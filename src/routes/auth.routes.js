@@ -2,7 +2,7 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken, hashResetToken } = require('../auth');
-const { isValidEmail, isNonEmptyString, isValidPassword, validate } = require('../validators');
+const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, validate } = require('../validators');
 
 const router = express.Router();
 
@@ -13,13 +13,22 @@ function publicUser(u) {
 
 // POST /api/auth/signup
 router.post('/signup', (req, res) => {
-  const { name, email, password, role, country, city } = req.body || {};
+  const { name, email, password, role, country, city, phone, address, zipCode, category, skills } = req.body || {};
   const errors = validate([
     ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Full name must be at least 2 characters'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
     ['password', isValidPassword(password), 'Password must be at least 6 characters'],
     ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
+    ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
+    ['zipCode', isValidPostalCode(zipCode), 'Enter a valid postal/zip code'],
+    ['address', isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address'],
   ]);
+  if (role === 'provider') {
+    errors.push(...validate([
+      ['category', isNonEmptyString(category), 'Select your primary service category'],
+      ['skills', isNonEmptyString(skills, { min: 2, max: 300 }), 'List at least one skill or specialty'],
+    ]));
+  }
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
   const trimmedName = name.trim();
@@ -33,11 +42,24 @@ router.post('/signup', (req, res) => {
     role,
     country: country || 'United States',
     city: city || 'Atlanta',
+    phone: phone.trim(),
+    address: address.trim(),
+    zipCode: zipCode.trim(),
+    phoneVerified: false,
     initials: trimmedName.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
     verified: false,
     passwordHash: hashPassword(password),
     createdAt: new Date().toISOString(),
-    ...(role === 'provider' ? { providerRole: 'New Provider', category: 'Plumbing', rating: 0, jobs: 0, price: 50, tags: [], color: '#5A5F6C', since: String(new Date().getFullYear()) } : {}),
+    ...(role === 'provider' ? {
+      providerRole: 'New Provider',
+      category: category || 'Plumbing',
+      // Skills are stored both as free text (what the provider actually
+      // typed) and as a parsed tag list (what the UI displays as chips) —
+      // this is also what the community-matching algorithm below reads.
+      skills: skills.trim(),
+      tags: skills.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6),
+      rating: 0, jobs: 0, price: 50, color: '#5A5F6C', since: String(new Date().getFullYear()),
+    } : {}),
   };
   db.insert('users', user);
   const token = signToken(user);
@@ -68,7 +90,7 @@ router.get('/me', requireAuth, (req, res) => {
 
 // PATCH /api/auth/me — update own profile / settings
 router.patch('/me', requireAuth, (req, res) => {
-  const allowed = ['name', 'email', 'phone', 'country', 'city', 'payPreference', 'payoutMethod', 'notifPrefs'];
+  const allowed = ['name', 'email', 'phone', 'country', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
   if ('name' in patch && !isNonEmptyString(patch.name, { min: 2, max: 100 })) {
@@ -82,6 +104,21 @@ router.patch('/me', requireAuth, (req, res) => {
   }
   if ('phone' in patch && patch.phone && !isNonEmptyString(patch.phone, { min: 7, max: 30 })) {
     return res.status(400).json({ error: 'Enter a valid phone number' });
+  }
+  if ('availability' in patch) {
+    if (!Array.isArray(patch.availability) || !patch.availability.every(a => typeof a === 'string' && a.trim().length > 0)) {
+      return res.status(400).json({ error: 'Availability must be a list of time slots' });
+    }
+    if (patch.availability.length === 0) {
+      return res.status(400).json({ error: 'You need at least one available time slot' });
+    }
+    patch.availability = patch.availability.map(a => a.trim()).slice(0, 15);
+  }
+  if ('pricingModel' in patch && !['hourly', 'negotiable'].includes(patch.pricingModel)) {
+    return res.status(400).json({ error: 'Pricing model must be hourly or negotiable' });
+  }
+  if ('price' in patch && (typeof patch.price !== 'number' || patch.price <= 0)) {
+    return res.status(400).json({ error: 'Hourly rate must be a positive number' });
   }
   const updated = db.update('users', req.user.sub, patch);
   if (!updated) return res.status(404).json({ error: 'User not found' });
@@ -199,6 +236,66 @@ router.post('/reset-password', (req, res) => {
   db.update('passwordResets', record.id, { used: true });
 
   res.json({ message: 'Password reset successfully — you can now sign in with your new password.' });
+});
+
+// ── PHONE VERIFICATION (test mode — same honest pattern as password reset) ──
+// No real SMS provider (Twilio, etc.) is connected yet, so the OTP code is
+// returned directly in the API response instead of being texted, clearly
+// labeled as test mode. Everything else — a real one-time code, hashed
+// before storage, short expiry, single use — is the production pattern.
+// Wiring in a real SMS provider later means sending the code by text instead
+// of returning it, not redesigning this flow.
+const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function generateOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+}
+
+// POST /api/auth/send-phone-otp — sends (in test mode: returns) a code to the
+// phone number already on the requesting user's account.
+router.post('/send-phone-otp', requireAuth, (req, res) => {
+  const user = db.find('users', u => u.id === req.user.sub);
+  if (!user) return res.status(404).json({ error: 'Account not found' });
+  if (!user.phone) return res.status(400).json({ error: 'Add a phone number to your account first' });
+
+  // Invalidate any previous outstanding code before issuing a new one.
+  db.filter('phoneVerifications', v => v.userId === user.id && !v.used).forEach(v => {
+    db.update('phoneVerifications', v.id, { used: true });
+  });
+
+  const code = generateOtp();
+  db.insert('phoneVerifications', {
+    id: `pv_${nanoid(10)}`,
+    userId: user.id,
+    codeHash: hashResetToken(code), // same fast-hash helper as reset tokens — a short-lived numeric code, not a password
+    expiresAt: new Date(Date.now() + OTP_TTL_MS).toISOString(),
+    used: false,
+    createdAt: new Date().toISOString(),
+  });
+
+  console.log(`[TEST MODE] Phone verification code for ${user.phone}: ${code} (expires in 10 min)`);
+
+  res.json({
+    message: `A verification code would be sent to ${user.phone}.`,
+    testMode: true,
+    testModeNote: 'No real SMS provider is configured yet — this code is returned directly instead of being texted. Do not do this in production.',
+    code,
+  });
+});
+
+// POST /api/auth/verify-phone-otp — confirms the code and marks the phone verified
+router.post('/verify-phone-otp', requireAuth, (req, res) => {
+  const { code } = req.body || {};
+  if (!isNonEmptyString(code)) return res.status(400).json({ error: 'Enter the code you received' });
+
+  const codeHash = hashResetToken(code.trim());
+  const record = db.find('phoneVerifications', v => v.userId === req.user.sub && v.codeHash === codeHash);
+  if (!record || record.used || new Date(record.expiresAt) < new Date()) {
+    return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
+  }
+  db.update('phoneVerifications', record.id, { used: true });
+  db.update('users', req.user.sub, { phoneVerified: true });
+  res.json({ message: 'Phone number verified.' });
 });
 
 module.exports = router;

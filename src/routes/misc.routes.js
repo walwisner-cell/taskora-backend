@@ -2,6 +2,8 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth } = require('../auth');
+const { isNonEmptyString, validate } = require('../validators');
+const { notify } = require('../notify');
 
 const router = express.Router();
 
@@ -32,7 +34,7 @@ router.post('/verification/submit', requireAuth, (req, res) => {
   const record = {
     id: `ver_${nanoid(10)}`,
     userId: req.user.sub,
-    docType: docType || 'Government ID',
+    docType: isNonEmptyString(docType) ? docType.trim() : 'Government ID',
     status: 'in review',
     createdAt: new Date().toISOString(),
   };
@@ -45,16 +47,28 @@ router.get('/messages/:withUserId', requireAuth, (req, res) => {
   const all = db.filter('messages', m =>
     (m.fromId === req.user.sub && m.toId === req.params.withUserId) ||
     (m.toId === req.user.sub && m.fromId === req.params.withUserId)
-  );
+  ).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   res.json({ messages: all });
 });
 
 // POST /api/messages — send a message
 router.post('/messages', requireAuth, (req, res) => {
   const { toId, text } = req.body || {};
-  if (!toId || !text) return res.status(400).json({ error: 'toId and text are required' });
-  const message = { id: `msg_${nanoid(10)}`, fromId: req.user.sub, toId, text, createdAt: new Date().toISOString() };
+  const errors = validate([
+    ['toId', isNonEmptyString(toId), 'Recipient is required'],
+    ['text', isNonEmptyString(text, { min: 1, max: 2000 }), 'Message cannot be empty'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const recipient = db.find('users', u => u.id === toId);
+  if (!recipient) return res.status(404).json({ error: 'Recipient not found' });
+
+  const message = { id: `msg_${nanoid(10)}`, fromId: req.user.sub, toId, text: text.trim(), createdAt: new Date().toISOString() };
   db.insert('messages', message);
+
+  const sender = db.find('users', u => u.id === req.user.sub);
+  notify(toId, '💬', `New message from ${sender ? sender.name : 'someone'}: "${text.trim().slice(0, 50)}${text.length > 50 ? '…' : ''}"`);
+
   res.status(201).json({ message });
 });
 

@@ -59,10 +59,18 @@ const users = [
     region: 'Accra', isSuperAdmin: false, active: true },
   { id: 'u_superadmin', name: 'Taskora HQ', email: 'superadmin@taskora.io', role: 'admin', city: null, country: null, initials: 'TH', verified: true,
     region: null, isSuperAdmin: true, active: true },
-].map(u => ({
+].map((u, i) => ({
   ...u,
   passwordHash: hashPassword(DEMO_PASSWORD),
   createdAt: now(),
+  phone: u.phone || `+1 404 555 ${String(1000 + i).slice(-4)}`,
+  address: u.address || `${100 + i} Main Street`,
+  // A couple of Atlanta providers deliberately share a zip code with Jordan
+  // (the seeded demo customer) so the community-matching boost in AI
+  // matching has something real to demonstrate rather than always being 0.
+  zipCode: u.zipCode || (u.city === 'Atlanta' ? (i % 3 === 0 ? '30301' : '30302') : (u.city ? '00000' : null)),
+  phoneVerified: u.phoneVerified !== undefined ? u.phoneVerified : true,
+  skills: u.skills || (u.tags && u.tags.length ? u.tags.join(', ') : undefined),
 }));
 
 db.replaceAll('users', users);
@@ -149,6 +157,7 @@ db.replaceAll('matches', []);
 db.replaceAll('messages', []);
 db.replaceAll('paymentMethods', []);
 db.replaceAll('passwordResets', []);
+db.replaceAll('phoneVerifications', []);
 db.replaceAll('reviews', [
   { id: id('rev'), providerId: 'u_marcus', authorName: 'Renee P.', stars: 5, text: 'Showed up on time, explained everything clearly, and the price matched the quote exactly.' },
   { id: id('rev'), providerId: 'u_marcus', authorName: 'Malik O.', stars: 5, text: 'Excellent work — fast, clean, and professional. The escrow process made the whole thing feel safe.' },

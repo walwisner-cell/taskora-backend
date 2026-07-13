@@ -8,8 +8,12 @@
     "country": "United States",
     "initials": "JD",
     "verified": true,
-    "passwordHash": "$2a$10$7AuLknmHc/dLkIxTJXVHp.NuOiALdj6gCpO5uZMpTroZdxmGp0zUq",
-    "createdAt": "2026-07-13T16:59:48.963Z"
+    "passwordHash": "$2a$10$qtWtaxh5bNS9vb9QQIuTR.G/G.acOprXV7f/DChTKaMK7ix3sZekC",
+    "createdAt": "2026-07-13T22:50:02.519Z",
+    "phone": "+1 404 555 1000",
+    "address": "100 Main Street",
+    "zipCode": "30301",
+    "phoneVerified": true
   },
   {
     "id": "u_marcus",
@@ -32,8 +36,13 @@
     ],
     "color": "#12161F",
     "since": "2022",
-    "passwordHash": "$2a$10$MGriQxj9FjRSgLVIj1WAwuvq2ddLt6j9HgpYZ5Ajv2fxXmNTls5vO",
-    "createdAt": "2026-07-13T16:59:49.052Z"
+    "passwordHash": "$2a$10$9cCA6V/OpPDbd50v/qof/uqXl5FZNGqxQooyzKfImQcNY.Wo9Ak4G",
+    "createdAt": "2026-07-13T22:50:02.605Z",
+    "phone": "+1 404 555 1001",
+    "address": "101 Main Street",
+    "zipCode": "30302",
+    "phoneVerified": true,
+    "skills": "Pipe Repair, Drain Cleaning, Fixtures"
   },
   {
     "id": "u_aisha",
@@ -56,8 +65,13 @@
     ],
     "color": "#2E8C6F",
     "since": "2023",
-    "passwordHash": "$2a$10$mb/klDCs5gV6x2Yub9gx2eARRcRIo8.LtBWHJEJfF8owgy65Ome8q",
-    "createdAt": "2026-07-13T16:59:49.139Z"
+    "passwordHash": "$2a$10$d6hbk94SVXPiITy690932uAAwhM0sFh5VLnWe4YRqIqycWsdlJhGa",
+    "createdAt": "2026-07-13T22:50:02.690Z",
+    "phone": "+1 404 555 1002",
+    "address": "102 Main Street",
+    "zipCode": "30302",
+    "phoneVerified": true,
+    "skills": "Deep Clean, Move-Out, Weekly Service"
   },
   {
     "id": "u_james",
@@ -80,8 +94,13 @@
     ],
     "color": "#B08A3E",
     "since": "2021",
-    "passwordHash": "$2a$10$4pn3XBIi.Q/NoyrQzOSFYOYKZgMHocwHMV3PHsuNhhAPamYRr9F9S",
-    "createdAt": "2026-07-13T16:59:49.226Z"
+    "passwordHash": "$2a$10$FjJeZl4XU8tNLQjVgAb0tejLm5CHwPMy7gZz1mQyzMGFPanxnDKaW",
+    "createdAt": "2026-07-13T22:50:02.776Z",
+    "phone": "+1 404 555 1003",
+    "address": "103 Main Street",
+    "zipCode": "30301",
+    "phoneVerified": true,
+    "skills": "SAT Prep, Algebra, Physics"
   },
   {
     "id": "u_sofia",
@@ -104,8 +123,13 @@
     ],
     "color": "#4B5D7A",
     "since": "2020",
-    "passwordHash": "$2a$10$MKIereo1I2Om.8aSeaJGL.JvOp5tTPP0vApFXIBusTsVQPSVurFZW",
-    "createdAt": "2026-07-13T16:59:49.315Z"
+    "passwordHash": "$2a$10$k3xgYOeO5usCVYDNkA90vuTCv7lEG7o.ndAB8FPrvblOCne0yxe/2",
+    "createdAt": "2026-07-13T22:50:02.862Z",
+    "phone": "+1 404 555 1004",
+    "address": "104 Main Street",
+    "zipCode": "30302",
+    "phoneVerified": true,
+    "skills": "Wiring, Panel Upgrade, Outlets"
   },
   {
     "id": "u_deshawn",
@@ -128,8 +152,13 @@
     ],
     "color": "#8C4A46",
     "since": "2023",
-    "passwordHash": "$2a$10$jZntsal5bLGtAPdsnzIaYuFNkuikYIDMMYJRQkPDaMxzW8aUls3pi",
-    "createdAt": "2026-07-13T16:59:49.403Z"
+    "passwordHash": "$2a$10$7VQnhXIZ4rvQw7RpXqx7l.hkCVGTzaSLf0W2HrvrnzvaSjGIOS4n.",
+    "createdAt": "2026-07-13T22:50:02.947Z",
+    "phone": "+1 404 555 1005",
+    "address": "105 Main Street",
+    "zipCode": "30302",
+    "phoneVerified": true,
+    "skills": "Weight Loss, HIIT, Strength"
   },
   {
     "id": "u_priya",
@@ -152,8 +181,13 @@
     ],
     "color": "#2F6F62",
     "since": "2022",
-    "passwordHash": "$2a$10$0Soi2.unpuQ0XSyDBxlazOb7vvnVg3yDl32CQy7nK3KHMMT0X2yaq",
-    "createdAt": "2026-07-13T16:59:49.490Z"
+    "passwordHash": "$2a$10$n4vPRVlHx42WX.qyWtPFX.ilJXwD1X2K8.QARBonJ1l7kZfvB9PS6",
+    "createdAt": "2026-07-13T22:50:03.034Z",
+    "phone": "+1 404 555 1006",
+    "address": "106 Main Street",
+    "zipCode": "30301",
+    "phoneVerified": true,
+    "skills": "Interior, Exterior, Accent Walls"
   },
   {
     "id": "u_tom",
@@ -176,8 +210,13 @@
     ],
     "color": "#6B4C7A",
     "since": "2021",
-    "passwordHash": "$2a$10$GuVsZmQ8y0zY5PigFTj54.z3rhaaC2jfSqBNNgw4t7QCpSRW38UYe",
-    "createdAt": "2026-07-13T16:59:49.577Z"
+    "passwordHash": "$2a$10$U407/Wq7O4STwFsp4hX90.6PpJm5k82Zw4tmcGlE.BChvm620kOz.",
+    "createdAt": "2026-07-13T22:50:03.120Z",
+    "phone": "+1 404 555 1007",
+    "address": "107 Main Street",
+    "zipCode": "30302",
+    "phoneVerified": true,
+    "skills": "Local Move, Packing, Furniture"
   },
   {
     "id": "u_keisha",
@@ -200,8 +239,13 @@
     ],
     "color": "#3F6B4A",
     "since": "2022",
-    "passwordHash": "$2a$10$IKqaeVqFYGNaXfvfVMV6F.SXUoIvvgmwVTt8INAd4ymOPgG4DhWo6",
-    "createdAt": "2026-07-13T16:59:49.664Z"
+    "passwordHash": "$2a$10$EUhMbiuEMzQ4tl7T03AP5O2nL6s8TdgkkM8KrVtS6Z5fuS4URUwIi",
+    "createdAt": "2026-07-13T22:50:03.205Z",
+    "phone": "+1 404 555 1008",
+    "address": "108 Main Street",
+    "zipCode": "30302",
+    "phoneVerified": true,
+    "skills": "Lawn Care, Garden Design, Mulching"
   },
   {
     "id": "u_emeka",
@@ -220,8 +264,12 @@
     "tags": [],
     "color": "#5A5F6C",
     "since": "2026",
-    "passwordHash": "$2a$10$rMzmMlyT82im7wEVunCR7uj5Z7DWMQFKqBOXulPvv4dlJZF/EWIZa",
-    "createdAt": "2026-07-13T16:59:49.752Z"
+    "passwordHash": "$2a$10$OiKXa5nzCM1odIw4/rlRwuZdfusySVfGTTjFv3GpTIIC23Hiq9QMe",
+    "createdAt": "2026-07-13T22:50:03.291Z",
+    "phone": "+1 404 555 1009",
+    "address": "109 Main Street",
+    "zipCode": "00000",
+    "phoneVerified": true
   },
   {
     "id": "u_chioma",
@@ -232,8 +280,12 @@
     "country": "Nigeria",
     "initials": "CK",
     "verified": false,
-    "passwordHash": "$2a$10$Z7o85X0UaCmQ8ca2tq.oWeJVW0H4NLwkH/3dh2bAVtQp5WeV0mXby",
-    "createdAt": "2026-07-13T16:59:49.839Z"
+    "passwordHash": "$2a$10$9k0B9x/N9DQRBUE07U4ckuAZSo0oBBuJjq2vWI2CR0BWRZph9scWe",
+    "createdAt": "2026-07-13T22:50:03.376Z",
+    "phone": "+1 404 555 1010",
+    "address": "110 Main Street",
+    "zipCode": "00000",
+    "phoneVerified": true
   },
   {
     "id": "u_grace",
@@ -252,8 +304,12 @@
     "tags": [],
     "color": "#5A5F6C",
     "since": "2026",
-    "passwordHash": "$2a$10$XD9f398TSGNDl2sM2blKuOWlElf84.rIMdDwWZEbHdldX4pA7GQ2S",
-    "createdAt": "2026-07-13T16:59:49.928Z"
+    "passwordHash": "$2a$10$Tc1wDNBEhXSZcIrd.HqDsOLzBhNBCCQeA/.dsIXeafUrtbkjQzCxq",
+    "createdAt": "2026-07-13T22:50:03.466Z",
+    "phone": "+1 404 555 1011",
+    "address": "111 Main Street",
+    "zipCode": "00000",
+    "phoneVerified": true
   },
   {
     "id": "u_ama",
@@ -264,8 +320,12 @@
     "country": "Ghana",
     "initials": "AS",
     "verified": false,
-    "passwordHash": "$2a$10$X3FLY82PV5VOWekyYTWHUOnn1ZvzVBynlvkaPCglG2JO8yV8gFFA2",
-    "createdAt": "2026-07-13T16:59:50.022Z"
+    "passwordHash": "$2a$10$Cnutb.kY0Wh.15iAKtzpfelkXfyfqlgJJKjqIJgZB4YHvOaPJR36W",
+    "createdAt": "2026-07-13T22:50:03.555Z",
+    "phone": "+1 404 555 1012",
+    "address": "112 Main Street",
+    "zipCode": "00000",
+    "phoneVerified": true
   },
   {
     "id": "u_amara",
@@ -279,8 +339,12 @@
     "region": "Atlanta",
     "isSuperAdmin": false,
     "active": true,
-    "passwordHash": "$2a$10$NiLvyiq/bQxkRQK5YiLnluL/gPR0OarCi7uxigbbwAOo5na5hZqMC",
-    "createdAt": "2026-07-13T16:59:50.109Z"
+    "passwordHash": "$2a$10$q7KNkAM39cOvGlZJQh5I9u75CKJXevi2DFv1hsG780vgJjNPNDoyu",
+    "createdAt": "2026-07-13T22:50:03.641Z",
+    "phone": "+1 404 555 1013",
+    "address": "113 Main Street",
+    "zipCode": "30302",
+    "phoneVerified": true
   },
   {
     "id": "u_ngozi",
@@ -294,8 +358,12 @@
     "region": "Lagos",
     "isSuperAdmin": false,
     "active": true,
-    "passwordHash": "$2a$10$aoppWLPt7OW2s8y2qWgp..uut79Stqz.SV.40qE2m.ZMsr4lYxxXO",
-    "createdAt": "2026-07-13T16:59:50.196Z"
+    "passwordHash": "$2a$10$lIcPnWdqFyV4DIzJY98Nz.sKFxyTg6WdnwyHYbbEfRpbAI5Z/r8ta",
+    "createdAt": "2026-07-13T22:50:03.728Z",
+    "phone": "+1 404 555 1014",
+    "address": "114 Main Street",
+    "zipCode": "00000",
+    "phoneVerified": true
   },
   {
     "id": "u_kwame",
@@ -309,8 +377,12 @@
     "region": "Accra",
     "isSuperAdmin": false,
     "active": true,
-    "passwordHash": "$2a$10$WsOAkzaabFirEeqJDS49M.r3IJoBmUaVy8pEgJ7qVaRrqFlP9JdAq",
-    "createdAt": "2026-07-13T16:59:50.291Z"
+    "passwordHash": "$2a$10$k80ZfhBzYzTOGtJoWxjoiujEV0lIGkdz1jkg2DAtZjXncDr8BG3A.",
+    "createdAt": "2026-07-13T22:50:03.818Z",
+    "phone": "+1 404 555 1015",
+    "address": "115 Main Street",
+    "zipCode": "00000",
+    "phoneVerified": true
   },
   {
     "id": "u_superadmin",
@@ -324,7 +396,11 @@
     "region": null,
     "isSuperAdmin": true,
     "active": true,
-    "passwordHash": "$2a$10$mtgw7S4rCdJ07fsR7ON9N.axwLjL976qWvxrwtYRD3geCgTFmcv1W",
-    "createdAt": "2026-07-13T16:59:50.378Z"
+    "passwordHash": "$2a$10$mXU4G3MHZhFVel7aldGuNeHHCOZVwwKEIQT60Y50rB7QqS3voXN0u",
+    "createdAt": "2026-07-13T22:50:03.904Z",
+    "phone": "+1 404 555 1016",
+    "address": "116 Main Street",
+    "zipCode": null,
+    "phoneVerified": true
   }
 ]

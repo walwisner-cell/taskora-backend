@@ -3,6 +3,7 @@ const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { isNonEmptyString, validate } = require('../validators');
+const { notify } = require('../notify');
 
 const router = express.Router();
 
@@ -107,6 +108,7 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), (req, res)
     createdAt: new Date().toISOString(),
   };
   db.insert('payouts', payout);
+  notify(req.user.sub, '💸', `Payout of $${payout.amount} requested — processing.`);
   res.status(201).json({ payout });
 });
 
@@ -117,6 +119,7 @@ router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), (re
   const escrow = db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow) db.update('escrowTransactions', escrow.id, { status: 'released' });
   const updated = db.update('contracts', contract.id, { status: 'completed' });
+  notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}.`);
   res.json({ contract: updated, escrow: { ...escrow, status: 'released' } });
 });
 

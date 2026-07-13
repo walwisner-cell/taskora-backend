@@ -3,6 +3,7 @@ const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole, hashPassword } = require('../auth');
 const { isValidEmail, isNonEmptyString, isValidPassword, validate } = require('../validators');
+const { notify } = require('../notify');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -82,6 +83,36 @@ router.get('/users/pending', (req, res) => {
   res.json({ users: pending });
 });
 
+// GET /api/admin/users/all?role=customer|provider — the full customer/provider
+// directory. A location admin only ever sees people in their own assigned
+// city — that's the whole point of location admins existing. A super admin
+// passes no region filter here, so they always see (and can act on)
+// everyone, everywhere, regardless of what any location admin's scope is.
+router.get('/users/all', (req, res) => {
+  const region = myRegion(req);
+  const { role } = req.query;
+  let users = db.filter('users', u => u.role === 'customer' || u.role === 'provider');
+  if (region) users = users.filter(u => u.city === region);
+  if (role && ['customer', 'provider'].includes(role)) users = users.filter(u => u.role === role);
+  res.json({ users: users.map(publicAdmin) });
+});
+
+// PATCH /api/admin/users/:id/status  { active: true|false } — suspend or
+// reactivate a customer or provider account. Location admins can only do
+// this to people in their own city; a super admin can do it to anyone,
+// anytime, overriding whatever a location admin has set.
+router.patch('/users/:id/status', (req, res) => {
+  const { active } = req.body || {};
+  if (typeof active !== 'boolean') return res.status(400).json({ error: 'active must be true or false' });
+  const region = myRegion(req);
+  const target = db.find('users', u => u.id === req.params.id && (u.role === 'customer' || u.role === 'provider'));
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  const updated = db.update('users', target.id, { active });
+  notify(target.id, active ? '✅' : '⛔', active ? 'Your account has been reactivated.' : 'Your account has been suspended. Contact support for details.');
+  res.json({ user: publicAdmin(updated) });
+});
+
 // POST /api/admin/users/:id/decide  { decision: 'approve' | 'reject' }
 router.post('/users/:id/decide', (req, res) => {
   const { decision } = req.body || {};
@@ -91,6 +122,7 @@ router.post('/users/:id/decide', (req, res) => {
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
   const updated = db.update('users', req.params.id, { verified: decision === 'approve', status: decision === 'approve' ? 'approved' : 'rejected' });
+  notify(target.id, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? 'Your account has been approved.' : 'Your account application was not approved. Contact support for details.');
   res.json({ user: publicAdmin(updated) });
 });
 
@@ -115,6 +147,7 @@ router.post('/verification/:id/decide', (req, res) => {
   const status = decision === 'approve' ? 'approved' : 'rejected';
   db.update('verifications', record.id, { status });
   if (decision === 'approve') db.update('users', record.userId, { verified: true });
+  notify(record.userId, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? 'Your identity verification was approved.' : 'Your identity verification was rejected — please resubmit your documents.');
   res.json({ verification: { ...record, status } });
 });
 
@@ -134,6 +167,11 @@ router.post('/disputes/:id/resolve', (req, res) => {
   const updated = db.update('disputes', dispute.id, { status: 'resolved' });
   const escrow = db.find('escrowTransactions', e => e.contractId === updated.contractId);
   if (escrow) db.update('escrowTransactions', escrow.id, { status: 'released' });
+  const contract = db.find('contracts', c => c.id === updated.contractId);
+  if (contract) {
+    notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved.`);
+    notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved.`);
+  }
   res.json({ dispute: updated });
 });
 

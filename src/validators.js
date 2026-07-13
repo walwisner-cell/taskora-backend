@@ -19,6 +19,22 @@ function isValidPassword(password) {
   return typeof password === 'string' && password.length >= 6 && password.length <= 200;
 }
 
+// Deliberately permissive on format — Taskora operates across the US, Nigeria,
+// and Ghana, and phone/postal formats vary a lot by country. This checks for
+// "plausible," not a single country's exact pattern: digits (with optional
+// +, spaces, dashes, parens) and a sane length.
+function isValidPhone(phone) {
+  if (typeof phone !== 'string') return false;
+  const digitsOnly = phone.replace(/[^0-9]/g, '');
+  return digitsOnly.length >= 7 && digitsOnly.length <= 15 && /^[0-9+()\-\s]+$/.test(phone.trim());
+}
+
+function isValidPostalCode(code) {
+  if (typeof code !== 'string') return false;
+  const trimmed = code.trim();
+  return trimmed.length >= 3 && trimmed.length <= 10 && /^[a-zA-Z0-9\s-]+$/.test(trimmed);
+}
+
 // Collects every failing rule instead of stopping at the first one, so the
 // client can show all problems at once rather than one at a time.
 function validate(rules) {
@@ -29,4 +45,4 @@ function validate(rules) {
   return errors;
 }
 
-module.exports = { isValidEmail, isNonEmptyString, isValidPassword, validate, EMAIL_RE };
+module.exports = { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, validate, EMAIL_RE };
