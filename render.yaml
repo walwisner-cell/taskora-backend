@@ -5,16 +5,15 @@
 # env-var collisions. Nothing here touches or references any other service
 # on the account.
 #
-# Deploy: push this repo to GitHub, then in Render choose
-# "New +" → "Blueprint" → select this repo. Render reads this file and
-# creates everything below automatically. See README.md → "Deploying to
-# Render" for the full walkthrough, including a manual (non-Blueprint) path.
+# This version uses Render's Starter plan (~$7/month) with a persistent
+# disk attached, so test data you add (new users, jobs, approvals, etc.)
+# actually survives redeploys and idle spin-downs instead of resetting.
 
 services:
   - type: web
-    name: taskora-api            # <-- change this if you want an even more distinct name
+    name: taskora-api
     runtime: node
-    plan: free                   # bump to "starter" or higher for production-grade uptime
+    plan: starter
     region: oregon                # pick whichever region is closest to you
     buildCommand: npm install
     startCommand: npm start
@@ -22,20 +21,19 @@ services:
     autoDeploy: true
     envVars:
       - key: TASKORA_JWT_SECRET
-        generateValue: true      # Render generates a strong random secret — never commit one
-      - key: DATA_DIR
-        value: /var/data         # points the JSON datastore at the persistent disk below
+        generateValue: true       # Render generates a strong random secret — never commit one
       - key: NODE_ENV
         value: production
+      - key: DATA_DIR
+        value: /var/data          # points the JSON datastore at the persistent disk below
     disk:
       name: taskora-data
       mountPath: /var/data
-      sizeGB: 1                  # plenty of headroom for JSON test data; resize anytime
+      sizeGB: 1                   # plenty of headroom for JSON test data; resize anytime
 
-# NOTE ON PERSISTENCE
-# The free plan's disk still persists across deploys and restarts (that's
-# the whole point of attaching one) — it just isn't replicated/backed up the
-# way a managed database would be. That's fine for a test/staging
-# environment. Before this becomes the live system, follow the Postgres
-# migration path in Taskora_Technical_Spec.docx (the DDL there maps directly
-# onto the data already stored here).
+# First deploy boots with an empty disk, so it auto-seeds demo data once.
+# Every deploy after that leaves your real data alone — the seed only runs
+# when the disk is genuinely empty (see src/seed.js -> seedIfEmpty()).
+#
+# To go back to clean demo data on purpose: open a Render Shell for this
+# service (Dashboard -> your service -> Shell) and run: npm run seed
