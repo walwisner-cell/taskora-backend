@@ -1,0 +1,41 @@
+# Render Blueprint for Taskora.
+#
+# This defines a standalone, independently-named Web Service so it can sit
+# in the same Render account as other projects without any naming, port, or
+# env-var collisions. Nothing here touches or references any other service
+# on the account.
+#
+# Deploy: push this repo to GitHub, then in Render choose
+# "New +" → "Blueprint" → select this repo. Render reads this file and
+# creates everything below automatically. See README.md → "Deploying to
+# Render" for the full walkthrough, including a manual (non-Blueprint) path.
+
+services:
+  - type: web
+    name: taskora-api            # <-- change this if you want an even more distinct name
+    runtime: node
+    plan: free                   # bump to "starter" or higher for production-grade uptime
+    region: oregon                # pick whichever region is closest to you
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: TASKORA_JWT_SECRET
+        generateValue: true      # Render generates a strong random secret — never commit one
+      - key: DATA_DIR
+        value: /var/data         # points the JSON datastore at the persistent disk below
+      - key: NODE_ENV
+        value: production
+    disk:
+      name: taskora-data
+      mountPath: /var/data
+      sizeGB: 1                  # plenty of headroom for JSON test data; resize anytime
+
+# NOTE ON PERSISTENCE
+# The free plan's disk still persists across deploys and restarts (that's
+# the whole point of attaching one) — it just isn't replicated/backed up the
+# way a managed database would be. That's fine for a test/staging
+# environment. Before this becomes the live system, follow the Postgres
+# migration path in Taskora_Technical_Spec.docx (the DDL there maps directly
+# onto the data already stored here).

@@ -1,0 +1,29 @@
+[
+  {
+    "id": "dp_118",
+    "contractId": "ct_1024",
+    "reason": "Incomplete work",
+    "amount": 640,
+    "status": "open",
+    "parties": "Sofia M. ↔ Malik Owens",
+    "createdAt": "2026-07-13T10:55:13.312Z"
+  },
+  {
+    "id": "dp_114",
+    "contractId": "ct_1039",
+    "reason": "Late arrival",
+    "amount": 75,
+    "status": "in review",
+    "parties": "Priya N. ↔ Renee Park",
+    "createdAt": "2026-07-13T10:55:13.312Z"
+  },
+  {
+    "id": "dp_109",
+    "contractId": "ct_1031",
+    "reason": "Damaged item during move",
+    "amount": 220,
+    "status": "resolved",
+    "parties": "Tom B. ↔ Grant Lee",
+    "createdAt": "2026-07-13T10:55:13.312Z"
+  }
+]

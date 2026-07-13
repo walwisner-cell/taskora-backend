@@ -1,0 +1,42 @@
+[
+  {
+    "id": "cty_DFPTKBCxp3",
+    "name": "United States",
+    "status": "live"
+  },
+  {
+    "id": "cty_DVnluIflC2",
+    "name": "Nigeria",
+    "status": "live"
+  },
+  {
+    "id": "cty_rq6_TNJCjU",
+    "name": "Ghana",
+    "status": "live"
+  },
+  {
+    "id": "cty_9wOW3kx4c6",
+    "name": "Liberia",
+    "status": "live"
+  },
+  {
+    "id": "cty_3YZWjRYBcR",
+    "name": "United Kingdom",
+    "status": "planned"
+  },
+  {
+    "id": "cty_MNUQruMfxo",
+    "name": "Canada",
+    "status": "planned"
+  },
+  {
+    "id": "cty_vMM6fBwvSJ",
+    "name": "Kenya",
+    "status": "planned"
+  },
+  {
+    "id": "cty_spt1kVBhko",
+    "name": "South Africa",
+    "status": "planned"
+  }
+]

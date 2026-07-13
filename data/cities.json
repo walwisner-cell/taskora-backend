@@ -1,0 +1,20 @@
+[
+  {
+    "id": "city_atlanta",
+    "name": "Atlanta",
+    "country": "United States",
+    "adminId": "u_amara"
+  },
+  {
+    "id": "city_lagos",
+    "name": "Lagos",
+    "country": "Nigeria",
+    "adminId": "u_ngozi"
+  },
+  {
+    "id": "city_accra",
+    "name": "Accra",
+    "country": "Ghana",
+    "adminId": "u_kwame"
+  }
+]

@@ -1,0 +1,23 @@
+[
+  {
+    "id": "esc_ohRF24Jo4Z",
+    "contractId": "ct_1042",
+    "amount": 180,
+    "status": "held",
+    "createdAt": "2026-07-13T10:55:13.311Z"
+  },
+  {
+    "id": "esc_qWY-3w85DW",
+    "contractId": "ct_1039",
+    "amount": 140,
+    "status": "released",
+    "createdAt": "2026-07-13T10:55:13.311Z"
+  },
+  {
+    "id": "esc_FxeMyRkKzJ",
+    "contractId": "ct_1031",
+    "amount": 220,
+    "status": "released",
+    "createdAt": "2026-07-13T10:55:13.311Z"
+  }
+]

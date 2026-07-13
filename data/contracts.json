@@ -1,0 +1,42 @@
+[
+  {
+    "id": "ct_1042",
+    "customerId": "u_jordan",
+    "providerId": "u_marcus",
+    "service": "Kitchen sink pipe repair",
+    "amount": 180,
+    "status": "active",
+    "signedAt": "2026-07-12",
+    "createdAt": "2026-07-13T10:55:13.311Z"
+  },
+  {
+    "id": "ct_1039",
+    "customerId": "u_jordan",
+    "providerId": "u_aisha",
+    "service": "Deep clean — 3BR apartment",
+    "amount": 140,
+    "status": "completed",
+    "signedAt": "2026-07-10",
+    "createdAt": "2026-07-13T10:55:13.311Z"
+  },
+  {
+    "id": "ct_1031",
+    "customerId": "u_jordan",
+    "providerId": "u_james",
+    "service": "SAT prep — 4 sessions",
+    "amount": 220,
+    "status": "completed",
+    "signedAt": "2026-07-02",
+    "createdAt": "2026-07-13T10:55:13.311Z"
+  },
+  {
+    "id": "ct_1024",
+    "customerId": "u_jordan",
+    "providerId": "u_sofia",
+    "service": "Panel upgrade estimate",
+    "amount": 0,
+    "status": "disputed",
+    "signedAt": "2026-06-24",
+    "createdAt": "2026-07-13T10:55:13.311Z"
+  }
+]

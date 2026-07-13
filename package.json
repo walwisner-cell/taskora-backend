@@ -1,0 +1,20 @@
+{
+  "name": "taskora-backend",
+  "version": "1.0.0",
+  "description": "Taskora API — auth, marketplace, matching, contracts, escrow, disputes, admin",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "seed": "node src/seed.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "nanoid": "^3.3.7",
+    "morgan": "^1.10.0"
+  }
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "ver_Xx8HQn0Hb8",
+    "userId": "u_grace",
+    "docType": "National ID",
+    "status": "in review",
+    "createdAt": "2026-07-13T10:55:13.312Z"
+  },
+  {
+    "id": "ver_EUU_o03IdN",
+    "userId": "u_emeka",
+    "docType": "BVN + NIN",
+    "status": "in review",
+    "createdAt": "2026-07-13T10:55:13.312Z"
+  },
+  {
+    "id": "ver_YMurix9Ys9",
+    "userId": "u_chioma",
+    "docType": "BVN + NIN",
+    "status": "in review",
+    "createdAt": "2026-07-13T10:55:13.312Z"
+  },
+  {
+    "id": "ver_l-ep7AoDtl",
+    "userId": "u_ama",
+    "docType": "National ID",
+    "status": "in review",
+    "createdAt": "2026-07-13T10:55:13.312Z"
+  },
+  {
+    "id": "ver_rUa1mTY30L",
+    "userId": "u_jordan",
+    "docType": "State ID",
+    "status": "approved",
+    "createdAt": "2026-07-13T10:55:13.312Z"
+  },
+  {
+    "id": "ver_xI0bcSmj8F",
+    "userId": "u_marcus",
+    "docType": "State ID",
+    "status": "approved",
+    "createdAt": "2026-07-13T10:55:13.312Z"
+  }
+]

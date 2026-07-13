@@ -1,0 +1,42 @@
+[
+  {
+    "id": "cat_azVQAg3c_q",
+    "name": "Plumbing",
+    "active": true
+  },
+  {
+    "id": "cat_GZhtoibrWw",
+    "name": "Cleaning",
+    "active": true
+  },
+  {
+    "id": "cat_aLTLl4xHGE",
+    "name": "Tutoring",
+    "active": true
+  },
+  {
+    "id": "cat_khwXu6JGNb",
+    "name": "Electrical",
+    "active": true
+  },
+  {
+    "id": "cat_vpdeuXBi1R",
+    "name": "Moving",
+    "active": true
+  },
+  {
+    "id": "cat_QV9ZkePmOa",
+    "name": "Painting",
+    "active": true
+  },
+  {
+    "id": "cat_Z8V9HLNore",
+    "name": "Landscaping",
+    "active": true
+  },
+  {
+    "id": "cat_aFWca46-V9",
+    "name": "Fitness",
+    "active": true
+  }
+]
