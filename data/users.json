@@ -8,8 +8,8 @@
     "country": "United States",
     "initials": "JD",
     "verified": true,
-    "passwordHash": "$2a$10$qYCs5DUXgO.AYU.Qv3MIFeBtdgbiOdrS3jq23AjlCeNsA0QAl9BPm",
-    "createdAt": "2026-07-13T10:55:11.946Z"
+    "passwordHash": "$2a$10$7AuLknmHc/dLkIxTJXVHp.NuOiALdj6gCpO5uZMpTroZdxmGp0zUq",
+    "createdAt": "2026-07-13T16:59:48.963Z"
   },
   {
     "id": "u_marcus",
@@ -32,8 +32,8 @@
     ],
     "color": "#12161F",
     "since": "2022",
-    "passwordHash": "$2a$10$WtAjWl3aKtAu.rQWaqgV2utR6pyE1O7DcanhoCSTv/fLkq1hZhiWK",
-    "createdAt": "2026-07-13T10:55:12.029Z"
+    "passwordHash": "$2a$10$MGriQxj9FjRSgLVIj1WAwuvq2ddLt6j9HgpYZ5Ajv2fxXmNTls5vO",
+    "createdAt": "2026-07-13T16:59:49.052Z"
   },
   {
     "id": "u_aisha",
@@ -56,8 +56,8 @@
     ],
     "color": "#2E8C6F",
     "since": "2023",
-    "passwordHash": "$2a$10$ppqC9Iyr1QPJpEiDVaQ3/e/n7N1eI6NKaIJflcAJXnhgV99kigb5.",
-    "createdAt": "2026-07-13T10:55:12.112Z"
+    "passwordHash": "$2a$10$mb/klDCs5gV6x2Yub9gx2eARRcRIo8.LtBWHJEJfF8owgy65Ome8q",
+    "createdAt": "2026-07-13T16:59:49.139Z"
   },
   {
     "id": "u_james",
@@ -80,8 +80,8 @@
     ],
     "color": "#B08A3E",
     "since": "2021",
-    "passwordHash": "$2a$10$nfUtZQa0aVKuXgA1Niephu0WlDTKyTrQBzNbeS90gjciC.0CbyqOq",
-    "createdAt": "2026-07-13T10:55:12.198Z"
+    "passwordHash": "$2a$10$4pn3XBIi.Q/NoyrQzOSFYOYKZgMHocwHMV3PHsuNhhAPamYRr9F9S",
+    "createdAt": "2026-07-13T16:59:49.226Z"
   },
   {
     "id": "u_sofia",
@@ -104,8 +104,8 @@
     ],
     "color": "#4B5D7A",
     "since": "2020",
-    "passwordHash": "$2a$10$t4QY9ZtfQDGvv92EFPn5oeJR9FXrIEVDxdnqsxXeEQJsbe4L24Uu2",
-    "createdAt": "2026-07-13T10:55:12.284Z"
+    "passwordHash": "$2a$10$MKIereo1I2Om.8aSeaJGL.JvOp5tTPP0vApFXIBusTsVQPSVurFZW",
+    "createdAt": "2026-07-13T16:59:49.315Z"
   },
   {
     "id": "u_deshawn",
@@ -128,8 +128,8 @@
     ],
     "color": "#8C4A46",
     "since": "2023",
-    "passwordHash": "$2a$10$5Nv4kPNwPDlW6TUOEK2Ife0qehEAcdOqpGz7lJwAxCQJxr8ZwP5tC",
-    "createdAt": "2026-07-13T10:55:12.366Z"
+    "passwordHash": "$2a$10$jZntsal5bLGtAPdsnzIaYuFNkuikYIDMMYJRQkPDaMxzW8aUls3pi",
+    "createdAt": "2026-07-13T16:59:49.403Z"
   },
   {
     "id": "u_priya",
@@ -152,8 +152,8 @@
     ],
     "color": "#2F6F62",
     "since": "2022",
-    "passwordHash": "$2a$10$8r7Su4NAdJLhTRVNUS8b8eFWJpmO1dzAg4euM7GGIDFeUtE2F0pkS",
-    "createdAt": "2026-07-13T10:55:12.451Z"
+    "passwordHash": "$2a$10$0Soi2.unpuQ0XSyDBxlazOb7vvnVg3yDl32CQy7nK3KHMMT0X2yaq",
+    "createdAt": "2026-07-13T16:59:49.490Z"
   },
   {
     "id": "u_tom",
@@ -176,8 +176,8 @@
     ],
     "color": "#6B4C7A",
     "since": "2021",
-    "passwordHash": "$2a$10$Acy58yy0zqIKzCdehZtOUeufGcN.t5gYtdfVL2.7Cb6xjcu9F0qd.",
-    "createdAt": "2026-07-13T10:55:12.539Z"
+    "passwordHash": "$2a$10$GuVsZmQ8y0zY5PigFTj54.z3rhaaC2jfSqBNNgw4t7QCpSRW38UYe",
+    "createdAt": "2026-07-13T16:59:49.577Z"
   },
   {
     "id": "u_keisha",
@@ -200,8 +200,8 @@
     ],
     "color": "#3F6B4A",
     "since": "2022",
-    "passwordHash": "$2a$10$0arwZAs7BHjARSlCBVW/juJ07mRUqOHfJPrmcegOgphGLnjqR3uvS",
-    "createdAt": "2026-07-13T10:55:12.621Z"
+    "passwordHash": "$2a$10$IKqaeVqFYGNaXfvfVMV6F.SXUoIvvgmwVTt8INAd4ymOPgG4DhWo6",
+    "createdAt": "2026-07-13T16:59:49.664Z"
   },
   {
     "id": "u_emeka",
@@ -220,8 +220,8 @@
     "tags": [],
     "color": "#5A5F6C",
     "since": "2026",
-    "passwordHash": "$2a$10$lKw6Y.42XsaX5gXkTIRr6uru5C76iu2EAUf87Ws4yO38RpcSF2Zxq",
-    "createdAt": "2026-07-13T10:55:12.705Z"
+    "passwordHash": "$2a$10$rMzmMlyT82im7wEVunCR7uj5Z7DWMQFKqBOXulPvv4dlJZF/EWIZa",
+    "createdAt": "2026-07-13T16:59:49.752Z"
   },
   {
     "id": "u_chioma",
@@ -232,8 +232,8 @@
     "country": "Nigeria",
     "initials": "CK",
     "verified": false,
-    "passwordHash": "$2a$10$r6WK73ajYeTbf0WWkJ6CwOLWypi/Qqi.AXh5UeZKR8SIJBOopp.QC",
-    "createdAt": "2026-07-13T10:55:12.789Z"
+    "passwordHash": "$2a$10$Z7o85X0UaCmQ8ca2tq.oWeJVW0H4NLwkH/3dh2bAVtQp5WeV0mXby",
+    "createdAt": "2026-07-13T16:59:49.839Z"
   },
   {
     "id": "u_grace",
@@ -243,7 +243,7 @@
     "city": "Accra",
     "country": "Ghana",
     "initials": "GB",
-    "verified": true,
+    "verified": false,
     "providerRole": "Electrician",
     "category": "Electrical",
     "rating": 0,
@@ -252,10 +252,8 @@
     "tags": [],
     "color": "#5A5F6C",
     "since": "2026",
-    "passwordHash": "$2a$10$sLoK4Xm/z5xMurgpvTNZXu.t3X3MO8FCoDYhWMA6hH7IO1M8qHUlS",
-    "createdAt": "2026-07-13T10:55:12.879Z",
-    "status": "approved",
-    "updatedAt": "2026-07-13T10:55:23.388Z"
+    "passwordHash": "$2a$10$XD9f398TSGNDl2sM2blKuOWlElf84.rIMdDwWZEbHdldX4pA7GQ2S",
+    "createdAt": "2026-07-13T16:59:49.928Z"
   },
   {
     "id": "u_ama",
@@ -266,8 +264,8 @@
     "country": "Ghana",
     "initials": "AS",
     "verified": false,
-    "passwordHash": "$2a$10$T7ovaKuB4tgEskfe/RA7AOf71LzLP6S7aV4u4gBtFO.Sx0fDpJWPK",
-    "createdAt": "2026-07-13T10:55:12.969Z"
+    "passwordHash": "$2a$10$X3FLY82PV5VOWekyYTWHUOnn1ZvzVBynlvkaPCglG2JO8yV8gFFA2",
+    "createdAt": "2026-07-13T16:59:50.022Z"
   },
   {
     "id": "u_amara",
@@ -281,8 +279,8 @@
     "region": "Atlanta",
     "isSuperAdmin": false,
     "active": true,
-    "passwordHash": "$2a$10$cSuEn/Vfkoc3SAyjgMad5uEjPM7y8of5kg0hk12UBsrIXHZer8ymi",
-    "createdAt": "2026-07-13T10:55:13.053Z"
+    "passwordHash": "$2a$10$NiLvyiq/bQxkRQK5YiLnluL/gPR0OarCi7uxigbbwAOo5na5hZqMC",
+    "createdAt": "2026-07-13T16:59:50.109Z"
   },
   {
     "id": "u_ngozi",
@@ -296,8 +294,8 @@
     "region": "Lagos",
     "isSuperAdmin": false,
     "active": true,
-    "passwordHash": "$2a$10$RG5nyS3YY7PPueK20EeGeeFibr0.I6jg5beBRmBFCdHVemLR6OckS",
-    "createdAt": "2026-07-13T10:55:13.136Z"
+    "passwordHash": "$2a$10$aoppWLPt7OW2s8y2qWgp..uut79Stqz.SV.40qE2m.ZMsr4lYxxXO",
+    "createdAt": "2026-07-13T16:59:50.196Z"
   },
   {
     "id": "u_kwame",
@@ -311,8 +309,8 @@
     "region": "Accra",
     "isSuperAdmin": false,
     "active": true,
-    "passwordHash": "$2a$10$jy/ShnMBvph0Xsxmk9nYK.m4pNuZmtqgtLelK/DYcuIN3VLWlWO3G",
-    "createdAt": "2026-07-13T10:55:13.225Z"
+    "passwordHash": "$2a$10$WsOAkzaabFirEeqJDS49M.r3IJoBmUaVy8pEgJ7qVaRrqFlP9JdAq",
+    "createdAt": "2026-07-13T16:59:50.291Z"
   },
   {
     "id": "u_superadmin",
@@ -326,7 +324,7 @@
     "region": null,
     "isSuperAdmin": true,
     "active": true,
-    "passwordHash": "$2a$10$hPpBv7ATdvzrZoD75fPZQOC6pT.11NUcYH6KA3HguRXxLYCGq1pe6",
-    "createdAt": "2026-07-13T10:55:13.309Z"
+    "passwordHash": "$2a$10$mtgw7S4rCdJ07fsR7ON9N.axwLjL976qWvxrwtYRD3geCgTFmcv1W",
+    "createdAt": "2026-07-13T16:59:50.378Z"
   }
 ]

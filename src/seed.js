@@ -147,6 +147,8 @@ db.replaceAll('notifications', [
 db.replaceAll('jobs', []);
 db.replaceAll('matches', []);
 db.replaceAll('messages', []);
+db.replaceAll('paymentMethods', []);
+db.replaceAll('passwordResets', []);
 db.replaceAll('reviews', [
   { id: id('rev'), providerId: 'u_marcus', authorName: 'Renee P.', stars: 5, text: 'Showed up on time, explained everything clearly, and the price matched the quote exactly.' },
   { id: id('rev'), providerId: 'u_marcus', authorName: 'Malik O.', stars: 5, text: 'Excellent work — fast, clean, and professional. The escrow process made the whole thing feel safe.' },

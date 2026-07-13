@@ -12,21 +12,28 @@ real.
 ## Deploying to Render (as a separate service from anything else on your account)
 
 This project is set up to deploy cleanly alongside other projects already in
-your Render account — it uses its own service name, its own environment
-variables, and its own persistent disk, so nothing about it touches or
-depends on anything else you have running there.
+your Render account — it uses its own service name and its own environment
+variables, so nothing about it touches or depends on anything else you have
+running there.
+
+**One important thing to know before you deploy:** Render's free web service
+plan does not support persistent disks at all — that's a hard platform rule.
+A free service's filesystem resets every time it redeploys *or* spins down
+from 15 minutes of inactivity. `render.yaml` ships configured for the free
+plan by default (zero cost, but data resets periodically); switching to real
+persistence is a two-line change once you decide you want it — see "Adding
+real persistence" below.
 
 ### Option A — Blueprint (recommended, fully automatic)
-1. Push this `taskora-backend` folder to its own GitHub repo (or a
-   subfolder of an existing one — Render can target a subdirectory).
+1. Push this `taskora-backend` folder to its own GitHub repo.
 2. In the Render dashboard: **New +** → **Blueprint** → connect that repo.
-3. Render reads `render.yaml` and creates the service, the persistent disk,
-   and the environment variables (including a freshly generated JWT secret)
-   automatically. Nothing here references or reuses config from any other
-   service on your account.
-4. First deploy will boot with an empty disk, so it auto-seeds the demo data
-   described above. Every deploy after that leaves your data alone — the
-   seed only ever runs once, the first time the disk is empty.
+3. Render reads `render.yaml` and creates the service and environment
+   variables (including a freshly generated JWT secret) automatically.
+   Nothing here references or reuses config from any other service on your
+   account.
+4. Every boot auto-seeds demo data if the datastore is empty — on the free
+   plan (no disk), that means it re-seeds fairly often, since the
+   filesystem doesn't survive spin-downs. That's expected on this plan.
 
 If you want an even more distinct name than the default `taskora-api` (e.g.
 if you're worried about visually telling it apart from your other project in
@@ -37,31 +44,30 @@ connect the repo.
 1. **New +** → **Web Service** → connect the repo.
 2. Name it something distinct, e.g. `taskora-api` or `taskora-staging`.
 3. Runtime: Node. Build command: `npm install`. Start command: `npm start`.
-4. Add a **Disk** (Settings → Disks): mount path `/var/data`, at least 1 GB.
-5. Add environment variables:
-   - `TASKORA_JWT_SECRET` — generate any long random string
-   - `DATA_DIR` — `/var/data` (must match the disk's mount path)
-6. Deploy. Same auto-seed-on-first-boot behavior as Option A.
+4. Add environment variable `TASKORA_JWT_SECRET` — any long random string.
+5. Deploy. Same auto-seed-on-first-boot behavior as Option A.
 
-### Testing and adding more data once it's live
-Once deployed, treat it like a real (if small) production system for test
-purposes:
-- Sign up new customers/providers through the actual UI — they'll show up
-  in Admin → User Approvals for whichever city admin covers that user's
-  city, exactly like the seeded demo accounts.
-- Post real jobs, accept/decline matches, resolve disputes, toggle
-  categories — all of it writes to the persistent disk and survives the
-  next redeploy.
-- If you ever want to wipe back to the clean demo state, run `npm run seed`
-  from a Render Shell (Render dashboard → your service → Shell) — this is
-  the *only* thing that resets data, so it's safe from accidental resets on
-  redeploy.
+### Adding real persistence (data survives redeploys/idle spin-downs)
+Persistent disks require a paid plan (Starter, ~$7/month). To turn this on:
+1. In `render.yaml`, change `plan: free` to `plan: starter`
+2. Uncomment the `DATA_DIR` env var and the `disk:` block (both are already
+   written out in the file, just commented — see the inline instructions
+   there)
+3. Commit and push — Render picks up the change automatically on a
+   Blueprint-connected repo
+4. First deploy after this change starts with an empty disk and auto-seeds
+   once; every deploy after that leaves your data alone
 
-### Without a disk (quick throwaway test only)
-If you skip the disk entirely, the app still runs fine — it just re-seeds
-from scratch on every restart/redeploy (Render's free-tier filesystem isn't
-persistent without a Disk attached). Fine for a five-minute smoke test, not
-for anything you want to keep adding data to over multiple sessions.
+Once this is on, treat the deployment like a real (if small) system for
+testing: sign up new users, post jobs, approve/reject things as admin — it
+all persists. Only running `npm run seed` manually from a Render Shell
+resets it back to clean demo data.
+
+### Preparing for the actual live system
+Neither option above is meant to be the permanent production setup — a
+single disk (or no disk) isn't how you'd run this for real users. Follow the
+Postgres migration path in `Taskora_Technical_Spec.docx` instead once you're
+past testing.
 
 ## Quick start
 

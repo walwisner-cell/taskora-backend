@@ -156,6 +156,16 @@
   .book-btn:hover { background:var(--teal); color:var(--navy); }
 
   /* ── HOW IT WORKS ── */
+  .mission-section { background:var(--white); padding:72px 24px; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+  .mission-inner { max-width:760px; margin:0 auto; text-align:center; }
+  .mission-eyebrow { color:var(--gold); font-size:11px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; margin-bottom:16px; }
+  .mission-headline { font-family:'Fraunces',serif; font-size:clamp(24px,3.6vw,36px); font-weight:600; color:var(--navy); line-height:1.3; margin-bottom:20px; }
+  .mission-body { font-size:15px; color:var(--slate); line-height:1.8; margin-bottom:40px; max-width:640px; margin-left:auto; margin-right:auto; }
+  .mission-pillars { display:flex; justify-content:center; gap:40px; flex-wrap:wrap; }
+  .mission-pillar { max-width:210px; }
+  .mission-pillar-icon { font-size:24px; margin-bottom:10px; display:block; }
+  .mission-pillar-text { font-family:'Fraunces',serif; font-size:14.5px; color:var(--navy); font-weight:600; line-height:1.4; }
+
   .how-section { background:var(--navy); padding:56px 24px; }
   .how-inner { max-width:1100px; margin:0 auto; }
   .how-title { font-family:'Fraunces',serif; font-size:32px; font-weight:800; color:var(--white); text-align:center; margin-bottom:8px; }
@@ -441,7 +451,127 @@
   .review-text { font-size:13px; color:var(--text); line-height:1.6; }
   .profile-side-price { font-family:'Fraunces',serif; font-size:28px; font-weight:600; color:var(--navy); }
   .profile-side-price span { font-size:13px; color:var(--slate); font-weight:400; font-family:'Inter',sans-serif; }
-  .profile-trust-item { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text); padding:6px 0; }
+  .profile-trust-item { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text); padding:6px 0; }  /* ══════════════════════════════════════════════════════════════════════
+     MOBILE RESPONSIVENESS
+     Real phone-width testing (375px, iPhone-class) found the navbar, hero
+     search bar, and dashboard sidebar nav all forcing the whole page to
+     scroll horizontally. Fixed below — each internal scroller (nav, tables)
+     now scrolls within itself instead of blowing out the page width.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  /* Safety net: nothing should ever force the page itself to scroll sideways. */
+  html, body { overflow-x: hidden; width: 100%; }
+
+  @media (max-width: 760px) {
+    /* ── Navbar: scrolls horizontally within itself instead of overflowing ── */
+    .navbar { padding: 0 12px; gap: 8px; }
+    .navbar-logo { font-size: 16px; gap: 6px; flex-shrink: 0; }
+    .logo-mark { width: 20px; height: 20px; }
+    .navbar-nav {
+      gap: 4px; flex-shrink: 0; min-width: 0;
+    }
+    .role-switch-demo {
+      flex-shrink: 1; min-width: 0; max-width: 145px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none; margin-right: 4px;
+    }
+    .role-switch-demo::-webkit-scrollbar { display: none; }
+    .role-switch-demo button { padding: 4px 7px; font-size: 10px; }
+    .nav-btn { padding: 5px 9px; font-size: 11px; flex-shrink: 0; white-space: nowrap; }
+    .nav-cta { padding: 5px 12px; }
+    .notif-bell { width: 30px; height: 30px; font-size: 13px; flex-shrink: 0; }
+
+    /* ── Hero: stack the search bar instead of one cramped row ── */
+    .hero { padding: 40px 16px 56px; }
+    .hero-badge { font-size: 9.5px; padding: 6px 12px; letter-spacing: 1.5px; }
+    .hero p { font-size: 14px; padding: 0 4px; }
+    .search-bar {
+      flex-direction: column; align-items: stretch;
+      padding: 14px; border-radius: 14px; gap: 0; max-width: 100%;
+    }
+    .search-bar input { width: 100%; padding: 8px 0; font-size: 15px; }
+    .search-divider { display: none; }
+    .location-tag {
+      justify-content: center; padding: 10px 0;
+      border-top: 1px solid var(--border); margin-top: 4px;
+    }
+    .search-btn { width: 100%; padding: 13px; margin-top: 8px; }
+    .hero-cat { font-size: 12px; padding: 7px 12px; }
+
+    /* ── Dashboards: sidebar nav becomes a horizontal scroller, contained ── */
+    .dash-layout { min-width: 0; }
+    .dash-sidebar { min-width: 0; }
+    .dash-main { padding: 18px 14px; min-width: 0; }
+    .dash-nav { max-width: 100%; }
+    .dash-nav-item { flex-shrink: 0; }
+    .dash-title { font-size: 20px; }
+    .dash-header { gap: 10px; }
+    .stat-cards { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .stat-card { padding: 12px 14px; }
+    .stat-card-val { font-size: 20px; }
+    .panel { padding: 14px; }
+
+    /* Tables already scroll within .data-table-wrap — just tighten padding */
+    .data-table th, .data-table td { padding: 8px 6px; font-size: 12px; }
+
+    /* ── Auth card ── */
+    .auth-wrap { padding: 24px 14px; }
+    .auth-card { padding: 24px 20px; }
+    .auth-role-grid { grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    .auth-role-opt { padding: 8px 4px; font-size: 10px; }
+
+    /* ── Modals: nearly full-width on phones, not floating at 480px ── */
+    .modal-overlay { padding: 12px; }
+    .modal { max-width: 100%; border-radius: 12px; }
+    .modal-header { padding: 18px; }
+    .modal-body { padding: 18px; }
+    .modal-footer { padding: 0 18px 18px; }
+    .dates-row { grid-template-columns: 1fr; }
+
+    /* ── Provider profile ── */
+    .profile-cover { padding: 30px 16px 60px; }
+    .profile-avatar-lg { width: 72px; height: 72px; font-size: 26px; }
+    .profile-name { font-size: 22px; }
+    .profile-body { padding: 0 14px 40px; margin-top: -30px; }
+    .profile-card { padding: 16px; }
+    .portfolio-grid { grid-template-columns: repeat(2, 1fr); }
+
+    /* ── Pricing ── */
+    .pricing-wrap { padding: 40px 14px; }
+    .pricing-title { font-size: 26px; }
+
+    /* ── Messaging ── */
+    .msg-thread-body { padding: 14px; }
+    .msg-bubble { max-width: 85%; }
+
+    /* ── Provider grid on marketing page ── */
+    .providers-grid { grid-template-columns: 1fr; }
+    .cats-grid { grid-template-columns: repeat(2, 1fr); }
+
+    /* ── Mission section ── */
+    .mission-section { padding: 44px 18px; }
+    .mission-pillars { gap: 22px; }
+  }
+
+  @media (max-width: 420px) {
+    .nav-btn:not(.nav-cta) { display: none; } /* "Become a Pro" hidden on very small phones; Sign In stays */
+    .hero h1 { font-size: 30px; }
+    .stat-cards { grid-template-columns: 1fr 1fr; }
+    .trust-inner { justify-content: center; text-align: center; }
+    .trust-item { flex-direction: column; text-align: center; min-width: 130px; }
+  }
+  /* ── BROWSE PAGES (categories / directory) ── */
+  .browse-wrap { flex:1; background:var(--offwhite); padding:36px 24px 60px; max-width:1160px; margin:0 auto; width:100%; }
+  .browse-back { color:var(--slate); font-size:13px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; margin-bottom:18px; }
+  .browse-back:hover { color:var(--navy); }
+  .browse-title { font-family:'Fraunces',serif; font-size:30px; font-weight:600; color:var(--navy); }
+  .browse-sub { color:var(--slate); font-size:14px; margin-top:6px; }
+  .directory-controls { margin-top:24px; display:flex; flex-direction:column; gap:14px; }
+  .directory-chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .directory-chip { background:var(--white); border:1.5px solid var(--border); color:var(--slate); font-size:13px; font-weight:600; padding:7px 16px; border-radius:20px; cursor:pointer; }
+  .directory-chip:hover { border-color:var(--teal); color:var(--navy); }
+  .directory-chip.active { background:var(--navy); border-color:var(--navy); color:#fff; }
+  @media (max-width: 760px) { .browse-wrap { padding:24px 16px 40px; } .browse-title { font-size:24px; } }
 </style>
 </head>
 <body>
@@ -511,25 +641,30 @@
     </div>
   </div>
 
+  <!-- MISSION / WHY TASKORA EXISTS -->
+  <div class="mission-section">
+    <div class="mission-inner">
+      <div class="mission-eyebrow">Why Taskora Exists</div>
+      <div class="mission-headline">Local services shouldn't require a leap of faith.</div>
+      <div class="mission-body">From Atlanta to Lagos to Accra, hiring a plumber or a tutor has always meant crossing your fingers — no way to know who's really showing up, and no recourse if it goes wrong. Taskora closes that gap: every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is done right. Trust shouldn't be a gamble. On Taskora, it's the default.</div>
+      <div class="mission-pillars">
+        <div class="mission-pillar"><span class="mission-pillar-icon">🪪</span><div class="mission-pillar-text">Verified before they ever bid</div></div>
+        <div class="mission-pillar"><span class="mission-pillar-icon">🤖</span><div class="mission-pillar-text">Matched by AI, not guesswork</div></div>
+        <div class="mission-pillar"><span class="mission-pillar-icon">🔒</span><div class="mission-pillar-text">Protected by escrow, not promises</div></div>
+      </div>
+    </div>
+  </div>
+
   <!-- CATEGORIES -->
   <div class="section">
     <div class="section-header">
       <div>
         <div class="section-title">Browse Categories</div>
-        <div class="section-sub">30+ service types available</div>
+        <div class="section-sub" id="categories-sub">Service types available</div>
       </div>
-      <a class="see-all" onclick="showToast('All categories coming soon!')">See all →</a>
+      <a class="see-all" onclick="goCategoriesPage()">See all →</a>
     </div>
-    <div class="cats-grid">
-      <div class="cat-card" onclick="filterCat('Plumbing')"><span class="cat-emoji">🔧</span><div class="cat-label">Plumbing</div><div class="cat-count">48 pros</div></div>
-      <div class="cat-card" onclick="filterCat('Cleaning')"><span class="cat-emoji">🧹</span><div class="cat-label">Cleaning</div><div class="cat-count">92 pros</div></div>
-      <div class="cat-card" onclick="filterCat('Tutoring')"><span class="cat-emoji">📚</span><div class="cat-label">Tutoring</div><div class="cat-count">65 pros</div></div>
-      <div class="cat-card" onclick="filterCat('Electrical')"><span class="cat-emoji">⚡</span><div class="cat-label">Electrical</div><div class="cat-count">37 pros</div></div>
-      <div class="cat-card" onclick="filterCat('Moving')"><span class="cat-emoji">📦</span><div class="cat-label">Moving</div><div class="cat-count">29 pros</div></div>
-      <div class="cat-card" onclick="filterCat('Fitness')"><span class="cat-emoji">💪</span><div class="cat-label">Fitness</div><div class="cat-count">54 pros</div></div>
-      <div class="cat-card" onclick="filterCat('Painting')"><span class="cat-emoji">🎨</span><div class="cat-label">Painting</div><div class="cat-count">41 pros</div></div>
-      <div class="cat-card" onclick="filterCat('Landscaping')"><span class="cat-emoji">🌿</span><div class="cat-label">Landscaping</div><div class="cat-count">33 pros</div></div>
-    </div>
+    <div class="cats-grid" id="categories-grid"></div>
   </div>
 
   <!-- TOP PROVIDERS -->
@@ -539,7 +674,7 @@
         <div class="section-title" id="providers-title">Top Rated Pros</div>
         <div class="section-sub" id="providers-sub">Hand-picked by our AI matching engine</div>
       </div>
-      <a class="see-all" onclick="showToast('Full listing coming soon!')">View all →</a>
+      <a class="see-all" onclick="goDirectory()">View all →</a>
     </div>
     <div class="providers-grid" id="providers-grid"></div>
   </div>
@@ -589,6 +724,9 @@
         <path d="M34 22 L58 10 L34 58 L24 46 Z" fill="url(#tGradTail)"/>
       </svg>Taskora</div>
       <div class="footer-text">© 2026 Taskora Tech Group · Atlanta, GA · support@taskora.io</div>
+    </div>
+    <div style="text-align:center; margin-top:14px; padding-top:14px; border-top:1px solid rgba(255,255,255,.08); max-width:1100px; margin-left:auto; margin-right:auto;">
+      <div style="font-family:'Fraunces',serif; font-size:13px; color:rgba(255,255,255,.55); font-style:italic;">Verified pros. Protected payments. Zero guesswork. — everywhere Taskora goes.</div>
     </div>
   </footer>
 </div>
@@ -729,9 +867,48 @@
         <label class="form-label">Password</label>
         <input class="form-input" type="password" placeholder="••••••••" id="auth-password"/>
       </div>
+      <div class="auth-foot" id="auth-forgot-link" style="text-align:right;margin-top:-10px;margin-bottom:14px;"><a onclick="showForgotPassword()">Forgot password?</a></div>
       <button class="auth-submit" onclick="mockAuth()" id="auth-submit-btn">Sign In</button>
       <div class="auth-foot" id="auth-foot">New to Taskora? <a onclick="setAuthMode('signup')">Create an account</a></div>
       <div class="auth-foot" id="auth-demo-hint" style="margin-top:2px;color:var(--muted);">Demo login: jordan@example.com / taskora123</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════ SCREEN: FORGOT / RESET PASSWORD ════════════════════════════ -->
+<div class="screen" id="screen-forgot">
+  <nav class="navbar" id="navbar-forgot"></nav>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div id="forgot-request-view">
+        <div class="auth-card-title">Reset your password</div>
+        <div class="auth-card-sub">Enter your account email and we'll send you a reset link.</div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input class="form-input" type="email" placeholder="you@example.com" id="forgot-email"/>
+        </div>
+        <button class="auth-submit" onclick="submitForgotPassword()">Send Reset Link</button>
+        <div class="auth-foot"><a onclick="showAuth('login')">Back to sign in</a></div>
+        <div id="forgot-test-mode-panel" style="display:none;margin-top:18px;padding:14px 16px;background:var(--offwhite);border:1px dashed var(--gold);border-radius:10px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-warn">TEST MODE</span><span style="font-size:12px;color:var(--slate);">No email service is connected yet</span></div>
+          <div style="font-size:12.5px;color:var(--text);margin-bottom:10px;">In production this link would be emailed to you. For now, click through directly:</div>
+          <button class="btn-sm btn-sm-primary" id="forgot-test-link-btn" style="width:100%;" onclick="useTestResetToken()">Open Reset Link Now</button>
+        </div>
+      </div>
+      <div id="forgot-reset-view" style="display:none">
+        <div class="auth-card-title">Choose a new password</div>
+        <div class="auth-card-sub">Your reset link has been verified.</div>
+        <div class="form-group">
+          <label class="form-label">New Password</label>
+          <input class="form-input" type="password" placeholder="At least 6 characters" id="reset-new-password"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm New Password</label>
+          <input class="form-input" type="password" placeholder="Re-enter new password" id="reset-confirm-password"/>
+        </div>
+        <button class="auth-submit" onclick="submitResetPassword()">Reset Password</button>
+        <div class="auth-foot"><a onclick="showAuth('login')">Back to sign in</a></div>
+      </div>
     </div>
   </div>
 </div>
@@ -742,8 +919,8 @@
   <div class="dash-layout">
     <aside class="dash-sidebar">
       <div class="dash-sidebar-user">
-        <div class="dash-avatar">JD</div>
-        <div><div class="dash-user-name">Jordan Diaz</div><div class="dash-user-role">Customer · Verified ✓</div></div>
+        <div class="dash-avatar" id="customer-sidebar-avatar">JD</div>
+        <div><div class="dash-user-name" id="customer-sidebar-name">Jordan Diaz</div><div class="dash-user-role" id="customer-sidebar-role">Customer · Verified ✓</div></div>
       </div>
       <nav class="dash-nav" id="customer-nav"></nav>
     </aside>
@@ -757,8 +934,8 @@
   <div class="dash-layout">
     <aside class="dash-sidebar">
       <div class="dash-sidebar-user">
-        <div class="dash-avatar" style="background:#2E8C6F">MT</div>
-        <div><div class="dash-user-name">Marcus T.</div><div class="dash-user-role">Provider · Verified ✓</div></div>
+        <div class="dash-avatar" id="provider-sidebar-avatar" style="background:#2E8C6F">MT</div>
+        <div><div class="dash-user-name" id="provider-sidebar-name">Marcus T.</div><div class="dash-user-role" id="provider-sidebar-role">Provider · Verified ✓</div></div>
       </div>
       <nav class="dash-nav" id="provider-nav"></nav>
     </aside>
@@ -850,6 +1027,32 @@
   </div>
 </div>
 
+<!-- ════════════════════════════ SCREEN: ALL CATEGORIES ════════════════════════════ -->
+<div class="screen" id="screen-categories">
+  <nav class="navbar" id="navbar-categories"></nav>
+  <div class="browse-wrap">
+    <div class="browse-back" onclick="goHome()">← Back to Explore</div>
+    <div class="browse-title">Browse All Categories</div>
+    <div class="browse-sub" id="categories-page-sub">Every service type available on Taskora</div>
+    <div class="cats-grid" id="categories-page-grid" style="margin-top:24px;"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════ SCREEN: PROVIDER DIRECTORY ════════════════════════════ -->
+<div class="screen" id="screen-directory">
+  <nav class="navbar" id="navbar-directory"></nav>
+  <div class="browse-wrap">
+    <div class="browse-back" onclick="goHome()">← Back to Explore</div>
+    <div class="browse-title">Browse All Pros</div>
+    <div class="browse-sub" id="directory-sub">Every verified provider on Taskora</div>
+    <div class="directory-controls">
+      <input class="form-input" type="text" id="directory-search" placeholder="Search by name, skill, or specialty..." oninput="renderDirectory()"/>
+      <div class="directory-chips" id="directory-chips"></div>
+    </div>
+    <div class="providers-grid" id="directory-grid" style="margin-top:20px;"></div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"><span class="toast-icon">✦</span><span id="toast-msg"></span></div>
 
@@ -872,6 +1075,10 @@ async function apiFetch(method, path, body) {
   try { data = await res.json(); } catch (e) { /* no body */ }
   if (!res.ok) throw Object.assign(new Error((data && data.error) || 'Request failed'), { status: res.status, data });
   return data;
+}
+
+function isValidEmailClient(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 async function checkBackend() {
@@ -919,12 +1126,91 @@ async function loadProviders() {
       PROVIDERS = data.providers.map(p => ({
         id: p.id, name: p.name, initials: p.initials, role: p.role, cat: p.category,
         rating: p.rating, jobs: p.jobs, price: p.price, tags: p.tags || [], color: p.color, since: p.since,
+        verified: p.verified !== false, city: p.city || 'Atlanta',
       }));
     }
   } catch (e) { console.warn('Could not load providers from API, using demo data.', e); }
 }
 
 let currentPro = null;
+
+/* ══════════════════════ CATEGORIES (homepage + browse pages) ══════════════════════ */
+const CATEGORY_ICONS = {
+  Plumbing: '🔧', Cleaning: '🧹', Tutoring: '📚', Electrical: '⚡',
+  Moving: '📦', Fitness: '💪', Painting: '🎨', Landscaping: '🌿',
+};
+function categoryIcon(name) { return CATEGORY_ICONS[name] || '🛠️'; }
+
+const FALLBACK_PUBLIC_CATEGORIES = [
+  { id: 'Plumbing', name: 'Plumbing', proCount: 48 }, { id: 'Cleaning', name: 'Cleaning', proCount: 92 },
+  { id: 'Tutoring', name: 'Tutoring', proCount: 65 }, { id: 'Electrical', name: 'Electrical', proCount: 37 },
+  { id: 'Moving', name: 'Moving', proCount: 29 }, { id: 'Fitness', name: 'Fitness', proCount: 54 },
+  { id: 'Painting', name: 'Painting', proCount: 41 }, { id: 'Landscaping', name: 'Landscaping', proCount: 33 },
+];
+let CATEGORIES = FALLBACK_PUBLIC_CATEGORIES.slice();
+
+async function loadCategories() {
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const { categories } = await apiFetch('GET', '/categories');
+    if (categories && categories.length) CATEGORIES = categories;
+  } catch (e) { console.warn('Could not load categories from API, using demo data.', e); }
+}
+
+function categoryCardsHTML(list) {
+  return list.map(c => `<div class="cat-card" onclick="goDirectory('${c.name}')"><span class="cat-emoji">${categoryIcon(c.name)}</span><div class="cat-label">${c.name}</div><div class="cat-count">${c.proCount} pros</div></div>`).join('');
+}
+
+function renderHomeCategories() {
+  document.getElementById('categories-grid').innerHTML = categoryCardsHTML(CATEGORIES);
+  document.getElementById('categories-sub').textContent = `${CATEGORIES.length} service type${CATEGORIES.length === 1 ? '' : 's'} — every pro background-checked before they're listed`;
+}
+
+function goCategoriesPage() {
+  showScreen('screen-categories');
+  renderNavbar('navbar-categories', 'home');
+  document.getElementById('categories-page-sub').textContent = `${CATEGORIES.length} service type${CATEGORIES.length === 1 ? '' : 's'} available — tap any to see its providers`;
+  document.getElementById('categories-page-grid').innerHTML = categoryCardsHTML(CATEGORIES);
+  window.scrollTo(0, 0);
+}
+
+/* ══════════════════════ PROVIDER DIRECTORY (full "View all" page) ══════════════════════ */
+let directoryCategoryFilter = 'All';
+
+function goDirectory(category) {
+  directoryCategoryFilter = category || 'All';
+  showScreen('screen-directory');
+  renderNavbar('navbar-directory', 'home');
+  document.getElementById('directory-search').value = '';
+  const chips = ['All', ...CATEGORIES.map(c => c.name)];
+  document.getElementById('directory-chips').innerHTML = chips.map(c =>
+    `<button class="directory-chip ${c === directoryCategoryFilter ? 'active' : ''}" onclick="setDirectoryCategory('${c}')">${c}</button>`
+  ).join('');
+  renderDirectory();
+  window.scrollTo(0, 0);
+}
+
+function setDirectoryCategory(category) {
+  directoryCategoryFilter = category;
+  document.querySelectorAll('.directory-chip').forEach(el => el.classList.toggle('active', el.textContent === category));
+  renderDirectory();
+}
+
+function renderDirectory() {
+  const q = document.getElementById('directory-search').value.trim().toLowerCase();
+  let list = PROVIDERS.slice();
+  if (directoryCategoryFilter && directoryCategoryFilter !== 'All') list = list.filter(p => p.cat === directoryCategoryFilter);
+  if (q) {
+    list = list.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.role.toLowerCase().includes(q) ||
+      (p.tags || []).some(t => t.toLowerCase().includes(q))
+    );
+  }
+  document.getElementById('directory-sub').textContent = `${list.length} verified provider${list.length === 1 ? '' : 's'}${directoryCategoryFilter !== 'All' ? ' in ' + directoryCategoryFilter : ''}`;
+  document.getElementById('directory-grid').innerHTML = providerCardsHTML(list);
+}
+
 
 /* ══════════════════════ SHARED: LOGO, NAVBAR, SCREEN NAV ══════════════════════ */
 const LOGO_SVG = `<svg class="logo-mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -951,7 +1237,7 @@ function navbarHTML(active) {
       </div>
     </div>` : '';
   const rightSide = isDash
-    ? `${bell}<button class="nav-btn nav-cta" onclick="goHome()">Sign Out</button>`
+    ? `${bell}<button class="nav-btn nav-cta" onclick="logout()">Sign Out</button>`
     : `<button class="nav-btn" onclick="showPricing()">Become a Pro</button><button class="nav-btn nav-cta" onclick="showAuth('login')">Sign In</button>`;
   return `
     <div class="navbar-logo" onclick="goHome()">${LOGO_SVG}Taskora</div>
@@ -1011,6 +1297,18 @@ function goHome() {
   renderNavbar('navbar-home', 'home');
 }
 
+// Distinct from goHome(): this actually ends the session (clears the token
+// and user in memory) before navigating home. goHome() alone is also used
+// for ordinary navigation (e.g. clicking the logo while still logged in),
+// so it must NOT clear auth state itself — only an explicit "Sign Out"
+// action should do that.
+function logout() {
+  AUTH.token = null;
+  AUTH.user = null;
+  showToast('Signed out');
+  goHome();
+}
+
 /* ══════════════════════ AUTH ══════════════════════ */
 const authState = { mode: 'login', role: 'customer' };
 
@@ -1018,6 +1316,80 @@ function showAuth(mode) {
   showScreen('screen-auth');
   renderNavbar('navbar-auth', 'auth');
   setAuthMode(mode);
+}
+
+/* ══════════════════════ FORGOT / RESET PASSWORD ══════════════════════ */
+let lastTestResetToken = null;
+
+function showForgotPassword() {
+  showScreen('screen-forgot');
+  renderNavbar('navbar-forgot', 'auth');
+  document.getElementById('forgot-request-view').style.display = 'block';
+  document.getElementById('forgot-reset-view').style.display = 'none';
+  document.getElementById('forgot-test-mode-panel').style.display = 'none';
+  document.getElementById('forgot-email').value = '';
+  lastTestResetToken = null;
+}
+
+async function submitForgotPassword() {
+  const email = document.getElementById('forgot-email').value.trim();
+  if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
+
+  if (!BACKEND_AVAILABLE) {
+    showToast('Reset link sent (demo mode — no backend detected)');
+    return;
+  }
+  try {
+    const data = await apiFetch('POST', '/auth/forgot-password', { email });
+    showToast(data.message);
+    if (data.testMode && data.resetToken) {
+      lastTestResetToken = data.resetToken;
+      document.getElementById('forgot-test-mode-panel').style.display = 'block';
+    } else {
+      document.getElementById('forgot-test-mode-panel').style.display = 'none';
+    }
+  } catch (e) {
+    showToast(e.message || 'Could not send reset link');
+  }
+}
+
+function useTestResetToken() {
+  if (!lastTestResetToken) return;
+  showResetPasswordForm(lastTestResetToken);
+}
+
+function showResetPasswordForm(token) {
+  pendingResetToken = token;
+  showScreen('screen-forgot');
+  renderNavbar('navbar-forgot', 'auth');
+  document.getElementById('forgot-request-view').style.display = 'none';
+  document.getElementById('forgot-reset-view').style.display = 'block';
+  document.getElementById('reset-new-password').value = '';
+  document.getElementById('reset-confirm-password').value = '';
+}
+
+let pendingResetToken = null;
+
+async function submitResetPassword() {
+  const newPassword = document.getElementById('reset-new-password').value;
+  const confirm = document.getElementById('reset-confirm-password').value;
+  if (!pendingResetToken) return showToast('Missing reset token — request a new link');
+  if (newPassword.length < 6) return showToast('New password must be at least 6 characters');
+  if (newPassword !== confirm) return showToast("Passwords don't match");
+
+  if (!BACKEND_AVAILABLE) {
+    showToast('Password reset (demo mode — no backend detected)');
+    showAuth('login');
+    return;
+  }
+  try {
+    const data = await apiFetch('POST', '/auth/reset-password', { token: pendingResetToken, newPassword });
+    showToast(data.message);
+    pendingResetToken = null;
+    showAuth('login');
+  } catch (e) {
+    showToast(e.message || 'Could not reset password');
+  }
 }
 
 function setAuthMode(mode) {
@@ -1028,6 +1400,7 @@ function setAuthMode(mode) {
   document.getElementById('auth-name-group').style.display = mode === 'signup' ? 'block' : 'none';
   document.getElementById('auth-city-group').style.display = mode === 'signup' ? 'block' : 'none';
   document.getElementById('auth-demo-hint').style.display = mode === 'signup' ? 'none' : 'block';
+  document.getElementById('auth-forgot-link').style.display = mode === 'signup' ? 'none' : 'block';
   document.getElementById('auth-submit-btn').textContent = mode === 'login' ? 'Sign In' : 'Create Account';
   document.getElementById('auth-sub').textContent = mode === 'login' ? 'Verified pros. Protected payments. Zero guesswork.' : 'Join as a customer, provider, or admin to get started.';
   document.getElementById('auth-foot').innerHTML = mode === 'login'
@@ -1052,6 +1425,13 @@ async function mockAuth() {
   }
   if (!email || !password || (authState.mode === 'signup' && !name)) {
     return showToast('Please fill in all fields');
+  }
+  if (!isValidEmailClient(email)) {
+    return showToast('Enter a valid email address');
+  }
+  if (authState.mode === 'signup') {
+    if (name.length < 2) return showToast('Full name must be at least 2 characters');
+    if (password.length < 6) return showToast('Password must be at least 6 characters');
   }
   try {
     if (authState.mode === 'login') {
@@ -1110,21 +1490,26 @@ function statusBadge(status) {
   return `<span class="badge ${m[0]}">${m[1]}</span>`;
 }
 
-function verificationHTML(role, verified) {
+function verificationHTML(role, status) {
+  // status: 'verified' | 'in review' | 'none'
+  const verified = status === 'verified';
+  const inReview = status === 'in review';
   return `
   <div class="dash-header"><div><div class="dash-title">Identity Verification</div><div class="dash-sub">Required for every ${role === 'provider' ? 'provider' : 'customer'} on Taskora — this is what makes the marketplace trustworthy</div></div></div>
   <div class="panel">
     <div class="stepper">
-      <div class="step-dot done">✓</div><div class="step-line done"></div>
-      <div class="step-dot done">✓</div><div class="step-line done"></div>
-      <div class="step-dot ${verified ? 'done' : 'current'}">${verified ? '✓' : '3'}</div>
+      <div class="step-dot done">✓</div><div class="step-line ${inReview || verified ? 'done' : ''}"></div>
+      <div class="step-dot ${inReview ? 'current' : (verified ? 'done' : '')}">${verified ? '✓' : '2'}</div><div class="step-line ${verified ? 'done' : ''}"></div>
+      <div class="step-dot ${verified ? 'done' : ''}">${verified ? '✓' : '3'}</div>
     </div>
     <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--slate);margin-top:-18px;margin-bottom:20px;max-width:520px;">
       <span>Submit Documents</span><span>Under Review</span><span>Verified</span>
     </div>
     ${verified
       ? `<div class="badge badge-success" style="font-size:13px;padding:8px 16px;">✓ Identity Verified — government ID confirmed</div>`
-      : `<div class="upload-box">📄 Upload Government-Issued ID</div><div class="upload-box">🤳 Take a Selfie for Face Match</div><button class="btn-sm btn-sm-primary" onclick="showToast('Submitted for review')">Submit for Review</button>`}
+      : inReview
+        ? `<div class="badge badge-warn" style="font-size:13px;padding:8px 16px;">⏳ Submitted — awaiting admin review</div>`
+        : `<div class="upload-box">📄 Upload Government-Issued ID</div><div class="upload-box">🤳 Take a Selfie for Face Match</div><button class="btn-sm btn-sm-primary" onclick="submitVerification('${role}')">Submit for Review</button>`}
   </div>
   ${role === 'provider' ? `<div class="panel"><div class="panel-title">Additional Trust Checks</div>
     <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Check</th><th>Status</th></tr></thead><tbody>
@@ -1132,6 +1517,19 @@ function verificationHTML(role, verified) {
     <tr><td>Two-Factor Authentication</td><td>${statusBadge('completed')}</td></tr>
     <tr><td>AI Fraud Screening</td><td>${statusBadge('completed')}</td></tr>
     </tbody></table></div></div>` : ''}`;
+}
+
+async function submitVerification(role) {
+  if (!BACKEND_AVAILABLE) {
+    showToast('Submitted for review (demo mode — no backend detected)');
+    return;
+  }
+  try {
+    await apiFetch('POST', '/verification/submit', { docType: role === 'provider' ? 'Government ID + Background Check' : 'Government ID' });
+    showToast('Submitted — an admin will review it shortly');
+    if (role === 'customer') { await loadCustomerData(); selectCustomerSection('verification'); }
+    else { await loadProviderData(); selectProviderSection('verification'); }
+  } catch (e) { showToast(e.message || 'Could not submit for review'); }
 }
 
 function messagingHTML(role) {
@@ -1191,10 +1589,24 @@ const FALLBACK_BOOKINGS = [
   { id: 'BK-1024', pro: 'Sofia M.', service: 'Panel upgrade estimate', date: '2026-06-24', status: 'disputed', escrow: 0 },
 ];
 
-let customerData = { bookings: FALLBACK_BOOKINGS, notifications: [] };
+const FALLBACK_PAYMENT_METHODS = [
+  { id: 'pm_demo1', brand: 'Visa', last4: '4821', nameOnCard: 'Jordan Diaz', expiry: '09/28', isDefault: true, mode: 'test' },
+];
+
+let customerData = { bookings: FALLBACK_BOOKINGS, notifications: [], verificationStatus: 'verified', paymentMethods: FALLBACK_PAYMENT_METHODS };
+
+async function computeVerificationStatus() {
+  if (!AUTH.user) return 'verified'; // fallback/demo mode
+  if (AUTH.user.verified) return 'verified';
+  try {
+    const { verifications } = await apiFetch('GET', '/verification/mine');
+    if (verifications.some(v => v.status === 'in review')) return 'in review';
+    return 'none';
+  } catch (e) { return 'none'; }
+}
 
 async function loadCustomerData() {
-  if (!BACKEND_AVAILABLE) { customerData.bookings = FALLBACK_BOOKINGS; return; }
+  if (!BACKEND_AVAILABLE) { customerData.bookings = FALLBACK_BOOKINGS; customerData.verificationStatus = 'verified'; customerData.paymentMethods = FALLBACK_PAYMENT_METHODS; return; }
   try {
     const { contracts } = await apiFetch('GET', '/contracts/mine');
     customerData.bookings = contracts.map(c => ({
@@ -1203,7 +1615,69 @@ async function loadCustomerData() {
     }));
     const { notifications } = await apiFetch('GET', '/notifications/mine');
     customerData.notifications = notifications;
+    const { methods } = await apiFetch('GET', '/payment-methods/mine');
+    customerData.paymentMethods = methods;
   } catch (e) { console.warn('Falling back to demo bookings', e); customerData.bookings = FALLBACK_BOOKINGS; }
+  customerData.verificationStatus = await computeVerificationStatus();
+}
+
+function paymentMethodsTableHTML() {
+  const list = customerData.paymentMethods || [];
+  if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payment methods yet — add one to test the booking flow.</div>`;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Method</th><th>Details</th><th>Default</th><th>Action</th></tr></thead><tbody>
+  ${list.map(m => `<tr><td>💳 ${m.brand}${m.mode === 'test' ? ' <span class="badge badge-warn" style="margin-left:4px;">test</span>' : ''}</td><td>•••• ${m.last4} · exp ${m.expiry}</td><td>${m.isDefault ? '<span class="badge badge-success">Default</span>' : `<button class="btn-sm btn-sm-outline" onclick="setDefaultPaymentMethod('${m.id}')">Set Default</button>`}</td><td><button class="btn-sm btn-sm-outline" onclick="removePaymentMethod('${m.id}')">Remove</button></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+function openAddPaymentMethodForm() {
+  const panel = document.getElementById('add-payment-panel');
+  if (panel) { panel.style.display = 'block'; document.getElementById('pm-card-number').focus(); }
+}
+
+async function submitPaymentMethod() {
+  const cardNumber = document.getElementById('pm-card-number').value.trim();
+  const expiry = document.getElementById('pm-expiry').value.trim();
+  const nameOnCard = document.getElementById('pm-name').value.trim();
+  const digits = cardNumber.replace(/\D/g, '');
+  if (digits.length < 4) return showToast('Enter at least 4 digits (any test number works)');
+  if (!/^\d{1,2}\/\d{2}$/.test(expiry)) return showToast('Enter expiry as MM/YY');
+  if (!nameOnCard || nameOnCard.length < 2) return showToast('Enter the name on the card');
+
+  if (!BACKEND_AVAILABLE) {
+    showToast('Payment method added (demo mode — no backend detected)');
+    document.getElementById('add-payment-panel').style.display = 'none';
+    return;
+  }
+  try {
+    await apiFetch('POST', '/payment-methods', { cardNumber, expiry, nameOnCard });
+    showToast('Test payment method added');
+    document.getElementById('pm-card-number').value = '';
+    document.getElementById('pm-expiry').value = '';
+    document.getElementById('pm-name').value = '';
+    document.getElementById('add-payment-panel').style.display = 'none';
+    await loadCustomerData();
+    selectCustomerSection('payments');
+  } catch (e) { showToast(e.message || 'Could not add payment method'); }
+}
+
+async function setDefaultPaymentMethod(id) {
+  if (!BACKEND_AVAILABLE) return showToast('Default updated (demo mode)');
+  try {
+    await apiFetch('PATCH', `/payment-methods/${id}/default`);
+    showToast('Default payment method updated');
+    await loadCustomerData();
+    selectCustomerSection('payments');
+  } catch (e) { showToast(e.message || 'Could not update default'); }
+}
+
+async function removePaymentMethod(id) {
+  if (!BACKEND_AVAILABLE) return showToast('Removed (demo mode)');
+  try {
+    await apiFetch('DELETE', `/payment-methods/${id}`);
+    showToast('Payment method removed');
+    await loadCustomerData();
+    selectCustomerSection('payments');
+  } catch (e) { showToast(e.message || 'Could not remove payment method'); }
 }
 
 function bookingsTable(list) {
@@ -1218,6 +1692,9 @@ const CUSTOMER_SECTIONS = {
     const active = customerData.bookings.filter(b => b.status === 'confirmed' || b.status === 'active').length;
     const inEscrow = customerData.bookings.reduce((s, b) => s + (b.escrow || 0), 0);
     const completed = customerData.bookings.filter(b => b.status === 'completed').length;
+    const vStatus = customerData.verificationStatus || 'none';
+    const vLabel = vStatus === 'verified' ? '✓ Verified' : vStatus === 'in review' ? '⏳ In Review' : '⚠ Not Verified';
+    const vColor = vStatus === 'verified' ? '#256B54' : vStatus === 'in review' ? '#8C6423' : '#B3423A';
     return `
     <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Jordan'}</div><div class="dash-sub">Here's what's happening with your bookings</div></div>
     <button class="btn-sm btn-sm-primary" onclick="openPostJobModal()">+ Post a New Job</button></div>
@@ -1225,7 +1702,7 @@ const CUSTOMER_SECTIONS = {
       <div class="stat-card"><div class="stat-card-label">Active Bookings</div><div class="stat-card-val">${active}</div></div>
       <div class="stat-card"><div class="stat-card-label">In Escrow</div><div class="stat-card-val">$${inEscrow}</div></div>
       <div class="stat-card"><div class="stat-card-label">Completed Jobs</div><div class="stat-card-val">${completed}</div></div>
-      <div class="stat-card"><div class="stat-card-label">Verification</div><div class="stat-card-val" style="font-size:15px;color:#256B54">✓ Verified</div></div>
+      <div class="stat-card"><div class="stat-card-label">Verification</div><div class="stat-card-val" style="font-size:15px;color:${vColor}">${vLabel}</div></div>
     </div>
     <div class="panel"><div class="panel-title">Recent Bookings <small>${customerData.bookings.length} total</small></div>${bookingsTable(customerData.bookings)}</div>`;
   },
@@ -1234,16 +1711,20 @@ const CUSTOMER_SECTIONS = {
     <div class="panel">${bookingsTable(customerData.bookings)}</div>`,
   messages: () => messagingHTML('customer'),
   payments: () => `
-    <div class="dash-header"><div><div class="dash-title">Payments</div><div class="dash-sub">Payment methods & escrow history</div></div><button class="btn-sm btn-sm-primary" onclick="showToast('Add payment method coming soon')">+ Add Payment Method</button></div>
-    <div class="panel"><div class="panel-title">Payment Methods</div>
-      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Method</th><th>Details</th><th>Default</th></tr></thead><tbody>
-      <tr><td>💳 Visa</td><td>•••• 4821</td><td><span class="badge badge-success">Default</span></td></tr>
-      <tr><td>🏦 Bank Transfer</td><td>Chase •••• 1123</td><td>—</td></tr>
-      <tr><td>📱 Mobile Money</td><td>Not linked</td><td>—</td></tr>
-      </tbody></table></div>
+    <div class="dash-header"><div><div class="dash-title">Payments</div><div class="dash-sub">Payment methods & escrow history</div></div><button class="btn-sm btn-sm-primary" onclick="openAddPaymentMethodForm()">+ Add Payment Method</button></div>
+    <div class="panel" id="add-payment-panel" style="display:none;">
+      <div class="panel-title">Add Payment Method <span class="badge badge-warn" style="margin-left:8px;">TEST MODE — no real charges</span></div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:14px;">This is a sandbox for testing the booking flow. Enter any card number — nothing is charged, and only the last 4 digits are ever stored. A real payment processor gets wired in before this goes live.</div>
+      <div class="form-group"><label class="form-label">Card Number</label><input class="form-input" id="pm-card-number" placeholder="4242 4242 4242 4242"/></div>
+      <div class="dates-row">
+        <div class="form-group"><label class="form-label">Expiry (MM/YY)</label><input class="form-input" id="pm-expiry" placeholder="12/28"/></div>
+        <div class="form-group"><label class="form-label">Name on Card</label><input class="form-input" id="pm-name" placeholder="Jordan Diaz"/></div>
+      </div>
+      <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitPaymentMethod()">Save Payment Method</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('add-payment-panel').style.display='none'">Cancel</button></div>
     </div>
+    <div class="panel"><div class="panel-title">Payment Methods</div>${paymentMethodsTableHTML()}</div>
     <div class="panel"><div class="panel-title">Escrow History</div>${bookingsTable(customerData.bookings)}</div>`,
-  verification: () => verificationHTML('customer', true),
+  verification: () => verificationHTML('customer', customerData.verificationStatus || 'none'),
   settings: () => `
     <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Account preferences ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Saved to your account</span>' : ''}</div></div></div>
     <div class="panel"><div class="panel-title">Profile</div>
@@ -1252,6 +1733,7 @@ const CUSTOMER_SECTIONS = {
       <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="set-cust-phone" value="${(AUTH.user && AUTH.user.phone) || '+1 (404) 555-0148'}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveCustomerSettings()">Save Changes</button>
     </div>
+    ${changePasswordPanelHTML('cust')}
     <div class="panel"><div class="panel-title">Notifications</div>
       <div class="switch-row"><div><div class="switch-label">Booking updates</div><div class="switch-sub">Status changes on your active bookings</div></div><label class="switch"><input type="checkbox" checked onchange="showToast('Preference updated')"><span class="switch-track"></span></label></div>
       <div class="switch-row"><div><div class="switch-label">Messages</div><div class="switch-sub">New messages from pros</div></div><label class="switch"><input type="checkbox" checked onchange="showToast('Preference updated')"><span class="switch-track"></span></label></div>
@@ -1259,14 +1741,44 @@ const CUSTOMER_SECTIONS = {
     </div>`,
 };
 
+function changePasswordPanelHTML(prefix) {
+  return `<div class="panel"><div class="panel-title">Change Password</div>
+    <div class="form-group"><label class="form-label">Current Password</label><input class="form-input" type="password" id="${prefix}-pw-current" placeholder="••••••••"/></div>
+    <div class="form-group"><label class="form-label">New Password</label><input class="form-input" type="password" id="${prefix}-pw-new" placeholder="At least 6 characters"/></div>
+    <div class="form-group"><label class="form-label">Confirm New Password</label><input class="form-input" type="password" id="${prefix}-pw-confirm" placeholder="Re-enter new password"/></div>
+    <button class="btn-sm btn-sm-primary" onclick="changePassword('${prefix}')">Update Password</button>
+  </div>`;
+}
+
+async function changePassword(prefix) {
+  const currentPassword = document.getElementById(`${prefix}-pw-current`).value;
+  const newPassword = document.getElementById(`${prefix}-pw-new`).value;
+  const confirm = document.getElementById(`${prefix}-pw-confirm`).value;
+  if (!currentPassword || !newPassword || !confirm) return showToast('Fill in all three password fields');
+  if (newPassword.length < 6) return showToast('New password must be at least 6 characters');
+  if (newPassword !== confirm) return showToast("New password and confirmation don't match");
+  if (!BACKEND_AVAILABLE) return showToast('Password updated (demo mode — no backend detected)');
+  try {
+    await apiFetch('POST', '/auth/change-password', { currentPassword, newPassword });
+    showToast('Password updated successfully');
+    document.getElementById(`${prefix}-pw-current`).value = '';
+    document.getElementById(`${prefix}-pw-new`).value = '';
+    document.getElementById(`${prefix}-pw-confirm`).value = '';
+  } catch (e) { showToast(e.message || 'Could not update password'); }
+}
+
 async function saveCustomerSettings() {
-  const name = document.getElementById('set-cust-name').value;
-  const email = document.getElementById('set-cust-email').value;
-  const phone = document.getElementById('set-cust-phone').value;
+  const name = document.getElementById('set-cust-name').value.trim();
+  const email = document.getElementById('set-cust-email').value.trim();
+  const phone = document.getElementById('set-cust-phone').value.trim();
+  if (name.length < 2) return showToast('Full name must be at least 2 characters');
+  if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
+  if (phone && phone.length < 7) return showToast('Enter a valid phone number');
   if (!BACKEND_AVAILABLE) return showToast('Settings saved (demo mode — no backend detected)');
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { name, email, phone });
     AUTH.user = user;
+    updateCustomerSidebar();
     showToast('Settings saved to your account');
   } catch (e) { showToast(e.message || 'Could not save settings'); }
 }
@@ -1276,7 +1788,15 @@ function selectCustomerSection(key) {
   document.getElementById('customer-main').innerHTML = CUSTOMER_SECTIONS[key]();
 }
 
-async function initCustomerDash() { await loadCustomerData(); selectCustomerSection('overview'); }
+function updateCustomerSidebar() {
+  const u = AUTH.user;
+  if (!u) return;
+  document.getElementById('customer-sidebar-avatar').textContent = u.initials || 'CU';
+  document.getElementById('customer-sidebar-name').textContent = u.name;
+  document.getElementById('customer-sidebar-role').textContent = `Customer · ${u.verified ? 'Verified ✓' : 'Verification pending'}`;
+}
+
+async function initCustomerDash() { await loadCustomerData(); updateCustomerSidebar(); selectCustomerSection('overview'); }
 
 /* ══════════════════════ PROVIDER PROFILE ══════════════════════ */
 const REVIEW_BANK = [
@@ -1294,8 +1814,8 @@ function viewProviderProfile(id) {
   document.getElementById('profile-head').innerHTML = `
     <div class="profile-avatar-lg" style="background:${p.color}">${p.initials}</div>
     <div>
-      <div class="profile-name-row"><div class="profile-name">${p.name}</div><span class="badge badge-success">✓ Verified</span></div>
-      <div class="profile-role">${p.role} · Serving Atlanta, GA · Taskora Pro since ${p.since}</div>
+      <div class="profile-name-row"><div class="profile-name">${p.name}</div>${p.verified !== false ? '<span class="badge badge-success">✓ Verified</span>' : '<span class="badge badge-warn">Verification pending</span>'}</div>
+      <div class="profile-role">${p.role} · Serving ${p.city || 'Atlanta'} · Taskora Pro since ${p.since}</div>
       <div class="profile-meta-row">
         <div class="profile-meta-item">★ ${p.rating} rating</div>
         <div class="profile-meta-item">📋 ${p.jobs} jobs completed</div>
@@ -1337,13 +1857,12 @@ function viewProviderProfile(id) {
 }
 
 /* ══════════════════════ POST A JOB / AI MATCHING ══════════════════════ */
-const POSTJOB_FORM_HTML = `
+function postJobFormHTML() {
+  const options = CATEGORIES.map(c => `<option>${c.name}</option>`).join('');
+  return `
   <div class="form-group">
     <label class="form-label">Category</label>
-    <select class="form-input form-select" id="pj-category">
-      <option>Plumbing</option><option>Cleaning</option><option>Tutoring</option><option>Electrical</option>
-      <option>Moving</option><option>Painting</option><option>Landscaping</option><option>Fitness</option>
-    </select>
+    <select class="form-input form-select" id="pj-category">${options}</select>
   </div>
   <div class="form-group">
     <label class="form-label">What do you need done?</label>
@@ -1353,9 +1872,10 @@ const POSTJOB_FORM_HTML = `
     <label class="form-label">Budget Range</label>
     <input class="form-input" type="text" placeholder="e.g. $80–150" id="pj-budget"/>
   </div>`;
+}
 
 function openPostJobModal() {
-  document.getElementById('postjob-body').innerHTML = POSTJOB_FORM_HTML;
+  document.getElementById('postjob-body').innerHTML = postJobFormHTML();
   const footer = document.querySelector('#postjob-modal .modal-footer');
   footer.innerHTML = `<button class="confirm-btn" onclick="runAIMatch()">🤖 Find My Matches</button>`;
   document.getElementById('postjob-modal').classList.add('open');
@@ -1366,8 +1886,12 @@ function closePostJobModal() {
 
 async function runAIMatch() {
   const cat = document.getElementById('pj-category').value;
-  const desc = document.getElementById('pj-desc').value || 'General service request';
-  const budget = document.getElementById('pj-budget').value;
+  const desc = document.getElementById('pj-desc').value.trim();
+  const budget = document.getElementById('pj-budget').value.trim();
+
+  if (!desc || desc.length < 5) return showToast('Describe the job in at least 5 characters');
+  if (budget && budget.length > 40) return showToast('Budget must be under 40 characters');
+
   const body = document.getElementById('postjob-body');
   body.innerHTML = `<div style="text-align:center;padding:40px 10px;color:var(--slate);font-size:13px;">🤖 Scanning 1,200+ verified pros for the best match…</div>`;
   document.querySelector('#postjob-modal .modal-footer').innerHTML = '';
@@ -1378,7 +1902,15 @@ async function runAIMatch() {
       const { matches } = await apiFetch('POST', '/jobs', { category: cat, description: desc, budget });
       pool = matches.map(m => ({ id: m.providerId, name: m.provider.name, initials: m.provider.initials, role: m.provider.role, price: m.provider.price, rating: m.provider.rating, color: m.provider.color, score: m.score }));
     } catch (e) {
-      showToast(e.message || 'Could not run matching — showing demo matches');
+      // A genuine validation error (bad category, description rejected, etc.)
+      // should send the user back to fix their input, not get quietly
+      // replaced with fake demo matches that imply their job was posted.
+      if (e.status && e.status < 500) {
+        showToast(e.message || 'Please check your job details and try again');
+        openPostJobModal();
+        return;
+      }
+      showToast('Could not reach the matching service — showing demo matches instead');
     }
   }
   if (!pool.length) {
@@ -1433,10 +1965,10 @@ const FALLBACK_PAYOUTS = [
   { id: 'PO-312', date: '2026-06-26', amount: 295, method: 'Wallet', status: 'completed' },
 ];
 
-let providerData = { matches: FALLBACK_MATCHES, contracts: FALLBACK_CONTRACTS_PROVIDER, payouts: FALLBACK_PAYOUTS };
+let providerData = { matches: FALLBACK_MATCHES, contracts: FALLBACK_CONTRACTS_PROVIDER, payouts: FALLBACK_PAYOUTS, verificationStatus: 'verified' };
 
 async function loadProviderData() {
-  if (!BACKEND_AVAILABLE) return;
+  if (!BACKEND_AVAILABLE) { providerData.verificationStatus = 'verified'; return; }
   try {
     const [{ matches }, { contracts }, { payouts }] = await Promise.all([
       apiFetch('GET', '/matches/mine'),
@@ -1444,16 +1976,16 @@ async function loadProviderData() {
       apiFetch('GET', '/payouts/mine'),
     ]);
     providerData.matches = matches.map(m => ({
-      id: m.id, customer: (db_lookup_name(m.customerId)) || 'Customer', service: m.job ? m.job.description : 'Service request',
+      id: m.id, customer: m.customerName || 'Customer', service: m.job ? m.job.description : 'Service request',
       budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: (Math.round(Math.random() * 40) / 10) + ' mi',
     }));
     providerData.contracts = contracts.map(c => ({ id: c.id, customer: c.customerName, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10) }));
     providerData.payouts = payouts.length ? payouts : FALLBACK_PAYOUTS;
   } catch (e) { console.warn('Falling back to demo provider data', e); }
+  providerData.verificationStatus = await computeVerificationStatus();
 }
-// Small helper since match responses only include customerId, not a name — in a
-// fuller build this would come from a /users/:id lookup or be joined server-side.
-function db_lookup_name(id) { return null; }
+// Small helper since match responses now include customerName directly from
+// the backend (see marketplace.routes.js GET /matches/mine).
 
 async function respondToMatch(id, decision) {
   if (!BACKEND_AVAILABLE) {
@@ -1515,7 +2047,7 @@ const PROVIDER_SECTIONS = {
         <div class="cat-card"><span class="cat-emoji">🧰</span><div class="cat-label">Drain Cleaning</div><div class="cat-count">6 photos</div></div>
       </div>
     </div>`,
-  verification: () => verificationHTML('provider', true),
+  verification: () => verificationHTML('provider', providerData.verificationStatus || 'none'),
   settings: () => `
     <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Payout preferences & account ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Saved to your account</span>' : ''}</div></div></div>
     <div class="panel"><div class="panel-title">Profile</div>
@@ -1523,6 +2055,7 @@ const PROVIDER_SECTIONS = {
       <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-prov-email" value="${(AUTH.user && AUTH.user.email) || 'marcus@example.com'}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveProviderSettings()">Save Changes</button>
     </div>
+    ${changePasswordPanelHTML('prov')}
     <div class="panel"><div class="panel-title">Pay Preference</div>
       <div class="form-group"><label class="form-label">Default Pay Structure</label>
         <select class="form-input form-select" onchange="showToast('Pay preference updated')">
@@ -1543,12 +2076,29 @@ const PROVIDER_SECTIONS = {
 };
 
 async function saveProviderSettings() {
-  const name = document.getElementById('set-prov-name').value;
-  const email = document.getElementById('set-prov-email').value;
+  const name = document.getElementById('set-prov-name').value.trim();
+  const email = document.getElementById('set-prov-email').value.trim();
+  if (name.length < 2) return showToast('Full name must be at least 2 characters');
+  if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
   if (!BACKEND_AVAILABLE) return showToast('Settings saved (demo mode — no backend detected)');
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { name, email });
     AUTH.user = user;
+    updateProviderSidebar();
+    showToast('Settings saved to your account');
+  } catch (e) { showToast(e.message || 'Could not save settings'); }
+}
+
+async function saveAdminSettings() {
+  const name = document.getElementById('set-admin-name').value.trim();
+  const email = document.getElementById('set-admin-email').value.trim();
+  if (name.length < 2) return showToast('Full name must be at least 2 characters');
+  if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
+  if (!BACKEND_AVAILABLE) return showToast('Settings saved (demo mode — no backend detected)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { name, email });
+    AUTH.user = user;
+    updateAdminSidebar();
     showToast('Settings saved to your account');
   } catch (e) { showToast(e.message || 'Could not save settings'); }
 }
@@ -1583,7 +2133,16 @@ function selectProviderSection(key) {
   document.getElementById('provider-main').innerHTML = PROVIDER_SECTIONS[key]();
 }
 
-async function initProviderDash() { await loadProviderData(); selectProviderSection('overview'); }
+function updateProviderSidebar() {
+  const u = AUTH.user;
+  if (!u) return;
+  document.getElementById('provider-sidebar-avatar').textContent = u.initials || 'PR';
+  document.getElementById('provider-sidebar-avatar').style.background = u.color || '#2E8C6F';
+  document.getElementById('provider-sidebar-name').textContent = u.name;
+  document.getElementById('provider-sidebar-role').textContent = `Provider · ${u.verified ? 'Verified ✓' : 'Verification pending'}`;
+}
+
+async function initProviderDash() { await loadProviderData(); updateProviderSidebar(); selectProviderSection('overview'); }
 
 /* ══════════════════════ ADMIN DASHBOARD ══════════════════════ */
 function getAdminNavItems() {
@@ -1599,6 +2158,7 @@ function getAdminNavItems() {
   if (AUTH.user && AUTH.user.isSuperAdmin) {
     base.push({ key: 'locations', label: 'Locations & Admins', icon: '🗺️' });
   }
+  base.push({ key: 'settings', label: 'Settings', icon: '⚙️' });
   return base;
 }
 
@@ -1659,7 +2219,7 @@ async function loadAdminData() {
     adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
     adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status }));
     adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status }));
-    adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: Math.floor(Math.random() * 80) + 20, active: c.active }));
+    adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active }));
     adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
     adminData.escrow = escrow;
 
@@ -1760,7 +2320,12 @@ const ADMIN_SECTIONS = {
       ? `<label class="switch"><input type="checkbox" ${c.status==='live'?'checked':''} onchange="toggleCountry('${c.id}')"><span class="switch-track"></span></label>`
       : (c.status === 'live' ? statusBadge('completed') : `<span class="badge badge-neutral">Planned</span>`);
     return `
-    <div class="dash-header"><div><div class="dash-title">Categories & Countries</div><div class="dash-sub">${isSuper ? "Manage what's bookable, and where" : 'Global platform settings — read-only outside Super Admin'}</div></div>${isSuper ? `<button class="btn-sm btn-sm-primary" onclick="showToast('Add category form coming soon')">+ Add Category</button>` : ''}</div>
+    <div class="dash-header"><div><div class="dash-title">Categories & Countries</div><div class="dash-sub">${isSuper ? "Manage what's bookable, and where" : 'Global platform settings — read-only outside Super Admin'}</div></div>${isSuper ? `<button class="btn-sm btn-sm-primary" onclick="openNewCategoryForm()">+ Add Category</button>` : ''}</div>
+    ${isSuper ? `<div class="panel" id="new-category-panel" style="display:none;">
+      <div class="panel-title">New Service Category</div>
+      <div class="form-group"><label class="form-label">Category Name</label><input class="form-input" id="new-cat-name" placeholder="e.g. Pest Control"/></div>
+      <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitNewCategory()">Create Category</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-category-panel').style.display='none'">Cancel</button></div>
+    </div>` : ''}
     <div class="panel"><div class="panel-title">Service Categories</div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Active</th></tr></thead><tbody>
       ${adminData.categories.map(c => `<tr><td>${c.name}</td><td>${c.pros}</td><td>${catCell(c)}</td></tr>`).join('')}
@@ -1785,6 +2350,14 @@ const ADMIN_SECTIONS = {
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="createLocationAdmin()">Create Admin & Open City</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-location-panel').style.display='none'">Cancel</button></div>
     </div>
     <div class="panel"><div class="panel-title">Cities Under Your Oversight <small>${adminData.cities.length} total</small></div>${citiesTable(adminData.cities)}</div>`,
+  settings: () => `
+    <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Your admin account ${BACKEND_AVAILABLE ? '<span class="badge badge-success" style="margin-left:6px;">Saved to your account</span>' : ''}</div></div></div>
+    <div class="panel"><div class="panel-title">Profile</div>
+      <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="set-admin-name" value="${(AUTH.user && AUTH.user.name) || ''}"/></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-admin-email" value="${(AUTH.user && AUTH.user.email) || ''}"/></div>
+      <button class="btn-sm btn-sm-primary" onclick="saveAdminSettings()">Save Changes</button>
+    </div>
+    ${changePasswordPanelHTML('admin')}`,
 };
 
 function citiesTable(list) {
@@ -1806,6 +2379,9 @@ async function createLocationAdmin() {
   const city = document.getElementById('loc-city').value.trim();
   const country = document.getElementById('loc-country').value.trim();
   if (!name || !email || !password || !city || !country) return showToast('Please fill in every field');
+  if (name.length < 2) return showToast('Full name must be at least 2 characters');
+  if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
+  if (password.length < 6) return showToast('Password must be at least 6 characters');
   if (!BACKEND_AVAILABLE) return showToast(`${city} admin created (demo mode — no backend detected)`);
   try {
     const { admin } = await apiFetch('POST', '/admin/sub-admins', { name, email, password, city, country });
@@ -1824,6 +2400,29 @@ async function toggleSubAdminActive(adminId) {
     await loadAdminData();
     selectAdminSection('locations');
   } catch (e) { showToast(e.message || 'Could not update admin status'); }
+}
+
+function openNewCategoryForm() {
+  const panel = document.getElementById('new-category-panel');
+  if (panel) { panel.style.display = 'block'; document.getElementById('new-cat-name').focus(); }
+}
+
+async function submitNewCategory() {
+  const name = document.getElementById('new-cat-name').value.trim();
+  if (!name || name.length < 2) return showToast('Category name must be at least 2 characters');
+  if (!BACKEND_AVAILABLE) {
+    showToast(`"${name}" created (demo mode — no backend detected)`);
+    document.getElementById('new-category-panel').style.display = 'none';
+    return;
+  }
+  try {
+    const { category } = await apiFetch('POST', '/admin/categories', { name });
+    showToast(`"${category.name}" added as a bookable category`);
+    document.getElementById('new-cat-name').value = '';
+    document.getElementById('new-category-panel').style.display = 'none';
+    await Promise.all([loadAdminData(), loadCategories()]);
+    selectAdminSection('categories');
+  } catch (e) { showToast(e.message || 'Could not create category'); }
 }
 
 async function toggleCategory(catId) {
@@ -1932,13 +2531,13 @@ function stars(n) {
   return '★'.repeat(Math.floor(n)) + (n % 1 >= 0.5 ? '½' : '') + ' ' + n;
 }
 
-function renderProviders(list) {
-  const grid = document.getElementById('providers-grid');
-  grid.innerHTML = list.map(p => `
+function providerCardsHTML(list) {
+  if (!list.length) return `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--slate);font-size:13px;">No providers match that search yet.</div>`;
+  return list.map(p => `
     <div class="provider-card fade-up" onclick="viewProviderProfile('${p.id}')">
       <div class="provider-header" style="background:linear-gradient(135deg,${p.color}22,${p.color}44)">
         <div class="provider-avatar" style="background:${p.color};color:#fff">${p.initials}</div>
-        <div class="verified-badge">✓ Verified</div>
+        ${p.verified !== false ? '<div class="verified-badge">✓ Verified</div>' : ''}
       </div>
       <div class="provider-body">
         <div class="provider-name">${p.name}</div>
@@ -1946,7 +2545,7 @@ function renderProviders(list) {
         <div class="provider-meta">
           <div class="meta-chip"><span class="stars">★</span> ${p.rating}</div>
           <div class="meta-chip">📋 ${p.jobs} jobs</div>
-          <div class="meta-chip">📍 Atlanta</div>
+          <div class="meta-chip">📍 ${p.city || 'Atlanta'}</div>
         </div>
         <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
         <div class="provider-footer">
@@ -1956,6 +2555,10 @@ function renderProviders(list) {
       </div>
     </div>
   `).join('');
+}
+
+function renderProviders(list) {
+  document.getElementById('providers-grid').innerHTML = providerCardsHTML(list);
 }
 
 function filterCat(cat) {
@@ -1998,14 +2601,22 @@ function closeModal() {
 }
 
 async function confirmBooking() {
-  const desc = document.getElementById('job-desc').value || 'General service';
+  const desc = document.getElementById('job-desc').value.trim();
   const date = document.getElementById('job-date').value;
   const time = document.getElementById('job-time').value;
-  const addr = document.getElementById('job-address').value || 'Atlanta, GA';
-  const total = currentPro.price * 2 + Math.round(currentPro.price * 0.08);
-  closeModal();
+  const addr = document.getElementById('job-address').value.trim();
 
+  // Client-side validation — mirrors what the backend requires, so the user
+  // gets immediate feedback instead of a confusing failure after the modal
+  // has already closed.
+  if (!desc || desc.length < 3) return showToast('Describe the job in at least 3 characters');
+  if (!date) return showToast('Pick a date for the job');
+  if (!time) return showToast('Pick a time for the job');
+  if (!addr || addr.length < 5) return showToast('Enter a valid address');
+
+  const total = currentPro.price * 2 + Math.round(currentPro.price * 0.08);
   let contractId = 'CT-' + Math.floor(1000 + Math.random() * 9000);
+
   if (BACKEND_AVAILABLE) {
     try {
       if (!AUTH.token || AUTH.user.role !== 'customer') {
@@ -2016,9 +2627,15 @@ async function confirmBooking() {
       });
       contractId = contract.id;
     } catch (e) {
-      console.warn('Could not persist booking to backend, showing local confirmation only.', e);
+      // A real failure (validation error, server down, etc.) must NOT show a
+      // fake success screen — that would tell the user their booking is
+      // confirmed and protected by escrow when nothing was actually saved.
+      showToast(e.message || 'Could not complete booking — please try again');
+      return;
     }
   }
+
+  closeModal();
 
   // Show confirmation screen
   document.getElementById('screen-home').classList.remove('active');
@@ -2060,13 +2677,24 @@ document.getElementById('dispute-modal').addEventListener('click', function(e) {
 (async function initApp() {
   renderNavbar('navbar-home', 'home');
   renderProviders(PROVIDERS); // paint immediately with fallback data, then upgrade if backend is live
+  renderHomeCategories();
   await checkBackend();
   if (BACKEND_AVAILABLE) {
-    await loadProviders();
+    await Promise.all([loadProviders(), loadCategories()]);
     renderProviders(PROVIDERS);
+    renderHomeCategories();
     console.log('%cTaskora API connected — live data enabled.', 'color:#1D5FA8;font-weight:bold;');
   } else {
     console.log('%cTaskora API not detected — running on demo data. Start the backend (npm start in /taskora-backend) for live data.', 'color:#B08A3E;');
+  }
+
+  // If the page was opened with ?resetToken=... (what a real password-reset
+  // email link would look like), jump straight to the reset-password form —
+  // this is the same code path as clicking "Open Reset Link Now" in test mode.
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlResetToken = urlParams.get('resetToken');
+  if (urlResetToken) {
+    showResetPasswordForm(urlResetToken);
   }
 })();
 </script>

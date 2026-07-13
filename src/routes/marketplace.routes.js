@@ -2,6 +2,7 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
+const { isNonEmptyString, validate } = require('../validators');
 
 const router = express.Router();
 
@@ -13,10 +14,40 @@ function publicProvider(u) {
   };
 }
 
+// Parses a customer-entered budget string like "$80-150", "$80 - $150", or
+// "$120" into a single representative amount. Previously this stripped all
+// non-digit characters and parsed the result as one number, which turned a
+// range like "$80-150" into 80150 — fixed to take the first number in the
+// string (a sensible starting quote) instead.
+function parseBudgetAmount(budget, fallback = 100) {
+  if (!budget) return fallback;
+  const match = String(budget).match(/\d+/);
+  if (!match) return fallback;
+  const n = parseInt(match[0], 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+// GET /api/categories — public directory of active categories with real,
+// live counts of verified providers in each (no auth required; this powers
+// the marketing homepage and the full "Browse Categories" page).
+router.get('/categories', (req, res) => {
+  const categories = db.filter('categories', c => c.active);
+  const withCounts = categories.map(c => ({
+    id: c.id,
+    name: c.name,
+    proCount: db.filter('users', u => u.role === 'provider' && u.verified && u.category === c.name).length,
+  }));
+  res.json({ categories: withCounts });
+});
+
 // GET /api/providers?category=Plumbing&q=leak&city=Atlanta
 router.get('/providers', (req, res) => {
   const { category, q, city } = req.query;
-  let providers = db.filter('users', u => u.role === 'provider');
+  // Only verified providers appear in the public directory — showing an
+  // unverified provider here (even briefly, while their documents are in
+  // review) would contradict the "Fully Verified" promise shown on the
+  // marketing page and profile badges.
+  let providers = db.filter('users', u => u.role === 'provider' && u.verified);
   if (category) providers = providers.filter(p => p.category === category);
   if (city) providers = providers.filter(p => p.city === city);
   if (q) {
@@ -32,7 +63,7 @@ router.get('/providers', (req, res) => {
 
 // GET /api/providers/:id  (profile page: includes reviews)
 router.get('/providers/:id', (req, res) => {
-  const p = db.find('users', u => u.id === req.params.id && u.role === 'provider');
+  const p = db.find('users', u => u.id === req.params.id && u.role === 'provider' && u.verified);
   if (!p) return res.status(404).json({ error: 'Provider not found' });
   const reviews = db.filter('reviews', r => r.providerId === p.id);
   res.json({ provider: publicProvider(p), reviews });
@@ -43,12 +74,24 @@ router.get('/providers/:id', (req, res) => {
 // POST /api/jobs — customer posts a job, triggers AI matching immediately
 router.post('/jobs', requireAuth, requireRole('customer'), (req, res) => {
   const { category, description, budget } = req.body || {};
-  if (!category || !description) return res.status(400).json({ error: 'category and description are required' });
+  const errors = validate([
+    ['category', isNonEmptyString(category), 'Category is required'],
+    ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const activeCategories = db.filter('categories', c => c.active).map(c => c.name);
+  if (!activeCategories.includes(category)) {
+    return res.status(400).json({ error: `"${category}" is not a currently bookable category` });
+  }
+  if (budget && !isNonEmptyString(budget, { max: 40 })) {
+    return res.status(400).json({ error: 'Budget must be under 40 characters' });
+  }
 
   const job = {
     id: `job_${nanoid(10)}`,
     customerId: req.user.sub,
-    category, description, budget: budget || null,
+    category, description: description.trim(), budget: budget ? budget.trim() : null,
     status: 'open',
     createdAt: new Date().toISOString(),
   };
@@ -91,7 +134,10 @@ router.get('/jobs/mine', requireAuth, requireRole('customer'), (req, res) => {
 // GET /api/matches/mine — provider's pending AI matches
 router.get('/matches/mine', requireAuth, requireRole('provider'), (req, res) => {
   const matches = db.filter('matches', m => m.providerId === req.user.sub && m.status === 'pending');
-  const withJob = matches.map(m => ({ ...m, job: db.find('jobs', j => j.id === m.jobId) }));
+  const withJob = matches.map(m => {
+    const customer = db.find('users', u => u.id === m.customerId);
+    return { ...m, job: db.find('jobs', j => j.id === m.jobId), customerName: customer ? customer.name : 'Customer' };
+  });
   res.json({ matches: withJob });
 });
 
@@ -105,23 +151,31 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), (req, 
   db.update('matches', match.id, { status: decision === 'accept' ? 'accepted' : 'declined' });
 
   let contract = null;
+  let escrow = null;
   if (decision === 'accept') {
     const job = db.find('jobs', j => j.id === match.jobId);
+    const amount = parseBudgetAmount(job && job.budget, 100);
     contract = {
       id: `ct_${nanoid(10)}`,
       customerId: match.customerId,
       providerId: match.providerId,
       jobId: match.jobId,
       service: job ? job.description : 'Service',
-      amount: job && job.budget ? parseInt(String(job.budget).replace(/[^0-9]/g, '')) || 100 : 100,
+      amount,
       status: 'active',
       signedAt: new Date().toISOString().slice(0, 10),
       createdAt: new Date().toISOString(),
     };
     db.insert('contracts', contract);
+    // Every accepted contract holds funds in escrow — this was previously only
+    // happening for direct bookings (POST /contracts), not AI-matched ones,
+    // which meant matched jobs could never be paid out. Fixed here so both
+    // paths behave identically.
+    escrow = { id: `esc_${nanoid(10)}`, contractId: contract.id, amount, status: 'held', createdAt: new Date().toISOString() };
+    db.insert('escrowTransactions', escrow);
     if (job) db.update('jobs', job.id, { status: 'matched' });
   }
-  res.json({ match, contract });
+  res.json({ match, contract, escrow });
 });
 
 // ---- Contracts / bookings ----------------------------------------------------
@@ -129,6 +183,18 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), (req, 
 // POST /api/contracts — direct booking of a specific provider (skips matching)
 router.post('/contracts', requireAuth, requireRole('customer'), (req, res) => {
   const { providerId, service, date, time, address, amount } = req.body || {};
+  const errors = validate([
+    ['providerId', isNonEmptyString(providerId), 'A provider must be selected'],
+    ['service', isNonEmptyString(service, { min: 3, max: 200 }), 'Describe the service in at least 3 characters'],
+    ['date', isNonEmptyString(date), 'Pick a date for the job'],
+    ['time', isNonEmptyString(time), 'Pick a time for the job'],
+    ['address', isNonEmptyString(address, { min: 5, max: 200 }), 'Enter a valid address'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  if (amount !== undefined && (typeof amount !== 'number' || amount <= 0)) {
+    return res.status(400).json({ error: 'Amount must be a positive number' });
+  }
+
   const provider = db.find('users', u => u.id === providerId && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
@@ -136,8 +202,8 @@ router.post('/contracts', requireAuth, requireRole('customer'), (req, res) => {
     id: `ct_${nanoid(10)}`,
     customerId: req.user.sub,
     providerId,
-    service: service || 'General service',
-    date, time, address,
+    service: service.trim(),
+    date, time, address: address.trim(),
     amount: amount || provider.price * 2,
     status: 'active',
     signedAt: new Date().toISOString().slice(0, 10),

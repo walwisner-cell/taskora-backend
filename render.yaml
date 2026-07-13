@@ -5,15 +5,24 @@
 # env-var collisions. Nothing here touches or references any other service
 # on the account.
 #
-# This version uses Render's Starter plan (~$7/month) with a persistent
-# disk attached, so test data you add (new users, jobs, approvals, etc.)
-# actually survives redeploys and idle spin-downs instead of resetting.
+# Deploy: push this repo to GitHub, then in Render choose
+# "New +" → "Blueprint" → select this repo. Render reads this file and
+# creates everything below automatically. See README.md → "Deploying to
+# Render" for the full walkthrough, including a manual (non-Blueprint) path.
+#
+# IMPORTANT — read this before you deploy:
+# Render's FREE web service plan does not support persistent disks at all
+# (this is a hard platform rule, not a bug) — a free service's filesystem is
+# wiped every time it redeploys OR spins down from 15 minutes of inactivity.
+# That means with the config below (free, no disk), any data you add while
+# testing will reset periodically. If you want data to actually stick around
+# between test sessions, see "OPTION B" below — it's a two-line change.
 
 services:
   - type: web
-    name: taskora-api
+    name: taskora-api            # <-- change this if you want an even more distinct name
     runtime: node
-    plan: starter
+    plan: free                   # OPTION A (current): free, but no persistent storage — see note above
     region: oregon                # pick whichever region is closest to you
     buildCommand: npm install
     startCommand: npm start
@@ -21,19 +30,33 @@ services:
     autoDeploy: true
     envVars:
       - key: TASKORA_JWT_SECRET
-        generateValue: true       # Render generates a strong random secret — never commit one
+        generateValue: true      # Render generates a strong random secret — never commit one
       - key: NODE_ENV
         value: production
-      - key: DATA_DIR
-        value: /var/data          # points the JSON datastore at the persistent disk below
-    disk:
-      name: taskora-data
-      mountPath: /var/data
-      sizeGB: 1                   # plenty of headroom for JSON test data; resize anytime
+      # If you switch to Option B below, uncomment this so the app writes to
+      # the persistent disk instead of its own (ephemeral) local folder:
+      # - key: DATA_DIR
+      #   value: /var/data
 
-# First deploy boots with an empty disk, so it auto-seeds demo data once.
-# Every deploy after that leaves your real data alone — the seed only runs
-# when the disk is genuinely empty (see src/seed.js -> seedIfEmpty()).
-#
-# To go back to clean demo data on purpose: open a Render Shell for this
-# service (Dashboard -> your service -> Shell) and run: npm run seed
+    # ── OPTION B: real persistence for ~$7/month ────────────────────────────
+    # Persistent disks require a paid plan. To turn this on:
+    #   1. Change "plan: free" above to "plan: starter"
+    #   2. Uncomment the DATA_DIR env var above
+    #   3. Uncomment the "disk:" block below
+    #   4. Commit, push, and Render will apply the change automatically
+    #
+    # disk:
+    #   name: taskora-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+
+# WHICH OPTION SHOULD YOU PICK?
+# - Just clicking around, testing a flow, showing someone the app for a few
+#   minutes? Option A (free) is fine — you'll just notice data resetting to
+#   the seeded demo state if the service has been idle a while.
+# - Actually building up test data over several sessions (adding real users,
+#   testing admin approvals over days, etc.)? Switch to Option B — the cost
+#   is small and it's the only way free-tier Render will hold onto data.
+# - Preparing for the real live system? Neither — follow the Postgres
+#   migration path in Taskora_Technical_Spec.docx instead of relying on disk
+#   storage at all.

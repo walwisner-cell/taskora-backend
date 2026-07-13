@@ -13,8 +13,10 @@ router.get('/notifications/mine', requireAuth, (req, res) => {
 
 // POST /api/notifications/:id/read
 router.post('/notifications/:id/read', requireAuth, (req, res) => {
+  const record = db.find('notifications', n => n.id === req.params.id);
+  if (!record) return res.status(404).json({ error: 'Notification not found' });
+  if (record.userId !== req.user.sub) return res.status(403).json({ error: 'Forbidden' });
   const updated = db.update('notifications', req.params.id, { read: true });
-  if (!updated) return res.status(404).json({ error: 'Notification not found' });
   res.json({ notification: updated });
 });
 

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 // In production this must come from an environment variable / secrets
 // manager, never be hardcoded, and be rotated. It's inlined here only so
@@ -21,6 +22,19 @@ function signToken(user) {
     JWT_SECRET,
     { expiresIn: TOKEN_TTL }
   );
+}
+
+// Password-reset tokens are high-entropy random strings, not user-chosen
+// passwords — a fast cryptographic hash (SHA-256) is the standard, correct
+// choice for these, unlike bcrypt which exists specifically to slow down
+// brute-forcing *low*-entropy user passwords. Hashing the token before
+// storing it means a leaked database still can't be used to reset accounts.
+function generateResetToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function hashResetToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 function requireAuth(req, res, next) {
@@ -45,4 +59,7 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { hashPassword, verifyPassword, signToken, requireAuth, requireRole, JWT_SECRET };
+module.exports = {
+  hashPassword, verifyPassword, signToken, requireAuth, requireRole, JWT_SECRET,
+  generateResetToken, hashResetToken,
+};

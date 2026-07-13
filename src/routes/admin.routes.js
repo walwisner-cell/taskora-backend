@@ -2,9 +2,22 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole, hashPassword } = require('../auth');
+const { isValidEmail, isNonEmptyString, isValidPassword, validate } = require('../validators');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
+
+// A suspended admin's existing token would otherwise keep working for up to
+// 7 days (tokens aren't re-checked against the DB by requireAuth itself).
+// This re-fetches the fresh record on every admin request so a suspension
+// takes effect immediately, not whenever the token happens to expire.
+router.use((req, res, next) => {
+  const current = db.find('users', u => u.id === req.user.sub);
+  if (!current || current.active === false) {
+    return res.status(403).json({ error: 'This account has been suspended. Contact a super admin for access.' });
+  }
+  next();
+});
 
 // Every route below runs as an admin (super admin or a location admin).
 // `me` is the fresh DB record (not just the JWT payload) so a change to an
@@ -125,7 +138,29 @@ router.post('/disputes/:id/resolve', (req, res) => {
 });
 
 // ---- Global config: categories & countries (super admin only) --------------
-router.get('/categories', (req, res) => res.json({ categories: db.all('categories') }));
+router.get('/categories', (req, res) => {
+  const categories = db.all('categories').map(c => ({
+    ...c,
+    pros: db.filter('users', u => u.role === 'provider' && u.verified && u.category === c.name).length,
+  }));
+  res.json({ categories });
+});
+
+// POST /api/admin/categories — add a new bookable service category
+router.post('/categories', requireSuperAdmin, (req, res) => {
+  const { name } = req.body || {};
+  if (!isNonEmptyString(name, { min: 2, max: 40 })) {
+    return res.status(400).json({ error: 'Category name must be between 2 and 40 characters' });
+  }
+  const trimmed = name.trim();
+  const existing = db.find('categories', c => c.name.toLowerCase() === trimmed.toLowerCase());
+  if (existing) return res.status(409).json({ error: `"${trimmed}" already exists as a category` });
+
+  const category = { id: `cat_${nanoid(8)}`, name: trimmed, active: true };
+  db.insert('categories', category);
+  res.status(201).json({ category });
+});
+
 router.patch('/categories/:id', requireSuperAdmin, (req, res) => {
   const cat = db.find('categories', c => c.id === req.params.id);
   if (!cat) return res.status(404).json({ error: 'Category not found' });
@@ -162,21 +197,27 @@ router.get('/sub-admins', requireSuperAdmin, (req, res) => {
 // POST /api/admin/sub-admins — create a new location admin for a city
 router.post('/sub-admins', requireSuperAdmin, (req, res) => {
   const { name, email, password, city, country } = req.body || {};
-  if (!name || !email || !password || !city || !country) {
-    return res.status(400).json({ error: 'name, email, password, city, and country are required' });
-  }
-  const existing = db.find('users', u => u.email.toLowerCase() === email.toLowerCase());
+  const errors = validate([
+    ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Full name must be at least 2 characters'],
+    ['email', isValidEmail(email), 'Enter a valid email address'],
+    ['password', isValidPassword(password), 'Password must be at least 6 characters'],
+    ['city', isNonEmptyString(city), 'City is required'],
+    ['country', isNonEmptyString(country), 'Country is required'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const existing = db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
   if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
 
   const admin = {
     id: `u_${nanoid(10)}`,
-    name, email, city, country,
+    name: name.trim(), email: email.trim(), city, country,
     role: 'admin',
     region: city,
     isSuperAdmin: false,
     active: true,
     verified: true,
-    initials: name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
+    initials: name.trim().split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
     passwordHash: hashPassword(password),
     createdAt: new Date().toISOString(),
   };

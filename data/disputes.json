@@ -6,7 +6,7 @@
     "amount": 640,
     "status": "open",
     "parties": "Sofia M. ↔ Malik Owens",
-    "createdAt": "2026-07-13T10:55:13.312Z"
+    "createdAt": "2026-07-13T16:59:50.380Z"
   },
   {
     "id": "dp_114",
@@ -15,7 +15,7 @@
     "amount": 75,
     "status": "in review",
     "parties": "Priya N. ↔ Renee Park",
-    "createdAt": "2026-07-13T10:55:13.312Z"
+    "createdAt": "2026-07-13T16:59:50.380Z"
   },
   {
     "id": "dp_109",
@@ -24,6 +24,6 @@
     "amount": 220,
     "status": "resolved",
     "parties": "Tom B. ↔ Grant Lee",
-    "createdAt": "2026-07-13T10:55:13.312Z"
+    "createdAt": "2026-07-13T16:59:50.380Z"
   }
 ]
