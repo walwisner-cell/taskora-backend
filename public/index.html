@@ -1548,9 +1548,13 @@ async function mockAuth() {
 // private, per-account view rather than a shared demo the whole world can
 // wander into.
 async function goDashboard(role) {
+  // Both regular admins and the super admin are stored with role: 'admin' in
+  // the database — isSuperAdmin is a separate flag, not a different role
+  // value. So "admin" here must match either one; the admin dashboard
+  // itself already branches on isSuperAdmin internally for the extra
+  // super-admin-only features (see getAdminNavItems()).
   const alreadyCorrect = AUTH.user && (
-    (role === 'superadmin' && AUTH.user.isSuperAdmin) ||
-    (role === 'admin' && AUTH.user.role === 'admin' && !AUTH.user.isSuperAdmin) ||
+    (role === 'admin' && AUTH.user.role === 'admin') ||
     (role === AUTH.user.role && role !== 'admin')
   );
   if (BACKEND_AVAILABLE && !alreadyCorrect) {
