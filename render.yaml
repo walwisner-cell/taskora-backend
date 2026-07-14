@@ -28,10 +28,15 @@ services:
         value: production
       - key: DATA_DIR
         value: /var/data          # points the JSON datastore at the persistent disk below
+      - key: UPLOADS_DIR
+        value: /var/data/uploads  # portfolio photos live on the same persistent disk, in their own subfolder
       # Add this once you've created a Render Postgres instance (see below) —
       # uncommenting this alone is what switches the app from the JSON-file
       # store to real Postgres. No code change needed; db.js picks the
-      # backend automatically based on whether this is set.
+      # backend automatically based on whether this is set. Note: Postgres
+      # only replaces the JSON datastore — UPLOADS_DIR above still needs the
+      # disk (or S3 at larger scale) regardless, since Postgres stores data,
+      # not image files.
       # - key: DATABASE_URL
       #   fromDatabase:
       #     name: taskora-db

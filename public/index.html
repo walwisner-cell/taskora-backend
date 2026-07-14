@@ -30,13 +30,13 @@
 
   /* ── NAVBAR ── */
   .navbar {
-    background:var(--navy); padding:0 24px; height:60px;
+    background:var(--navy); padding:0 24px; height:68px;
     display:flex; align-items:center; justify-content:space-between;
     position:sticky; top:0; z-index:100; box-shadow:0 2px 20px rgba(0,0,0,.25);
   }
   .navbar-logo { font-family:'Fraunces',serif; font-size:21px; font-weight:800; color:var(--white); display:flex; align-items:center; gap:9px; cursor:pointer; letter-spacing:.2px; }
-  .navbar-logo-img { height:34px; width:auto; display:block; }
-  .footer-logo-img { height:38px; width:auto; display:block; }
+  .navbar-logo-img { height:46px; width:auto; display:block; }
+  .footer-logo-img { height:50px; width:auto; display:block; }
   .logo-mark { width:26px; height:26px; display:inline-flex; flex-shrink:0; }
   .navbar-nav { display:flex; gap:6px; }
   .nav-btn { background:none; border:none; color:var(--mint); font-family:'Inter',sans-serif; font-size:13px; padding:6px 14px; border-radius:12px; cursor:pointer; transition:all .2s; }
@@ -430,7 +430,7 @@
 
   /* ── PROVIDER PROFILE ── */
   .profile-wrap { flex:1; background:var(--offwhite); }
-  .profile-cover { background:linear-gradient(135deg, var(--navy) 0%, #1B2233 60%, #242F45 100%); padding:44px 24px 74px; position:relative; }
+  .profile-cover { background:linear-gradient(135deg, var(--navy) 0%, #1B2233 60%, #242F45 100%); padding:44px 24px 40px; position:relative; }
   .profile-back { color:rgba(255,255,255,.7); font-size:13px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; margin-bottom:20px; }
   .profile-back:hover { color:#fff; }
   .profile-head { max-width:1000px; margin:0 auto; display:flex; align-items:center; gap:22px; flex-wrap:wrap; }
@@ -440,7 +440,7 @@
   .profile-role { color:rgba(255,255,255,.65); font-size:14px; margin-top:4px; }
   .profile-meta-row { display:flex; gap:18px; margin-top:12px; flex-wrap:wrap; }
   .profile-meta-item { color:rgba(255,255,255,.85); font-size:13px; display:flex; align-items:center; gap:5px; }
-  .profile-body { max-width:1000px; margin:-40px auto 0; padding:0 24px 60px; display:grid; grid-template-columns:2fr 1fr; gap:22px; }
+  .profile-body { max-width:1000px; margin:0 auto; padding:24px 24px 60px; display:grid; grid-template-columns:2fr 1fr; gap:22px; }
   @media (max-width:800px) { .profile-body { grid-template-columns:1fr; } }
   .profile-card { background:#fff; border:1px solid var(--border); border-radius:10px; padding:22px; margin-bottom:20px; }
   .profile-card-title { font-family:'Fraunces',serif; font-weight:600; font-size:16px; color:var(--navy); margin-bottom:14px; }
@@ -468,7 +468,7 @@
     /* ── Navbar: scrolls horizontally within itself instead of overflowing ── */
     .navbar { padding: 0 12px; gap: 8px; }
     .navbar-logo { font-size: 16px; gap: 6px; flex-shrink: 0; }
-    .navbar-logo-img { height: 26px; }
+    .navbar-logo-img { height: 34px; }
     .logo-mark { width: 20px; height: 20px; }
     .navbar-nav {
       gap: 4px; flex-shrink: 0; min-width: 0;
@@ -532,10 +532,10 @@
     .dates-row { grid-template-columns: 1fr; }
 
     /* ── Provider profile ── */
-    .profile-cover { padding: 30px 16px 60px; }
+    .profile-cover { padding: 30px 16px 30px; }
     .profile-avatar-lg { width: 72px; height: 72px; font-size: 26px; }
     .profile-name { font-size: 22px; }
-    .profile-body { padding: 0 14px 40px; margin-top: -30px; }
+    .profile-body { padding: 20px 14px 40px; margin-top: 0; }
     .profile-card { padding: 16px; }
     .portfolio-grid { grid-template-columns: repeat(2, 1fr); }
 
@@ -864,11 +864,11 @@
       <div class="auth-divider">or</div>
       <div class="form-group" id="auth-name-group" style="display:none">
         <label class="form-label">Full Name</label>
-        <input class="form-input" type="text" placeholder="Your name" id="auth-name"/>
+        <input class="form-input" type="text" id="auth-name"/>
       </div>
       <div class="form-group" id="auth-phone-group" style="display:none">
         <label class="form-label">Phone Number</label>
-        <input class="form-input" type="tel" placeholder="+1 404 555 0100" id="auth-phone"/>
+        <input class="form-input" type="tel" id="auth-phone"/>
       </div>
       <div class="form-group" id="auth-city-group" style="display:none">
         <label class="form-label">City</label>
@@ -878,11 +878,11 @@
       </div>
       <div class="form-group" id="auth-address-group" style="display:none">
         <label class="form-label">Street Address</label>
-        <input class="form-input" type="text" placeholder="123 Main Street" id="auth-address"/>
+        <input class="form-input" type="text" id="auth-address"/>
       </div>
       <div class="form-group" id="auth-zip-group" style="display:none">
         <label class="form-label">Zip / Postal Code</label>
-        <input class="form-input" type="text" placeholder="30301" id="auth-zip"/>
+        <input class="form-input" type="text" id="auth-zip"/>
         <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Used to match you with pros in your community</div>
       </div>
       <div id="auth-provider-fields-group" style="display:none">
@@ -895,17 +895,17 @@
         </div>
         <div class="form-group">
           <label class="form-label">Skills & Specialties</label>
-          <input class="form-input" type="text" placeholder="e.g. Pipe Repair, Drain Cleaning, Fixtures" id="auth-skills"/>
+          <input class="form-input" type="text" id="auth-skills"/>
           <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Comma-separated — helps the AI match you to the right jobs</div>
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">Email</label>
-        <input class="form-input" type="email" placeholder="you@example.com" id="auth-email"/>
+        <input class="form-input" type="email" id="auth-email"/>
       </div>
       <div class="form-group">
         <label class="form-label">Password</label>
-        <input class="form-input" type="password" placeholder="••••••••" id="auth-password"/>
+        <input class="form-input" type="password" id="auth-password"/>
       </div>
       <div class="auth-foot" id="auth-forgot-link" style="text-align:right;margin-top:-10px;margin-bottom:14px;"><a onclick="showForgotPassword()">Forgot password?</a></div>
       <button class="auth-submit" onclick="mockAuth()" id="auth-submit-btn">Sign In</button>
@@ -929,7 +929,7 @@
         <div class="auth-card-sub">Enter your account email and we'll send you a reset link.</div>
         <div class="form-group">
           <label class="form-label">Email</label>
-          <input class="form-input" type="email" placeholder="you@example.com" id="forgot-email"/>
+          <input class="form-input" type="email" id="forgot-email"/>
         </div>
         <button class="auth-submit" onclick="submitForgotPassword()">Send Reset Link</button>
         <div class="auth-foot"><a onclick="showAuth('login')">Back to sign in</a></div>
@@ -944,11 +944,11 @@
         <div class="auth-card-sub">Your reset link has been verified.</div>
         <div class="form-group">
           <label class="form-label">New Password</label>
-          <input class="form-input" type="password" placeholder="At least 6 characters" id="reset-new-password"/>
+          <input class="form-input" type="password" id="reset-new-password"/>
         </div>
         <div class="form-group">
           <label class="form-label">Confirm New Password</label>
-          <input class="form-input" type="password" placeholder="Re-enter new password" id="reset-confirm-password"/>
+          <input class="form-input" type="password" id="reset-confirm-password"/>
         </div>
         <button class="auth-submit" onclick="submitResetPassword()">Reset Password</button>
         <div class="auth-foot"><a onclick="showAuth('login')">Back to sign in</a></div>
@@ -1063,7 +1063,7 @@
             <div class="pricing-feat">Dedicated account manager</div>
             <div class="pricing-feat">Volume commission discounts</div>
           </div>
-          <button class="pricing-cta" onclick="showToast('Our team will follow up within 1 business day')">Contact Sales</button>
+          <button class="pricing-cta" onclick="window.location.href='mailto:sales@taskora.io?subject=' + encodeURIComponent('Custom Plan Inquiry') + '&body=' + encodeURIComponent('Hi Taskora team,\n\nI\'m interested in the Custom plan for organizations. Please reach out to discuss details.\n\nCompany name:\nExpected team size:\n')">Contact Sales</button>
         </div>
       </div>
     </div>
@@ -2155,7 +2155,7 @@ const REVIEW_BANK = [
 ];
 const PORTFOLIO_ICONS = ['🔧','🧰','🚿','🪠','🛠️','📐'];
 
-function viewProviderProfile(id) {
+async function viewProviderProfile(id) {
   const p = PROVIDERS.find(x => x.id === id);
   if (!p) return;
   showScreen('screen-profile');
@@ -2166,31 +2166,56 @@ function viewProviderProfile(id) {
       <div class="profile-name-row"><div class="profile-name">${p.name}</div>${p.verified !== false ? '<span class="badge badge-success">✓ Verified</span>' : '<span class="badge badge-warn">Verification pending</span>'}</div>
       <div class="profile-role">${p.role} · Serving ${p.city || 'Atlanta'} · Taskora Pro since ${p.since}</div>
       <div class="profile-meta-row">
-        <div class="profile-meta-item">★ ${p.rating} rating</div>
+        <div class="profile-meta-item">★ ${p.rating || 'No'} rating</div>
         <div class="profile-meta-item">📋 ${p.jobs} jobs completed</div>
         <div class="profile-meta-item">⚡ Responds in ~1 hr</div>
       </div>
     </div>`;
+
+  // Real reviews AND real portfolio photos for THIS specific provider,
+  // fetched fresh — previously reviews showed the same hardcoded review bank
+  // on every single profile regardless of who was being viewed, and
+  // portfolio always said "no photos yet" even when real ones existed.
+  let reviews = [];
+  let portfolio = [];
+  if (BACKEND_AVAILABLE) {
+    try {
+      const data = await apiFetch('GET', `/providers/${p.id}`);
+      reviews = data.reviews || [];
+      portfolio = data.portfolio || [];
+    } catch (e) { console.warn('Could not load profile data for this provider', e); }
+  }
+  const reviewsHTML = reviews.length
+    ? reviews.map(r => `<div class="review-item"><div class="review-head"><span>${r.authorName}</span><span>Verified booking</span></div><div class="review-stars">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</div><div class="review-text">${r.text}</div></div>`).join('')
+    : `<div style="color:var(--slate);font-size:13px;padding:8px 0;">No reviews yet — ${p.name.split(' ')[0]} hasn't completed a reviewed job yet.</div>`;
+  const portfolioHTML = portfolio.length
+    ? `<div class="cats-grid">${portfolio.map(ph => `<img src="${ph.url}" alt="Portfolio photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block;"/>`).join('')}</div>`
+    : `<div style="color:var(--slate);font-size:13px;padding:4px 0;">No portfolio photos yet.</div>`;
+
+  const isNegotiable = p.pricingModel === 'negotiable';
+  const priceHTML = isNegotiable
+    ? `<div class="profile-side-price" style="font-size:26px;">Mutual Agreement</div><div style="font-size:12px;color:var(--slate);margin-bottom:16px;">Price is worked out directly with ${p.name.split(' ')[0]} per job</div>`
+    : `<div class="profile-side-price">$${p.price}<span>/hr</span></div><div style="font-size:12px;color:var(--slate);margin-bottom:16px;">Escrow-protected, released when the job is confirmed done</div>`;
+
   document.getElementById('profile-body').innerHTML = `
     <div>
       <div class="profile-card">
         <div class="profile-card-title">About</div>
-        <div style="font-size:13.5px;color:var(--text);line-height:1.7;">${p.name.split(' ')[0]} is a Taskora-verified ${p.role.toLowerCase()} with ${p.jobs}+ completed jobs and a ${p.rating}★ average rating. Every booking runs on an auto-generated contract with funds held in escrow until the job is confirmed complete.</div>
-        <div class="provider-tags" style="margin-top:14px;">${p.tags.map(t => `<span class="tag">${t}</span>`).join('')}</div>
+        <div style="font-size:13.5px;color:var(--text);line-height:1.7;">${p.name.split(' ')[0]} is a Taskora-verified ${p.role.toLowerCase()} with ${p.jobs}+ completed jobs${p.rating ? ` and a ${p.rating}★ average rating` : ''}. Every booking runs on an auto-generated contract with funds held in escrow until the job is confirmed complete.</div>
+        <div class="provider-tags" style="margin-top:14px;">${(p.tags||[]).map(t => `<span class="tag">${t}</span>`).join('') || '<span style="color:var(--muted);font-size:12px;">No specialties listed yet</span>'}</div>
       </div>
       <div class="profile-card">
         <div class="profile-card-title">Portfolio</div>
-        <div class="portfolio-grid">${PORTFOLIO_ICONS.map(ic => `<div class="portfolio-tile" style="background:${p.color}18;">${ic}</div>`).join('')}</div>
+        ${portfolioHTML}
       </div>
       <div class="profile-card">
-        <div class="profile-card-title">Reviews (${p.jobs})</div>
-        ${REVIEW_BANK.map(r => `<div class="review-item"><div class="review-head"><span>${r.name}</span><span>Verified booking</span></div><div class="review-stars">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</div><div class="review-text">${r.text}</div></div>`).join('')}
+        <div class="profile-card-title">Reviews (${reviews.length})</div>
+        ${reviewsHTML}
       </div>
     </div>
     <div>
       <div class="profile-card">
-        <div class="profile-side-price">$${p.price}<span>/hr</span></div>
-        <div style="font-size:12px;color:var(--slate);margin-bottom:16px;">Also available for fixed-price jobs</div>
+        ${priceHTML}
         <button class="confirm-btn" style="margin-bottom:10px;" onclick="openBooking('${p.id}')">Book Now</button>
         <button class="pricing-cta" style="width:100%;" onclick="goDashboard('customer');selectCustomerSection('messages')">Message</button>
       </div>
@@ -2314,15 +2339,16 @@ const FALLBACK_PAYOUTS = [
   { id: 'PO-312', date: '2026-06-26', amount: 295, method: 'Wallet', status: 'completed' },
 ];
 
-let providerData = { matches: FALLBACK_MATCHES, contracts: FALLBACK_CONTRACTS_PROVIDER, payouts: FALLBACK_PAYOUTS, verificationStatus: 'verified' };
+let providerData = { matches: FALLBACK_MATCHES, contracts: FALLBACK_CONTRACTS_PROVIDER, payouts: FALLBACK_PAYOUTS, verificationStatus: 'verified', portfolioPhotos: [] };
 
 async function loadProviderData() {
   if (!BACKEND_AVAILABLE) { providerData.verificationStatus = 'verified'; return; }
   try {
-    const [{ matches }, { contracts }, { payouts }] = await Promise.all([
+    const [{ matches }, { contracts }, { payouts }, { photos }] = await Promise.all([
       apiFetch('GET', '/matches/mine'),
       apiFetch('GET', '/contracts/mine'),
       apiFetch('GET', '/payouts/mine'),
+      apiFetch('GET', '/portfolio/mine'),
     ]);
     providerData.matches = matches.map(m => ({
       id: m.id, customer: m.customerName || 'Customer', service: m.job ? m.job.description : 'Service request',
@@ -2330,6 +2356,7 @@ async function loadProviderData() {
     }));
     providerData.contracts = contracts.map(c => ({ id: c.id, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow }));
     providerData.payouts = payouts.length ? payouts : FALLBACK_PAYOUTS;
+    providerData.portfolioPhotos = photos;
   } catch (e) { console.warn('Falling back to demo provider data', e); }
   providerData.verificationStatus = await computeVerificationStatus();
 }
@@ -2395,8 +2422,11 @@ const PROVIDER_SECTIONS = {
   },
   portfolio: () => `
     <div class="dash-header"><div><div class="dash-title">Portfolio</div><div class="dash-sub">Showcase past work to win more AI matches</div></div></div>
-    <div class="panel"><div class="upload-box" onclick="showToast('Photo upload is coming in a future update')" style="cursor:pointer;">📷 Upload Portfolio Photo</div>
-      <div style="color:var(--slate);font-size:13px;padding:14px 0 4px;">No portfolio photos yet — once uploads are enabled, they'll organize by your service tags: ${(AUTH.user && AUTH.user.tags && AUTH.user.tags.length) ? AUTH.user.tags.join(', ') : 'your specialties'}.</div>
+    <div class="panel">
+      <label class="upload-box" for="portfolio-file-input" style="cursor:pointer;display:block;">📷 Upload Portfolio Photo</label>
+      <input type="file" id="portfolio-file-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none;" onchange="uploadPortfolioPhoto(this.files[0])"/>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:8px;">JPEG, PNG, WEBP, or GIF · up to 5MB · up to 12 photos</div>
+      <div id="portfolio-grid-wrap" style="margin-top:16px;">${portfolioGridHTML(providerData.portfolioPhotos || [])}</div>
     </div>`,
   verification: () => verificationHTML('provider', providerData.verificationStatus || 'none'),
   settings: () => `
@@ -2587,6 +2617,51 @@ function updateProviderSidebar() {
   document.getElementById('provider-sidebar-avatar').style.background = u.color || '#2E8C6F';
   document.getElementById('provider-sidebar-name').textContent = u.name;
   document.getElementById('provider-sidebar-role').textContent = `Provider · ${u.verified ? 'Verified ✓' : 'Verification pending'}`;
+}
+
+function portfolioGridHTML(photos) {
+  if (!photos.length) return `<div style="color:var(--slate);font-size:13px;padding:8px 0;">No portfolio photos yet.</div>`;
+  return `<div class="cats-grid">${photos.map(p => `
+    <div style="position:relative;">
+      <img src="${p.url}" alt="Portfolio photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block;"/>
+      <button onclick="deletePortfolioPhoto('${p.id}')" title="Remove" style="position:absolute;top:6px;right:6px;background:rgba(18,22,31,.75);color:#fff;border:none;border-radius:50%;width:26px;height:26px;cursor:pointer;font-size:13px;line-height:1;">✕</button>
+    </div>`).join('')}</div>`;
+}
+
+async function uploadPortfolioPhoto(file) {
+  if (!file) return;
+  if (!BACKEND_AVAILABLE) return showToast('Photo uploaded (demo mode — no backend detected)');
+  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large — 5MB max');
+
+  const formData = new FormData();
+  formData.append('photo', file);
+  try {
+    const res = await fetch(API_BASE + '/portfolio/upload', {
+      method: 'POST',
+      headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
+      body: formData, // deliberately no Content-Type header — the browser sets the correct multipart boundary itself
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    showToast('Photo uploaded');
+    providerData.portfolioPhotos = providerData.portfolioPhotos || [];
+    providerData.portfolioPhotos.push(data.photo);
+    document.getElementById('portfolio-grid-wrap').innerHTML = portfolioGridHTML(providerData.portfolioPhotos);
+    document.getElementById('portfolio-file-input').value = '';
+  } catch (e) {
+    showToast(e.message || 'Could not upload photo');
+  }
+}
+
+async function deletePortfolioPhoto(id) {
+  if (!BACKEND_AVAILABLE) return showToast('Photo removed (demo mode)');
+  if (!confirm('Remove this portfolio photo?')) return;
+  try {
+    await apiFetch('DELETE', `/portfolio/${id}`);
+    providerData.portfolioPhotos = (providerData.portfolioPhotos || []).filter(p => p.id !== id);
+    document.getElementById('portfolio-grid-wrap').innerHTML = portfolioGridHTML(providerData.portfolioPhotos);
+    showToast('Photo removed');
+  } catch (e) { showToast(e.message || 'Could not remove photo'); }
 }
 
 async function initProviderDash() { await loadProviderData(); updateProviderSidebar(); selectProviderSection('overview'); }

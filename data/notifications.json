@@ -1,38 +1,38 @@
 [
   {
-    "id": "ntf_V6xYy3ai60",
+    "id": "ntf_zgoa2S-xYE",
     "userId": "u_jordan",
     "icon": "✅",
     "text": "Your identity verification was approved.",
     "time": "2 hours ago",
     "read": false,
-    "createdAt": "2026-07-14T11:15:46.779Z"
+    "createdAt": "2026-07-14T11:51:07.211Z"
   },
   {
-    "id": "ntf_Lt_tQoNDvA",
+    "id": "ntf_yvaf7naQQ8",
     "userId": "u_jordan",
     "icon": "💰",
     "text": "Escrow released — $140 for Deep Clean job.",
     "time": "1 day ago",
     "read": false,
-    "createdAt": "2026-07-14T11:15:46.779Z"
+    "createdAt": "2026-07-14T11:51:07.211Z"
   },
   {
-    "id": "ntf_9Fg7EwgrdP",
+    "id": "ntf_XT2RlpcKBH",
     "userId": "u_jordan",
     "icon": "💬",
     "text": "New message from Marcus T.",
     "time": "2 days ago",
     "read": true,
-    "createdAt": "2026-07-14T11:15:46.779Z"
+    "createdAt": "2026-07-14T11:51:07.211Z"
   },
   {
-    "id": "ntf_rFngMj6J5K",
+    "id": "ntf_6WugWnaN6J",
     "userId": "u_marcus",
     "icon": "🎯",
     "text": "You have 3 new AI job matches.",
     "time": "1 hour ago",
     "read": false,
-    "createdAt": "2026-07-14T11:15:46.779Z"
+    "createdAt": "2026-07-14T11:51:07.211Z"
   }
 ]

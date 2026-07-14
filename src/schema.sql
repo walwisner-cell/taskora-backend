@@ -189,3 +189,12 @@ CREATE TABLE IF NOT EXISTS phone_verifications (
   used        BOOLEAN NOT NULL DEFAULT FALSE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS portfolio_photos (
+  id           TEXT PRIMARY KEY,
+  provider_id  TEXT NOT NULL REFERENCES users(id),
+  filename     TEXT NOT NULL,
+  url          TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_provider ON portfolio_photos(provider_id);

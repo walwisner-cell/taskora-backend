@@ -64,12 +64,13 @@ router.get('/providers', async (req, res) => {
   res.json({ providers: providers.map(publicProvider) });
 });
 
-// GET /api/providers/:id  (profile page: includes reviews)
+// GET /api/providers/:id  (profile page: includes reviews and portfolio photos)
 router.get('/providers/:id', async (req, res) => {
   const p = await db.find('users', u => u.id === req.params.id && u.role === 'provider' && u.verified);
   if (!p) return res.status(404).json({ error: 'Provider not found' });
   const reviews = await db.filter('reviews', r => r.providerId === p.id);
-  res.json({ provider: publicProvider(p), reviews });
+  const portfolio = await db.filter('portfolioPhotos', ph => ph.providerId === p.id);
+  res.json({ provider: publicProvider(p), reviews, portfolio });
 });
 
 // ---- Jobs & AI matching -----------------------------------------------------

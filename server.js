@@ -17,6 +17,8 @@ const marketplaceRoutes = require('./src/routes/marketplace.routes');
 const paymentsRoutes = require('./src/routes/payments.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const miscRoutes = require('./src/routes/misc.routes');
+const portfolioRoutes = require('./src/routes/portfolio.routes');
+const { UPLOADS_DIR } = require('./src/uploads');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,8 +33,12 @@ app.use('/api', marketplaceRoutes);
 app.use('/api', paymentsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', miscRoutes);
+app.use('/api', portfolioRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'taskora-api', time: new Date().toISOString() }));
+
+// ---- Serve uploaded portfolio photos ----
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // ---- Serve the frontend ----
 app.use(express.static(path.join(__dirname, 'public')));
