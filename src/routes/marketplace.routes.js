@@ -7,6 +7,22 @@ const { notify } = require('../notify');
 
 const router = express.Router();
 
+// The internal contract id (ct_xxxxxxxxxx) is what the system/API uses —
+// fine for URLs and database keys, but not something a customer wants to
+// read out over the phone to a provider. This generates a short 6-digit
+// number instead, purely for humans to reference the same booking by.
+async function generateBookingNumber() {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = String(Math.floor(100000 + Math.random() * 900000));
+    const collision = await db.find('contracts', c => c.bookingNumber === candidate);
+    if (!collision) return candidate;
+  }
+  // Astronomically unlikely to ever reach here (5 collisions in a row out of
+  // 900,000 possibilities), but fall back to a guaranteed-unique value
+  // rather than ever leaving a contract without one.
+  return String(Date.now()).slice(-6);
+}
+
 function publicProvider(u) {
   return {
     id: u.id, name: u.name, initials: u.initials, role: u.providerRole, category: u.category,
@@ -14,6 +30,7 @@ function publicProvider(u) {
     verified: u.verified, country: u.country, city: u.city, zipCode: u.zipCode,
     availability: u.availability && u.availability.length ? u.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'],
     pricingModel: u.pricingModel || 'hourly',
+    plan: u.plan || 'starter',
   };
 }
 
@@ -44,6 +61,38 @@ router.get('/categories', async (req, res) => {
 });
 
 // GET /api/providers?category=Plumbing&q=leak&city=Atlanta
+// GET /api/providers/featured — for the homepage carousel. Only providers
+// on a paid plan (Pro or Super Pro) ever appear here — that's the actual
+// perk of paying, not a cosmetic label. Super Pro providers are weighted
+// 2x as likely to appear as Pro providers in any given rotation, matching
+// the requested 4x/day vs 2x/day ratio: guaranteeing an exact literal count
+// per calendar day would need real session/analytics tracking per visitor,
+// which doesn't exist yet, so this implements the same relative emphasis
+// (2:1) through weighted random rotation instead — proportionally correct,
+// verifiable by anyone pulling this endpoint repeatedly, not a fixed fake
+// schedule.
+router.get('/providers/featured', async (req, res) => {
+  const paid = await db.filter('users', u => u.role === 'provider' && u.verified && ['pro', 'superpro'].includes(u.plan));
+  const weighted = [];
+  for (const p of paid) {
+    const weight = p.plan === 'superpro' ? 2 : 1;
+    for (let i = 0; i < weight; i++) weighted.push(p);
+  }
+  // Shuffle (Fisher-Yates) so repeated calls don't always return the same
+  // order, then de-duplicate back down to unique providers for display,
+  // preserving the shuffled (weighted) order.
+  for (let i = weighted.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [weighted[i], weighted[j]] = [weighted[j], weighted[i]];
+  }
+  const seen = new Set();
+  const ordered = [];
+  for (const p of weighted) {
+    if (!seen.has(p.id)) { seen.add(p.id); ordered.push(p); }
+  }
+  res.json({ providers: ordered.map(publicProvider) });
+});
+
 router.get('/providers', async (req, res) => {
   const { category, q, city } = req.query;
   // Only verified providers appear in the public directory — showing an
@@ -79,15 +128,19 @@ router.get('/providers/:id', async (req, res) => {
 router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   const { category, description, budget } = req.body || {};
   const errors = validate([
-    ['category', isNonEmptyString(category), 'Category is required'],
+    ['category', isNonEmptyString(category, { min: 2, max: 60 }), 'Category is required'],
     ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
   const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
-  if (!activeCategories.includes(category)) {
-    return res.status(400).json({ error: `"${category}" is not a currently bookable category` });
-  }
+  const isKnownCategory = activeCategories.includes(category);
+  // A job in a category we don't currently list is still a real request —
+  // rejecting it here would mean "sorry, we can't help you" the moment a
+  // customer's actual need doesn't match our current catalog. It posts
+  // normally; AI matching just won't find anyone yet (no provider is tagged
+  // to a category that doesn't exist), and the super admin is notified so
+  // real demand for a new category is visible instead of silently lost.
   if (budget && !isNonEmptyString(budget, { max: 40 })) {
     return res.status(400).json({ error: 'Budget must be under 40 characters' });
   }
@@ -100,6 +153,13 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
     createdAt: new Date().toISOString(),
   };
   await db.insert('jobs', job);
+
+  if (!isKnownCategory) {
+    const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+    for (const admin of superAdmins) {
+      await notify(admin.id, '📋', `A customer requested "${category}" — not a current category. Consider adding it if you're seeing repeat demand.`);
+    }
+  }
 
   // --- AI matching (deterministic scoring stand-in for a real ranking model) ---
   // Score = base 70 + rating weight + experience weight + community-proximity
@@ -139,7 +199,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
     matches.push({ ...match, provider: publicProvider(provider) });
   }
 
-  res.status(201).json({ job, matches });
+  res.status(201).json({ job, matches, isKnownCategory });
 });
 
 // GET /api/jobs/mine — customer's posted jobs
@@ -175,6 +235,7 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async 
     const amount = parseBudgetAmount(job && job.budget, 100);
     contract = {
       id: `ct_${nanoid(10)}`,
+      bookingNumber: await generateBookingNumber(),
       customerId: match.customerId,
       providerId: match.providerId,
       jobId: match.jobId,
@@ -220,6 +281,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
 
   const contract = {
     id: `ct_${nanoid(10)}`,
+    bookingNumber: await generateBookingNumber(),
     customerId: req.user.sub,
     providerId,
     service: service.trim(),

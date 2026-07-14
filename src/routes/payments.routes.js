@@ -2,7 +2,7 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const { isNonEmptyString, validate } = require('../validators');
+const { isNonEmptyString, isValidCardExpiry, isValidPostalCode, validate } = require('../validators');
 const { notify } = require('../notify');
 
 const router = express.Router();
@@ -35,11 +35,13 @@ router.get('/payment-methods/mine', requireAuth, async (req, res) => {
 // POST /api/payment-methods — add a test payment method (any input accepted;
 // only last 4 digits + brand are ever kept)
 router.post('/payment-methods', requireAuth, async (req, res) => {
-  const { cardNumber, expiry, nameOnCard } = req.body || {};
+  const { cardNumber, expiry, nameOnCard, billingAddress, billingZip } = req.body || {};
   const errors = validate([
     ['cardNumber', isNonEmptyString(cardNumber, { min: 4 }), 'Enter a card number (any digits — this is test mode)'],
-    ['expiry', isNonEmptyString(expiry, { min: 4, max: 7 }), 'Enter an expiry date (MM/YY)'],
+    ['expiry', isValidCardExpiry(expiry), 'Enter a valid, non-expired expiry date in MM/YY format'],
     ['nameOnCard', isNonEmptyString(nameOnCard, { min: 2 }), 'Enter the name on the card'],
+    ['billingAddress', isNonEmptyString(billingAddress, { min: 3, max: 200 }), 'Enter the billing address'],
+    ['billingZip', isValidPostalCode(billingZip), 'Enter a valid billing zip/postal code'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
@@ -53,6 +55,7 @@ router.post('/payment-methods', requireAuth, async (req, res) => {
     id: `pm_${nanoid(10)}`,
     userId: req.user.sub,
     brand, last4, nameOnCard: nameOnCard.trim(), expiry: expiry.trim(),
+    billingAddress: billingAddress.trim(), billingZip: billingZip.trim(),
     isDefault: existing.length === 0, // first one added becomes default automatically
     mode: 'test',
     createdAt: new Date().toISOString(),

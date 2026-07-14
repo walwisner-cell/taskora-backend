@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
   tags            JSONB,
   availability    JSONB,
   pricing_model   TEXT CHECK (pricing_model IN ('hourly','negotiable')),
+  plan            TEXT NOT NULL DEFAULT 'starter' CHECK (plan IN ('starter','pro','superpro')),
   pay_preference  TEXT,
   payout_method   TEXT,
   notif_prefs     JSONB,
@@ -82,18 +83,19 @@ CREATE TABLE IF NOT EXISTS matches (
 CREATE INDEX IF NOT EXISTS idx_matches_provider_status ON matches(provider_id, status);
 
 CREATE TABLE IF NOT EXISTS contracts (
-  id           TEXT PRIMARY KEY,
-  customer_id  TEXT NOT NULL REFERENCES users(id),
-  provider_id  TEXT NOT NULL REFERENCES users(id),
-  job_id       TEXT REFERENCES jobs(id),
-  service      TEXT NOT NULL,
-  date         TEXT,
-  time         TEXT,
-  address      TEXT,
-  amount       NUMERIC(10,2) NOT NULL,
-  status       TEXT NOT NULL DEFAULT 'active',
-  signed_at    TEXT,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+  id             TEXT PRIMARY KEY,
+  booking_number TEXT UNIQUE,
+  customer_id    TEXT NOT NULL REFERENCES users(id),
+  provider_id    TEXT NOT NULL REFERENCES users(id),
+  job_id         TEXT REFERENCES jobs(id),
+  service        TEXT NOT NULL,
+  date           TEXT,
+  time           TEXT,
+  address        TEXT,
+  amount         NUMERIC(10,2) NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'active',
+  signed_at      TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS escrow_transactions (
@@ -161,15 +163,17 @@ CREATE TABLE IF NOT EXISTS verifications (
 );
 
 CREATE TABLE IF NOT EXISTS payment_methods (
-  id            TEXT PRIMARY KEY,
-  user_id       TEXT NOT NULL REFERENCES users(id),
-  brand         TEXT,
-  last4         TEXT,
-  name_on_card  TEXT,
-  expiry        TEXT,
-  is_default    BOOLEAN NOT NULL DEFAULT FALSE,
-  mode          TEXT NOT NULL DEFAULT 'test',
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id),
+  brand           TEXT,
+  last4           TEXT,
+  name_on_card    TEXT,
+  expiry          TEXT,
+  billing_address TEXT,
+  billing_zip     TEXT,
+  is_default      BOOLEAN NOT NULL DEFAULT FALSE,
+  mode            TEXT NOT NULL DEFAULT 'test',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS password_resets (
@@ -198,3 +202,18 @@ CREATE TABLE IF NOT EXISTS portfolio_photos (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_portfolio_provider ON portfolio_photos(provider_id);
+
+-- ── MIGRATIONS ────────────────────────────────────────────────────────────
+-- `CREATE TABLE IF NOT EXISTS` above only helps on a genuinely fresh
+-- database — it does nothing for a table that already exists from an
+-- earlier version of this schema. Anything added to an existing table after
+-- its first deploy needs an explicit ALTER TABLE here, or it silently never
+-- reaches a database that was set up before this line was added. This file
+-- runs on every boot, so these are all safe to run repeatedly.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pay_preference TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_method TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notif_prefs JSONB;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'starter';
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS billing_address TEXT;
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS billing_zip TEXT;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS booking_number TEXT;

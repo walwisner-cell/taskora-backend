@@ -238,6 +238,29 @@
 
   /* ── STATS STRIP ── */
   .stats-strip { background:var(--teal); padding:20px 24px; }
+
+  /* ── FEATURED PROVIDER CAROUSEL ── */
+  .featured-carousel { background:var(--offwhite); padding:28px 24px; border-bottom:1px solid var(--border); }
+  .featured-carousel-inner { max-width:900px; margin:0 auto; }
+  .featured-carousel-label { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gold); text-align:center; margin-bottom:14px; }
+  .featured-carousel-track { position:relative; height:96px; }
+  .featured-slide { position:absolute; inset:0; display:flex; align-items:center; gap:16px; background:#fff; border:1px solid var(--border); border-radius:14px; padding:16px 20px; opacity:0; transform:translateX(12px); transition:opacity .4s ease, transform .4s ease; pointer-events:none; }
+  .featured-slide.active { opacity:1; transform:translateX(0); pointer-events:auto; }
+  .featured-slide-avatar { width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-weight:600; font-size:17px; color:#fff; flex-shrink:0; }
+  .featured-slide-body { flex:1; min-width:0; }
+  .featured-slide-name { font-weight:600; font-size:14.5px; color:var(--navy); display:flex; align-items:center; gap:8px; }
+  .featured-slide-sub { font-size:12px; color:var(--slate); margin-top:2px; }
+  .featured-slide-cta { flex-shrink:0; }
+  .featured-carousel-dots { display:flex; justify-content:center; gap:6px; margin-top:12px; }
+  .featured-carousel-dot { width:6px; height:6px; border-radius:50%; background:var(--border); cursor:pointer; transition:background .2s; }
+  .featured-carousel-dot.active { background:var(--gold); }
+  .featured-slide-ad { background:linear-gradient(135deg, var(--navy), #1B2233); border-color:var(--navy); }
+  .featured-slide-ad .featured-slide-name, .featured-slide-ad .featured-slide-sub { color:#fff; }
+  @media (max-width:600px) {
+    .featured-slide { padding:12px 14px; gap:12px; }
+    .featured-slide-avatar { width:42px; height:42px; font-size:14px; }
+    .featured-carousel-track { height:110px; }
+  }
   .stats-inner { max-width:1100px; margin:0 auto; display:flex; justify-content:space-around; flex-wrap:wrap; gap:16px; }
   .stat { text-align:center; }
   .stat-val { font-family:'Fraunces',serif; font-size:28px; font-weight:800; color:var(--navy); }
@@ -657,6 +680,9 @@
     </div>
   </div>
 
+  <!-- FEATURED PROVIDERS CAROUSEL (Pro/Super Pro perk — real data, not decorative) -->
+  <div id="featured-carousel-section" style="display:none;"></div>
+
   <!-- TRUST LAYER -->
   <div class="trust-strip">
     <div class="trust-inner">
@@ -846,7 +872,9 @@
 <div class="screen" id="screen-auth">
   <nav class="navbar" id="navbar-auth"></nav>
   <div class="auth-wrap">
-    <div class="auth-card">
+    <div style="display:flex;flex-direction:column;align-items:center;">
+      <div class="profile-back" onclick="goHome()" style="align-self:flex-start;margin-bottom:14px;color:rgba(255,255,255,.7);">← Back to Home</div>
+      <div class="auth-card">
       <div class="auth-card-title" id="auth-title">Welcome to Taskora</div>
       <div class="auth-card-sub" id="auth-sub">Verified pros. Protected payments. Zero guesswork.</div>
       <div class="auth-tabs">
@@ -871,9 +899,12 @@
         <input class="form-input" type="tel" id="auth-phone"/>
       </div>
       <div class="form-group" id="auth-city-group" style="display:none">
-        <label class="form-label">City</label>
+        <label class="form-label">City & Country</label>
         <select class="form-input form-select" id="auth-city">
-          <option>Atlanta</option><option>Lagos</option><option>Accra</option><option>Monrovia</option>
+          <option value="Atlanta" data-country="United States">Atlanta, United States</option>
+          <option value="Lagos" data-country="Nigeria">Lagos, Nigeria</option>
+          <option value="Accra" data-country="Ghana">Accra, Ghana</option>
+          <option value="Monrovia" data-country="Liberia">Monrovia, Liberia</option>
         </select>
       </div>
       <div class="form-group" id="auth-address-group" style="display:none">
@@ -916,6 +947,7 @@
         Admin: amara@example.com · Super Admin: superadmin@taskora.io
       </div>
     </div>
+    </div>
   </div>
 </div>
 
@@ -923,6 +955,8 @@
 <div class="screen" id="screen-forgot">
   <nav class="navbar" id="navbar-forgot"></nav>
   <div class="auth-wrap">
+    <div style="display:flex;flex-direction:column;align-items:center;">
+      <div class="profile-back" onclick="goHome()" style="align-self:flex-start;margin-bottom:14px;color:rgba(255,255,255,.7);">← Back to Home</div>
     <div class="auth-card">
       <div id="forgot-request-view">
         <div class="auth-card-title">Reset your password</div>
@@ -953,6 +987,7 @@
         <button class="auth-submit" onclick="submitResetPassword()">Reset Password</button>
         <div class="auth-foot"><a onclick="showAuth('login')">Back to sign in</a></div>
       </div>
+    </div>
     </div>
   </div>
 </div>
@@ -1007,6 +1042,7 @@
   <nav class="navbar" id="navbar-pricing"></nav>
   <div class="pricing-wrap">
     <div class="pricing-inner">
+      <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
       <div class="pricing-head">
         <div class="pricing-eyebrow">Provider Plans</div>
         <div class="pricing-title">Get matched more. Keep more of what you earn.</div>
@@ -1024,7 +1060,7 @@
             <div class="pricing-feat">12% commission per job</div>
             <div class="pricing-feat">Standard placement in search</div>
           </div>
-          <button class="pricing-cta" onclick="setAuthRolePreselect('provider')">Start Free</button>
+          <button class="pricing-cta" onclick="selectPlan('starter')">Start Free</button>
         </div>
         <div class="pricing-card">
           <div class="pricing-plan-name">Pro</div>
@@ -1037,7 +1073,7 @@
             <div class="pricing-feat">Portfolio & review boosts</div>
             <div class="pricing-feat">Same-day payout option</div>
           </div>
-          <button class="pricing-cta" onclick="setAuthRolePreselect('provider')">Start Pro Trial</button>
+          <button class="pricing-cta" onclick="selectPlan('pro')">Start Pro Trial</button>
         </div>
         <div class="pricing-card featured">
           <div class="pricing-plan-badge">Most Popular</div>
@@ -1051,7 +1087,7 @@
             <div class="pricing-feat">List in multiple categories</div>
             <div class="pricing-feat">Dedicated support line</div>
           </div>
-          <button class="pricing-cta primary" onclick="setAuthRolePreselect('provider')">Start Super Pro Trial</button>
+          <button class="pricing-cta primary" onclick="selectPlan('superpro')">Start Super Pro Trial</button>
         </div>
         <div class="pricing-card">
           <div class="pricing-plan-name">Custom</div>
@@ -1208,12 +1244,109 @@ async function loadProviders() {
   } catch (e) { console.warn('Could not load providers from API, using demo data.', e); }
 }
 
+/* ══════════════════════ FEATURED PROVIDER CAROUSEL ══════════════════════
+   Real Pro/Super Pro perk: only providers who actually pay for Pro or
+   Super Pro appear here, pulled fresh from the real /providers/featured
+   endpoint — Super Pro providers are weighted 2x as likely to come up in
+   any given rotation as Pro (matching the requested 4x/day vs 2x/day
+   emphasis, done through real weighted rotation rather than a fixed fake
+   schedule, since there's no per-visitor session tracking to guarantee an
+   exact literal daily count). An ad slot is mixed into the same rotation,
+   since the same screen doubles as ad inventory — currently a real,
+   clickable "advertise here" slot rather than a fabricated fake ad, since
+   there's no real advertiser yet. */
+let featuredCarouselInterval = null;
+let featuredCarouselIndex = 0;
+let featuredCarouselItems = [];
+
+async function loadFeaturedCarousel() {
+  const section = document.getElementById('featured-carousel-section');
+  if (!section) return;
+  if (featuredCarouselInterval) { clearInterval(featuredCarouselInterval); featuredCarouselInterval = null; }
+
+  let providers = [];
+  if (BACKEND_AVAILABLE) {
+    try {
+      const data = await apiFetch('GET', '/providers/featured');
+      providers = data.providers || [];
+    } catch (e) { console.warn('Could not load featured providers', e); }
+  }
+
+  if (!providers.length) {
+    // No one is on a paid plan yet — don't show an empty/fake carousel.
+    section.style.display = 'none';
+    section.innerHTML = '';
+    return;
+  }
+
+  // Mix in exactly one ad slot per rotation, positioned roughly in the middle.
+  featuredCarouselItems = providers.map(p => ({ type: 'provider', data: p }));
+  const adPosition = Math.min(2, featuredCarouselItems.length);
+  featuredCarouselItems.splice(adPosition, 0, { type: 'ad' });
+  featuredCarouselIndex = 0;
+
+  section.style.display = 'block';
+  section.innerHTML = `
+    <div class="featured-carousel">
+      <div class="featured-carousel-inner">
+        <div class="featured-carousel-label">✦ Featured Pros</div>
+        <div class="featured-carousel-track" id="featured-carousel-track"></div>
+        <div class="featured-carousel-dots" id="featured-carousel-dots"></div>
+      </div>
+    </div>`;
+  renderFeaturedCarouselSlides();
+  featuredCarouselInterval = setInterval(() => advanceFeaturedCarousel(1), 4500);
+}
+
+function renderFeaturedCarouselSlides() {
+  const track = document.getElementById('featured-carousel-track');
+  const dots = document.getElementById('featured-carousel-dots');
+  if (!track || !dots) return;
+  track.innerHTML = featuredCarouselItems.map((item, i) => {
+    if (item.type === 'ad') {
+      return `<div class="featured-slide featured-slide-ad ${i === featuredCarouselIndex ? 'active' : ''}">
+        <div class="featured-slide-avatar" style="background:rgba(255,255,255,.15);">✦</div>
+        <div class="featured-slide-body">
+          <div class="featured-slide-name">Your business could be here</div>
+          <div class="featured-slide-sub">Reach customers browsing Taskora right now</div>
+        </div>
+        <button class="btn-sm" style="background:#fff;color:var(--navy);flex-shrink:0;" onclick="window.location.href='mailto:sales@taskora.io?subject=' + encodeURIComponent('Advertising Inquiry')">Advertise Here</button>
+      </div>`;
+    }
+    const p = item.data;
+    return `<div class="featured-slide ${i === featuredCarouselIndex ? 'active' : ''}">
+      <div class="featured-slide-avatar" style="background:${p.color}">${p.initials}</div>
+      <div class="featured-slide-body">
+        <div class="featured-slide-name">${p.name} <span class="badge ${p.plan === 'superpro' ? 'badge-warn' : 'badge-success'}" style="font-size:9.5px;">${p.plan === 'superpro' ? 'SUPER PRO' : 'PRO'}</span></div>
+        <div class="featured-slide-sub">${p.role} · ${p.city} · ★ ${p.rating || 'New'}</div>
+      </div>
+      <button class="btn-sm btn-sm-primary featured-slide-cta" onclick="viewProviderProfile('${p.id}')">View</button>
+    </div>`;
+  }).join('');
+  dots.innerHTML = featuredCarouselItems.map((_, i) => `<div class="featured-carousel-dot ${i === featuredCarouselIndex ? 'active' : ''}" onclick="goToFeaturedSlide(${i})"></div>`).join('');
+}
+
+function advanceFeaturedCarousel(delta) {
+  if (!featuredCarouselItems.length) return;
+  featuredCarouselIndex = (featuredCarouselIndex + delta + featuredCarouselItems.length) % featuredCarouselItems.length;
+  renderFeaturedCarouselSlides();
+}
+
+function goToFeaturedSlide(i) {
+  featuredCarouselIndex = i;
+  renderFeaturedCarouselSlides();
+  // Manual interaction resets the auto-advance timer so it doesn't jump
+  // again right after someone just clicked.
+  if (featuredCarouselInterval) clearInterval(featuredCarouselInterval);
+  featuredCarouselInterval = setInterval(() => advanceFeaturedCarousel(1), 4500);
+}
+
 let currentPro = null;
 
 /* ══════════════════════ CATEGORIES (homepage + browse pages) ══════════════════════ */
 const CATEGORY_ICONS = {
   Plumbing: '🔧', Cleaning: '🧹', Tutoring: '📚', Electrical: '⚡',
-  Moving: '📦', Fitness: '💪', Painting: '🎨', Landscaping: '🌿',
+  Moving: '📦', Fitness: '💪', Painting: '🎨', Landscaping: '🌿', 'Pick & Drop': '🚗',
 };
 function categoryIcon(name) { return CATEGORY_ICONS[name] || '🛠️'; }
 
@@ -1296,10 +1429,10 @@ function navbarHTML(active) {
   const isDash = active === 'customer' || active === 'provider' || active === 'admin' || active === 'superadmin';
   const bell = isDash ? `
     <div style="position:relative;">
-      <div class="notif-bell" onclick="toggleNotifPanel(event)">🔔<span class="notif-dot"></span></div>
+      <div class="notif-bell" onclick="toggleNotifPanel(event)">🔔${CURRENT_NOTIFICATIONS.some(n => !n.read) ? '<span class="notif-dot"></span>' : ''}</div>
       <div class="notif-panel" id="notif-panel">
         <div class="notif-panel-head">Notifications</div>
-        ${CURRENT_NOTIFICATIONS.map(n => `<div class="notif-item"><span class="notif-item-icon">${n.icon}</span><div><div class="notif-item-text">${n.text}</div><div class="notif-item-time">${n.time}</div></div></div>`).join('')}
+        ${CURRENT_NOTIFICATIONS.length ? CURRENT_NOTIFICATIONS.map(n => `<div class="notif-item"><span class="notif-item-icon">${n.icon}</span><div><div class="notif-item-text">${n.text}</div><div class="notif-item-time">${n.time}</div></div></div>`).join('') : '<div style="padding:16px;color:var(--slate);font-size:12.5px;text-align:center;">No notifications yet.</div>'}
       </div>
     </div>` : '';
   // Logged-in users get a way back to the public marketplace + notifications
@@ -1330,13 +1463,26 @@ async function refreshNotifications() {
   if (!BACKEND_AVAILABLE || !AUTH.token) { CURRENT_NOTIFICATIONS = FALLBACK_NOTIFICATIONS; return; }
   try {
     const { notifications } = await apiFetch('GET', '/notifications/mine');
-    CURRENT_NOTIFICATIONS = notifications.length ? notifications : FALLBACK_NOTIFICATIONS;
+    CURRENT_NOTIFICATIONS = notifications;
   } catch (e) { CURRENT_NOTIFICATIONS = FALLBACK_NOTIFICATIONS; }
 }
 
-function toggleNotifPanel(e) {
+async function toggleNotifPanel(e) {
   e.stopPropagation();
-  document.getElementById('notif-panel').classList.toggle('open');
+  const panel = document.getElementById('notif-panel');
+  const isOpening = !panel.classList.contains('open');
+  panel.classList.toggle('open');
+
+  if (isOpening && BACKEND_AVAILABLE) {
+    const unread = CURRENT_NOTIFICATIONS.filter(n => !n.read && n.id);
+    if (unread.length) {
+      await Promise.all(unread.map(n => apiFetch('POST', `/notifications/${n.id}/read`).catch(() => {})));
+      CURRENT_NOTIFICATIONS = CURRENT_NOTIFICATIONS.map(n => ({ ...n, read: true }));
+      // Remove the unread dot directly rather than re-rendering the whole
+      // navbar, which would destroy the panel we just opened.
+      document.querySelectorAll('.notif-dot').forEach(dot => dot.remove());
+    }
+  }
 }
 document.addEventListener('click', () => {
   const p = document.getElementById('notif-panel');
@@ -1353,6 +1499,30 @@ function setAuthRolePreselect(role) {
   setAuthRole(role);
 }
 
+const PLAN_LABELS = { starter: 'Starter', pro: 'Pro', superpro: 'Super Pro' };
+
+async function selectPlan(plan) {
+  // Already signed in as a provider — set their real plan right now, no
+  // detour through signup. This is test mode (no real billing wired in
+  // yet), same honest pattern as payments and phone verification: the plan
+  // genuinely changes on the account, but no card is actually charged.
+  if (AUTH.token && AUTH.user && AUTH.user.role === 'provider') {
+    if (!BACKEND_AVAILABLE) return showToast(`${PLAN_LABELS[plan]} plan selected (demo mode)`);
+    try {
+      const { user } = await apiFetch('PATCH', '/auth/me', { plan });
+      AUTH.user = user;
+      showToast(`You're now on the ${PLAN_LABELS[plan]} plan${plan !== 'starter' ? ' (test mode — no real charge yet, billing connects before this goes live)' : ''}`);
+    } catch (e) { showToast(e.message || 'Could not update your plan'); }
+    return;
+  }
+  // Not signed in as a provider yet — get them signed up first, and
+  // remember which plan they picked so we can apply it right after.
+  pendingPlanSelection = plan;
+  setAuthRolePreselect('provider');
+  showToast(`Sign up as a provider to start on the ${PLAN_LABELS[plan]} plan`);
+}
+let pendingPlanSelection = null;
+
 function renderNavbar(slotId, active) {
   const el = document.getElementById(slotId);
   if (el) el.innerHTML = navbarHTML(active);
@@ -1367,6 +1537,7 @@ function showScreen(id) {
 function goHome() {
   showScreen('screen-home');
   renderNavbar('navbar-home', 'home');
+  loadFeaturedCarousel();
 }
 
 // Distinct from goHome(): this actually ends the session (clears the token
@@ -1446,7 +1617,7 @@ async function submitResetPassword() {
   const newPassword = document.getElementById('reset-new-password').value;
   const confirm = document.getElementById('reset-confirm-password').value;
   if (!pendingResetToken) return showToast('Missing reset token — request a new link');
-  if (newPassword.length < 6) return showToast('New password must be at least 6 characters');
+  if (newPassword.length < 9 || ((newPassword.match(/[0-9]/g) || []).length < 6) || ((newPassword.match(/[a-zA-Z]/g) || []).length < 2) || ((newPassword.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
   if (newPassword !== confirm) return showToast("Passwords don't match");
 
   if (!BACKEND_AVAILABLE) {
@@ -1504,6 +1675,7 @@ async function mockAuth() {
   const password = document.getElementById('auth-password').value;
   const name = document.getElementById('auth-name').value.trim();
   const city = document.getElementById('auth-city').value;
+  const country = document.getElementById('auth-city').selectedOptions[0]?.dataset.country || 'United States';
   const phone = document.getElementById('auth-phone').value.trim();
   const address = document.getElementById('auth-address').value.trim();
   const zipCode = document.getElementById('auth-zip').value.trim();
@@ -1525,7 +1697,7 @@ async function mockAuth() {
   }
   if (authState.mode === 'signup') {
     if (name.length < 2) return showToast('Full name must be at least 2 characters');
-    if (password.length < 6) return showToast('Password must be at least 6 characters');
+    if (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
     const phoneDigits = phone.replace(/[^0-9]/g, '');
     if (phoneDigits.length < 7) return showToast('Enter a valid phone number');
     if (zipCode.length < 3) return showToast('Enter a valid zip/postal code');
@@ -1537,11 +1709,20 @@ async function mockAuth() {
       await goDashboard(user.role);
     } else {
       const data = await apiFetch('POST', '/auth/signup', {
-        name, email, password, role: authState.role, city, phone, address, zipCode,
+        name, email, password, role: authState.role, city, country, phone, address, zipCode,
         ...(authState.role === 'provider' ? { category, skills } : {}),
       });
       AUTH.token = data.token; AUTH.user = data.user;
-      showToast('Account created — welcome to Taskora!');
+      if (pendingPlanSelection && data.user.role === 'provider') {
+        try {
+          const { user } = await apiFetch('PATCH', '/auth/me', { plan: pendingPlanSelection });
+          AUTH.user = user;
+          showToast(`Account created — you're on the ${PLAN_LABELS[pendingPlanSelection]} plan (test mode)`);
+        } catch (e) { showToast('Account created — welcome to Taskora!'); }
+        pendingPlanSelection = null;
+      } else {
+        showToast('Account created — welcome to Taskora!');
+      }
       await goDashboard(data.user.role);
     }
   } catch (e) {
@@ -1778,7 +1959,7 @@ async function loadCustomerData() {
   try {
     const { contracts } = await apiFetch('GET', '/contracts/mine');
     customerData.bookings = contracts.map(c => ({
-      id: c.id, pro: c.providerName, providerId: c.providerId, service: c.service, date: c.signedAt || (c.createdAt || '').slice(0, 10),
+      id: c.id, bookingNumber: c.bookingNumber, pro: c.providerName, providerId: c.providerId, service: c.service, date: c.signedAt || (c.createdAt || '').slice(0, 10),
       escrow: c.escrow && c.escrow.status === 'held' ? c.escrow.amount : 0, status: c.status, amount: c.amount, reviewed: c.reviewed,
     }));
     const { notifications } = await apiFetch('GET', '/notifications/mine');
@@ -1806,10 +1987,14 @@ async function submitPaymentMethod() {
   const cardNumber = document.getElementById('pm-card-number').value.trim();
   const expiry = document.getElementById('pm-expiry').value.trim();
   const nameOnCard = document.getElementById('pm-name').value.trim();
+  const billingAddress = document.getElementById('pm-billing-address').value.trim();
+  const billingZip = document.getElementById('pm-billing-zip').value.trim();
   const digits = cardNumber.replace(/\D/g, '');
   if (digits.length < 4) return showToast('Enter at least 4 digits (any test number works)');
   if (!/^\d{1,2}\/\d{2}$/.test(expiry)) return showToast('Enter expiry as MM/YY');
   if (!nameOnCard || nameOnCard.length < 2) return showToast('Enter the name on the card');
+  if (!billingAddress || billingAddress.length < 3) return showToast('Enter the billing address');
+  if (!billingZip || billingZip.length < 3) return showToast('Enter the billing zip/postal code');
 
   if (!BACKEND_AVAILABLE) {
     showToast('Payment method added (demo mode — no backend detected)');
@@ -1817,11 +2002,13 @@ async function submitPaymentMethod() {
     return;
   }
   try {
-    await apiFetch('POST', '/payment-methods', { cardNumber, expiry, nameOnCard });
+    await apiFetch('POST', '/payment-methods', { cardNumber, expiry, nameOnCard, billingAddress, billingZip });
     showToast('Test payment method added');
     document.getElementById('pm-card-number').value = '';
     document.getElementById('pm-expiry').value = '';
     document.getElementById('pm-name').value = '';
+    document.getElementById('pm-billing-address').value = '';
+    document.getElementById('pm-billing-zip').value = '';
     document.getElementById('add-payment-panel').style.display = 'none';
     await loadCustomerData();
     selectCustomerSection('payments');
@@ -1850,8 +2037,8 @@ async function removePaymentMethod(id) {
 
 function bookingsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings yet — post a job or book a pro to get started.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking</th><th>Pro</th><th>Service</th><th>Date</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(b => `<tr><td>${b.id}</td><td>${b.pro}</td><td>${b.service}</td><td>${b.date}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Pro</th><th>Service</th><th>Date</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${b.pro}</td><td>${b.service}</td><td>${b.date}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -2002,6 +2189,9 @@ const CUSTOMER_SECTIONS = {
         <div class="form-group"><label class="form-label">Expiry (MM/YY)</label><input class="form-input" id="pm-expiry" placeholder="12/28"/></div>
         <div class="form-group"><label class="form-label">Name on Card</label><input class="form-input" id="pm-name" placeholder="Jordan Diaz"/></div>
       </div>
+      <div class="form-group"><label class="form-label">Billing Address</label><input class="form-input" id="pm-billing-address"/></div>
+      <div class="form-group"><label class="form-label">Billing Zip / Postal Code</label><input class="form-input" id="pm-billing-zip"/></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:4px;">CVV is intentionally not collected or stored here — real card verification happens once, live, at the payment processor when a real processor is connected. Storing it afterward isn't allowed under card network rules (PCI-DSS).</div>
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitPaymentMethod()">Save Payment Method</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('add-payment-panel').style.display='none'">Cancel</button></div>
     </div>
     <div class="panel"><div class="panel-title">Payment Methods</div>${paymentMethodsTableHTML()}</div>
@@ -2090,7 +2280,7 @@ async function verifyPhoneOtp() {
 function changePasswordPanelHTML(prefix) {
   return `<div class="panel"><div class="panel-title">Change Password</div>
     <div class="form-group"><label class="form-label">Current Password</label><input class="form-input" type="password" id="${prefix}-pw-current" placeholder="••••••••"/></div>
-    <div class="form-group"><label class="form-label">New Password</label><input class="form-input" type="password" id="${prefix}-pw-new" placeholder="At least 6 characters"/></div>
+    <div class="form-group"><label class="form-label">New Password</label><input class="form-input" type="password" id="${prefix}-pw-new"/></div>
     <div class="form-group"><label class="form-label">Confirm New Password</label><input class="form-input" type="password" id="${prefix}-pw-confirm" placeholder="Re-enter new password"/></div>
     <button class="btn-sm btn-sm-primary" onclick="changePassword('${prefix}')">Update Password</button>
   </div>`;
@@ -2101,7 +2291,7 @@ async function changePassword(prefix) {
   const newPassword = document.getElementById(`${prefix}-pw-new`).value;
   const confirm = document.getElementById(`${prefix}-pw-confirm`).value;
   if (!currentPassword || !newPassword || !confirm) return showToast('Fill in all three password fields');
-  if (newPassword.length < 6) return showToast('New password must be at least 6 characters');
+  if (newPassword.length < 9 || ((newPassword.match(/[0-9]/g) || []).length < 6) || ((newPassword.match(/[a-zA-Z]/g) || []).length < 2) || ((newPassword.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
   if (newPassword !== confirm) return showToast("New password and confirmation don't match");
   if (!BACKEND_AVAILABLE) return showToast('Password updated (demo mode — no backend detected)');
   try {
@@ -2236,7 +2426,12 @@ function postJobFormHTML() {
   return `
   <div class="form-group">
     <label class="form-label">Category</label>
-    <select class="form-input form-select" id="pj-category">${options}</select>
+    <select class="form-input form-select" id="pj-category" onchange="document.getElementById('pj-custom-category-group').style.display = this.value === '__other__' ? 'block' : 'none'">${options}<option value="__other__">Other (not listed — describe below)</option></select>
+  </div>
+  <div class="form-group" id="pj-custom-category-group" style="display:none;">
+    <label class="form-label">What kind of service is it?</label>
+    <input class="form-input" type="text" placeholder="e.g. Piano Tuning, Pool Maintenance, Pet Grooming" id="pj-custom-category"/>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">We don't have pros listed under this yet, so you may not get an instant match — but we'll log the request, and our team follows up to help source someone.</div>
   </div>
   <div class="form-group">
     <label class="form-label">What do you need done?</label>
@@ -2259,26 +2454,33 @@ function closePostJobModal() {
 }
 
 async function runAIMatch() {
-  const cat = document.getElementById('pj-category').value;
+  const catSelect = document.getElementById('pj-category').value;
+  const isCustom = catSelect === '__other__';
+  const cat = isCustom ? document.getElementById('pj-custom-category').value.trim() : catSelect;
   const desc = document.getElementById('pj-desc').value.trim();
   const budget = document.getElementById('pj-budget').value.trim();
 
+  if (isCustom && cat.length < 2) return showToast('Tell us what kind of service you need');
   if (!desc || desc.length < 5) return showToast('Describe the job in at least 5 characters');
   if (budget && budget.length > 40) return showToast('Budget must be under 40 characters');
 
   const body = document.getElementById('postjob-body');
-  body.innerHTML = `<div style="text-align:center;padding:40px 10px;color:var(--slate);font-size:13px;">🤖 Scanning 1,200+ verified pros for the best match…</div>`;
+  body.innerHTML = `<div style="text-align:center;padding:40px 10px;color:var(--slate);font-size:13px;">🤖 Scanning verified pros for the best match…</div>`;
   document.querySelector('#postjob-modal .modal-footer').innerHTML = '';
 
   let pool = [];
+  let realCallSucceeded = false;
+  let isKnownCategory = true;
   if (BACKEND_AVAILABLE && AUTH.token && AUTH.user && AUTH.user.role === 'customer') {
     try {
-      const { matches } = await apiFetch('POST', '/jobs', { category: cat, description: desc, budget });
-      pool = matches.map(m => ({ id: m.providerId, name: m.provider.name, initials: m.provider.initials, role: m.provider.role, price: m.provider.price, rating: m.provider.rating, color: m.provider.color, score: m.score }));
+      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, budget });
+      realCallSucceeded = true;
+      isKnownCategory = result.isKnownCategory !== false;
+      pool = result.matches.map(m => ({ id: m.providerId, name: m.provider.name, initials: m.provider.initials, role: m.provider.role, price: m.provider.price, rating: m.provider.rating, color: m.provider.color, score: m.score }));
     } catch (e) {
-      // A genuine validation error (bad category, description rejected, etc.)
-      // should send the user back to fix their input, not get quietly
-      // replaced with fake demo matches that imply their job was posted.
+      // A genuine validation error (description rejected, etc.) should send
+      // the user back to fix their input, not get quietly replaced with
+      // fake demo matches that imply their job was posted.
       if (e.status && e.status < 500) {
         showToast(e.message || 'Please check your job details and try again');
         openPostJobModal();
@@ -2287,7 +2489,13 @@ async function runAIMatch() {
       showToast('Could not reach the matching service — showing demo matches instead');
     }
   }
-  if (!pool.length) {
+  // Fake demo matches are ONLY appropriate when there was no real API call
+  // to begin with (offline demo mode, or a genuine connection failure).
+  // A real call that genuinely found zero matches — most likely because
+  // this is a custom category no provider is tagged to yet — must show
+  // that honestly, not paper over it with fabricated 97%/93%/89% matches
+  // for unrelated providers.
+  if (!realCallSucceeded && !pool.length) {
     const local = PROVIDERS.filter(p => p.cat === cat).sort((a, b) => b.rating - a.rating).slice(0, 3);
     const fallbackPool = local.length ? local : PROVIDERS.slice(0, 3);
     const scores = [97, 93, 89];
@@ -2295,8 +2503,20 @@ async function runAIMatch() {
   }
 
   setTimeout(() => {
+    if (realCallSucceeded && !pool.length) {
+      body.innerHTML = `
+        <div style="text-align:center;padding:24px 10px;">
+          <div style="font-size:28px;margin-bottom:10px;">📋</div>
+          <div style="font-weight:600;color:var(--navy);margin-bottom:6px;">Job posted — no instant match yet</div>
+          <div style="font-size:12.5px;color:var(--slate);line-height:1.6;">${isKnownCategory
+            ? `We don't have a verified "${cat}" pro in your area right now. Your request is saved, and we'll notify you the moment someone's available.`
+            : `"${cat}" isn't a category we currently list, so there's no automatic match — but we've logged your request and our team follows up to help source someone.`}</div>
+        </div>`;
+      document.querySelector('#postjob-modal .modal-footer').innerHTML = `<button class="pricing-cta" style="border-color:var(--border);" onclick="closePostJobModal()">Done</button>`;
+      return;
+    }
     body.innerHTML = `
-      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Matched for "<strong style="color:var(--navy)">${desc}</strong>" in <strong style="color:var(--navy)">${cat}</strong> ${BACKEND_AVAILABLE && AUTH.user && AUTH.user.role === 'customer' ? '<span class="badge badge-success">Live AI match</span>' : ''}</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Matched for "<strong style="color:var(--navy)">${desc}</strong>" in <strong style="color:var(--navy)">${cat}</strong> ${realCallSucceeded ? '<span class="badge badge-success">Live AI match</span>' : ''}</div>
       ${pool.map(p => `
         <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;">
           <div style="width:44px;height:44px;border-radius:50%;background:${p.color};color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-weight:600;flex-shrink:0;">${p.initials}</div>
@@ -2354,8 +2574,8 @@ async function loadProviderData() {
       id: m.id, customer: m.customerName || 'Customer', service: m.job ? m.job.description : 'Service request',
       budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: (Math.round(Math.random() * 40) / 10) + ' mi',
     }));
-    providerData.contracts = contracts.map(c => ({ id: c.id, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow }));
-    providerData.payouts = payouts.length ? payouts : FALLBACK_PAYOUTS;
+    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow }));
+    providerData.payouts = payouts;
     providerData.portfolioPhotos = photos;
   } catch (e) { console.warn('Falling back to demo provider data', e); }
   providerData.verificationStatus = await computeVerificationStatus();
@@ -2415,9 +2635,9 @@ const PROVIDER_SECTIONS = {
     </div>
     <div class="panel"><div class="panel-title">Recent Payout History (by week)</div>${weeklyChart.length ? barChart(weeklyChart) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts yet — request one once you have completed jobs.</div>'}</div>
     <div class="panel"><div class="panel-title">Payout History</div>
-      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Payout</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>
+      ${providerData.payouts.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Payout</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>
       ${providerData.payouts.map(p => `<tr><td>${p.id}</td><td>${p.date}</td><td>$${p.amount}</td><td>${p.method}</td><td>${statusBadge(p.status)}</td></tr>`).join('')}
-      </tbody></table></div>
+      </tbody></table></div>` : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts requested yet.</div>'}
     </div>`;
   },
   portfolio: () => `
@@ -2438,6 +2658,13 @@ const PROVIDER_SECTIONS = {
     </div>
     ${phoneVerificationPanelHTML()}
     ${changePasswordPanelHTML('prov')}
+    <div class="panel"><div class="panel-title">Current Plan</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">${(() => {
+        const plan = (AUTH.user && AUTH.user.plan) || 'starter';
+        return `You're on the <strong style="color:var(--navy)">${PLAN_LABELS[plan]}</strong> plan. ${plan === 'starter' ? 'Upgrade for priority placement and lower commission.' : 'Changing plans here is test mode — no real charge yet.'}`;
+      })()}</div>
+      <button class="btn-sm btn-sm-outline" onclick="showPricing()">View Plans & Pricing</button>
+    </div>
     <div class="panel"><div class="panel-title">Pricing Model</div>
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Choose how customers pay you — either a set hourly rate, or work it out per job.</div>
       <div class="auth-role-grid" style="grid-template-columns:1fr 1fr;margin-bottom:14px;">
@@ -2588,8 +2815,8 @@ function matchesTable(list) {
 
 function contractsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No contracts yet.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Contract</th><th>Customer</th><th>Service</th><th>Amount</th><th>Signed</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(c => `<tr><td>${c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${c.signed}</td><td>${statusBadge(c.status)}</td><td class="row-actions">${c.status === 'active' ? `<button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>` : '—'}</td></tr>`).join('')}
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Customer</th><th>Service</th><th>Amount</th><th>Signed</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  ${list.map(c => `<tr><td>${c.bookingNumber || c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${c.signed}</td><td>${statusBadge(c.status)}</td><td class="row-actions">${c.status === 'active' ? `<button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>` : '—'}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -2743,10 +2970,20 @@ async function loadAdminData() {
     adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
     adminData.people = allPeople.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), city: u.city, country: u.country, verified: u.verified, active: u.active !== false }));
     adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status }));
-    adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status }));
+    adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
     adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active }));
     adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
     adminData.escrow = escrow;
+
+    // A genuine live check, not a hardcoded "everything's fine" badge — this
+    // hits the real /api/health endpoint right now and times it.
+    try {
+      const start = performance.now();
+      const healthRes = await fetch(API_BASE + '/health');
+      adminData.apiHealth = { ok: healthRes.ok, ms: Math.round(performance.now() - start) };
+    } catch (e) {
+      adminData.apiHealth = { ok: false, ms: null };
+    }
 
     if (AUTH.user && AUTH.user.isSuperAdmin) {
       const [cities, subAdmins] = await Promise.all([
@@ -2832,11 +3069,10 @@ const ADMIN_SECTIONS = {
   reports: () => `
     <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">AI-driven demand and performance insights</div></div></div>
     <div class="panel"><div class="panel-title">Demand by Category (This Month)</div>${barChart(adminData.categories.map(c=>({label:c.name.slice(0,4),val:c.pros})))}</div>
-    <div class="panel"><div class="panel-title">Platform Uptime</div>
-      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Service</th><th>Uptime (30d)</th><th>Status</th></tr></thead><tbody>
-      <tr><td>Marketplace API</td><td>99.98%</td><td>${statusBadge('completed')}</td></tr>
-      <tr><td>Payments & Escrow</td><td>99.95%</td><td>${statusBadge('completed')}</td></tr>
-      <tr><td>Matching Engine (AI)</td><td>99.90%</td><td>${statusBadge('completed')}</td></tr>
+    <div class="panel"><div class="panel-title">Platform Health</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">Live check against the API right now — no historical uptime monitoring is connected yet (that needs a status-page provider or APM tool), but this row is genuinely real-time, not decorative.</div>
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Service</th><th>Response Time</th><th>Status</th></tr></thead><tbody>
+      <tr><td>Marketplace API</td><td>${adminData.apiHealth ? (adminData.apiHealth.ok ? adminData.apiHealth.ms + ' ms' : '—') : 'Checking…'}</td><td>${adminData.apiHealth ? (adminData.apiHealth.ok ? statusBadge('completed') : statusBadge('rejected')) : statusBadge('pending')}</td></tr>
       </tbody></table></div>
     </div>`,
   categories: () => {
@@ -2915,7 +3151,7 @@ async function createLocationAdmin() {
   if (!name || !email || !password || !city || !country) return showToast('Please fill in every field');
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
-  if (password.length < 6) return showToast('Password must be at least 6 characters');
+  if (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
   if (!BACKEND_AVAILABLE) return showToast(`${city} admin created (demo mode — no backend detected)`);
   try {
     const { admin } = await apiFetch('POST', '/admin/sub-admins', { name, email, password, city, country });
@@ -3062,6 +3298,7 @@ function viewDispute(id) {
   if (!d) return;
   document.getElementById('dispute-modal-title').textContent = 'Dispute ' + d.id;
   document.getElementById('dispute-modal-sub').textContent = d.parties;
+  const openedDate = d.createdAt ? new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   document.getElementById('dispute-modal-body').innerHTML = `
     <div class="booking-summary">
       <div class="summary-row"><span>Reason</span><span>${d.reason}</span></div>
@@ -3070,10 +3307,8 @@ function viewDispute(id) {
     </div>
     <div class="form-label" style="margin-bottom:10px;">Timeline</div>
     <div style="font-size:12.5px;color:var(--slate);line-height:2;">
-      🔔 AI fraud detection flagged the booking for review<br/>
-      💬 Both parties contacted for statements<br/>
-      🧑‍⚖️ Assigned to Finance & Dispute team<br/>
-      ${d.status === 'resolved' ? '✅ Resolved — escrow released per agreement' : '⏳ Awaiting resolution'}
+      ⚠️ Dispute opened${openedDate ? ` — ${openedDate}` : ''}<br/>
+      ${d.status === 'resolved' ? '✅ Resolved — escrow released' : '⏳ Awaiting admin review'}
     </div>`;
   document.getElementById('dispute-modal-footer').innerHTML = d.status !== 'resolved'
     ? `<button class="confirm-btn" onclick="resolveDispute('${d.id}');closeDisputeModal();">Mark Resolved & Release Escrow</button>`
@@ -3238,7 +3473,7 @@ async function confirmBooking() {
       const { contract } = await apiFetch('POST', '/contracts', {
         providerId: currentPro.id, service: desc, date, time, address: addr, amount: total,
       });
-      contractId = contract.id;
+      contractId = contract.bookingNumber || contract.id;
     } catch (e) {
       // A real failure (validation error, server down, etc.) must NOT show a
       // fake success screen — that would tell the user their booking is
@@ -3257,7 +3492,7 @@ async function confirmBooking() {
   renderNavbar('navbar-confirm', 'home');
 
   document.getElementById('confirm-details').innerHTML = `
-    <div class="confirm-detail"><span>Booking ID</span><strong>${contractId}</strong></div>
+    <div class="confirm-detail"><span>Booking #</span><strong>${contractId}</strong></div>
     <div class="confirm-detail"><span>Pro</span><strong>${currentPro.name}</strong></div>
     <div class="confirm-detail"><span>Service</span><strong>${desc}</strong></div>
     <div class="confirm-detail"><span>Date</span><strong>${date} · ${time}</strong></div>
@@ -3385,6 +3620,7 @@ function sendSupportChatMessage() {
   } else {
     console.log('%cTaskora API not detected — running on demo data. Start the backend (npm start in /taskora-backend) for live data.', 'color:#B08A3E;');
   }
+  loadFeaturedCarousel();
 
   // If the page was opened with ?resetToken=... (what a real password-reset
   // email link would look like), jump straight to the reset-password form —

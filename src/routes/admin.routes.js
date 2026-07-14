@@ -2,7 +2,7 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole, hashPassword } = require('../auth');
-const { isValidEmail, isNonEmptyString, isValidPassword, validate } = require('../validators');
+const { isValidEmail, isNonEmptyString, isValidPassword, isValidName, isValidLabel, validate } = require('../validators');
 const { notify } = require('../notify');
 
 const router = express.Router();
@@ -201,8 +201,8 @@ router.get('/categories', async (req, res) => {
 // POST /api/admin/categories — add a new bookable service category
 router.post('/categories', requireSuperAdmin, async (req, res) => {
   const { name } = req.body || {};
-  if (!isNonEmptyString(name, { min: 2, max: 40 })) {
-    return res.status(400).json({ error: 'Category name must be between 2 and 40 characters' });
+  if (!isValidLabel(name, { min: 2, max: 40 })) {
+    return res.status(400).json({ error: 'Enter a real category name (2-40 characters)' });
   }
   const trimmed = name.trim();
   const existing = await db.find('categories', c => c.name.toLowerCase() === trimmed.toLowerCase());
@@ -227,8 +227,8 @@ router.get('/countries', async (req, res) => res.json({ countries: await db.all(
 // goes live on the platform)
 router.post('/countries', requireSuperAdmin, async (req, res) => {
   const { name, status } = req.body || {};
-  if (!isNonEmptyString(name, { min: 2, max: 60 })) {
-    return res.status(400).json({ error: 'Country name must be between 2 and 60 characters' });
+  if (!isValidLabel(name, { min: 2, max: 60 })) {
+    return res.status(400).json({ error: 'Enter a real country name (2-60 characters)' });
   }
   const trimmed = name.trim();
   const existing = await db.find('countries', c => c.name.toLowerCase() === trimmed.toLowerCase());
@@ -269,9 +269,9 @@ router.get('/sub-admins', requireSuperAdmin, async (req, res) => {
 router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
   const { name, email, password, city, country } = req.body || {};
   const errors = validate([
-    ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Full name must be at least 2 characters'],
+    ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
-    ['password', isValidPassword(password), 'Password must be at least 6 characters'],
+    ['password', isValidPassword(password), 'Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol'],
     ['city', isNonEmptyString(city), 'City is required'],
     ['country', isNonEmptyString(country), 'Country is required'],
   ]);

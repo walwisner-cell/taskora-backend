@@ -86,6 +86,7 @@ await db.replaceAll('categories', [
   { id: id('cat'), name: 'Moving', active: true },
   { id: id('cat'), name: 'Painting', active: true },
   { id: id('cat'), name: 'Landscaping', active: true },
+  { id: id('cat'), name: 'Pick & Drop', active: true },
   { id: id('cat'), name: 'Fitness', active: true },
 ]);
 

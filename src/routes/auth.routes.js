@@ -2,7 +2,7 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken, hashResetToken } = require('../auth');
-const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, validate } = require('../validators');
+const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, isValidName, validate } = require('../validators');
 
 const router = express.Router();
 
@@ -15,9 +15,9 @@ function publicUser(u) {
 router.post('/signup', async (req, res) => {
   const { name, email, password, role, country, city, phone, address, zipCode, category, skills } = req.body || {};
   const errors = validate([
-    ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Full name must be at least 2 characters'],
+    ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
-    ['password', isValidPassword(password), 'Password must be at least 6 characters'],
+    ['password', isValidPassword(password), 'Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol'],
     ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
     ['zipCode', isValidPostalCode(zipCode), 'Enter a valid postal/zip code'],
@@ -90,11 +90,11 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // PATCH /api/auth/me — update own profile / settings
 router.patch('/me', requireAuth, async (req, res) => {
-  const allowed = ['name', 'email', 'phone', 'country', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price'];
+  const allowed = ['name', 'email', 'phone', 'country', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'plan'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
-  if ('name' in patch && !isNonEmptyString(patch.name, { min: 2, max: 100 })) {
-    return res.status(400).json({ error: 'Full name must be at least 2 characters' });
+  if ('name' in patch && !isValidName(patch.name)) {
+    return res.status(400).json({ error: 'Enter a real name — letters, spaces, hyphens, and apostrophes only' });
   }
   if ('email' in patch) {
     if (!isValidEmail(patch.email)) return res.status(400).json({ error: 'Enter a valid email address' });
@@ -120,6 +120,14 @@ router.patch('/me', requireAuth, async (req, res) => {
   if ('price' in patch && (typeof patch.price !== 'number' || patch.price <= 0)) {
     return res.status(400).json({ error: 'Hourly rate must be a positive number' });
   }
+  if ('plan' in patch) {
+    if (req.user.role !== 'provider') {
+      return res.status(400).json({ error: 'Only provider accounts have a plan' });
+    }
+    if (!['starter', 'pro', 'superpro'].includes(patch.plan)) {
+      return res.status(400).json({ error: 'Plan must be starter, pro, or superpro' });
+    }
+  }
   if ('notifPrefs' in patch) {
     if (typeof patch.notifPrefs !== 'object' || patch.notifPrefs === null || Array.isArray(patch.notifPrefs)) {
       return res.status(400).json({ error: 'notifPrefs must be an object of true/false toggles' });
@@ -144,7 +152,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'currentPassword and newPassword are required' });
   }
   if (!isValidPassword(newPassword)) {
-    return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    return res.status(400).json({ error: 'New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol' });
   }
   const user = await db.find('users', u => u.id === req.user.sub);
   if (!user || !verifyPassword(currentPassword, user.passwordHash)) {
@@ -234,7 +242,7 @@ router.post('/forgot-password', async (req, res) => {
 router.post('/reset-password', async (req, res) => {
   const { token, newPassword } = req.body || {};
   if (!isNonEmptyString(token)) return res.status(400).json({ error: 'Reset token is required' });
-  if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol' });
 
   const tokenHash = hashResetToken(token);
   const record = await db.find('passwordResets', r => r.tokenHash === tokenHash);

@@ -29,13 +29,13 @@ const pool = new Pool({
 // in (snake_case) DB order. Used to build safe, parameterized INSERT/UPDATE
 // statements without ever interpolating arbitrary object keys into SQL.
 const TABLES = {
-  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','pay_preference','payout_method','notif_prefs','rating','jobs_completed','price','color','provider_since','created_at','updated_at'] },
+  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs_completed','price','color','provider_since','created_at','updated_at'] },
   categories: { table: 'categories', columns: ['id','name','active'] },
   countries: { table: 'countries', columns: ['id','name','status'] },
   cities: { table: 'cities', columns: ['id','name','country','admin_id'] },
   jobs: { table: 'jobs', columns: ['id','customer_id','category','description','budget','status','created_at'] },
   matches: { table: 'matches', columns: ['id','job_id','provider_id','customer_id','score','same_community','status','created_at'] },
-  contracts: { table: 'contracts', columns: ['id','customer_id','provider_id','job_id','service','date','time','address','amount','status','signed_at','created_at'] },
+  contracts: { table: 'contracts', columns: ['id','booking_number','customer_id','provider_id','job_id','service','date','time','address','amount','status','signed_at','created_at'] },
   escrowTransactions: { table: 'escrow_transactions', columns: ['id','contract_id','amount','status','created_at'] },
   payouts: { table: 'payouts', columns: ['id','provider_id','amount','method','status','date'] },
   disputes: { table: 'disputes', columns: ['id','contract_id','reason','amount','status','parties','created_at'] },
@@ -43,7 +43,7 @@ const TABLES = {
   notifications: { table: 'notifications', columns: ['id','user_id','icon','text','time','read','created_at'] },
   messages: { table: 'messages', columns: ['id','from_id','to_id','text','created_at'] },
   verifications: { table: 'verifications', columns: ['id','user_id','doc_type','status','created_at'] },
-  paymentMethods: { table: 'payment_methods', columns: ['id','user_id','brand','last4','name_on_card','expiry','is_default','mode','created_at'] },
+  paymentMethods: { table: 'payment_methods', columns: ['id','user_id','brand','last4','name_on_card','expiry','billing_address','billing_zip','is_default','mode','created_at'] },
   passwordResets: { table: 'password_resets', columns: ['id','user_id','token_hash','expires_at','used','created_at'] },
   phoneVerifications: { table: 'phone_verifications', columns: ['id','user_id','code_hash','expires_at','used','created_at'] },
   portfolioPhotos: { table: 'portfolio_photos', columns: ['id','provider_id','filename','url','created_at'] },
