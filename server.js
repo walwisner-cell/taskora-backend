@@ -1,5 +1,13 @@
 const path = require('path');
 const express = require('express');
+// Express 4 does not automatically catch rejected Promises thrown inside
+// async route handlers — without this, any unexpected database error (or
+// any other thrown error) inside an `async (req, res) => {...}` handler
+// crashes the entire Node process instead of returning a 500 response.
+// This patches Express's routing so those errors are forwarded to the
+// error-handling middleware below like any other error. Must be required
+// before any routes are defined.
+require('express-async-errors');
 const cors = require('cors');
 const morgan = require('morgan');
 const { seedIfEmpty } = require('./src/seed');
@@ -9,10 +17,6 @@ const marketplaceRoutes = require('./src/routes/marketplace.routes');
 const paymentsRoutes = require('./src/routes/payments.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const miscRoutes = require('./src/routes/misc.routes');
-
-// Seed demo data only if the datastore is empty (fresh disk / first boot).
-// Never overwrites data that already exists, so redeploys are safe.
-seedIfEmpty();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,6 +47,18 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`\n  Taskora API + frontend running at http://localhost:${PORT}\n`);
-});
+// Seed demo data only if the datastore is empty (fresh disk/database, first
+// boot). Never overwrites data that already exists, so redeploys are safe.
+// This is awaited before the server starts accepting requests — with a real
+// Postgres backend, the very first query needs the schema to exist and the
+// seed check needs to actually finish, not race against incoming traffic.
+seedIfEmpty()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`\n  Taskora API + frontend running at http://localhost:${PORT}\n`);
+    });
+  })
+  .catch(err => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });

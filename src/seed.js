@@ -1,6 +1,8 @@
-// Resets /data to a known demo state. Run with: npm run seed
+// Resets /data (or the Postgres database, if DATABASE_URL is set) to a known
+// demo state. Run with: npm run seed
 // Also imported by server.js to auto-seed an empty datastore on first boot
-// (e.g. a fresh Render persistent disk) without ever overwriting real data.
+// (e.g. a fresh Render persistent disk, or a freshly-created Postgres
+// database) without ever overwriting real data.
 const { nanoid } = require('nanoid');
 const db = require('./db');
 const { hashPassword } = require('./auth');
@@ -13,7 +15,7 @@ function id(prefix) {
 
 const now = () => new Date().toISOString();
 
-function seedDatabase() {
+async function seedDatabase() {
 
 // ---- Users (customers, providers) — every user belongs to a city -----------
 const users = [
@@ -73,10 +75,10 @@ const users = [
   skills: u.skills || (u.tags && u.tags.length ? u.tags.join(', ') : undefined),
 }));
 
-db.replaceAll('users', users);
+await db.replaceAll('users', users);
 
 // ---- Categories & countries (global config — super admin only) -------------
-db.replaceAll('categories', [
+await db.replaceAll('categories', [
   { id: id('cat'), name: 'Plumbing', active: true },
   { id: id('cat'), name: 'Cleaning', active: true },
   { id: id('cat'), name: 'Tutoring', active: true },
@@ -87,7 +89,7 @@ db.replaceAll('categories', [
   { id: id('cat'), name: 'Fitness', active: true },
 ]);
 
-db.replaceAll('countries', [
+await db.replaceAll('countries', [
   { id: id('cty'), name: 'United States', status: 'live' },
   { id: id('cty'), name: 'Nigeria', status: 'live' },
   { id: id('cty'), name: 'Ghana', status: 'live' },
@@ -99,7 +101,7 @@ db.replaceAll('countries', [
 ]);
 
 // ---- Cities registry (which cities are open, and who admins them) ----------
-db.replaceAll('cities', [
+await db.replaceAll('cities', [
   { id: 'city_atlanta', name: 'Atlanta', country: 'United States', adminId: 'u_amara' },
   { id: 'city_lagos', name: 'Lagos', country: 'Nigeria', adminId: 'u_ngozi' },
   { id: 'city_accra', name: 'Accra', country: 'Ghana', adminId: 'u_kwame' },
@@ -112,29 +114,29 @@ const contracts = [
   { id: 'ct_1031', customerId: 'u_jordan', providerId: 'u_james', service: 'SAT prep — 4 sessions', amount: 220, status: 'completed', signedAt: '2026-07-02' },
   { id: 'ct_1024', customerId: 'u_jordan', providerId: 'u_sofia', service: 'Panel upgrade estimate', amount: 0, status: 'disputed', signedAt: '2026-06-24' },
 ];
-db.replaceAll('contracts', contracts.map(c => ({ ...c, createdAt: now() })));
+await db.replaceAll('contracts', contracts.map(c => ({ ...c, createdAt: now() })));
 
-db.replaceAll('escrowTransactions', [
+await db.replaceAll('escrowTransactions', [
   { id: id('esc'), contractId: 'ct_1042', amount: 180, status: 'held', createdAt: now() },
   { id: id('esc'), contractId: 'ct_1039', amount: 140, status: 'released', createdAt: now() },
   { id: id('esc'), contractId: 'ct_1031', amount: 220, status: 'released', createdAt: now() },
 ]);
 
-db.replaceAll('payouts', [
+await db.replaceAll('payouts', [
   { id: 'po_330', providerId: 'u_marcus', date: '2026-07-10', amount: 530, method: 'Bank Transfer', status: 'completed' },
   { id: 'po_321', providerId: 'u_marcus', date: '2026-07-03', amount: 410, method: 'Bank Transfer', status: 'completed' },
   { id: 'po_312', providerId: 'u_marcus', date: '2026-06-26', amount: 295, method: 'Wallet', status: 'completed' },
 ]);
 
 // ---- Disputes ---------------------------------------------------------------
-db.replaceAll('disputes', [
+await db.replaceAll('disputes', [
   { id: 'dp_118', contractId: 'ct_1024', reason: 'Incomplete work', amount: 640, status: 'open', parties: 'Sofia M. \u2194 Malik Owens', createdAt: now() },
   { id: 'dp_114', contractId: 'ct_1039', reason: 'Late arrival', amount: 75, status: 'in review', parties: 'Priya N. \u2194 Renee Park', createdAt: now() },
   { id: 'dp_109', contractId: 'ct_1031', reason: 'Damaged item during move', amount: 220, status: 'resolved', parties: 'Tom B. \u2194 Grant Lee', createdAt: now() },
 ]);
 
 // ---- Verification queue ------------------------------------------------------
-db.replaceAll('verifications', [
+await db.replaceAll('verifications', [
   { id: id('ver'), userId: 'u_grace', docType: 'National ID', status: 'in review', createdAt: now() },
   { id: id('ver'), userId: 'u_emeka', docType: 'BVN + NIN', status: 'in review', createdAt: now() },
   { id: id('ver'), userId: 'u_chioma', docType: 'BVN + NIN', status: 'in review', createdAt: now() },
@@ -144,24 +146,24 @@ db.replaceAll('verifications', [
 ]);
 
 // ---- Notifications ------------------------------------------------------------
-db.replaceAll('notifications', [
-  { id: id('ntf'), userId: 'u_jordan', icon: '✅', text: 'Your identity verification was approved.', time: '2 hours ago', read: false },
-  { id: id('ntf'), userId: 'u_jordan', icon: '💰', text: 'Escrow released — $140 for Deep Clean job.', time: '1 day ago', read: false },
-  { id: id('ntf'), userId: 'u_jordan', icon: '💬', text: 'New message from Marcus T.', time: '2 days ago', read: true },
-  { id: id('ntf'), userId: 'u_marcus', icon: '🎯', text: 'You have 3 new AI job matches.', time: '1 hour ago', read: false },
+await db.replaceAll('notifications', [
+  { id: id('ntf'), userId: 'u_jordan', icon: '✅', text: 'Your identity verification was approved.', time: '2 hours ago', read: false, createdAt: now() },
+  { id: id('ntf'), userId: 'u_jordan', icon: '💰', text: 'Escrow released — $140 for Deep Clean job.', time: '1 day ago', read: false, createdAt: now() },
+  { id: id('ntf'), userId: 'u_jordan', icon: '💬', text: 'New message from Marcus T.', time: '2 days ago', read: true, createdAt: now() },
+  { id: id('ntf'), userId: 'u_marcus', icon: '🎯', text: 'You have 3 new AI job matches.', time: '1 hour ago', read: false, createdAt: now() },
 ]);
 
 // ---- Jobs & matches (empty at boot — created live via the Post a Job flow) ---
-db.replaceAll('jobs', []);
-db.replaceAll('matches', []);
-db.replaceAll('messages', []);
-db.replaceAll('paymentMethods', []);
-db.replaceAll('passwordResets', []);
-db.replaceAll('phoneVerifications', []);
-db.replaceAll('reviews', [
-  { id: id('rev'), providerId: 'u_marcus', authorName: 'Renee P.', stars: 5, text: 'Showed up on time, explained everything clearly, and the price matched the quote exactly.' },
-  { id: id('rev'), providerId: 'u_marcus', authorName: 'Malik O.', stars: 5, text: 'Excellent work — fast, clean, and professional. The escrow process made the whole thing feel safe.' },
-  { id: id('rev'), providerId: 'u_marcus', authorName: 'Priya S.', stars: 4, text: 'Good work overall, arrived a little later than scheduled but communicated well throughout.' },
+await db.replaceAll('jobs', []);
+await db.replaceAll('matches', []);
+await db.replaceAll('messages', []);
+await db.replaceAll('paymentMethods', []);
+await db.replaceAll('passwordResets', []);
+await db.replaceAll('phoneVerifications', []);
+await db.replaceAll('reviews', [
+  { id: id('rev'), providerId: 'u_marcus', authorName: 'Renee P.', stars: 5, text: 'Showed up on time, explained everything clearly, and the price matched the quote exactly.', createdAt: now() },
+  { id: id('rev'), providerId: 'u_marcus', authorName: 'Malik O.', stars: 5, text: 'Excellent work — fast, clean, and professional. The escrow process made the whole thing feel safe.', createdAt: now() },
+  { id: id('rev'), providerId: 'u_marcus', authorName: 'Priya S.', stars: 4, text: 'Good work overall, arrived a little later than scheduled but communicated well throughout.', createdAt: now() },
 ]);
 
 console.log('✅ Seed complete.');
@@ -176,23 +178,26 @@ console.log('   Provider:      marcus@example.com   (Atlanta)');
 } // end seedDatabase
 
 // Only seed automatically if the datastore is genuinely empty — this is what
-// makes it safe to import from server.js on every boot: a fresh disk (first
-// deploy) gets demo data, but a disk that already has real users/jobs/etc.
+// makes it safe to import from server.js on every boot: a fresh disk/database
+// (first deploy) gets demo data, but one that already has real users/jobs/etc.
 // on it is left completely untouched, redeploy after redeploy.
-function seedIfEmpty() {
-  const hasData = db.all('users').length > 0;
+async function seedIfEmpty() {
+  const existingUsers = await db.all('users');
+  const hasData = existingUsers.length > 0;
   if (hasData) {
     console.log('ℹ️  Existing data found — skipping auto-seed (use `npm run seed` to force-reset).');
     return false;
   }
   console.log('ℹ️  No existing data found — seeding demo data for first boot...');
-  seedDatabase();
+  await seedDatabase();
   return true;
 }
 
 // Run immediately (and unconditionally) when invoked directly via `npm run seed`.
 if (require.main === module) {
-  seedDatabase();
+  seedDatabase()
+    .then(() => process.exit(0))
+    .catch(err => { console.error('Seed failed:', err); process.exit(1); });
 }
 
 module.exports = { seedDatabase, seedIfEmpty };

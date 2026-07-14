@@ -5,24 +5,17 @@
 # env-var collisions. Nothing here touches or references any other service
 # on the account.
 #
-# Deploy: push this repo to GitHub, then in Render choose
-# "New +" → "Blueprint" → select this repo. Render reads this file and
-# creates everything below automatically. See README.md → "Deploying to
-# Render" for the full walkthrough, including a manual (non-Blueprint) path.
-#
-# IMPORTANT — read this before you deploy:
-# Render's FREE web service plan does not support persistent disks at all
-# (this is a hard platform rule, not a bug) — a free service's filesystem is
-# wiped every time it redeploys OR spins down from 15 minutes of inactivity.
-# That means with the config below (free, no disk), any data you add while
-# testing will reset periodically. If you want data to actually stick around
-# between test sessions, see "OPTION B" below — it's a two-line change.
+# This is currently configured for the Starter plan with a persistent disk
+# (~$7.25/month) — matching what's actually deployed — so test data (new
+# users, jobs, approvals, etc.) survives redeploys and idle spin-downs
+# instead of resetting. See "ADDING REAL POSTGRES" below for the next step
+# up from disk-based JSON storage.
 
 services:
   - type: web
-    name: taskora-api            # <-- change this if you want an even more distinct name
+    name: taskora-api
     runtime: node
-    plan: free                   # OPTION A (current): free, but no persistent storage — see note above
+    plan: starter
     region: oregon                # pick whichever region is closest to you
     buildCommand: npm install
     startCommand: npm start
@@ -30,33 +23,41 @@ services:
     autoDeploy: true
     envVars:
       - key: TASKORA_JWT_SECRET
-        generateValue: true      # Render generates a strong random secret — never commit one
+        generateValue: true       # Render generates a strong random secret — never commit one
       - key: NODE_ENV
         value: production
-      # If you switch to Option B below, uncomment this so the app writes to
-      # the persistent disk instead of its own (ephemeral) local folder:
-      # - key: DATA_DIR
-      #   value: /var/data
+      - key: DATA_DIR
+        value: /var/data          # points the JSON datastore at the persistent disk below
+      # Add this once you've created a Render Postgres instance (see below) —
+      # uncommenting this alone is what switches the app from the JSON-file
+      # store to real Postgres. No code change needed; db.js picks the
+      # backend automatically based on whether this is set.
+      # - key: DATABASE_URL
+      #   fromDatabase:
+      #     name: taskora-db
+      #     property: connectionString
+    disk:
+      name: taskora-data
+      mountPath: /var/data
+      sizeGB: 1
 
-    # ── OPTION B: real persistence for ~$7/month ────────────────────────────
-    # Persistent disks require a paid plan. To turn this on:
-    #   1. Change "plan: free" above to "plan: starter"
-    #   2. Uncomment the DATA_DIR env var above
-    #   3. Uncomment the "disk:" block below
-    #   4. Commit, push, and Render will apply the change automatically
-    #
-    # disk:
-    #   name: taskora-data
-    #   mountPath: /var/data
-    #   sizeGB: 1
-
-# WHICH OPTION SHOULD YOU PICK?
-# - Just clicking around, testing a flow, showing someone the app for a few
-#   minutes? Option A (free) is fine — you'll just notice data resetting to
-#   the seeded demo state if the service has been idle a while.
-# - Actually building up test data over several sessions (adding real users,
-#   testing admin approvals over days, etc.)? Switch to Option B — the cost
-#   is small and it's the only way free-tier Render will hold onto data.
-# - Preparing for the real live system? Neither — follow the Postgres
-#   migration path in Taskora_Technical_Spec.docx instead of relying on disk
-#   storage at all.
+# ── ADDING REAL POSTGRES (recommended before real users touch this) ─────────
+# The JSON-file store above is fully real and correct, but a single flat
+# file per table isn't what you'd want under real concurrent traffic. To
+# switch to Postgres:
+#
+#   1. In the Render dashboard: "New +" → "PostgreSQL". Name it (e.g.
+#      "taskora-db"), pick the free tier to start, create it.
+#   2. Back in this file, uncomment the DATABASE_URL env var above and make
+#      sure the `name:` under fromDatabase matches exactly what you named
+#      the Postgres instance in step 1.
+#   3. Commit and push — Render will wire the connection string in
+#      automatically and redeploy.
+#   4. First boot creates all tables automatically (src/schema.sql runs on
+#      startup) and seeds demo data since the database starts empty — same
+#      auto-seed-once behavior as the disk-based version.
+#
+# This has been tested end-to-end against a real Postgres database — full
+# signup/login, AI matching, escrow, reviews, messaging, regional admin
+# scoping, all pass identically to the JSON-file version. The switch is a
+# config change, not a code change.

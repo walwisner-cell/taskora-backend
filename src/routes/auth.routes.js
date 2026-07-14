@@ -12,7 +12,7 @@ function publicUser(u) {
 }
 
 // POST /api/auth/signup
-router.post('/signup', (req, res) => {
+router.post('/signup', async (req, res) => {
   const { name, email, password, role, country, city, phone, address, zipCode, category, skills } = req.body || {};
   const errors = validate([
     ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Full name must be at least 2 characters'],
@@ -32,7 +32,7 @@ router.post('/signup', (req, res) => {
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
   const trimmedName = name.trim();
-  const existing = db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
+  const existing = await db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
   if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
 
   const user = {
@@ -61,16 +61,16 @@ router.post('/signup', (req, res) => {
       rating: 0, jobs: 0, price: 50, color: '#5A5F6C', since: String(new Date().getFullYear()),
     } : {}),
   };
-  db.insert('users', user);
+  await db.insert('users', user);
   const token = signToken(user);
   res.status(201).json({ token, user: publicUser(user) });
 });
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
-  const user = db.find('users', u => u.email.toLowerCase() === (email || '').toLowerCase());
+  const user = await db.find('users', u => u.email.toLowerCase() === (email || '').toLowerCase());
   if (!user || !verifyPassword(password, user.passwordHash)) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
@@ -82,14 +82,14 @@ router.post('/login', (req, res) => {
 });
 
 // GET /api/auth/me
-router.get('/me', requireAuth, (req, res) => {
-  const user = db.find('users', u => u.id === req.user.sub);
+router.get('/me', requireAuth, async (req, res) => {
+  const user = await db.find('users', u => u.id === req.user.sub);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({ user: publicUser(user) });
 });
 
 // PATCH /api/auth/me — update own profile / settings
-router.patch('/me', requireAuth, (req, res) => {
+router.patch('/me', requireAuth, async (req, res) => {
   const allowed = ['name', 'email', 'phone', 'country', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
@@ -99,7 +99,7 @@ router.patch('/me', requireAuth, (req, res) => {
   if ('email' in patch) {
     if (!isValidEmail(patch.email)) return res.status(400).json({ error: 'Enter a valid email address' });
     patch.email = patch.email.trim();
-    const conflict = db.find('users', u => u.id !== req.user.sub && u.email.toLowerCase() === patch.email.toLowerCase());
+    const conflict = await db.find('users', u => u.id !== req.user.sub && u.email.toLowerCase() === patch.email.toLowerCase());
     if (conflict) return res.status(409).json({ error: 'That email is already in use by another account' });
   }
   if ('phone' in patch && patch.phone && !isNonEmptyString(patch.phone, { min: 7, max: 30 })) {
@@ -120,13 +120,25 @@ router.patch('/me', requireAuth, (req, res) => {
   if ('price' in patch && (typeof patch.price !== 'number' || patch.price <= 0)) {
     return res.status(400).json({ error: 'Hourly rate must be a positive number' });
   }
-  const updated = db.update('users', req.user.sub, patch);
+  if ('notifPrefs' in patch) {
+    if (typeof patch.notifPrefs !== 'object' || patch.notifPrefs === null || Array.isArray(patch.notifPrefs)) {
+      return res.status(400).json({ error: 'notifPrefs must be an object of true/false toggles' });
+    }
+    if (!Object.values(patch.notifPrefs).every(v => typeof v === 'boolean')) {
+      return res.status(400).json({ error: 'Every notifPrefs value must be true or false' });
+    }
+    // Merge, don't overwrite — toggling one preference (e.g. "Promotions")
+    // shouldn't silently reset every other saved preference to defaults.
+    const current = await db.find('users', u => u.id === req.user.sub);
+    patch.notifPrefs = { ...(current && current.notifPrefs), ...patch.notifPrefs };
+  }
+  const updated = await db.update('users', req.user.sub, patch);
   if (!updated) return res.status(404).json({ error: 'User not found' });
   res.json({ user: publicUser(updated) });
 });
 
 // POST /api/auth/change-password — requires the current password, not just auth
-router.post('/change-password', requireAuth, (req, res) => {
+router.post('/change-password', requireAuth, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'currentPassword and newPassword are required' });
@@ -134,14 +146,14 @@ router.post('/change-password', requireAuth, (req, res) => {
   if (!isValidPassword(newPassword)) {
     return res.status(400).json({ error: 'New password must be at least 6 characters' });
   }
-  const user = db.find('users', u => u.id === req.user.sub);
+  const user = await db.find('users', u => u.id === req.user.sub);
   if (!user || !verifyPassword(currentPassword, user.passwordHash)) {
     return res.status(401).json({ error: 'Current password is incorrect' });
   }
   if (verifyPassword(newPassword, user.passwordHash)) {
     return res.status(400).json({ error: 'New password must be different from your current password' });
   }
-  db.update('users', user.id, { passwordHash: hashPassword(newPassword) });
+  await db.update('users', user.id, { passwordHash: hashPassword(newPassword) });
   res.json({ ok: true });
 });
 
@@ -174,7 +186,7 @@ function isRateLimited(email) {
 // POST /api/auth/forgot-password — always responds the same way whether or
 // not the email exists, so this endpoint can't be used to discover which
 // emails have accounts.
-router.post('/forgot-password', (req, res) => {
+router.post('/forgot-password', async (req, res) => {
   const { email } = req.body || {};
   if (!isValidEmail(email)) return res.status(400).json({ error: 'Enter a valid email address' });
   const normalized = email.trim().toLowerCase();
@@ -187,14 +199,15 @@ router.post('/forgot-password', (req, res) => {
     return res.json(genericResponse);
   }
 
-  const user = db.find('users', u => u.email.toLowerCase() === normalized);
+  const user = await db.find('users', u => u.email.toLowerCase() === normalized);
   if (!user) return res.json(genericResponse); // deliberately identical to the success path
 
   // Invalidate any previous outstanding reset tokens for this user before
   // issuing a new one, so only the most recent link works.
-  db.filter('passwordResets', r => r.userId === user.id && !r.used).forEach(r => {
-    db.update('passwordResets', r.id, { used: true });
-  });
+  const outstanding = await db.filter('passwordResets', r => r.userId === user.id && !r.used);
+  for (const r of outstanding) {
+    await db.update('passwordResets', r.id, { used: true });
+  }
 
   const rawToken = generateResetToken();
   const record = {
@@ -205,7 +218,7 @@ router.post('/forgot-password', (req, res) => {
     used: false,
     createdAt: new Date().toISOString(),
   };
-  db.insert('passwordResets', record);
+  await db.insert('passwordResets', record);
 
   console.log(`[TEST MODE] Password reset requested for ${user.email}. Reset token: ${rawToken} (expires in 30 min)`);
 
@@ -218,22 +231,22 @@ router.post('/forgot-password', (req, res) => {
 });
 
 // POST /api/auth/reset-password
-router.post('/reset-password', (req, res) => {
+router.post('/reset-password', async (req, res) => {
   const { token, newPassword } = req.body || {};
   if (!isNonEmptyString(token)) return res.status(400).json({ error: 'Reset token is required' });
   if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 6 characters' });
 
   const tokenHash = hashResetToken(token);
-  const record = db.find('passwordResets', r => r.tokenHash === tokenHash);
+  const record = await db.find('passwordResets', r => r.tokenHash === tokenHash);
   if (!record || record.used || new Date(record.expiresAt) < new Date()) {
     return res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' });
   }
 
-  const user = db.find('users', u => u.id === record.userId);
+  const user = await db.find('users', u => u.id === record.userId);
   if (!user) return res.status(404).json({ error: 'Account not found' });
 
-  db.update('users', user.id, { passwordHash: hashPassword(newPassword) });
-  db.update('passwordResets', record.id, { used: true });
+  await db.update('users', user.id, { passwordHash: hashPassword(newPassword) });
+  await db.update('passwordResets', record.id, { used: true });
 
   res.json({ message: 'Password reset successfully — you can now sign in with your new password.' });
 });
@@ -253,18 +266,19 @@ function generateOtp() {
 
 // POST /api/auth/send-phone-otp — sends (in test mode: returns) a code to the
 // phone number already on the requesting user's account.
-router.post('/send-phone-otp', requireAuth, (req, res) => {
-  const user = db.find('users', u => u.id === req.user.sub);
+router.post('/send-phone-otp', requireAuth, async (req, res) => {
+  const user = await db.find('users', u => u.id === req.user.sub);
   if (!user) return res.status(404).json({ error: 'Account not found' });
   if (!user.phone) return res.status(400).json({ error: 'Add a phone number to your account first' });
 
   // Invalidate any previous outstanding code before issuing a new one.
-  db.filter('phoneVerifications', v => v.userId === user.id && !v.used).forEach(v => {
-    db.update('phoneVerifications', v.id, { used: true });
-  });
+  const outstanding = await db.filter('phoneVerifications', v => v.userId === user.id && !v.used);
+  for (const v of outstanding) {
+    await db.update('phoneVerifications', v.id, { used: true });
+  }
 
   const code = generateOtp();
-  db.insert('phoneVerifications', {
+  await db.insert('phoneVerifications', {
     id: `pv_${nanoid(10)}`,
     userId: user.id,
     codeHash: hashResetToken(code), // same fast-hash helper as reset tokens — a short-lived numeric code, not a password
@@ -284,17 +298,17 @@ router.post('/send-phone-otp', requireAuth, (req, res) => {
 });
 
 // POST /api/auth/verify-phone-otp — confirms the code and marks the phone verified
-router.post('/verify-phone-otp', requireAuth, (req, res) => {
+router.post('/verify-phone-otp', requireAuth, async (req, res) => {
   const { code } = req.body || {};
   if (!isNonEmptyString(code)) return res.status(400).json({ error: 'Enter the code you received' });
 
   const codeHash = hashResetToken(code.trim());
-  const record = db.find('phoneVerifications', v => v.userId === req.user.sub && v.codeHash === codeHash);
+  const record = await db.find('phoneVerifications', v => v.userId === req.user.sub && v.codeHash === codeHash);
   if (!record || record.used || new Date(record.expiresAt) < new Date()) {
     return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
   }
-  db.update('phoneVerifications', record.id, { used: true });
-  db.update('users', req.user.sub, { phoneVerified: true });
+  await db.update('phoneVerifications', record.id, { used: true });
+  await db.update('users', req.user.sub, { phoneVerified: true });
   res.json({ message: 'Phone number verified.' });
 });
 

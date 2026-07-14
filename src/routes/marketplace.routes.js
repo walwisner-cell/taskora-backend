@@ -33,24 +33,24 @@ function parseBudgetAmount(budget, fallback = 100) {
 // GET /api/categories — public directory of active categories with real,
 // live counts of verified providers in each (no auth required; this powers
 // the marketing homepage and the full "Browse Categories" page).
-router.get('/categories', (req, res) => {
-  const categories = db.filter('categories', c => c.active);
-  const withCounts = categories.map(c => ({
+router.get('/categories', async (req, res) => {
+  const categories = await db.filter('categories', c => c.active);
+  const withCounts = await Promise.all(categories.map(async c => ({
     id: c.id,
     name: c.name,
-    proCount: db.filter('users', u => u.role === 'provider' && u.verified && u.category === c.name).length,
-  }));
+    proCount: (await db.filter('users', u => u.role === 'provider' && u.verified && u.category === c.name)).length,
+  })));
   res.json({ categories: withCounts });
 });
 
 // GET /api/providers?category=Plumbing&q=leak&city=Atlanta
-router.get('/providers', (req, res) => {
+router.get('/providers', async (req, res) => {
   const { category, q, city } = req.query;
   // Only verified providers appear in the public directory — showing an
   // unverified provider here (even briefly, while their documents are in
   // review) would contradict the "Fully Verified" promise shown on the
   // marketing page and profile badges.
-  let providers = db.filter('users', u => u.role === 'provider' && u.verified);
+  let providers = await db.filter('users', u => u.role === 'provider' && u.verified);
   if (category) providers = providers.filter(p => p.category === category);
   if (city) providers = providers.filter(p => p.city === city);
   if (q) {
@@ -65,17 +65,17 @@ router.get('/providers', (req, res) => {
 });
 
 // GET /api/providers/:id  (profile page: includes reviews)
-router.get('/providers/:id', (req, res) => {
-  const p = db.find('users', u => u.id === req.params.id && u.role === 'provider' && u.verified);
+router.get('/providers/:id', async (req, res) => {
+  const p = await db.find('users', u => u.id === req.params.id && u.role === 'provider' && u.verified);
   if (!p) return res.status(404).json({ error: 'Provider not found' });
-  const reviews = db.filter('reviews', r => r.providerId === p.id);
+  const reviews = await db.filter('reviews', r => r.providerId === p.id);
   res.json({ provider: publicProvider(p), reviews });
 });
 
 // ---- Jobs & AI matching -----------------------------------------------------
 
 // POST /api/jobs — customer posts a job, triggers AI matching immediately
-router.post('/jobs', requireAuth, requireRole('customer'), (req, res) => {
+router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   const { category, description, budget } = req.body || {};
   const errors = validate([
     ['category', isNonEmptyString(category), 'Category is required'],
@@ -83,7 +83,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), (req, res) => {
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
-  const activeCategories = db.filter('categories', c => c.active).map(c => c.name);
+  const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
   if (!activeCategories.includes(category)) {
     return res.status(400).json({ error: `"${category}" is not a currently bookable category` });
   }
@@ -98,7 +98,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), (req, res) => {
     status: 'open',
     createdAt: new Date().toISOString(),
   };
-  db.insert('jobs', job);
+  await db.insert('jobs', job);
 
   // --- AI matching (deterministic scoring stand-in for a real ranking model) ---
   // Score = base 70 + rating weight + experience weight + community-proximity
@@ -111,8 +111,8 @@ router.post('/jobs', requireAuth, requireRole('customer'), (req, res) => {
   // signal — not simulated geolocation — using data the account already
   // has (no third-party geocoding API required). If real lat/long-based
   // radius search is wanted later, this is the function to replace.
-  const customer = db.find('users', u => u.id === req.user.sub);
-  const candidates = db.filter('users', u => u.role === 'provider' && u.category === category && u.verified && (!customer || u.city === customer.city));
+  const customer = await db.find('users', u => u.id === req.user.sub);
+  const candidates = await db.filter('users', u => u.role === 'provider' && u.category === category && u.verified && (!customer || u.city === customer.city));
   const scored = candidates.map(p => {
     const jitter = (parseInt(job.id.slice(-4), 36) % 7);
     const sameCommunity = customer && p.zipCode && customer.zipCode && p.zipCode === customer.zipCode;
@@ -121,7 +121,8 @@ router.post('/jobs', requireAuth, requireRole('customer'), (req, res) => {
     return { provider: p, score, sameCommunity };
   }).sort((a, b) => b.score - a.score).slice(0, 3);
 
-  const matches = scored.map(({ provider, score, sameCommunity }) => {
+  const matches = [];
+  for (const { provider, score, sameCommunity } of scored) {
     const match = {
       id: `match_${nanoid(10)}`,
       jobId: job.id,
@@ -132,43 +133,44 @@ router.post('/jobs', requireAuth, requireRole('customer'), (req, res) => {
       status: 'pending',
       createdAt: new Date().toISOString(),
     };
-    db.insert('matches', match);
-    notify(provider.id, '🎯', `New AI job match: ${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''} (${score}% fit)`);
-    return { ...match, provider: publicProvider(provider) };
-  });
+    await db.insert('matches', match);
+    await notify(provider.id, '🎯', `New AI job match: ${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''} (${score}% fit)`, 'newMatches');
+    matches.push({ ...match, provider: publicProvider(provider) });
+  }
 
   res.status(201).json({ job, matches });
 });
 
 // GET /api/jobs/mine — customer's posted jobs
-router.get('/jobs/mine', requireAuth, requireRole('customer'), (req, res) => {
-  const jobs = db.filter('jobs', j => j.customerId === req.user.sub);
+router.get('/jobs/mine', requireAuth, requireRole('customer'), async (req, res) => {
+  const jobs = await db.filter('jobs', j => j.customerId === req.user.sub);
   res.json({ jobs });
 });
 
 // GET /api/matches/mine — provider's pending AI matches
-router.get('/matches/mine', requireAuth, requireRole('provider'), (req, res) => {
-  const matches = db.filter('matches', m => m.providerId === req.user.sub && m.status === 'pending');
-  const withJob = matches.map(m => {
-    const customer = db.find('users', u => u.id === m.customerId);
-    return { ...m, job: db.find('jobs', j => j.id === m.jobId), customerName: customer ? customer.name : 'Customer' };
-  });
+router.get('/matches/mine', requireAuth, requireRole('provider'), async (req, res) => {
+  const matches = await db.filter('matches', m => m.providerId === req.user.sub && m.status === 'pending');
+  const withJob = await Promise.all(matches.map(async m => {
+    const customer = await db.find('users', u => u.id === m.customerId);
+    const job = await db.find('jobs', j => j.id === m.jobId);
+    return { ...m, job, customerName: customer ? customer.name : 'Customer' };
+  }));
   res.json({ matches: withJob });
 });
 
 // POST /api/matches/:id/respond  { decision: 'accept' | 'decline' }
-router.post('/matches/:id/respond', requireAuth, requireRole('provider'), (req, res) => {
+router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async (req, res) => {
   const { decision } = req.body || {};
-  const match = db.find('matches', m => m.id === req.params.id && m.providerId === req.user.sub);
+  const match = await db.find('matches', m => m.id === req.params.id && m.providerId === req.user.sub);
   if (!match) return res.status(404).json({ error: 'Match not found' });
   if (!['accept', 'decline'].includes(decision)) return res.status(400).json({ error: 'decision must be accept or decline' });
 
-  db.update('matches', match.id, { status: decision === 'accept' ? 'accepted' : 'declined' });
+  await db.update('matches', match.id, { status: decision === 'accept' ? 'accepted' : 'declined' });
 
   let contract = null;
   let escrow = null;
   if (decision === 'accept') {
-    const job = db.find('jobs', j => j.id === match.jobId);
+    const job = await db.find('jobs', j => j.id === match.jobId);
     const amount = parseBudgetAmount(job && job.budget, 100);
     contract = {
       id: `ct_${nanoid(10)}`,
@@ -181,16 +183,16 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), (req, 
       signedAt: new Date().toISOString().slice(0, 10),
       createdAt: new Date().toISOString(),
     };
-    db.insert('contracts', contract);
+    await db.insert('contracts', contract);
     // Every accepted contract holds funds in escrow — this was previously only
     // happening for direct bookings (POST /contracts), not AI-matched ones,
     // which meant matched jobs could never be paid out. Fixed here so both
     // paths behave identically.
     escrow = { id: `esc_${nanoid(10)}`, contractId: contract.id, amount, status: 'held', createdAt: new Date().toISOString() };
-    db.insert('escrowTransactions', escrow);
-    if (job) db.update('jobs', job.id, { status: 'matched' });
-    const provider = db.find('users', u => u.id === match.providerId);
-    notify(match.customerId, '🤝', `${provider ? provider.name : 'Your matched pro'} accepted your job — contract signed and escrow funded.`);
+    await db.insert('escrowTransactions', escrow);
+    if (job) await db.update('jobs', job.id, { status: 'matched' });
+    const provider = await db.find('users', u => u.id === match.providerId);
+    await notify(match.customerId, '🤝', `${provider ? provider.name : 'Your matched pro'} accepted your job — contract signed and escrow funded.`, 'bookingUpdates');
   }
   res.json({ match, contract, escrow });
 });
@@ -198,7 +200,7 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), (req, 
 // ---- Contracts / bookings ----------------------------------------------------
 
 // POST /api/contracts — direct booking of a specific provider (skips matching)
-router.post('/contracts', requireAuth, requireRole('customer'), (req, res) => {
+router.post('/contracts', requireAuth, requireRole('customer'), async (req, res) => {
   const { providerId, service, date, time, address, amount } = req.body || {};
   const errors = validate([
     ['providerId', isNonEmptyString(providerId), 'A provider must be selected'],
@@ -212,7 +214,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), (req, res) => {
     return res.status(400).json({ error: 'Amount must be a positive number' });
   }
 
-  const provider = db.find('users', u => u.id === providerId && u.role === 'provider');
+  const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
   const contract = {
@@ -226,23 +228,23 @@ router.post('/contracts', requireAuth, requireRole('customer'), (req, res) => {
     signedAt: new Date().toISOString().slice(0, 10),
     createdAt: new Date().toISOString(),
   };
-  db.insert('contracts', contract);
+  await db.insert('contracts', contract);
   const escrow = { id: `esc_${nanoid(10)}`, contractId: contract.id, amount: contract.amount, status: 'held', createdAt: new Date().toISOString() };
-  db.insert('escrowTransactions', escrow);
+  await db.insert('escrowTransactions', escrow);
   res.status(201).json({ contract, escrow });
 });
 
 // GET /api/contracts/mine — works for both customers and providers
-router.get('/contracts/mine', requireAuth, (req, res) => {
+router.get('/contracts/mine', requireAuth, async (req, res) => {
   const field = req.user.role === 'provider' ? 'providerId' : 'customerId';
-  const contracts = db.filter('contracts', c => c[field] === req.user.sub);
-  const withNames = contracts.map(c => {
-    const customer = db.find('users', u => u.id === c.customerId);
-    const provider = db.find('users', u => u.id === c.providerId);
-    const escrow = db.find('escrowTransactions', e => e.contractId === c.id);
-    const reviewed = !!db.find('reviews', r => r.contractId === c.id);
+  const contracts = await db.filter('contracts', c => c[field] === req.user.sub);
+  const withNames = await Promise.all(contracts.map(async c => {
+    const customer = await db.find('users', u => u.id === c.customerId);
+    const provider = await db.find('users', u => u.id === c.providerId);
+    const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
+    const reviewed = !!(await db.find('reviews', r => r.contractId === c.id));
     return { ...c, customerName: customer ? customer.name : 'Customer', providerName: provider ? provider.name : 'Provider', escrow, reviewed };
-  });
+  }));
   res.json({ contracts: withNames });
 });
 
@@ -250,7 +252,7 @@ router.get('/contracts/mine', requireAuth, (req, res) => {
 // once per contract). Recomputes the provider's average rating from every
 // real review on file, so the rating shown across the app becomes genuine
 // customer feedback instead of a static seeded number.
-router.post('/reviews', requireAuth, requireRole('customer'), (req, res) => {
+router.post('/reviews', requireAuth, requireRole('customer'), async (req, res) => {
   const { contractId, stars, text } = req.body || {};
   const errors = validate([
     ['stars', Number.isInteger(stars) && stars >= 1 && stars <= 5, 'Rating must be between 1 and 5 stars'],
@@ -258,15 +260,15 @@ router.post('/reviews', requireAuth, requireRole('customer'), (req, res) => {
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
-  const contract = db.find('contracts', c => c.id === contractId && c.customerId === req.user.sub);
+  const contract = await db.find('contracts', c => c.id === contractId && c.customerId === req.user.sub);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
   if (contract.status !== 'completed') {
     return res.status(400).json({ error: 'You can only review a job after it is marked complete' });
   }
-  const existing = db.find('reviews', r => r.contractId === contractId);
+  const existing = await db.find('reviews', r => r.contractId === contractId);
   if (existing) return res.status(409).json({ error: "You've already reviewed this job" });
 
-  const customer = db.find('users', u => u.id === req.user.sub);
+  const customer = await db.find('users', u => u.id === req.user.sub);
   const review = {
     id: `rev_${nanoid(10)}`,
     contractId,
@@ -276,16 +278,62 @@ router.post('/reviews', requireAuth, requireRole('customer'), (req, res) => {
     text: text.trim(),
     createdAt: new Date().toISOString(),
   };
-  db.insert('reviews', review);
+  await db.insert('reviews', review);
 
   // Recompute the provider's average rating from every review on file.
-  const allReviews = db.filter('reviews', r => r.providerId === contract.providerId);
+  const allReviews = await db.filter('reviews', r => r.providerId === contract.providerId);
   const avg = allReviews.reduce((s, r) => s + r.stars, 0) / allReviews.length;
-  db.update('users', contract.providerId, { rating: Math.round(avg * 10) / 10 });
+  await db.update('users', contract.providerId, { rating: Math.round(avg * 10) / 10 });
 
-  notify(contract.providerId, '⭐', `New ${stars}-star review: "${text.trim().slice(0, 60)}${text.length > 60 ? '…' : ''}"`);
+  await notify(contract.providerId, '⭐', `New ${stars}-star review: "${text.trim().slice(0, 60)}${text.length > 60 ? '…' : ''}"`);
 
   res.status(201).json({ review });
+});
+
+// POST /api/disputes — customer or provider raises a real dispute against a
+// contract they're actually party to. Previously the UI claimed "customer/
+// provider-raised disputes" but no such endpoint existed at all — only
+// admins could resolve pre-existing (seeded) disputes.
+router.post('/disputes', requireAuth, async (req, res) => {
+  const { contractId, reason } = req.body || {};
+  const errors = validate([
+    ['contractId', isNonEmptyString(contractId), 'A booking must be selected'],
+    ['reason', isNonEmptyString(reason, { min: 10, max: 500 }), 'Describe the issue in at least 10 characters'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const contract = await db.find('contracts', c =>
+    c.id === contractId && (c.customerId === req.user.sub || c.providerId === req.user.sub)
+  );
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  if (contract.status === 'disputed') {
+    return res.status(409).json({ error: 'There is already an open dispute on this booking' });
+  }
+  if (contract.status !== 'active') {
+    return res.status(400).json({ error: `This booking is ${contract.status} and can no longer be disputed` });
+  }
+  const existing = await db.find('disputes', d => d.contractId === contractId && d.status !== 'resolved');
+  if (existing) return res.status(409).json({ error: 'There is already an open dispute on this booking' });
+
+  const customer = await db.find('users', u => u.id === contract.customerId);
+  const provider = await db.find('users', u => u.id === contract.providerId);
+  const dispute = {
+    id: `dp_${nanoid(10)}`,
+    contractId,
+    reason: reason.trim(),
+    amount: contract.amount,
+    status: 'open',
+    parties: `${provider ? provider.name : 'Provider'} ↔ ${customer ? customer.name : 'Customer'}`,
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('disputes', dispute);
+  await db.update('contracts', contractId, { status: 'disputed' });
+
+  // Notify whichever party didn't raise the dispute.
+  const otherPartyId = req.user.sub === contract.customerId ? contract.providerId : contract.customerId;
+  await notify(otherPartyId, '⚠️', `A dispute was opened on "${contract.service}" — our team is reviewing it.`, 'bookingUpdates');
+
+  res.status(201).json({ dispute });
 });
 
 module.exports = router;

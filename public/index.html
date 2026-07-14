@@ -1488,6 +1488,15 @@ function setAuthRole(role) {
   authState.role = role;
   document.querySelectorAll('.auth-role-opt').forEach(el => el.classList.toggle('active', el.dataset.role === role));
   document.getElementById('auth-provider-fields-group').style.display = (authState.mode === 'signup' && role === 'provider') ? 'block' : 'none';
+  if (role === 'provider') {
+    // Pull from the live category list (same source as the homepage and job
+    // posting) so a category an admin just added is immediately selectable
+    // here too, instead of a hardcoded list going stale.
+    const select = document.getElementById('auth-category');
+    if (select && CATEGORIES.length) {
+      select.innerHTML = CATEGORIES.map(c => `<option>${c.name}</option>`).join('');
+    }
+  }
 }
 
 async function mockAuth() {
@@ -1703,6 +1712,29 @@ async function sendRealMessage() {
   }
 }
 
+// Buckets real payout history into ISO weeks for the earnings chart —
+// replaces what used to be entirely made-up numbers ([410, 520, 295...])
+// with whatever the provider's actual payouts add up to, week by week.
+function weeklyEarningsChartData(payouts) {
+  if (!payouts || !payouts.length) return [];
+  const weekOf = (dateStr) => {
+    const d = new Date(dateStr);
+    if (isNaN(d)) return 'Unknown';
+    const onejan = new Date(d.getFullYear(), 0, 1);
+    const week = Math.ceil((((d - onejan) / 86400000) + onejan.getDay() + 1) / 7);
+    return `Wk ${week}`;
+  };
+  const totals = {};
+  payouts.forEach(p => {
+    const key = weekOf(p.date);
+    totals[key] = (totals[key] || 0) + (p.amount || 0);
+  });
+  return Object.entries(totals)
+    .sort((a, b) => parseInt(a[0].replace('Wk ', '')) - parseInt(b[0].replace('Wk ', '')))
+    .slice(-6)
+    .map(([label, val]) => ({ label, val }));
+}
+
 function barChart(data) {
   const max = Math.max(...data.map(d => d.val));
   return `<div class="bar-chart">${data.map(d => `<div class="bar-col"><div class="bar-fill" style="height:${Math.max(6, d.val / max * 100)}px"></div><div class="bar-label">${d.label}</div></div>`).join('')}</div>`;
@@ -1825,7 +1857,7 @@ function bookingsTable(list) {
 
 function bookingActionHTML(b) {
   if (b.status === 'active' || b.status === 'confirmed') {
-    return `<button class="btn-sm btn-sm-primary" onclick="completeBooking('${b.id}')">Mark Complete</button>`;
+    return `<button class="btn-sm btn-sm-primary" onclick="completeBooking('${b.id}')">Mark Complete</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${b.id}')">Report a Problem</button>`;
   }
   if (b.status === 'completed') {
     return b.reviewed
@@ -1833,6 +1865,52 @@ function bookingActionHTML(b) {
       : `<button class="btn-sm btn-sm-ghost" onclick="openReviewForm('${b.id}','${b.pro}')">Leave Review</button>`;
   }
   return '—';
+}
+
+function openDisputeForm(contractId) {
+  const modalHtml = `
+    <div class="modal-overlay open" id="dispute-modal-overlay" onclick="if(event.target===this)document.getElementById('dispute-modal-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('dispute-modal-overlay').remove()">✕</button>
+          <h3>Report a Problem</h3>
+          <p>This opens a real dispute — our team will review and resolve it. The booking is frozen (can't be completed or cancelled) until it's resolved.</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">What went wrong?</label>
+            <input class="form-input" id="dispute-reason" placeholder="Describe the issue in detail..."/>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="submitDispute('${contractId}')">Submit Dispute</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitDispute(contractId) {
+  const reason = document.getElementById('dispute-reason').value.trim();
+  if (!reason || reason.length < 10) return showToast('Describe the issue in at least 10 characters');
+  if (!BACKEND_AVAILABLE) { showToast('Dispute submitted (demo mode)'); document.getElementById('dispute-modal-overlay').remove(); return; }
+  try {
+    await apiFetch('POST', '/disputes', { contractId, reason });
+    showToast('Dispute submitted — our team will review it');
+    document.getElementById('dispute-modal-overlay').remove();
+    if (AUTH.user.role === 'customer') { await loadCustomerData(); selectCustomerSection('bookings'); }
+    else { await loadProviderData(); selectProviderSection('contracts'); }
+  } catch (e) { showToast(e.message || 'Could not submit dispute'); }
+}
+
+async function cancelBooking(contractId) {
+  if (!BACKEND_AVAILABLE) return showToast('Booking cancelled (demo mode — no backend detected)');
+  if (!confirm('Cancel this booking? Any held escrow will be refunded, not paid to the pro.')) return;
+  try {
+    await apiFetch('POST', `/contracts/${contractId}/cancel`);
+    showToast('Booking cancelled — escrow refunded');
+    await loadCustomerData();
+    selectCustomerSection('bookings');
+  } catch (e) { showToast(e.message || 'Could not cancel this booking'); }
 }
 
 async function completeBooking(contractId) {
@@ -1942,11 +2020,26 @@ const CUSTOMER_SECTIONS = {
     ${phoneVerificationPanelHTML()}
     ${changePasswordPanelHTML('cust')}
     <div class="panel"><div class="panel-title">Notifications</div>
-      <div class="switch-row"><div><div class="switch-label">Booking updates</div><div class="switch-sub">Status changes on your active bookings</div></div><label class="switch"><input type="checkbox" checked onchange="showToast('Preference updated')"><span class="switch-track"></span></label></div>
-      <div class="switch-row"><div><div class="switch-label">Messages</div><div class="switch-sub">New messages from pros</div></div><label class="switch"><input type="checkbox" checked onchange="showToast('Preference updated')"><span class="switch-track"></span></label></div>
-      <div class="switch-row"><div><div class="switch-label">Promotions</div><div class="switch-sub">Offers and product news</div></div><label class="switch"><input type="checkbox" onchange="showToast('Preference updated')"><span class="switch-track"></span></label></div>
+      ${notifToggleHTML('bookingUpdates', 'Booking updates', 'Status changes on your active bookings', true)}
+      ${notifToggleHTML('messages', 'Messages', 'New messages from pros', true)}
+      ${notifToggleHTML('promotions', 'Promotions', 'Offers and product news', false)}
     </div>`,
 };
+
+function notifToggleHTML(key, label, sub, defaultOn) {
+  const prefs = (AUTH.user && AUTH.user.notifPrefs) || {};
+  const isOn = key in prefs ? prefs[key] : defaultOn;
+  return `<div class="switch-row"><div><div class="switch-label">${label}</div><div class="switch-sub">${sub}</div></div><label class="switch"><input type="checkbox" ${isOn ? 'checked' : ''} onchange="updateNotifPref('${key}', this.checked)"><span class="switch-track"></span></label></div>`;
+}
+
+async function updateNotifPref(key, checked) {
+  if (!BACKEND_AVAILABLE) return showToast('Preference updated (demo mode)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { notifPrefs: { [key]: checked } });
+    AUTH.user = user;
+    showToast('Preference updated');
+  } catch (e) { showToast(e.message || 'Could not update preference'); }
+}
 
 function phoneVerificationPanelHTML() {
   const verified = AUTH.user && AUTH.user.phoneVerified;
@@ -2235,7 +2328,7 @@ async function loadProviderData() {
       id: m.id, customer: m.customerName || 'Customer', service: m.job ? m.job.description : 'Service request',
       budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: (Math.round(Math.random() * 40) / 10) + ' mi',
     }));
-    providerData.contracts = contracts.map(c => ({ id: c.id, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10) }));
+    providerData.contracts = contracts.map(c => ({ id: c.id, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow }));
     providerData.payouts = payouts.length ? payouts : FALLBACK_PAYOUTS;
   } catch (e) { console.warn('Falling back to demo provider data', e); }
   providerData.verificationStatus = await computeVerificationStatus();
@@ -2281,27 +2374,29 @@ const PROVIDER_SECTIONS = {
     <div class="dash-header"><div><div class="dash-title">My Contracts</div><div class="dash-sub">Every contract is auto-generated and stored per booking</div></div></div>
     <div class="panel">${contractsTable(providerData.contracts)}</div>`,
   messages: () => messagingHTML('provider'),
-  earnings: () => `
+  earnings: () => {
+    const pendingPayout = providerData.contracts
+      .filter(c => c.escrow && c.escrow.status === 'held')
+      .reduce((s, c) => s + c.escrow.amount, 0);
+    const weeklyChart = weeklyEarningsChartData(providerData.payouts);
+    return `
     <div class="dash-header"><div><div class="dash-title">Earnings & Payouts</div><div class="dash-sub">Paid hourly or per job — your choice, set per contract</div></div><button class="btn-sm btn-sm-primary" onclick="requestPayout()">Request Payout</button></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Earned</div><div class="stat-card-val">$${providerData.payouts.reduce((s,p)=>s+p.amount,0).toLocaleString()}</div></div>
-      <div class="stat-card"><div class="stat-card-label">Pending Payout</div><div class="stat-card-val">$180</div></div>
-      <div class="stat-card"><div class="stat-card-label">Next Payout</div><div class="stat-card-val" style="font-size:16px">Jul 17</div></div>
+      <div class="stat-card"><div class="stat-card-label">Pending Payout</div><div class="stat-card-val">$${pendingPayout.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Payout Schedule</div><div class="stat-card-val" style="font-size:15px">On Request</div></div>
     </div>
-    <div class="panel"><div class="panel-title">Last 6 Weeks</div>${barChart([{label:'W1',val:410},{label:'W2',val:520},{label:'W3',val:295},{label:'W4',val:610},{label:'W5',val:530},{label:'W6',val:180}])}</div>
+    <div class="panel"><div class="panel-title">Recent Payout History (by week)</div>${weeklyChart.length ? barChart(weeklyChart) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts yet — request one once you have completed jobs.</div>'}</div>
     <div class="panel"><div class="panel-title">Payout History</div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Payout</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>
       ${providerData.payouts.map(p => `<tr><td>${p.id}</td><td>${p.date}</td><td>$${p.amount}</td><td>${p.method}</td><td>${statusBadge(p.status)}</td></tr>`).join('')}
       </tbody></table></div>
-    </div>`,
+    </div>`;
+  },
   portfolio: () => `
     <div class="dash-header"><div><div class="dash-title">Portfolio</div><div class="dash-sub">Showcase past work to win more AI matches</div></div></div>
-    <div class="panel"><div class="upload-box">📷 Upload Portfolio Photo</div>
-      <div class="cats-grid">
-        <div class="cat-card"><span class="cat-emoji">🔧</span><div class="cat-label">Pipe Repair</div><div class="cat-count">14 photos</div></div>
-        <div class="cat-card"><span class="cat-emoji">🚿</span><div class="cat-label">Fixture Install</div><div class="cat-count">9 photos</div></div>
-        <div class="cat-card"><span class="cat-emoji">🧰</span><div class="cat-label">Drain Cleaning</div><div class="cat-count">6 photos</div></div>
-      </div>
+    <div class="panel"><div class="upload-box" onclick="showToast('Photo upload is coming in a future update')" style="cursor:pointer;">📷 Upload Portfolio Photo</div>
+      <div style="color:var(--slate);font-size:13px;padding:14px 0 4px;">No portfolio photos yet — once uploads are enabled, they'll organize by your service tags: ${(AUTH.user && AUTH.user.tags && AUTH.user.tags.length) ? AUTH.user.tags.join(', ') : 'your specialties'}.</div>
     </div>`,
   verification: () => verificationHTML('provider', providerData.verificationStatus || 'none'),
   settings: () => `
@@ -2336,15 +2431,16 @@ const PROVIDER_SECTIONS = {
     </div>
     <div class="panel"><div class="panel-title">Payout Method</div>
       <div class="form-group"><label class="form-label">Payout Method</label>
-        <select class="form-input form-select" onchange="showToast('Payout method updated')">
-          <option>Bank Transfer — Chase •••• 1123</option><option>Wallet / Mobile Money</option>
+        <select class="form-input form-select" id="set-prov-payout-method" onchange="savePayoutMethod(this.value)">
+          <option value="Bank Transfer" ${(!AUTH.user || AUTH.user.payoutMethod !== 'Wallet / Mobile Money') ? 'selected' : ''}>Bank Transfer — Chase •••• 1123</option>
+          <option value="Wallet / Mobile Money" ${(AUTH.user && AUTH.user.payoutMethod === 'Wallet / Mobile Money') ? 'selected' : ''}>Wallet / Mobile Money</option>
         </select>
       </div>
     </div>
     <div class="panel"><div class="panel-title">Notifications</div>
-      <div class="switch-row"><div><div class="switch-label">New job matches</div><div class="switch-sub">AI-matched jobs in your category</div></div><label class="switch"><input type="checkbox" checked onchange="showToast('Preference updated')"><span class="switch-track"></span></label></div>
-      <div class="switch-row"><div><div class="switch-label">Payout alerts</div><div class="switch-sub">When a payout is released</div></div><label class="switch"><input type="checkbox" checked onchange="showToast('Preference updated')"><span class="switch-track"></span></label></div>
-      <div class="switch-row"><div><div class="switch-label">Messages</div><div class="switch-sub">New messages from customers</div></div><label class="switch"><input type="checkbox" checked onchange="showToast('Preference updated')"><span class="switch-track"></span></label></div>
+      ${notifToggleHTML('newMatches', 'New job matches', 'AI-matched jobs in your category', true)}
+      ${notifToggleHTML('payoutAlerts', 'Payout alerts', 'When a payout is released', true)}
+      ${notifToggleHTML('messages', 'Messages', 'New messages from customers', true)}
     </div>`,
 };
 
@@ -2356,6 +2452,15 @@ function setPricingModelUI(model) {
   document.getElementById('pricing-opt-negotiable').classList.toggle('active', model === 'negotiable');
   document.getElementById('pricing-hourly-rate-group').style.display = model === 'hourly' ? 'block' : 'none';
   document.getElementById('pricing-negotiable-note').style.display = model === 'negotiable' ? 'block' : 'none';
+}
+
+async function savePayoutMethod(method) {
+  if (!BACKEND_AVAILABLE) return showToast('Payout method updated (demo mode)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { payoutMethod: method });
+    AUTH.user = user;
+    showToast('Payout method updated — future payouts will use this');
+  } catch (e) { showToast(e.message || 'Could not update payout method'); }
 }
 
 async function savePricingModel() {
@@ -2453,9 +2558,20 @@ function matchesTable(list) {
 
 function contractsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No contracts yet.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Contract</th><th>Customer</th><th>Service</th><th>Amount</th><th>Signed</th><th>Status</th></tr></thead><tbody>
-  ${list.map(c => `<tr><td>${c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${c.signed}</td><td>${statusBadge(c.status)}</td></tr>`).join('')}
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Contract</th><th>Customer</th><th>Service</th><th>Amount</th><th>Signed</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  ${list.map(c => `<tr><td>${c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${c.signed}</td><td>${statusBadge(c.status)}</td><td class="row-actions">${c.status === 'active' ? `<button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>` : '—'}</td></tr>`).join('')}
   </tbody></table></div>`;
+}
+
+async function cancelProviderContract(contractId) {
+  if (!BACKEND_AVAILABLE) return showToast('Contract cancelled (demo mode)');
+  if (!confirm("Cancel this contract? The customer's held escrow will be refunded, and you won't be paid for this job.")) return;
+  try {
+    await apiFetch('POST', `/contracts/${contractId}/cancel`);
+    showToast('Contract cancelled — customer notified and refunded');
+    await loadProviderData();
+    selectProviderSection('contracts');
+  } catch (e) { showToast(e.message || 'Could not cancel this contract'); }
 }
 
 function selectProviderSection(key) {
@@ -2657,11 +2773,17 @@ const ADMIN_SECTIONS = {
       ? `<label class="switch"><input type="checkbox" ${c.status==='live'?'checked':''} onchange="toggleCountry('${c.id}')"><span class="switch-track"></span></label>`
       : (c.status === 'live' ? statusBadge('completed') : `<span class="badge badge-neutral">Planned</span>`);
     return `
-    <div class="dash-header"><div><div class="dash-title">Categories & Countries</div><div class="dash-sub">${isSuper ? "Manage what's bookable, and where" : 'Global platform settings — read-only outside Super Admin'}</div></div>${isSuper ? `<button class="btn-sm btn-sm-primary" onclick="openNewCategoryForm()">+ Add Category</button>` : ''}</div>
+    <div class="dash-header"><div><div class="dash-title">Categories & Countries</div><div class="dash-sub">${isSuper ? "Manage what's bookable, and where" : 'Global platform settings — read-only outside Super Admin'}</div></div>${isSuper ? `<div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="openNewCategoryForm()">+ Add Category</button><button class="btn-sm btn-sm-outline" onclick="openNewCountryForm()">+ Add Country</button></div>` : ''}</div>
     ${isSuper ? `<div class="panel" id="new-category-panel" style="display:none;">
       <div class="panel-title">New Service Category</div>
       <div class="form-group"><label class="form-label">Category Name</label><input class="form-input" id="new-cat-name" placeholder="e.g. Pest Control"/></div>
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitNewCategory()">Create Category</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-category-panel').style.display='none'">Cancel</button></div>
+    </div>` : ''}
+    ${isSuper ? `<div class="panel" id="new-country-panel" style="display:none;">
+      <div class="panel-title">New Country</div>
+      <div class="form-group"><label class="form-label">Country Name</label><input class="form-input" id="new-country-name" placeholder="e.g. Kenya"/></div>
+      <div class="switch-row" style="padding:8px 0;"><div><div class="switch-label">Launch live immediately</div><div class="switch-sub">Off = added as "Planned" until you're ready to open it</div></div><label class="switch"><input type="checkbox" id="new-country-live"><span class="switch-track"></span></label></div>
+      <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitNewCountry()">Create Country</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-country-panel').style.display='none'">Cancel</button></div>
     </div>` : ''}
     <div class="panel"><div class="panel-title">Service Categories</div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Active</th></tr></thead><tbody>
@@ -2760,6 +2882,31 @@ async function submitNewCategory() {
     await Promise.all([loadAdminData(), loadCategories()]);
     selectAdminSection('categories');
   } catch (e) { showToast(e.message || 'Could not create category'); }
+}
+
+function openNewCountryForm() {
+  const panel = document.getElementById('new-country-panel');
+  if (panel) { panel.style.display = 'block'; document.getElementById('new-country-name').focus(); }
+}
+
+async function submitNewCountry() {
+  const name = document.getElementById('new-country-name').value.trim();
+  const live = document.getElementById('new-country-live').checked;
+  if (!name || name.length < 2) return showToast('Country name must be at least 2 characters');
+  if (!BACKEND_AVAILABLE) {
+    showToast(`"${name}" created (demo mode — no backend detected)`);
+    document.getElementById('new-country-panel').style.display = 'none';
+    return;
+  }
+  try {
+    const { country } = await apiFetch('POST', '/admin/countries', { name, status: live ? 'live' : 'planned' });
+    showToast(`"${country.name}" added${live ? ' and launched live' : ' as Planned'}`);
+    document.getElementById('new-country-name').value = '';
+    document.getElementById('new-country-live').checked = false;
+    document.getElementById('new-country-panel').style.display = 'none';
+    await loadAdminData();
+    selectAdminSection('categories');
+  } catch (e) { showToast(e.message || 'Could not create country'); }
 }
 
 async function toggleCategory(catId) {

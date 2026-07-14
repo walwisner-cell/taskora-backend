@@ -143,28 +143,61 @@ taskora-backend/
   public/                    — the Taskora frontend (index.html)
 ```
 
-## Why a JSON-file datastore instead of Postgres/MySQL?
+## Datastore: JSON files by default, real Postgres when you want it
 
-So `npm install && npm start` works immediately on any machine, with no
-database server to install, no native modules to compile, and no connection
-string to configure. Every route talks only to `src/db.js`'s methods
-(`all`, `find`, `filter`, `insert`, `update`, `remove`) — never to the JSON
-files directly — so swapping in a real database later is a matter of
-rewriting `db.js`, not touching route logic.
+`src/db.js` picks the backend automatically based on environment — nothing
+elsewhere in the app knows or cares which one is active:
 
-### Going to production
-Before this handles real users and real money, at minimum:
-1. Swap `src/db.js` for Postgres (Prisma or Knex are good fits) — the method
-   signatures in this file are intentionally close to what an ORM query
-   builder looks like, to make that swap mechanical.
-2. Move `JWT_SECRET` in `src/auth.js` out of the code and into an environment
+- **No `DATABASE_URL` set** → the JSON-file store (`src/db-json.js`). Zero
+  setup: `npm install && npm start` just works, no database server to
+  install, no connection string to configure. This is what every test
+  session so far has run against.
+- **`DATABASE_URL` set to a real Postgres connection string** → the
+  Postgres-backed store (`src/db-postgres.js`). Every route calls the exact
+  same methods (`all`, `find`, `filter`, `insert`, `update`, `remove`,
+  `replaceAll`) either way — switching backends is a config change, not a
+  code change.
+
+Both backends have been tested end-to-end against the full app: signup,
+login, AI matching, escrow, reviews, real-time messaging, regional admin
+scoping, phone/password reset flows — all pass identically against the
+JSON store and against a real running Postgres database.
+
+### Setting up Postgres
+
+1. **Local development:** install Postgres, create a database, then run:
+   ```
+   DATABASE_URL="postgresql://user:password@localhost:5432/taskora_dev" npm start
+   ```
+   The schema (`src/schema.sql`) is applied automatically on first boot —
+   no separate migration step to run.
+
+2. **On Render:** see the `render.yaml` comments under "ADDING REAL
+   POSTGRES" — briefly, create a Render Postgres instance from the
+   dashboard, uncomment the `DATABASE_URL` block in `render.yaml` (it
+   references the Postgres instance by name), commit and push.
+
+3. **Resetting demo data on Postgres:** same as the JSON store —
+   `npm run seed` truncates every table and reloads the standard demo
+   dataset. Safe to run any time; it only ever runs automatically on a
+   genuinely empty database, never over real data.
+
+### Going to production — what's still ahead
+With Postgres in place, the remaining steps before this handles real users
+and real money:
+1. Move `JWT_SECRET` in `src/auth.js` out of the code and into an environment
    variable / secrets manager, and rotate it.
-3. Add a real payment processor + escrow provider integration behind
+2. Add a real payment processor + escrow provider integration behind
    `payments.routes.js`.
-4. Add a real KYC/identity verification vendor behind the verification
+3. Add a real KYC/identity verification vendor behind the verification
    endpoints, per the per-country approach in the architecture doc (BVN/NIN
    for Nigeria, national ID for Ghana, etc.).
-5. Add request validation (e.g. zod) and rate limiting on auth endpoints.
+4. Add a real SMS provider (phone verification) and email provider
+   (password reset) — both flows are fully built in test mode already; see
+   `src/routes/auth.routes.js`.
+5. Add rate limiting more broadly (auth endpoints already have basic
+   in-memory rate limiting — see the note in `auth.routes.js` about moving
+   this to a shared store like Redis once running multiple instances).
 6. Add HTTPS/TLS termination (typically handled by your host/load balancer).
 
 ## API reference (short version)
