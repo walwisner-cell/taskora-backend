@@ -2043,15 +2043,41 @@ function bookingsTable(list) {
 }
 
 function bookingActionHTML(b) {
+  const downloadBtn = `<button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${b.id}')" title="Download a PDF record of this contract">📄 PDF</button>`;
   if (b.status === 'active' || b.status === 'confirmed') {
-    return `<button class="btn-sm btn-sm-primary" onclick="completeBooking('${b.id}')">Mark Complete</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${b.id}')">Report a Problem</button>`;
+    return `<button class="btn-sm btn-sm-primary" onclick="completeBooking('${b.id}')">Mark Complete</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${b.id}')">Report a Problem</button> ${downloadBtn}`;
   }
   if (b.status === 'completed') {
-    return b.reviewed
+    return `${b.reviewed
       ? `<span class="badge badge-success">Reviewed</span>`
-      : `<button class="btn-sm btn-sm-ghost" onclick="openReviewForm('${b.id}','${b.pro}')">Leave Review</button>`;
+      : `<button class="btn-sm btn-sm-ghost" onclick="openReviewForm('${b.id}','${b.pro}')">Leave Review</button>`} ${downloadBtn}`;
   }
-  return '—';
+  return downloadBtn;
+}
+
+async function downloadContractPDF(contractId) {
+  if (!BACKEND_AVAILABLE) return showToast('PDF download requires a live backend connection');
+  try {
+    const res = await fetch(API_BASE + `/contracts/${contractId}/pdf`, {
+      headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Could not generate the PDF');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Taskora-Contract-${contractId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    showToast('Contract PDF downloaded');
+  } catch (e) {
+    showToast(e.message || 'Could not download the PDF');
+  }
 }
 
 function openDisputeForm(contractId) {
@@ -2689,10 +2715,21 @@ const PROVIDER_SECTIONS = {
     <div class="panel"><div class="panel-title">Payout Method</div>
       <div class="form-group"><label class="form-label">Payout Method</label>
         <select class="form-input form-select" id="set-prov-payout-method" onchange="savePayoutMethod(this.value)">
-          <option value="Bank Transfer" ${(!AUTH.user || AUTH.user.payoutMethod !== 'Wallet / Mobile Money') ? 'selected' : ''}>Bank Transfer — Chase •••• 1123</option>
+          <option value="Bank Transfer" ${(!AUTH.user || !AUTH.user.payoutMethod || AUTH.user.payoutMethod === 'Bank Transfer') ? 'selected' : ''}>Bank Transfer — Chase •••• 1123</option>
           <option value="Wallet / Mobile Money" ${(AUTH.user && AUTH.user.payoutMethod === 'Wallet / Mobile Money') ? 'selected' : ''}>Wallet / Mobile Money</option>
+          <option value="Debit Card" ${(AUTH.user && AUTH.user.payoutMethod === 'Debit Card') ? 'selected' : ''}>Debit Card</option>
         </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Card payouts are test mode until a real payment processor is connected — same as everywhere else money touches this app.</div>
       </div>
+    </div>
+    <div class="panel" id="prov-billing-card-panel" style="display:${(AUTH.user && AUTH.user.payoutMethod === 'Debit Card') ? 'block' : 'none'};">
+      <div class="panel-title">Debit Card for Payouts</div>
+      <div class="form-group"><label class="form-label">Card Number</label><input class="form-input" id="prov-payout-card-number" placeholder="4242 4242 4242 4242"/></div>
+      <div class="dates-row">
+        <div class="form-group"><label class="form-label">Expiry (MM/YY)</label><input class="form-input" id="prov-payout-card-expiry" placeholder="12/28"/></div>
+        <div class="form-group"><label class="form-label">Name on Card</label><input class="form-input" id="prov-payout-card-name"/></div>
+      </div>
+      <button class="btn-sm btn-sm-primary" onclick="savePayoutCard()">Save Card</button>
     </div>
     <div class="panel"><div class="panel-title">Notifications</div>
       ${notifToggleHTML('newMatches', 'New job matches', 'AI-matched jobs in your category', true)}
@@ -2712,12 +2749,35 @@ function setPricingModelUI(model) {
 }
 
 async function savePayoutMethod(method) {
+  const cardPanel = document.getElementById('prov-billing-card-panel');
+  if (cardPanel) cardPanel.style.display = method === 'Debit Card' ? 'block' : 'none';
   if (!BACKEND_AVAILABLE) return showToast('Payout method updated (demo mode)');
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { payoutMethod: method });
     AUTH.user = user;
     showToast('Payout method updated — future payouts will use this');
   } catch (e) { showToast(e.message || 'Could not update payout method'); }
+}
+
+async function savePayoutCard() {
+  const cardNumber = document.getElementById('prov-payout-card-number').value.trim();
+  const expiry = document.getElementById('prov-payout-card-expiry').value.trim();
+  const nameOnCard = document.getElementById('prov-payout-card-name').value.trim();
+  if (cardNumber.replace(/\D/g, '').length < 4) return showToast('Enter at least 4 digits (test mode — any digits work)');
+  if (!/^\d{1,2}\/\d{2}$/.test(expiry)) return showToast('Enter expiry as MM/YY');
+  if (!nameOnCard || nameOnCard.length < 2) return showToast('Enter the name on the card');
+  if (!BACKEND_AVAILABLE) return showToast('Card saved for payouts (demo mode)');
+  try {
+    // Reuses the same payment-methods storage/validation as the customer
+    // side (last-4-only, no CVV) — a payout card is handled with the same
+    // care as a payment card, not a separate looser path.
+    await apiFetch('POST', '/payment-methods', {
+      cardNumber, expiry, nameOnCard,
+      billingAddress: (AUTH.user && AUTH.user.address) || 'On file',
+      billingZip: (AUTH.user && AUTH.user.zipCode) || '00000',
+    });
+    showToast('Card saved for payouts');
+  } catch (e) { showToast(e.message || 'Could not save card'); }
 }
 
 async function savePricingModel() {
@@ -2816,7 +2876,7 @@ function matchesTable(list) {
 function contractsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No contracts yet.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Customer</th><th>Service</th><th>Amount</th><th>Signed</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(c => `<tr><td>${c.bookingNumber || c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${c.signed}</td><td>${statusBadge(c.status)}</td><td class="row-actions">${c.status === 'active' ? `<button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>` : '—'}</td></tr>`).join('')}
+  ${list.map(c => `<tr><td>${c.bookingNumber || c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${c.signed}</td><td>${statusBadge(c.status)}</td><td class="row-actions">${c.status === 'active' ? `<button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>` : ''} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -3097,13 +3157,13 @@ const ADMIN_SECTIONS = {
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitNewCountry()">Create Country</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-country-panel').style.display='none'">Cancel</button></div>
     </div>` : ''}
     <div class="panel"><div class="panel-title">Service Categories</div>
-      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Active</th></tr></thead><tbody>
-      ${adminData.categories.map(c => `<tr><td>${c.name}</td><td>${c.pros}</td><td>${catCell(c)}</td></tr>`).join('')}
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Active</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
+      ${adminData.categories.map(c => `<tr><td>${c.name}</td><td>${c.pros}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" onclick="deleteCategory('${c.id}','${c.name}')">Delete</button></td>` : ''}</tr>`).join('')}
       </tbody></table></div>
     </div>
     <div class="panel"><div class="panel-title">Countries</div>
-      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Country</th><th>Live</th></tr></thead><tbody>
-      ${adminData.countries.map(c => `<tr><td>${c.name}</td><td>${cntCell(c)}</td></tr>`).join('')}
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Country</th><th>Live</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
+      ${adminData.countries.map(c => `<tr><td>${c.name}</td><td>${cntCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" onclick="deleteCountry('${c.id}','${c.name}')">Delete</button></td>` : ''}</tr>`).join('')}
       </tbody></table></div>
     </div>`;
   },
@@ -3134,7 +3194,7 @@ function citiesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No cities configured yet.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>City</th><th>Country</th><th>Admin</th><th>Users</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
   ${list.map(c => `<tr><td>${c.name}</td><td>${c.country}</td><td>${c.adminName || '—'}<div style="font-size:11px;color:var(--slate)">${c.adminEmail || ''}</div></td><td>${c.userCount ?? '—'}</td><td>${statusBadge(c.adminActive === false ? 'rejected' : 'completed')}</td>
-  ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${c.adminId}')">${c.adminActive === false ? 'Reactivate' : 'Suspend'}</button></td>` : ''}</tr>`).join('')}
+  ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${c.adminId}')">${c.adminActive === false ? 'Reactivate' : 'Suspend'}</button> <button class="btn-sm btn-sm-outline" onclick="deleteSubAdmin('${c.adminId}','${c.adminName || 'this admin'}','${c.name}')">Delete</button></td>` : ''}</tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -3170,6 +3230,18 @@ async function toggleSubAdminActive(adminId) {
     await loadAdminData();
     selectAdminSection('locations');
   } catch (e) { showToast(e.message || 'Could not update admin status'); }
+}
+
+async function deleteSubAdmin(adminId, adminName, cityName) {
+  if (!adminId) return;
+  if (!confirm(`Delete ${adminName}'s account? This can't be undone.`)) return;
+  if (!BACKEND_AVAILABLE) return showToast(`${adminName} deleted (demo mode)`);
+  try {
+    await apiFetch('DELETE', `/admin/sub-admins/${adminId}`);
+    showToast(`${adminName} deleted`);
+    await loadAdminData();
+    selectAdminSection('locations');
+  } catch (e) { showToast(e.message || `Could not delete — ${cityName} may still need a reassigned admin first`); }
 }
 
 function openNewCategoryForm() {
@@ -3247,6 +3319,28 @@ async function toggleCountry(cId) {
     if (local) local.status = country.status;
     showToast(`${country.name} marked ${country.status}`);
   } catch (e) { showToast(e.message || 'Could not update country'); }
+}
+
+async function deleteCategory(catId, name) {
+  if (!confirm(`Delete "${name}"? This can't be undone. Providers currently listed under it will block this.`)) return;
+  if (!BACKEND_AVAILABLE) return showToast(`${name} deleted (demo mode)`);
+  try {
+    await apiFetch('DELETE', `/admin/categories/${catId}`);
+    showToast(`${name} deleted`);
+    await loadAdminData();
+    selectAdminSection('categories');
+  } catch (e) { showToast(e.message || 'Could not delete category'); }
+}
+
+async function deleteCountry(cId, name) {
+  if (!confirm(`Delete "${name}"? This can't be undone. Accounts registered under it will block this.`)) return;
+  if (!BACKEND_AVAILABLE) return showToast(`${name} deleted (demo mode)`);
+  try {
+    await apiFetch('DELETE', `/admin/countries/${cId}`);
+    showToast(`${name} deleted`);
+    await loadAdminData();
+    selectAdminSection('categories');
+  } catch (e) { showToast(e.message || 'Could not delete country'); }
 }
 
 function peopleTable(list) {

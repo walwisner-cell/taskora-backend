@@ -311,6 +311,95 @@ router.get('/contracts/mine', requireAuth, async (req, res) => {
   res.json({ contracts: withNames });
 });
 
+// GET /api/contracts/:id/pdf — a real, downloadable PDF record of the
+// contract. Requested specifically so there's something concrete to hand a
+// court or a lawyer if a dispute over a booking ever needs to go beyond the
+// app — this is a genuine generated document, not a screenshot or a
+// formatted webpage.
+router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
+  const contract = await db.find('contracts', c =>
+    c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub || req.user.role === 'admin')
+  );
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+  const customer = await db.find('users', u => u.id === contract.customerId);
+  const provider = await db.find('users', u => u.id === contract.providerId);
+  const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+  const dispute = await db.find('disputes', d => d.contractId === contract.id);
+
+  const PDFDocument = require('pdfkit');
+  const doc = new PDFDocument({ size: 'LETTER', margin: 56 });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Taskora-Contract-${contract.bookingNumber || contract.id}.pdf"`);
+  doc.pipe(res);
+
+  const navy = '#12161F';
+  const slate = '#5A5F6C';
+  const gold = '#B08A3E';
+
+  doc.fillColor(navy).fontSize(22).font('Helvetica-Bold').text('TASKORA', { continued: false });
+  doc.fillColor(gold).fontSize(11).font('Helvetica-Bold').text('SERVICE CONTRACT', { characterSpacing: 1 });
+  doc.moveDown(0.3);
+  doc.fillColor(slate).fontSize(9).font('Helvetica').text(`Generated ${new Date().toLocaleString('en-US')}`);
+  doc.moveDown(1.2);
+  doc.strokeColor('#D8D3C8').lineWidth(1).moveTo(56, doc.y).lineTo(556, doc.y).stroke();
+  doc.moveDown(1);
+
+  function row(label, value) {
+    doc.fillColor(slate).fontSize(9).font('Helvetica-Bold').text(label.toUpperCase(), { continued: false });
+    doc.fillColor(navy).fontSize(12).font('Helvetica').text(value || '—');
+    doc.moveDown(0.6);
+  }
+
+  row('Booking Number', contract.bookingNumber || contract.id);
+  row('Internal Reference ID', contract.id);
+  row('Status', contract.status.charAt(0).toUpperCase() + contract.status.slice(1));
+  doc.moveDown(0.4);
+
+  doc.fillColor(navy).fontSize(11).font('Helvetica-Bold').text('PARTIES');
+  doc.moveDown(0.3);
+  row('Customer', customer ? `${customer.name} (${customer.email})` : 'Unknown');
+  row('Provider', provider ? `${provider.name} (${provider.email})` : 'Unknown');
+  doc.moveDown(0.4);
+
+  doc.fillColor(navy).fontSize(11).font('Helvetica-Bold').text('SERVICE DETAILS');
+  doc.moveDown(0.3);
+  row('Service', contract.service);
+  if (contract.date) row('Scheduled Date', `${contract.date}${contract.time ? ' · ' + contract.time : ''}`);
+  if (contract.address) row('Service Address', contract.address);
+  row('Agreed Amount', `$${contract.amount}`);
+  row('Contract Signed', contract.signedAt || new Date(contract.createdAt).toLocaleDateString());
+  doc.moveDown(0.4);
+
+  doc.fillColor(navy).fontSize(11).font('Helvetica-Bold').text('ESCROW & PAYMENT');
+  doc.moveDown(0.3);
+  if (escrow) {
+    row('Escrow Amount', `$${escrow.amount}`);
+    row('Escrow Status', escrow.status.charAt(0).toUpperCase() + escrow.status.slice(1));
+  } else {
+    row('Escrow Status', 'No escrow record on file');
+  }
+
+  if (dispute) {
+    doc.moveDown(0.4);
+    doc.fillColor(navy).fontSize(11).font('Helvetica-Bold').text('DISPUTE RECORD');
+    doc.moveDown(0.3);
+    row('Reason', dispute.reason);
+    row('Dispute Status', dispute.status.charAt(0).toUpperCase() + dispute.status.slice(1));
+    row('Opened', new Date(dispute.createdAt).toLocaleDateString());
+  }
+
+  doc.moveDown(1.5);
+  doc.strokeColor('#D8D3C8').lineWidth(1).moveTo(56, doc.y).lineTo(556, doc.y).stroke();
+  doc.moveDown(0.6);
+  doc.fillColor(slate).fontSize(8).font('Helvetica').text(
+    'This document is a system-generated record of a Taskora booking, reflecting the state of the contract, escrow, and any dispute at the time of generation. It is provided for the parties\' own recordkeeping.',
+    { width: 500 }
+  );
+
+  doc.end();
+});
+
 // POST /api/reviews — leave a review for a completed contract (customer only,
 // once per contract). Recomputes the provider's average rating from every
 // real review on file, so the rating shown across the app becomes genuine

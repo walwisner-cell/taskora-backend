@@ -220,6 +220,23 @@ router.patch('/categories/:id', requireSuperAdmin, async (req, res) => {
   res.json({ category: updated });
 });
 
+// DELETE /api/admin/categories/:id — real delete, guarded the same way as
+// countries: a category with providers actually listed under it can't be
+// deleted outright, since that would silently strand their accounts with a
+// category that no longer exists anywhere in the system. Deactivating (the
+// PATCH above) is the right move for "stop taking new bookings in this
+// category" — delete is for one that was never actually adopted.
+router.delete('/categories/:id', requireSuperAdmin, async (req, res) => {
+  const cat = await db.find('categories', c => c.id === req.params.id);
+  if (!cat) return res.status(404).json({ error: 'Category not found' });
+  const providersHere = await db.filter('users', u => u.role === 'provider' && u.category === cat.name);
+  if (providersHere.length > 0) {
+    return res.status(409).json({ error: `Can't delete — ${providersHere.length} provider(s) are listed under "${cat.name}". Deactivate it instead to stop new bookings.` });
+  }
+  await db.remove('categories', cat.id);
+  res.json({ ok: true });
+});
+
 router.get('/countries', async (req, res) => res.json({ countries: await db.all('countries') }));
 
 // POST /api/admin/countries — add a new country (starts as 'planned' until
@@ -244,6 +261,24 @@ router.patch('/countries/:id', requireSuperAdmin, async (req, res) => {
   if (!c) return res.status(404).json({ error: 'Country not found' });
   const updated = await db.update('countries', c.id, { status: c.status === 'live' ? 'planned' : 'live' });
   res.json({ country: updated });
+});
+
+// DELETE /api/admin/countries/:id — real delete, but only when it's actually
+// safe: a country with real users registered under it can't be deleted,
+// since that would silently orphan every one of their accounts (dangling
+// references with no country data, breaking admin location scoping,
+// reporting, etc). Deactivating (the PATCH above) is the right tool for
+// "stop accepting new signups here" — deleting is for a country that was
+// added by mistake or never actually launched.
+router.delete('/countries/:id', requireSuperAdmin, async (req, res) => {
+  const c = await db.find('countries', x => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Country not found' });
+  const usersHere = await db.filter('users', u => u.country === c.name);
+  if (usersHere.length > 0) {
+    return res.status(409).json({ error: `Can't delete — ${usersHere.length} account(s) are registered under ${c.name}. Set it to "Planned" instead to stop new signups there.` });
+  }
+  await db.remove('countries', c.id);
+  res.json({ ok: true });
 });
 
 // ---- Locations & sub-admins (super admin only) ------------------------------
@@ -315,6 +350,24 @@ router.patch('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
   if (!Object.keys(patch).length && req.body && req.body.toggleActive) patch.active = !target.active;
   const updated = await db.update('users', target.id, patch);
   res.json({ admin: publicAdmin(updated) });
+});
+
+// DELETE /api/admin/sub-admins/:id — real delete, guarded: a city currently
+// pointing at this admin as its manager can't be left with a dangling
+// reference, so this requires the city be reassigned to someone else first
+// (via POST /sub-admins with the same city, which reassigns automatically —
+// see that route). Suspending (PATCH above) is the right tool for "this
+// person shouldn't have access right now" — delete is for removing the
+// account entirely once no city depends on it.
+router.delete('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
+  const target = await db.find('users', u => u.id === req.params.id && u.role === 'admin' && !u.isSuperAdmin);
+  if (!target) return res.status(404).json({ error: 'Sub-admin not found' });
+  const managedCity = await db.find('cities', c => c.adminId === target.id);
+  if (managedCity) {
+    return res.status(409).json({ error: `Can't delete — ${target.name} is still the assigned admin for ${managedCity.name}. Assign a new admin to that city first.` });
+  }
+  await db.remove('users', target.id);
+  res.json({ ok: true });
 });
 
 module.exports = router;
