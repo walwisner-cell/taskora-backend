@@ -1,360 +1,360 @@
 [
   {
-    "id": "cat_CKGoTso3GC",
+    "id": "cat_GlyEoy3EnP",
     "name": "Plumbing",
     "icon": "🔧",
     "active": true
   },
   {
-    "id": "cat_wNSGsBMuGr",
+    "id": "cat_Gkbr6OhNxj",
     "name": "Electrical",
     "icon": "⚡",
     "active": true
   },
   {
-    "id": "cat_2WyEfe_HLx",
+    "id": "cat_fG6w27BZFU",
     "name": "HVAC & Air Conditioning",
     "icon": "❄️",
     "active": true
   },
   {
-    "id": "cat_amDXk5LCRl",
+    "id": "cat_OVFawJ8O2g",
     "name": "Handyman Services",
     "icon": "🛠️",
     "active": true
   },
   {
-    "id": "cat_1zoIpwFoh1",
+    "id": "cat_7kEfq2BFfh",
     "name": "Carpentry",
     "icon": "🪚",
     "active": true
   },
   {
-    "id": "cat_P4pvMGNk8-",
+    "id": "cat_Q4UlRbFrz7",
     "name": "Painting",
     "icon": "🎨",
     "active": true
   },
   {
-    "id": "cat_zOgqC7cf8o",
+    "id": "cat_6dFHgf0oS1",
     "name": "Roofing",
     "icon": "🏠",
     "active": true
   },
   {
-    "id": "cat_XavY1CnNNW",
+    "id": "cat_yshF3Ywo3m",
     "name": "Flooring Installation",
     "icon": "🪵",
     "active": true
   },
   {
-    "id": "cat_TMadziUwkc",
+    "id": "cat_RB6GKAHSci",
     "name": "Locksmith",
     "icon": "🔑",
     "active": true
   },
   {
-    "id": "cat_GCAxYuJirF",
+    "id": "cat_nfcqDKuaD0",
     "name": "Appliance Repair",
     "icon": "🔌",
     "active": true
   },
   {
-    "id": "cat_EQv4biAcct",
+    "id": "cat_JzBGTZsdE6",
     "name": "Pest Control",
     "icon": "🐜",
     "active": true
   },
   {
-    "id": "cat_JcW_ThF0n0",
+    "id": "cat_eSCapFO6Gq",
     "name": "Window Installation & Repair",
     "icon": "🪟",
     "active": true
   },
   {
-    "id": "cat_rP_zc3MWXQ",
+    "id": "cat_p55iZ1nj_c",
     "name": "Masonry",
     "icon": "🧱",
     "active": true
   },
   {
-    "id": "cat_JIoQNlfB9e",
+    "id": "cat_A-6Gr5YJzJ",
     "name": "Welding",
     "icon": "🔥",
     "active": true
   },
   {
-    "id": "cat__XJiz2hFYG",
+    "id": "cat_OqVpzVk1dQ",
     "name": "General Contracting",
     "icon": "👷",
     "active": true
   },
   {
-    "id": "cat_jLhA8HU43t",
+    "id": "cat_2kiv5CwrD0",
     "name": "Home Renovation",
     "icon": "🏗️",
     "active": true
   },
   {
-    "id": "cat_M_5xE7-WW_",
+    "id": "cat_lnOeySPoSc",
     "name": "Cleaning",
     "icon": "🧹",
     "active": true
   },
   {
-    "id": "cat_EFfTKH1yKn",
+    "id": "cat_dnqK3fc726",
     "name": "Deep Cleaning",
     "icon": "🧼",
     "active": true
   },
   {
-    "id": "cat_Th1rU-JzG4",
+    "id": "cat_bVrMrcXW5y",
     "name": "Carpet Cleaning",
     "icon": "🧽",
     "active": true
   },
   {
-    "id": "cat_AAPNGT_Siw",
+    "id": "cat_DD6YN5rBt5",
     "name": "Window Cleaning",
     "icon": "🪞",
     "active": true
   },
   {
-    "id": "cat_Jvi9Br3X_9",
+    "id": "cat_hylQTd1BdD",
     "name": "Pool Cleaning & Maintenance",
     "icon": "🏊",
     "active": true
   },
   {
-    "id": "cat_vZgcc5Hmkc",
+    "id": "cat_OPUZiSnIru",
     "name": "Laundry & Dry Cleaning",
     "icon": "👕",
     "active": true
   },
   {
-    "id": "cat_0fxS_bG5KU",
+    "id": "cat_LRm-VquYYF",
     "name": "Moving",
     "icon": "📦",
     "active": true
   },
   {
-    "id": "cat_NVEi6GwzSq",
+    "id": "cat_wMPv7HYKf1",
     "name": "Pick & Drop",
     "icon": "🚗",
     "active": true
   },
   {
-    "id": "cat_zz-G3xzAZk",
+    "id": "cat_UzFN37f6xf",
     "name": "Furniture Assembly",
     "icon": "🪑",
     "active": true
   },
   {
-    "id": "cat_wBIyxOEa3A",
+    "id": "cat_c6jmI8k7rB",
     "name": "Junk Removal",
     "icon": "🗑️",
     "active": true
   },
   {
-    "id": "cat_6Vrgd4-RdV",
+    "id": "cat_ep7PDtKyiV",
     "name": "Landscaping",
     "icon": "🌿",
     "active": true
   },
   {
-    "id": "cat_-jTM6aPrk1",
+    "id": "cat_KB0GIdW4LK",
     "name": "Lawn Care",
     "icon": "🌾",
     "active": true
   },
   {
-    "id": "cat_0KJd407WfV",
+    "id": "cat_D3bQgY2XYE",
     "name": "Gardening",
     "icon": "🌱",
     "active": true
   },
   {
-    "id": "cat_Py9eWm_gYz",
+    "id": "cat_cO6f21l1t6",
     "name": "Tree Trimming & Removal",
     "icon": "🌳",
     "active": true
   },
   {
-    "id": "cat_TGi7t1ZVfF",
+    "id": "cat_Lqb_LaENU6",
     "name": "Fence Installation & Repair",
     "icon": "🚧",
     "active": true
   },
   {
-    "id": "cat_fO1fXm2avq",
+    "id": "cat_kEnsgky7MF",
     "name": "Fitness",
     "icon": "💪",
     "active": true
   },
   {
-    "id": "cat_9WxSa_Hp5G",
+    "id": "cat_B1gNpctWIK",
     "name": "Massage Therapy",
     "icon": "💆",
     "active": true
   },
   {
-    "id": "cat_X8fhU6AvQk",
+    "id": "cat_noF5mBg6jv",
     "name": "Hair Styling",
     "icon": "💇",
     "active": true
   },
   {
-    "id": "cat_AEBqCEr439",
+    "id": "cat_U-dSL-CuzM",
     "name": "Makeup Artistry",
     "icon": "💄",
     "active": true
   },
   {
-    "id": "cat_gv1TVP9TWr",
+    "id": "cat_eoJr0tyhuf",
     "name": "Nail Care",
     "icon": "💅",
     "active": true
   },
   {
-    "id": "cat_UnVd6UHcb4",
+    "id": "cat_NqXk5pABXS",
     "name": "Tutoring",
     "icon": "📚",
     "active": true
   },
   {
-    "id": "cat_KmlLoKr9-L",
+    "id": "cat_g_dBlUsvuM",
     "name": "Music Lessons",
     "icon": "🎵",
     "active": true
   },
   {
-    "id": "cat_gbmrcUojpy",
+    "id": "cat_NGx3tnRA1B",
     "name": "Language Lessons",
     "icon": "🗣️",
     "active": true
   },
   {
-    "id": "cat_7Fx6ElLaOH",
+    "id": "cat_eNvWFvuWf_",
     "name": "Test Prep",
     "icon": "📝",
     "active": true
   },
   {
-    "id": "cat_Ab9unV_ZZk",
+    "id": "cat_vR0GEVpHm0",
     "name": "Event Planning",
     "icon": "🎉",
     "active": true
   },
   {
-    "id": "cat_P-AISJpwpp",
+    "id": "cat_8CflT6Aqmm",
     "name": "Photography",
     "icon": "📷",
     "active": true
   },
   {
-    "id": "cat_Spge3V3z8d",
+    "id": "cat_xt081ul6lc",
     "name": "Videography",
     "icon": "🎥",
     "active": true
   },
   {
-    "id": "cat_zLXA5PZcIZ",
+    "id": "cat_1uiuuZunmp",
     "name": "DJ Services",
     "icon": "🎧",
     "active": true
   },
   {
-    "id": "cat_aPTqP-rc2Z",
+    "id": "cat_QUWuNzstcb",
     "name": "Catering",
     "icon": "🍽️",
     "active": true
   },
   {
-    "id": "cat_OYjP44Q99S",
+    "id": "cat_bDpey5eKRq",
     "name": "Auto Repair",
     "icon": "🚘",
     "active": true
   },
   {
-    "id": "cat_EnpumTdnvP",
+    "id": "cat_qbGf_iDPVI",
     "name": "Car Detailing & Wash",
     "icon": "🧽",
     "active": true
   },
   {
-    "id": "cat_zCx_Im1FVt",
+    "id": "cat_HvHrObMqPb",
     "name": "Towing",
     "icon": "🚛",
     "active": true
   },
   {
-    "id": "cat_NiFTcqj6V6",
+    "id": "cat_yiiN3I6SDC",
     "name": "Pet Sitting",
     "icon": "🐾",
     "active": true
   },
   {
-    "id": "cat_tG9obXKCnF",
+    "id": "cat_N4RPdNI5Jn",
     "name": "Dog Walking",
     "icon": "🐕",
     "active": true
   },
   {
-    "id": "cat_u2mQxGR9sd",
+    "id": "cat_zg2DLL_Nx1",
     "name": "Pet Grooming",
     "icon": "🐩",
     "active": true
   },
   {
-    "id": "cat_TyBZ1faZfq",
+    "id": "cat_cmWCv7LIUi",
     "name": "IT Support & Computer Repair",
     "icon": "💻",
     "active": true
   },
   {
-    "id": "cat_OsO0Zt0scQ",
+    "id": "cat_cBNC4YTY7i",
     "name": "Web & Graphic Design",
     "icon": "🎨",
     "active": true
   },
   {
-    "id": "cat_cVjywLbxVE",
+    "id": "cat_Izyv56yEXc",
     "name": "Accounting & Bookkeeping",
     "icon": "📊",
     "active": true
   },
   {
-    "id": "cat_JiDBaI5kZN",
+    "id": "cat_Q3MuIS6XKa",
     "name": "Legal Consulting",
     "icon": "⚖️",
     "active": true
   },
   {
-    "id": "cat_e2CwMYYtP2",
+    "id": "cat_8pbk088yrs",
     "name": "Notary Services",
     "icon": "🖋️",
     "active": true
   },
   {
-    "id": "cat_ILWvucygCy",
+    "id": "cat_mIXv7zCMhn",
     "name": "Interior Design",
     "icon": "🛋️",
     "active": true
   },
   {
-    "id": "cat_SNt75febdh",
+    "id": "cat_ATBZUFrBWv",
     "name": "Babysitting & Nanny Services",
     "icon": "🍼",
     "active": true
   },
   {
-    "id": "cat_EPNwwVEqYA",
+    "id": "cat_8eUM7PzM3M",
     "name": "Elder Care",
     "icon": "🧓",
     "active": true
   },
   {
-    "id": "cat_rgHyuk7mFq",
+    "id": "cat_M4qut3A331",
     "name": "Security Services",
     "icon": "🛡️",
     "active": true

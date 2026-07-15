@@ -58,9 +58,22 @@ app.get('/api/health', (req, res) => res.json({ ok: true, service: 'taskora-api'
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // ---- Serve the frontend ----
-app.use(express.static(path.join(__dirname, 'public')));
+// The main HTML file explicitly disables caching — this is the file that
+// changes with every deploy, and a browser serving a stale cached copy
+// after a real fix has shipped is a genuinely confusing, hard-to-diagnose
+// failure mode (looks like "the fix didn't work" when it's actually just
+// an old cached page). Other static assets (images, uploads) can still
+// cache normally since they change far less often.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  },
+}));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

@@ -897,7 +897,10 @@
       </div>
       <div class="form-group" id="auth-phone-group" style="display:none">
         <label class="form-label">Phone Number</label>
-        <input class="form-input" type="tel" id="auth-phone"/>
+        <div style="display:flex;gap:8px;">
+          <div id="auth-phone-dialcode" style="flex-shrink:0;min-width:56px;display:flex;align-items:center;justify-content:center;padding:0 10px;border:1.5px solid var(--border);border-radius:10px;background:var(--offwhite);font-size:14px;color:var(--navy);font-weight:600;">+1</div>
+          <input class="form-input" type="tel" id="auth-phone" style="flex:1;"/>
+        </div>
       </div>
       <div class="form-group" id="auth-country-group" style="display:none">
         <label class="form-label">Country</label>
@@ -1441,6 +1444,7 @@ const FALLBACK_GEO = {
     'Liberia': ['Montserrado', 'Bong', 'Nimba'],
   },
   noPostalCodeCountries: ['Ghana'],
+  dialCodeByCountry: { 'United States': '+1', 'Nigeria': '+234', 'Ghana': '+233', 'Liberia': '+231' },
 };
 let GEO_DATA = FALLBACK_GEO;
 
@@ -1478,10 +1482,18 @@ function populateAuthStates() {
   const zipHint = document.getElementById('auth-zip-hint');
   if (zipLabel) zipLabel.textContent = noPostalCode ? 'Zip / Postal Code (optional)' : 'Zip / Postal Code';
   if (zipHint) zipHint.style.display = noPostalCode ? 'block' : 'none';
+
+  // Real country calling code, shown as a fixed prefix so nobody has to
+  // remember or type their own country's dial code — they just type the
+  // rest of their number after it.
+  const dialCodeBadge = document.getElementById('auth-phone-dialcode');
+  if (dialCodeBadge) {
+    dialCodeBadge.textContent = (GEO_DATA.dialCodeByCountry && GEO_DATA.dialCodeByCountry[country]) || '+1';
+  }
 }
 
 function categoryCardsHTML(list) {
-  return list.map(c => `<div class="cat-card" onclick="goDirectory('${c.name}')"><span class="cat-emoji">${categoryIcon(c.name)}</span><div class="cat-label">${c.name}</div><div class="cat-count">${c.proCount} pros</div></div>`).join('');
+  return list.map(c => `<div class="cat-card" data-catname="${c.name.replace(/"/g, '&quot;')}" onclick="goDirectory(this.dataset.catname)"><span class="cat-emoji">${categoryIcon(c.name)}</span><div class="cat-label">${c.name}</div><div class="cat-count">${c.proCount} pros</div></div>`).join('');
 }
 
 function renderHomeCategories() {
@@ -1799,7 +1811,9 @@ async function mockAuth() {
   const city = document.getElementById('auth-city').value.trim();
   const country = document.getElementById('auth-country').value;
   const state = document.getElementById('auth-state').value;
-  const phone = document.getElementById('auth-phone').value.trim();
+  const phoneDialCode = document.getElementById('auth-phone-dialcode') ? document.getElementById('auth-phone-dialcode').textContent : '';
+  const phoneLocal = document.getElementById('auth-phone').value.trim();
+  const phone = phoneLocal ? `${phoneDialCode}${phoneLocal.replace(/^0+/, '')}` : '';
   const address = document.getElementById('auth-address').value.trim();
   const zipCode = document.getElementById('auth-zip').value.trim();
   const categorySelect = document.getElementById('auth-category').value;
@@ -2238,7 +2252,7 @@ function bookingActionHTML(b) {
   if (b.status === 'completed') {
     return `${b.reviewed
       ? `<span class="badge badge-success">Reviewed</span>`
-      : `<button class="btn-sm btn-sm-ghost" onclick="openReviewForm('${b.id}','${b.pro}')">Leave Review</button>`} ${downloadBtn}`;
+      : `<button class="btn-sm btn-sm-ghost" data-contract-id="${b.id}" data-pro-name="${(b.pro || '').replace(/"/g, '&quot;')}" onclick="openReviewForm(this.dataset.contractId, this.dataset.proName)">Leave Review</button>`} ${downloadBtn}`;
   }
   if (b.status === 'declined') {
     return `<span style="font-size:12px;color:var(--slate);">Try a new offer, or a different pro</span>`;
@@ -3474,14 +3488,14 @@ const ADMIN_SECTIONS = {
       <div class="switch-row" style="padding:8px 0;"><div><div class="switch-label">Launch live immediately</div><div class="switch-sub">Off = added as "Planned" until you're ready to open it</div></div><label class="switch"><input type="checkbox" id="new-country-live"><span class="switch-track"></span></label></div>
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitNewCountry()">Create Country</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-country-panel').style.display='none'">Cancel</button></div>
     </div>` : ''}
-    <div class="panel"><div class="panel-title">Service Categories</div>
+    <div class="panel"><div class="panel-title">Service Categories <small style="font-weight:400;color:var(--slate);">${adminData.categories.length} total</small></div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Active</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
-      ${adminData.categories.map(c => `<tr><td>${c.name}</td><td>${c.pros}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" onclick="deleteCategory('${c.id}','${c.name}')">Delete</button></td>` : ''}</tr>`).join('')}
+      ${adminData.categories.map(c => `<tr><td>${c.name}</td><td>${c.pros}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteCategory(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
       </tbody></table></div>
     </div>
-    <div class="panel"><div class="panel-title">Countries</div>
+    <div class="panel"><div class="panel-title">Countries <small style="font-weight:400;color:var(--slate);">${adminData.countries.length} total</small></div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Country</th><th>Live</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
-      ${adminData.countries.map(c => `<tr><td>${c.name}</td><td>${cntCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" onclick="deleteCountry('${c.id}','${c.name}')">Delete</button></td>` : ''}</tr>`).join('')}
+      ${adminData.countries.map(c => `<tr><td>${c.name}</td><td>${cntCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteCountry(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
       </tbody></table></div>
     </div>`;
   },
@@ -3512,7 +3526,7 @@ function citiesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No cities configured yet.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>City</th><th>Country</th><th>Admin</th><th>Users</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
   ${list.map(c => `<tr><td>${c.name}</td><td>${c.country}</td><td>${c.adminName || '—'}<div style="font-size:11px;color:var(--slate)">${c.adminEmail || ''}</div></td><td>${c.userCount ?? '—'}</td><td>${statusBadge(c.adminActive === false ? 'rejected' : 'completed')}</td>
-  ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${c.adminId}')">${c.adminActive === false ? 'Reactivate' : 'Suspend'}</button> <button class="btn-sm btn-sm-outline" onclick="deleteSubAdmin('${c.adminId}','${c.adminName || 'this admin'}','${c.name}')">Delete</button></td>` : ''}</tr>`).join('')}
+  ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${c.adminId}')">${c.adminActive === false ? 'Reactivate' : 'Suspend'}</button> <button class="btn-sm btn-sm-outline" data-admin-id="${c.adminId}" data-admin-name="${(c.adminName || 'this admin').replace(/"/g, '&quot;')}" data-city-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteSubAdmin(this.dataset.adminId, this.dataset.adminName, this.dataset.cityName)">Delete</button></td>` : ''}</tr>`).join('')}
   </tbody></table></div>`;
 }
 

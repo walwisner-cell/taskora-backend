@@ -1,5 +1,5 @@
 const express = require('express');
-const { COUNTRIES, statesForCountry } = require('../geo-data');
+const { COUNTRIES, statesForCountry, dialCodeForCountry } = require('../geo-data');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
@@ -116,9 +116,13 @@ router.get('/geo', async (req, res) => {
   // genuinely removes it from signup, not just from a marketing label.
   const countries = COUNTRIES.filter(c => liveCountries.includes(c));
   const statesByCountry = {};
-  for (const c of countries) statesByCountry[c] = statesForCountry(c);
+  const dialCodeByCountry = {};
+  for (const c of countries) {
+    statesByCountry[c] = statesForCountry(c);
+    dialCodeByCountry[c] = dialCodeForCountry(c);
+  }
   const noPostalCodeCountries = countries.filter(c => postalCodeIsOptionalFor(c));
-  res.json({ countries, statesByCountry, noPostalCodeCountries });
+  res.json({ countries, statesByCountry, noPostalCodeCountries, dialCodeByCountry });
 });
 
 // GET /api/currency/mine — the signed-in user's real local currency, plus a
