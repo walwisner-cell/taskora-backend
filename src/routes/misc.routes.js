@@ -7,6 +7,66 @@ const { notify } = require('../notify');
 
 const router = express.Router();
 
+// POST /api/contact — the public "Contact Us" form. No auth required (an
+// anonymous visitor should be able to reach out), but genuinely stored and
+// genuinely alerts the team — not just a toast that pretends to send
+// something.
+router.post('/contact', async (req, res) => {
+  const { name, email, subject, message } = req.body || {};
+  const errors = validate([
+    ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Enter your name'],
+    ['email', isNonEmptyString(email, { min: 5, max: 254 }), 'Enter a valid email address'],
+    ['subject', isNonEmptyString(subject, { min: 2, max: 200 }), 'Enter a subject'],
+    ['message', isNonEmptyString(message, { min: 10, max: 3000 }), 'Message must be at least 10 characters'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const submission = {
+    id: `contact_${nanoid(10)}`,
+    name: name.trim(), email: email.trim(), subject: subject.trim(), message: message.trim(),
+    status: 'new',
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('contactSubmissions', submission);
+
+  const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+  for (const admin of superAdmins) {
+    await notify(admin.id, '✉️', `New contact form message from ${submission.name}: "${submission.subject}"`);
+  }
+  console.log(`[TEST MODE — no email provider connected] Would email support@taskora.io: new contact form submission from ${submission.email}`);
+
+  res.status(201).json({ ok: true });
+});
+
+// POST /api/careers-inquiry — same real-storage, real-notification pattern
+// as the contact form, for the Careers page's "get in touch" form.
+router.post('/careers-inquiry', async (req, res) => {
+  const { name, email, role, message } = req.body || {};
+  const errors = validate([
+    ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Enter your name'],
+    ['email', isNonEmptyString(email, { min: 5, max: 254 }), 'Enter a valid email address'],
+    ['role', isNonEmptyString(role, { min: 2, max: 200 }), 'Tell us what role or area interests you'],
+    ['message', isNonEmptyString(message, { min: 10, max: 3000 }), 'Tell us a bit about yourself (at least 10 characters)'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const submission = {
+    id: `career_${nanoid(10)}`,
+    name: name.trim(), email: email.trim(), role: role.trim(), message: message.trim(),
+    status: 'new',
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('careersInquiries', submission);
+
+  const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+  for (const admin of superAdmins) {
+    await notify(admin.id, '💼', `New careers inquiry from ${submission.name} — interested in: "${submission.role}"`);
+  }
+  console.log(`[TEST MODE — no email provider connected] Would email support@taskora.io: new careers inquiry from ${submission.email}`);
+
+  res.status(201).json({ ok: true });
+});
+
 // GET /api/notifications/mine
 router.get('/notifications/mine', requireAuth, async (req, res) => {
   const notifications = await db.filter('notifications', n => n.userId === req.user.sub);

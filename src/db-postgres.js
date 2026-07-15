@@ -49,6 +49,8 @@ const TABLES = {
   portfolioPhotos: { table: 'portfolio_photos', columns: ['id','provider_id','filename','url','created_at'] },
   pendingRegistrations: { table: 'pending_registrations', columns: ['id','payload','phone_code_hash','email_code_hash','phone_verified','email_verified','expires_at','created_at'] },
   categoryRequests: { table: 'category_requests', columns: ['id','provider_id','requested_category','status','created_at','resolved_at'] },
+  contactSubmissions: { table: 'contact_submissions', columns: ['id','name','email','subject','message','status','created_at'] },
+  careersInquiries: { table: 'careers_inquiries', columns: ['id','name','email','role','message','status','created_at'] },
 };
 
 // Columns stored as JSONB. `pg` serializes JS arrays using Postgres's native

@@ -52,8 +52,17 @@ const REFERENCE_CATEGORIES = [
   { name: 'Elder Care', icon: '🧓' }, { name: 'Security Services', icon: '🛡️' },
 ];
 
+// These are the platform's core, always-operating countries — if one of
+// these ever ends up "planned" instead of "live" (e.g. an accidental toggle
+// in the admin panel), that's not a deliberate business decision the way it
+// might be for a country that was only just added; it's almost certainly a
+// mistake, since the whole platform is built around these being real,
+// active markets. Sync corrects this defensively rather than assuming any
+// existing status was intentional.
+const CORE_COUNTRIES = ['United States', 'Nigeria', 'Ghana', 'Liberia'];
+
 async function syncReferenceData() {
-  const result = { countriesAdded: [], categoriesAdded: [] };
+  const result = { countriesAdded: [], categoriesAdded: [], countriesReactivated: [] };
 
   const existingCountries = await db.all('countries');
   const existingCountryNames = new Set(existingCountries.map(c => c.name));
@@ -61,6 +70,17 @@ async function syncReferenceData() {
     if (!existingCountryNames.has(name)) {
       await db.insert('countries', { id: `cty_${nanoid(8)}`, name, status: 'live' });
       result.countriesAdded.push(name);
+    }
+  }
+
+  // Defensive correction for the core countries specifically — see the
+  // comment above CORE_COUNTRIES for why this one case gets fixed rather
+  // than just left as "whatever the database already says."
+  for (const name of CORE_COUNTRIES) {
+    const existing = await db.find('countries', c => c.name === name);
+    if (existing && existing.status !== 'live') {
+      await db.update('countries', existing.id, { status: 'live' });
+      result.countriesReactivated.push(name);
     }
   }
 
@@ -85,6 +105,7 @@ if (require.main === module) {
   syncReferenceData().then(result => {
     console.log(`✅ Sync complete.`);
     console.log(`   Countries added: ${result.countriesAdded.length ? result.countriesAdded.join(', ') : '(none — already up to date)'}`);
+    console.log(`   Countries reactivated (were incorrectly set to planned): ${result.countriesReactivated.length ? result.countriesReactivated.join(', ') : '(none)'}`);
     console.log(`   Categories added: ${result.categoriesAdded.length ? result.categoriesAdded.join(', ') : '(none — already up to date)'}`);
     process.exit(0);
   }).catch(err => {

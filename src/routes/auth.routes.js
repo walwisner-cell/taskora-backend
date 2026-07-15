@@ -225,7 +225,7 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // PATCH /api/auth/me — update own profile / settings
 router.patch('/me', requireAuth, async (req, res) => {
-  const allowed = ['name', 'email', 'phone', 'country', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'plan'];
+  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'plan'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
   if ('name' in patch && !isValidName(patch.name)) {
@@ -239,6 +239,18 @@ router.patch('/me', requireAuth, async (req, res) => {
   }
   if ('phone' in patch && patch.phone && !isNonEmptyString(patch.phone, { min: 7, max: 30 })) {
     return res.status(400).json({ error: 'Enter a valid phone number' });
+  }
+  if ('country' in patch) {
+    if (!isNonEmptyString(patch.country, { min: 2, max: 100 })) return res.status(400).json({ error: 'Select a valid country' });
+    patch.country = patch.country.trim();
+  }
+  if ('state' in patch) {
+    if (!isNonEmptyString(patch.state, { min: 1, max: 100 })) return res.status(400).json({ error: 'Select a valid state/region' });
+    patch.state = patch.state.trim();
+  }
+  if ('city' in patch) {
+    if (!isNonEmptyString(patch.city, { min: 2, max: 100 })) return res.status(400).json({ error: 'Enter a valid city' });
+    patch.city = patch.city.trim();
   }
   if ('availability' in patch) {
     if (!Array.isArray(patch.availability) || !patch.availability.every(a => typeof a === 'string' && a.trim().length > 0)) {

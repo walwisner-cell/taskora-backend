@@ -762,6 +762,11 @@
   <footer class="footer">
     <div class="footer-inner">
       <div class="footer-logo" style="display:flex;align-items:center;gap:8px;justify-content:center;"><img src="" id="footer-logo-img" alt="Taskora" class="footer-logo-img"/></div>
+      <div class="footer-links" style="display:flex;gap:20px;justify-content:center;margin:14px 0;font-size:13px;">
+        <a onclick="showAboutPage()" style="color:rgba(255,255,255,.7);cursor:pointer;">About Us</a>
+        <a onclick="showCareersPage()" style="color:rgba(255,255,255,.7);cursor:pointer;">Careers</a>
+        <a onclick="showContactPage()" style="color:rgba(255,255,255,.7);cursor:pointer;">Contact Us</a>
+      </div>
       <div class="footer-text">© 2026 Taskora Tech Group · Atlanta, GA · support@taskora.io</div>
     </div>
     <div style="text-align:center; margin-top:14px; padding-top:14px; border-top:1px solid rgba(255,255,255,.08); max-width:1100px; margin-left:auto; margin-right:auto;">
@@ -770,7 +775,80 @@
   </footer>
 </div>
 
-<!-- ════════════════════════════ SCREEN: CONFIRMATION ════════════════════════════ -->
+<!-- ════════════════════════════ SCREEN: ABOUT US ════════════════════════════ -->
+<div class="screen" id="screen-about">
+  <nav class="navbar" id="navbar-about"></nav>
+  <div class="pricing-wrap">
+    <div class="pricing-inner" style="max-width:760px;">
+      <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
+      <div class="pricing-eyebrow">About Us</div>
+      <div class="pricing-title" style="font-size:32px;">Built to make hiring someone feel safe again</div>
+      <div style="font-size:15px;line-height:1.8;color:var(--slate);margin-top:24px;">
+        <p style="margin-bottom:16px;">Taskora started with a simple frustration: hiring a plumber, a tutor, or a mover in your own neighborhood shouldn't feel like a gamble. Across every market we operate in — Atlanta to Lagos to Accra — the same problem kept coming up: no way to know who's really showing up, and no real recourse if something goes wrong.</p>
+        <p style="margin-bottom:16px;">So we built a platform where every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is actually done. Trust shouldn't be something you hope for — it should be the default.</p>
+        <p>We're a small, distributed team building this because we've personally been on both sides of a bad hire and a missed payment. We're still early, and we're building this in the open — if something's not working the way it should, we want to hear about it.</p>
+      </div>
+    </div>
+  </div>
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-text">© 2026 Taskora Tech Group · Atlanta, GA · support@taskora.io</div>
+    </div>
+  </footer>
+</div>
+
+<!-- ════════════════════════════ SCREEN: CAREERS ════════════════════════════ -->
+<div class="screen" id="screen-careers">
+  <nav class="navbar" id="navbar-careers"></nav>
+  <div class="pricing-wrap">
+    <div class="pricing-inner" style="max-width:760px;">
+      <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
+      <div class="pricing-eyebrow">Careers</div>
+      <div class="pricing-title" style="font-size:32px;">Help build the trust layer for local services</div>
+      <div style="font-size:15px;line-height:1.8;color:var(--slate);margin-top:24px;margin-bottom:28px;">
+        <p>We're a small, early-stage team — we don't have a long list of open roles posted yet, but we're always glad to hear from people who care about this problem. If you're excited about identity verification, marketplace trust & safety, or building for underserved markets across the US, Nigeria, and Ghana, we'd like to hear from you.</p>
+      </div>
+      <div class="panel" style="text-align:left;">
+        <div class="panel-title">Get in touch about opportunities</div>
+        <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" type="text" id="careers-name"/></div>
+        <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="careers-email"/></div>
+        <div class="form-group"><label class="form-label">What role or area interests you?</label><input class="form-input" type="text" id="careers-role"/></div>
+        <div class="form-group"><label class="form-label">Tell us a bit about yourself</label><textarea class="form-input" id="careers-message" rows="4" style="resize:vertical;"></textarea></div>
+        <button class="pricing-cta" onclick="submitCareersInquiry()">Send</button>
+      </div>
+    </div>
+  </div>
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-text">© 2026 Taskora Tech Group · Atlanta, GA · support@taskora.io</div>
+    </div>
+  </footer>
+</div>
+
+<!-- ════════════════════════════ SCREEN: CONTACT US ════════════════════════════ -->
+<div class="screen" id="screen-contact">
+  <nav class="navbar" id="navbar-contact"></nav>
+  <div class="pricing-wrap">
+    <div class="pricing-inner" style="max-width:640px;">
+      <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
+      <div class="pricing-eyebrow">Contact Us</div>
+      <div class="pricing-title" style="font-size:32px;">We're glad to help</div>
+      <div style="font-size:14px;line-height:1.7;color:var(--slate);margin-top:16px;margin-bottom:24px;">For account-specific issues (a booking, a dispute, verification), signing in and using the in-app support chat gets you help fastest. For everything else, use the form below.</div>
+      <div class="panel" id="contact-form-panel">
+        <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" type="text" id="contact-name"/></div>
+        <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="contact-email"/></div>
+        <div class="form-group"><label class="form-label">Subject</label><input class="form-input" type="text" id="contact-subject"/></div>
+        <div class="form-group"><label class="form-label">Message</label><textarea class="form-input" id="contact-message" rows="5" style="resize:vertical;"></textarea></div>
+        <button class="pricing-cta" onclick="submitContactForm()">Send Message</button>
+      </div>
+    </div>
+  </div>
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-text">© 2026 Taskora Tech Group · Atlanta, GA · support@taskora.io</div>
+    </div>
+  </footer>
+</div>
 <div class="screen" id="screen-confirm">
   <nav class="navbar" id="navbar-confirm"></nav>
   <div class="confirm-screen" style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px;">
@@ -1492,6 +1570,55 @@ function populateAuthStates() {
   }
 }
 
+// Populates the Country dropdown in Settings (customer or provider) with
+// the real, current list of live countries, pre-selecting whatever the
+// account's real current country is — then cascades into the matching
+// State dropdown. `prefix` is 'cust' or 'prov'.
+function populateSettingsCountry(prefix) {
+  const select = document.getElementById(`set-${prefix}-country`);
+  if (!select) return;
+  const countries = (GEO_DATA.countries && GEO_DATA.countries.length) ? GEO_DATA.countries : FALLBACK_GEO.countries;
+  const current = (AUTH.user && AUTH.user.country) || 'United States';
+  select.innerHTML = countries.map(c => `<option value="${c}" ${c === current ? 'selected' : ''}>${c}</option>`).join('');
+  populateSettingsStates(prefix);
+}
+
+function populateSettingsStates(prefix) {
+  const countrySelect = document.getElementById(`set-${prefix}-country`);
+  const stateSelect = document.getElementById(`set-${prefix}-state`);
+  if (!countrySelect || !stateSelect) return;
+  const country = countrySelect.value;
+  const states = (GEO_DATA.statesByCountry && GEO_DATA.statesByCountry[country]) || ['Nationwide'];
+  const current = (AUTH.user && AUTH.user.state) || '';
+  stateSelect.innerHTML = states.map(s => `<option value="${s}" ${s === current ? 'selected' : ''}>${s}</option>`).join('');
+}
+
+async function saveCustomerLocation() {
+  const country = document.getElementById('set-cust-country').value;
+  const state = document.getElementById('set-cust-state').value;
+  const city = document.getElementById('set-cust-city').value.trim();
+  if (!city || city.length < 2) return showToast('Enter your city');
+  if (!BACKEND_AVAILABLE) return showToast('Location updated (demo mode)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { country, state, city });
+    AUTH.user = user;
+    showToast('Location updated — this is what matches you with pros near you now');
+  } catch (e) { showToast(e.message || 'Could not update location'); }
+}
+
+async function saveProviderLocation() {
+  const country = document.getElementById('set-prov-country').value;
+  const state = document.getElementById('set-prov-state').value;
+  const city = document.getElementById('set-prov-city').value.trim();
+  if (!city || city.length < 2) return showToast('Enter your city');
+  if (!BACKEND_AVAILABLE) return showToast('Location updated (demo mode)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { country, state, city });
+    AUTH.user = user;
+    showToast('Location updated — this is what customers see on your profile now');
+  } catch (e) { showToast(e.message || 'Could not update location'); }
+}
+
 function categoryCardsHTML(list) {
   return list.map(c => `<div class="cat-card" data-catname="${c.name.replace(/"/g, '&quot;')}" onclick="goDirectory(this.dataset.catname)"><span class="cat-emoji">${categoryIcon(c.name)}</span><div class="cat-label">${c.name}</div><div class="cat-count">${c.proCount} pros</div></div>`).join('');
 }
@@ -1618,6 +1745,61 @@ document.addEventListener('click', () => {
 function showPricing() {
   showScreen('screen-pricing');
   renderNavbar('navbar-pricing', 'home');
+}
+
+function showAboutPage() {
+  showScreen('screen-about');
+  renderNavbar('navbar-about', 'home');
+}
+
+function showCareersPage() {
+  showScreen('screen-careers');
+  renderNavbar('navbar-careers', 'home');
+}
+
+function showContactPage() {
+  showScreen('screen-contact');
+  renderNavbar('navbar-contact', 'home');
+}
+
+async function submitContactForm() {
+  const name = document.getElementById('contact-name').value.trim();
+  const email = document.getElementById('contact-email').value.trim();
+  const subject = document.getElementById('contact-subject').value.trim();
+  const message = document.getElementById('contact-message').value.trim();
+  if (!name || !email || !subject || !message) return showToast('Please fill in every field');
+  if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
+  if (message.length < 10) return showToast('Message must be at least 10 characters');
+
+  if (!BACKEND_AVAILABLE) {
+    showToast("Message sent (demo mode) — we'll be in touch");
+    document.getElementById('contact-form-panel').innerHTML = `<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:10px;">✓</div><div style="font-weight:600;color:var(--navy);">Thanks — we'll be in touch soon.</div></div>`;
+    return;
+  }
+  try {
+    await apiFetch('POST', '/contact', { name, email, subject, message });
+    document.getElementById('contact-form-panel').innerHTML = `<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:10px;">✓</div><div style="font-weight:600;color:var(--navy);">Thanks, ${name.split(' ')[0]} — we've received your message and will be in touch soon.</div></div>`;
+  } catch (e) { showToast(e.message || 'Could not send your message — please try again'); }
+}
+
+async function submitCareersInquiry() {
+  const name = document.getElementById('careers-name').value.trim();
+  const email = document.getElementById('careers-email').value.trim();
+  const role = document.getElementById('careers-role').value.trim();
+  const message = document.getElementById('careers-message').value.trim();
+  if (!name || !email || !role || !message) return showToast('Please fill in every field');
+  if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
+  if (message.length < 10) return showToast('Tell us a bit more about yourself (at least 10 characters)');
+
+  if (!BACKEND_AVAILABLE) return showToast("Inquiry sent (demo mode) — we'll be in touch");
+  try {
+    await apiFetch('POST', '/careers-inquiry', { name, email, role, message });
+    showToast(`Thanks, ${name.split(' ')[0]} — we've got your inquiry and will reach out if there's a fit.`);
+    document.getElementById('careers-name').value = '';
+    document.getElementById('careers-email').value = '';
+    document.getElementById('careers-role').value = '';
+    document.getElementById('careers-message').value = '';
+  } catch (e) { showToast(e.message || 'Could not send your inquiry — please try again'); }
 }
 
 function setAuthRolePreselect(role) {
@@ -2438,6 +2620,19 @@ const CUSTOMER_SECTIONS = {
       <div class="form-group"><label class="form-label">Zip / Postal Code</label><input class="form-input" id="set-cust-zip" value="${(AUTH.user && AUTH.user.zipCode) || ''}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveCustomerSettings()">Save Changes</button>
     </div>
+    <div class="panel"><div class="panel-title">Location</div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:12px;">This is what matches you with pros in your community — if this is wrong (including if it says a location you've never lived in), fix it here.</div>
+      <div class="form-group"><label class="form-label">Country</label>
+        <select class="form-input form-select" id="set-cust-country" onchange="populateSettingsStates('cust')"></select>
+      </div>
+      <div class="form-group"><label class="form-label">State / Region</label>
+        <select class="form-input form-select" id="set-cust-state"></select>
+      </div>
+      <div class="form-group"><label class="form-label">City</label>
+        <input class="form-input" type="text" id="set-cust-city" value="${(AUTH.user && AUTH.user.city) || ''}"/>
+      </div>
+      <button class="btn-sm btn-sm-primary" onclick="saveCustomerLocation()">Save Location</button>
+    </div>
     ${phoneVerificationPanelHTML()}
     ${changePasswordPanelHTML('cust')}
     <div class="panel"><div class="panel-title">Notifications</div>
@@ -2556,6 +2751,7 @@ function selectCustomerSection(key) {
   renderDashNav('customer-nav', CUSTOMER_NAV_ITEMS, key, 'selectCustomerSection');
   document.getElementById('customer-main').innerHTML = CUSTOMER_SECTIONS[key]();
   if (key === 'messages') loadMessageThread();
+  if (key === 'settings') populateSettingsCountry('cust');
 }
 
 function updateCustomerSidebar() {
@@ -2914,6 +3110,19 @@ const PROVIDER_SECTIONS = {
       <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-prov-email" value="${(AUTH.user && AUTH.user.email) || 'marcus@example.com'}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveProviderSettings()">Save Changes</button>
     </div>
+    <div class="panel"><div class="panel-title">Location</div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:12px;">This is what customers see on your profile and what matches you with nearby jobs — if this is wrong, fix it here.</div>
+      <div class="form-group"><label class="form-label">Country</label>
+        <select class="form-input form-select" id="set-prov-country" onchange="populateSettingsStates('prov')"></select>
+      </div>
+      <div class="form-group"><label class="form-label">State / Region</label>
+        <select class="form-input form-select" id="set-prov-state"></select>
+      </div>
+      <div class="form-group"><label class="form-label">City</label>
+        <input class="form-input" type="text" id="set-prov-city" value="${(AUTH.user && AUTH.user.city) || ''}"/>
+      </div>
+      <button class="btn-sm btn-sm-primary" onclick="saveProviderLocation()">Save Location</button>
+    </div>
     ${phoneVerificationPanelHTML()}
     ${changePasswordPanelHTML('prov')}
     <div class="panel"><div class="panel-title">Current Plan</div>
@@ -3170,6 +3379,7 @@ function selectProviderSection(key) {
   renderDashNav('provider-nav', PROVIDER_NAV_ITEMS, key, 'selectProviderSection');
   document.getElementById('provider-main').innerHTML = PROVIDER_SECTIONS[key]();
   if (key === 'messages') loadMessageThread();
+  if (key === 'settings') populateSettingsCountry('prov');
 }
 
 function updateProviderSidebar() {
@@ -3690,11 +3900,15 @@ async function syncReferenceData() {
   showToast('Checking for new categories & countries…');
   try {
     const result = await apiFetch('POST', '/admin/sync-reference-data');
-    const total = result.countriesAdded.length + result.categoriesAdded.length;
+    const total = result.countriesAdded.length + result.categoriesAdded.length + (result.countriesReactivated || []).length;
     if (total === 0) {
       showToast('Already up to date — nothing new to add');
     } else {
-      showToast(`Added ${result.countriesAdded.length} countr${result.countriesAdded.length === 1 ? 'y' : 'ies'} and ${result.categoriesAdded.length} categor${result.categoriesAdded.length === 1 ? 'y' : 'ies'}`);
+      let msg = `Added ${result.countriesAdded.length} countr${result.countriesAdded.length === 1 ? 'y' : 'ies'} and ${result.categoriesAdded.length} categor${result.categoriesAdded.length === 1 ? 'y' : 'ies'}`;
+      if (result.countriesReactivated && result.countriesReactivated.length) {
+        msg += `. Also fixed ${result.countriesReactivated.length} core countr${result.countriesReactivated.length === 1 ? 'y' : 'ies'} that were incorrectly set to Planned: ${result.countriesReactivated.join(', ')}`;
+      }
+      showToast(msg);
     }
     await Promise.all([loadAdminData(), loadGeoData(), loadCategories()]);
     selectAdminSection('categories');

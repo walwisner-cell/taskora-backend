@@ -207,6 +207,26 @@ CREATE TABLE IF NOT EXISTS phone_verifications (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS contact_submissions (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  email       TEXT NOT NULL,
+  subject     TEXT NOT NULL,
+  message     TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'new',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS careers_inquiries (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  email       TEXT NOT NULL,
+  role        TEXT NOT NULL,
+  message     TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'new',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS category_requests (
   id                  TEXT PRIMARY KEY,
   provider_id         TEXT NOT NULL REFERENCES users(id),
