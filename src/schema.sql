@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   role            TEXT NOT NULL CHECK (role IN ('customer','provider','admin')),
   country         TEXT,
   city            TEXT,
+  state           TEXT,
   phone           TEXT,
   address         TEXT,
   zip_code        TEXT,
@@ -44,6 +45,7 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE TABLE IF NOT EXISTS categories (
   id      TEXT PRIMARY KEY,
   name    TEXT NOT NULL UNIQUE,
+  icon    TEXT DEFAULT '🛠️',
   active  BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -194,6 +196,17 @@ CREATE TABLE IF NOT EXISTS phone_verifications (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS pending_registrations (
+  id                TEXT PRIMARY KEY,
+  payload           JSONB NOT NULL,
+  phone_code_hash   TEXT NOT NULL,
+  email_code_hash   TEXT NOT NULL,
+  phone_verified    BOOLEAN NOT NULL DEFAULT FALSE,
+  email_verified    BOOLEAN NOT NULL DEFAULT FALSE,
+  expires_at        TIMESTAMPTZ NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS portfolio_photos (
   id           TEXT PRIMARY KEY,
   provider_id  TEXT NOT NULL REFERENCES users(id),
@@ -217,3 +230,5 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'starter';
 ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS billing_address TEXT;
 ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS billing_zip TEXT;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS booking_number TEXT;
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS icon TEXT DEFAULT '🛠️';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT;

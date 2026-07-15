@@ -20,6 +20,23 @@ const miscRoutes = require('./src/routes/misc.routes');
 const portfolioRoutes = require('./src/routes/portfolio.routes');
 const { UPLOADS_DIR } = require('./src/uploads');
 
+// Actually try writing to UPLOADS_DIR at boot, rather than assuming it's
+// writable just because the path exists. This is what turns a silent
+// misconfiguration (uploads that "succeed" but never really persist) into
+// something visible in the logs before a single user ever hits it.
+(function checkUploadsDirWritable() {
+  const fs = require('fs');
+  const path = require('path');
+  const testFile = path.join(UPLOADS_DIR, `.write-check-${Date.now()}`);
+  try {
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    console.log(`✅ Uploads directory is writable: ${UPLOADS_DIR}`);
+  } catch (e) {
+    console.error(`❌ Uploads directory is NOT writable: ${UPLOADS_DIR} — portfolio photo uploads will fail. Error: ${e.message}`);
+  }
+})();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 

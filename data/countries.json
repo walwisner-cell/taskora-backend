@@ -1,42 +1,987 @@
 [
   {
-    "id": "cty_2BXS8C6AFz",
-    "name": "United States",
+    "id": "cty_s0B1Gru1xT",
+    "name": "Afghanistan",
     "status": "live"
   },
   {
-    "id": "cty_4YtyNHTciq",
-    "name": "Nigeria",
+    "id": "cty_kt9UmqnxqD",
+    "name": "Albania",
     "status": "live"
   },
   {
-    "id": "cty_YGyDaPDz3x",
+    "id": "cty_JrrnNGhsKN",
+    "name": "Algeria",
+    "status": "live"
+  },
+  {
+    "id": "cty_161NIL_Vfi",
+    "name": "Andorra",
+    "status": "live"
+  },
+  {
+    "id": "cty_-KeoDP9ICC",
+    "name": "Angola",
+    "status": "live"
+  },
+  {
+    "id": "cty_3zeAciNmln",
+    "name": "Antigua and Barbuda",
+    "status": "live"
+  },
+  {
+    "id": "cty_zgL0PiTRQl",
+    "name": "Argentina",
+    "status": "live"
+  },
+  {
+    "id": "cty_zw7PHHHA2d",
+    "name": "Armenia",
+    "status": "live"
+  },
+  {
+    "id": "cty_VFEpVE1mid",
+    "name": "Australia",
+    "status": "live"
+  },
+  {
+    "id": "cty_2GetKY0o8h",
+    "name": "Austria",
+    "status": "live"
+  },
+  {
+    "id": "cty_KZFPgSzJhf",
+    "name": "Azerbaijan",
+    "status": "live"
+  },
+  {
+    "id": "cty_Jo390jUdHB",
+    "name": "Bahamas",
+    "status": "live"
+  },
+  {
+    "id": "cty_7Ub0bFJJZc",
+    "name": "Bahrain",
+    "status": "live"
+  },
+  {
+    "id": "cty_Jfmz7KXjOd",
+    "name": "Bangladesh",
+    "status": "live"
+  },
+  {
+    "id": "cty_FKbsAdH_Ql",
+    "name": "Barbados",
+    "status": "live"
+  },
+  {
+    "id": "cty_X_u9LMVthX",
+    "name": "Belarus",
+    "status": "live"
+  },
+  {
+    "id": "cty_PsNBZVh4rr",
+    "name": "Belgium",
+    "status": "live"
+  },
+  {
+    "id": "cty_EzhguzyRGP",
+    "name": "Belize",
+    "status": "live"
+  },
+  {
+    "id": "cty_Oj5CYoiRUF",
+    "name": "Benin",
+    "status": "live"
+  },
+  {
+    "id": "cty_heCYKTc5KC",
+    "name": "Bhutan",
+    "status": "live"
+  },
+  {
+    "id": "cty_BeoKzcRsxY",
+    "name": "Bolivia",
+    "status": "live"
+  },
+  {
+    "id": "cty_yF90d8f0O2",
+    "name": "Bosnia and Herzegovina",
+    "status": "live"
+  },
+  {
+    "id": "cty_af_eD_o8s2",
+    "name": "Botswana",
+    "status": "live"
+  },
+  {
+    "id": "cty_KTKXLapRmQ",
+    "name": "Brazil",
+    "status": "live"
+  },
+  {
+    "id": "cty_Bc_O5eLTbk",
+    "name": "Brunei",
+    "status": "live"
+  },
+  {
+    "id": "cty_0Av4qb3ISF",
+    "name": "Bulgaria",
+    "status": "live"
+  },
+  {
+    "id": "cty_PdK0O_jFZ7",
+    "name": "Burkina Faso",
+    "status": "live"
+  },
+  {
+    "id": "cty_QcIjfKhY11",
+    "name": "Burundi",
+    "status": "live"
+  },
+  {
+    "id": "cty_0fAxjYkB9-",
+    "name": "Cabo Verde",
+    "status": "live"
+  },
+  {
+    "id": "cty_uTbMSlAr5R",
+    "name": "Cambodia",
+    "status": "live"
+  },
+  {
+    "id": "cty_V0v0uKVHVg",
+    "name": "Cameroon",
+    "status": "live"
+  },
+  {
+    "id": "cty_q02vZ5GQMU",
+    "name": "Canada",
+    "status": "live"
+  },
+  {
+    "id": "cty_WU_7JxGV_o",
+    "name": "Central African Republic",
+    "status": "live"
+  },
+  {
+    "id": "cty_u3VJJRdmJY",
+    "name": "Chad",
+    "status": "live"
+  },
+  {
+    "id": "cty_GDOJxEr_SW",
+    "name": "Chile",
+    "status": "live"
+  },
+  {
+    "id": "cty_wPNINZA4Ek",
+    "name": "China",
+    "status": "live"
+  },
+  {
+    "id": "cty_NRzFbQZbFb",
+    "name": "Colombia",
+    "status": "live"
+  },
+  {
+    "id": "cty_GPT75avxHY",
+    "name": "Comoros",
+    "status": "live"
+  },
+  {
+    "id": "cty_O1HkvTQrPo",
+    "name": "Congo (Brazzaville)",
+    "status": "live"
+  },
+  {
+    "id": "cty_7xU0KGGWDp",
+    "name": "Congo (DRC)",
+    "status": "live"
+  },
+  {
+    "id": "cty_qZpblYyjUL",
+    "name": "Costa Rica",
+    "status": "live"
+  },
+  {
+    "id": "cty_1pjehWzrqk",
+    "name": "Cote d'Ivoire",
+    "status": "live"
+  },
+  {
+    "id": "cty_UbgsVjR4HX",
+    "name": "Croatia",
+    "status": "live"
+  },
+  {
+    "id": "cty_ERLKYsTWM1",
+    "name": "Cuba",
+    "status": "live"
+  },
+  {
+    "id": "cty_5sw3Npe9es",
+    "name": "Cyprus",
+    "status": "live"
+  },
+  {
+    "id": "cty_OKPsz9bbA7",
+    "name": "Czechia",
+    "status": "live"
+  },
+  {
+    "id": "cty_4bwRli53YA",
+    "name": "Denmark",
+    "status": "live"
+  },
+  {
+    "id": "cty_IZhkc9z4jb",
+    "name": "Djibouti",
+    "status": "live"
+  },
+  {
+    "id": "cty_lIPupIFcZO",
+    "name": "Dominica",
+    "status": "live"
+  },
+  {
+    "id": "cty_zkZ9HJXuES",
+    "name": "Dominican Republic",
+    "status": "live"
+  },
+  {
+    "id": "cty_Vt81Rs_Rtw",
+    "name": "Ecuador",
+    "status": "live"
+  },
+  {
+    "id": "cty_HETd88urWv",
+    "name": "Egypt",
+    "status": "live"
+  },
+  {
+    "id": "cty_QgMgLVqLEI",
+    "name": "El Salvador",
+    "status": "live"
+  },
+  {
+    "id": "cty_emhBcpxWav",
+    "name": "Equatorial Guinea",
+    "status": "live"
+  },
+  {
+    "id": "cty_5r0u4DiZtM",
+    "name": "Eritrea",
+    "status": "live"
+  },
+  {
+    "id": "cty_hFv3HslujE",
+    "name": "Estonia",
+    "status": "live"
+  },
+  {
+    "id": "cty_KL4wrnhZox",
+    "name": "Eswatini",
+    "status": "live"
+  },
+  {
+    "id": "cty_icb31YUTC3",
+    "name": "Ethiopia",
+    "status": "live"
+  },
+  {
+    "id": "cty_wC4I3FCHqG",
+    "name": "Fiji",
+    "status": "live"
+  },
+  {
+    "id": "cty_JvdXH8sT6x",
+    "name": "Finland",
+    "status": "live"
+  },
+  {
+    "id": "cty__OhcfuAlpH",
+    "name": "France",
+    "status": "live"
+  },
+  {
+    "id": "cty_sJrU6tZY8A",
+    "name": "Gabon",
+    "status": "live"
+  },
+  {
+    "id": "cty_iZ2hKY6gUt",
+    "name": "Gambia",
+    "status": "live"
+  },
+  {
+    "id": "cty_3UvNVdZ8L3",
+    "name": "Georgia",
+    "status": "live"
+  },
+  {
+    "id": "cty_7Pb2IjHAbl",
+    "name": "Germany",
+    "status": "live"
+  },
+  {
+    "id": "cty_lDKBojvuNV",
     "name": "Ghana",
     "status": "live"
   },
   {
-    "id": "cty_ek34h_uOJH",
+    "id": "cty_58OMV5dEXy",
+    "name": "Greece",
+    "status": "live"
+  },
+  {
+    "id": "cty_ypVKgFVwyg",
+    "name": "Grenada",
+    "status": "live"
+  },
+  {
+    "id": "cty__8_mmdRJQm",
+    "name": "Guatemala",
+    "status": "live"
+  },
+  {
+    "id": "cty_as8yLJCddE",
+    "name": "Guinea",
+    "status": "live"
+  },
+  {
+    "id": "cty_QFQlxeri1j",
+    "name": "Guinea-Bissau",
+    "status": "live"
+  },
+  {
+    "id": "cty_EYXwH_jqLg",
+    "name": "Guyana",
+    "status": "live"
+  },
+  {
+    "id": "cty_t8aOMdCDVL",
+    "name": "Haiti",
+    "status": "live"
+  },
+  {
+    "id": "cty_qblF0Obkid",
+    "name": "Honduras",
+    "status": "live"
+  },
+  {
+    "id": "cty_aoKKyby8aD",
+    "name": "Hungary",
+    "status": "live"
+  },
+  {
+    "id": "cty_9RqBjQia2X",
+    "name": "Iceland",
+    "status": "live"
+  },
+  {
+    "id": "cty_jgN6eFpFXp",
+    "name": "India",
+    "status": "live"
+  },
+  {
+    "id": "cty_WSGpneoca0",
+    "name": "Indonesia",
+    "status": "live"
+  },
+  {
+    "id": "cty_mTppEVmDGn",
+    "name": "Iran",
+    "status": "live"
+  },
+  {
+    "id": "cty_JLpiHaqdZD",
+    "name": "Iraq",
+    "status": "live"
+  },
+  {
+    "id": "cty_AjNtFDl-Mi",
+    "name": "Ireland",
+    "status": "live"
+  },
+  {
+    "id": "cty_b4KFW5mX2O",
+    "name": "Israel",
+    "status": "live"
+  },
+  {
+    "id": "cty_Xz3iGiTWzj",
+    "name": "Italy",
+    "status": "live"
+  },
+  {
+    "id": "cty_USnvJcwJTh",
+    "name": "Jamaica",
+    "status": "live"
+  },
+  {
+    "id": "cty_ZVIuKzkQ1Q",
+    "name": "Japan",
+    "status": "live"
+  },
+  {
+    "id": "cty_VrJEpFBV9B",
+    "name": "Jordan",
+    "status": "live"
+  },
+  {
+    "id": "cty_2ulh2hjtyp",
+    "name": "Kazakhstan",
+    "status": "live"
+  },
+  {
+    "id": "cty_4OlQ3Pp2ib",
+    "name": "Kenya",
+    "status": "live"
+  },
+  {
+    "id": "cty_HfJdc62jKx",
+    "name": "Kiribati",
+    "status": "live"
+  },
+  {
+    "id": "cty_AYGvZcMWp0",
+    "name": "Kosovo",
+    "status": "live"
+  },
+  {
+    "id": "cty_qbWI7M6eZ3",
+    "name": "Kuwait",
+    "status": "live"
+  },
+  {
+    "id": "cty_2PtzoxWFnj",
+    "name": "Kyrgyzstan",
+    "status": "live"
+  },
+  {
+    "id": "cty_Z14m18JqrC",
+    "name": "Laos",
+    "status": "live"
+  },
+  {
+    "id": "cty_RAEARjtnXU",
+    "name": "Latvia",
+    "status": "live"
+  },
+  {
+    "id": "cty_y-lJ9z2hZo",
+    "name": "Lebanon",
+    "status": "live"
+  },
+  {
+    "id": "cty_fOlTmGxAmi",
+    "name": "Lesotho",
+    "status": "live"
+  },
+  {
+    "id": "cty_jfDoAPWabe",
     "name": "Liberia",
     "status": "live"
   },
   {
-    "id": "cty_N-wy8HLnzA",
-    "name": "United Kingdom",
-    "status": "planned"
+    "id": "cty_OfcgDSUUZg",
+    "name": "Libya",
+    "status": "live"
   },
   {
-    "id": "cty_koICOnBD8i",
-    "name": "Canada",
-    "status": "planned"
+    "id": "cty_m6qbKx5EYn",
+    "name": "Liechtenstein",
+    "status": "live"
   },
   {
-    "id": "cty_Ph9J5P9y-E",
-    "name": "Kenya",
-    "status": "planned"
+    "id": "cty_dZBKSBq_ar",
+    "name": "Lithuania",
+    "status": "live"
   },
   {
-    "id": "cty_lm4K5FpMEF",
+    "id": "cty_4aF_zNZSB6",
+    "name": "Luxembourg",
+    "status": "live"
+  },
+  {
+    "id": "cty_YmnzSMD0ew",
+    "name": "Madagascar",
+    "status": "live"
+  },
+  {
+    "id": "cty_VOF2d0IweE",
+    "name": "Malawi",
+    "status": "live"
+  },
+  {
+    "id": "cty_FfY29zJWtG",
+    "name": "Malaysia",
+    "status": "live"
+  },
+  {
+    "id": "cty_EoGqeTNxBv",
+    "name": "Maldives",
+    "status": "live"
+  },
+  {
+    "id": "cty_pb-m2-79c2",
+    "name": "Mali",
+    "status": "live"
+  },
+  {
+    "id": "cty_Jttqkrz0-3",
+    "name": "Malta",
+    "status": "live"
+  },
+  {
+    "id": "cty_NfBsej01Rr",
+    "name": "Marshall Islands",
+    "status": "live"
+  },
+  {
+    "id": "cty_5Onflzv33U",
+    "name": "Mauritania",
+    "status": "live"
+  },
+  {
+    "id": "cty_EJwl5B17jW",
+    "name": "Mauritius",
+    "status": "live"
+  },
+  {
+    "id": "cty_G8CFwuQ44X",
+    "name": "Mexico",
+    "status": "live"
+  },
+  {
+    "id": "cty_ipkNVPHWY3",
+    "name": "Micronesia",
+    "status": "live"
+  },
+  {
+    "id": "cty_sujIQ3_tLa",
+    "name": "Moldova",
+    "status": "live"
+  },
+  {
+    "id": "cty_sh3iLnUcg-",
+    "name": "Monaco",
+    "status": "live"
+  },
+  {
+    "id": "cty_PWnA1V-e00",
+    "name": "Mongolia",
+    "status": "live"
+  },
+  {
+    "id": "cty_c29UUvppCc",
+    "name": "Montenegro",
+    "status": "live"
+  },
+  {
+    "id": "cty_D0w2w5YZcO",
+    "name": "Morocco",
+    "status": "live"
+  },
+  {
+    "id": "cty_L1BrO6cFpd",
+    "name": "Mozambique",
+    "status": "live"
+  },
+  {
+    "id": "cty__TtGofpnXO",
+    "name": "Myanmar",
+    "status": "live"
+  },
+  {
+    "id": "cty_i_njPp6YMW",
+    "name": "Namibia",
+    "status": "live"
+  },
+  {
+    "id": "cty_CFTqIMiIzv",
+    "name": "Nauru",
+    "status": "live"
+  },
+  {
+    "id": "cty_PYUu0lO3QI",
+    "name": "Nepal",
+    "status": "live"
+  },
+  {
+    "id": "cty_Gr9ItVM_QB",
+    "name": "Netherlands",
+    "status": "live"
+  },
+  {
+    "id": "cty_NXmqdsoqu9",
+    "name": "New Zealand",
+    "status": "live"
+  },
+  {
+    "id": "cty_haimxP4EhZ",
+    "name": "Nicaragua",
+    "status": "live"
+  },
+  {
+    "id": "cty_1wrNGm2WOJ",
+    "name": "Niger",
+    "status": "live"
+  },
+  {
+    "id": "cty_RliBP3EFMu",
+    "name": "Nigeria",
+    "status": "live"
+  },
+  {
+    "id": "cty_4L_Jr8Ipm2",
+    "name": "North Korea",
+    "status": "live"
+  },
+  {
+    "id": "cty_ftr-rXq_g-",
+    "name": "North Macedonia",
+    "status": "live"
+  },
+  {
+    "id": "cty_GlqX2bY1pZ",
+    "name": "Norway",
+    "status": "live"
+  },
+  {
+    "id": "cty__TTOBTnCUR",
+    "name": "Oman",
+    "status": "live"
+  },
+  {
+    "id": "cty_thce1mhFzX",
+    "name": "Pakistan",
+    "status": "live"
+  },
+  {
+    "id": "cty_U8LCUht7z6",
+    "name": "Palau",
+    "status": "live"
+  },
+  {
+    "id": "cty_m1bpIgNHjo",
+    "name": "Palestine",
+    "status": "live"
+  },
+  {
+    "id": "cty_OKBhovezG7",
+    "name": "Panama",
+    "status": "live"
+  },
+  {
+    "id": "cty_JwJPfAMUHx",
+    "name": "Papua New Guinea",
+    "status": "live"
+  },
+  {
+    "id": "cty_NKlldRz22O",
+    "name": "Paraguay",
+    "status": "live"
+  },
+  {
+    "id": "cty_xJA2cGJrfU",
+    "name": "Peru",
+    "status": "live"
+  },
+  {
+    "id": "cty_zyL0Bd4r0k",
+    "name": "Philippines",
+    "status": "live"
+  },
+  {
+    "id": "cty_i51xH2bemk",
+    "name": "Poland",
+    "status": "live"
+  },
+  {
+    "id": "cty_jkQ-z-HjzN",
+    "name": "Portugal",
+    "status": "live"
+  },
+  {
+    "id": "cty_iMA_F6_63c",
+    "name": "Qatar",
+    "status": "live"
+  },
+  {
+    "id": "cty_Duw-BMZuf9",
+    "name": "Romania",
+    "status": "live"
+  },
+  {
+    "id": "cty_VmCJN85Mcr",
+    "name": "Russia",
+    "status": "live"
+  },
+  {
+    "id": "cty_1LC5nwZIw3",
+    "name": "Rwanda",
+    "status": "live"
+  },
+  {
+    "id": "cty_IRzFl5kZJn",
+    "name": "Saint Kitts and Nevis",
+    "status": "live"
+  },
+  {
+    "id": "cty_fw_l8rGPMS",
+    "name": "Saint Lucia",
+    "status": "live"
+  },
+  {
+    "id": "cty_aRtXl-qdpU",
+    "name": "Saint Vincent and the Grenadines",
+    "status": "live"
+  },
+  {
+    "id": "cty_yO80DUpgd-",
+    "name": "Samoa",
+    "status": "live"
+  },
+  {
+    "id": "cty_Y6Iz70mHlT",
+    "name": "San Marino",
+    "status": "live"
+  },
+  {
+    "id": "cty_jjRLWlf4CC",
+    "name": "Sao Tome and Principe",
+    "status": "live"
+  },
+  {
+    "id": "cty_BQlUToQH_F",
+    "name": "Saudi Arabia",
+    "status": "live"
+  },
+  {
+    "id": "cty_w9AORDUTCY",
+    "name": "Senegal",
+    "status": "live"
+  },
+  {
+    "id": "cty_RqFSea5U5O",
+    "name": "Serbia",
+    "status": "live"
+  },
+  {
+    "id": "cty_droeQ-4NPn",
+    "name": "Seychelles",
+    "status": "live"
+  },
+  {
+    "id": "cty_z4UMJ1ZyU6",
+    "name": "Sierra Leone",
+    "status": "live"
+  },
+  {
+    "id": "cty_zeMgYTvIvE",
+    "name": "Singapore",
+    "status": "live"
+  },
+  {
+    "id": "cty_-8JU1Ep2wQ",
+    "name": "Slovakia",
+    "status": "live"
+  },
+  {
+    "id": "cty_AJr86PgVUF",
+    "name": "Slovenia",
+    "status": "live"
+  },
+  {
+    "id": "cty_ivtA8Yt93u",
+    "name": "Solomon Islands",
+    "status": "live"
+  },
+  {
+    "id": "cty_qWB_fapQ8b",
+    "name": "Somalia",
+    "status": "live"
+  },
+  {
+    "id": "cty_VMzY9w1muc",
     "name": "South Africa",
-    "status": "planned"
+    "status": "live"
+  },
+  {
+    "id": "cty_p850NkzAfl",
+    "name": "South Korea",
+    "status": "live"
+  },
+  {
+    "id": "cty_NUa_JN3Equ",
+    "name": "South Sudan",
+    "status": "live"
+  },
+  {
+    "id": "cty_lwsMxsrNZO",
+    "name": "Spain",
+    "status": "live"
+  },
+  {
+    "id": "cty_WCHjYPzA7e",
+    "name": "Sri Lanka",
+    "status": "live"
+  },
+  {
+    "id": "cty_Di3VAgwN_f",
+    "name": "Sudan",
+    "status": "live"
+  },
+  {
+    "id": "cty_ReciUA1xdb",
+    "name": "Suriname",
+    "status": "live"
+  },
+  {
+    "id": "cty_YdZnONNt_0",
+    "name": "Sweden",
+    "status": "live"
+  },
+  {
+    "id": "cty_IQVPBrIKj8",
+    "name": "Switzerland",
+    "status": "live"
+  },
+  {
+    "id": "cty_totF50ImYe",
+    "name": "Syria",
+    "status": "live"
+  },
+  {
+    "id": "cty_RHAYJdWY7t",
+    "name": "Taiwan",
+    "status": "live"
+  },
+  {
+    "id": "cty_HjFPplszRB",
+    "name": "Tajikistan",
+    "status": "live"
+  },
+  {
+    "id": "cty_RPJTnnvvj7",
+    "name": "Tanzania",
+    "status": "live"
+  },
+  {
+    "id": "cty_QniG34OizW",
+    "name": "Thailand",
+    "status": "live"
+  },
+  {
+    "id": "cty_k1CudQu4t2",
+    "name": "Timor-Leste",
+    "status": "live"
+  },
+  {
+    "id": "cty_MLlQHSfjXX",
+    "name": "Togo",
+    "status": "live"
+  },
+  {
+    "id": "cty_woM1Whss7c",
+    "name": "Tonga",
+    "status": "live"
+  },
+  {
+    "id": "cty_2JZBaHKeCD",
+    "name": "Trinidad and Tobago",
+    "status": "live"
+  },
+  {
+    "id": "cty_sXSQ7Z9Xeq",
+    "name": "Tunisia",
+    "status": "live"
+  },
+  {
+    "id": "cty_Ty0qanvkad",
+    "name": "Turkey",
+    "status": "live"
+  },
+  {
+    "id": "cty_DjRUy7FlsE",
+    "name": "Turkmenistan",
+    "status": "live"
+  },
+  {
+    "id": "cty_EL8PuM8u40",
+    "name": "Tuvalu",
+    "status": "live"
+  },
+  {
+    "id": "cty_XR_oSz2BHo",
+    "name": "Uganda",
+    "status": "live"
+  },
+  {
+    "id": "cty_2JugVE7KYh",
+    "name": "Ukraine",
+    "status": "live"
+  },
+  {
+    "id": "cty_8I1OAOA1tB",
+    "name": "United Arab Emirates",
+    "status": "live"
+  },
+  {
+    "id": "cty_0Kfmw5Tz-p",
+    "name": "United Kingdom",
+    "status": "live"
+  },
+  {
+    "id": "cty_i2Y5bXNv5U",
+    "name": "United States",
+    "status": "live"
+  },
+  {
+    "id": "cty_E4WSxthVl-",
+    "name": "Uruguay",
+    "status": "live"
+  },
+  {
+    "id": "cty_wPLlv1QvbA",
+    "name": "Uzbekistan",
+    "status": "live"
+  },
+  {
+    "id": "cty_U0Z7oPCvQs",
+    "name": "Vanuatu",
+    "status": "live"
+  },
+  {
+    "id": "cty_rg8ZnVgj4T",
+    "name": "Vatican City",
+    "status": "live"
+  },
+  {
+    "id": "cty_sWLKLT-FIw",
+    "name": "Venezuela",
+    "status": "live"
+  },
+  {
+    "id": "cty_0q1DOHnLgr",
+    "name": "Vietnam",
+    "status": "live"
+  },
+  {
+    "id": "cty_KfhPxmjnIU",
+    "name": "Yemen",
+    "status": "live"
+  },
+  {
+    "id": "cty_etlvSsLsQS",
+    "name": "Zambia",
+    "status": "live"
+  },
+  {
+    "id": "cty_JpNDnmThb9",
+    "name": "Zimbabwe",
+    "status": "live"
   }
 ]

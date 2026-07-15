@@ -44,6 +44,15 @@ router.post('/portfolio/upload', requireAuth, requireRole('provider'), (req, res
     }
     if (!req.file) return res.status(400).json({ error: 'No photo file was provided' });
 
+    // Confirm the file actually landed where we expect before doing anything
+    // else — silently reporting success on a write that didn't really stick
+    // is exactly the failure mode that's hardest to notice until a user
+    // reports a vanished photo days later.
+    if (!fs.existsSync(req.file.path)) {
+      console.error(`Portfolio upload reported success but file is missing at ${req.file.path} — check that UPLOADS_DIR points to a writable, persistent location.`);
+      return res.status(500).json({ error: 'The photo could not be saved to disk. Please try again, or contact support if this keeps happening.' });
+    }
+
     const existing = await db.filter('portfolioPhotos', p => p.providerId === req.user.sub);
     if (existing.length >= MAX_PHOTOS_PER_PROVIDER) {
       fs.unlink(req.file.path, () => {}); // clean up the file we just saved, since we're rejecting it
@@ -58,7 +67,18 @@ router.post('/portfolio/upload', requireAuth, requireRole('provider'), (req, res
       createdAt: new Date().toISOString(),
     };
     await db.insert('portfolioPhotos', photo);
-    res.status(201).json({ photo });
+
+    // Verify the record genuinely round-trips back out of the datastore
+    // before telling the client it worked — same principle as the file
+    // check above, applied to the database side of the same operation.
+    const confirmed = await db.find('portfolioPhotos', p => p.id === photo.id);
+    if (!confirmed) {
+      fs.unlink(req.file.path, () => {});
+      console.error(`Portfolio photo record ${photo.id} did not persist after insert.`);
+      return res.status(500).json({ error: 'The photo upload could not be saved. Please try again.' });
+    }
+
+    res.status(201).json({ photo: confirmed });
   });
 });
 

@@ -1,4 +1,5 @@
 const express = require('express');
+const { COUNTRIES, statesForCountry } = require('../geo-data');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
@@ -55,9 +56,42 @@ router.get('/categories', async (req, res) => {
   const withCounts = await Promise.all(categories.map(async c => ({
     id: c.id,
     name: c.name,
+    icon: c.icon || '🛠️',
     proCount: (await db.filter('users', u => u.role === 'provider' && u.verified && u.category === c.name)).length,
   })));
   res.json({ categories: withCounts });
+});
+
+// GET /api/cities — public, name+country only (no admin details — that
+// stays behind /admin/cities). Cities here are ones with a dedicated
+// regional admin assigned — a real, valuable feature, but no longer a
+// requirement for signup (see /api/geo below): a customer or provider can
+// select any real country + state/region even if no city there has its own
+// admin yet, and simply falls under the super admin's oversight until one
+// is assigned.
+router.get('/cities', async (req, res) => {
+  const cities = await db.all('cities');
+  res.json({ cities: cities.map(c => ({ name: c.name, country: c.country })) });
+});
+
+// GET /api/geo — the real, full geographic reference data: every country,
+// and (for the countries with real subdivision data) their actual
+// states/provinces/regions. This is what powers the signup form's
+// Country → State/Region dropdowns, and what the AI matching engine uses to
+// expand a search outward (city → state → country) when nothing is found
+// in the customer's exact city. City itself stays free text — a full
+// worldwide city database would be tens of thousands of entries and
+// unusable as a dropdown; country + state is the real, bounded, well-known
+// dataset that scales.
+router.get('/geo', async (req, res) => {
+  const liveCountries = (await db.filter('countries', c => c.status === 'live')).map(c => c.name);
+  // Only actually-live countries are offered — matches the super admin's
+  // real toggle in Categories & Countries, so turning a country off there
+  // genuinely removes it from signup, not just from a marketing label.
+  const countries = COUNTRIES.filter(c => liveCountries.includes(c));
+  const statesByCountry = {};
+  for (const c of countries) statesByCountry[c] = statesForCountry(c);
+  res.json({ countries, statesByCountry });
 });
 
 // GET /api/providers?category=Plumbing&q=leak&city=Atlanta
@@ -166,14 +200,32 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   // boost + small deterministic jitter derived from the job id, so results
   // are stable but vary per job.
   //
-  // "Community" here means zip/postal code: a provider in the customer's
-  // exact zip code is a tighter geographic match than merely being in the
-  // same city, so they get ranked higher. This is a real, honest proximity
-  // signal — not simulated geolocation — using data the account already
-  // has (no third-party geocoding API required). If real lat/long-based
-  // radius search is wanted later, this is the function to replace.
+  // Geographic scope expands outward in real stages, never skipping ahead
+  // and never crossing into another country: try the customer's exact city
+  // first; if nothing verified is found there, widen to the same
+  // state/region; only if THAT comes up empty does it widen to the whole
+  // country. A customer in Lagos is never matched to a provider in Abuja
+  // over one in a different country, no matter how good that provider is.
   const customer = await db.find('users', u => u.id === req.user.sub);
-  const candidates = await db.filter('users', u => u.role === 'provider' && u.category === category && u.verified && (!customer || u.city === customer.city));
+  const allInCategory = await db.filter('users', u => u.role === 'provider' && u.category === category && u.verified);
+
+  let candidates = [];
+  let matchScope = 'city';
+  if (!customer) {
+    candidates = allInCategory;
+    matchScope = 'none';
+  } else {
+    candidates = allInCategory.filter(p => p.city && p.city.toLowerCase() === customer.city.toLowerCase() && p.country === customer.country);
+    if (!candidates.length && customer.state) {
+      candidates = allInCategory.filter(p => p.state && p.state.toLowerCase() === customer.state.toLowerCase() && p.country === customer.country);
+      matchScope = 'state';
+    }
+    if (!candidates.length && customer.country) {
+      candidates = allInCategory.filter(p => p.country === customer.country);
+      matchScope = 'country';
+    }
+  }
+
   const scored = candidates.map(p => {
     const jitter = (parseInt(job.id.slice(-4), 36) % 7);
     const sameCommunity = customer && p.zipCode && customer.zipCode && p.zipCode === customer.zipCode;
@@ -199,7 +251,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
     matches.push({ ...match, provider: publicProvider(provider) });
   }
 
-  res.status(201).json({ job, matches, isKnownCategory });
+  res.status(201).json({ job, matches, isKnownCategory, matchScope });
 });
 
 // GET /api/jobs/mine — customer's posted jobs
@@ -279,6 +331,11 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
+  const isNegotiable = provider.pricingModel === 'negotiable';
+  if (isNegotiable && (amount === undefined || amount <= 0)) {
+    return res.status(400).json({ error: 'Enter your offer amount for this provider' });
+  }
+
   const contract = {
     id: `ct_${nanoid(10)}`,
     bookingNumber: await generateBookingNumber(),
@@ -287,14 +344,52 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     service: service.trim(),
     date, time, address: address.trim(),
     amount: amount || provider.price * 2,
-    status: 'active',
-    signedAt: new Date().toISOString().slice(0, 10),
+    // Mutual Agreement pricing means exactly that — the customer's offer is
+    // a proposal, not a binding charge, until the provider actually agrees
+    // to that specific number. Hourly-rate bookings still confirm and fund
+    // escrow immediately, same as before, since the price was never in
+    // question there.
+    status: isNegotiable ? 'pending_agreement' : 'active',
+    signedAt: isNegotiable ? null : new Date().toISOString().slice(0, 10),
     createdAt: new Date().toISOString(),
   };
   await db.insert('contracts', contract);
+
+  let escrow = null;
+  if (isNegotiable) {
+    const customer = await db.find('users', u => u.id === req.user.sub);
+    await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}" — accept to confirm the booking, or decline.`);
+  } else {
+    escrow = { id: `esc_${nanoid(10)}`, contractId: contract.id, amount: contract.amount, status: 'held', createdAt: new Date().toISOString() };
+    await db.insert('escrowTransactions', escrow);
+  }
+  res.status(201).json({ contract, escrow });
+});
+
+// POST /api/contracts/:id/respond-offer — provider accepts or declines a
+// Mutual Agreement offer. Accepting is the actual moment the fund amount
+// becomes agreed and recorded: only then does a real contract go active and
+// escrow get funded, at exactly the number the provider agreed to.
+router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider'), async (req, res) => {
+  const { decision } = req.body || {};
+  if (!['accept', 'decline'].includes(decision)) return res.status(400).json({ error: 'decision must be accept or decline' });
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Offer not found' });
+  if (contract.status !== 'pending_agreement') {
+    return res.status(400).json({ error: `This offer is already ${contract.status} and can't be responded to again` });
+  }
+
+  if (decision === 'decline') {
+    const updated = await db.update('contracts', contract.id, { status: 'declined' });
+    await notify(contract.customerId, '❌', `Your offer of $${contract.amount} for "${contract.service}" was declined.`);
+    return res.json({ contract: updated, escrow: null });
+  }
+
+  const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10) });
   const escrow = { id: `esc_${nanoid(10)}`, contractId: contract.id, amount: contract.amount, status: 'held', createdAt: new Date().toISOString() };
   await db.insert('escrowTransactions', escrow);
-  res.status(201).json({ contract, escrow });
+  await notify(contract.customerId, '🤝', `Your offer of $${contract.amount} for "${contract.service}" was accepted — escrow funded, booking confirmed.`);
+  res.json({ contract: updated, escrow });
 });
 
 // GET /api/contracts/mine — works for both customers and providers

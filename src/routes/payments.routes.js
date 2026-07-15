@@ -133,15 +133,18 @@ router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), asy
 });
 
 // POST /api/contracts/:id/cancel — either the customer or the provider can
-// cancel a booking before it's marked complete. Escrow is refunded (not
-// released to the provider) since no work was confirmed done. The other
+// cancel a booking before it's marked complete, or withdraw a Mutual
+// Agreement offer that hasn't been responded to yet. Escrow is refunded
+// (not released to the provider) since no work was confirmed done — and for
+// a still-pending offer, there's no escrow yet to begin with, since funds
+// were never held until the provider actually agreed to a number. The other
 // party is notified either way.
 router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
   const contract = await db.find('contracts', c =>
     c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub)
   );
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
-  if (contract.status !== 'active') {
+  if (!['active', 'pending_agreement'].includes(contract.status)) {
     return res.status(400).json({ error: `This booking is already ${contract.status} and can't be cancelled` });
   }
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
@@ -151,7 +154,10 @@ router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
   const iAmCustomer = contract.customerId === req.user.sub;
   const otherPartyId = iAmCustomer ? contract.providerId : contract.customerId;
   const canceller = await db.find('users', u => u.id === req.user.sub);
-  await notify(otherPartyId, '🚫', `${canceller ? canceller.name : 'The other party'} cancelled the booking for "${contract.service}". Any held escrow has been refunded.`, 'bookingUpdates');
+  const message = escrow
+    ? `${canceller ? canceller.name : 'The other party'} cancelled the booking for "${contract.service}". Any held escrow has been refunded.`
+    : `${canceller ? canceller.name : 'The other party'} withdrew the offer for "${contract.service}".`;
+  await notify(otherPartyId, '🚫', message, 'bookingUpdates');
 
   res.json({ contract: updated, escrow: escrow ? { ...escrow, status: 'refunded' } : null });
 });

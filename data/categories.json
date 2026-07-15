@@ -1,47 +1,56 @@
 [
   {
-    "id": "cat_jOReQXhmam",
+    "id": "cat_0fWgbRddE7",
     "name": "Plumbing",
+    "icon": "🔧",
     "active": true
   },
   {
-    "id": "cat_ofHp3Zf2R4",
+    "id": "cat_CylJ1nf7n4",
     "name": "Cleaning",
+    "icon": "🧹",
     "active": true
   },
   {
-    "id": "cat_0OpVzpAFME",
+    "id": "cat_VTfq-E0HAF",
     "name": "Tutoring",
+    "icon": "📚",
     "active": true
   },
   {
-    "id": "cat_IzrRMM04qy",
+    "id": "cat_kIW0kFwD6F",
     "name": "Electrical",
+    "icon": "⚡",
     "active": true
   },
   {
-    "id": "cat_-h1rlFE1sJ",
+    "id": "cat_d1VRMLp1-2",
     "name": "Moving",
+    "icon": "📦",
     "active": true
   },
   {
-    "id": "cat_l5jXgRfbeN",
+    "id": "cat_lvuRfr6L_F",
     "name": "Painting",
+    "icon": "🎨",
     "active": true
   },
   {
-    "id": "cat_df715pJTxy",
+    "id": "cat_-6VGKm4j9x",
     "name": "Landscaping",
+    "icon": "🌿",
     "active": true
   },
   {
-    "id": "cat_GZwDgBSSv-",
+    "id": "cat_3z_SjB7URH",
     "name": "Pick & Drop",
+    "icon": "🚗",
     "active": true
   },
   {
-    "id": "cat_tVBrckFnFO",
+    "id": "cat_8jqw0uozha",
     "name": "Fitness",
+    "icon": "💪",
     "active": true
   }
 ]

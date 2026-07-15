@@ -37,17 +37,44 @@ function hashResetToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-function requireAuth(req, res, next) {
+// A JWT's signature being valid only proves it was genuinely issued by this
+// server at some point in the last 7 days — it says nothing about whether
+// the account is still allowed to use it *right now*. Without re-checking
+// the database, a suspended customer or provider's existing token would
+// keep working perfectly for the rest of its 7-day life, same bug this app
+// already fixed for admin accounts specifically — this makes that check
+// apply to every authenticated request, for every role, in one place,
+// instead of each route file needing to remember to do it.
+//
+// db is required lazily (inside the function, not at module load time) to
+// avoid a circular require — db.js doesn't depend on auth.js, but requiring
+// it at the top of this file changes module load order in a way that's
+// easy to accidentally break later, and there's no real cost to requiring
+// it lazily here since Node caches the module after the first call.
+async function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Missing bearer token' });
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload; // { sub, role, email }
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch (e) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  try {
+    const db = require('./db');
+    const current = await db.find('users', u => u.id === payload.sub);
+    if (!current || current.active === false) {
+      return res.status(403).json({ error: 'This account has been suspended. Contact support for details.' });
+    }
+  } catch (e) {
+    // A database hiccup here shouldn't lock every single request out — log
+    // it and fall back to trusting the JWT's own signature/expiry, same
+    // safety net the app already had before this check existed.
+    console.error('requireAuth: could not verify current account status', e);
+  }
+  req.user = payload; // { sub, role, email }
+  next();
 }
 
 function requireRole(...roles) {

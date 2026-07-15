@@ -29,8 +29,8 @@ const pool = new Pool({
 // in (snake_case) DB order. Used to build safe, parameterized INSERT/UPDATE
 // statements without ever interpolating arbitrary object keys into SQL.
 const TABLES = {
-  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs_completed','price','color','provider_since','created_at','updated_at'] },
-  categories: { table: 'categories', columns: ['id','name','active'] },
+  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','state','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs_completed','price','color','provider_since','created_at','updated_at'] },
+  categories: { table: 'categories', columns: ['id','name','icon','active'] },
   countries: { table: 'countries', columns: ['id','name','status'] },
   cities: { table: 'cities', columns: ['id','name','country','admin_id'] },
   jobs: { table: 'jobs', columns: ['id','customer_id','category','description','budget','status','created_at'] },
@@ -47,13 +47,14 @@ const TABLES = {
   passwordResets: { table: 'password_resets', columns: ['id','user_id','token_hash','expires_at','used','created_at'] },
   phoneVerifications: { table: 'phone_verifications', columns: ['id','user_id','code_hash','expires_at','used','created_at'] },
   portfolioPhotos: { table: 'portfolio_photos', columns: ['id','provider_id','filename','url','created_at'] },
+  pendingRegistrations: { table: 'pending_registrations', columns: ['id','payload','phone_code_hash','email_code_hash','phone_verified','email_verified','expires_at','created_at'] },
 };
 
 // Columns stored as JSONB. `pg` serializes JS arrays using Postgres's native
 // array literal syntax ({a,b,c}) by default, which is NOT valid JSON — these
 // need an explicit JSON.stringify() before going out, and come back already
 // parsed into JS objects/arrays by `pg` automatically on the way in.
-const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs']);
+const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs', 'payload']);
 
 // `pg` returns NUMERIC/DECIMAL columns as JS strings by default (this avoids
 // silently losing precision on very large/precise values) — but every route

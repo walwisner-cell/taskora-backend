@@ -13,10 +13,21 @@
 const fs = require('fs');
 const path = require('path');
 
-const UPLOADS_DIR = process.env.UPLOADS_DIR
+const usingConfiguredDir = !!process.env.UPLOADS_DIR;
+const UPLOADS_DIR = usingConfiguredDir
   ? process.env.UPLOADS_DIR
   : path.join(__dirname, '..', 'uploads');
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+// Loud, unmissable startup log — this is exactly the kind of misconfiguration
+// (uploads silently landing somewhere that doesn't persist) that's otherwise
+// invisible until someone notices a photo vanished. If UPLOADS_DIR isn't set,
+// say so clearly instead of quietly falling back.
+if (usingConfiguredDir) {
+  console.log(`✅ Portfolio uploads will be saved to: ${UPLOADS_DIR} (UPLOADS_DIR is set)`);
+} else {
+  console.log(`⚠️  UPLOADS_DIR is not set — portfolio uploads will be saved to ${UPLOADS_DIR}, which will NOT survive a redeploy or restart on most hosting platforms. Set UPLOADS_DIR to a path on your persistent disk (e.g. /var/data/uploads on Render) for uploads to actually stick around.`);
+}
 
 module.exports = { UPLOADS_DIR };

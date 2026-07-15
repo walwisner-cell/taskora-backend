@@ -200,7 +200,7 @@ router.get('/categories', async (req, res) => {
 
 // POST /api/admin/categories — add a new bookable service category
 router.post('/categories', requireSuperAdmin, async (req, res) => {
-  const { name } = req.body || {};
+  const { name, icon } = req.body || {};
   if (!isValidLabel(name, { min: 2, max: 40 })) {
     return res.status(400).json({ error: 'Enter a real category name (2-40 characters)' });
   }
@@ -208,7 +208,12 @@ router.post('/categories', requireSuperAdmin, async (req, res) => {
   const existing = await db.find('categories', c => c.name.toLowerCase() === trimmed.toLowerCase());
   if (existing) return res.status(409).json({ error: `"${trimmed}" already exists as a category` });
 
-  const category = { id: `cat_${nanoid(8)}`, name: trimmed, active: true };
+  // A real emoji/icon chosen at creation time instead of every category
+  // silently falling back to the same generic wrench — falls back to that
+  // wrench only if nothing valid was actually provided.
+  const safeIcon = (typeof icon === 'string' && icon.trim().length > 0 && icon.trim().length <= 8) ? icon.trim() : '🛠️';
+
+  const category = { id: `cat_${nanoid(8)}`, name: trimmed, icon: safeIcon, active: true };
   await db.insert('categories', category);
   res.status(201).json({ category });
 });

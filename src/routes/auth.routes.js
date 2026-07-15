@@ -11,9 +11,26 @@ function publicUser(u) {
   return rest;
 }
 
-// POST /api/auth/signup
-router.post('/signup', async (req, res) => {
-  const { name, email, password, role, country, city, phone, address, zipCode, category, skills } = req.body || {};
+// ── SIGNUP: real two-stage verification gate ────────────────────────────────
+// Registration is no longer "submit a form, get an account instantly."
+// Every new signup now requires proving both a real phone number AND a real
+// email address before the account is actually created — two separate
+// codes, two separate channels, both required. Same honest test-mode
+// pattern as phone verification and password reset elsewhere: since no real
+// SMS/email provider is connected yet, both codes are returned directly in
+// the API response instead of being sent, clearly labeled as such. Wiring
+// in real providers later means sending the codes instead of returning
+// them — the verification gate itself doesn't change.
+const REGISTRATION_TTL_MS = 15 * 60 * 1000; // 15 minutes to complete both codes
+
+function generateSixDigitCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+// POST /api/auth/signup/start — validates everything and issues both codes,
+// but does NOT create the account yet.
+router.post('/signup/start', async (req, res) => {
+  const { name, email, password, role, country, state, city, phone, address, zipCode, category, skills } = req.body || {};
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
@@ -22,6 +39,9 @@ router.post('/signup', async (req, res) => {
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
     ['zipCode', isValidPostalCode(zipCode), 'Enter a valid postal/zip code'],
     ['address', isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address'],
+    ['country', isNonEmptyString(country, { min: 2, max: 100 }), 'Select your country'],
+    ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
+    ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
   ]);
   if (role === 'provider') {
     errors.push(...validate([
@@ -31,39 +51,117 @@ router.post('/signup', async (req, res) => {
   }
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
-  const trimmedName = name.trim();
   const existing = await db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
   if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
 
+  const phoneCode = generateSixDigitCode();
+  const emailCode = generateSixDigitCode();
+
+  const pending = {
+    id: `preg_${nanoid(12)}`,
+    payload: { name: name.trim(), email: email.trim(), password, role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: zipCode.trim(), category, skills },
+    phoneCodeHash: hashResetToken(phoneCode),
+    emailCodeHash: hashResetToken(emailCode),
+    phoneVerified: false,
+    emailVerified: false,
+    expiresAt: new Date(Date.now() + REGISTRATION_TTL_MS).toISOString(),
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('pendingRegistrations', pending);
+
+  console.log(`[TEST MODE] Registration codes for ${email.trim()} — phone: ${phoneCode}, email: ${emailCode}`);
+
+  res.status(201).json({
+    pendingId: pending.id,
+    message: `Enter the code sent to ${phone.trim()} and the code sent to ${email.trim()} to finish creating your account.`,
+    testMode: true,
+    testModeNote: 'No real SMS or email provider is configured yet — both codes are returned directly instead of being sent. Do not do this in production.',
+    phoneCode,
+    emailCode,
+  });
+});
+
+// POST /api/auth/signup/verify — both codes must match before the account
+// is actually created.
+router.post('/signup/verify', async (req, res) => {
+  const { pendingId, phoneCode, emailCode } = req.body || {};
+  if (!isNonEmptyString(pendingId) || !isNonEmptyString(phoneCode) || !isNonEmptyString(emailCode)) {
+    return res.status(400).json({ error: 'pendingId, phoneCode, and emailCode are all required' });
+  }
+  const pending = await db.find('pendingRegistrations', p => p.id === pendingId);
+  if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found — please start again' });
+  if (new Date(pending.expiresAt) < new Date()) {
+    await db.remove('pendingRegistrations', pending.id);
+    return res.status(400).json({ error: 'This registration has expired — please start again' });
+  }
+  if (hashResetToken(phoneCode.trim()) !== pending.phoneCodeHash) {
+    return res.status(400).json({ error: 'That phone code is incorrect' });
+  }
+  if (hashResetToken(emailCode.trim()) !== pending.emailCodeHash) {
+    return res.status(400).json({ error: 'That email code is incorrect' });
+  }
+
+  // Re-check email uniqueness — someone else could have registered the same
+  // email in the window between starting and finishing this one.
+  const { payload } = pending;
+  const stillFree = !(await db.find('users', u => u.email.toLowerCase() === payload.email.toLowerCase()));
+  if (!stillFree) {
+    await db.remove('pendingRegistrations', pending.id);
+    return res.status(409).json({ error: 'An account with that email already exists' });
+  }
+
+  const trimmedName = payload.name;
   const user = {
     id: `u_${nanoid(10)}`,
     name: trimmedName,
-    email: email.trim(),
-    role,
-    country: country || 'United States',
-    city: city || 'Atlanta',
-    phone: phone.trim(),
-    address: address.trim(),
-    zipCode: zipCode.trim(),
-    phoneVerified: false,
+    email: payload.email,
+    role: payload.role,
+    country: payload.country,
+    state: payload.state,
+    city: payload.city,
+    phone: payload.phone,
+    address: payload.address,
+    zipCode: payload.zipCode,
+    phoneVerified: true, // genuinely true this time — they just proved it as part of registering
     initials: trimmedName.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
     verified: false,
-    passwordHash: hashPassword(password),
+    passwordHash: hashPassword(payload.password),
     createdAt: new Date().toISOString(),
-    ...(role === 'provider' ? {
+    ...(payload.role === 'provider' ? {
       providerRole: 'New Provider',
-      category: category || 'Plumbing',
-      // Skills are stored both as free text (what the provider actually
-      // typed) and as a parsed tag list (what the UI displays as chips) —
-      // this is also what the community-matching algorithm below reads.
-      skills: skills.trim(),
-      tags: skills.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6),
+      category: payload.category || 'Plumbing',
+      skills: payload.skills.trim(),
+      tags: payload.skills.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6),
       rating: 0, jobs: 0, price: 50, color: '#5A5F6C', since: String(new Date().getFullYear()),
     } : {}),
   };
   await db.insert('users', user);
+  await db.remove('pendingRegistrations', pending.id);
+
   const token = signToken(user);
   res.status(201).json({ token, user: publicUser(user) });
+});
+
+// POST /api/auth/signup/resend — regenerate both codes for an in-progress
+// registration (e.g. the 15-minute window is about to run out, or the codes
+// were dismissed accidentally).
+router.post('/signup/resend', async (req, res) => {
+  const { pendingId } = req.body || {};
+  if (!isNonEmptyString(pendingId)) return res.status(400).json({ error: 'pendingId is required' });
+  const pending = await db.find('pendingRegistrations', p => p.id === pendingId);
+  if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found — please start again' });
+
+  const phoneCode = generateSixDigitCode();
+  const emailCode = generateSixDigitCode();
+  await db.update('pendingRegistrations', pending.id, {
+    phoneCodeHash: hashResetToken(phoneCode),
+    emailCodeHash: hashResetToken(emailCode),
+    expiresAt: new Date(Date.now() + REGISTRATION_TTL_MS).toISOString(),
+  });
+
+  console.log(`[TEST MODE] Resent registration codes for ${pending.payload.email} — phone: ${phoneCode}, email: ${emailCode}`);
+
+  res.json({ testMode: true, phoneCode, emailCode });
 });
 
 // POST /api/auth/login
