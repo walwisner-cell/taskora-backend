@@ -2,7 +2,8 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken, hashResetToken } = require('../auth');
-const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, isValidName, validate } = require('../validators');
+const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, isValidName, validate, postalCodeErrorMessage } = require('../validators');
+const { notify } = require('../notify');
 
 const router = express.Router();
 
@@ -37,7 +38,7 @@ router.post('/signup/start', async (req, res) => {
     ['password', isValidPassword(password), 'Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol'],
     ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
-    ['zipCode', isValidPostalCode(zipCode), 'Enter a valid postal/zip code'],
+    ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
     ['address', isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address'],
     ['country', isNonEmptyString(country, { min: 2, max: 100 }), 'Select your country'],
     ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
@@ -59,7 +60,7 @@ router.post('/signup/start', async (req, res) => {
 
   const pending = {
     id: `preg_${nanoid(12)}`,
-    payload: { name: name.trim(), email: email.trim(), password, role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: zipCode.trim(), category, skills },
+    payload: { name: name.trim(), email: email.trim(), password, role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category, skills },
     phoneCodeHash: hashResetToken(phoneCode),
     emailCodeHash: hashResetToken(emailCode),
     phoneVerified: false,
@@ -111,6 +112,19 @@ router.post('/signup/verify', async (req, res) => {
   }
 
   const trimmedName = payload.name;
+  // A provider who typed a category we don't currently list isn't blocked —
+  // their account is created normally and they can start using the
+  // platform right away. What happens instead: their category goes into a
+  // real pending-approval state (visible to them and to admins), and every
+  // super admin is notified immediately so a real person reviews it — the
+  // same "don't block, but don't silently pretend it's approved either"
+  // principle used for unlisted job categories.
+  let categoryApprovalStatus = 'approved';
+  if (payload.role === 'provider') {
+    const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
+    if (!activeCategories.includes(payload.category)) categoryApprovalStatus = 'pending';
+  }
+
   const user = {
     id: `u_${nanoid(10)}`,
     name: trimmedName,
@@ -130,6 +144,7 @@ router.post('/signup/verify', async (req, res) => {
     ...(payload.role === 'provider' ? {
       providerRole: 'New Provider',
       category: payload.category || 'Plumbing',
+      categoryApprovalStatus,
       skills: payload.skills.trim(),
       tags: payload.skills.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6),
       rating: 0, jobs: 0, price: 50, color: '#5A5F6C', since: String(new Date().getFullYear()),
@@ -138,8 +153,30 @@ router.post('/signup/verify', async (req, res) => {
   await db.insert('users', user);
   await db.remove('pendingRegistrations', pending.id);
 
+  if (categoryApprovalStatus === 'pending') {
+    const request = {
+      id: `catreq_${nanoid(10)}`,
+      providerId: user.id,
+      requestedCategory: user.category,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      resolvedAt: null,
+    };
+    await db.insert('categoryRequests', request);
+
+    // Real, immediate alert to every super admin — the actual working
+    // mechanism today (in-app notifications are live; there's no email
+    // provider connected yet, so an email alert is logged clearly as
+    // test-mode rather than silently not happening).
+    const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+    for (const admin of superAdmins) {
+      await notify(admin.id, '🆕', `${user.name} signed up wanting to offer "${user.category}" — not a current category. Review within 24 hours in Categories & Countries → Category Requests.`);
+      console.log(`[TEST MODE — no email provider connected] Would email ${admin.email}: New category request "${user.category}" from ${user.name} needs review within 24 hours.`);
+    }
+  }
+
   const token = signToken(user);
-  res.status(201).json({ token, user: publicUser(user) });
+  res.status(201).json({ token, user: publicUser(user), categoryApprovalStatus });
 });
 
 // POST /api/auth/signup/resend — regenerate both codes for an in-progress

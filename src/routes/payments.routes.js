@@ -2,8 +2,9 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const { isNonEmptyString, isValidCardExpiry, isValidPostalCode, validate } = require('../validators');
+const { isNonEmptyString, isValidCardExpiry, isValidPostalCode, validate, postalCodeErrorMessage } = require('../validators');
 const { notify } = require('../notify');
+const { currencyForCountry, convertFromUSD } = require('../currency-data');
 
 const router = express.Router();
 
@@ -36,12 +37,13 @@ router.get('/payment-methods/mine', requireAuth, async (req, res) => {
 // only last 4 digits + brand are ever kept)
 router.post('/payment-methods', requireAuth, async (req, res) => {
   const { cardNumber, expiry, nameOnCard, billingAddress, billingZip } = req.body || {};
+  const accountHolder = await db.find('users', u => u.id === req.user.sub);
   const errors = validate([
     ['cardNumber', isNonEmptyString(cardNumber, { min: 4 }), 'Enter a card number (any digits — this is test mode)'],
     ['expiry', isValidCardExpiry(expiry), 'Enter a valid, non-expired expiry date in MM/YY format'],
     ['nameOnCard', isNonEmptyString(nameOnCard, { min: 2 }), 'Enter the name on the card'],
     ['billingAddress', isNonEmptyString(billingAddress, { min: 3, max: 200 }), 'Enter the billing address'],
-    ['billingZip', isValidPostalCode(billingZip), 'Enter a valid billing zip/postal code'],
+    ['billingZip', isValidPostalCode(billingZip, accountHolder && accountHolder.country), postalCodeErrorMessage(accountHolder && accountHolder.country)],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
@@ -97,6 +99,7 @@ router.get('/payouts/mine', requireAuth, requireRole('provider'), async (req, re
 
 // POST /api/payouts/request — provider requests payout of released escrow
 router.post('/payouts/request', requireAuth, requireRole('provider'), async (req, res) => {
+  const { payoutCurrency } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
   const provider = await db.find('users', u => u.id === req.user.sub);
   const contracts = await db.filter('contracts', c => c.providerId === req.user.sub && c.status === 'active');
   let releasable = 0;
@@ -104,17 +107,33 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
     const e = await db.find('escrowTransactions', e => e.contractId === c.id && e.status === 'held');
     releasable += e ? e.amount : 0;
   }
+
+  // The contract/escrow ledger is always denominated in USD — that stays
+  // the canonical accounting currency regardless of payout choice, so
+  // reports and reconciliation are never ambiguous. What the provider
+  // actually RECEIVES can be converted to their local currency at their
+  // choice — the same way an international payout provider (Wise, Payoneer,
+  // etc.) would let you choose your payout currency for a USD-denominated
+  // balance.
+  const currency = currencyForCountry(provider ? provider.country : 'United States');
+  const wantsLocal = payoutCurrency === 'local' && currency.code !== 'USD';
+  const payoutAmountLocal = wantsLocal ? convertFromUSD(releasable || 0, currency.code) : null;
+
   const payout = {
     id: `po_${nanoid(10)}`,
     providerId: req.user.sub,
     date: new Date().toISOString().slice(0, 10),
-    amount: releasable || 0,
+    amount: releasable || 0, // canonical USD amount — always present
+    payoutCurrency: wantsLocal ? currency.code : 'USD',
+    payoutAmountLocal, // the converted amount actually paid out, if not USD
+    exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
     method: (provider && provider.payoutMethod) || 'Bank Transfer',
     status: 'processing',
     createdAt: new Date().toISOString(),
   };
   await db.insert('payouts', payout);
-  await notify(req.user.sub, '💸', `Payout of $${payout.amount} requested — processing.`, 'payoutAlerts');
+  const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
+  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested — processing.`, 'payoutAlerts');
   res.status(201).json({ payout });
 });
 

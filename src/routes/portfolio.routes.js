@@ -92,4 +92,51 @@ router.delete('/portfolio/:id', requireAuth, requireRole('provider'), async (req
   res.json({ ok: true });
 });
 
+// ── PROFILE PHOTO ────────────────────────────────────────────────────────
+// A single photo identifying the person themselves — distinct from the
+// portfolio (multiple work-sample photos). Available to any signed-in
+// account, not just providers: a customer's profile photo is just as real
+// as a provider's, even though providers are the ones shown on public
+// cards today. Uploading a new one replaces the old one (and deletes the
+// old file), rather than accumulating like the portfolio does.
+router.post('/profile-photo/upload', requireAuth, (req, res) => {
+  upload.single('photo')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (!req.file) return res.status(400).json({ error: 'No photo file was provided' });
+
+    if (!fs.existsSync(req.file.path)) {
+      console.error(`Profile photo upload reported success but file is missing at ${req.file.path} — check that UPLOADS_DIR points to a writable, persistent location.`);
+      return res.status(500).json({ error: 'The photo could not be saved to disk. Please try again, or contact support if this keeps happening.' });
+    }
+
+    const user = await db.find('users', u => u.id === req.user.sub);
+    const oldFilename = user && user.profilePhotoUrl ? user.profilePhotoUrl.split('/').pop() : null;
+
+    const updated = await db.update('users', req.user.sub, { profilePhotoUrl: `/uploads/${req.file.filename}` });
+    if (!updated || updated.profilePhotoUrl !== `/uploads/${req.file.filename}`) {
+      fs.unlink(req.file.path, () => {});
+      console.error(`Profile photo did not persist for user ${req.user.sub}.`);
+      return res.status(500).json({ error: 'The photo could not be saved. Please try again.' });
+    }
+
+    // Clean up the previous photo now that the new one is confirmed saved.
+    if (oldFilename) {
+      fs.unlink(path.join(UPLOADS_DIR, oldFilename), () => {});
+    }
+
+    res.status(201).json({ profilePhotoUrl: updated.profilePhotoUrl });
+  });
+});
+
+// DELETE /api/profile-photo — remove the current profile photo, reverting
+// to the initials avatar everywhere it's shown.
+router.delete('/profile-photo', requireAuth, async (req, res) => {
+  const user = await db.find('users', u => u.id === req.user.sub);
+  if (!user || !user.profilePhotoUrl) return res.status(404).json({ error: 'No profile photo to remove' });
+  const filename = user.profilePhotoUrl.split('/').pop();
+  await db.update('users', req.user.sub, { profilePhotoUrl: null });
+  fs.unlink(path.join(UPLOADS_DIR, filename), () => {});
+  res.json({ ok: true });
+});
+
 module.exports = router;

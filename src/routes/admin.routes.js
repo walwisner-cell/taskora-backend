@@ -177,7 +177,7 @@ router.post('/disputes/:id/resolve', async (req, res) => {
   const dispute = await db.find('disputes', d => d.id === req.params.id);
   if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
   if (region && (await disputeCity(dispute)) !== region) return res.status(403).json({ error: 'That dispute is outside your assigned city' });
-  const updated = await db.update('disputes', dispute.id, { status: 'resolved' });
+  const updated = await db.update('disputes', dispute.id, { status: 'resolved', resolvedAt: new Date().toISOString() });
   const escrow = await db.find('escrowTransactions', e => e.contractId === updated.contractId);
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
   const contract = await db.find('contracts', c => c.id === updated.contractId);
@@ -196,6 +196,63 @@ router.get('/categories', async (req, res) => {
     pros: (await db.filter('users', u => u.role === 'provider' && u.verified && u.category === c.name)).length,
   })));
   res.json({ categories });
+});
+
+// GET /api/admin/category-requests — the real approval queue for custom
+// categories providers typed in at signup. Includes real elapsed time
+// since request, so an overdue-for-24-hours request is actually visible,
+// not just implied.
+router.get('/category-requests', requireSuperAdmin, async (req, res) => {
+  const requests = await db.all('categoryRequests');
+  const withDetails = await Promise.all(requests.map(async r => {
+    const provider = await db.find('users', u => u.id === r.providerId);
+    const hoursElapsed = (Date.now() - new Date(r.createdAt).getTime()) / (1000 * 60 * 60);
+    return {
+      id: r.id,
+      providerId: r.providerId,
+      providerName: provider ? provider.name : 'Unknown provider',
+      providerEmail: provider ? provider.email : null,
+      requestedCategory: r.requestedCategory,
+      status: r.status,
+      createdAt: r.createdAt,
+      resolvedAt: r.resolvedAt,
+      hoursElapsed: Math.round(hoursElapsed * 10) / 10,
+      overdue: r.status === 'pending' && hoursElapsed > 24,
+    };
+  }));
+  res.json({ requests: withDetails.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) });
+});
+
+// POST /api/admin/category-requests/:id/approve — formally adds the
+// requested category (if it doesn't already exist) and marks the
+// provider's account as approved for it.
+router.post('/category-requests/:id/approve', requireSuperAdmin, async (req, res) => {
+  const request = await db.find('categoryRequests', r => r.id === req.params.id);
+  if (!request) return res.status(404).json({ error: 'Category request not found' });
+  if (request.status !== 'pending') return res.status(400).json({ error: `This request is already ${request.status}` });
+
+  const existingCategory = await db.find('categories', c => c.name.toLowerCase() === request.requestedCategory.toLowerCase());
+  if (!existingCategory) {
+    await db.insert('categories', { id: `cat_${nanoid(8)}`, name: request.requestedCategory, icon: '🛠️', active: true });
+  }
+  await db.update('users', request.providerId, { categoryApprovalStatus: 'approved' });
+  await db.update('categoryRequests', request.id, { status: 'approved', resolvedAt: new Date().toISOString() });
+  await notify(request.providerId, '✅', `Your category "${request.requestedCategory}" was approved — you're now fully listed and bookable.`);
+  res.json({ ok: true });
+});
+
+// POST /api/admin/category-requests/:id/reject — declines the custom
+// category; the provider keeps their account (never blocked), but their
+// category needs to change before they're fully listed.
+router.post('/category-requests/:id/reject', requireSuperAdmin, async (req, res) => {
+  const request = await db.find('categoryRequests', r => r.id === req.params.id);
+  if (!request) return res.status(404).json({ error: 'Category request not found' });
+  if (request.status !== 'pending') return res.status(400).json({ error: `This request is already ${request.status}` });
+
+  await db.update('users', request.providerId, { categoryApprovalStatus: 'rejected' });
+  await db.update('categoryRequests', request.id, { status: 'rejected', resolvedAt: new Date().toISOString() });
+  await notify(request.providerId, '❌', `Your category "${request.requestedCategory}" wasn't approved. Please update your category in Settings to one of our current listed categories.`);
+  res.json({ ok: true });
 });
 
 // POST /api/admin/categories — add a new bookable service category

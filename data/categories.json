@@ -1,56 +1,362 @@
 [
   {
-    "id": "cat_0fWgbRddE7",
+    "id": "cat_QDcH3H--rj",
     "name": "Plumbing",
     "icon": "🔧",
     "active": true
   },
   {
-    "id": "cat_CylJ1nf7n4",
-    "name": "Cleaning",
-    "icon": "🧹",
-    "active": true
-  },
-  {
-    "id": "cat_VTfq-E0HAF",
-    "name": "Tutoring",
-    "icon": "📚",
-    "active": true
-  },
-  {
-    "id": "cat_kIW0kFwD6F",
+    "id": "cat_vfedMjyWVp",
     "name": "Electrical",
     "icon": "⚡",
     "active": true
   },
   {
-    "id": "cat_d1VRMLp1-2",
-    "name": "Moving",
-    "icon": "📦",
+    "id": "cat_f5PBIfKRgF",
+    "name": "HVAC & Air Conditioning",
+    "icon": "❄️",
     "active": true
   },
   {
-    "id": "cat_lvuRfr6L_F",
+    "id": "cat_vpRT9RY7PF",
+    "name": "Handyman Services",
+    "icon": "🛠️",
+    "active": true
+  },
+  {
+    "id": "cat_pe9k2YwL8P",
+    "name": "Carpentry",
+    "icon": "🪚",
+    "active": true
+  },
+  {
+    "id": "cat_pE5RaqJImU",
     "name": "Painting",
     "icon": "🎨",
     "active": true
   },
   {
-    "id": "cat_-6VGKm4j9x",
-    "name": "Landscaping",
-    "icon": "🌿",
+    "id": "cat_l4uq2rGO4d",
+    "name": "Roofing",
+    "icon": "🏠",
     "active": true
   },
   {
-    "id": "cat_3z_SjB7URH",
+    "id": "cat_E5WRdurxlw",
+    "name": "Flooring Installation",
+    "icon": "🪵",
+    "active": true
+  },
+  {
+    "id": "cat_gqOOyhvfsf",
+    "name": "Locksmith",
+    "icon": "🔑",
+    "active": true
+  },
+  {
+    "id": "cat_L2iCu-YfOf",
+    "name": "Appliance Repair",
+    "icon": "🔌",
+    "active": true
+  },
+  {
+    "id": "cat_tfxnjlnmpq",
+    "name": "Pest Control",
+    "icon": "🐜",
+    "active": true
+  },
+  {
+    "id": "cat_7Jd--vqkpI",
+    "name": "Window Installation & Repair",
+    "icon": "🪟",
+    "active": true
+  },
+  {
+    "id": "cat_lVuridsUDo",
+    "name": "Masonry",
+    "icon": "🧱",
+    "active": true
+  },
+  {
+    "id": "cat_9jSEmPcqRj",
+    "name": "Welding",
+    "icon": "🔥",
+    "active": true
+  },
+  {
+    "id": "cat_Eo3CqYH__s",
+    "name": "General Contracting",
+    "icon": "👷",
+    "active": true
+  },
+  {
+    "id": "cat_Bb2XzQHdVz",
+    "name": "Home Renovation",
+    "icon": "🏗️",
+    "active": true
+  },
+  {
+    "id": "cat_6DRS5QzYK-",
+    "name": "Cleaning",
+    "icon": "🧹",
+    "active": true
+  },
+  {
+    "id": "cat_qpj9P0cTZj",
+    "name": "Deep Cleaning",
+    "icon": "🧼",
+    "active": true
+  },
+  {
+    "id": "cat_C3yH1FiZCr",
+    "name": "Carpet Cleaning",
+    "icon": "🧽",
+    "active": true
+  },
+  {
+    "id": "cat_s82sJ4MnmC",
+    "name": "Window Cleaning",
+    "icon": "🪞",
+    "active": true
+  },
+  {
+    "id": "cat_j733TlpmMc",
+    "name": "Pool Cleaning & Maintenance",
+    "icon": "🏊",
+    "active": true
+  },
+  {
+    "id": "cat_Ch1D9aT2Jk",
+    "name": "Laundry & Dry Cleaning",
+    "icon": "👕",
+    "active": true
+  },
+  {
+    "id": "cat_CrWJgh4F_O",
+    "name": "Moving",
+    "icon": "📦",
+    "active": true
+  },
+  {
+    "id": "cat_CrSOcEzxva",
     "name": "Pick & Drop",
     "icon": "🚗",
     "active": true
   },
   {
-    "id": "cat_8jqw0uozha",
+    "id": "cat_IiwZJsvyGJ",
+    "name": "Furniture Assembly",
+    "icon": "🪑",
+    "active": true
+  },
+  {
+    "id": "cat_tCe4_cslM3",
+    "name": "Junk Removal",
+    "icon": "🗑️",
+    "active": true
+  },
+  {
+    "id": "cat_LvaWnV_eZ8",
+    "name": "Landscaping",
+    "icon": "🌿",
+    "active": true
+  },
+  {
+    "id": "cat_vsLff1Azwa",
+    "name": "Lawn Care",
+    "icon": "🌾",
+    "active": true
+  },
+  {
+    "id": "cat_p4NpdKj45O",
+    "name": "Gardening",
+    "icon": "🌱",
+    "active": true
+  },
+  {
+    "id": "cat_BSRVNPLx46",
+    "name": "Tree Trimming & Removal",
+    "icon": "🌳",
+    "active": true
+  },
+  {
+    "id": "cat_2KynM0effN",
+    "name": "Fence Installation & Repair",
+    "icon": "🚧",
+    "active": true
+  },
+  {
+    "id": "cat_zkaOuL3UgU",
     "name": "Fitness",
     "icon": "💪",
+    "active": true
+  },
+  {
+    "id": "cat_MJMaO6sSJi",
+    "name": "Massage Therapy",
+    "icon": "💆",
+    "active": true
+  },
+  {
+    "id": "cat_AMX1u5_Cxa",
+    "name": "Hair Styling",
+    "icon": "💇",
+    "active": true
+  },
+  {
+    "id": "cat_lQmX3Gz7yD",
+    "name": "Makeup Artistry",
+    "icon": "💄",
+    "active": true
+  },
+  {
+    "id": "cat_WqWia091jh",
+    "name": "Nail Care",
+    "icon": "💅",
+    "active": true
+  },
+  {
+    "id": "cat_HwYXse8J2B",
+    "name": "Tutoring",
+    "icon": "📚",
+    "active": true
+  },
+  {
+    "id": "cat_fD7nYoh0CX",
+    "name": "Music Lessons",
+    "icon": "🎵",
+    "active": true
+  },
+  {
+    "id": "cat_ShR8wfSf3z",
+    "name": "Language Lessons",
+    "icon": "🗣️",
+    "active": true
+  },
+  {
+    "id": "cat_ONguauNvvY",
+    "name": "Test Prep",
+    "icon": "📝",
+    "active": true
+  },
+  {
+    "id": "cat_hwF0wUgZSn",
+    "name": "Event Planning",
+    "icon": "🎉",
+    "active": true
+  },
+  {
+    "id": "cat_5GjtM995z2",
+    "name": "Photography",
+    "icon": "📷",
+    "active": true
+  },
+  {
+    "id": "cat_1F5oRoAIzy",
+    "name": "Videography",
+    "icon": "🎥",
+    "active": true
+  },
+  {
+    "id": "cat__2qht64JI8",
+    "name": "DJ Services",
+    "icon": "🎧",
+    "active": true
+  },
+  {
+    "id": "cat_YhMhJYTJ97",
+    "name": "Catering",
+    "icon": "🍽️",
+    "active": true
+  },
+  {
+    "id": "cat_hUY3wAk9nf",
+    "name": "Auto Repair",
+    "icon": "🚘",
+    "active": true
+  },
+  {
+    "id": "cat_i_nrKpaU1k",
+    "name": "Car Detailing & Wash",
+    "icon": "🧽",
+    "active": true
+  },
+  {
+    "id": "cat_dz8r8Brr6Y",
+    "name": "Towing",
+    "icon": "🚛",
+    "active": true
+  },
+  {
+    "id": "cat_1Z11weHcBR",
+    "name": "Pet Sitting",
+    "icon": "🐾",
+    "active": true
+  },
+  {
+    "id": "cat_1QUnK8O1lb",
+    "name": "Dog Walking",
+    "icon": "🐕",
+    "active": true
+  },
+  {
+    "id": "cat_LID2fo6QLG",
+    "name": "Pet Grooming",
+    "icon": "🐩",
+    "active": true
+  },
+  {
+    "id": "cat_cnNgdtwEzF",
+    "name": "IT Support & Computer Repair",
+    "icon": "💻",
+    "active": true
+  },
+  {
+    "id": "cat_uu_Fy6jXGf",
+    "name": "Web & Graphic Design",
+    "icon": "🎨",
+    "active": true
+  },
+  {
+    "id": "cat_4wVTaFSdg9",
+    "name": "Accounting & Bookkeeping",
+    "icon": "📊",
+    "active": true
+  },
+  {
+    "id": "cat_B8Zbyxmqzj",
+    "name": "Legal Consulting",
+    "icon": "⚖️",
+    "active": true
+  },
+  {
+    "id": "cat_jK7fFib6wO",
+    "name": "Notary Services",
+    "icon": "🖋️",
+    "active": true
+  },
+  {
+    "id": "cat_2OXeUs1LAe",
+    "name": "Interior Design",
+    "icon": "🛋️",
+    "active": true
+  },
+  {
+    "id": "cat_NjgMEcQ5cC",
+    "name": "Babysitting & Nanny Services",
+    "icon": "🍼",
+    "active": true
+  },
+  {
+    "id": "cat_aE4gZECuAp",
+    "name": "Elder Care",
+    "icon": "🧓",
+    "active": true
+  },
+  {
+    "id": "cat_ZYhbY1PKcG",
+    "name": "Security Services",
+    "icon": "🛡️",
     "active": true
   }
 ]

@@ -72,14 +72,230 @@ function isValidPhone(phone) {
 // ZIP (5 or 9 digit), Canadian/UK-style alphanumeric postcodes, and simpler
 // numeric postal codes (Nigeria, Ghana, etc.), while rejecting obvious junk
 // like a single character repeated the whole way through.
-function isValidPostalCode(code) {
+// Real, strict postal code formats — one entry per country that actually
+// has a formal, standardized postal code system. Sources: the standard,
+// publicly documented national postal formats (USPS, Royal Mail, Canada
+// Post, India Post, Universal Postal Union country profiles, etc.) — the
+// same references most real-world address-validation libraries use.
+const POSTAL_CODE_PATTERNS = {
+  'United States': /^\d{5}(-\d{4})?$/,
+  'Canada': /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/,
+  'United Kingdom': /^[A-Za-z]{1,2}\d[A-Za-z\d]?\s?\d[A-Za-z]{2}$/,
+  'Nigeria': /^\d{6}$/,
+  'Liberia': /^\d{4}$/,
+  'India': /^\d{6}$/,
+  'Germany': /^\d{5}$/,
+  'France': /^\d{5}$/,
+  'Australia': /^\d{4}$/,
+  'Brazil': /^\d{5}-?\d{3}$/,
+  'Japan': /^\d{3}-?\d{4}$/,
+  'China': /^\d{6}$/,
+  'South Africa': /^\d{4}$/,
+  'Mexico': /^\d{5}$/,
+  'Kenya': /^\d{5}$/,
+  'Italy': /^\d{5}$/,
+  'Spain': /^\d{5}$/,
+  'Netherlands': /^\d{4}\s?[A-Za-z]{2}$/,
+  'Sweden': /^\d{3}\s?\d{2}$/,
+  'Switzerland': /^\d{4}$/,
+  'Poland': /^\d{2}-\d{3}$/,
+  'Portugal': /^\d{4}-\d{3}$/,
+  'Russia': /^\d{6}$/,
+  'South Korea': /^\d{5}$/,
+  'Singapore': /^\d{6}$/,
+  'Indonesia': /^\d{5}$/,
+  'Philippines': /^\d{4}$/,
+  'Vietnam': /^\d{6}$/,
+  'Thailand': /^\d{5}$/,
+  'Turkey': /^\d{5}$/,
+  'Egypt': /^\d{5}$/,
+  'Chile': /^\d{7}$/,
+  'Colombia': /^\d{6}$/,
+  'Peru': /^\d{5}$/,
+  'New Zealand': /^\d{4}$/,
+  'Ireland': /^[A-Za-z]\d{2}\s?[A-Za-z0-9]{4}$/, // Eircode
+  'Israel': /^\d{5,7}$/,
+  'Saudi Arabia': /^\d{5}$/,
+  'Austria': /^\d{4}$/,
+  'Belgium': /^\d{4}$/,
+  'Denmark': /^\d{4}$/,
+  'Norway': /^\d{4}$/,
+  'Finland': /^\d{5}$/,
+  'Czechia': /^\d{3}\s?\d{2}$/,
+  'Romania': /^\d{6}$/,
+  'Hungary': /^\d{4}$/,
+  'Greece': /^\d{3}\s?\d{2}$/,
+  'Malaysia': /^\d{5}$/,
+  'Bangladesh': /^\d{4}$/,
+  'Pakistan': /^\d{5}$/,
+  'Sri Lanka': /^\d{5}$/,
+  'Morocco': /^\d{5}$/,
+  'Tunisia': /^\d{4}$/,
+  'Ecuador': /^\d{6}$/,
+  'Venezuela': /^\d{4}$/,
+  'Ukraine': /^\d{5}$/,
+  'Argentina': /^([A-Za-z]\d{4}[A-Za-z]{3}|\d{4})$/,
+  // Extended coverage — every other country with a real, standardized format:
+  'Afghanistan': /^\d{4}$/,
+  'Albania': /^\d{4}$/,
+  'Algeria': /^\d{5}$/,
+  'Andorra': /^AD\d{3}$/i,
+  'Armenia': /^\d{4}$/,
+  'Azerbaijan': /^AZ\d{4}$/i,
+  'Bahrain': /^\d{3,4}$/,
+  'Barbados': /^BB\d{5}$/i,
+  'Belarus': /^\d{6}$/,
+  'Bhutan': /^\d{5}$/,
+  'Bosnia and Herzegovina': /^\d{5}$/,
+  'Brunei': /^[A-Za-z]{2}\d{4}$/i,
+  'Bulgaria': /^\d{4}$/,
+  'Cabo Verde': /^\d{4}$/,
+  'Cambodia': /^\d{5}$/,
+  'Costa Rica': /^\d{5}$/,
+  'Croatia': /^\d{5}$/,
+  'Cuba': /^\d{5}$/,
+  'Cyprus': /^\d{4}$/,
+  'Dominican Republic': /^\d{5}$/,
+  'El Salvador': /^\d{4}$/,
+  'Estonia': /^\d{5}$/,
+  'Eswatini': /^[A-Za-z]\d{3}$/i,
+  'Ethiopia': /^\d{4}$/,
+  'Georgia': /^\d{4}$/,
+  'Guatemala': /^\d{5}$/,
+  'Haiti': /^(HT)?\d{4}$/i,
+  'Honduras': /^\d{5}$/,
+  'Iceland': /^\d{3}$/,
+  'Iran': /^\d{5}-?\d{5}$/,
+  'Iraq': /^\d{5}$/,
+  'Jordan': /^\d{5}$/,
+  'Kazakhstan': /^\d{6}$/,
+  'Kosovo': /^\d{5}$/,
+  'Kuwait': /^\d{5}$/,
+  'Kyrgyzstan': /^\d{6}$/,
+  'Laos': /^\d{5}$/,
+  'Latvia': /^LV-?\d{4}$/i,
+  'Lebanon': /^\d{4}\s?\d{4}$/,
+  'Lesotho': /^\d{3}$/,
+  'Liechtenstein': /^\d{4}$/,
+  'Lithuania': /^LT-?\d{5}$/i,
+  'Luxembourg': /^\d{4}$/,
+  'Madagascar': /^\d{3}$/,
+  'Maldives': /^\d{5}$/,
+  'Malta': /^[A-Za-z]{3}\s?\d{4}$/i,
+  'Marshall Islands': /^\d{5}$/,
+  'Mauritius': /^\d{5}$/,
+  'Micronesia': /^\d{5}$/,
+  'Moldova': /^MD-?\d{4}$/i,
+  'Monaco': /^980\d{2}$/,
+  'Mongolia': /^\d{5}$/,
+  'Montenegro': /^\d{5}$/,
+  'Myanmar': /^\d{5}$/,
+  'Nepal': /^\d{5}$/,
+  'Nicaragua': /^\d{5}$/,
+  'Niger': /^\d{4}$/,
+  'North Macedonia': /^\d{4}$/,
+  'Oman': /^\d{3}$/,
+  'Palau': /^\d{5}$/,
+  'Panama': /^\d{4}$/,
+  'Papua New Guinea': /^\d{3}$/,
+  'Paraguay': /^\d{4}$/,
+  'Saint Vincent and the Grenadines': /^VC\d{4}$/i,
+  'San Marino': /^4789\d$/,
+  'Senegal': /^\d{5}$/,
+  'Serbia': /^\d{5,6}$/,
+  'Slovakia': /^\d{3}\s?\d{2}$/,
+  'Slovenia': /^(SI-)?\d{4}$/i,
+  'Somalia': /^[A-Za-z]{2}\s?\d{5}$/i,
+  'Sudan': /^\d{5}$/,
+  'Taiwan': /^\d{3}(\d{2})?$/,
+  'Tajikistan': /^\d{6}$/,
+  'Turkmenistan': /^\d{6}$/,
+  'Uruguay': /^\d{5}$/,
+  'Uzbekistan': /^\d{6}$/,
+  'Vatican City': /^00120$/,
+  'Zambia': /^\d{5}$/,
+};
+
+// Countries with no formal, standardized postal code system in wide use.
+// Requiring a made-up format here would just block real people who
+// genuinely have nothing to enter — so for these, the zip/postal code
+// field is treated as optional rather than validated against a pattern
+// that doesn't really exist. (Ghana is deliberately here too: GhanaPostGPS
+// digital addresses exist but aren't universally adopted yet, so enforcing
+// that format would incorrectly block real users who don't have one.)
+const NO_POSTAL_CODE_COUNTRIES = new Set([
+  'Angola', 'Antigua and Barbuda', 'Bahamas', 'Belize', 'Benin', 'Bolivia', 'Botswana',
+  'Burkina Faso', 'Burundi', 'Cameroon', 'Central African Republic', 'Chad', 'Comoros',
+  "Congo (Brazzaville)", 'Congo (DRC)', "Cote d'Ivoire", 'Djibouti', 'Dominica',
+  'Equatorial Guinea', 'Eritrea', 'Fiji', 'Gabon', 'Gambia', 'Ghana', 'Grenada', 'Guinea',
+  'Guinea-Bissau', 'Guyana', 'Jamaica', 'Kiribati', 'Libya', 'Malawi', 'Mali', 'Mauritania',
+  'Mozambique', 'Namibia', 'Nauru', 'North Korea', 'Palestine', 'Qatar', 'Rwanda',
+  'Saint Kitts and Nevis', 'Saint Lucia', 'Samoa', 'Sao Tome and Principe', 'Seychelles',
+  'Sierra Leone', 'Solomon Islands', 'South Sudan', 'Suriname', 'Syria', 'Tanzania',
+  'Timor-Leste', 'Togo', 'Tonga', 'Trinidad and Tobago', 'Tuvalu', 'Uganda',
+  'United Arab Emirates', 'Vanuatu', 'Yemen', 'Zimbabwe',
+]);
+
+// A country genuinely having no formal postal system is different from a
+// country whose format we simply haven't verified — for the former,
+// requiring the field at all would be asking for something that doesn't
+// exist, so an empty value is valid there. Everywhere else, a specific
+// pattern is checked if we have one; otherwise the permissive generic
+// check still guards against obvious junk.
+function isValidPostalCode(code, country) {
+  const trimmed = typeof code === 'string' ? code.trim() : '';
+
+  if (country && NO_POSTAL_CODE_COUNTRIES.has(country)) {
+    // Optional here: empty is fine, but if they did enter something, it
+    // should at least be reasonable free text, not garbage.
+    if (!trimmed) return true;
+    return trimmed.length <= 20 && /^[a-zA-Z0-9\s-]*$/.test(trimmed);
+  }
+
   if (typeof code !== 'string') return false;
-  const trimmed = code.trim();
+
+  if (country && POSTAL_CODE_PATTERNS[country]) {
+    return POSTAL_CODE_PATTERNS[country].test(trimmed);
+  }
+
+  // Generic fallback for countries without a listed strict format (or when
+  // no country was supplied): permissive but still rejects obvious junk.
   if (trimmed.length < 3 || trimmed.length > 10) return false;
   if (!/^[a-zA-Z0-9\s-]+$/.test(trimmed)) return false;
   const alnumOnly = trimmed.replace(/[\s-]/g, '');
   if (/^(.)\1+$/.test(alnumOnly)) return false; // e.g. "00000" or "AAAAA"
   return true;
+}
+
+function postalCodeIsOptionalFor(country) {
+  return !!(country && NO_POSTAL_CODE_COUNTRIES.has(country));
+}
+
+// Human-readable format hints for the countries with a strict pattern above
+// — telling someone "enter 5 digits" is a lot more useful than a generic
+// "invalid postal code" when we actually know the real expected format.
+const POSTAL_CODE_HINTS = {
+  'United States': '5 digits (e.g. 30301), optionally +4 (30301-1234)',
+  'Canada': 'the format A1A 1A1 (letter-digit-letter, space, digit-letter-digit)',
+  'United Kingdom': 'a valid UK postcode (e.g. SW1A 1AA)',
+  'Nigeria': '6 digits',
+  'Liberia': '4 digits',
+  'India': '6 digits (PIN code)',
+  'Germany': '5 digits',
+  'France': '5 digits',
+  'Australia': '4 digits',
+  'Brazil': '8 digits (CEP), optionally as 12345-678',
+  'Japan': '7 digits, optionally as 123-4567',
+  'China': '6 digits',
+  'South Africa': '4 digits',
+  'Mexico': '5 digits',
+  'Kenya': '5 digits',
+  'Ireland': 'a valid Eircode (e.g. D02 AF30)',
+};
+
+function postalCodeErrorMessage(country) {
+  const hint = POSTAL_CODE_HINTS[country];
+  return hint ? `Enter a valid postal/zip code — ${country} uses ${hint}` : 'Enter a valid postal/zip code';
 }
 
 // Real people's names: letters (Unicode-aware, so "José", "Chidinma", "Åsa"
@@ -136,5 +352,6 @@ function validate(rules) {
 
 module.exports = {
   isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode,
-  isValidName, isValidCardExpiry, isValidLabel, validate, EMAIL_RE,
+  isValidName, isValidCardExpiry, isValidLabel, validate, EMAIL_RE, postalCodeErrorMessage,
+  postalCodeIsOptionalFor,
 };

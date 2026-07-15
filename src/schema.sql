@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS users (
   price           NUMERIC(8,2),
   color           TEXT,
   provider_since  TEXT,
+  profile_photo_url TEXT,
+  category_approval_status TEXT DEFAULT 'approved',
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ
 );
@@ -68,6 +70,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   category     TEXT NOT NULL,
   description  TEXT NOT NULL,
   budget       TEXT,
+  pay_currency TEXT DEFAULT 'usd',
   status       TEXT NOT NULL DEFAULT 'open',
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -95,27 +98,34 @@ CREATE TABLE IF NOT EXISTS contracts (
   time           TEXT,
   address        TEXT,
   amount         NUMERIC(10,2) NOT NULL,
+  pay_currency   TEXT DEFAULT 'usd',
   status         TEXT NOT NULL DEFAULT 'active',
   signed_at      TEXT,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS escrow_transactions (
-  id           TEXT PRIMARY KEY,
-  contract_id  TEXT NOT NULL REFERENCES contracts(id),
-  amount       NUMERIC(10,2) NOT NULL,
-  status       TEXT NOT NULL DEFAULT 'held',
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                 TEXT PRIMARY KEY,
+  contract_id        TEXT NOT NULL REFERENCES contracts(id),
+  amount             NUMERIC(10,2) NOT NULL,
+  paid_currency      TEXT DEFAULT 'USD',
+  paid_amount_local   NUMERIC(14,2),
+  exchange_rate_note TEXT,
+  status             TEXT NOT NULL DEFAULT 'held',
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_escrow_contract ON escrow_transactions(contract_id);
 
 CREATE TABLE IF NOT EXISTS payouts (
-  id           TEXT PRIMARY KEY,
-  provider_id  TEXT NOT NULL REFERENCES users(id),
-  amount       NUMERIC(10,2) NOT NULL,
-  method       TEXT,
-  status       TEXT NOT NULL DEFAULT 'processing',
-  date         TEXT
+  id                 TEXT PRIMARY KEY,
+  provider_id        TEXT NOT NULL REFERENCES users(id),
+  amount             NUMERIC(10,2) NOT NULL,
+  payout_currency    TEXT DEFAULT 'USD',
+  payout_amount_local NUMERIC(14,2),
+  exchange_rate_note TEXT,
+  method             TEXT,
+  status             TEXT NOT NULL DEFAULT 'processing',
+  date               TEXT
 );
 
 CREATE TABLE IF NOT EXISTS disputes (
@@ -125,6 +135,7 @@ CREATE TABLE IF NOT EXISTS disputes (
   amount       NUMERIC(10,2),
   status       TEXT NOT NULL DEFAULT 'open',
   parties      TEXT,
+  resolved_at  TIMESTAMPTZ,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -196,6 +207,15 @@ CREATE TABLE IF NOT EXISTS phone_verifications (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS category_requests (
+  id                  TEXT PRIMARY KEY,
+  provider_id         TEXT NOT NULL REFERENCES users(id),
+  requested_category  TEXT NOT NULL,
+  status              TEXT NOT NULL DEFAULT 'pending',
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at         TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS pending_registrations (
   id                TEXT PRIMARY KEY,
   payload           JSONB NOT NULL,
@@ -232,3 +252,14 @@ ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS billing_zip TEXT;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS booking_number TEXT;
 ALTER TABLE categories ADD COLUMN IF NOT EXISTS icon TEXT DEFAULT '🛠️';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS pay_currency TEXT DEFAULT 'usd';
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS pay_currency TEXT DEFAULT 'usd';
+ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS paid_currency TEXT DEFAULT 'USD';
+ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS paid_amount_local NUMERIC(14,2);
+ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS exchange_rate_note TEXT;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS payout_currency TEXT DEFAULT 'USD';
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS payout_amount_local NUMERIC(14,2);
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS exchange_rate_note TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS category_approval_status TEXT DEFAULT 'approved';
+ALTER TABLE disputes ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;

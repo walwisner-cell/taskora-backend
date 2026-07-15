@@ -78,16 +78,97 @@ const users = [
 await db.replaceAll('users', users);
 
 // ---- Categories & countries (global config — super admin only) -------------
+// A genuinely comprehensive default list, not just the original handful of
+// launch categories — covering the real breadth of what a local services
+// marketplace like this actually needs to support from day one. Super
+// admins can still deactivate any of these or add more (including
+// approving custom ones providers request at signup).
 await db.replaceAll('categories', [
+  // Home repair & maintenance
   { id: id('cat'), name: 'Plumbing', icon: '🔧', active: true },
-  { id: id('cat'), name: 'Cleaning', icon: '🧹', active: true },
-  { id: id('cat'), name: 'Tutoring', icon: '📚', active: true },
   { id: id('cat'), name: 'Electrical', icon: '⚡', active: true },
-  { id: id('cat'), name: 'Moving', icon: '📦', active: true },
+  { id: id('cat'), name: 'HVAC & Air Conditioning', icon: '❄️', active: true },
+  { id: id('cat'), name: 'Handyman Services', icon: '🛠️', active: true },
+  { id: id('cat'), name: 'Carpentry', icon: '🪚', active: true },
   { id: id('cat'), name: 'Painting', icon: '🎨', active: true },
-  { id: id('cat'), name: 'Landscaping', icon: '🌿', active: true },
+  { id: id('cat'), name: 'Roofing', icon: '🏠', active: true },
+  { id: id('cat'), name: 'Flooring Installation', icon: '🪵', active: true },
+  { id: id('cat'), name: 'Locksmith', icon: '🔑', active: true },
+  { id: id('cat'), name: 'Appliance Repair', icon: '🔌', active: true },
+  { id: id('cat'), name: 'Pest Control', icon: '🐜', active: true },
+  { id: id('cat'), name: 'Window Installation & Repair', icon: '🪟', active: true },
+  { id: id('cat'), name: 'Masonry', icon: '🧱', active: true },
+  { id: id('cat'), name: 'Welding', icon: '🔥', active: true },
+  { id: id('cat'), name: 'General Contracting', icon: '👷', active: true },
+  { id: id('cat'), name: 'Home Renovation', icon: '🏗️', active: true },
+
+  // Cleaning
+  { id: id('cat'), name: 'Cleaning', icon: '🧹', active: true },
+  { id: id('cat'), name: 'Deep Cleaning', icon: '🧼', active: true },
+  { id: id('cat'), name: 'Carpet Cleaning', icon: '🧽', active: true },
+  { id: id('cat'), name: 'Window Cleaning', icon: '🪞', active: true },
+  { id: id('cat'), name: 'Pool Cleaning & Maintenance', icon: '🏊', active: true },
+  { id: id('cat'), name: 'Laundry & Dry Cleaning', icon: '👕', active: true },
+
+  // Moving & delivery
+  { id: id('cat'), name: 'Moving', icon: '📦', active: true },
   { id: id('cat'), name: 'Pick & Drop', icon: '🚗', active: true },
+  { id: id('cat'), name: 'Furniture Assembly', icon: '🪑', active: true },
+  { id: id('cat'), name: 'Junk Removal', icon: '🗑️', active: true },
+
+  // Outdoor & landscaping
+  { id: id('cat'), name: 'Landscaping', icon: '🌿', active: true },
+  { id: id('cat'), name: 'Lawn Care', icon: '🌾', active: true },
+  { id: id('cat'), name: 'Gardening', icon: '🌱', active: true },
+  { id: id('cat'), name: 'Tree Trimming & Removal', icon: '🌳', active: true },
+  { id: id('cat'), name: 'Fence Installation & Repair', icon: '🚧', active: true },
+
+  // Personal care & wellness
   { id: id('cat'), name: 'Fitness', icon: '💪', active: true },
+  { id: id('cat'), name: 'Massage Therapy', icon: '💆', active: true },
+  { id: id('cat'), name: 'Hair Styling', icon: '💇', active: true },
+  { id: id('cat'), name: 'Makeup Artistry', icon: '💄', active: true },
+  { id: id('cat'), name: 'Nail Care', icon: '💅', active: true },
+
+  // Education
+  { id: id('cat'), name: 'Tutoring', icon: '📚', active: true },
+  { id: id('cat'), name: 'Music Lessons', icon: '🎵', active: true },
+  { id: id('cat'), name: 'Language Lessons', icon: '🗣️', active: true },
+  { id: id('cat'), name: 'Test Prep', icon: '📝', active: true },
+
+  // Events
+  { id: id('cat'), name: 'Event Planning', icon: '🎉', active: true },
+  { id: id('cat'), name: 'Photography', icon: '📷', active: true },
+  { id: id('cat'), name: 'Videography', icon: '🎥', active: true },
+  { id: id('cat'), name: 'DJ Services', icon: '🎧', active: true },
+  { id: id('cat'), name: 'Catering', icon: '🍽️', active: true },
+
+  // Automotive
+  { id: id('cat'), name: 'Auto Repair', icon: '🚘', active: true },
+  { id: id('cat'), name: 'Car Detailing & Wash', icon: '🧽', active: true },
+  { id: id('cat'), name: 'Towing', icon: '🚛', active: true },
+
+  // Pet care
+  { id: id('cat'), name: 'Pet Sitting', icon: '🐾', active: true },
+  { id: id('cat'), name: 'Dog Walking', icon: '🐕', active: true },
+  { id: id('cat'), name: 'Pet Grooming', icon: '🐩', active: true },
+
+  // Tech & digital
+  { id: id('cat'), name: 'IT Support & Computer Repair', icon: '💻', active: true },
+  { id: id('cat'), name: 'Web & Graphic Design', icon: '🎨', active: true },
+
+  // Professional services
+  { id: id('cat'), name: 'Accounting & Bookkeeping', icon: '📊', active: true },
+  { id: id('cat'), name: 'Legal Consulting', icon: '⚖️', active: true },
+  { id: id('cat'), name: 'Notary Services', icon: '🖋️', active: true },
+  { id: id('cat'), name: 'Interior Design', icon: '🛋️', active: true },
+
+  // Care
+  { id: id('cat'), name: 'Babysitting & Nanny Services', icon: '🍼', active: true },
+  { id: id('cat'), name: 'Elder Care', icon: '🧓', active: true },
+
+  // Security
+  { id: id('cat'), name: 'Security Services', icon: '🛡️', active: true },
 ]);
 
 // Every real country, populated for real — not a handful of launch
@@ -356,6 +437,7 @@ await db.replaceAll('passwordResets', []);
 await db.replaceAll('phoneVerifications', []);
 await db.replaceAll('portfolioPhotos', []);
 await db.replaceAll('pendingRegistrations', []);
+await db.replaceAll('categoryRequests', []);
 await db.replaceAll('reviews', [
   { id: id('rev'), providerId: 'u_marcus', authorName: 'Renee P.', stars: 5, text: 'Showed up on time, explained everything clearly, and the price matched the quote exactly.', createdAt: now() },
   { id: id('rev'), providerId: 'u_marcus', authorName: 'Malik O.', stars: 5, text: 'Excellent work — fast, clean, and professional. The escrow process made the whole thing feel safe.', createdAt: now() },

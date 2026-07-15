@@ -654,7 +654,7 @@
       <div class="search-divider"></div>
       <div class="location-tag">
         <svg width="14" height="14" fill="#1D5FA8" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-        Atlanta, GA
+        <input type="text" id="search-location-input" placeholder="Your city" style="border:none;background:transparent;outline:none;font-size:14px;color:var(--navy);width:120px;font-family:inherit;" onkeypress="handleSearch(event)"/>
       </div>
       <button class="search-btn" onclick="handleSearchClick()">Search</button>
     </div>
@@ -920,17 +920,23 @@
         <input class="form-input" type="text" id="auth-address"/>
       </div>
       <div class="form-group" id="auth-zip-group" style="display:none">
-        <label class="form-label">Zip / Postal Code</label>
+        <label class="form-label" id="auth-zip-label">Zip / Postal Code</label>
         <input class="form-input" type="text" id="auth-zip"/>
         <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Used to match you with pros in your community</div>
+        <div id="auth-zip-hint" style="display:none;font-size:11.5px;color:var(--muted);margin-top:3px;">This country doesn't use a formal postal code system, so this is optional.</div>
       </div>
       <div id="auth-provider-fields-group" style="display:none">
         <div class="form-group">
           <label class="form-label">Primary Service Category</label>
-          <select class="form-input form-select" id="auth-category">
+          <select class="form-input form-select" id="auth-category" onchange="document.getElementById('auth-custom-category-group').style.display = this.value === '__other__' ? 'block' : 'none'">
             <option>Plumbing</option><option>Cleaning</option><option>Tutoring</option><option>Electrical</option>
             <option>Moving</option><option>Painting</option><option>Landscaping</option><option>Fitness</option>
           </select>
+        </div>
+        <div class="form-group" id="auth-custom-category-group" style="display:none;">
+          <label class="form-label">What service do you offer?</label>
+          <input class="form-input" type="text" id="auth-custom-category" placeholder="e.g. Piano Tuning, Pool Maintenance"/>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Not on our current list yet — you can still sign up and start using your account right away. A team member reviews new categories within 24 hours, and you'll be notified either way.</div>
         </div>
         <div class="form-group">
           <label class="form-label">Skills & Specialties</label>
@@ -1289,6 +1295,7 @@ async function loadProviders() {
         verified: p.verified !== false, city: p.city || 'Atlanta',
         availability: p.availability && p.availability.length ? p.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'],
         pricingModel: p.pricingModel || 'hourly',
+        profilePhotoUrl: p.profilePhotoUrl || null,
       }));
     }
   } catch (e) { console.warn('Could not load providers from API, using demo data.', e); }
@@ -1365,7 +1372,7 @@ function renderFeaturedCarouselSlides() {
     }
     const p = item.data;
     return `<div class="featured-slide ${i === featuredCarouselIndex ? 'active' : ''}">
-      <div class="featured-slide-avatar" style="background:${p.color}">${p.initials}</div>
+      <div class="featured-slide-avatar" ${p.profilePhotoUrl ? '' : `style="background:${p.color}"`}>${p.profilePhotoUrl ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : p.initials}</div>
       <div class="featured-slide-body">
         <div class="featured-slide-name">${p.name} <span class="badge ${p.plan === 'superpro' ? 'badge-warn' : 'badge-success'}" style="font-size:9.5px;">${p.plan === 'superpro' ? 'SUPER PRO' : 'PRO'}</span></div>
         <div class="featured-slide-sub">${p.role} · ${p.city} · ★ ${p.rating || 'New'}</div>
@@ -1392,6 +1399,7 @@ function goToFeaturedSlide(i) {
 }
 
 let currentPro = null;
+let currentCurrencyInfo = null;
 
 /* ══════════════════════ CATEGORIES (homepage + browse pages) ══════════════════════ */
 const CATEGORY_ICONS = {
@@ -1432,6 +1440,7 @@ const FALLBACK_GEO = {
     'Ghana': ['Greater Accra', 'Ashanti', 'Western'],
     'Liberia': ['Montserrado', 'Bong', 'Nimba'],
   },
+  noPostalCodeCountries: ['Ghana'],
 };
 let GEO_DATA = FALLBACK_GEO;
 
@@ -1461,6 +1470,14 @@ function populateAuthStates() {
   if (stateSelect) {
     stateSelect.innerHTML = states.map(s => `<option value="${s}">${s}</option>`).join('');
   }
+  // Some countries genuinely have no formal postal code system — for
+  // those, the field becomes optional rather than pretending a format
+  // exists that doesn't.
+  const noPostalCode = (GEO_DATA.noPostalCodeCountries || []).includes(country);
+  const zipLabel = document.getElementById('auth-zip-label');
+  const zipHint = document.getElementById('auth-zip-hint');
+  if (zipLabel) zipLabel.textContent = noPostalCode ? 'Zip / Postal Code (optional)' : 'Zip / Postal Code';
+  if (zipHint) zipHint.style.display = noPostalCode ? 'block' : 'none';
 }
 
 function categoryCardsHTML(list) {
@@ -1635,6 +1652,10 @@ function goHome() {
   showScreen('screen-home');
   renderNavbar('navbar-home', 'home');
   loadFeaturedCarousel();
+  const locInput = document.getElementById('search-location-input');
+  if (locInput && AUTH.user && AUTH.user.city) {
+    locInput.value = AUTH.user.state ? `${AUTH.user.city}, ${AUTH.user.state}` : AUTH.user.city;
+  }
 }
 
 // Distinct from goHome(): this actually ends the session (clears the token
@@ -1766,7 +1787,7 @@ function setAuthRole(role) {
     // here too, instead of a hardcoded list going stale.
     const select = document.getElementById('auth-category');
     if (select && CATEGORIES.length) {
-      select.innerHTML = CATEGORIES.map(c => `<option>${c.name}</option>`).join('');
+      select.innerHTML = CATEGORIES.map(c => `<option>${c.name}</option>`).join('') + `<option value="__other__">Other (not listed — describe below)</option>`;
     }
   }
 }
@@ -1781,7 +1802,8 @@ async function mockAuth() {
   const phone = document.getElementById('auth-phone').value.trim();
   const address = document.getElementById('auth-address').value.trim();
   const zipCode = document.getElementById('auth-zip').value.trim();
-  const category = document.getElementById('auth-category').value;
+  const categorySelect = document.getElementById('auth-category').value;
+  const category = categorySelect === '__other__' ? document.getElementById('auth-custom-category').value.trim() : categorySelect;
   const skills = document.getElementById('auth-skills').value.trim();
 
   if (!BACKEND_AVAILABLE) {
@@ -1791,8 +1813,10 @@ async function mockAuth() {
   if (authState.mode === 'login') {
     if (!email || !password) return showToast('Please fill in all fields');
   } else {
-    if (!email || !password || !name || !phone || !address || !zipCode || !city) return showToast('Please fill in all fields');
+    const zipRequired = !(GEO_DATA.noPostalCodeCountries || []).includes(country);
+    if (!email || !password || !name || !phone || !address || !city || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
     if (authState.role === 'provider' && !skills) return showToast('List at least one skill or specialty');
+    if (authState.role === 'provider' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
   }
   if (!isValidEmailClient(email)) {
     return showToast('Enter a valid email address');
@@ -1802,7 +1826,7 @@ async function mockAuth() {
     if (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
     const phoneDigits = phone.replace(/[^0-9]/g, '');
     if (phoneDigits.length < 7) return showToast('Enter a valid phone number');
-    if (zipCode.length < 3) return showToast('Enter a valid zip/postal code');
+    if (zipCode && zipCode.length < 3 && !(GEO_DATA.noPostalCodeCountries || []).includes(country)) return showToast('Enter a valid zip/postal code');
     if (city.length < 2) return showToast('Enter your city');
   }
   try {
@@ -1851,6 +1875,8 @@ async function submitSignupVerification() {
         showToast(`Account created — you're on the ${PLAN_LABELS[pendingPlanSelection]} plan (test mode)`);
       } catch (e) { showToast('Account created — welcome to Taskora!'); }
       pendingPlanSelection = null;
+    } else if (data.categoryApprovalStatus === 'pending') {
+      showToast(`Account created! Your category "${data.user.category}" is pending a quick admin review (within 24 hours) — you can use your account right away in the meantime.`);
     } else {
       showToast('Account created — welcome to Taskora!');
     }
@@ -2542,7 +2568,7 @@ async function viewProviderProfile(id) {
   showScreen('screen-profile');
   renderNavbar('navbar-profile', 'home');
   document.getElementById('profile-head').innerHTML = `
-    <div class="profile-avatar-lg" style="background:${p.color}">${p.initials}</div>
+    <div class="profile-avatar-lg" ${p.profilePhotoUrl ? '' : `style="background:${p.color}"`}>${p.profilePhotoUrl ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : p.initials}</div>
     <div>
       <div class="profile-name-row"><div class="profile-name">${p.name}</div>${p.verified !== false ? '<span class="badge badge-success">✓ Verified</span>' : '<span class="badge badge-warn">Verification pending</span>'}</div>
       <div class="profile-role">${p.role} · Serving ${p.city || 'Atlanta'} · Taskora Pro since ${p.since}</div>
@@ -2665,11 +2691,11 @@ async function runAIMatch() {
   let matchScope = 'city';
   if (BACKEND_AVAILABLE && AUTH.token && AUTH.user && AUTH.user.role === 'customer') {
     try {
-      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, budget });
+      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, budget, payCurrency: 'local' });
       realCallSucceeded = true;
       isKnownCategory = result.isKnownCategory !== false;
       matchScope = result.matchScope || 'city';
-      pool = result.matches.map(m => ({ id: m.providerId, name: m.provider.name, initials: m.provider.initials, role: m.provider.role, price: m.provider.price, rating: m.provider.rating, color: m.provider.color, score: m.score }));
+      pool = result.matches.map(m => ({ id: m.providerId, name: m.provider.name, initials: m.provider.initials, role: m.provider.role, price: m.provider.price, rating: m.provider.rating, color: m.provider.color, score: m.score, profilePhotoUrl: m.provider.profilePhotoUrl || null }));
     } catch (e) {
       // A genuine validation error (description rejected, etc.) should send
       // the user back to fix their input, not get quietly replaced with
@@ -2713,7 +2739,9 @@ async function runAIMatch() {
       ${realCallSucceeded && matchScope !== 'city' ? `<div style="font-size:12px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:12px;">📍 No verified "${cat}" pro in your exact city yet, so we widened the search to ${matchScope === 'state' ? 'your state/region' : 'your country'}.</div>` : ''}
       ${pool.map(p => `
         <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;">
-          <div style="width:44px;height:44px;border-radius:50%;background:${p.color};color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-weight:600;flex-shrink:0;">${p.initials}</div>
+          ${p.profilePhotoUrl
+            ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
+            : `<div style="width:44px;height:44px;border-radius:50%;background:${p.color};color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-weight:600;flex-shrink:0;">${p.initials}</div>`}
           <div style="flex:1;">
             <div style="font-weight:600;font-size:13.5px;color:var(--navy);">${p.name} <span class="badge badge-success" style="margin-left:4px;">${p.score}% match</span></div>
             <div style="font-size:12px;color:var(--slate);">${p.role} · $${p.price}/hr · ★ ${p.rating}</div>
@@ -2797,13 +2825,20 @@ const PROVIDER_SECTIONS = {
   overview: () => {
     const activeContracts = providerData.contracts.filter(c => c.status === 'active').length;
     const earnings = providerData.payouts.reduce((s, p) => s + p.amount, 0);
+    const catStatus = AUTH.user && AUTH.user.categoryApprovalStatus;
+    const catBanner = catStatus === 'pending'
+      ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--gold);"><div style="font-size:12.5px;color:var(--navy);">⏳ Your category "<strong>${AUTH.user.category}</strong>" is pending a quick admin review (usually within 24 hours). You can use your account normally in the meantime — we'll notify you the moment it's reviewed.</div></div>`
+      : catStatus === 'rejected'
+      ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--danger, #C1554D);"><div style="font-size:12.5px;color:var(--navy);">Your category "<strong>${AUTH.user.category}</strong>" wasn't approved as a new listed category. <a onclick="selectProviderSection('settings')" style="color:var(--gold);cursor:pointer;">Update your category in Settings</a> to one of our current categories to be fully bookable.</div></div>`
+      : '';
     return `
     <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Marcus'}</div><div class="dash-sub">Your AI-matched jobs and contract activity</div></div></div>
+    ${catBanner}
     <div class="stat-cards">
-      <div class="stat-card"><div class="stat-card-label">This Month's Earnings</div><div class="stat-card-val">$${earnings.toLocaleString()}</div><div class="stat-card-delta">↑ 12% vs last month</div></div>
+      <div class="stat-card"><div class="stat-card-label">This Month's Earnings</div><div class="stat-card-val">$${earnings.toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-card-label">Active Contracts</div><div class="stat-card-val">${activeContracts}</div></div>
-      <div class="stat-card"><div class="stat-card-label">Average Rating</div><div class="stat-card-val">4.9★</div></div>
-      <div class="stat-card"><div class="stat-card-label">Response Rate</div><div class="stat-card-val">98%</div></div>
+      <div class="stat-card"><div class="stat-card-label">Average Rating</div><div class="stat-card-val">${(AUTH.user && AUTH.user.rating) ? AUTH.user.rating + '★' : 'New'}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Jobs Completed</div><div class="stat-card-val">${providerData.contracts.filter(c => c.status === 'completed').length}</div></div>
     </div>
     <div class="panel"><div class="panel-title">New AI Matches <small>${providerData.matches.length} pending</small></div>${matchesTable(providerData.matches.slice(0, 3))}</div>
     <div class="panel"><div class="panel-title">Recent Contracts</div>${contractsTable(providerData.contracts.slice(0, 3))}</div>`;
@@ -2821,7 +2856,11 @@ const PROVIDER_SECTIONS = {
       .reduce((s, c) => s + c.escrow.amount, 0);
     const weeklyChart = weeklyEarningsChartData(providerData.payouts);
     return `
-    <div class="dash-header"><div><div class="dash-title">Earnings & Payouts</div><div class="dash-sub">Paid hourly or per job — your choice, set per contract</div></div><button class="btn-sm btn-sm-primary" onclick="requestPayout()">Request Payout</button></div>
+    <div class="dash-header"><div><div class="dash-title">Earnings & Payouts</div><div class="dash-sub">Paid hourly or per job — your choice, set per contract</div></div><button class="btn-sm btn-sm-primary" onclick="openPayoutCurrencyChoice()">Request Payout</button></div>
+    <div class="panel" id="payout-currency-panel" style="display:none;">
+      <div class="panel-title">Choose Payout Currency</div>
+      <div id="payout-currency-body"></div>
+    </div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Earned</div><div class="stat-card-val">$${providerData.payouts.reduce((s,p)=>s+p.amount,0).toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-card-label">Pending Payout</div><div class="stat-card-val">$${pendingPayout.toLocaleString()}</div></div>
@@ -2845,6 +2884,17 @@ const PROVIDER_SECTIONS = {
   verification: () => verificationHTML('provider', providerData.verificationStatus || 'none'),
   settings: () => `
     <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Payout preferences & account ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Saved to your account</span>' : ''}</div></div></div>
+    <div class="panel"><div class="panel-title">Profile Photo</div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div id="prov-profile-photo-preview">${avatarHTML({ profilePhotoUrl: (AUTH.user && AUTH.user.profilePhotoUrl), initials: (AUTH.user && AUTH.user.initials) || '?', color: (AUTH.user && AUTH.user.color) || 'var(--navy)', name: (AUTH.user && AUTH.user.name) || '' }, 72)}</div>
+        <div>
+          <input type="file" id="prov-photo-file-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none;" onchange="uploadProfilePhoto(this.files[0])"/>
+          <button class="btn-sm btn-sm-primary" onclick="document.getElementById('prov-photo-file-input').click()">Upload Photo</button>
+          ${AUTH.user && AUTH.user.profilePhotoUrl ? `<button class="btn-sm btn-sm-outline" onclick="removeProfilePhoto()">Remove</button>` : ''}
+          <div style="font-size:11px;color:var(--muted);margin-top:6px;">This is what customers see on your card, search results, and profile — a real, identifiable photo builds a lot more trust than initials.</div>
+        </div>
+      </div>
+    </div>
     <div class="panel"><div class="panel-title">Profile</div>
       <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="set-prov-name" value="${(AUTH.user && AUTH.user.name) || 'Marcus T.'}"/></div>
       <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-prov-email" value="${(AUTH.user && AUTH.user.email) || 'marcus@example.com'}"/></div>
@@ -3023,11 +3073,35 @@ async function saveAdminSettings() {
   } catch (e) { showToast(e.message || 'Could not save settings'); }
 }
 
-async function requestPayout() {
+async function openPayoutCurrencyChoice() {
+  if (!BACKEND_AVAILABLE) return requestPayout('usd');
+  try {
+    const info = await apiFetch('GET', '/currency/mine');
+    if (info.isUSD) return requestPayout('usd'); // nothing to choose between
+    const panel = document.getElementById('payout-currency-panel');
+    const c = info.currency;
+    document.getElementById('payout-currency-body').innerHTML = `
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">Your account is based in a ${c.name} (${c.code}) region — choose how you'd like to receive this payout.</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-sm btn-sm-primary" onclick="requestPayout('local')" style="flex:1;">${c.symbol} Receive in ${c.code}</button>
+        <button class="btn-sm btn-sm-outline" onclick="requestPayout('usd')" style="flex:1;">$ Receive in USD</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px;">Uses an approximate test-mode exchange rate — not a live market rate.</div>
+    `;
+    panel.style.display = 'block';
+  } catch (e) { showToast(e.message || 'Could not load currency info'); }
+}
+
+async function requestPayout(payoutCurrency) {
   if (!BACKEND_AVAILABLE) return showToast('Payout requested (demo mode — no backend detected)');
   try {
-    const { payout } = await apiFetch('POST', '/payouts/request');
-    showToast(`Payout of $${payout.amount} requested`);
+    const { payout } = await apiFetch('POST', '/payouts/request', { payoutCurrency });
+    const panel = document.getElementById('payout-currency-panel');
+    if (panel) panel.style.display = 'none';
+    const msg = payout.payoutAmountLocal
+      ? `Payout of ${payout.payoutCurrency} ${payout.payoutAmountLocal} (≈ $${payout.amount} USD) requested`
+      : `Payout of $${payout.amount} requested`;
+    showToast(msg);
     await loadProviderData();
     selectProviderSection('earnings');
   } catch (e) { showToast(e.message || 'Could not request payout'); }
@@ -3138,6 +3212,44 @@ async function deletePortfolioPhoto(id) {
   } catch (e) { showToast(e.message || 'Could not remove photo'); }
 }
 
+async function uploadProfilePhoto(file) {
+  if (!file) return;
+  if (!BACKEND_AVAILABLE) return showToast('Profile photo updated (demo mode — no backend detected)');
+  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large — 5MB max');
+
+  const formData = new FormData();
+  formData.append('photo', file);
+  try {
+    const res = await fetch(API_BASE + '/profile-photo/upload', {
+      method: 'POST',
+      headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    AUTH.user.profilePhotoUrl = data.profilePhotoUrl;
+    showToast('Profile photo updated');
+    // Re-render Settings so the new photo shows immediately, without a
+    // page reload — and re-render the navbar avatar too if one exists.
+    if (AUTH.user.role === 'provider') selectProviderSection('settings');
+    else if (AUTH.user.role === 'customer') selectCustomerSection('settings');
+  } catch (e) {
+    showToast(e.message || 'Could not upload photo');
+  }
+}
+
+async function removeProfilePhoto() {
+  if (!BACKEND_AVAILABLE) { AUTH.user.profilePhotoUrl = null; showToast('Profile photo removed (demo mode)'); return; }
+  if (!confirm('Remove your profile photo? This reverts to your initials.')) return;
+  try {
+    await apiFetch('DELETE', '/profile-photo');
+    AUTH.user.profilePhotoUrl = null;
+    showToast('Profile photo removed');
+    if (AUTH.user.role === 'provider') selectProviderSection('settings');
+    else if (AUTH.user.role === 'customer') selectCustomerSection('settings');
+  } catch (e) { showToast(e.message || 'Could not remove photo'); }
+}
+
 async function initProviderDash() { await loadProviderData(); updateProviderSidebar(); selectProviderSection('overview'); }
 
 /* ══════════════════════ ADMIN DASHBOARD ══════════════════════ */
@@ -3195,7 +3307,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [],
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [],
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -3211,8 +3323,9 @@ async function loadAdminData() {
       apiFetch('GET', '/admin/categories'),
       apiFetch('GET', '/admin/countries'),
       apiFetch('GET', '/escrow/summary'),
+      apiFetch('GET', '/admin/category-requests'),
     ];
-    const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow] = await Promise.all(calls);
+    const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests] = await Promise.all(calls);
     adminData.stats = stats;
     adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
     adminData.people = allPeople.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), city: u.city, country: u.country, verified: u.verified, active: u.active !== false }));
@@ -3221,6 +3334,7 @@ async function loadAdminData() {
     adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active }));
     adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
     adminData.escrow = escrow;
+    adminData.categoryRequests = catRequests.requests;
 
     // A genuine live check, not a hardcoded "everything's fine" badge — this
     // hits the real /api/health endpoint right now and times it.
@@ -3332,6 +3446,16 @@ const ADMIN_SECTIONS = {
       : (c.status === 'live' ? statusBadge('completed') : `<span class="badge badge-neutral">Planned</span>`);
     return `
     <div class="dash-header"><div><div class="dash-title">Categories & Countries</div><div class="dash-sub">${isSuper ? "Manage what's bookable, and where" : 'Global platform settings — read-only outside Super Admin'}</div></div>${isSuper ? `<div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="openNewCategoryForm()">+ Add Category</button><button class="btn-sm btn-sm-outline" onclick="openNewCountryForm()">+ Add Country</button></div>` : ''}</div>
+    ${isSuper && adminData.categoryRequests.filter(r => r.status === 'pending').length ? `<div class="panel"><div class="panel-title">Category Requests <small>${adminData.categoryRequests.filter(r => r.status === 'pending').length} pending</small></div>
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Requested Category</th><th>Requested</th><th>Action</th></tr></thead><tbody>
+      ${adminData.categoryRequests.filter(r => r.status === 'pending').map(r => `<tr>
+        <td>${r.providerName}</td>
+        <td>${r.requestedCategory}</td>
+        <td>${r.hoursElapsed < 1 ? 'Just now' : r.hoursElapsed + 'h ago'} ${r.overdue ? '<span class="badge badge-danger" style="margin-left:6px;">Overdue (24h+)</span>' : ''}</td>
+        <td class="row-actions"><button class="btn-sm btn-sm-primary" onclick="decideCategoryRequest('${r.id}','approve')">Approve</button> <button class="btn-sm btn-sm-outline" onclick="decideCategoryRequest('${r.id}','reject')">Reject</button></td>
+      </tr>`).join('')}
+      </tbody></table></div>
+    </div>` : ''}
     ${isSuper ? `<div class="panel" id="new-category-panel" style="display:none;">
       <div class="panel-title">New Service Category</div>
       <div class="form-group"><label class="form-label">Category Name</label><input class="form-input" id="new-cat-name" placeholder="e.g. Pest Control"/></div>
@@ -3537,6 +3661,16 @@ async function deleteCategory(catId, name) {
   } catch (e) { showToast(e.message || 'Could not delete category'); }
 }
 
+async function decideCategoryRequest(requestId, decision) {
+  if (!BACKEND_AVAILABLE) return showToast(`Request ${decision}d (demo mode)`);
+  try {
+    await apiFetch('POST', `/admin/category-requests/${requestId}/${decision}`);
+    showToast(decision === 'approve' ? 'Category approved — now live and bookable' : 'Category request rejected');
+    await loadAdminData();
+    selectAdminSection('categories');
+  } catch (e) { showToast(e.message || `Could not ${decision} this request`); }
+}
+
 async function deleteCountry(cId, name) {
   if (!confirm(`Delete "${name}"? This can't be undone. Accounts registered under it will block this.`)) return;
   if (!BACKEND_AVAILABLE) return showToast(`${name} deleted (demo mode)`);
@@ -3644,12 +3778,26 @@ function stars(n) {
   return '★'.repeat(Math.floor(n)) + (n % 1 >= 0.5 ? '½' : '') + ' ' + n;
 }
 
+// Shows a provider's real uploaded profile photo wherever their avatar
+// appears, falling back to the initials-in-a-colored-circle placeholder
+// only when they haven't uploaded one. `sizePx` controls both the avatar's
+// dimensions and its font size (initials scale down for smaller avatars).
+function avatarHTML(p, sizePx, extraStyle = '') {
+  if (p.profilePhotoUrl) {
+    return `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:${sizePx}px;height:${sizePx}px;border-radius:50%;object-fit:cover;display:block;flex-shrink:0;${extraStyle}"/>`;
+  }
+  const fontSize = Math.round(sizePx * 0.36);
+  return `<div style="width:${sizePx}px;height:${sizePx}px;border-radius:50%;background:${p.color};color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-weight:600;font-size:${fontSize}px;flex-shrink:0;${extraStyle}">${p.initials}</div>`;
+}
+
 function providerCardsHTML(list) {
   if (!list.length) return `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--slate);font-size:13px;">No providers match that search yet.</div>`;
   return list.map(p => `
     <div class="provider-card fade-up" onclick="viewProviderProfile('${p.id}')">
       <div class="provider-header" style="background:linear-gradient(135deg,${p.color}22,${p.color}44)">
-        <div class="provider-avatar" style="background:${p.color};color:#fff">${p.initials}</div>
+        ${p.profilePhotoUrl
+          ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" class="provider-avatar" style="object-fit:cover;"/>`
+          : `<div class="provider-avatar" style="background:${p.color};color:#fff">${p.initials}</div>`}
         ${p.verified !== false ? '<div class="verified-badge">✓ Verified</div>' : ''}
       </div>
       <div class="provider-body">
@@ -3683,17 +3831,62 @@ function filterCat(cat) {
 }
 
 function handleSearch(e) { if(e.key === 'Enter') handleSearchClick(); }
-function handleSearchClick() {
+
+async function handleSearchClick() {
   const q = document.getElementById('search-input').value.trim();
-  if (!q) return;
-  const match = PROVIDERS.filter(p => p.cat.toLowerCase().includes(q.toLowerCase()) || p.role.toLowerCase().includes(q.toLowerCase()) || p.tags.some(t => t.toLowerCase().includes(q.toLowerCase())));
-  document.getElementById('providers-title').textContent = `Results for "${q}"`;
+  const locationRaw = document.getElementById('search-location-input').value.trim();
+  if (!q && !locationRaw) return;
+
+  document.querySelector('.section').scrollIntoView({ behavior: 'smooth' });
+  document.getElementById('providers-title').textContent = q ? `Results for "${q}"` : 'Pros near you';
+  document.getElementById('providers-sub').textContent = 'Searching…';
+
+  // Parse "City, State" or just "City" from the free-text location field.
+  // Country comes from the signed-in user's account if we have it — an
+  // anonymous visitor typing a location has no country context to expand
+  // within, so their search only narrows by city/state text matching
+  // against whatever's already loaded, rather than hitting the real
+  // country-scoped endpoint.
+  let cityPart = '', statePart = '';
+  if (locationRaw) {
+    const parts = locationRaw.split(',').map(s => s.trim());
+    cityPart = parts[0] || '';
+    statePart = parts[1] || '';
+  }
+  const country = (AUTH.user && AUTH.user.country) || null;
+
+  if (BACKEND_AVAILABLE && country && cityPart) {
+    try {
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      params.set('city', cityPart);
+      if (statePart) params.set('state', statePart);
+      params.set('country', country);
+      const result = await apiFetch('GET', `/providers?${params.toString()}`);
+      const scopeNote = result.locationScope === 'state'
+        ? `<div style="grid-column:1/-1;font-size:12.5px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:14px;">📍 No matches in ${cityPart} yet, so we widened to your state/region.</div>`
+        : result.locationScope === 'country'
+        ? `<div style="grid-column:1/-1;font-size:12.5px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:14px;">📍 No matches nearby yet, so we widened the search to all of ${country}.</div>`
+        : '';
+      document.getElementById('providers-sub').textContent = `${result.providers.length} pros found`;
+      document.getElementById('providers-grid').innerHTML = scopeNote + providerCardsHTML(result.providers);
+      return;
+    } catch (e) {
+      console.warn('Real location search failed, falling back to local filtering', e);
+    }
+  }
+
+  // Fallback: no location typed, not signed in, or the real search call
+  // failed — filter whatever's already loaded client-side instead of
+  // showing nothing.
+  const needle = q.toLowerCase();
+  let match = q ? PROVIDERS.filter(p => p.cat.toLowerCase().includes(needle) || p.role.toLowerCase().includes(needle) || p.tags.some(t => t.toLowerCase().includes(needle))) : PROVIDERS.slice();
+  if (cityPart) match = match.filter(p => (p.city || '').toLowerCase().includes(cityPart.toLowerCase()));
   document.getElementById('providers-sub').textContent = `${match.length} pros found`;
   renderProviders(match.length ? match : PROVIDERS);
-  document.querySelector('.section').scrollIntoView({ behavior:'smooth' });
 }
 
-function openBooking(id) {
+async function openBooking(id) {
   currentPro = PROVIDERS.find(p => p.id === id);
   const availability = currentPro.availability && currentPro.availability.length ? currentPro.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'];
   const isNegotiable = currentPro.pricingModel === 'negotiable';
@@ -3706,12 +3899,25 @@ function openBooking(id) {
   // is forced into.
   document.getElementById('job-time').innerHTML = availability.map(a => `<option>${a}</option>`).join('');
 
+  // Real currency choice — only shown when the signed-in customer's actual
+  // country uses a non-USD currency. The contract is always denominated in
+  // USD (that stays the accounting figure of record); this only affects
+  // what currency they actually pay in, converted at time of payment.
+  currentCurrencyInfo = null;
+  if (BACKEND_AVAILABLE && AUTH.token && AUTH.user && AUTH.user.role === 'customer') {
+    try {
+      const hourlyTotal = currentPro.price * 2 + Math.round(currentPro.price * 0.08);
+      currentCurrencyInfo = await apiFetch('GET', `/currency/mine?amount=${hourlyTotal}`);
+    } catch (e) { console.warn('Could not load currency info', e); }
+  }
+
   if (isNegotiable) {
     document.getElementById('booking-summary').innerHTML = `
       <div class="summary-row"><span>Pricing</span><span>Mutual Agreement</span></div>
-      <div class="form-group" style="margin-top:10px;"><label class="form-label">Your Offer ($)</label><input class="form-input" type="number" min="1" placeholder="e.g. 120" id="job-offer-amount"/></div>
+      <div class="form-group" style="margin-top:10px;"><label class="form-label">Your Offer ($)</label><input class="form-input" type="number" min="1" placeholder="e.g. 120" id="job-offer-amount" oninput="updateCurrencyPreview()"/></div>
       <div class="summary-row"><span>Platform fee</span><span>8% of agreed amount</span></div>
       <div class="summary-row total"><span>Escrow hold</span><span>Set once your offer is entered</span></div>
+      ${currencyToggleHTML()}
     `;
   } else {
     document.getElementById('booking-summary').innerHTML = `
@@ -3719,12 +3925,57 @@ function openBooking(id) {
       <div class="summary-row"><span>Platform fee</span><span>$${Math.round(currentPro.price*0.08)}</span></div>
       <div class="summary-row"><span>AI Contract</span><span style="color:#2E8C6F">Included ✓</span></div>
       <div class="summary-row total"><span>Escrow hold (2hr)</span><span>$${currentPro.price*2 + Math.round(currentPro.price*0.08)}</span></div>
+      ${currencyToggleHTML()}
     `;
   }
   // Default date to tomorrow
   const d = new Date(); d.setDate(d.getDate()+1);
   document.getElementById('job-date').value = d.toISOString().split('T')[0];
   document.getElementById('booking-modal').classList.add('open');
+}
+
+// Only rendered when the customer's real country uses a non-USD currency —
+// an American customer never sees a currency choice, since there's nothing
+// to choose between.
+function currencyToggleHTML() {
+  if (!currentCurrencyInfo || currentCurrencyInfo.isUSD) return '';
+  const c = currentCurrencyInfo.currency;
+  return `
+    <div class="form-group" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+      <label class="form-label">Pay in</label>
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="btn-sm btn-sm-primary" id="pay-currency-local-btn" onclick="setPayCurrency('local')" style="flex:1;">${c.symbol} ${c.name}</button>
+        <button type="button" class="btn-sm btn-sm-outline" id="pay-currency-usd-btn" onclick="setPayCurrency('usd')" style="flex:1;">$ USD</button>
+      </div>
+      <div id="currency-preview" style="font-size:11.5px;color:var(--muted);margin-top:6px;"></div>
+    </div>`;
+}
+
+let selectedPayCurrency = 'local';
+function setPayCurrency(choice) {
+  selectedPayCurrency = choice;
+  document.getElementById('pay-currency-local-btn').className = choice === 'local' ? 'btn-sm btn-sm-primary' : 'btn-sm btn-sm-outline';
+  document.getElementById('pay-currency-usd-btn').className = choice === 'usd' ? 'btn-sm btn-sm-primary' : 'btn-sm btn-sm-outline';
+  updateCurrencyPreview();
+}
+
+async function updateCurrencyPreview() {
+  const preview = document.getElementById('currency-preview');
+  if (!preview || !currentCurrencyInfo || currentCurrencyInfo.isUSD) return;
+  const c = currentCurrencyInfo.currency;
+  if (selectedPayCurrency === 'usd') {
+    preview.textContent = 'You will be charged in US dollars.';
+    return;
+  }
+  const offerInput = document.getElementById('job-offer-amount');
+  const amount = offerInput ? parseFloat(offerInput.value) || 0 : (currentPro.price * 2 + Math.round(currentPro.price * 0.08));
+  if (!amount) { preview.textContent = ''; return; }
+  try {
+    const data = await apiFetch('GET', `/currency/mine?amount=${amount}`);
+    preview.textContent = data.convertedAmount
+      ? `≈ ${c.symbol}${data.convertedAmount} ${c.code} (${data.exchangeRateNote})`
+      : '';
+  } catch (e) { preview.textContent = ''; }
 }
 
 function closeModal() {
@@ -3771,7 +4022,7 @@ async function confirmBooking() {
   if (BACKEND_AVAILABLE) {
     try {
       const { contract } = await apiFetch('POST', '/contracts', {
-        providerId: currentPro.id, service: desc, date, time, address: addr, amount: total,
+        providerId: currentPro.id, service: desc, date, time, address: addr, amount: total, payCurrency: selectedPayCurrency,
       });
       contractId = contract.bookingNumber || contract.id;
       isPendingOffer = contract.status === 'pending_agreement';
