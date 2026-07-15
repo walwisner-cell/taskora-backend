@@ -3445,7 +3445,7 @@ const ADMIN_SECTIONS = {
       ? `<label class="switch"><input type="checkbox" ${c.status==='live'?'checked':''} onchange="toggleCountry('${c.id}')"><span class="switch-track"></span></label>`
       : (c.status === 'live' ? statusBadge('completed') : `<span class="badge badge-neutral">Planned</span>`);
     return `
-    <div class="dash-header"><div><div class="dash-title">Categories & Countries</div><div class="dash-sub">${isSuper ? "Manage what's bookable, and where" : 'Global platform settings — read-only outside Super Admin'}</div></div>${isSuper ? `<div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="openNewCategoryForm()">+ Add Category</button><button class="btn-sm btn-sm-outline" onclick="openNewCountryForm()">+ Add Country</button></div>` : ''}</div>
+    <div class="dash-header"><div><div class="dash-title">Categories & Countries</div><div class="dash-sub">${isSuper ? "Manage what's bookable, and where" : 'Global platform settings — read-only outside Super Admin'}</div></div>${isSuper ? `<div class="row-actions"><button class="btn-sm btn-sm-outline" onclick="syncReferenceData()" title="Adds any new categories/countries that have been added to the platform since this database was first set up — never touches existing settings or real users">↻ Sync Latest Categories & Countries</button><button class="btn-sm btn-sm-primary" onclick="openNewCategoryForm()">+ Add Category</button><button class="btn-sm btn-sm-outline" onclick="openNewCountryForm()">+ Add Country</button></div>` : ''}</div>
     ${isSuper && adminData.categoryRequests.filter(r => r.status === 'pending').length ? `<div class="panel"><div class="panel-title">Category Requests <small>${adminData.categoryRequests.filter(r => r.status === 'pending').length} pending</small></div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Requested Category</th><th>Requested</th><th>Action</th></tr></thead><tbody>
       ${adminData.categoryRequests.filter(r => r.status === 'pending').map(r => `<tr>
@@ -3669,6 +3669,22 @@ async function decideCategoryRequest(requestId, decision) {
     await loadAdminData();
     selectAdminSection('categories');
   } catch (e) { showToast(e.message || `Could not ${decision} this request`); }
+}
+
+async function syncReferenceData() {
+  if (!BACKEND_AVAILABLE) return showToast('Sync requires a live backend connection');
+  showToast('Checking for new categories & countries…');
+  try {
+    const result = await apiFetch('POST', '/admin/sync-reference-data');
+    const total = result.countriesAdded.length + result.categoriesAdded.length;
+    if (total === 0) {
+      showToast('Already up to date — nothing new to add');
+    } else {
+      showToast(`Added ${result.countriesAdded.length} countr${result.countriesAdded.length === 1 ? 'y' : 'ies'} and ${result.categoriesAdded.length} categor${result.categoriesAdded.length === 1 ? 'y' : 'ies'}`);
+    }
+    await Promise.all([loadAdminData(), loadGeoData(), loadCategories()]);
+    selectAdminSection('categories');
+  } catch (e) { showToast(e.message || 'Could not sync reference data'); }
 }
 
 async function deleteCountry(cId, name) {

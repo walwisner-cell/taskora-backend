@@ -202,6 +202,18 @@ router.get('/categories', async (req, res) => {
 // categories providers typed in at signup. Includes real elapsed time
 // since request, so an overdue-for-24-hours request is actually visible,
 // not just implied.
+// POST /api/admin/sync-reference-data — safely adds any countries or
+// categories that exist in the current codebase but are missing from this
+// specific database (common after deploying new code to a database that
+// was already seeded a while ago — new code alone doesn't retroactively
+// add new reference data to an existing database). Never touches real
+// users, bookings, or any existing country/category's settings.
+router.post('/sync-reference-data', requireSuperAdmin, async (req, res) => {
+  const { syncReferenceData } = require('../sync-reference-data');
+  const result = await syncReferenceData();
+  res.json(result);
+});
+
 router.get('/category-requests', requireSuperAdmin, async (req, res) => {
   const requests = await db.all('categoryRequests');
   const withDetails = await Promise.all(requests.map(async r => {

@@ -1,13 +1,14 @@
 {
   "name": "taskora-backend",
   "version": "1.0.0",
-  "description": "Taskora API — auth, marketplace, matching, contracts, escrow, disputes, admin",
+  "description": "Taskora API \u2014 auth, marketplace, matching, contracts, escrow, disputes, admin",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "sync-reference-data": "node src/sync-reference-data.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
