@@ -98,15 +98,39 @@ router.get('/payouts/mine', requireAuth, requireRole('provider'), async (req, re
 });
 
 // POST /api/payouts/request — provider requests payout of released escrow
+const COMMISSION_RATES = { starter: 0.12, pro: 0.08, superpro: 0.05 };
+
 router.post('/payouts/request', requireAuth, requireRole('provider'), async (req, res) => {
   const { payoutCurrency } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
   const provider = await db.find('users', u => u.id === req.user.sub);
-  const contracts = await db.filter('contracts', c => c.providerId === req.user.sub && c.status === 'active');
-  let releasable = 0;
-  for (const c of contracts) {
-    const e = await db.find('escrowTransactions', e => e.contractId === c.id && e.status === 'held');
-    releasable += e ? e.amount : 0;
+
+  // What's actually payable is escrow that's been RELEASED (the customer
+  // confirmed the work) and hasn't already gone out in an earlier payout —
+  // not escrow that's still held pending confirmation. Paying out held
+  // funds would defeat the entire point of escrow protection, and paying
+  // out the same released escrow twice would be a real financial bug, not
+  // just a display one — so every included escrow record gets stamped
+  // with this payout's id the moment it's included, and never counted
+  // again after that.
+  const releasedEscrow = await db.filter('escrowTransactions', e =>
+    e.status === 'released' && !e.payoutId
+  );
+  const contracts = await db.filter('contracts', c => c.providerId === req.user.sub);
+  const contractIds = new Set(contracts.map(c => c.id));
+  const payableEscrow = releasedEscrow.filter(e => contractIds.has(e.contractId));
+  const grossAmount = payableEscrow.reduce((sum, e) => sum + e.amount, 0);
+
+  if (grossAmount <= 0) {
+    return res.status(400).json({ error: 'Nothing to pay out yet — this only includes jobs the customer has marked complete that haven\'t already been paid out.' });
   }
+
+  // Commission is based on the provider's plan at the time they cash out —
+  // matches the rates genuinely advertised on the Pricing page (Starter
+  // 12%, Pro 8%, Super Pro 5%), actually deducted here rather than just
+  // being marketing copy.
+  const commissionRate = COMMISSION_RATES[provider.plan] ?? COMMISSION_RATES.starter;
+  const commissionAmount = Math.round(grossAmount * commissionRate * 100) / 100;
+  const netAmount = Math.round((grossAmount - commissionAmount) * 100) / 100;
 
   // The contract/escrow ledger is always denominated in USD — that stays
   // the canonical accounting currency regardless of payout choice, so
@@ -117,23 +141,32 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
   // balance.
   const currency = currencyForCountry(provider ? provider.country : 'United States');
   const wantsLocal = payoutCurrency === 'local' && currency.code !== 'USD';
-  const payoutAmountLocal = wantsLocal ? convertFromUSD(releasable || 0, currency.code) : null;
+  const payoutAmountLocal = wantsLocal ? convertFromUSD(netAmount, currency.code) : null;
 
   const payout = {
     id: `po_${nanoid(10)}`,
     providerId: req.user.sub,
     date: new Date().toISOString().slice(0, 10),
-    amount: releasable || 0, // canonical USD amount — always present
+    grossAmount,
+    commissionRate,
+    commissionAmount,
+    amount: netAmount, // canonical USD amount actually paid out, after commission
     payoutCurrency: wantsLocal ? currency.code : 'USD',
-    payoutAmountLocal, // the converted amount actually paid out, if not USD
+    payoutAmountLocal,
     exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
     method: (provider && provider.payoutMethod) || 'Bank Transfer',
     status: 'processing',
     createdAt: new Date().toISOString(),
   };
   await db.insert('payouts', payout);
+
+  // Stamp every included escrow record so it can never be paid out again.
+  for (const e of payableEscrow) {
+    await db.update('escrowTransactions', e.id, { payoutId: payout.id });
+  }
+
   const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
-  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested — processing.`, 'payoutAlerts');
+  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned) — processing.`, 'payoutAlerts');
   res.status(201).json({ payout });
 });
 
@@ -181,8 +214,14 @@ router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
   res.json({ contract: updated, escrow: escrow ? { ...escrow, status: 'refunded' } : null });
 });
 
-// GET /api/escrow/summary — admin: platform-wide escrow snapshot
+// GET /api/escrow/summary — admin: platform-wide escrow snapshot. Scoped to
+// the Financial team when an admin account has been set up that way — a
+// super admin or an unscoped regional admin still sees this unchanged.
 router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me.isSuperAdmin && me.adminDepartment && me.adminDepartment !== 'financial') {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${me.adminDepartment} team and doesn't have access to this.` });
+  }
   const all = await db.all('escrowTransactions');
   const held = all.filter(e => e.status === 'held').reduce((s, e) => s + e.amount, 0);
   const released = all.filter(e => e.status === 'released').reduce((s, e) => s + e.amount, 0);

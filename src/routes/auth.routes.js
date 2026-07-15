@@ -212,6 +212,54 @@ router.post('/login', async (req, res) => {
   if (user.active === false) {
     return res.status(403).json({ error: 'This account has been suspended. Contact a super admin for access.' });
   }
+
+  // Two-factor is opt-in (Settings), not forced on every account — when a
+  // person has turned it on, a correct password is only the first factor.
+  // A second, time-limited code (same honest test-mode pattern as
+  // everywhere else: no real SMS/email provider connected yet, so the code
+  // is returned directly rather than silently not being sent) is required
+  // before a real session token is issued.
+  if (user.twoFactorEnabled) {
+    const code = generateSixDigitCode();
+    const pendingLogin = {
+      id: `plogin_${nanoid(10)}`,
+      userId: user.id,
+      codeHash: hashResetToken(code),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes
+      createdAt: new Date().toISOString(),
+    };
+    await db.insert('pendingLogins', pendingLogin);
+    return res.json({
+      requires2FA: true,
+      pendingLoginId: pendingLogin.id,
+      testMode: true,
+      testModeNote: 'No real SMS or email provider is configured yet — the code is returned directly instead of being sent. Do not do this in production.',
+      code,
+    });
+  }
+
+  const token = signToken(user);
+  res.json({ token, user: publicUser(user) });
+});
+
+// POST /api/auth/login/verify-2fa — the second factor. Completes the
+// session only if the code matches and hasn't expired; the pending login
+// record is single-use either way, so a code can't be replayed.
+router.post('/login/verify-2fa', async (req, res) => {
+  const { pendingLoginId, code } = req.body || {};
+  if (!pendingLoginId || !code) return res.status(400).json({ error: 'pendingLoginId and code are required' });
+  const pending = await db.find('pendingLogins', p => p.id === pendingLoginId);
+  if (!pending) return res.status(400).json({ error: 'This login attempt has expired. Please sign in again.' });
+  if (new Date(pending.expiresAt) < new Date()) {
+    await db.remove('pendingLogins', pending.id);
+    return res.status(400).json({ error: 'This code has expired. Please sign in again.' });
+  }
+  if (hashResetToken(code.trim()) !== pending.codeHash) {
+    return res.status(400).json({ error: 'Incorrect code' });
+  }
+  await db.remove('pendingLogins', pending.id);
+  const user = await db.find('users', u => u.id === pending.userId);
+  if (!user) return res.status(404).json({ error: 'Account not found' });
   const token = signToken(user);
   res.json({ token, user: publicUser(user) });
 });
@@ -225,7 +273,7 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // PATCH /api/auth/me — update own profile / settings
 router.patch('/me', requireAuth, async (req, res) => {
-  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'plan'];
+  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'plan', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
   if ('name' in patch && !isValidName(patch.name)) {
@@ -251,6 +299,21 @@ router.patch('/me', requireAuth, async (req, res) => {
   if ('city' in patch) {
     if (!isNonEmptyString(patch.city, { min: 2, max: 100 })) return res.status(400).json({ error: 'Enter a valid city' });
     patch.city = patch.city.trim();
+  }
+  if ('twoFactorEnabled' in patch && typeof patch.twoFactorEnabled !== 'boolean') {
+    return res.status(400).json({ error: 'twoFactorEnabled must be true or false' });
+  }
+  if ('businessName' in patch) {
+    if (patch.businessName && !isNonEmptyString(patch.businessName, { max: 150 })) {
+      return res.status(400).json({ error: 'Business name is too long' });
+    }
+    patch.businessName = patch.businessName ? patch.businessName.trim() : null;
+  }
+  if ('businessRegistrationNumber' in patch) {
+    if (patch.businessRegistrationNumber && !isNonEmptyString(patch.businessRegistrationNumber, { max: 100 })) {
+      return res.status(400).json({ error: 'Business registration number is too long' });
+    }
+    patch.businessRegistrationNumber = patch.businessRegistrationNumber ? patch.businessRegistrationNumber.trim() : null;
   }
   if ('availability' in patch) {
     if (!Array.isArray(patch.availability) || !patch.availability.every(a => typeof a === 'string' && a.trim().length > 0)) {

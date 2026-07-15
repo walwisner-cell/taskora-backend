@@ -1063,6 +1063,19 @@
         <button class="auth-submit" onclick="submitSignupVerification()">Verify & Create Account</button>
         <div class="auth-foot"><a onclick="resendSignupCodes()">Resend codes</a> · <a onclick="cancelSignupVerification()">Start over</a></div>
       </div>
+      <div id="login-2fa-view" style="display:none">
+        <div class="auth-card-title">Enter your two-factor code</div>
+        <div class="auth-card-sub">Your password was correct — since two-factor authentication is on for this account, enter the code to finish signing in.</div>
+        <div id="login-2fa-test-banner" style="display:none;margin:16px 0;padding:12px 14px;background:var(--offwhite);border:1px dashed var(--gold);border-radius:10px;font-size:12.5px;">
+          <span class="badge badge-warn" style="margin-right:6px;">TEST MODE</span>No SMS/email provider is connected yet — your code: <strong id="login-2fa-code-display"></strong>
+        </div>
+        <div class="form-group">
+          <label class="form-label">6-digit code</label>
+          <input class="form-input" type="text" maxlength="6" id="login-2fa-code"/>
+        </div>
+        <button class="auth-submit" onclick="submitLogin2FA()">Verify & Sign In</button>
+        <div class="auth-foot"><a onclick="cancelLogin2FA()">Back to sign in</a></div>
+      </div>
     </div>
     </div>
   </div>
@@ -1347,6 +1360,7 @@ function getSavedAuthToken() {
 
 async function loginAs(email, password) {
   const data = await apiFetch('POST', '/auth/login', { email, password });
+  if (data.requires2FA) return data; // caller must complete the second factor before a session exists
   AUTH.token = data.token;
   AUTH.user = data.user;
   saveAuthSession(data.token);
@@ -1617,6 +1631,20 @@ async function saveProviderLocation() {
     AUTH.user = user;
     showToast('Location updated — this is what customers see on your profile now');
   } catch (e) { showToast(e.message || 'Could not update location'); }
+}
+
+async function saveBusinessProfile() {
+  const businessName = document.getElementById('set-prov-business-name').value.trim();
+  const businessRegistrationNumber = document.getElementById('set-prov-business-reg').value.trim();
+  if (!BACKEND_AVAILABLE) return showToast('Business profile updated (demo mode)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', {
+      businessName: businessName || null,
+      businessRegistrationNumber: businessRegistrationNumber || null,
+    });
+    AUTH.user = user;
+    showToast('Business profile updated');
+  } catch (e) { showToast(e.message || 'Could not update business profile'); }
 }
 
 function categoryCardsHTML(list) {
@@ -2027,7 +2055,18 @@ async function mockAuth() {
   }
   try {
     if (authState.mode === 'login') {
-      const user = await loginAs(email, password);
+      const result = await loginAs(email, password);
+      if (result && result.requires2FA) {
+        pendingLoginId = result.pendingLoginId;
+        document.getElementById('auth-main-form').style.display = 'none';
+        document.getElementById('login-2fa-view').style.display = 'block';
+        if (result.testMode) {
+          document.getElementById('login-2fa-test-banner').style.display = 'block';
+          document.getElementById('login-2fa-code-display').textContent = result.code;
+        }
+        return;
+      }
+      const user = result;
       showToast(`Welcome back, ${user.name.split(' ')[0]}!`);
       await goDashboard(user.role);
     } else {
@@ -2051,6 +2090,7 @@ async function mockAuth() {
 }
 
 let pendingSignupId = null;
+let pendingLoginId = null;
 
 async function submitSignupVerification() {
   const phoneCode = document.getElementById('signup-verify-phone-code').value.trim();
@@ -2101,6 +2141,27 @@ function cancelSignupVerification() {
   document.getElementById('auth-main-form').style.display = 'block';
   document.getElementById('signup-verify-phone-code').value = '';
   document.getElementById('signup-verify-email-code').value = '';
+}
+
+async function submitLogin2FA() {
+  const code = document.getElementById('login-2fa-code').value.trim();
+  if (code.length !== 6) return showToast('Enter the 6-digit code');
+  try {
+    const data = await apiFetch('POST', '/auth/login/verify-2fa', { pendingLoginId, code });
+    AUTH.token = data.token;
+    AUTH.user = data.user;
+    saveAuthSession(data.token);
+    pendingLoginId = null;
+    showToast(`Welcome back, ${data.user.name.split(' ')[0]}!`);
+    await goDashboard(data.user.role);
+  } catch (e) { showToast(e.message || 'Incorrect code'); }
+}
+
+function cancelLogin2FA() {
+  pendingLoginId = null;
+  document.getElementById('login-2fa-view').style.display = 'none';
+  document.getElementById('auth-main-form').style.display = 'block';
+  document.getElementById('login-2fa-code').value = '';
 }
 
 // Shows the dashboard matching the CURRENT signed-in account — it never
@@ -2635,6 +2696,7 @@ const CUSTOMER_SECTIONS = {
     </div>
     ${phoneVerificationPanelHTML()}
     ${changePasswordPanelHTML('cust')}
+    ${twoFactorPanelHTML()}
     <div class="panel"><div class="panel-title">Notifications</div>
       ${notifToggleHTML('bookingUpdates', 'Booking updates', 'Status changes on your active bookings', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from pros', true)}
@@ -2701,6 +2763,22 @@ async function verifyPhoneOtp() {
     if (AUTH.user.role === 'customer') selectCustomerSection('settings');
     else if (AUTH.user.role === 'provider') selectProviderSection('settings');
   } catch (e) { showToast(e.message || 'Could not verify code'); }
+}
+
+function twoFactorPanelHTML() {
+  const isOn = !!(AUTH.user && AUTH.user.twoFactorEnabled);
+  return `<div class="panel"><div class="panel-title">Two-Factor Authentication</div>
+    <div class="switch-row"><div><div class="switch-label">Require a code at sign-in</div><div class="switch-sub">${isOn ? 'On — a 6-digit code is required every time you sign in, in addition to your password.' : 'Off — signing in only requires your password.'}</div></div><label class="switch"><input type="checkbox" ${isOn ? 'checked' : ''} onchange="toggleTwoFactor(this.checked)"><span class="switch-track"></span></label></div>
+  </div>`;
+}
+
+async function toggleTwoFactor(enabled) {
+  if (!BACKEND_AVAILABLE) return showToast(`Two-factor authentication ${enabled ? 'enabled' : 'disabled'} (demo mode)`);
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { twoFactorEnabled: enabled });
+    AUTH.user = user;
+    showToast(`Two-factor authentication ${enabled ? 'enabled — you\'ll be asked for a code next time you sign in' : 'disabled'}`);
+  } catch (e) { showToast(e.message || 'Could not update two-factor setting'); }
 }
 
 function changePasswordPanelHTML(prefix) {
@@ -2781,6 +2859,7 @@ async function viewProviderProfile(id) {
     <div class="profile-avatar-lg" ${p.profilePhotoUrl ? '' : `style="background:${p.color}"`}>${p.profilePhotoUrl ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : p.initials}</div>
     <div>
       <div class="profile-name-row"><div class="profile-name">${p.name}</div>${p.verified !== false ? '<span class="badge badge-success">✓ Verified</span>' : '<span class="badge badge-warn">Verification pending</span>'}</div>
+      ${p.businessName ? `<div style="font-size:13px;color:var(--slate);margin-top:-4px;margin-bottom:4px;">${p.businessName}</div>` : ''}
       <div class="profile-role">${p.role} · Serving ${p.city || 'Atlanta'} · Taskora Pro since ${p.since}</div>
       <div class="profile-meta-row">
         <div class="profile-meta-item">★ ${p.rating || 'No'} rating</div>
@@ -3064,6 +3143,14 @@ const PROVIDER_SECTIONS = {
     const pendingPayout = providerData.contracts
       .filter(c => c.escrow && c.escrow.status === 'held')
       .reduce((s, c) => s + c.escrow.amount, 0);
+    // What's actually withdrawable right now: escrow the customer has
+    // already released (job confirmed complete) that hasn't gone out in a
+    // past payout yet. This is what the Request Payout button will
+    // actually pay — distinct from "Pending" above, which is still locked.
+    const availableForPayout = providerData.contracts
+      .filter(c => c.escrow && c.escrow.status === 'released' && !c.escrow.payoutId)
+      .reduce((s, c) => s + c.escrow.amount, 0);
+    const commissionRate = { starter: 0.12, pro: 0.08, superpro: 0.05 }[(AUTH.user && AUTH.user.plan) || 'starter'];
     const weeklyChart = weeklyEarningsChartData(providerData.payouts);
     return `
     <div class="dash-header"><div><div class="dash-title">Earnings & Payouts</div><div class="dash-sub">Paid hourly or per job — your choice, set per contract</div></div><button class="btn-sm btn-sm-primary" onclick="openPayoutCurrencyChoice()">Request Payout</button></div>
@@ -3072,14 +3159,14 @@ const PROVIDER_SECTIONS = {
       <div id="payout-currency-body"></div>
     </div>
     <div class="stat-cards">
-      <div class="stat-card"><div class="stat-card-label">Total Earned</div><div class="stat-card-val">$${providerData.payouts.reduce((s,p)=>s+p.amount,0).toLocaleString()}</div></div>
-      <div class="stat-card"><div class="stat-card-label">Pending Payout</div><div class="stat-card-val">$${pendingPayout.toLocaleString()}</div></div>
-      <div class="stat-card"><div class="stat-card-label">Payout Schedule</div><div class="stat-card-val" style="font-size:15px">On Request</div></div>
+      <div class="stat-card"><div class="stat-card-label">Total Earned (after commission)</div><div class="stat-card-val">$${providerData.payouts.reduce((s,p)=>s+p.amount,0).toLocaleString()}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Available for Payout</div><div class="stat-card-val">$${availableForPayout.toLocaleString()}</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">${Math.round(commissionRate*100)}% commission applies at payout</div></div>
+      <div class="stat-card"><div class="stat-card-label">Pending (job not yet confirmed done)</div><div class="stat-card-val">$${pendingPayout.toLocaleString()}</div></div>
     </div>
     <div class="panel"><div class="panel-title">Recent Payout History (by week)</div>${weeklyChart.length ? barChart(weeklyChart) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts yet — request one once you have completed jobs.</div>'}</div>
     <div class="panel"><div class="panel-title">Payout History</div>
-      ${providerData.payouts.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Payout</th><th>Date</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>
-      ${providerData.payouts.map(p => `<tr><td>${p.id}</td><td>${p.date}</td><td>$${p.amount}</td><td>${p.method}</td><td>${statusBadge(p.status)}</td></tr>`).join('')}
+      ${providerData.payouts.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Payout</th><th>Date</th><th>Earned</th><th>Commission</th><th>Paid Out</th><th>Method</th><th>Status</th></tr></thead><tbody>
+      ${providerData.payouts.map(p => `<tr><td>${p.id}</td><td>${p.date}</td><td>$${p.grossAmount ?? p.amount}</td><td>${p.commissionAmount ? `$${p.commissionAmount} (${Math.round((p.commissionRate||0)*100)}%)` : '—'}</td><td>$${p.amount}</td><td>${p.method}</td><td>${statusBadge(p.status)}</td></tr>`).join('')}
       </tbody></table></div>` : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts requested yet.</div>'}
     </div>`;
   },
@@ -3123,8 +3210,15 @@ const PROVIDER_SECTIONS = {
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveProviderLocation()">Save Location</button>
     </div>
+    <div class="panel"><div class="panel-title">Business Profile <small style="font-weight:400;color:var(--slate);">optional</small></div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:12px;">If you operate as a registered business rather than as an individual, add your business details here — this appears on your public profile alongside your name.</div>
+      <div class="form-group"><label class="form-label">Business Name</label><input class="form-input" type="text" id="set-prov-business-name" value="${(AUTH.user && AUTH.user.businessName) || ''}" placeholder="e.g. Marcus T. Plumbing LLC"/></div>
+      <div class="form-group"><label class="form-label">Business Registration Number</label><input class="form-input" type="text" id="set-prov-business-reg" value="${(AUTH.user && AUTH.user.businessRegistrationNumber) || ''}" placeholder="e.g. state or national registration ID"/></div>
+      <button class="btn-sm btn-sm-primary" onclick="saveBusinessProfile()">Save Business Profile</button>
+    </div>
     ${phoneVerificationPanelHTML()}
     ${changePasswordPanelHTML('prov')}
+    ${twoFactorPanelHTML()}
     <div class="panel"><div class="panel-title">Current Plan</div>
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">${(() => {
         const plan = (AUTH.user && AUTH.user.plan) || 'starter';
@@ -3478,6 +3572,31 @@ async function initProviderDash() { await loadProviderData(); updateProviderSide
 
 /* ══════════════════════ ADMIN DASHBOARD ══════════════════════ */
 function getAdminNavItems() {
+  const dept = AUTH.user && AUTH.user.adminDepartment;
+  // A department-scoped admin (Verification/Disputes/Financial team) only
+  // sees the one section their account is actually for — everything else
+  // would just 403 anyway, so there's no reason to show a nav item that
+  // leads nowhere.
+  if (dept === 'verification') {
+    return [
+      { key: 'approvals', label: 'User Approvals', icon: '✅' },
+      { key: 'verification', label: 'Verification Queue', icon: '🪪' },
+      { key: 'settings', label: 'Settings', icon: '⚙️' },
+    ];
+  }
+  if (dept === 'disputes') {
+    return [
+      { key: 'disputes', label: 'Disputes', icon: '⚖️' },
+      { key: 'settings', label: 'Settings', icon: '⚙️' },
+    ];
+  }
+  if (dept === 'financial') {
+    return [
+      { key: 'payments', label: 'Payments', icon: '💳' },
+      { key: 'settings', label: 'Settings', icon: '⚙️' },
+    ];
+  }
+
   const base = [
     { key: 'overview', label: 'Overview', icon: '📊' },
     { key: 'approvals', label: 'User Approvals', icon: '✅' },
@@ -3537,48 +3656,59 @@ let adminData = {
 
 async function loadAdminData() {
   if (!BACKEND_AVAILABLE) return;
+
+  // Each call is fetched independently rather than as one all-or-nothing
+  // Promise.all — a regular regional admin (or a department-scoped admin)
+  // is expected to be denied access to some of these by design, and that
+  // must not silently wipe out every OTHER section's real data. Each
+  // result is applied on its own if it succeeded, and quietly left alone
+  // (keeping whatever was there before) if that specific call wasn't
+  // permitted for this account.
+  async function tryFetch(path) {
+    try { return await apiFetch('GET', path); }
+    catch (e) { return null; }
+  }
+
+  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests] = await Promise.all([
+    tryFetch('/admin/stats'),
+    tryFetch('/admin/users/pending'),
+    tryFetch('/admin/users/all'),
+    tryFetch('/admin/verification-queue'),
+    tryFetch('/admin/disputes'),
+    tryFetch('/admin/categories'),
+    tryFetch('/admin/countries'),
+    tryFetch('/escrow/summary'),
+    tryFetch('/admin/category-requests'),
+  ]);
+
+  if (stats) adminData.stats = stats;
+  if (pending) adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
+  if (allPeople) adminData.people = allPeople.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), city: u.city, country: u.country, verified: u.verified, active: u.active !== false }));
+  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status }));
+  if (disputes) adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
+  if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active }));
+  if (countries) adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
+  if (escrow) adminData.escrow = escrow;
+  if (catRequests) adminData.categoryRequests = catRequests.requests;
+
+  // A genuine live check, not a hardcoded "everything's fine" badge — this
+  // hits the real /api/health endpoint right now and times it.
   try {
-    const calls = [
-      apiFetch('GET', '/admin/stats'),
-      apiFetch('GET', '/admin/users/pending'),
-      apiFetch('GET', '/admin/users/all'),
-      apiFetch('GET', '/admin/verification-queue'),
-      apiFetch('GET', '/admin/disputes'),
-      apiFetch('GET', '/admin/categories'),
-      apiFetch('GET', '/admin/countries'),
-      apiFetch('GET', '/escrow/summary'),
-      apiFetch('GET', '/admin/category-requests'),
-    ];
-    const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests] = await Promise.all(calls);
-    adminData.stats = stats;
-    adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
-    adminData.people = allPeople.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), city: u.city, country: u.country, verified: u.verified, active: u.active !== false }));
-    adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status }));
-    adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
-    adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active }));
-    adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
-    adminData.escrow = escrow;
-    adminData.categoryRequests = catRequests.requests;
+    const start = performance.now();
+    const healthRes = await fetch(API_BASE + '/health');
+    adminData.apiHealth = { ok: healthRes.ok, ms: Math.round(performance.now() - start) };
+  } catch (e) {
+    adminData.apiHealth = { ok: false, ms: null };
+  }
 
-    // A genuine live check, not a hardcoded "everything's fine" badge — this
-    // hits the real /api/health endpoint right now and times it.
-    try {
-      const start = performance.now();
-      const healthRes = await fetch(API_BASE + '/health');
-      adminData.apiHealth = { ok: healthRes.ok, ms: Math.round(performance.now() - start) };
-    } catch (e) {
-      adminData.apiHealth = { ok: false, ms: null };
-    }
-
-    if (AUTH.user && AUTH.user.isSuperAdmin) {
-      const [cities, subAdmins] = await Promise.all([
-        apiFetch('GET', '/admin/cities'),
-        apiFetch('GET', '/admin/sub-admins'),
-      ]);
-      adminData.cities = cities.cities;
-      adminData.subAdmins = subAdmins.admins;
-    }
-  } catch (e) { console.warn('Falling back to demo admin data', e); }
+  if (AUTH.user && AUTH.user.isSuperAdmin) {
+    const [cities, subAdmins] = await Promise.all([
+      tryFetch('/admin/cities'),
+      tryFetch('/admin/sub-admins'),
+    ]);
+    if (cities) adminData.cities = cities.cities;
+    if (subAdmins) adminData.subAdmins = subAdmins.admins;
+  }
 }
 
 async function adminDecide(listName, id, decision, sectionKey) {
@@ -3710,18 +3840,27 @@ const ADMIN_SECTIONS = {
     </div>`;
   },
   locations: () => `
-    <div class="dash-header"><div><div class="dash-title">Locations & Admins</div><div class="dash-sub">Create a new city and hand it a dedicated administrator — every account and dispute in that city routes to them, and only them</div></div>
-    <button class="btn-sm btn-sm-primary" onclick="openNewLocationForm()">+ Add Location Admin</button></div>
+    <div class="dash-header"><div><div class="dash-title">Locations & Admins</div><div class="dash-sub">Create a regional admin for a city, or a functional team member with global access to just one area (verification, disputes, or finance)</div></div>
+    <button class="btn-sm btn-sm-primary" onclick="openNewLocationForm()">+ Add Admin</button></div>
     <div class="panel" id="new-location-panel" style="display:none;">
-      <div class="panel-title">New Location Admin</div>
+      <div class="panel-title">New Admin</div>
       <div class="form-group"><label class="form-label">Admin Name</label><input class="form-input" id="loc-admin-name" placeholder="e.g. Fatima B."/></div>
       <div class="form-group"><label class="form-label">Admin Email</label><input class="form-input" id="loc-admin-email" placeholder="fatima@example.com"/></div>
       <div class="form-group"><label class="form-label">Temporary Password</label><input class="form-input" id="loc-admin-password" placeholder="Set a starting password" type="text" value="Welcome123456!"/><div style="font-size:11px;color:var(--muted);margin-top:5px;">Must be at least 9 characters with 6 numbers, 2 letters, and 1 symbol — they can change it after signing in</div></div>
-      <div class="form-group"><label class="form-label">City</label><input class="form-input" id="loc-city" placeholder="e.g. Monrovia"/></div>
+      <div class="form-group"><label class="form-label">City</label><input class="form-input" id="loc-city" placeholder="e.g. Monrovia"/><div style="font-size:11px;color:var(--muted);margin-top:5px;">Still required even for a functional-team member (their base location for contact purposes) — it just won't restrict what they can see if a department is selected below.</div></div>
       <div class="form-group"><label class="form-label">Country</label><input class="form-input" id="loc-country" placeholder="e.g. Liberia"/></div>
-      <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="createLocationAdmin()">Create Admin & Open City</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-location-panel').style.display='none'">Cancel</button></div>
+      <div class="form-group"><label class="form-label">Role</label>
+        <select class="form-input form-select" id="loc-department">
+          <option value="">Regional Admin — full access, scoped to this one city</option>
+          <option value="verification">Verification Team — global access to identity verification only</option>
+          <option value="disputes">Disputes Team — global access to disputes only</option>
+          <option value="financial">Financial Team — global access to escrow & payouts only</option>
+        </select>
+      </div>
+      <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="createLocationAdmin()">Create Admin</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-location-panel').style.display='none'">Cancel</button></div>
     </div>
-    <div class="panel"><div class="panel-title">Cities Under Your Oversight <small>${adminData.cities.length} total</small></div>${citiesTable(adminData.cities)}</div>`,
+    <div class="panel"><div class="panel-title">Cities Under Your Oversight <small>${adminData.cities.length} total</small></div>${citiesTable(adminData.cities)}</div>
+    <div class="panel"><div class="panel-title">Functional Team Members</div>${functionalAdminsTable((adminData.subAdmins||[]).filter(a => a.adminDepartment))}</div>`,
   settings: () => `
     <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Your admin account ${BACKEND_AVAILABLE ? '<span class="badge badge-success" style="margin-left:6px;">Saved to your account</span>' : ''}</div></div></div>
     <div class="panel"><div class="panel-title">Profile</div>
@@ -3740,6 +3879,16 @@ function citiesTable(list) {
   </tbody></table></div>`;
 }
 
+const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disputes Team', financial: 'Financial Team' };
+
+function functionalAdminsTable(list) {
+  if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No functional team members yet — create one above with a Role other than "Regional Admin".</div>`;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Team</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
+  ${list.map(a => `<tr><td>${a.name}</td><td>${a.email}</td><td>${DEPARTMENT_LABELS[a.adminDepartment] || a.adminDepartment}</td><td>${statusBadge(a.active === false ? 'rejected' : 'completed')}</td>
+  ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${a.id}')">${a.active === false ? 'Reactivate' : 'Suspend'}</button> <button class="btn-sm btn-sm-outline" data-admin-id="${a.id}" data-admin-name="${a.name.replace(/"/g, '&quot;')}" data-city-name="${(a.city || '').replace(/"/g, '&quot;')}" onclick="deleteSubAdmin(this.dataset.adminId, this.dataset.adminName, this.dataset.cityName)">Delete</button></td>` : ''}</tr>`).join('')}
+  </tbody></table></div>`;
+}
+
 function openNewLocationForm() {
   document.getElementById('new-location-panel').style.display = 'block';
 }
@@ -3750,17 +3899,18 @@ async function createLocationAdmin() {
   const password = document.getElementById('loc-admin-password').value;
   const city = document.getElementById('loc-city').value.trim();
   const country = document.getElementById('loc-country').value.trim();
+  const department = document.getElementById('loc-department').value || null;
   if (!name || !email || !password || !city || !country) return showToast('Please fill in every field');
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
   if (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
   if (!BACKEND_AVAILABLE) return showToast(`${city} admin created (demo mode — no backend detected)`);
   try {
-    const { admin } = await apiFetch('POST', '/admin/sub-admins', { name, email, password, city, country });
-    showToast(`${admin.name} is now the admin for ${city}, ${country}`);
+    const { admin } = await apiFetch('POST', '/admin/sub-admins', { name, email, password, city, country, department });
+    showToast(department ? `${admin.name} is now on the ${department} team` : `${admin.name} is now the admin for ${city}, ${country}`);
     await loadAdminData();
     selectAdminSection('locations');
-  } catch (e) { showToast(e.message || 'Could not create location admin'); }
+  } catch (e) { showToast(e.message || 'Could not create admin'); }
 }
 
 async function toggleSubAdminActive(adminId) {
@@ -4014,7 +4164,8 @@ function updateAdminSidebar() {
 async function initAdminDash() {
   await loadAdminData();
   updateAdminSidebar();
-  selectAdminSection('overview');
+  const firstAvailable = getAdminNavItems()[0];
+  selectAdminSection(firstAvailable ? firstAvailable.key : 'overview');
 }
 
 

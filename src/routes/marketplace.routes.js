@@ -58,6 +58,7 @@ function publicProvider(u) {
     pricingModel: u.pricingModel || 'hourly',
     plan: u.plan || 'starter',
     profilePhotoUrl: u.profilePhotoUrl || null,
+    businessName: u.businessName || null,
   };
 }
 

@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS users (
   provider_since  TEXT,
   profile_photo_url TEXT,
   category_approval_status TEXT DEFAULT 'approved',
+  two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  business_name TEXT,
+  business_registration_number TEXT,
+  admin_department TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ
 );
@@ -112,6 +116,7 @@ CREATE TABLE IF NOT EXISTS escrow_transactions (
   paid_amount_local   NUMERIC(14,2),
   exchange_rate_note TEXT,
   status             TEXT NOT NULL DEFAULT 'held',
+  payout_id          TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_escrow_contract ON escrow_transactions(contract_id);
@@ -119,6 +124,9 @@ CREATE INDEX IF NOT EXISTS idx_escrow_contract ON escrow_transactions(contract_i
 CREATE TABLE IF NOT EXISTS payouts (
   id                 TEXT PRIMARY KEY,
   provider_id        TEXT NOT NULL REFERENCES users(id),
+  gross_amount       NUMERIC(10,2) NOT NULL,
+  commission_rate    NUMERIC(5,4) NOT NULL DEFAULT 0,
+  commission_amount  NUMERIC(10,2) NOT NULL DEFAULT 0,
   amount             NUMERIC(10,2) NOT NULL,
   payout_currency    TEXT DEFAULT 'USD',
   payout_amount_local NUMERIC(14,2),
@@ -227,6 +235,14 @@ CREATE TABLE IF NOT EXISTS careers_inquiries (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS pending_logins (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id),
+  code_hash   TEXT NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS category_requests (
   id                  TEXT PRIMARY KEY,
   provider_id         TEXT NOT NULL REFERENCES users(id),
@@ -283,3 +299,15 @@ ALTER TABLE payouts ADD COLUMN IF NOT EXISTS payout_amount_local NUMERIC(14,2);
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS exchange_rate_note TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS category_approval_status TEXT DEFAULT 'approved';
 ALTER TABLE disputes ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;
+ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS payout_id TEXT;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS gross_amount NUMERIC(10,2);
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS commission_rate NUMERIC(5,4) DEFAULT 0;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS commission_amount NUMERIC(10,2) DEFAULT 0;
+-- Backfill: any payout created before commission tracking existed had no
+-- deduction at all, so its gross equals its net — never invent a
+-- commission for a payout that already went out at the full amount.
+UPDATE payouts SET gross_amount = amount WHERE gross_amount IS NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS business_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS business_registration_number TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_department TEXT;

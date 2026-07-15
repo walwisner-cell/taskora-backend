@@ -32,13 +32,31 @@ async function me(req) {
 // every query below to that one city.
 async function myRegion(req) {
   const m = await me(req);
-  return m && !m.isSuperAdmin ? m.region : null;
+  return m && !m.isSuperAdmin && !m.adminDepartment ? m.region : null;
 }
 
 async function requireSuperAdmin(req, res, next) {
   const m = await me(req);
   if (!m || !m.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
   next();
+}
+
+// Gates access to one functional department's endpoints (verification,
+// disputes, financial). A super admin always passes. A regular admin with
+// no department set (a regional admin, the original role) also passes —
+// they still have full access to their own city's data, unchanged. A
+// department-scoped admin only passes for THEIR department; scoped admins
+// see data across all regions for that one function, not just one city,
+// since a dispute or a verification request can come from anywhere.
+function requireDepartment(dept) {
+  return async (req, res, next) => {
+    const m = await me(req);
+    if (!m) return res.status(403).json({ error: 'Not authorized' });
+    if (m.isSuperAdmin) return next();
+    if (!m.adminDepartment) return next(); // regular regional admin — unchanged access
+    if (m.adminDepartment === dept) return next();
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  };
 }
 
 // Resolve which city a dispute "belongs to" via its contract's customer.
@@ -120,7 +138,7 @@ router.patch('/users/:id/status', async (req, res) => {
 });
 
 // POST /api/admin/users/:id/decide  { decision: 'approve' | 'reject' }
-router.post('/users/:id/decide', async (req, res) => {
+router.post('/users/:id/decide', requireDepartment('verification'), async (req, res) => {
   const { decision } = req.body || {};
   if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ error: 'decision must be approve or reject' });
   const region = await myRegion(req);
@@ -133,7 +151,7 @@ router.post('/users/:id/decide', async (req, res) => {
 });
 
 // GET /api/admin/verification-queue
-router.get('/verification-queue', async (req, res) => {
+router.get('/verification-queue', requireDepartment('verification'), async (req, res) => {
   const region = await myRegion(req);
   const inReview = await db.filter('verifications', v => v.status === 'in review');
   const queue = [];
@@ -146,7 +164,7 @@ router.get('/verification-queue', async (req, res) => {
 });
 
 // POST /api/admin/verification/:id/decide  { decision: 'approve' | 'reject' }
-router.post('/verification/:id/decide', async (req, res) => {
+router.post('/verification/:id/decide', requireDepartment('verification'), async (req, res) => {
   const { decision } = req.body || {};
   const record = await db.find('verifications', v => v.id === req.params.id);
   if (!record) return res.status(404).json({ error: 'Verification record not found' });
@@ -161,7 +179,7 @@ router.post('/verification/:id/decide', async (req, res) => {
 });
 
 // GET /api/admin/disputes
-router.get('/disputes', async (req, res) => {
+router.get('/disputes', requireDepartment('disputes'), async (req, res) => {
   const region = await myRegion(req);
   const all = await db.all('disputes');
   const disputes = [];
@@ -172,7 +190,7 @@ router.get('/disputes', async (req, res) => {
 });
 
 // POST /api/admin/disputes/:id/resolve
-router.post('/disputes/:id/resolve', async (req, res) => {
+router.post('/disputes/:id/resolve', requireDepartment('disputes'), async (req, res) => {
   const region = await myRegion(req);
   const dispute = await db.find('disputes', d => d.id === req.params.id);
   if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
@@ -376,7 +394,7 @@ router.get('/sub-admins', requireSuperAdmin, async (req, res) => {
 
 // POST /api/admin/sub-admins — create a new location admin for a city
 router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
-  const { name, email, password, city, country } = req.body || {};
+  const { name, email, password, city, country, department } = req.body || {};
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
@@ -385,6 +403,9 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
     ['country', isNonEmptyString(country), 'Country is required'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  if (department && !['verification', 'disputes', 'financial'].includes(department)) {
+    return res.status(400).json({ error: 'department must be verification, disputes, or financial' });
+  }
 
   const existing = await db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
   if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
@@ -395,6 +416,7 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
     role: 'admin',
     region: city,
     isSuperAdmin: false,
+    adminDepartment: department || null,
     active: true,
     verified: true,
     initials: name.trim().split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
