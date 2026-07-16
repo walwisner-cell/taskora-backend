@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS payouts (
   exchange_rate_note TEXT,
   method             TEXT,
   status             TEXT NOT NULL DEFAULT 'processing',
+  line_items         JSONB,
   date               TEXT
 );
 
@@ -311,3 +312,4 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL D
 ALTER TABLE users ADD COLUMN IF NOT EXISTS business_name TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS business_registration_number TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_department TEXT;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS line_items JSONB;

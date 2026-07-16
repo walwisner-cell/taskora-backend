@@ -124,6 +124,24 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
     return res.status(400).json({ error: 'Nothing to pay out yet — this only includes jobs the customer has marked complete that haven\'t already been paid out.' });
   }
 
+  // A provider should be able to see exactly which jobs and which
+  // customers make up a payout, not just a lump sum — this is what
+  // actually answers "who paid, and for what" when they look at their
+  // payout history later.
+  const lineItems = [];
+  for (const e of payableEscrow) {
+    const contract = contracts.find(c => c.id === e.contractId);
+    if (!contract) continue;
+    const customer = await db.find('users', u => u.id === contract.customerId);
+    lineItems.push({
+      contractId: contract.id,
+      bookingNumber: contract.bookingNumber || contract.id,
+      customerName: customer ? customer.name : 'Unknown customer',
+      service: contract.service,
+      amount: e.amount,
+    });
+  }
+
   // Commission is based on the provider's plan at the time they cash out —
   // matches the rates genuinely advertised on the Pricing page (Starter
   // 12%, Pro 8%, Super Pro 5%), actually deducted here rather than just
@@ -156,6 +174,7 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
     exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
     method: (provider && provider.payoutMethod) || 'Bank Transfer',
     status: 'processing',
+    lineItems,
     createdAt: new Date().toISOString(),
   };
   await db.insert('payouts', payout);

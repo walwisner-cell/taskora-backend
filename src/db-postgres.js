@@ -37,7 +37,7 @@ const TABLES = {
   matches: { table: 'matches', columns: ['id','job_id','provider_id','customer_id','score','same_community','status','created_at'] },
   contracts: { table: 'contracts', columns: ['id','booking_number','customer_id','provider_id','job_id','service','date','time','address','amount','pay_currency','status','signed_at','created_at'] },
   escrowTransactions: { table: 'escrow_transactions', columns: ['id','contract_id','amount','paid_currency','paid_amount_local','exchange_rate_note','status','payout_id','created_at'] },
-  payouts: { table: 'payouts', columns: ['id','provider_id','gross_amount','commission_rate','commission_amount','amount','payout_currency','payout_amount_local','exchange_rate_note','method','status','date'] },
+  payouts: { table: 'payouts', columns: ['id','provider_id','gross_amount','commission_rate','commission_amount','amount','payout_currency','payout_amount_local','exchange_rate_note','method','status','line_items','date'] },
   disputes: { table: 'disputes', columns: ['id','contract_id','reason','amount','status','parties','resolved_at','created_at'] },
   reviews: { table: 'reviews', columns: ['id','contract_id','provider_id','author_name','stars','text','created_at'] },
   notifications: { table: 'notifications', columns: ['id','user_id','icon','text','time','read','created_at'] },
@@ -58,7 +58,7 @@ const TABLES = {
 // array literal syntax ({a,b,c}) by default, which is NOT valid JSON — these
 // need an explicit JSON.stringify() before going out, and come back already
 // parsed into JS objects/arrays by `pg` automatically on the way in.
-const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs', 'payload']);
+const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs', 'payload', 'line_items']);
 
 // `pg` returns NUMERIC/DECIMAL columns as JS strings by default (this avoids
 // silently losing precision on very large/precise values) — but every route
