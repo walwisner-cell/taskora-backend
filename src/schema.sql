@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS contracts (
   address        TEXT,
   amount         NUMERIC(10,2) NOT NULL,
   pay_currency   TEXT DEFAULT 'usd',
+  materials_advance NUMERIC(10,2) DEFAULT 0,
   status         TEXT NOT NULL DEFAULT 'active',
   signed_at      TEXT,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -117,6 +118,9 @@ CREATE TABLE IF NOT EXISTS escrow_transactions (
   exchange_rate_note TEXT,
   status             TEXT NOT NULL DEFAULT 'held',
   payout_id          TEXT,
+  materials_advance_amount NUMERIC(10,2) DEFAULT 0,
+  materials_advance_released BOOLEAN DEFAULT FALSE,
+  materials_advance_payout_id TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_escrow_contract ON escrow_transactions(contract_id);
@@ -236,6 +240,19 @@ CREATE TABLE IF NOT EXISTS careers_inquiries (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS fraud_flags (
+  id             TEXT PRIMARY KEY,
+  type           TEXT NOT NULL,
+  severity       TEXT NOT NULL DEFAULT 'medium',
+  user_id        TEXT REFERENCES users(id),
+  related_user_id TEXT REFERENCES users(id),
+  contract_id    TEXT REFERENCES contracts(id),
+  details        TEXT NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'open',
+  reviewed_at    TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS pending_logins (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id),
@@ -313,3 +330,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS business_name TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS business_registration_number TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_department TEXT;
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS line_items JSONB;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS materials_advance NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_amount NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_released BOOLEAN DEFAULT FALSE;
+ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_payout_id TEXT;

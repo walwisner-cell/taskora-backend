@@ -194,6 +194,39 @@ router.get('/disputes', requireDepartment('disputes'), async (req, res) => {
 
 // GET /api/admin/disputes/pdf — a real downloadable dispute report,
 // respecting the same region/department scope as the on-screen list.
+// GET /api/admin/fraud-flags — every real flag raised by the rule-based
+// fraud/safety checks, newest first. This is what actually backs the "every
+// job screened automatically" claim — a real, reviewable queue, not just a
+// marketing line.
+router.get('/fraud-flags', requireDepartment('disputes'), async (req, res) => {
+  const flags = await db.all('fraudFlags');
+  const withNames = await Promise.all(flags.map(async f => {
+    const user = f.userId ? await db.find('users', u => u.id === f.userId) : null;
+    const relatedUser = f.relatedUserId ? await db.find('users', u => u.id === f.relatedUserId) : null;
+    return {
+      id: f.id, type: f.type, severity: f.severity, details: f.details, status: f.status,
+      userName: user ? user.name : null, userEmail: user ? user.email : null,
+      relatedUserName: relatedUser ? relatedUser.name : null,
+      contractId: f.contractId, createdAt: f.createdAt,
+    };
+  }));
+  withNames.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ flags: withNames });
+});
+
+// POST /api/admin/fraud-flags/:id/resolve — mark a flag reviewed or
+// dismissed after a human has actually looked at it.
+router.post('/fraud-flags/:id/resolve', requireDepartment('disputes'), async (req, res) => {
+  const { decision } = req.body || {}; // 'reviewed' or 'dismissed'
+  if (!['reviewed', 'dismissed'].includes(decision)) {
+    return res.status(400).json({ error: 'decision must be reviewed or dismissed' });
+  }
+  const flag = await db.find('fraudFlags', f => f.id === req.params.id);
+  if (!flag) return res.status(404).json({ error: 'Flag not found' });
+  const updated = await db.update('fraudFlags', flag.id, { status: decision, reviewedAt: new Date().toISOString() });
+  res.json({ flag: updated });
+});
+
 router.get('/disputes/pdf', requireDepartment('disputes'), async (req, res) => {
   const region = await myRegion(req);
   const { from, to } = req.query;

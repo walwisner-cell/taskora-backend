@@ -439,6 +439,7 @@ await db.replaceAll('portfolioPhotos', []);
 await db.replaceAll('pendingRegistrations', []);
 await db.replaceAll('categoryRequests', []);
 await db.replaceAll('pendingLogins', []);
+await db.replaceAll('fraudFlags', []);
 await db.replaceAll('contactSubmissions', []);
 await db.replaceAll('careersInquiries', []);
 await db.replaceAll('contactSubmissions', []);

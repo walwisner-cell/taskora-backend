@@ -174,10 +174,22 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
   const contracts = await db.filter('contracts', c => c.providerId === req.user.sub);
   const contractIds = new Set(contracts.map(c => c.id));
   const payableEscrow = releasedEscrow.filter(e => contractIds.has(e.contractId));
-  const grossAmount = payableEscrow.reduce((sum, e) => sum + e.amount, 0);
+
+  // Materials advances release the moment they're agreed, independent of
+  // whether the rest of the job is done — so they're gathered separately
+  // here, using their own payout tracking field, since the MAIN escrow
+  // record for that contract might still legitimately be 'held' for the
+  // remainder while the advance itself is fully payable right now.
+  const allEscrowForProvider = await db.filter('escrowTransactions', e => contractIds.has(e.contractId));
+  const payableAdvances = allEscrowForProvider.filter(e =>
+    e.materialsAdvanceReleased && e.materialsAdvanceAmount > 0 && !e.materialsAdvancePayoutId
+  );
+
+  const grossAmount = payableEscrow.reduce((sum, e) => sum + (e.amount - (e.materialsAdvanceAmount || 0)), 0)
+    + payableAdvances.reduce((sum, e) => sum + e.materialsAdvanceAmount, 0);
 
   if (grossAmount <= 0) {
-    return res.status(400).json({ error: 'Nothing to pay out yet — this only includes jobs the customer has marked complete that haven\'t already been paid out.' });
+    return res.status(400).json({ error: 'Nothing to pay out yet — this only includes jobs the customer has marked complete, or agreed materials advances, that haven\'t already been paid out.' });
   }
 
   // A provider should be able to see exactly which jobs and which
@@ -190,6 +202,8 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
     if (!contract) continue;
     const customer = await db.find('users', u => u.id === contract.customerId);
     const review = await db.find('reviews', r => r.contractId === contract.id);
+    const newlyPayable = e.amount - (e.materialsAdvanceAmount || 0);
+    if (newlyPayable <= 0) continue; // the whole amount was already an advance, nothing further to add here
     lineItems.push({
       contractId: contract.id,
       bookingNumber: contract.bookingNumber || contract.id,
@@ -203,7 +217,27 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
       contractStatus: contract.status,
       signedAt: contract.signedAt || (contract.createdAt || '').slice(0, 10),
       review: review ? { stars: review.stars, text: review.text || null } : null,
-      amount: e.amount,
+      amount: newlyPayable,
+    });
+  }
+  for (const e of payableAdvances) {
+    const contract = contracts.find(c => c.id === e.contractId);
+    if (!contract) continue;
+    const customer = await db.find('users', u => u.id === contract.customerId);
+    lineItems.push({
+      contractId: contract.id,
+      bookingNumber: contract.bookingNumber || contract.id,
+      customerName: customer ? customer.name : 'Unknown customer',
+      customerEmail: customer ? customer.email : null,
+      customerPhone: customer ? customer.phone : null,
+      service: `${contract.service} (materials advance)`,
+      jobDate: contract.date || null,
+      jobTime: contract.time || null,
+      address: contract.address || null,
+      contractStatus: contract.status,
+      signedAt: contract.signedAt || (contract.createdAt || '').slice(0, 10),
+      review: null,
+      amount: e.materialsAdvanceAmount,
     });
   }
 
@@ -247,6 +281,9 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
   // Stamp every included escrow record so it can never be paid out again.
   for (const e of payableEscrow) {
     await db.update('escrowTransactions', e.id, { payoutId: payout.id });
+  }
+  for (const e of payableAdvances) {
+    await db.update('escrowTransactions', e.id, { materialsAdvancePayoutId: payout.id });
   }
 
   const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;

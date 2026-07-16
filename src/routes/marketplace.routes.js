@@ -35,6 +35,14 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   const wantsLocal = payCurrencyChoice === 'local' && currency.code !== 'USD';
   const paidAmountLocal = wantsLocal ? convertFromUSD(contract.amount, currency.code) : null;
 
+  // A materials advance is tracked on the SAME escrow record as separate
+  // fields, rather than as a second record — every existing feature
+  // (payouts, PDFs, admin reporting) assumes one escrow per contract, and
+  // this keeps that true while still letting an advance release early.
+  // The main `amount`/`status` still represent the full contract and its
+  // overall held/released state exactly as before.
+  const advance = Math.min(contract.materialsAdvance || 0, contract.amount);
+
   const escrow = {
     id: `esc_${nanoid(10)}`,
     contractId: contract.id,
@@ -43,9 +51,22 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
     paidAmountLocal,
     exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
     status: 'held',
+    materialsAdvanceAmount: advance,
+    materialsAdvanceReleased: false,
+    materialsAdvancePayoutId: null,
     createdAt: new Date().toISOString(),
   };
   await db.insert('escrowTransactions', escrow);
+
+  // If an advance was agreed, it releases immediately — that's the whole
+  // point of it. Everything else about the contract (the remainder,
+  // overall completion) is untouched until the customer confirms the job
+  // is actually done, exactly as before.
+  if (advance > 0) {
+    await db.update('escrowTransactions', escrow.id, { materialsAdvanceReleased: true });
+    escrow.materialsAdvanceReleased = true;
+  }
+
   return escrow;
 }
 
@@ -110,6 +131,24 @@ router.get('/cities', async (req, res) => {
 // worldwide city database would be tens of thousands of entries and
 // unusable as a dropdown; country + state is the real, bounded, well-known
 // dataset that scales.
+// GET /api/platform-stats — real, computed numbers for the homepage hero
+// (verified pro count, completed jobs, average rating). Public — this is
+// marketing-page data, not anything sensitive — and genuinely derived from
+// the database rather than being hardcoded copy.
+router.get('/platform-stats', async (req, res) => {
+  const verifiedPros = await db.filter('users', u => u.role === 'provider' && u.verified);
+  const completedContracts = await db.filter('contracts', c => c.status === 'completed');
+  const ratedPros = verifiedPros.filter(p => p.rating && p.rating > 0);
+  const avgRating = ratedPros.length
+    ? Math.round((ratedPros.reduce((s, p) => s + p.rating, 0) / ratedPros.length) * 10) / 10
+    : null;
+  res.json({
+    verifiedProsCount: verifiedPros.length,
+    jobsCompletedCount: completedContracts.length,
+    averageRating: avgRating,
+  });
+});
+
 router.get('/geo', async (req, res) => {
   const liveCountries = (await db.filter('countries', c => c.status === 'live')).map(c => c.name);
   // Only actually-live countries are offered — matches the super admin's
@@ -388,6 +427,13 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async 
     escrow = await fundEscrowForContract(contract, match.customerId, job ? job.payCurrency : 'usd');
     if (job) await db.update('jobs', job.id, { status: 'matched' });
     const provider = await db.find('users', u => u.id === match.providerId);
+
+    // Same real fraud/safety screening as direct bookings — every accepted
+    // match gets checked too, not just ones booked directly.
+    const { checkPriceAnomaly, checkNewAccountHighValue } = require('../fraud-detection');
+    if (provider) await checkPriceAnomaly(provider.category, contract.amount, contract.id, match.customerId, match.providerId);
+    await checkNewAccountHighValue(match.customerId, contract.amount);
+
     await notify(match.customerId, '🤝', `${provider ? provider.name : 'Your matched pro'} accepted your job — contract signed and escrow funded.`, 'bookingUpdates');
   }
   res.json({ match, contract, escrow });
@@ -397,7 +443,7 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async 
 
 // POST /api/contracts — direct booking of a specific provider (skips matching)
 router.post('/contracts', requireAuth, requireRole('customer'), async (req, res) => {
-  const { providerId, service, date, time, address, amount, payCurrency } = req.body || {};
+  const { providerId, service, date, time, address, amount, payCurrency, materialsAdvance } = req.body || {};
   const errors = validate([
     ['providerId', isNonEmptyString(providerId), 'A provider must be selected'],
     ['service', isNonEmptyString(service, { min: 3, max: 200 }), 'Describe the service in at least 3 characters'],
@@ -408,6 +454,12 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
   if (amount !== undefined && (typeof amount !== 'number' || amount <= 0)) {
     return res.status(400).json({ error: 'Amount must be a positive number' });
+  }
+  if (materialsAdvance !== undefined && (typeof materialsAdvance !== 'number' || materialsAdvance < 0)) {
+    return res.status(400).json({ error: 'Materials advance must be zero or a positive number' });
+  }
+  if (materialsAdvance && amount && materialsAdvance > amount) {
+    return res.status(400).json({ error: 'The materials advance can\'t be more than the total job amount' });
   }
 
   const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
@@ -426,6 +478,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     service: service.trim(),
     date, time, address: address.trim(),
     amount: amount || provider.price * 2,
+    materialsAdvance: materialsAdvance || 0,
     // Mutual Agreement pricing means exactly that — the customer's offer is
     // a proposal, not a binding charge, until the provider actually agrees
     // to that specific number. Hourly-rate bookings still confirm and fund
@@ -437,6 +490,14 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     createdAt: new Date().toISOString(),
   };
   await db.insert('contracts', contract);
+
+  // Real fraud/safety screening on every booking — this is what actually
+  // backs the "every job screened automatically" claim. Never blocks the
+  // booking itself; just creates a real, reviewable flag when something's
+  // genuinely off.
+  const { checkPriceAnomaly, checkNewAccountHighValue } = require('../fraud-detection');
+  await checkPriceAnomaly(provider.category, contract.amount, contract.id, req.user.sub, providerId);
+  await checkNewAccountHighValue(req.user.sub, contract.amount);
 
   let escrow = null;
   if (isNegotiable) {
@@ -792,6 +853,12 @@ router.post('/disputes', requireAuth, async (req, res) => {
   // Notify whichever party didn't raise the dispute.
   const otherPartyId = req.user.sub === contract.customerId ? contract.providerId : contract.customerId;
   await notify(otherPartyId, '⚠️', `A dispute was opened on "${contract.service}" — our team is reviewing it.`, 'bookingUpdates');
+
+  // Real fraud/safety screening — checks both parties for an unusual
+  // pattern of repeat disputes, not just this one.
+  const { checkRapidDisputes } = require('../fraud-detection');
+  await checkRapidDisputes(contract.customerId);
+  await checkRapidDisputes(contract.providerId);
 
   res.status(201).json({ dispute });
 });

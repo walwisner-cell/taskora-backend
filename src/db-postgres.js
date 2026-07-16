@@ -35,8 +35,8 @@ const TABLES = {
   cities: { table: 'cities', columns: ['id','name','country','admin_id'] },
   jobs: { table: 'jobs', columns: ['id','customer_id','category','description','budget','pay_currency','status','created_at'] },
   matches: { table: 'matches', columns: ['id','job_id','provider_id','customer_id','score','same_community','status','created_at'] },
-  contracts: { table: 'contracts', columns: ['id','booking_number','customer_id','provider_id','job_id','service','date','time','address','amount','pay_currency','status','signed_at','created_at'] },
-  escrowTransactions: { table: 'escrow_transactions', columns: ['id','contract_id','amount','paid_currency','paid_amount_local','exchange_rate_note','status','payout_id','created_at'] },
+  contracts: { table: 'contracts', columns: ['id','booking_number','customer_id','provider_id','job_id','service','date','time','address','amount','pay_currency','status','signed_at','materials_advance','created_at'] },
+  escrowTransactions: { table: 'escrow_transactions', columns: ['id','contract_id','amount','paid_currency','paid_amount_local','exchange_rate_note','status','payout_id','materials_advance_amount','materials_advance_released','materials_advance_payout_id','created_at'] },
   payouts: { table: 'payouts', columns: ['id','provider_id','gross_amount','commission_rate','commission_amount','amount','payout_currency','payout_amount_local','exchange_rate_note','method','status','line_items','date'] },
   disputes: { table: 'disputes', columns: ['id','contract_id','reason','amount','status','parties','resolved_at','created_at'] },
   reviews: { table: 'reviews', columns: ['id','contract_id','provider_id','author_name','stars','text','created_at'] },
@@ -50,6 +50,7 @@ const TABLES = {
   pendingRegistrations: { table: 'pending_registrations', columns: ['id','payload','phone_code_hash','email_code_hash','phone_verified','email_verified','expires_at','created_at'] },
   categoryRequests: { table: 'category_requests', columns: ['id','provider_id','requested_category','status','created_at','resolved_at'] },
   pendingLogins: { table: 'pending_logins', columns: ['id','user_id','code_hash','expires_at','created_at'] },
+  fraudFlags: { table: 'fraud_flags', columns: ['id','type','severity','user_id','related_user_id','contract_id','details','status','reviewed_at','created_at'] },
   contactSubmissions: { table: 'contact_submissions', columns: ['id','name','email','subject','message','status','created_at'] },
   careersInquiries: { table: 'careers_inquiries', columns: ['id','name','email','role','message','status','created_at'] },
 };

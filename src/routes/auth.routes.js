@@ -175,6 +175,12 @@ router.post('/signup/verify', async (req, res) => {
     }
   }
 
+  // Real fraud/safety check — the same phone number registering a second
+  // account is a genuine, common signal worth a human review. The account
+  // is never blocked over this alone; it just creates a real flag.
+  const { checkDuplicateIdentity } = require('../fraud-detection');
+  await checkDuplicateIdentity(user.phone, user.email, user.id);
+
   const token = signToken(user);
   res.status(201).json({ token, user: publicUser(user), categoryApprovalStatus });
 });
