@@ -1,23 +1,23 @@
 [
   {
-    "id": "esc_SfgkJYdZz5",
+    "id": "esc_3YpCwIsya8",
     "contractId": "ct_1042",
     "amount": 180,
     "status": "held",
-    "createdAt": "2026-07-16T12:10:27.285Z"
+    "createdAt": "2026-07-16T12:25:57.030Z"
   },
   {
-    "id": "esc_JXCRKYf_AD",
+    "id": "esc_sJm6oKKErs",
     "contractId": "ct_1039",
     "amount": 140,
     "status": "released",
-    "createdAt": "2026-07-16T12:10:27.285Z"
+    "createdAt": "2026-07-16T12:25:57.030Z"
   },
   {
-    "id": "esc_d4co0RU2r8",
+    "id": "esc_789KYsEPU9",
     "contractId": "ct_1031",
     "amount": 220,
     "status": "released",
-    "createdAt": "2026-07-16T12:10:27.285Z"
+    "createdAt": "2026-07-16T12:25:57.030Z"
   }
 ]

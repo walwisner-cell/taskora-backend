@@ -273,7 +273,7 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // PATCH /api/auth/me — update own profile / settings
 router.patch('/me', requireAuth, async (req, res) => {
-  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'plan', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber'];
+  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'plan', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
   if ('name' in patch && !isValidName(patch.name)) {
@@ -349,6 +349,46 @@ router.patch('/me', requireAuth, async (req, res) => {
     // shouldn't silently reset every other saved preference to defaults.
     const current = await db.find('users', u => u.id === req.user.sub);
     patch.notifPrefs = { ...(current && current.notifPrefs), ...patch.notifPrefs };
+  }
+  if ('category' in patch) {
+    const current = await db.find('users', u => u.id === req.user.sub);
+    if (!current || current.role !== 'provider') {
+      return res.status(400).json({ error: 'Only provider accounts have a category' });
+    }
+    if (!isNonEmptyString(patch.category, { min: 2, max: 100 })) {
+      return res.status(400).json({ error: 'Enter a valid category' });
+    }
+    patch.category = patch.category.trim();
+
+    // Same real-category matching used at signup and at category-request
+    // approval: strip punctuation/casing differences so "pick and drop"
+    // correctly matches an existing "Pick & Drop" instead of creating a
+    // near-duplicate, or incorrectly staying "pending" when it's really
+    // already a listed category.
+    const normalize = (s) => s.toLowerCase().replace(/&/g, 'and').replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+    const activeCategories = await db.filter('categories', c => c.active);
+    const matchedCategory = activeCategories.find(c => normalize(c.name) === normalize(patch.category));
+
+    if (matchedCategory) {
+      patch.category = matchedCategory.name; // use the real, correctly-formatted name
+      patch.categoryApprovalStatus = 'approved';
+    } else {
+      patch.categoryApprovalStatus = 'pending';
+      const request = {
+        id: `catreq_${nanoid(10)}`,
+        providerId: req.user.sub,
+        requestedCategory: patch.category,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        resolvedAt: null,
+      };
+      await db.insert('categoryRequests', request);
+      const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+      for (const admin of superAdmins) {
+        await notify(admin.id, '🆕', `${current.name} updated their category to "${patch.category}" — not a current category. Review within 24 hours in Categories & Countries → Category Requests.`);
+        console.log(`[TEST MODE — no email provider connected] Would email ${admin.email}: category update request "${patch.category}" from ${current.name} needs review within 24 hours.`);
+      }
+    }
   }
   const updated = await db.update('users', req.user.sub, patch);
   if (!updated) return res.status(404).json({ error: 'User not found' });

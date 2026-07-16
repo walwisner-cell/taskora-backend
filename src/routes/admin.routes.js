@@ -389,19 +389,46 @@ router.get('/category-requests', requireSuperAdmin, async (req, res) => {
 // POST /api/admin/category-requests/:id/approve — formally adds the
 // requested category (if it doesn't already exist) and marks the
 // provider's account as approved for it.
+// Normalizes a category name for COMPARISON only (never for storage/
+// display) — strips punctuation like "&", collapses whitespace, lowercases.
+// This is what catches "pick and drop" as the same real category as
+// "Pick & Drop" rather than letting a near-duplicate get created just
+// because the punctuation or casing differs.
+function normalizeCategoryForComparison(name) {
+  return name.toLowerCase().replace(/&/g, 'and').replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function titleCase(name) {
+  return name.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
 router.post('/category-requests/:id/approve', requireSuperAdmin, async (req, res) => {
   const request = await db.find('categoryRequests', r => r.id === req.params.id);
   if (!request) return res.status(404).json({ error: 'Category request not found' });
   if (request.status !== 'pending') return res.status(400).json({ error: `This request is already ${request.status}` });
 
-  const existingCategory = await db.find('categories', c => c.name.toLowerCase() === request.requestedCategory.toLowerCase());
-  if (!existingCategory) {
-    await db.insert('categories', { id: `cat_${nanoid(8)}`, name: request.requestedCategory, icon: '🛠️', active: true });
+  const allCategories = await db.all('categories');
+  const requestedNormalized = normalizeCategoryForComparison(request.requestedCategory);
+  const existingCategory = allCategories.find(c => normalizeCategoryForComparison(c.name) === requestedNormalized);
+
+  // If this really is the same category under different punctuation or
+  // casing (e.g. "pick and drop" vs the existing "Pick & Drop"), the
+  // provider gets assigned to the REAL existing category rather than a
+  // near-duplicate being created — and their account's category field is
+  // corrected to match it.
+  let finalCategoryName = request.requestedCategory;
+  if (existingCategory) {
+    finalCategoryName = existingCategory.name;
+    await db.update('users', request.providerId, { category: finalCategoryName });
+  } else {
+    finalCategoryName = titleCase(request.requestedCategory);
+    await db.insert('categories', { id: `cat_${nanoid(8)}`, name: finalCategoryName, icon: '🛠️', active: true });
+    await db.update('users', request.providerId, { category: finalCategoryName });
   }
   await db.update('users', request.providerId, { categoryApprovalStatus: 'approved' });
   await db.update('categoryRequests', request.id, { status: 'approved', resolvedAt: new Date().toISOString() });
-  await notify(request.providerId, '✅', `Your category "${request.requestedCategory}" was approved — you're now fully listed and bookable.`);
-  res.json({ ok: true });
+  await notify(request.providerId, '✅', `Your category "${finalCategoryName}" was approved — you're now fully listed and bookable.`);
+  res.json({ ok: true, matchedExisting: !!existingCategory, finalCategoryName });
 });
 
 // POST /api/admin/category-requests/:id/reject — declines the custom

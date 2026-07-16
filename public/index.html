@@ -1647,6 +1647,43 @@ async function saveBusinessProfile() {
   } catch (e) { showToast(e.message || 'Could not update business profile'); }
 }
 
+// Populates the Settings category dropdown with the real, current list of
+// active categories, pre-selecting whatever the provider's account
+// currently has — falling back to "Other" if their current category isn't
+// (or is no longer) a real listed one.
+function populateSettingsCategory() {
+  const select = document.getElementById('set-prov-category');
+  if (!select) return;
+  const current = (AUTH.user && AUTH.user.category) || '';
+  const catNames = (CATEGORIES && CATEGORIES.length) ? CATEGORIES.map(c => c.name) : [];
+  const isListed = catNames.includes(current);
+  select.innerHTML = catNames.map(c => `<option value="${c}" ${c === current ? 'selected' : ''}>${c}</option>`).join('')
+    + `<option value="__other__" ${!isListed ? 'selected' : ''}>Other (not listed — describe below)</option>`;
+  const customGroup = document.getElementById('set-prov-custom-category-group');
+  const customInput = document.getElementById('set-prov-custom-category');
+  if (!isListed && current) {
+    customGroup.style.display = 'block';
+    customInput.value = current;
+  }
+}
+
+async function saveProviderCategory() {
+  const select = document.getElementById('set-prov-category').value;
+  const category = select === '__other__'
+    ? document.getElementById('set-prov-custom-category').value.trim().replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    : select;
+  if (!category || category.length < 2) return showToast('Enter or select a category');
+  if (!BACKEND_AVAILABLE) return showToast('Category updated (demo mode)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { category });
+    AUTH.user = user;
+    showToast(user.categoryApprovalStatus === 'pending'
+      ? `Category saved — "${category}" is pending a quick admin review (within 24 hours). You can keep using your account normally.`
+      : `Category updated to "${user.category}"`);
+    selectProviderSection('settings');
+  } catch (e) { showToast(e.message || 'Could not update category'); }
+}
+
 function categoryCardsHTML(list) {
   return list.map(c => `<div class="cat-card" data-catname="${c.name.replace(/"/g, '&quot;')}" onclick="goDirectory(this.dataset.catname)"><span class="cat-emoji">${categoryIcon(c.name)}</span><div class="cat-label">${c.name}</div><div class="cat-count">${c.proCount} pros</div></div>`).join('');
 }
@@ -2027,7 +2064,10 @@ async function mockAuth() {
   const address = document.getElementById('auth-address').value.trim();
   const zipCode = document.getElementById('auth-zip').value.trim();
   const categorySelect = document.getElementById('auth-category').value;
-  const category = categorySelect === '__other__' ? document.getElementById('auth-custom-category').value.trim() : categorySelect;
+  const customCategoryRaw = document.getElementById('auth-custom-category').value.trim();
+  const category = categorySelect === '__other__'
+    ? customCategoryRaw.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    : categorySelect;
   const skills = document.getElementById('auth-skills').value.trim();
 
   if (!BACKEND_AVAILABLE) {
@@ -3307,6 +3347,18 @@ const PROVIDER_SECTIONS = {
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveProviderLocation()">Save Location</button>
     </div>
+    <div class="panel"><div class="panel-title">Service Category</div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:12px;">${AUTH.user && AUTH.user.categoryApprovalStatus === 'pending' ? 'Your current category is pending admin review.' : AUTH.user && AUTH.user.categoryApprovalStatus === 'rejected' ? 'Your last category request wasn\'t approved — pick a listed category below, or describe a new one.' : 'This is what customers search for to find you.'}</div>
+      <div class="form-group"><label class="form-label">Primary Service Category</label>
+        <select class="form-input form-select" id="set-prov-category" onchange="document.getElementById('set-prov-custom-category-group').style.display = this.value === '__other__' ? 'block' : 'none'"></select>
+      </div>
+      <div class="form-group" id="set-prov-custom-category-group" style="display:none;">
+        <label class="form-label">What service do you offer?</label>
+        <input class="form-input" type="text" id="set-prov-custom-category" placeholder="e.g. Piano Tuning, Pool Maintenance"/>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Not on our current list — a team member reviews new categories within 24 hours. You can keep using your account normally in the meantime.</div>
+      </div>
+      <button class="btn-sm btn-sm-primary" onclick="saveProviderCategory()">Save Category</button>
+    </div>
     <div class="panel"><div class="panel-title">Business Profile <small style="font-weight:400;color:var(--slate);">optional</small></div>
       <div style="font-size:12px;color:var(--slate);margin-bottom:12px;">If you operate as a registered business rather than as an individual, add your business details here — this appears on your public profile alongside your name.</div>
       <div class="form-group"><label class="form-label">Business Name</label><input class="form-input" type="text" id="set-prov-business-name" value="${(AUTH.user && AUTH.user.businessName) || ''}" placeholder="e.g. Marcus T. Plumbing LLC"/></div>
@@ -3749,7 +3801,7 @@ function selectProviderSection(key) {
   renderDashNav('provider-nav', PROVIDER_NAV_ITEMS, key, 'selectProviderSection');
   document.getElementById('provider-main').innerHTML = PROVIDER_SECTIONS[key]();
   if (key === 'messages') loadMessageThread();
-  if (key === 'settings') populateSettingsCountry('prov');
+  if (key === 'settings') { populateSettingsCountry('prov'); populateSettingsCategory(); }
 }
 
 function updateProviderSidebar() {
@@ -4163,8 +4215,10 @@ const ADMIN_SECTIONS = {
       <div class="form-group"><label class="form-label">Admin Name</label><input class="form-input" id="loc-admin-name" placeholder="e.g. Fatima B."/></div>
       <div class="form-group"><label class="form-label">Admin Email</label><input class="form-input" id="loc-admin-email" placeholder="fatima@example.com"/></div>
       <div class="form-group"><label class="form-label">Temporary Password</label><input class="form-input" id="loc-admin-password" placeholder="Set a starting password" type="text" value="Welcome123456!"/><div style="font-size:11px;color:var(--muted);margin-top:5px;">Must be at least 9 characters with 6 numbers, 2 letters, and 1 symbol — they can change it after signing in</div></div>
+      <div class="form-group"><label class="form-label">Country</label>
+        <select class="form-input form-select" id="loc-country"></select>
+      </div>
       <div class="form-group"><label class="form-label">City</label><input class="form-input" id="loc-city" placeholder="e.g. Monrovia"/><div style="font-size:11px;color:var(--muted);margin-top:5px;">Still required even for a functional-team member (their base location for contact purposes) — it just won't restrict what they can see if a department is selected below.</div></div>
-      <div class="form-group"><label class="form-label">Country</label><input class="form-input" id="loc-country" placeholder="e.g. Liberia"/></div>
       <div class="form-group"><label class="form-label">Role</label>
         <select class="form-input form-select" id="loc-department">
           <option value="">Regional Admin — full access, scoped to this one city</option>
@@ -4207,14 +4261,22 @@ function functionalAdminsTable(list) {
 
 function openNewLocationForm() {
   document.getElementById('new-location-panel').style.display = 'block';
+  const countrySelect = document.getElementById('loc-country');
+  const countries = (GEO_DATA.countries && GEO_DATA.countries.length) ? GEO_DATA.countries : FALLBACK_GEO.countries;
+  const current = 'United States';
+  countrySelect.innerHTML = countries.map(c => `<option value="${c}" ${c === current ? 'selected' : ''}>${c}</option>`).join('');
 }
 
 async function createLocationAdmin() {
   const name = document.getElementById('loc-admin-name').value.trim();
   const email = document.getElementById('loc-admin-email').value.trim();
   const password = document.getElementById('loc-admin-password').value;
-  const city = document.getElementById('loc-city').value.trim();
-  const country = document.getElementById('loc-country').value.trim();
+  const cityRaw = document.getElementById('loc-city').value.trim();
+  // Title-case the city ("monrovia" -> "Monrovia") — City stays free text
+  // since there's no universal real-time city list to validate against,
+  // but at least it's stored consistently rather than however it was typed.
+  const city = cityRaw.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  const country = document.getElementById('loc-country').value;
   const department = document.getElementById('loc-department').value || null;
   if (!name || !email || !password || !city || !country) return showToast('Please fill in every field');
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
