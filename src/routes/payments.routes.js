@@ -93,10 +93,66 @@ router.delete('/payment-methods/:id', requireAuth, async (req, res) => {
 
 // GET /api/payouts/mine — provider payout history
 router.get('/payouts/mine', requireAuth, requireRole('provider'), async (req, res) => {
-  const payouts = await db.filter('payouts', p => p.providerId === req.user.sub);
+  let payouts = await db.filter('payouts', p => p.providerId === req.user.sub);
+  const { from, to } = req.query;
+  if (from) payouts = payouts.filter(p => p.date >= from);
+  if (to) payouts = payouts.filter(p => p.date <= to);
+  payouts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json({ payouts });
 });
 
+// GET /api/payouts/pdf — a real, downloadable payout history report for a
+// provider, honoring the same from/to date range as the on-screen history.
+// Built so "who paid me, and when" is answerable from a document alone,
+// not just by scrolling the dashboard.
+router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res) => {
+  const { from, to } = req.query;
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  let payouts = await db.filter('payouts', p => p.providerId === req.user.sub);
+  if (from) payouts = payouts.filter(p => p.date >= from);
+  if (to) payouts = payouts.filter(p => p.date <= to);
+  payouts.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  const { createReportDoc } = require('../pdf-report-builder');
+  const rangeLabel = from || to ? `${from || 'earliest'} to ${to || 'today'}` : 'All time';
+  const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
+    res,
+    filename: `Taskora-Payout-History-${provider.name.replace(/\s+/g, '-')}.pdf`,
+    title: 'Payout History Report',
+    subtitle: 'AI-Matched · Identity-Verified · Escrow-Protected',
+    docId: rangeLabel,
+    verificationSeed: `payouts|${provider.id}|${from || ''}|${to || ''}|${payouts.length}`,
+  });
+
+  sectionHeader('Report Summary');
+  twoColumnRow('Provider', `${provider.name} (${provider.email})`, 'Date Range', rangeLabel);
+  const totalGross = payouts.reduce((s, p) => s + (p.grossAmount ?? p.amount), 0);
+  const totalCommission = payouts.reduce((s, p) => s + (p.commissionAmount || 0), 0);
+  const totalNet = payouts.reduce((s, p) => s + p.amount, 0);
+  twoColumnRow('Total Earned (Gross)', `$${totalGross.toFixed(2)}`, 'Total Commission', `$${totalCommission.toFixed(2)}`);
+  row('Total Paid Out (Net)', `$${totalNet.toFixed(2)}`);
+
+  if (payouts.length === 0) {
+    sectionHeader('Payouts');
+    row('No payouts', 'No payouts were found in this date range.');
+  } else {
+    for (const payout of payouts) {
+      sectionHeader(`Payout ${payout.id} — ${payout.date}`);
+      twoColumnRow('Gross Earned', `$${(payout.grossAmount ?? payout.amount).toFixed(2)}`, 'Commission', payout.commissionAmount ? `$${payout.commissionAmount.toFixed(2)} (${Math.round((payout.commissionRate || 0) * 100)}%)` : '—');
+      twoColumnRow('Net Paid Out', `$${payout.amount.toFixed(2)}`, 'Method / Status', `${payout.method} · ${payout.status}`);
+      if (payout.lineItems && payout.lineItems.length) {
+        table(
+          [{ label: 'Customer', width: 160 }, { label: 'Job', width: 200 }, { label: 'Booking #', width: 90 }, { label: 'Amount', width: 60, align: 'right' }],
+          payout.lineItems.map(li => [li.customerName, li.service, li.bookingNumber, `$${li.amount}`])
+        );
+      }
+    }
+  }
+
+  finish({
+    closingNote: 'This report reflects Taskora\'s payout records for this provider account as of the moment it was generated. Commission is deducted according to the provider\'s plan at the time of each payout. Provided for the provider\'s own recordkeeping.',
+  });
+});
 // POST /api/payouts/request — provider requests payout of released escrow
 const COMMISSION_RATES = { starter: 0.12, pro: 0.08, superpro: 0.05 };
 
@@ -233,7 +289,83 @@ router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
   res.json({ contract: updated, escrow: escrow ? { ...escrow, status: 'refunded' } : null });
 });
 
-// GET /api/escrow/summary — admin: platform-wide escrow snapshot. Scoped to
+// GET /api/payments/mine — a customer's real payment history: every
+// contract they've funded, who the provider was, and what currency they
+// actually paid in. The same "who paid / who got paid" concept as the
+// provider's payout history, just from the other side of the transaction.
+router.get('/payments/mine', requireAuth, requireRole('customer'), async (req, res) => {
+  const { from, to } = req.query;
+  let contracts = await db.filter('contracts', c => c.customerId === req.user.sub);
+  if (from) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) >= from);
+  if (to) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) <= to);
+  contracts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const payments = await Promise.all(contracts.map(async c => {
+    const provider = await db.find('users', u => u.id === c.providerId);
+    const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
+    return {
+      contractId: c.id,
+      bookingNumber: c.bookingNumber || c.id,
+      date: (c.createdAt || '').slice(0, 10),
+      providerName: provider ? provider.name : 'Unknown provider',
+      service: c.service,
+      amount: c.amount,
+      status: c.status,
+      escrowStatus: escrow ? escrow.status : 'none',
+      paidCurrency: escrow ? escrow.paidCurrency : 'USD',
+      paidAmountLocal: escrow ? escrow.paidAmountLocal : null,
+    };
+  }));
+  res.json({ payments });
+});
+
+// GET /api/payments/pdf — a real, downloadable payment history report for a
+// customer, same date-range concept as the provider's payout report.
+router.get('/payments/pdf', requireAuth, requireRole('customer'), async (req, res) => {
+  const { from, to } = req.query;
+  const customer = await db.find('users', u => u.id === req.user.sub);
+  let contracts = await db.filter('contracts', c => c.customerId === req.user.sub);
+  if (from) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) >= from);
+  if (to) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) <= to);
+  contracts.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  const rows = await Promise.all(contracts.map(async c => {
+    const provider = await db.find('users', u => u.id === c.providerId);
+    const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
+    return { c, provider, escrow };
+  }));
+
+  const { createReportDoc } = require('../pdf-report-builder');
+  const rangeLabel = from || to ? `${from || 'earliest'} to ${to || 'today'}` : 'All time';
+  const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
+    res,
+    filename: `Taskora-Payment-History-${customer.name.replace(/\s+/g, '-')}.pdf`,
+    title: 'Payment History Report',
+    subtitle: 'AI-Matched · Identity-Verified · Escrow-Protected',
+    docId: rangeLabel,
+    verificationSeed: `payments|${customer.id}|${from || ''}|${to || ''}|${contracts.length}`,
+  });
+
+  sectionHeader('Report Summary');
+  twoColumnRow('Customer', `${customer.name} (${customer.email})`, 'Date Range', rangeLabel);
+  const totalPaid = contracts.reduce((s, c) => s + c.amount, 0);
+  row('Total Paid (USD)', `$${totalPaid.toFixed(2)} across ${contracts.length} booking${contracts.length === 1 ? '' : 's'}`);
+
+  sectionHeader('Bookings & Payments');
+  if (rows.length === 0) {
+    row('No payments', 'No payments were found in this date range.');
+  } else {
+    table(
+      [{ label: 'Date', width: 65 }, { label: 'Provider', width: 100 }, { label: 'Service', width: 165 }, { label: 'Booking #', width: 75 }, { label: 'Amount', width: 55, align: 'right' }],
+      rows.map(({ c, provider }) => [(c.createdAt || '').slice(0, 10), provider ? provider.name : 'Unknown', c.service, c.bookingNumber || c.id, `$${c.amount}`])
+    );
+  }
+
+  finish({
+    closingNote: 'This report reflects Taskora\'s payment records for this customer account as of the moment it was generated. All amounts shown are in USD, the platform\'s canonical accounting currency, regardless of what currency was actually charged at checkout. Provided for the customer\'s own recordkeeping.',
+  });
+});
+
 // the Financial team when an admin account has been set up that way — a
 // super admin or an unscoped regional admin still sees this unchanged.
 router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res) => {

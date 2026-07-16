@@ -2359,8 +2359,8 @@ function weeklyEarningsChartData(payouts) {
 }
 
 function barChart(data) {
-  const max = Math.max(...data.map(d => d.val));
-  return `<div class="bar-chart">${data.map(d => `<div class="bar-col"><div class="bar-fill" style="height:${Math.max(6, d.val / max * 100)}px"></div><div class="bar-label">${d.label}</div></div>`).join('')}</div>`;
+  const max = Math.max(...data.map(d => d.val), 1);
+  return `<div class="bar-chart">${data.map(d => `<div class="bar-col" title="${(d.fullLabel || d.label)}: ${d.val}"><div class="bar-fill" style="height:${Math.max(6, d.val / max * 100)}px"></div><div class="bar-label">${d.label}</div></div>`).join('')}</div>`;
 }
 
 /* ══════════════════════ CUSTOMER DASHBOARD ══════════════════════ */
@@ -2397,7 +2397,7 @@ async function computeVerificationStatus() {
 }
 
 async function loadCustomerData() {
-  if (!BACKEND_AVAILABLE) { customerData.bookings = FALLBACK_BOOKINGS; customerData.verificationStatus = 'verified'; customerData.paymentMethods = FALLBACK_PAYMENT_METHODS; return; }
+  if (!BACKEND_AVAILABLE) { customerData.bookings = FALLBACK_BOOKINGS; customerData.verificationStatus = 'verified'; customerData.paymentMethods = FALLBACK_PAYMENT_METHODS; customerData.payments = []; return; }
   try {
     const { contracts } = await apiFetch('GET', '/contracts/mine');
     customerData.bookings = contracts.map(c => ({
@@ -2409,6 +2409,10 @@ async function loadCustomerData() {
     const { methods } = await apiFetch('GET', '/payment-methods/mine');
     customerData.paymentMethods = methods;
   } catch (e) { console.warn('Falling back to demo bookings', e); customerData.bookings = FALLBACK_BOOKINGS; }
+  try {
+    const { payments } = await apiFetch('GET', '/payments/mine');
+    customerData.payments = payments;
+  } catch (e) { console.warn('Could not load payment history', e); customerData.payments = []; }
   customerData.verificationStatus = await computeVerificationStatus();
 }
 
@@ -2418,6 +2422,43 @@ function paymentMethodsTableHTML() {
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Method</th><th>Details</th><th>Default</th><th>Action</th></tr></thead><tbody>
   ${list.map(m => `<tr><td>💳 ${m.brand}${m.mode === 'test' ? ' <span class="badge badge-warn" style="margin-left:4px;">test</span>' : ''}</td><td>•••• ${m.last4} · exp ${m.expiry}</td><td>${m.isDefault ? '<span class="badge badge-success">Default</span>' : `<button class="btn-sm btn-sm-outline" onclick="setDefaultPaymentMethod('${m.id}')">Set Default</button>`}</td><td><button class="btn-sm btn-sm-outline" onclick="removePaymentMethod('${m.id}')">Remove</button></td></tr>`).join('')}
   </tbody></table></div>`;
+}
+
+function paymentHistoryTableHTML(payments) {
+  if (!payments.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payments in this range.</div>`;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Paid To</th><th>Service</th><th>Booking #</th><th>Amount</th><th>Status</th></tr></thead><tbody>
+  ${payments.map(p => `<tr><td>${p.date}</td><td>${p.providerName}</td><td>${p.service}</td><td>${p.bookingNumber}</td><td>$${p.amount}${p.paidCurrency && p.paidCurrency !== 'USD' && p.paidAmountLocal ? ` <span style="color:var(--muted);font-size:11px;">(${p.paidAmountLocal} ${p.paidCurrency})</span>` : ''}</td><td>${statusBadge(p.status)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+async function filterPaymentHistory() {
+  const from = document.getElementById('payment-filter-from').value;
+  const to = document.getElementById('payment-filter-to').value;
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const { payments } = await apiFetch('GET', `/payments/mine?${params.toString()}`);
+    document.getElementById('payment-history-table-wrap').innerHTML = paymentHistoryTableHTML(payments);
+  } catch (e) { showToast(e.message || 'Could not filter payment history'); }
+}
+
+function clearPaymentFilter() {
+  document.getElementById('payment-filter-from').value = '';
+  document.getElementById('payment-filter-to').value = '';
+  filterPaymentHistory();
+}
+
+function downloadPaymentHistoryPDF() {
+  const from = document.getElementById('payment-filter-from').value;
+  const to = document.getElementById('payment-filter-to').value;
+  if (!BACKEND_AVAILABLE) return showToast('PDF download requires a live backend connection');
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const url = `${API_BASE}/payments/pdf?${params.toString()}`;
+  downloadFileWithAuth(url, 'Taskora-Payment-History.pdf');
 }
 
 function openAddPaymentMethodForm() {
@@ -2669,7 +2710,19 @@ const CUSTOMER_SECTIONS = {
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitPaymentMethod()">Save Payment Method</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('add-payment-panel').style.display='none'">Cancel</button></div>
     </div>
     <div class="panel"><div class="panel-title">Payment Methods</div>${paymentMethodsTableHTML()}</div>
-    <div class="panel"><div class="panel-title">Escrow History</div>${bookingsTable(customerData.bookings)}</div>`,
+    <div class="panel">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>Payment History</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
+          <input type="date" class="form-input" id="payment-filter-from" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterPaymentHistory()"/>
+          <span style="font-size:12px;color:var(--slate);">to</span>
+          <input type="date" class="form-input" id="payment-filter-to" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterPaymentHistory()"/>
+          <button class="btn-sm btn-sm-outline" onclick="clearPaymentFilter()">Clear</button>
+          <button class="btn-sm btn-sm-primary" onclick="downloadPaymentHistoryPDF()">⬇ Download PDF</button>
+        </div>
+      </div>
+      <div id="payment-history-table-wrap">${paymentHistoryTableHTML(customerData.payments || [])}</div>
+    </div>`,
   verification: () => verificationHTML('customer', customerData.verificationStatus || 'none'),
   settings: () => `
     <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Account preferences ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Saved to your account</span>' : ''}</div></div></div>
@@ -3164,25 +3217,18 @@ const PROVIDER_SECTIONS = {
       <div class="stat-card"><div class="stat-card-label">Pending (job not yet confirmed done)</div><div class="stat-card-val">$${pendingPayout.toLocaleString()}</div></div>
     </div>
     <div class="panel"><div class="panel-title">Recent Payout History (by week)</div>${weeklyChart.length ? barChart(weeklyChart) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts yet — request one once you have completed jobs.</div>'}</div>
-    <div class="panel"><div class="panel-title">Payout History</div>
-      ${providerData.payouts.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th></th><th>Payout</th><th>Date</th><th>Earned</th><th>Commission</th><th>Paid Out</th><th>Method</th><th>Status</th></tr></thead><tbody>
-      ${providerData.payouts.map(p => `
-        <tr style="cursor:${p.lineItems && p.lineItems.length ? 'pointer' : 'default'};" onclick="${p.lineItems && p.lineItems.length ? `togglePayoutBreakdown('${p.id}')` : ''}">
-          <td>${p.lineItems && p.lineItems.length ? `<span id="payout-caret-${p.id}">▸</span>` : ''}</td>
-          <td>${p.id}</td><td>${p.date}</td><td>$${p.grossAmount ?? p.amount}</td><td>${p.commissionAmount ? `$${p.commissionAmount} (${Math.round((p.commissionRate||0)*100)}%)` : '—'}</td><td>$${p.amount}</td><td>${p.method}</td><td>${statusBadge(p.status)}</td>
-        </tr>
-        <tr id="payout-breakdown-${p.id}" style="display:none;">
-          <td colspan="8" style="background:var(--offwhite);padding:0;">
-            ${p.lineItems && p.lineItems.length ? `
-              <div style="padding:12px 16px;font-size:12px;color:var(--slate);font-weight:600;">Who paid — ${p.lineItems.length} job${p.lineItems.length===1?'':'s'} in this payout</div>
-              <table class="data-table" style="margin:0;"><thead><tr><th>Customer</th><th>Job</th><th>Booking #</th><th>Amount</th></tr></thead><tbody>
-              ${p.lineItems.map(li => `<tr><td>${li.customerName}</td><td>${li.service}</td><td>${li.bookingNumber}</td><td>$${li.amount}</td></tr>`).join('')}
-              </tbody></table>
-            ` : `<div style="padding:12px 16px;font-size:12px;color:var(--muted);">No itemized breakdown available for this payout (requested before this feature existed).</div>`}
-          </td>
-        </tr>
-      `).join('')}
-      </tbody></table></div>` : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts requested yet.</div>'}
+    <div class="panel">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>Payout History</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
+          <input type="date" class="form-input" id="payout-filter-from" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterPayoutHistory()"/>
+          <span style="font-size:12px;color:var(--slate);">to</span>
+          <input type="date" class="form-input" id="payout-filter-to" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterPayoutHistory()"/>
+          <button class="btn-sm btn-sm-outline" onclick="clearPayoutFilter()">Clear</button>
+          <button class="btn-sm btn-sm-primary" onclick="downloadPayoutHistoryPDF()">⬇ Download PDF</button>
+        </div>
+      </div>
+      <div id="payout-history-table-wrap">${payoutHistoryTableHTML(providerData.payouts)}</div>
     </div>`;
   },
   portfolio: () => `
@@ -3446,6 +3492,83 @@ function togglePayoutBreakdown(payoutId) {
   const isOpen = row.style.display !== 'none';
   row.style.display = isOpen ? 'none' : 'table-row';
   if (caret) caret.textContent = isOpen ? '▸' : '▾';
+}
+
+function payoutHistoryTableHTML(payouts) {
+  if (!payouts.length) return '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts in this range.</div>';
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th></th><th>Payout</th><th>Date</th><th>Earned</th><th>Commission</th><th>Paid Out</th><th>Method</th><th>Status</th></tr></thead><tbody>
+    ${payouts.map(p => `
+      <tr style="cursor:${p.lineItems && p.lineItems.length ? 'pointer' : 'default'};" onclick="${p.lineItems && p.lineItems.length ? `togglePayoutBreakdown('${p.id}')` : ''}">
+        <td>${p.lineItems && p.lineItems.length ? `<span id="payout-caret-${p.id}">▸</span>` : ''}</td>
+        <td>${p.id}</td><td>${p.date}</td><td>$${p.grossAmount ?? p.amount}</td><td>${p.commissionAmount ? `$${p.commissionAmount} (${Math.round((p.commissionRate||0)*100)}%)` : '—'}</td><td>$${p.amount}</td><td>${p.method}</td><td>${statusBadge(p.status)}</td>
+      </tr>
+      <tr id="payout-breakdown-${p.id}" style="display:none;">
+        <td colspan="8" style="background:var(--offwhite);padding:0;">
+          ${p.lineItems && p.lineItems.length ? `
+            <div style="padding:12px 16px;font-size:12px;color:var(--slate);font-weight:600;">Who paid — ${p.lineItems.length} job${p.lineItems.length===1?'':'s'} in this payout</div>
+            <table class="data-table" style="margin:0;"><thead><tr><th>Customer</th><th>Job</th><th>Booking #</th><th>Amount</th></tr></thead><tbody>
+            ${p.lineItems.map(li => `<tr><td>${li.customerName}</td><td>${li.service}</td><td>${li.bookingNumber}</td><td>$${li.amount}</td></tr>`).join('')}
+            </tbody></table>
+          ` : `<div style="padding:12px 16px;font-size:12px;color:var(--muted);">No itemized breakdown available for this payout (requested before this feature existed).</div>`}
+        </td>
+      </tr>
+    `).join('')}
+    </tbody></table></div>`;
+}
+
+async function filterPayoutHistory() {
+  const from = document.getElementById('payout-filter-from').value;
+  const to = document.getElementById('payout-filter-to').value;
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const { payouts } = await apiFetch('GET', `/payouts/mine?${params.toString()}`);
+    document.getElementById('payout-history-table-wrap').innerHTML = payoutHistoryTableHTML(payouts);
+  } catch (e) { showToast(e.message || 'Could not filter payout history'); }
+}
+
+function clearPayoutFilter() {
+  document.getElementById('payout-filter-from').value = '';
+  document.getElementById('payout-filter-to').value = '';
+  filterPayoutHistory();
+}
+
+function downloadPayoutHistoryPDF() {
+  const from = document.getElementById('payout-filter-from').value;
+  const to = document.getElementById('payout-filter-to').value;
+  if (!BACKEND_AVAILABLE) return showToast('PDF download requires a live backend connection');
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const url = `${API_BASE}/payouts/pdf?${params.toString()}`;
+  downloadFileWithAuth(url, 'Taskora-Payout-History.pdf');
+}
+
+// Downloads a file that requires an Authorization header — a plain <a
+// href> download can't attach auth headers, so this fetches the file with
+// the real token and triggers a save via a Blob instead.
+async function downloadFileWithAuth(url, fallbackFilename) {
+  try {
+    const res = await fetch(url, { headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {} });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Could not generate PDF');
+    }
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    const filename = match ? match[1] : fallbackFilename;
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch (e) { showToast(e.message || 'Could not download PDF'); }
 }
 
 function matchesTable(list) {
@@ -3805,15 +3928,29 @@ const ADMIN_SECTIONS = {
       <div class="stat-card"><div class="stat-card-label">Commission Revenue</div><div class="stat-card-val">$3,150</div></div>
     </div>
     <div class="panel"><div class="panel-title">Recent Transactions</div>${bookingsTable(customerData.bookings)}</div>`,
-  reports: () => `
+  reports: () => {
+    // Only the top 10 categories by real demand — with 60 categories now
+    // active, charting all of them at once produced an unreadable wall of
+    // tiny bars with 4-character truncated labels. Sorted so the busiest
+    // categories are genuinely the ones shown, and labels are long enough
+    // to actually read (with a tooltip-style title attribute for the full
+    // name, since some category names are longer than the bar is wide).
+    const topCategories = [...adminData.categories]
+      .sort((a, b) => (b.pros || 0) - (a.pros || 0))
+      .slice(0, 10)
+      .map(c => ({ label: c.name.length > 12 ? c.name.slice(0, 11) + '…' : c.name, fullLabel: c.name, val: c.pros || 0 }));
+    const totalCategories = adminData.categories.length;
+
+    return `
     <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">AI-driven demand and performance insights</div></div></div>
-    <div class="panel"><div class="panel-title">Demand by Category (This Month)</div>${barChart(adminData.categories.map(c=>({label:c.name.slice(0,4),val:c.pros})))}</div>
+    <div class="panel"><div class="panel-title">Demand by Category (This Month) <small style="font-weight:400;color:var(--slate);">top 10 of ${totalCategories}</small></div>${topCategories.length ? barChart(topCategories) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No category demand data yet.</div>'}</div>
     <div class="panel"><div class="panel-title">Platform Health</div>
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">Live check against the API right now — no historical uptime monitoring is connected yet (that needs a status-page provider or APM tool), but this row is genuinely real-time, not decorative.</div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Service</th><th>Response Time</th><th>Status</th></tr></thead><tbody>
-      <tr><td>Marketplace API</td><td>${adminData.apiHealth ? (adminData.apiHealth.ok ? adminData.apiHealth.ms + ' ms' : '—') : 'Checking…'}</td><td>${adminData.apiHealth ? (adminData.apiHealth.ok ? statusBadge('completed') : statusBadge('rejected')) : statusBadge('pending')}</td></tr>
+      <tr><td>Marketplace API</td><td>${adminData.apiHealth ? (adminData.apiHealth.ok ? adminData.apiHealth.ms + ' ms' : '—') : 'Checking…'}</td><td>${adminData.apiHealth ? (adminData.apiHealth.ok ? '<span class="badge badge-success">Operational</span>' : '<span class="badge badge-danger">Down</span>') : '<span class="badge badge-neutral">Checking…</span>'}</td></tr>
       </tbody></table></div>
-    </div>`,
+    </div>`;
+  },
   categories: () => {
     const isSuper = AUTH.user && AUTH.user.isSuperAdmin;
     const catCell = c => isSuper
