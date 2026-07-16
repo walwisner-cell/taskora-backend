@@ -3302,9 +3302,10 @@ const PROVIDER_SECTIONS = {
     </div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Earned (after commission)</div><div class="stat-card-val">$${providerData.payouts.reduce((s,p)=>s+p.amount,0).toLocaleString()}</div></div>
-      <div class="stat-card"><div class="stat-card-label">Available for Payout</div><div class="stat-card-val">$${availableForPayout.toLocaleString()}</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">${Math.round(commissionRate*100)}% commission applies at payout</div></div>
-      <div class="stat-card"><div class="stat-card-label">Pending (job not yet confirmed done)</div><div class="stat-card-val">$${pendingPayout.toLocaleString()}</div></div>
+      <div class="stat-card" style="cursor:pointer;" onclick="toggleEarningsBreakdown('available')"><div class="stat-card-label">Available for Payout <span style="font-weight:400;">▾</span></div><div class="stat-card-val">$${availableForPayout.toLocaleString()}</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">${Math.round(commissionRate*100)}% commission applies at payout · click for details</div></div>
+      <div class="stat-card" style="cursor:pointer;" onclick="toggleEarningsBreakdown('pending')"><div class="stat-card-label">Pending (job not yet confirmed done) <span style="font-weight:400;">▾</span></div><div class="stat-card-val">$${pendingPayout.toLocaleString()}</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">click for details</div></div>
     </div>
+    <div class="panel" id="earnings-breakdown-panel" style="display:none;"></div>
     <div class="panel"><div class="panel-title">Recent Payout History (by week)</div>${weeklyChart.length ? barChart(weeklyChart) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts yet — request one once you have completed jobs.</div>'}</div>
     <div class="panel">
       <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
@@ -3593,6 +3594,29 @@ function togglePayoutBreakdown(payoutId) {
   const isOpen = row.style.display !== 'none';
   row.style.display = isOpen ? 'none' : 'table-row';
   if (caret) caret.textContent = isOpen ? '▸' : '▾';
+}
+
+let earningsBreakdownOpen = null;
+function toggleEarningsBreakdown(which) {
+  const panel = document.getElementById('earnings-breakdown-panel');
+  if (earningsBreakdownOpen === which) {
+    panel.style.display = 'none';
+    earningsBreakdownOpen = null;
+    return;
+  }
+  earningsBreakdownOpen = which;
+  const contracts = which === 'available'
+    ? providerData.contracts.filter(c => c.escrow && c.escrow.status === 'released' && !c.escrow.payoutId)
+    : providerData.contracts.filter(c => c.escrow && c.escrow.status === 'held');
+  const title = which === 'available' ? 'Available for Payout — the exact jobs behind this number' : 'Pending — jobs the customer hasn\'t marked complete yet';
+  panel.innerHTML = `
+    <div class="panel-title">${title}</div>
+    ${contracts.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Amount</th><th>Contract Status</th></tr></thead><tbody>
+      ${contracts.map(c => `<tr><td>${c.customerName}</td><td>${c.service}</td><td>$${c.escrow.amount}</td><td>${statusBadge(c.status)}</td></tr>`).join('')}
+      </tbody></table></div>`
+      : `<div style="color:var(--slate);font-size:13px;padding:8px 0;">${which === 'available' ? 'Nothing here yet — this fills in once a customer marks a job complete.' : 'Nothing pending right now.'}</div>`}
+  `;
+  panel.style.display = 'block';
 }
 
 function payoutHistoryTableHTML(payouts) {
