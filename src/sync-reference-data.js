@@ -93,16 +93,17 @@ async function syncReferenceData() {
     }
   }
 
-  // Backfills the icon on any EXISTING category that's missing one — this
-  // is the actual fix for categories created before the icon field
-  // existed on this database (they'd otherwise be stuck showing the
-  // generic fallback tool icon forever, since adding new categories alone
-  // never touches ones that already exist).
+  // Fixes the icon on any EXISTING category that doesn't match its real
+  // reference icon — this covers BOTH cases: a category created before the
+  // icon field existed (icon is blank/missing), and one whose icon somehow
+  // got set to the wrong value at some point (e.g. an old default that
+  // predates per-category icons). Only touches categories we have a known
+  // reference icon for, so anything genuinely custom (a provider-requested
+  // category that got approved) is never touched.
   const refIconByName = new Map(REFERENCE_CATEGORIES.map(c => [c.name.toLowerCase(), c.icon]));
   for (const existing of existingCategories) {
-    if (existing.icon && existing.icon.trim()) continue; // already has a real icon — leave it alone
     const refIcon = refIconByName.get(existing.name.toLowerCase());
-    if (refIcon) {
+    if (refIcon && existing.icon !== refIcon) {
       await db.update('categories', existing.id, { icon: refIcon });
       result.iconsBackfilled.push(existing.name);
     }
