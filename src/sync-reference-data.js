@@ -62,7 +62,7 @@ const REFERENCE_CATEGORIES = [
 const CORE_COUNTRIES = ['United States', 'Nigeria', 'Ghana', 'Liberia'];
 
 async function syncReferenceData() {
-  const result = { countriesAdded: [], categoriesAdded: [], countriesReactivated: [] };
+  const result = { countriesAdded: [], categoriesAdded: [], countriesReactivated: [], iconsBackfilled: [] };
 
   const existingCountries = await db.all('countries');
   const existingCountryNames = new Set(existingCountries.map(c => c.name));
@@ -93,6 +93,21 @@ async function syncReferenceData() {
     }
   }
 
+  // Backfills the icon on any EXISTING category that's missing one — this
+  // is the actual fix for categories created before the icon field
+  // existed on this database (they'd otherwise be stuck showing the
+  // generic fallback tool icon forever, since adding new categories alone
+  // never touches ones that already exist).
+  const refIconByName = new Map(REFERENCE_CATEGORIES.map(c => [c.name.toLowerCase(), c.icon]));
+  for (const existing of existingCategories) {
+    if (existing.icon && existing.icon.trim()) continue; // already has a real icon — leave it alone
+    const refIcon = refIconByName.get(existing.name.toLowerCase());
+    if (refIcon) {
+      await db.update('categories', existing.id, { icon: refIcon });
+      result.iconsBackfilled.push(existing.name);
+    }
+  }
+
   return result;
 }
 
@@ -107,6 +122,7 @@ if (require.main === module) {
     console.log(`   Countries added: ${result.countriesAdded.length ? result.countriesAdded.join(', ') : '(none — already up to date)'}`);
     console.log(`   Countries reactivated (were incorrectly set to planned): ${result.countriesReactivated.length ? result.countriesReactivated.join(', ') : '(none)'}`);
     console.log(`   Categories added: ${result.categoriesAdded.length ? result.categoriesAdded.join(', ') : '(none — already up to date)'}`);
+    console.log(`   Category icons fixed (were missing/blank): ${result.iconsBackfilled.length ? result.iconsBackfilled.join(', ') : '(none)'}`);
     process.exit(0);
   }).catch(err => {
     console.error('❌ Sync failed:', err);

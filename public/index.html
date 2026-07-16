@@ -4478,13 +4478,16 @@ async function syncReferenceData() {
   showToast('Checking for new categories & countries…');
   try {
     const result = await apiFetch('POST', '/admin/sync-reference-data');
-    const total = result.countriesAdded.length + result.categoriesAdded.length + (result.countriesReactivated || []).length;
+    const total = result.countriesAdded.length + result.categoriesAdded.length + (result.countriesReactivated || []).length + (result.iconsBackfilled || []).length;
     if (total === 0) {
       showToast('Already up to date — nothing new to add');
     } else {
       let msg = `Added ${result.countriesAdded.length} countr${result.countriesAdded.length === 1 ? 'y' : 'ies'} and ${result.categoriesAdded.length} categor${result.categoriesAdded.length === 1 ? 'y' : 'ies'}`;
       if (result.countriesReactivated && result.countriesReactivated.length) {
         msg += `. Also fixed ${result.countriesReactivated.length} core countr${result.countriesReactivated.length === 1 ? 'y' : 'ies'} that were incorrectly set to Planned: ${result.countriesReactivated.join(', ')}`;
+      }
+      if (result.iconsBackfilled && result.iconsBackfilled.length) {
+        msg += `. Fixed missing icons on ${result.iconsBackfilled.length} categor${result.iconsBackfilled.length === 1 ? 'y' : 'ies'}: ${result.iconsBackfilled.join(', ')}`;
       }
       showToast(msg);
     }
