@@ -264,7 +264,18 @@ router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), asy
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
   const updated = await db.update('contracts', contract.id, { status: 'completed' });
-  await notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}.`, 'payoutAlerts');
+
+  // The alert tells the provider their real, current total available
+  // balance — not just this one job's amount — so it's an accurate,
+  // actionable number the moment they see it, matching exactly what
+  // they'd see if they opened Earnings & Payouts right now.
+  const providerContracts = await db.filter('contracts', c => c.providerId === contract.providerId);
+  const providerContractIds = new Set(providerContracts.map(c => c.id));
+  const releasedUnpaid = (await db.filter('escrowTransactions', e => e.status === 'released' && !e.payoutId))
+    .filter(e => providerContractIds.has(e.contractId));
+  const totalAvailable = releasedUnpaid.reduce((s, e) => s + e.amount, 0);
+
+  await notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts');
   res.json({ contract: updated, escrow: { ...escrow, status: 'released' } });
 });
 

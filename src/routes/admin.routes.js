@@ -330,11 +330,21 @@ router.post('/disputes/:id/resolve', requireDepartment('disputes'), async (req, 
   if (region && (await disputeCity(dispute)) !== region) return res.status(403).json({ error: 'That dispute is outside your assigned city' });
   const updated = await db.update('disputes', dispute.id, { status: 'resolved', resolvedAt: new Date().toISOString() });
   const escrow = await db.find('escrowTransactions', e => e.contractId === updated.contractId);
+  const wasReleased = escrow && escrow.status !== 'released';
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
   const contract = await db.find('contracts', c => c.id === updated.contractId);
   if (contract) {
     await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved.`, 'bookingUpdates');
-    await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved.`, 'bookingUpdates');
+    if (wasReleased) {
+      const providerContracts = await db.filter('contracts', c => c.providerId === contract.providerId);
+      const providerContractIds = new Set(providerContracts.map(c => c.id));
+      const releasedUnpaid = (await db.filter('escrowTransactions', e => e.status === 'released' && !e.payoutId))
+        .filter(e => providerContractIds.has(e.contractId));
+      const totalAvailable = releasedUnpaid.reduce((s, e) => s + e.amount, 0);
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — escrow released. You now have $${totalAvailable} available to request as a payout.`, 'bookingUpdates');
+    } else {
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved.`, 'bookingUpdates');
+    }
   }
   res.json({ dispute: updated });
 });

@@ -2234,7 +2234,7 @@ async function goDashboard(role) {
 /* ══════════════════════ SHARED DASHBOARD HELPERS ══════════════════════ */
 function renderDashNav(containerId, items, activeKey, fnName) {
   document.getElementById(containerId).innerHTML = items.map(it =>
-    `<div class="dash-nav-item ${it.key === activeKey ? 'active' : ''}" onclick="${fnName}('${it.key}')"><span>${it.icon}</span>${it.label}</div>`
+    `<div class="dash-nav-item ${it.key === activeKey ? 'active' : ''}" onclick="${fnName}('${it.key}')"><span>${it.icon}</span>${it.label}${it.dot ? '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#2E8C6F;margin-left:6px;"></span>' : ''}</div>`
   ).join('');
 }
 
@@ -3249,8 +3249,21 @@ const PROVIDER_SECTIONS = {
       : catStatus === 'rejected'
       ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--danger, #C1554D);"><div style="font-size:12.5px;color:var(--navy);">Your category "<strong>${AUTH.user.category}</strong>" wasn't approved as a new listed category. <a onclick="selectProviderSection('settings')" style="color:var(--gold);cursor:pointer;">Update your category in Settings</a> to one of our current categories to be fully bookable.</div></div>`
       : '';
+    // A real, computed number — not decorative — so this only ever shows
+    // when there's genuinely money sitting unclaimed, and disappears the
+    // moment it's been requested.
+    const availableForPayout = providerData.contracts
+      .filter(c => c.escrow && c.escrow.status === 'released' && !c.escrow.payoutId)
+      .reduce((s, c) => s + c.escrow.amount, 0);
+    const payoutBanner = availableForPayout > 0
+      ? `<div class="panel" style="background:#EAF4EF;border:1.5px solid var(--teal, #2E8C6F);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div><div style="font-weight:700;color:var(--navy);font-size:14px;">💰 You have $${availableForPayout.toLocaleString()} available to withdraw</div><div style="font-size:12px;color:var(--slate);margin-top:2px;">From jobs customers have confirmed complete — request it whenever you're ready.</div></div>
+          <button class="btn-sm btn-sm-primary" onclick="selectProviderSection('earnings')">Go to Payouts →</button>
+        </div>`
+      : '';
     return `
     <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Marcus'}</div><div class="dash-sub">Your AI-matched jobs and contract activity</div></div></div>
+    ${payoutBanner}
     ${catBanner}
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">This Month's Earnings</div><div class="stat-card-val">$${earnings.toLocaleString()}</div></div>
@@ -3798,7 +3811,11 @@ async function cancelProviderContract(contractId) {
 }
 
 function selectProviderSection(key) {
-  renderDashNav('provider-nav', PROVIDER_NAV_ITEMS, key, 'selectProviderSection');
+  const availableForPayout = providerData.contracts
+    .filter(c => c.escrow && c.escrow.status === 'released' && !c.escrow.payoutId)
+    .reduce((s, c) => s + c.escrow.amount, 0);
+  const navItems = PROVIDER_NAV_ITEMS.map(it => it.key === 'earnings' ? { ...it, dot: availableForPayout > 0 } : it);
+  renderDashNav('provider-nav', navItems, key, 'selectProviderSection');
   document.getElementById('provider-main').innerHTML = PROVIDER_SECTIONS[key]();
   if (key === 'messages') loadMessageThread();
   if (key === 'settings') { populateSettingsCountry('prov'); populateSettingsCategory(); }
