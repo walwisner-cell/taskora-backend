@@ -2454,6 +2454,10 @@ async function loadCustomerData() {
     const { payments } = await apiFetch('GET', '/payments/mine');
     customerData.payments = payments;
   } catch (e) { console.warn('Could not load payment history', e); customerData.payments = []; }
+  try {
+    const { jobs } = await apiFetch('GET', '/jobs/mine');
+    customerData.openJobs = jobs.filter(j => j.status === 'open');
+  } catch (e) { console.warn('Could not load job postings', e); customerData.openJobs = []; }
   customerData.verificationStatus = await computeVerificationStatus();
 }
 
@@ -2768,6 +2772,11 @@ const CUSTOMER_SECTIONS = {
   },
   bookings: () => `
     <div class="dash-header"><div><div class="dash-title">My Bookings</div><div class="dash-sub">Every job, contract, and escrow status in one place ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Live data</span>' : ''}</div></div></div>
+    ${customerData.openJobs && customerData.openJobs.length ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--gold);">
+      <div class="panel-title">Awaiting a Match <small>${customerData.openJobs.length}</small></div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">These job requests haven't been booked with a provider yet — they'll move to My Bookings automatically once matched.</div>
+      ${customerData.openJobs.map(j => `<div style="padding:8px 0;border-top:1px solid var(--border);"><strong>${j.category}</strong> — ${j.description}${j.budget ? ` · Budget: ${j.budget}` : ''}</div>`).join('')}
+    </div>` : ''}
     <div class="panel">${bookingsTable(customerData.bookings)}</div>`,
   messages: () => messagingHTML('customer'),
   payments: () => `
