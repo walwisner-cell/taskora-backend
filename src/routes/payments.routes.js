@@ -392,7 +392,11 @@ router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res
   const all = await db.all('escrowTransactions');
   const held = all.filter(e => e.status === 'held').reduce((s, e) => s + e.amount, 0);
   const released = all.filter(e => e.status === 'released').reduce((s, e) => s + e.amount, 0);
-  res.json({ held, released, count: all.length });
+  // Real commission revenue — the sum of what's actually been deducted
+  // across every payout ever made, not a placeholder figure.
+  const payouts = await db.all('payouts');
+  const commissionRevenue = payouts.reduce((s, p) => s + (p.commissionAmount || 0), 0);
+  res.json({ held, released, count: all.length, commissionRevenue });
 });
 
 module.exports = router;

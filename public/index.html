@@ -2204,9 +2204,10 @@ function statusBadge(status) {
     disputed: ['badge-danger', 'Disputed'], pending: ['badge-warn', 'Pending'],
     approved: ['badge-success', 'Approved'], rejected: ['badge-danger', 'Rejected'],
     open: ['badge-pending', 'Open'], 'in review': ['badge-warn', 'In Review'],
-    resolved: ['badge-success', 'Resolved'], active: ['badge-pending', 'Active'],
+    resolved: ['badge-success', 'Resolved'], active: ['badge-success', 'Active'],
     pending_agreement: ['badge-warn', 'Awaiting Response'], declined: ['badge-danger', 'Declined'],
-    cancelled: ['badge-neutral', 'Cancelled'],
+    cancelled: ['badge-neutral', 'Cancelled'], suspended: ['badge-danger', 'Suspended'],
+    verified: ['badge-success', 'Verified'], unverified: ['badge-warn', 'Unverified'],
   };
   const m = map[status] || ['badge-neutral', status];
   return `<span class="badge ${m[0]}">${m[1]}</span>`;
@@ -3633,6 +3634,72 @@ async function downloadFileWithAuth(url, fallbackFilename) {
   } catch (e) { showToast(e.message || 'Could not download PDF'); }
 }
 
+function adminTransactionsTableHTML(transactions) {
+  if (!transactions.length) return '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No transactions in this range.</div>';
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Customer</th><th>Provider</th><th>Service</th><th>Amount</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  ${transactions.map(t => `<tr><td>${t.date}</td><td>${t.customerName}</td><td>${t.providerName}</td><td>${t.service}</td><td>$${t.amount}</td><td>${t.escrowStatus}${t.paidOut ? ' (paid out)' : ''}</td><td>${statusBadge(t.status)}</td><td><button class="btn-sm btn-sm-outline" onclick="downloadFileWithAuth('${API_BASE}/contracts/${t.contractId}/pdf', 'Taskora-Contract-${t.bookingNumber}.pdf')">📄 PDF</button></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+async function filterAdminTransactions() {
+  const from = document.getElementById('txn-filter-from').value;
+  const to = document.getElementById('txn-filter-to').value;
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const { transactions } = await apiFetch('GET', `/admin/transactions?${params.toString()}`);
+    document.getElementById('admin-transactions-table-wrap').innerHTML = adminTransactionsTableHTML(transactions);
+  } catch (e) { showToast(e.message || 'Could not filter transactions'); }
+}
+
+function clearAdminTransactionsFilter() {
+  document.getElementById('txn-filter-from').value = '';
+  document.getElementById('txn-filter-to').value = '';
+  filterAdminTransactions();
+}
+
+function downloadAdminTransactionsPDF() {
+  const from = document.getElementById('txn-filter-from').value;
+  const to = document.getElementById('txn-filter-to').value;
+  if (!BACKEND_AVAILABLE) return showToast('PDF download requires a live backend connection');
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  downloadFileWithAuth(`${API_BASE}/admin/transactions/pdf?${params.toString()}`, 'Taskora-Platform-Transactions.pdf');
+}
+
+function downloadAdminDisputesPDF() {
+  const from = document.getElementById('dispute-filter-from') ? document.getElementById('dispute-filter-from').value : '';
+  const to = document.getElementById('dispute-filter-to') ? document.getElementById('dispute-filter-to').value : '';
+  if (!BACKEND_AVAILABLE) return showToast('PDF download requires a live backend connection');
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  downloadFileWithAuth(`${API_BASE}/admin/disputes/pdf?${params.toString()}`, 'Taskora-Disputes-Report.pdf');
+}
+
+async function filterAdminDisputes() {
+  const from = document.getElementById('dispute-filter-from').value;
+  const to = document.getElementById('dispute-filter-to').value;
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const { disputes } = await apiFetch('GET', `/admin/disputes?${params.toString()}`);
+    adminData.disputes = disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
+    document.getElementById('admin-disputes-table-wrap').innerHTML = disputesTable(adminData.disputes);
+  } catch (e) { showToast(e.message || 'Could not filter disputes'); }
+}
+
+function clearAdminDisputesFilter() {
+  document.getElementById('dispute-filter-from').value = '';
+  document.getElementById('dispute-filter-to').value = '';
+  filterAdminDisputes();
+}
+
 function matchesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No pending matches right now.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Budget</th><th>Match Score</th><th>Distance</th><th>Action</th></tr></thead><tbody>
@@ -3859,7 +3926,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [],
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [],
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -3878,7 +3945,7 @@ async function loadAdminData() {
     catch (e) { return null; }
   }
 
-  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests] = await Promise.all([
+  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions] = await Promise.all([
     tryFetch('/admin/stats'),
     tryFetch('/admin/users/pending'),
     tryFetch('/admin/users/all'),
@@ -3888,6 +3955,7 @@ async function loadAdminData() {
     tryFetch('/admin/countries'),
     tryFetch('/escrow/summary'),
     tryFetch('/admin/category-requests'),
+    tryFetch('/admin/transactions'),
   ]);
 
   if (stats) adminData.stats = stats;
@@ -3899,6 +3967,7 @@ async function loadAdminData() {
   if (countries) adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
   if (escrow) adminData.escrow = escrow;
   if (catRequests) adminData.categoryRequests = catRequests.requests;
+  if (transactions) adminData.transactions = transactions.transactions;
 
   // A genuine live check, not a hardcoded "everything's fine" badge — this
   // hits the real /api/health endpoint right now and times it.
@@ -3981,15 +4050,39 @@ const ADMIN_SECTIONS = {
     <div class="panel">${verificationQueueTable()}</div>`,
   disputes: () => `
     <div class="dash-header"><div><div class="dash-title">Disputes</div><div class="dash-sub">AI-flagged and customer/provider-raised disputes</div></div></div>
-    <div class="panel">${disputesTable(adminData.disputes)}</div>`,
+    <div class="panel">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>All Disputes</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
+          <input type="date" class="form-input" id="dispute-filter-from" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterAdminDisputes()"/>
+          <span style="font-size:12px;color:var(--slate);">to</span>
+          <input type="date" class="form-input" id="dispute-filter-to" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterAdminDisputes()"/>
+          <button class="btn-sm btn-sm-outline" onclick="clearAdminDisputesFilter()">Clear</button>
+          <button class="btn-sm btn-sm-primary" onclick="downloadAdminDisputesPDF()">⬇ Download PDF</button>
+        </div>
+      </div>
+      <div id="admin-disputes-table-wrap">${disputesTable(adminData.disputes)}</div>
+    </div>`,
   payments: () => `
     <div class="dash-header"><div><div class="dash-title">Payments</div><div class="dash-sub">Escrow, payouts, and commission across the platform</div></div></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Escrow Currently Held</div><div class="stat-card-val">$${adminData.escrow.held.toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-card-label">Escrow Released (Total)</div><div class="stat-card-val">$${adminData.escrow.released.toLocaleString()}</div></div>
-      <div class="stat-card"><div class="stat-card-label">Commission Revenue</div><div class="stat-card-val">$3,150</div></div>
+      <div class="stat-card"><div class="stat-card-label">Commission Revenue</div><div class="stat-card-val">$${(adminData.escrow.commissionRevenue || 0).toLocaleString()}</div></div>
     </div>
-    <div class="panel"><div class="panel-title">Recent Transactions</div>${bookingsTable(customerData.bookings)}</div>`,
+    <div class="panel">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>Platform Transactions</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
+          <input type="date" class="form-input" id="txn-filter-from" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterAdminTransactions()"/>
+          <span style="font-size:12px;color:var(--slate);">to</span>
+          <input type="date" class="form-input" id="txn-filter-to" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterAdminTransactions()"/>
+          <button class="btn-sm btn-sm-outline" onclick="clearAdminTransactionsFilter()">Clear</button>
+          <button class="btn-sm btn-sm-primary" onclick="downloadAdminTransactionsPDF()">⬇ Download PDF</button>
+        </div>
+      </div>
+      <div id="admin-transactions-table-wrap">${adminTransactionsTableHTML(adminData.transactions || [])}</div>
+    </div>`,
   reports: () => {
     // Only the top 10 categories by real demand — with 60 categories now
     // active, charting all of them at once produced an unreadable wall of
@@ -4097,7 +4190,7 @@ const ADMIN_SECTIONS = {
 function citiesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No cities configured yet.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>City</th><th>Country</th><th>Admin</th><th>Users</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
-  ${list.map(c => `<tr><td>${c.name}</td><td>${c.country}</td><td>${c.adminName || '—'}<div style="font-size:11px;color:var(--slate)">${c.adminEmail || ''}</div></td><td>${c.userCount ?? '—'}</td><td>${statusBadge(c.adminActive === false ? 'rejected' : 'completed')}</td>
+  ${list.map(c => `<tr><td>${c.name}</td><td>${c.country}</td><td>${c.adminName || '—'}<div style="font-size:11px;color:var(--slate)">${c.adminEmail || ''}</div></td><td>${c.userCount ?? '—'}</td><td>${statusBadge(c.adminActive === false ? 'suspended' : 'active')}</td>
   ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${c.adminId}')">${c.adminActive === false ? 'Reactivate' : 'Suspend'}</button> <button class="btn-sm btn-sm-outline" data-admin-id="${c.adminId}" data-admin-name="${(c.adminName || 'this admin').replace(/"/g, '&quot;')}" data-city-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteSubAdmin(this.dataset.adminId, this.dataset.adminName, this.dataset.cityName)">Delete</button></td>` : ''}</tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -4107,7 +4200,7 @@ const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disput
 function functionalAdminsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No functional team members yet — create one above with a Role other than "Regional Admin".</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Team</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
-  ${list.map(a => `<tr><td>${a.name}</td><td>${a.email}</td><td>${DEPARTMENT_LABELS[a.adminDepartment] || a.adminDepartment}</td><td>${statusBadge(a.active === false ? 'rejected' : 'completed')}</td>
+  ${list.map(a => `<tr><td>${a.name}</td><td>${a.email}</td><td>${DEPARTMENT_LABELS[a.adminDepartment] || a.adminDepartment}</td><td>${statusBadge(a.active === false ? 'suspended' : 'active')}</td>
   ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${a.id}')">${a.active === false ? 'Reactivate' : 'Suspend'}</button> <button class="btn-sm btn-sm-outline" data-admin-id="${a.id}" data-admin-name="${a.name.replace(/"/g, '&quot;')}" data-city-name="${(a.city || '').replace(/"/g, '&quot;')}" onclick="deleteSubAdmin(this.dataset.adminId, this.dataset.adminName, this.dataset.cityName)">Delete</button></td>` : ''}</tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -4302,7 +4395,7 @@ async function deleteCountry(cId, name) {
 function peopleTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No customers or providers found${AUTH.user && !AUTH.user.isSuperAdmin ? ' in your city yet' : ''}.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Role</th><th>City</th><th>Country</th><th>Verified</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(u => `<tr><td>${u.name}</td><td>${u.role}</td><td>${u.city || '—'}</td><td>${u.country || '—'}</td><td>${u.verified ? statusBadge('completed') : statusBadge('pending')}</td><td>${u.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
+  ${list.map(u => `<tr><td>${u.name}</td><td>${u.role}</td><td>${u.city || '—'}</td><td>${u.country || '—'}</td><td>${u.verified ? statusBadge('verified') : statusBadge('unverified')}</td><td>${u.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
   <td class="row-actions">${u.active
     ? `<button class="btn-sm btn-sm-outline" onclick="toggleUserActive('${u.id}', false)">Suspend</button>`
     : `<button class="btn-sm btn-sm-primary" onclick="toggleUserActive('${u.id}', true)">Reactivate</button>`}</td></tr>`).join('')}

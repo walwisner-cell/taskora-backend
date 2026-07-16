@@ -181,15 +181,148 @@ router.post('/verification/:id/decide', requireDepartment('verification'), async
 // GET /api/admin/disputes
 router.get('/disputes', requireDepartment('disputes'), async (req, res) => {
   const region = await myRegion(req);
+  const { from, to } = req.query;
   const all = await db.all('disputes');
   const disputes = [];
   for (const d of all) {
+    if (from && (d.createdAt || '').slice(0, 10) < from) continue;
+    if (to && (d.createdAt || '').slice(0, 10) > to) continue;
     if (!region || (await disputeCity(d)) === region) disputes.push(d);
   }
   res.json({ disputes });
 });
 
-// POST /api/admin/disputes/:id/resolve
+// GET /api/admin/disputes/pdf — a real downloadable dispute report,
+// respecting the same region/department scope as the on-screen list.
+router.get('/disputes/pdf', requireDepartment('disputes'), async (req, res) => {
+  const region = await myRegion(req);
+  const { from, to } = req.query;
+  const all = await db.all('disputes');
+  const disputes = [];
+  for (const d of all) {
+    if (from && (d.createdAt || '').slice(0, 10) < from) continue;
+    if (to && (d.createdAt || '').slice(0, 10) > to) continue;
+    if (!region || (await disputeCity(d)) === region) disputes.push(d);
+  }
+  disputes.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  const me_ = await me(req);
+  const { createReportDoc } = require('../pdf-report-builder');
+  const rangeLabel = from || to ? `${from || 'earliest'} to ${to || 'today'}` : 'All time';
+  const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
+    res,
+    filename: `Taskora-Disputes-Report.pdf`,
+    title: 'Disputes Report',
+    subtitle: region ? `Scoped to ${region}` : 'All locations',
+    docId: rangeLabel,
+    verificationSeed: `disputes|${me_.id}|${region || 'all'}|${from || ''}|${to || ''}|${disputes.length}`,
+  });
+
+  sectionHeader('Report Summary');
+  twoColumnRow('Scope', region || 'All locations', 'Date Range', rangeLabel);
+  const open = disputes.filter(d => d.status === 'open').length;
+  const resolved = disputes.filter(d => d.status === 'resolved').length;
+  twoColumnRow('Total Disputes', String(disputes.length), 'Open / Resolved', `${open} open, ${resolved} resolved`);
+
+  sectionHeader('Disputes');
+  if (disputes.length === 0) {
+    row('No disputes', 'No disputes were found in this date range.');
+  } else {
+    table(
+      [{ label: 'Dispute', width: 75 }, { label: 'Parties', width: 140 }, { label: 'Reason', width: 150 }, { label: 'Amount', width: 55, align: 'right' }, { label: 'Status', width: 60 }],
+      disputes.map(d => [d.id, d.parties, d.reason, `$${d.amount}`, d.status])
+    );
+  }
+
+  finish({ closingNote: 'This report reflects Taskora\'s dispute records within the scope and date range shown, as of the moment it was generated.' });
+});
+
+// GET /api/admin/transactions — every real contract on the platform (or
+// within an admin's assigned city), with escrow and payout status. This is
+// what the admin Payments page actually needs — previously it was showing
+// unrelated demo data, not real platform transactions.
+router.get('/transactions', requireDepartment('financial'), async (req, res) => {
+  const region = await myRegion(req);
+  const { from, to } = req.query;
+  let contracts = await db.all('contracts');
+  if (from) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) >= from);
+  if (to) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) <= to);
+  contracts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const rows = await Promise.all(contracts.map(async c => {
+    const customer = await db.find('users', u => u.id === c.customerId);
+    const provider = await db.find('users', u => u.id === c.providerId);
+    const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
+    return { c, customer, provider, escrow };
+  }));
+
+  const scoped = region ? rows.filter(r => r.customer && r.customer.city === region) : rows;
+  const transactions = scoped.map(({ c, customer, provider, escrow }) => ({
+    contractId: c.id,
+    bookingNumber: c.bookingNumber || c.id,
+    date: (c.createdAt || '').slice(0, 10),
+    customerName: customer ? customer.name : 'Unknown',
+    providerName: provider ? provider.name : 'Unknown',
+    service: c.service,
+    amount: c.amount,
+    status: c.status,
+    escrowStatus: escrow ? escrow.status : 'none',
+    paidOut: !!(escrow && escrow.payoutId),
+  }));
+  res.json({ transactions });
+});
+
+// GET /api/admin/transactions/pdf — a real, downloadable platform
+// transactions report, same scoping and date range as the JSON endpoint.
+router.get('/transactions/pdf', requireDepartment('financial'), async (req, res) => {
+  const region = await myRegion(req);
+  const { from, to } = req.query;
+  let contracts = await db.all('contracts');
+  if (from) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) >= from);
+  if (to) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) <= to);
+
+  const rows = await Promise.all(contracts.map(async c => {
+    const customer = await db.find('users', u => u.id === c.customerId);
+    const provider = await db.find('users', u => u.id === c.providerId);
+    const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
+    return { c, customer, provider, escrow };
+  }));
+  const scoped = (region ? rows.filter(r => r.customer && r.customer.city === region) : rows)
+    .sort((a, b) => new Date(a.c.createdAt) - new Date(b.c.createdAt));
+
+  const me_ = await me(req);
+  const { createReportDoc } = require('../pdf-report-builder');
+  const rangeLabel = from || to ? `${from || 'earliest'} to ${to || 'today'}` : 'All time';
+  const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
+    res,
+    filename: `Taskora-Platform-Transactions-Report.pdf`,
+    title: 'Platform Transactions Report',
+    subtitle: region ? `Scoped to ${region}` : 'All locations',
+    docId: rangeLabel,
+    verificationSeed: `transactions|${me_.id}|${region || 'all'}|${from || ''}|${to || ''}|${scoped.length}`,
+  });
+
+  sectionHeader('Report Summary');
+  twoColumnRow('Scope', region || 'All locations', 'Date Range', rangeLabel);
+  const totalGMV = scoped.reduce((s, r) => s + r.c.amount, 0);
+  const totalHeld = scoped.filter(r => r.escrow && r.escrow.status === 'held').reduce((s, r) => s + r.escrow.amount, 0);
+  const totalReleased = scoped.filter(r => r.escrow && r.escrow.status === 'released').reduce((s, r) => s + r.escrow.amount, 0);
+  twoColumnRow('Total GMV', `$${totalGMV.toFixed(2)}`, 'Transactions', String(scoped.length));
+  twoColumnRow('Escrow Held', `$${totalHeld.toFixed(2)}`, 'Escrow Released', `$${totalReleased.toFixed(2)}`);
+
+  sectionHeader('Transactions');
+  if (scoped.length === 0) {
+    row('No transactions', 'No transactions were found in this date range.');
+  } else {
+    table(
+      [{ label: 'Date', width: 60 }, { label: 'Customer', width: 90 }, { label: 'Provider', width: 90 }, { label: 'Service', width: 110 }, { label: 'Amount', width: 50, align: 'right' }, { label: 'Status', width: 60 }],
+      scoped.map(({ c, customer, provider }) => [(c.createdAt || '').slice(0, 10), customer ? customer.name : 'Unknown', provider ? provider.name : 'Unknown', c.service, `$${c.amount}`, c.status])
+    );
+  }
+
+  finish({ closingNote: 'This report reflects Taskora\'s transaction records within the scope and date range shown, as of the moment it was generated. GMV figures are gross booking values, not net of commission.' });
+});
+
 router.post('/disputes/:id/resolve', requireDepartment('disputes'), async (req, res) => {
   const region = await myRegion(req);
   const dispute = await db.find('disputes', d => d.id === req.params.id);
