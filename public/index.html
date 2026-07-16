@@ -2426,9 +2426,44 @@ function paymentMethodsTableHTML() {
 
 function paymentHistoryTableHTML(payments) {
   if (!payments.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payments in this range.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Paid To</th><th>Service</th><th>Booking #</th><th>Amount</th><th>Status</th></tr></thead><tbody>
-  ${payments.map(p => `<tr><td>${p.date}</td><td>${p.providerName}</td><td>${p.service}</td><td>${p.bookingNumber}</td><td>$${p.amount}${p.paidCurrency && p.paidCurrency !== 'USD' && p.paidAmountLocal ? ` <span style="color:var(--muted);font-size:11px;">(${p.paidAmountLocal} ${p.paidCurrency})</span>` : ''}</td><td>${statusBadge(p.status)}</td></tr>`).join('')}
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th></th><th>Date</th><th>Paid To</th><th>Service</th><th>Booking #</th><th>Amount</th><th>Status</th></tr></thead><tbody>
+  ${payments.map(p => `
+    <tr style="cursor:pointer;" onclick="togglePaymentBreakdown('${p.contractId}')">
+      <td><span id="payment-caret-${p.contractId}">▸</span></td>
+      <td>${p.date}</td><td>${p.providerName}</td><td>${p.service}</td><td>${p.bookingNumber}</td><td>$${p.amount}${p.paidCurrency && p.paidCurrency !== 'USD' && p.paidAmountLocal ? ` <span style="color:var(--muted);font-size:11px;">(${p.paidAmountLocal} ${p.paidCurrency})</span>` : ''}</td><td>${statusBadge(p.status)}</td>
+    </tr>
+    <tr id="payment-breakdown-${p.contractId}" style="display:none;">
+      <td colspan="7" style="background:var(--offwhite);padding:0;">
+        <div style="padding:12px 16px;border-top:1px solid var(--border);background:var(--white);">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+            <div>
+              <div style="font-weight:700;color:var(--navy);font-size:13.5px;">${p.service}</div>
+              <div style="font-size:12px;color:var(--slate);margin-top:2px;">Booking #${p.bookingNumber} · Escrow ${p.escrowStatus}${p.disputeStatus ? ` · Dispute: ${p.disputeStatus}` : ''}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-weight:700;color:var(--navy);">$${p.amount}</div>
+              <a onclick="downloadFileWithAuth('${API_BASE}/contracts/${p.contractId}/pdf', 'Taskora-Contract-${p.bookingNumber}.pdf')" style="font-size:11.5px;color:var(--gold);cursor:pointer;">View full contract PDF →</a>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
+            <div><span style="color:var(--muted);">Provider:</span> ${p.providerName}${p.providerEmail ? ` · ${p.providerEmail}` : ''}${p.providerPhone ? ` · ${p.providerPhone}` : ''}</div>
+            <div><span style="color:var(--muted);">Scheduled:</span> ${p.jobDate || '—'}${p.jobTime ? ` · ${p.jobTime}` : ''}</div>
+            <div style="grid-column:1/-1;"><span style="color:var(--muted);">Address:</span> ${p.address || '—'}</div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  `).join('')}
   </tbody></table></div>`;
+}
+
+function togglePaymentBreakdown(contractId) {
+  const row = document.getElementById(`payment-breakdown-${contractId}`);
+  const caret = document.getElementById(`payment-caret-${contractId}`);
+  if (!row) return;
+  const isOpen = row.style.display !== 'none';
+  row.style.display = isOpen ? 'none' : 'table-row';
+  if (caret) caret.textContent = isOpen ? '▸' : '▾';
 }
 
 async function filterPaymentHistory() {
@@ -3498,22 +3533,49 @@ function payoutHistoryTableHTML(payouts) {
   if (!payouts.length) return '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts in this range.</div>';
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th></th><th>Payout</th><th>Date</th><th>Earned</th><th>Commission</th><th>Paid Out</th><th>Method</th><th>Status</th></tr></thead><tbody>
     ${payouts.map(p => `
-      <tr style="cursor:${p.lineItems && p.lineItems.length ? 'pointer' : 'default'};" onclick="${p.lineItems && p.lineItems.length ? `togglePayoutBreakdown('${p.id}')` : ''}">
-        <td>${p.lineItems && p.lineItems.length ? `<span id="payout-caret-${p.id}">▸</span>` : ''}</td>
+      <tr style="cursor:pointer;" onclick="togglePayoutBreakdown('${p.id}')">
+        <td><span id="payout-caret-${p.id}">▸</span></td>
         <td>${p.id}</td><td>${p.date}</td><td>$${p.grossAmount ?? p.amount}</td><td>${p.commissionAmount ? `$${p.commissionAmount} (${Math.round((p.commissionRate||0)*100)}%)` : '—'}</td><td>$${p.amount}</td><td>${p.method}</td><td>${statusBadge(p.status)}</td>
       </tr>
       <tr id="payout-breakdown-${p.id}" style="display:none;">
         <td colspan="8" style="background:var(--offwhite);padding:0;">
           ${p.lineItems && p.lineItems.length ? `
             <div style="padding:12px 16px;font-size:12px;color:var(--slate);font-weight:600;">Who paid — ${p.lineItems.length} job${p.lineItems.length===1?'':'s'} in this payout</div>
-            <table class="data-table" style="margin:0;"><thead><tr><th>Customer</th><th>Job</th><th>Booking #</th><th>Amount</th></tr></thead><tbody>
-            ${p.lineItems.map(li => `<tr><td>${li.customerName}</td><td>${li.service}</td><td>${li.bookingNumber}</td><td>$${li.amount}</td></tr>`).join('')}
-            </tbody></table>
-          ` : `<div style="padding:12px 16px;font-size:12px;color:var(--muted);">No itemized breakdown available for this payout (requested before this feature existed).</div>`}
+            ${p.lineItems.map(li => payoutLineItemDetailHTML(li)).join('')}
+          ` : `<div style="padding:12px 16px;font-size:12px;color:var(--muted);">No itemized breakdown available for this payout — it was requested before this feature existed.</div>`}
         </td>
       </tr>
     `).join('')}
     </tbody></table></div>`;
+}
+
+// A full detail card for one job within a payout — not just "who and how
+// much," but the job itself: what was done, when, where, the customer's
+// contact info, whether the contract is still active or fully wrapped up,
+// and their review if they left one. A real link to that job's full
+// contract PDF is included too, for anyone who wants the complete record.
+function payoutLineItemDetailHTML(li) {
+  return `
+    <div style="padding:12px 16px;border-top:1px solid var(--border);background:var(--white);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-weight:700;color:var(--navy);font-size:13.5px;">${li.service}</div>
+          <div style="font-size:12px;color:var(--slate);margin-top:2px;">Booking #${li.bookingNumber} · ${statusBadge(li.contractStatus)}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-weight:700;color:var(--navy);">$${li.amount}</div>
+          <a onclick="downloadFileWithAuth('${API_BASE}/contracts/${li.contractId}/pdf', 'Taskora-Contract-${li.bookingNumber}.pdf')" style="font-size:11.5px;color:var(--gold);cursor:pointer;">View full contract PDF →</a>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
+        <div><span style="color:var(--muted);">Customer:</span> ${li.customerName}${li.customerEmail ? ` · ${li.customerEmail}` : ''}${li.customerPhone ? ` · ${li.customerPhone}` : ''}</div>
+        <div><span style="color:var(--muted);">Scheduled:</span> ${li.jobDate || '—'}${li.jobTime ? ` · ${li.jobTime}` : ''}</div>
+        <div style="grid-column:1/-1;"><span style="color:var(--muted);">Address:</span> ${li.address || '—'}</div>
+        <div style="grid-column:1/-1;"><span style="color:var(--muted);">Contract signed:</span> ${li.signedAt || '—'}</div>
+        ${li.review ? `<div style="grid-column:1/-1;padding-top:6px;border-top:1px dashed var(--border);"><span style="color:var(--muted);">Customer review:</span> ${'★'.repeat(li.review.stars)}${li.review.text ? ` — "${li.review.text}"` : ''}</div>` : ''}
+      </div>
+    </div>
+  `;
 }
 
 async function filterPayoutHistory() {

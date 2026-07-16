@@ -142,8 +142,8 @@ router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res
       twoColumnRow('Net Paid Out', `$${payout.amount.toFixed(2)}`, 'Method / Status', `${payout.method} · ${payout.status}`);
       if (payout.lineItems && payout.lineItems.length) {
         table(
-          [{ label: 'Customer', width: 160 }, { label: 'Job', width: 200 }, { label: 'Booking #', width: 90 }, { label: 'Amount', width: 60, align: 'right' }],
-          payout.lineItems.map(li => [li.customerName, li.service, li.bookingNumber, `$${li.amount}`])
+          [{ label: 'Customer', width: 110 }, { label: 'Job', width: 140 }, { label: 'Date', width: 60 }, { label: 'Booking #', width: 80 }, { label: 'Amount', width: 60, align: 'right' }],
+          payout.lineItems.map(li => [li.customerName, li.service, li.jobDate || '—', li.bookingNumber, `$${li.amount}`])
         );
       }
     }
@@ -189,11 +189,20 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
     const contract = contracts.find(c => c.id === e.contractId);
     if (!contract) continue;
     const customer = await db.find('users', u => u.id === contract.customerId);
+    const review = await db.find('reviews', r => r.contractId === contract.id);
     lineItems.push({
       contractId: contract.id,
       bookingNumber: contract.bookingNumber || contract.id,
       customerName: customer ? customer.name : 'Unknown customer',
+      customerEmail: customer ? customer.email : null,
+      customerPhone: customer ? customer.phone : null,
       service: contract.service,
+      jobDate: contract.date || null,
+      jobTime: contract.time || null,
+      address: contract.address || null,
+      contractStatus: contract.status,
+      signedAt: contract.signedAt || (contract.createdAt || '').slice(0, 10),
+      review: review ? { stars: review.stars, text: review.text || null } : null,
       amount: e.amount,
     });
   }
@@ -303,17 +312,24 @@ router.get('/payments/mine', requireAuth, requireRole('customer'), async (req, r
   const payments = await Promise.all(contracts.map(async c => {
     const provider = await db.find('users', u => u.id === c.providerId);
     const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
+    const dispute = await db.find('disputes', d => d.contractId === c.id);
     return {
       contractId: c.id,
       bookingNumber: c.bookingNumber || c.id,
       date: (c.createdAt || '').slice(0, 10),
       providerName: provider ? provider.name : 'Unknown provider',
+      providerEmail: provider ? provider.email : null,
+      providerPhone: provider ? provider.phone : null,
       service: c.service,
+      jobDate: c.date || null,
+      jobTime: c.time || null,
+      address: c.address || null,
       amount: c.amount,
       status: c.status,
       escrowStatus: escrow ? escrow.status : 'none',
       paidCurrency: escrow ? escrow.paidCurrency : 'USD',
       paidAmountLocal: escrow ? escrow.paidAmountLocal : null,
+      disputeStatus: dispute ? dispute.status : null,
     };
   }));
   res.json({ payments });
