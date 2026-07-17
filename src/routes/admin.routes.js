@@ -48,13 +48,14 @@ async function requireSuperAdmin(req, res, next) {
 // department-scoped admin only passes for THEIR department; scoped admins
 // see data across all regions for that one function, not just one city,
 // since a dispute or a verification request can come from anywhere.
-function requireDepartment(dept) {
+function requireDepartment(deptOrDepts) {
+  const allowed = Array.isArray(deptOrDepts) ? deptOrDepts : [deptOrDepts];
   return async (req, res, next) => {
     const m = await me(req);
     if (!m) return res.status(403).json({ error: 'Not authorized' });
     if (m.isSuperAdmin) return next();
     if (!m.adminDepartment) return next(); // regular regional admin — unchanged access
-    if (m.adminDepartment === dept) return next();
+    if (allowed.includes(m.adminDepartment)) return next();
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   };
 }
@@ -138,7 +139,7 @@ router.patch('/users/:id/status', async (req, res) => {
 });
 
 // POST /api/admin/users/:id/decide  { decision: 'approve' | 'reject' }
-router.post('/users/:id/decide', requireDepartment('verification'), async (req, res) => {
+router.post('/users/:id/decide', requireDepartment(['verification', 'customer_service']), async (req, res) => {
   const { decision } = req.body || {};
   if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ error: 'decision must be approve or reject' });
   const region = await myRegion(req);
@@ -151,7 +152,7 @@ router.post('/users/:id/decide', requireDepartment('verification'), async (req, 
 });
 
 // GET /api/admin/verification-queue
-router.get('/verification-queue', requireDepartment('verification'), async (req, res) => {
+router.get('/verification-queue', requireDepartment(['verification', 'customer_service']), async (req, res) => {
   const region = await myRegion(req);
   const inReview = await db.filter('verifications', v => v.status === 'in review');
   const queue = [];
@@ -164,7 +165,7 @@ router.get('/verification-queue', requireDepartment('verification'), async (req,
 });
 
 // POST /api/admin/verification/:id/decide  { decision: 'approve' | 'reject' }
-router.post('/verification/:id/decide', requireDepartment('verification'), async (req, res) => {
+router.post('/verification/:id/decide', requireDepartment(['verification', 'customer_service']), async (req, res) => {
   const { decision } = req.body || {};
   const record = await db.find('verifications', v => v.id === req.params.id);
   if (!record) return res.status(404).json({ error: 'Verification record not found' });
@@ -179,7 +180,7 @@ router.post('/verification/:id/decide', requireDepartment('verification'), async
 });
 
 // GET /api/admin/disputes
-router.get('/disputes', requireDepartment('disputes'), async (req, res) => {
+router.get('/disputes', requireDepartment(['disputes', 'customer_service', 'legal']), async (req, res) => {
   const region = await myRegion(req);
   const { from, to } = req.query;
   const all = await db.all('disputes');
@@ -227,7 +228,7 @@ router.post('/fraud-flags/:id/resolve', requireDepartment('disputes'), async (re
   res.json({ flag: updated });
 });
 
-router.get('/disputes/pdf', requireDepartment('disputes'), async (req, res) => {
+router.get('/disputes/pdf', requireDepartment(['disputes', 'customer_service', 'legal']), async (req, res) => {
   const region = await myRegion(req);
   const { from, to } = req.query;
   const all = await db.all('disputes');
@@ -274,7 +275,7 @@ router.get('/disputes/pdf', requireDepartment('disputes'), async (req, res) => {
 // within an admin's assigned city), with escrow and payout status. This is
 // what the admin Payments page actually needs — previously it was showing
 // unrelated demo data, not real platform transactions.
-router.get('/transactions', requireDepartment('financial'), async (req, res) => {
+router.get('/transactions', requireDepartment(['financial', 'legal']), async (req, res) => {
   const region = await myRegion(req);
   const { from, to } = req.query;
   let contracts = await db.all('contracts');
@@ -307,7 +308,7 @@ router.get('/transactions', requireDepartment('financial'), async (req, res) => 
 
 // GET /api/admin/transactions/pdf — a real, downloadable platform
 // transactions report, same scoping and date range as the JSON endpoint.
-router.get('/transactions/pdf', requireDepartment('financial'), async (req, res) => {
+router.get('/transactions/pdf', requireDepartment(['financial', 'legal']), async (req, res) => {
   const region = await myRegion(req);
   const { from, to } = req.query;
   let contracts = await db.all('contracts');
@@ -356,7 +357,7 @@ router.get('/transactions/pdf', requireDepartment('financial'), async (req, res)
   finish({ closingNote: 'This report reflects Taskora\'s transaction records within the scope and date range shown, as of the moment it was generated. GMV figures are gross booking values, not net of commission.' });
 });
 
-router.post('/disputes/:id/resolve', requireDepartment('disputes'), async (req, res) => {
+router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_service']), async (req, res) => {
   const region = await myRegion(req);
   const dispute = await db.find('disputes', d => d.id === req.params.id);
   if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
@@ -606,7 +607,7 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
     ['country', isNonEmptyString(country), 'Country is required'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
-  if (department && !['verification', 'disputes', 'financial'].includes(department)) {
+  if (department && !['verification', 'disputes', 'financial', 'customer_service', 'legal'].includes(department)) {
     return res.status(400).json({ error: 'department must be verification, disputes, or financial' });
   }
 

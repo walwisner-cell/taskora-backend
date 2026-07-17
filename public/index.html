@@ -3905,6 +3905,20 @@ function adminTransactionsTableHTML(transactions) {
   </tbody></table></div>`;
 }
 
+// A real per-region financial breakdown — how much is held, released, and
+// earned in commission in each city, plus a genuine grand total row. This
+// is what lets the super admin actually see how each region is doing
+// financially, rather than only ever seeing one flattened global number.
+function financialByRegionTableHTML(data) {
+  const regions = (data && data.regions) || [];
+  const total = (data && data.total) || { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 };
+  if (!regions.length) return '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No regional financial activity yet.</div>';
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Region</th><th>Country</th><th>Escrow Held</th><th>Escrow Released</th><th>Commission Revenue</th><th>Transactions</th></tr></thead><tbody>
+  ${regions.map(r => `<tr><td>${r.region}</td><td>${r.country}</td><td>$${r.held.toLocaleString()}</td><td>$${r.released.toLocaleString()}</td><td>$${r.commissionRevenue.toLocaleString()}</td><td>${r.transactionCount}</td></tr>`).join('')}
+  <tr style="font-weight:700;background:var(--offwhite);"><td colspan="2">Total — All Regions</td><td>$${total.held.toLocaleString()}</td><td>$${total.released.toLocaleString()}</td><td>$${total.commissionRevenue.toLocaleString()}</td><td>${total.transactionCount}</td></tr>
+  </tbody></table></div>`;
+}
+
 async function filterAdminTransactions() {
   const from = document.getElementById('txn-filter-from').value;
   const to = document.getElementById('txn-filter-to').value;
@@ -4141,6 +4155,21 @@ function getAdminNavItems() {
       { key: 'settings', label: 'Settings', icon: '⚙️' },
     ];
   }
+  if (dept === 'customer_service') {
+    return [
+      { key: 'approvals', label: 'User Approvals', icon: '✅' },
+      { key: 'verification', label: 'Verification Queue', icon: '🪪' },
+      { key: 'disputes', label: 'Disputes', icon: '⚖️' },
+      { key: 'settings', label: 'Settings', icon: '⚙️' },
+    ];
+  }
+  if (dept === 'legal') {
+    return [
+      { key: 'disputes', label: 'Disputes', icon: '⚖️' },
+      { key: 'payments', label: 'Payments', icon: '💳' },
+      { key: 'settings', label: 'Settings', icon: '⚙️' },
+    ];
+  }
 
   const base = [
     { key: 'overview', label: 'Overview', icon: '📊' },
@@ -4196,7 +4225,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [],
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -4215,7 +4244,7 @@ async function loadAdminData() {
     catch (e) { return null; }
   }
 
-  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags] = await Promise.all([
+  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion] = await Promise.all([
     tryFetch('/admin/stats'),
     tryFetch('/admin/users/pending'),
     tryFetch('/admin/users/all'),
@@ -4227,6 +4256,7 @@ async function loadAdminData() {
     tryFetch('/admin/category-requests'),
     tryFetch('/admin/transactions'),
     tryFetch('/admin/fraud-flags'),
+    tryFetch('/admin/financial-by-region'),
   ]);
 
   if (stats) adminData.stats = stats;
@@ -4240,6 +4270,7 @@ async function loadAdminData() {
   if (catRequests) adminData.categoryRequests = catRequests.requests;
   if (transactions) adminData.transactions = transactions.transactions;
   if (fraudFlags) adminData.fraudFlags = fraudFlags.flags;
+  if (financialByRegion) adminData.financialByRegion = financialByRegion;
 
   // A genuine live check, not a hardcoded "everything's fine" badge — this
   // hits the real /api/health endpoint right now and times it.
@@ -4345,6 +4376,7 @@ const ADMIN_SECTIONS = {
       <div class="stat-card"><div class="stat-card-label">Escrow Released (Total)</div><div class="stat-card-val">$${adminData.escrow.released.toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-card-label">Commission Revenue</div><div class="stat-card-val">$${(adminData.escrow.commissionRevenue || 0).toLocaleString()}</div></div>
     </div>
+    <div class="panel"><div class="panel-title">Funds by Region</div>${financialByRegionTableHTML(adminData.financialByRegion)}</div>
     <div class="panel">
       <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <span>Platform Transactions</span>
@@ -4431,7 +4463,7 @@ const ADMIN_SECTIONS = {
     </div>`;
   },
   locations: () => `
-    <div class="dash-header"><div><div class="dash-title">Locations & Admins</div><div class="dash-sub">Create a regional admin for a city, or a functional team member with global access to just one area (verification, disputes, or finance)</div></div>
+    <div class="dash-header"><div><div class="dash-title">Locations & Admins</div><div class="dash-sub">Create a regional admin for a city, or a functional team member scoped to just one area — verification, disputes, finance, customer service, or legal</div></div>
     <button class="btn-sm btn-sm-primary" onclick="openNewLocationForm()">+ Add Admin</button></div>
     <div class="panel" id="new-location-panel" style="display:none;">
       <div class="panel-title">New Admin</div>
@@ -4448,6 +4480,8 @@ const ADMIN_SECTIONS = {
           <option value="verification">Verification Team — global access to identity verification only</option>
           <option value="disputes">Disputes Team — global access to disputes only</option>
           <option value="financial">Financial Team — global access to escrow & payouts only</option>
+          <option value="customer_service">Customer Service — approvals, verification & disputes, to help users directly</option>
+          <option value="legal">Legal — read-only access to disputes & transactions, for compliance review</option>
         </select>
       </div>
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="createLocationAdmin()">Create Admin</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-location-panel').style.display='none'">Cancel</button></div>
@@ -4472,7 +4506,7 @@ function citiesTable(list) {
   </tbody></table></div>`;
 }
 
-const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disputes Team', financial: 'Financial Team' };
+const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disputes Team', financial: 'Financial Team', customer_service: 'Customer Service', legal: 'Legal' };
 
 function functionalAdminsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No functional team members yet — create one above with a Role other than "Regional Admin".</div>`;

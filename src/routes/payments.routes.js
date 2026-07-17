@@ -434,17 +434,89 @@ router.get('/payments/pdf', requireAuth, requireRole('customer'), async (req, re
 // super admin or an unscoped regional admin still sees this unchanged.
 router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
-  if (!me.isSuperAdmin && me.adminDepartment && me.adminDepartment !== 'financial') {
+  if (!me.isSuperAdmin && me.adminDepartment && !['financial', 'legal'].includes(me.adminDepartment)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${me.adminDepartment} team and doesn't have access to this.` });
   }
-  const all = await db.all('escrowTransactions');
+  // A regional admin (no department, just assigned a city) should only ever
+  // see their own city's numbers here — every other financial view already
+  // works this way; this was the one that didn't, which meant a regional
+  // admin could see platform-wide totals well beyond their own city.
+  const region = (!me.isSuperAdmin && !me.adminDepartment) ? me.region : null;
+
+  let all = await db.all('escrowTransactions');
+  let payouts = await db.all('payouts');
+  if (region) {
+    const contracts = await db.all('contracts');
+    const regionalContractIds = new Set();
+    for (const c of contracts) {
+      const customer = await db.find('users', u => u.id === c.customerId);
+      if (customer && customer.city === region) regionalContractIds.add(c.id);
+    }
+    all = all.filter(e => regionalContractIds.has(e.contractId));
+    const regionalProviderIds = new Set((await db.filter('users', u => u.role === 'provider' && u.city === region)).map(u => u.id));
+    payouts = payouts.filter(p => regionalProviderIds.has(p.providerId));
+  }
+
   const held = all.filter(e => e.status === 'held').reduce((s, e) => s + e.amount, 0);
   const released = all.filter(e => e.status === 'released').reduce((s, e) => s + e.amount, 0);
   // Real commission revenue — the sum of what's actually been deducted
   // across every payout ever made, not a placeholder figure.
-  const payouts = await db.all('payouts');
   const commissionRevenue = payouts.reduce((s, p) => s + (p.commissionAmount || 0), 0);
   res.json({ held, released, count: all.length, commissionRevenue });
+});
+
+// GET /api/admin/financial-by-region — a real, per-city breakdown of escrow
+// held/released and commission revenue, plus a grand total row, so the
+// super admin (or the financial team) can actually see how each region is
+// performing rather than only ever seeing one flattened global number.
+router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me.isSuperAdmin && me.adminDepartment && !['financial', 'legal'].includes(me.adminDepartment)) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${me.adminDepartment} team and doesn't have access to this.` });
+  }
+
+  const contracts = await db.all('contracts');
+  const escrow = await db.all('escrowTransactions');
+  const payouts = await db.all('payouts');
+  const customers = await db.filter('users', u => u.role === 'customer');
+  const providers = await db.filter('users', u => u.role === 'provider');
+  const customerById = new Map(customers.map(c => [c.id, c]));
+  const providerById = new Map(providers.map(p => [p.id, p]));
+  const contractById = new Map(contracts.map(c => [c.id, c]));
+
+  // Group everything by the CUSTOMER's city — same convention used
+  // everywhere else a "region" is derived (disputes, transactions).
+  const byRegion = new Map(); // region -> { region, country, held, released, commissionRevenue, transactionCount }
+  function bucket(region, country) {
+    if (!byRegion.has(region)) byRegion.set(region, { region, country, held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 });
+    return byRegion.get(region);
+  }
+
+  for (const e of escrow) {
+    const contract = contractById.get(e.contractId);
+    const customer = contract && customerById.get(contract.customerId);
+    if (!customer) continue;
+    const b = bucket(customer.city || 'Unknown', customer.country || 'Unknown');
+    if (e.status === 'held') b.held += e.amount;
+    if (e.status === 'released') b.released += e.amount;
+    b.transactionCount += 1;
+  }
+  for (const p of payouts) {
+    const provider = providerById.get(p.providerId);
+    if (!provider) continue;
+    const b = bucket(provider.city || 'Unknown', provider.country || 'Unknown');
+    b.commissionRevenue += (p.commissionAmount || 0);
+  }
+
+  const regions = Array.from(byRegion.values()).sort((a, b) => (b.held + b.released) - (a.held + a.released));
+  const total = regions.reduce((acc, r) => ({
+    held: acc.held + r.held,
+    released: acc.released + r.released,
+    commissionRevenue: acc.commissionRevenue + r.commissionRevenue,
+    transactionCount: acc.transactionCount + r.transactionCount,
+  }), { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 });
+
+  res.json({ regions, total });
 });
 
 module.exports = router;
