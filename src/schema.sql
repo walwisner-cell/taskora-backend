@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS users (
   payout_method   TEXT,
   notif_prefs     JSONB,
   rating          NUMERIC(3,1) DEFAULT 0,
-  jobs_completed  INTEGER DEFAULT 0,
+  jobs            INTEGER DEFAULT 0,
   price           NUMERIC(8,2),
   color           TEXT,
   provider_since  TEXT,
@@ -262,14 +262,58 @@ CREATE TABLE IF NOT EXISTS advertising_inquiries (
 );
 
 CREATE TABLE IF NOT EXISTS sales_inquiries (
-  id            TEXT PRIMARY KEY,
-  company_name  TEXT NOT NULL,
-  contact_name  TEXT NOT NULL,
-  email         TEXT NOT NULL,
-  team_size     TEXT,
-  message       TEXT NOT NULL,
-  status        TEXT NOT NULL DEFAULT 'new',
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  id              TEXT PRIMARY KEY,
+  company_name    TEXT NOT NULL,
+  contact_name    TEXT NOT NULL,
+  email           TEXT NOT NULL,
+  team_size       TEXT,
+  message         TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'new',
+  agreed_price    NUMERIC,
+  agreed_currency TEXT,
+  internal_notes  TEXT,
+  converted_to_org_id TEXT,
+  updated_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- A Custom-plan company account — the multi-seat umbrella a group of
+-- individual provider accounts can belong to. Created by converting an
+-- agreed sales inquiry (see /admin/sales-inquiries/:id/convert-to-org),
+-- never self-serve. commission_rate, if set, overrides every attached
+-- provider's individual Starter/Pro/Super Pro rate — this is the "volume
+-- commission discount" promised on the Custom pricing card.
+CREATE TABLE IF NOT EXISTS organizations (
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT NOT NULL,
+  sales_inquiry_id      TEXT,
+  agreed_price          NUMERIC,
+  agreed_currency       TEXT,
+  commission_rate       NUMERIC,
+  seat_limit            INTEGER,
+  account_manager_id    TEXT,
+  billing_contact_name  TEXT,
+  billing_contact_email TEXT,
+  status                TEXT NOT NULL DEFAULT 'active',
+  created_by            TEXT,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ
+);
+
+-- A self-serve join link for one organization. A provider who signs up
+-- (or an existing provider who later enters this code) with a valid,
+-- unexpired, not-over-capacity code gets attached to the org automatically
+-- — no admin has to manually add every seat one at a time.
+CREATE TABLE IF NOT EXISTS organization_invites (
+  id               TEXT PRIMARY KEY,
+  organization_id  TEXT NOT NULL,
+  code             TEXT NOT NULL UNIQUE,
+  created_by       TEXT,
+  max_uses         INTEGER,
+  uses_count       INTEGER NOT NULL DEFAULT 0,
+  expires_at       TIMESTAMPTZ,
+  status           TEXT NOT NULL DEFAULT 'active',
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- The global USD starting price per plan, editable by a super admin. Any
@@ -378,6 +422,8 @@ ALTER TABLE contracts ADD COLUMN IF NOT EXISTS booking_number TEXT;
 ALTER TABLE categories ADD COLUMN IF NOT EXISTS icon TEXT DEFAULT '🛠️';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS organization_id TEXT;
+ALTER TABLE sales_inquiries ADD COLUMN IF NOT EXISTS converted_to_org_id TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS pay_currency TEXT DEFAULT 'usd';
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS pay_currency TEXT DEFAULT 'usd';
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS paid_currency TEXT DEFAULT 'USD';
@@ -417,3 +463,23 @@ ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS approved_by TEXT;
 ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
 ALTER TABLE exchange_rates ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
 ALTER TABLE exchange_rates ADD COLUMN IF NOT EXISTS fetched_at TIMESTAMPTZ;
+ALTER TABLE sales_inquiries ADD COLUMN IF NOT EXISTS agreed_price NUMERIC;
+ALTER TABLE sales_inquiries ADD COLUMN IF NOT EXISTS agreed_currency TEXT;
+ALTER TABLE sales_inquiries ADD COLUMN IF NOT EXISTS internal_notes TEXT;
+ALTER TABLE sales_inquiries ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+-- Fixes a real pre-existing bug: this column was originally created as
+-- jobs_completed, but every route in the app reads/writes it as `jobs`
+-- (camelCase<->snake_case conversion is purely algorithmic — jobs_completed
+-- maps to jobsCompleted, never to jobs). On any real Postgres deployment
+-- this meant the field silently never persisted at all. Renamed here,
+-- guarded so it only runs once and is a no-op on a fresh database that
+-- already creates the column as `jobs` directly (see CREATE TABLE users
+-- above).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'jobs_completed')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'jobs') THEN
+    ALTER TABLE users RENAME COLUMN jobs_completed TO jobs;
+  END IF;
+END $$;

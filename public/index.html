@@ -4897,12 +4897,58 @@ const ADMIN_SECTIONS = {
     <div class="panel"><div class="panel-title">Inquiries <small style="font-weight:400;color:var(--slate);">${(adminData.advertisingInquiries || []).length} total</small></div>${advertisingInquiriesTableHTML(adminData.advertisingInquiries || [])}</div>`;
   },
   pricing: () => (AUTH.user && AUTH.user.isSuperAdmin) ? superAdminPricingSectionHTML() : regionalPricingSectionHTML(),
-  sales: () => `
+  sales: () => {
+    const list = adminData.salesInquiries || [];
+    const newCount = list.filter(i => i.status === 'new').length;
+    const contactedCount = list.filter(i => i.status === 'contacted').length;
+    const convertedCount = list.filter(i => i.convertedToOrgId).length;
+    return `
     <div class="dash-header"><div><div class="dash-title">Sales Inquiries</div><div class="dash-sub">Real submissions from the Custom plan's "Contact Sales" button</div></div></div>
-    <div class="panel"><div class="panel-title">All Inquiries <small style="font-weight:400;color:var(--slate);">${(adminData.salesInquiries || []).length} total</small></div>${salesInquiriesTableHTML(adminData.salesInquiries || [])}</div>`,
-  organizations: () => `
+    <div class="stat-cards">
+      <div class="stat-card"><div class="stat-card-label">Total Inquiries</div><div class="stat-card-val">${list.length}</div></div>
+      <div class="stat-card"><div class="stat-card-label">New</div><div class="stat-card-val">${newCount}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Contacted</div><div class="stat-card-val">${contactedCount}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Converted to Org</div><div class="stat-card-val">${convertedCount}</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>All Inquiries <small style="font-weight:400;color:var(--slate);">${list.length} total</small></span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
+          <input type="text" class="form-input" id="sales-search" placeholder="Search company or contact…" style="padding:6px 10px;font-size:12.5px;width:200px;" oninput="filterSalesInquiries()"/>
+          <select class="form-input" id="sales-status-filter" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterSalesInquiries()">
+            <option value="">All statuses</option>
+            <option value="new">New</option>
+            <option value="contacted">Contacted</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+      </div>
+      <div id="sales-inquiries-table-wrap">${salesInquiriesTableHTML(list)}</div>
+    </div>`;
+  },
+  organizations: () => {
+    const orgs = adminData.organizations || [];
+    const activeOrgs = orgs.filter(o => o.status === 'active');
+    const totalSeats = orgs.reduce((s, o) => s + (o.seatCount || 0), 0);
+    const totalMRR = activeOrgs.reduce((s, o) => s + (o.agreedPrice || 0), 0);
+    const ratedOrgs = orgs.filter(o => o.commissionRate != null);
+    const avgRate = ratedOrgs.length ? (ratedOrgs.reduce((s, o) => s + o.commissionRate, 0) / ratedOrgs.length * 100).toFixed(1) : null;
+    return `
     <div class="dash-header"><div><div class="dash-title">Organizations</div><div class="dash-sub">Multi-seat Custom-plan accounts — created from an agreed Sales Inquiry</div></div></div>
-    <div class="panel"><div class="panel-title">All Organizations <small style="font-weight:400;color:var(--slate);">${(adminData.organizations || []).length} total</small></div>${organizationsListHTML(adminData.organizations || [])}</div>`,
+    <div class="stat-cards">
+      <div class="stat-card"><div class="stat-card-label">Organizations</div><div class="stat-card-val">${orgs.length}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Total Seats</div><div class="stat-card-val">${totalSeats}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Combined MRR <span style="font-size:10px;font-weight:400;color:var(--slate);">(active orgs)</span></div><div class="stat-card-val">$${totalMRR.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Avg. Commission Rate</div><div class="stat-card-val">${avgRate != null ? avgRate + '%' : '—'}</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>All Organizations <small style="font-weight:400;color:var(--slate);">${orgs.length} total</small></span>
+        <input type="text" class="form-input" id="org-search" placeholder="Search organization name…" style="padding:6px 10px;font-size:12.5px;width:220px;" oninput="filterOrganizations()"/>
+      </div>
+      <div id="organizations-table-wrap">${organizationsListHTML(orgs)}</div>
+    </div>`;
+  },
   settings: () => `
     <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Your admin account ${BACKEND_AVAILABLE ? '<span class="badge badge-success" style="margin-left:6px;">Saved to your account</span>' : ''}</div></div></div>
     <div class="panel"><div class="panel-title">Profile</div>
@@ -5363,16 +5409,35 @@ let currentOrgDetailId = null;
 
 function organizationsListHTML(orgs) {
   if (!orgs.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No organizations yet — convert an agreed Sales Inquiry into one to get started.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Organization</th><th>Seats</th><th>Commission Rate</th><th>Account Manager</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Organization</th><th>Seats</th><th>Agreed Price</th><th>Commission Rate</th><th>Account Manager</th><th>Created</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${orgs.map(o => `<tr>
     <td style="font-weight:600;">${o.name}</td>
     <td>${o.seatCount}${o.seatLimit ? ` / ${o.seatLimit}` : ''}</td>
+    <td>${o.agreedPrice != null ? `$${o.agreedPrice} ${o.agreedCurrency || 'USD'}/mo` : '—'}</td>
     <td>${o.commissionRate != null ? `${(o.commissionRate * 100).toFixed(1)}%` : '<span style="color:var(--slate);">Plan default</span>'}</td>
     <td>${o.accountManagerName || '—'}</td>
+    <td style="font-size:12px;color:var(--slate);">${(o.createdAt || '').slice(0, 10)}</td>
     <td>${o.status === 'active' ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
     <td><button class="btn-sm btn-sm-primary" onclick="openOrgDetail('${o.id}')">View</button></td>
   </tr>`).join('')}
   </tbody></table></div>`;
+}
+
+function filterOrganizations() {
+  const q = (document.getElementById('org-search').value || '').trim().toLowerCase();
+  const filtered = (adminData.organizations || []).filter(o => !q || o.name.toLowerCase().includes(q));
+  document.getElementById('organizations-table-wrap').innerHTML = organizationsListHTML(filtered);
+}
+
+function filterSalesInquiries() {
+  const q = (document.getElementById('sales-search').value || '').trim().toLowerCase();
+  const status = document.getElementById('sales-status-filter').value;
+  const filtered = (adminData.salesInquiries || []).filter(i => {
+    if (status && i.status !== status) return false;
+    if (q && !(`${i.companyName} ${i.contactName}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  document.getElementById('sales-inquiries-table-wrap').innerHTML = salesInquiriesTableHTML(filtered);
 }
 
 async function openOrgDetail(orgId) {
@@ -5394,15 +5459,22 @@ function renderOrgDetailModal(detail) {
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('org-detail-modal-overlay').remove()">✕</button>
           <h3>${o.name}</h3>
-          <p>${o.status === 'active' ? 'Active' : 'Suspended'} · Account manager: ${o.accountManagerName || '—'} · Agreed at $${o.agreedPrice} ${o.agreedCurrency}/mo</p>
+          <p>${o.status === 'active' ? 'Active' : 'Suspended'} · Account manager: ${o.accountManagerName || '—'} · Agreed at $${o.agreedPrice} ${o.agreedCurrency}/mo · Created ${(o.createdAt || '').slice(0, 10)}</p>
         </div>
         <div class="modal-body" style="max-height:60vh;overflow-y:auto;">
 
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
             <div class="stat-card"><div class="stat-card-label">Seats</div><div class="stat-card-val">${performance.seatCount}${o.seatLimit ? `/${o.seatLimit}` : ''}</div></div>
             <div class="stat-card"><div class="stat-card-label">Jobs Booked</div><div class="stat-card-val">${performance.jobsBooked}</div></div>
+            <div class="stat-card"><div class="stat-card-label">Jobs Completed</div><div class="stat-card-val">${performance.jobsCompleted}</div></div>
             <div class="stat-card"><div class="stat-card-label">GMV</div><div class="stat-card-val">$${performance.gmv.toLocaleString()}</div></div>
             <div class="stat-card"><div class="stat-card-label">Commission Rate</div><div class="stat-card-val">${performance.commissionRate != null ? (performance.commissionRate * 100).toFixed(1) + '%' : '—'}</div></div>
+            <div class="stat-card"><div class="stat-card-label">Est. Commission</div><div class="stat-card-val">${performance.estCommission != null ? '$' + performance.estCommission.toLocaleString() : '—'}</div></div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;gap:16px;background:var(--offwhite);border-radius:8px;padding:10px 14px;margin-bottom:18px;font-size:12.5px;">
+            <div><strong>Billing Contact:</strong> ${o.billingContactName || '—'} ${o.billingContactEmail ? `<span style="color:var(--slate);">(${o.billingContactEmail})</span>` : ''}</div>
+            ${o.salesInquiryId ? `<div style="color:var(--slate);">From lead: ${o.salesInquiryId}</div>` : ''}
           </div>
 
           <div style="font-weight:700;margin-bottom:8px;">Seats (${seats.length})</div>

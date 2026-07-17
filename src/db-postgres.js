@@ -29,7 +29,7 @@ const pool = new Pool({
 // in (snake_case) DB order. Used to build safe, parameterized INSERT/UPDATE
 // statements without ever interpolating arbitrary object keys into SQL.
 const TABLES = {
-  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','state','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs_completed','price','color','provider_since','profile_photo_url','category_approval_status','two_factor_enabled','business_name','business_registration_number','admin_department','created_at','updated_at'] },
+  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','state','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs','price','color','provider_since','profile_photo_url','category_approval_status','two_factor_enabled','business_name','business_registration_number','admin_department','organization_id','created_at','updated_at'] },
   categories: { table: 'categories', columns: ['id','name','icon','active'] },
   countries: { table: 'countries', columns: ['id','name','status'] },
   cities: { table: 'cities', columns: ['id','name','country','admin_id'] },
@@ -54,7 +54,9 @@ const TABLES = {
   contactSubmissions: { table: 'contact_submissions', columns: ['id','name','email','subject','message','status','created_at'] },
   careersInquiries: { table: 'careers_inquiries', columns: ['id','name','email','role','message','status','created_at'] },
   advertisingInquiries: { table: 'advertising_inquiries', columns: ['id','company_name','contact_name','email','phone','message','status','target_city','is_live','price','currency_code','display_headline','display_subtext','display_link','approved_by','approved_at','created_at'] },
-  salesInquiries: { table: 'sales_inquiries', columns: ['id','company_name','contact_name','email','team_size','message','status','created_at'] },
+  salesInquiries: { table: 'sales_inquiries', columns: ['id','company_name','contact_name','email','team_size','message','status','agreed_price','agreed_currency','internal_notes','converted_to_org_id','updated_at','created_at'] },
+  organizations: { table: 'organizations', columns: ['id','name','sales_inquiry_id','agreed_price','agreed_currency','commission_rate','seat_limit','account_manager_id','billing_contact_name','billing_contact_email','status','created_by','created_at','updated_at'] },
+  organizationInvites: { table: 'organization_invites', columns: ['id','organization_id','code','created_by','max_uses','uses_count','expires_at','status','created_at'] },
   planPricingBase: { table: 'plan_pricing_base', columns: ['id','plan','usd_price','updated_at'] },
   planPricingOverrides: { table: 'plan_pricing_overrides', columns: ['id','country','plan','local_price','currency_code','set_by','updated_at'] },
   exchangeRates: { table: 'exchange_rates', columns: ['id','currency_code','rate_to_usd','source','fetched_at','updated_at'] },

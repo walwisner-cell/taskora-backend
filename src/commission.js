@@ -9,4 +9,15 @@ function commissionRateForPlan(plan) {
   return COMMISSION_RATES[plan] ?? COMMISSION_RATES.starter;
 }
 
-module.exports = { COMMISSION_RATES, commissionRateForPlan };
+// The real rate a specific provider pays right now — an organization's
+// negotiated volume-discount rate (see src/schema.sql organizations table)
+// always wins over their individual plan rate, since that's the entire
+// point of the Custom plan's "volume commission discount" promise. Falls
+// back to the normal plan-based rate for any provider not attached to an
+// org, or attached to one with no custom rate set.
+function effectiveCommissionRate(provider, organization) {
+  if (organization && organization.commissionRate != null) return organization.commissionRate;
+  return commissionRateForPlan(provider && provider.plan);
+}
+
+module.exports = { COMMISSION_RATES, commissionRateForPlan, effectiveCommissionRate };

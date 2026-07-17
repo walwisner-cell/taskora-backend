@@ -155,7 +155,7 @@ router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res
   });
 });
 // POST /api/payouts/request — provider requests payout of released escrow
-const { COMMISSION_RATES } = require('../commission');
+const { COMMISSION_RATES, effectiveCommissionRate } = require('../commission');
 
 router.post('/payouts/request', requireAuth, requireRole('provider'), async (req, res) => {
   const { payoutCurrency } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
@@ -245,8 +245,11 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
   // Commission is based on the provider's plan at the time they cash out —
   // matches the rates genuinely advertised on the Pricing page (Starter
   // 12%, Pro 8%, Super Pro 5%), actually deducted here rather than just
-  // being marketing copy.
-  const commissionRate = COMMISSION_RATES[provider.plan] ?? COMMISSION_RATES.starter;
+  // being marketing copy. A provider attached to a Custom-plan
+  // organization uses that org's negotiated rate instead — the "volume
+  // commission discount" promised on the Custom pricing card.
+  const organization = provider.organizationId ? await db.find('organizations', o => o.id === provider.organizationId) : null;
+  const commissionRate = effectiveCommissionRate(provider, organization);
   const commissionAmount = Math.round(grossAmount * commissionRate * 100) / 100;
   const netAmount = Math.round((grossAmount - commissionAmount) * 100) / 100;
 
@@ -303,6 +306,14 @@ router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), asy
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
   const updated = await db.update('contracts', contract.id, { status: 'completed' });
+
+  // Real completed-jobs tracking — this used to be a static number set once
+  // at signup and never touched again (every provider profile showed the
+  // same seed value forever, regardless of real activity). Now it's
+  // incremented for real, exactly once, the moment a job is genuinely
+  // confirmed complete — the same event that releases their escrow.
+  const provider = await db.find('users', u => u.id === contract.providerId);
+  if (provider) await db.update('users', provider.id, { jobs: (provider.jobs || 0) + 1 });
 
   // The alert tells the provider their real, current total available
   // balance — not just this one job's amount — so it's an accurate,

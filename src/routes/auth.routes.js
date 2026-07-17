@@ -31,7 +31,7 @@ function generateSixDigitCode() {
 // POST /api/auth/signup/start — validates everything and issues both codes,
 // but does NOT create the account yet.
 router.post('/signup/start', async (req, res) => {
-  const { name, email, password, role, country, state, city, phone, address, zipCode, category, skills } = req.body || {};
+  const { name, email, password, role, country, state, city, phone, address, zipCode, category, skills, inviteCode } = req.body || {};
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
@@ -55,12 +55,28 @@ router.post('/signup/start', async (req, res) => {
   const existing = await db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
   if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
 
+  // Org invite codes attach a brand-new provider to a Custom-plan
+  // organization's seats. Validated up front so a bad code fails
+  // immediately, rather than after the person's already gone through the
+  // phone/email verification step.
+  let inviteOrgId = null;
+  const trimmedInviteCode = (inviteCode || '').trim().toUpperCase();
+  if (trimmedInviteCode) {
+    if (role !== 'provider') return res.status(400).json({ error: 'Organization invite links are for provider accounts' });
+    const invite = await db.find('organizationInvites', i => i.code === trimmedInviteCode);
+    if (!invite) return res.status(400).json({ error: 'This invite link is invalid' });
+    if (invite.status !== 'active') return res.status(400).json({ error: 'This invite link has been revoked' });
+    if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) return res.status(400).json({ error: 'This invite link has expired' });
+    if (invite.maxUses != null && invite.usesCount >= invite.maxUses) return res.status(400).json({ error: 'This invite link has reached its usage limit' });
+    inviteOrgId = invite.organizationId;
+  }
+
   const phoneCode = generateSixDigitCode();
   const emailCode = generateSixDigitCode();
 
   const pending = {
     id: `preg_${nanoid(12)}`,
-    payload: { name: name.trim(), email: email.trim(), password, role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category, skills },
+    payload: { name: name.trim(), email: email.trim(), password, role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category, skills, inviteCode: trimmedInviteCode || null },
     phoneCodeHash: hashResetToken(phoneCode),
     emailCodeHash: hashResetToken(emailCode),
     phoneVerified: false,
@@ -79,6 +95,7 @@ router.post('/signup/start', async (req, res) => {
     testModeNote: 'No real SMS or email provider is configured yet — both codes are returned directly instead of being sent. Do not do this in production.',
     phoneCode,
     emailCode,
+    joiningOrganization: inviteOrgId ? true : false,
   });
 });
 
@@ -153,6 +170,30 @@ router.post('/signup/verify', async (req, res) => {
   await db.insert('users', user);
   await db.remove('pendingRegistrations', pending.id);
 
+  // Consume the org invite (if any) now that the account genuinely exists
+  // — re-validated here rather than trusting the check from /signup/start,
+  // since the code could have been revoked or hit its limit during the
+  // phone/email verification window. If it's no longer valid, the account
+  // still gets created normally — it just isn't attached to the org. Same
+  // "don't block, but don't silently pretend it worked" principle as the
+  // unlisted-category flow below.
+  let joinedOrganizationName = null;
+  if (payload.role === 'provider' && payload.inviteCode) {
+    const invite = await db.find('organizationInvites', i => i.code === payload.inviteCode);
+    const stillValid = invite
+      && invite.status === 'active'
+      && (!invite.expiresAt || new Date(invite.expiresAt) >= new Date())
+      && (invite.maxUses == null || invite.usesCount < invite.maxUses);
+    if (stillValid) {
+      const org = await db.find('organizations', o => o.id === invite.organizationId && o.status === 'active');
+      if (org) {
+        await db.update('users', user.id, { organizationId: org.id });
+        await db.update('organizationInvites', invite.id, { usesCount: invite.usesCount + 1 });
+        joinedOrganizationName = org.name;
+      }
+    }
+  }
+
   if (categoryApprovalStatus === 'pending') {
     const request = {
       id: `catreq_${nanoid(10)}`,
@@ -182,7 +223,7 @@ router.post('/signup/verify', async (req, res) => {
   await checkDuplicateIdentity(user.phone, user.email, user.id);
 
   const token = signToken(user);
-  res.status(201).json({ token, user: publicUser(user), categoryApprovalStatus });
+  res.status(201).json({ token, user: publicUser(user), categoryApprovalStatus, joinedOrganizationName });
 });
 
 // POST /api/auth/signup/resend — regenerate both codes for an in-progress
@@ -464,7 +505,35 @@ router.post('/forgot-password', async (req, res) => {
   }
 
   const user = await db.find('users', u => u.email.toLowerCase() === normalized);
-  if (!user) return res.json(genericResponse); // deliberately identical to the success path
+  // Note: this closes the response-SHAPE leak (identical fields either
+  // way). A response-TIME leak technically still exists — the real path
+  // below does a few extra DB writes the decoy path doesn't — but that's
+  // a much higher-effort attack (needs precise timing measurement over
+  // many requests) than just reading the JSON, and full constant-time
+  // handling is disproportionate for this app's threat model right now.
+  // Worth revisiting if this ever needs to resist a genuinely determined
+  // attacker rather than casual probing.
+  if (!user) {
+    // Previously this returned genericResponse alone — no testMode,
+    // testModeNote, or resetToken fields. That made the response shape
+    // itself distinguish a real account from a fake one (an attacker
+    // doesn't need to read the message text, just check whether
+    // resetToken is present), quietly defeating the whole point of
+    // returning "the same" message either way. This generates a
+    // realistic-looking token and returns it in the IDENTICAL shape as
+    // the real path below — but it's never hashed, stored, or checked
+    // against anything, so submitting it to /reset-password fails exactly
+    // like any other wrong token would. Same UX, same test-mode
+    // convenience, no distinguishable signal.
+    const decoyToken = generateResetToken();
+    console.log(`[TEST MODE] Password reset requested for an email with no account (${normalized}) — no token was actually issued.`);
+    return res.json({
+      ...genericResponse,
+      testMode: true,
+      testModeNote: 'No real email service is configured yet — this token is returned directly instead of being emailed. Do not do this in production.',
+      resetToken: decoyToken,
+    });
+  }
 
   // Invalidate any previous outstanding reset tokens for this user before
   // issuing a new one, so only the most recent link works.

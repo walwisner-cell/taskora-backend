@@ -192,6 +192,48 @@ router.get('/live-ads', async (req, res) => {
   });
 });
 
+// GET /api/org-invites/:code — public, no auth: lets the signup page (or
+// anyone with the link) confirm a code is real before asking someone to
+// fill out a whole signup form. Deliberately returns only the org name,
+// nothing else about the account (commission rate, billing contact, etc.
+// stay admin-only).
+router.get('/org-invites/:code', async (req, res) => {
+  const code = (req.params.code || '').trim().toUpperCase();
+  const invite = await db.find('organizationInvites', i => i.code === code);
+  if (!invite) return res.status(404).json({ valid: false, error: 'This invite link is invalid' });
+  if (invite.status !== 'active') return res.status(400).json({ valid: false, error: 'This invite link has been revoked' });
+  if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) return res.status(400).json({ valid: false, error: 'This invite link has expired' });
+  if (invite.maxUses != null && invite.usesCount >= invite.maxUses) return res.status(400).json({ valid: false, error: 'This invite link has reached its usage limit' });
+  const org = await db.find('organizations', o => o.id === invite.organizationId);
+  if (!org || org.status !== 'active') return res.status(400).json({ valid: false, error: 'This organization account is no longer active' });
+  res.json({ valid: true, organizationName: org.name });
+});
+
+// POST /api/org-invites/:code/redeem — for a provider who ALREADY has an
+// account (signed up before the org existed, or before they got the link)
+// to join an organization's seats themselves, without an admin manually
+// attaching them. Same validation as the signup-time path, just for an
+// existing account instead of a brand-new one.
+router.post('/org-invites/:code/redeem', requireAuth, requireRole('provider'), async (req, res) => {
+  const code = (req.params.code || '').trim().toUpperCase();
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  if (provider.organizationId) return res.status(400).json({ error: 'Your account already belongs to an organization' });
+  const invite = await db.find('organizationInvites', i => i.code === code);
+  if (!invite) return res.status(404).json({ error: 'This invite link is invalid' });
+  if (invite.status !== 'active') return res.status(400).json({ error: 'This invite link has been revoked' });
+  if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) return res.status(400).json({ error: 'This invite link has expired' });
+  if (invite.maxUses != null && invite.usesCount >= invite.maxUses) return res.status(400).json({ error: 'This invite link has reached its usage limit' });
+  const org = await db.find('organizations', o => o.id === invite.organizationId);
+  if (!org || org.status !== 'active') return res.status(400).json({ error: 'This organization account is no longer active' });
+  if (org.seatLimit != null) {
+    const currentSeats = (await db.filter('users', u => u.role === 'provider' && u.organizationId === org.id)).length;
+    if (currentSeats >= org.seatLimit) return res.status(400).json({ error: `${org.name} is at its seat limit — contact them to request more seats.` });
+  }
+  await db.update('users', provider.id, { organizationId: org.id });
+  await db.update('organizationInvites', invite.id, { usesCount: invite.usesCount + 1 });
+  res.json({ ok: true, organizationName: org.name });
+});
+
 router.get('/geo', async (req, res) => {
   const liveCountries = (await db.filter('countries', c => c.status === 'live')).map(c => c.name);
   // Only actually-live countries are offered — matches the super admin's
