@@ -3421,7 +3421,15 @@ async function respondToMatch(id, decision) {
 const PROVIDER_SECTIONS = {
   overview: () => {
     const activeContracts = providerData.contracts.filter(c => c.status === 'active').length;
-    const earnings = providerData.payouts.reduce((s, p) => s + p.amount, 0);
+    // "This Month's Earnings" was previously summing ALL-TIME payouts
+    // regardless of date — a real mismatch between the label and what was
+    // actually shown. This now genuinely filters to the current calendar
+    // month, with the real all-time total shown separately for context.
+    const now = new Date();
+    const thisMonthEarnings = providerData.payouts
+      .filter(p => { const d = new Date(p.date || p.createdAt); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); })
+      .reduce((s, p) => s + p.amount, 0);
+    const allTimeEarnings = providerData.payouts.reduce((s, p) => s + p.amount, 0);
     const catStatus = AUTH.user && AUTH.user.categoryApprovalStatus;
     const catBanner = catStatus === 'pending'
       ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--gold);"><div style="font-size:12.5px;color:var(--navy);">⏳ Your category "<strong>${AUTH.user.category}</strong>" is pending a quick admin review (usually within 24 hours). You can use your account normally in the meantime — we'll notify you the moment it's reviewed.</div></div>`
@@ -3445,13 +3453,13 @@ const PROVIDER_SECTIONS = {
     ${payoutBanner}
     ${catBanner}
     <div class="stat-cards">
-      <div class="stat-card"><div class="stat-card-label">This Month's Earnings</div><div class="stat-card-val">$${earnings.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="stat-card-label">This Month's Earnings</div><div class="stat-card-val">$${thisMonthEarnings.toLocaleString()}</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">$${allTimeEarnings.toLocaleString()} all-time</div></div>
       <div class="stat-card"><div class="stat-card-label">Active Contracts</div><div class="stat-card-val">${activeContracts}</div></div>
       <div class="stat-card"><div class="stat-card-label">Average Rating</div><div class="stat-card-val">${(AUTH.user && AUTH.user.rating) ? Number(AUTH.user.rating).toFixed(1) + '★' : 'New'}</div></div>
       <div class="stat-card"><div class="stat-card-label">Jobs Completed</div><div class="stat-card-val">${providerData.contracts.filter(c => c.status === 'completed').length}</div></div>
     </div>
     <div class="panel"><div class="panel-title">New AI Matches <small>${providerData.matches.length} pending</small></div>${matchesTable(providerData.matches.slice(0, 3))}</div>
-    <div class="panel"><div class="panel-title">Recent Contracts</div>${contractsTable(providerData.contracts.slice(0, 3))}</div>`;
+    <div class="panel"><div class="panel-title">Recent Contracts</div>${contractsTableWithEscrow(providerData.contracts.slice(0, 3))}</div>`;
   },
   matches: () => `
     <div class="dash-header"><div><div class="dash-title">Job Matches</div><div class="dash-sub">Ranked by Taskora's AI matching engine — fit, proximity, and your trust score ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Live data</span>' : ''}</div></div></div>
@@ -3481,8 +3489,16 @@ const PROVIDER_SECTIONS = {
     </div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Earned (after commission)</div><div class="stat-card-val">$${providerData.payouts.reduce((s,p)=>s+p.amount,0).toLocaleString()}</div></div>
-      <div class="stat-card" style="cursor:pointer;" onclick="toggleEarningsBreakdown('available')"><div class="stat-card-label">Available for Payout <span style="font-weight:400;">▾</span></div><div class="stat-card-val">$${availableForPayout.toLocaleString()}</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">${Math.round(commissionRate*100)}% commission applies at payout · click for details</div></div>
-      <div class="stat-card" style="cursor:pointer;" onclick="toggleEarningsBreakdown('pending')"><div class="stat-card-label">Pending (job not yet confirmed done) <span style="font-weight:400;">▾</span></div><div class="stat-card-val">$${pendingPayout.toLocaleString()}</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">click for details</div></div>
+      <div class="stat-card" style="cursor:pointer;" onclick="toggleEarningsBreakdown('available')">
+        <div class="stat-card-label">Available for Payout <span style="font-weight:400;">▾</span></div>
+        <div class="stat-card-val">$${(availableForPayout - Math.round(availableForPayout * commissionRate * 100) / 100).toLocaleString()}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">$${availableForPayout.toLocaleString()} earned − $${(Math.round(availableForPayout * commissionRate * 100) / 100).toLocaleString()} commission (${Math.round(commissionRate*100)}%) · click for details</div>
+      </div>
+      <div class="stat-card" style="cursor:pointer;" onclick="toggleEarningsBreakdown('pending')">
+        <div class="stat-card-label">Pending (job not yet confirmed done) <span style="font-weight:400;">▾</span></div>
+        <div class="stat-card-val">$${pendingPayout.toLocaleString()}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Would net ≈ $${(pendingPayout - Math.round(pendingPayout * commissionRate * 100) / 100).toLocaleString()} after ${Math.round(commissionRate*100)}% commission once released · click for details</div>
+      </div>
     </div>
     <div class="panel" id="earnings-breakdown-panel" style="display:none;"></div>
     <div class="panel"><div class="panel-title">Recent Payout History (by week)</div>${weeklyChart.length ? barChart(weeklyChart) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payouts yet — request one once you have completed jobs.</div>'}</div>
@@ -4002,6 +4018,25 @@ function contractsTable(list) {
       actions = `<button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>`;
     }
     return `<tr><td>${c.bookingNumber || c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${c.signed || '—'}</td><td>${statusBadge(c.status)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
+  }).join('')}
+  </tbody></table></div>`;
+}
+
+// Same as contractsTable, but with a real per-row Escrow column — held,
+// released (ready for payout), or already paid out — so the Overview
+// page's contract list carries genuine financial detail instead of just
+// the booking status.
+function contractsTableWithEscrow(list) {
+  if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No contracts yet.</div>`;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Customer</th><th>Service</th><th>Amount</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  ${list.map(c => {
+    let escrowLabel = '—';
+    if (c.escrow) {
+      if (c.escrow.status === 'released' && c.escrow.payoutId) escrowLabel = '<span style="color:var(--muted);">Paid out</span>';
+      else if (c.escrow.status === 'released') escrowLabel = '<span style="color:#2E8C6F;font-weight:600;">Available</span>';
+      else if (c.escrow.status === 'held') escrowLabel = '<span style="color:var(--gold);">Held</span>';
+    }
+    return `<tr><td>${c.bookingNumber || c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${escrowLabel}</td><td>${statusBadge(c.status)}</td><td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
   }).join('')}
   </tbody></table></div>`;
 }
