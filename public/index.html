@@ -976,12 +976,28 @@
           <div class="auth-role-opt" data-role="provider" onclick="setAuthRole('provider')"><span class="r-icon">🛠️</span>Provider</div>
         </div>
       </div>
-      <button class="oauth-btn" onclick="showToast('Google sign-in isn\'t connected yet in this test environment — please use email/password below.')">🔵 Continue with Google</button>
-      <button class="oauth-btn" onclick="showToast('Facebook sign-in isn\'t connected yet in this test environment — please use email/password below.')">📘 Continue with Facebook</button>
+      <div style="display:flex;gap:10px;">
+        <button class="oauth-btn" style="flex:1;" onclick="showToast('Google sign-in isn\'t connected yet in this test environment — please use email/password below.')">🔵 Google</button>
+        <button class="oauth-btn" style="flex:1;" onclick="showToast('Facebook sign-in isn\'t connected yet in this test environment — please use email/password below.')">📘 Facebook</button>
+      </div>
       <div class="auth-divider">or</div>
       <div class="form-group" id="auth-name-group" style="display:none">
         <label class="form-label">Full Name</label>
         <input class="form-input" type="text" id="auth-name"/>
+      </div>
+      <div class="dates-row">
+        <div class="form-group" id="auth-country-group" style="display:none">
+          <label class="form-label">Country</label>
+          <select class="form-input form-select" id="auth-country" onchange="populateAuthStates()">
+            <option value="">Loading countries…</option>
+          </select>
+        </div>
+        <div class="form-group" id="auth-state-group" style="display:none">
+          <label class="form-label">State / Region</label>
+          <select class="form-input form-select" id="auth-state">
+            <option value="">Select a country first</option>
+          </select>
+        </div>
       </div>
       <div class="form-group" id="auth-phone-group" style="display:none">
         <label class="form-label">Phone Number</label>
@@ -990,31 +1006,20 @@
           <input class="form-input" type="tel" id="auth-phone" style="flex:1;"/>
         </div>
       </div>
-      <div class="form-group" id="auth-country-group" style="display:none">
-        <label class="form-label">Country</label>
-        <select class="form-input form-select" id="auth-country" onchange="populateAuthStates()">
-          <option value="">Loading countries…</option>
-        </select>
-      </div>
-      <div class="form-group" id="auth-state-group" style="display:none">
-        <label class="form-label">State / Region</label>
-        <select class="form-input form-select" id="auth-state">
-          <option value="">Select a country first</option>
-        </select>
-      </div>
-      <div class="form-group" id="auth-city-group" style="display:none">
-        <label class="form-label">City</label>
-        <input class="form-input" type="text" id="auth-city" placeholder="e.g. Philadelphia"/>
-      </div>
       <div class="form-group" id="auth-address-group" style="display:none">
         <label class="form-label">Street Address</label>
         <input class="form-input" type="text" id="auth-address"/>
       </div>
-      <div class="form-group" id="auth-zip-group" style="display:none">
-        <label class="form-label" id="auth-zip-label">Zip / Postal Code</label>
-        <input class="form-input" type="text" id="auth-zip"/>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Used to match you with pros in your community</div>
-        <div id="auth-zip-hint" style="display:none;font-size:11.5px;color:var(--muted);margin-top:3px;">This country doesn't use a formal postal code system, so this is optional.</div>
+      <div class="dates-row">
+        <div class="form-group" id="auth-city-group" style="display:none">
+          <label class="form-label">City</label>
+          <input class="form-input" type="text" id="auth-city" placeholder="e.g. Philadelphia"/>
+        </div>
+        <div class="form-group" id="auth-zip-group" style="display:none">
+          <label class="form-label" id="auth-zip-label">Zip / Postal Code</label>
+          <input class="form-input" type="text" id="auth-zip"/>
+          <div id="auth-zip-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:3px;">Optional — no formal postal system here.</div>
+        </div>
       </div>
       <div id="auth-provider-fields-group" style="display:none">
         <div class="form-group">
