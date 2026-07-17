@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   text       TEXT NOT NULL,
   time       TEXT,
   read       BOOLEAN NOT NULL DEFAULT FALSE,
+  link_to    JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -334,3 +335,4 @@ ALTER TABLE contracts ADD COLUMN IF NOT EXISTS materials_advance NUMERIC(10,2) D
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_amount NUMERIC(10,2) DEFAULT 0;
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_released BOOLEAN DEFAULT FALSE;
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_payout_id TEXT;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS link_to JSONB;

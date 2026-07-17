@@ -369,7 +369,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
       createdAt: new Date().toISOString(),
     };
     await db.insert('matches', match);
-    await notify(provider.id, '🎯', `New AI job match: ${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''} (${score}% fit)`, 'newMatches');
+    await notify(provider.id, '🎯', `New AI job match: ${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''} (${score}% fit)`, 'newMatches', { section: 'matches' });
     matches.push({ ...match, provider: publicProvider(provider) });
   }
 
@@ -380,6 +380,21 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
 router.get('/jobs/mine', requireAuth, requireRole('customer'), async (req, res) => {
   const jobs = await db.filter('jobs', j => j.customerId === req.user.sub);
   res.json({ jobs });
+});
+
+// POST /api/jobs/:id/cancel — a customer can remove their own job request
+// as long as it's still open (unmatched). Once a match is accepted it
+// becomes a real contract, which has its own cancellation path — this is
+// specifically for "I made a mistake" or "never mind" on a raw request
+// that hasn't turned into a booking yet.
+router.post('/jobs/:id/cancel', requireAuth, requireRole('customer'), async (req, res) => {
+  const job = await db.find('jobs', j => j.id === req.params.id && j.customerId === req.user.sub);
+  if (!job) return res.status(404).json({ error: 'Job request not found' });
+  if (job.status !== 'open') {
+    return res.status(400).json({ error: `This request is already ${job.status} and can't be cancelled here` });
+  }
+  const updated = await db.update('jobs', job.id, { status: 'cancelled' });
+  res.json({ job: updated });
 });
 
 // GET /api/matches/mine — provider's pending AI matches
@@ -434,7 +449,7 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async 
     if (provider) await checkPriceAnomaly(provider.category, contract.amount, contract.id, match.customerId, match.providerId);
     await checkNewAccountHighValue(match.customerId, contract.amount);
 
-    await notify(match.customerId, '🤝', `${provider ? provider.name : 'Your matched pro'} accepted your job — contract signed and escrow funded.`, 'bookingUpdates');
+    await notify(match.customerId, '🤝', `${provider ? provider.name : 'Your matched pro'} accepted your job — contract signed and escrow funded.`, 'bookingUpdates', { section: 'bookings' });
   }
   res.json({ match, contract, escrow });
 });
@@ -502,7 +517,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   let escrow = null;
   if (isNegotiable) {
     const customer = await db.find('users', u => u.id === req.user.sub);
-    await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}" — accept to confirm the booking, or decline.`);
+    await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}" — accept to confirm the booking, or decline.`, null, { section: 'bookings' });
   } else {
     escrow = await fundEscrowForContract(contract, req.user.sub, payCurrency);
   }
@@ -524,13 +539,13 @@ router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider')
 
   if (decision === 'decline') {
     const updated = await db.update('contracts', contract.id, { status: 'declined' });
-    await notify(contract.customerId, '❌', `Your offer of $${contract.amount} for "${contract.service}" was declined.`);
+    await notify(contract.customerId, '❌', `Your offer of $${contract.amount} for "${contract.service}" was declined.`, null, { section: 'bookings' });
     return res.json({ contract: updated, escrow: null });
   }
 
   const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10) });
   const escrow = await fundEscrowForContract(contract, contract.customerId, contract.payCurrency);
-  await notify(contract.customerId, '🤝', `Your offer of $${contract.amount} for "${contract.service}" was accepted — escrow funded, booking confirmed.`);
+  await notify(contract.customerId, '🤝', `Your offer of $${contract.amount} for "${contract.service}" was accepted — escrow funded, booking confirmed.`, null, { section: 'bookings' });
   res.json({ contract: updated, escrow });
 });
 
@@ -809,7 +824,7 @@ router.post('/reviews', requireAuth, requireRole('customer'), async (req, res) =
   const avg = allReviews.reduce((s, r) => s + r.stars, 0) / allReviews.length;
   await db.update('users', contract.providerId, { rating: Math.round(avg * 10) / 10 });
 
-  await notify(contract.providerId, '⭐', `New ${stars}-star review: "${text.trim().slice(0, 60)}${text.length > 60 ? '…' : ''}"`);
+  await notify(contract.providerId, '⭐', `New ${stars}-star review: "${text.trim().slice(0, 60)}${text.length > 60 ? '…' : ''}"`, null, { section: 'bookings' });
 
   res.status(201).json({ review });
 });
@@ -855,7 +870,7 @@ router.post('/disputes', requireAuth, async (req, res) => {
 
   // Notify whichever party didn't raise the dispute.
   const otherPartyId = req.user.sub === contract.customerId ? contract.providerId : contract.customerId;
-  await notify(otherPartyId, '⚠️', `A dispute was opened on "${contract.service}" — our team is reviewing it.`, 'bookingUpdates');
+  await notify(otherPartyId, '⚠️', `A dispute was opened on "${contract.service}" — our team is reviewing it.`, 'bookingUpdates', { section: 'bookings' });
 
   // Real fraud/safety screening — checks both parties for an unusual
   // pattern of repeat disputes, not just this one.

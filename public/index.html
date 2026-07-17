@@ -1517,6 +1517,51 @@ function categoryIcon(name) {
   return CATEGORY_ICONS[name] || '🛠️';
 }
 
+function timeAgo(isoString) {
+  if (!isoString) return '';
+  const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(isoString).toLocaleDateString();
+}
+
+// A real card for one unmatched job request — icon, clear hierarchy
+// between the category/description and the budget, a relative timestamp,
+// and a genuine way to cancel a mistaken or no-longer-needed request,
+// rather than a flat unstructured line of text.
+function openJobCardHTML(j) {
+  return `
+    <div class="panel" style="margin:0;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;">
+      <div style="font-size:22px;line-height:1;flex-shrink:0;">${categoryIcon(j.category)}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <div style="font-weight:700;color:var(--navy);font-size:14px;">${j.category}</div>
+          <div style="font-size:11px;color:var(--muted);white-space:nowrap;">${timeAgo(j.createdAt)}</div>
+        </div>
+        <div style="font-size:13px;color:var(--slate);margin-top:2px;line-height:1.5;">${j.description}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:10px;flex-wrap:wrap;">
+          ${j.budget ? `<span class="badge badge-neutral">Budget: ${j.budget}</span>` : '<span></span>'}
+          <button class="btn-sm btn-sm-ghost" onclick="cancelJobRequest('${j.id}')">Cancel Request</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function cancelJobRequest(id) {
+  if (!BACKEND_AVAILABLE) return showToast('Request cancelled (demo mode)');
+  try {
+    await apiFetch('POST', `/jobs/${id}/cancel`);
+    showToast('Job request cancelled');
+    await loadCustomerData();
+    selectCustomerSection('bookings');
+  } catch (e) { showToast(e.message || 'Could not cancel this request'); }
+}
+
 const FALLBACK_PUBLIC_CATEGORIES = [
   { id: 'Plumbing', name: 'Plumbing', proCount: 48 }, { id: 'Cleaning', name: 'Cleaning', proCount: 92 },
   { id: 'Tutoring', name: 'Tutoring', proCount: 65 }, { id: 'Electrical', name: 'Electrical', proCount: 37 },
@@ -1781,7 +1826,7 @@ function navbarHTML(active) {
       <div class="notif-bell" onclick="toggleNotifPanel(event)">🔔${CURRENT_NOTIFICATIONS.some(n => !n.read) ? '<span class="notif-dot"></span>' : ''}</div>
       <div class="notif-panel" id="notif-panel">
         <div class="notif-panel-head">Notifications</div>
-        ${CURRENT_NOTIFICATIONS.length ? CURRENT_NOTIFICATIONS.map(n => `<div class="notif-item"><span class="notif-item-icon">${n.icon}</span><div><div class="notif-item-text">${n.text}</div><div class="notif-item-time">${n.time}</div></div></div>`).join('') : '<div style="padding:16px;color:var(--slate);font-size:12.5px;text-align:center;">No notifications yet.</div>'}
+        ${CURRENT_NOTIFICATIONS.length ? CURRENT_NOTIFICATIONS.map(n => `<div class="notif-item" ${n.linkTo ? `style="cursor:pointer;" onclick='navigateFromNotification(${JSON.stringify(n.linkTo)})'` : ''}><span class="notif-item-icon">${n.icon}</span><div><div class="notif-item-text">${n.text}</div><div class="notif-item-time">${n.time}</div></div></div>`).join('') : '<div style="padding:16px;color:var(--slate);font-size:12.5px;text-align:center;">No notifications yet.</div>'}
       </div>
     </div>` : '';
   // Logged-in users get a way back to the public marketplace + notifications
@@ -1814,6 +1859,31 @@ async function refreshNotifications() {
     const { notifications } = await apiFetch('GET', '/notifications/mine');
     CURRENT_NOTIFICATIONS = notifications;
   } catch (e) { CURRENT_NOTIFICATIONS = FALLBACK_NOTIFICATIONS; }
+}
+
+// Turns a stored notification's linkTo into a real jump to the relevant
+// dashboard section — this is what makes clicking a notification actually
+// DO something instead of just displaying inert text. The same section key
+// (e.g. "bookings") means something slightly different per role, since
+// customers and providers don't share section names 1:1.
+function navigateFromNotification(linkTo) {
+  document.getElementById('notif-panel').classList.remove('open');
+  if (!AUTH.user || !linkTo || !linkTo.section) return;
+  const role = AUTH.user.role;
+  if (role === 'customer') {
+    goDashboard('customer').then(() => {
+      selectCustomerSection(linkTo.section);
+      if (linkTo.contactId) setTimeout(() => selectMessageContact(linkTo.contactId), 150);
+    });
+  } else if (role === 'provider') {
+    const map = { bookings: 'contracts' }; // providers call their booking list "contracts"
+    goDashboard('provider').then(() => {
+      selectProviderSection(map[linkTo.section] || linkTo.section);
+      if (linkTo.contactId) setTimeout(() => selectMessageContact(linkTo.contactId), 150);
+    });
+  } else if (role === 'admin') {
+    goDashboard('admin').then(() => selectAdminSection(linkTo.section));
+  }
 }
 
 async function toggleNotifPanel(e) {
@@ -2865,8 +2935,10 @@ const CUSTOMER_SECTIONS = {
     <div class="dash-header"><div><div class="dash-title">My Bookings</div><div class="dash-sub">Every job, contract, and escrow status in one place ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Live data</span>' : ''}</div></div></div>
     ${customerData.openJobs && customerData.openJobs.length ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--gold);">
       <div class="panel-title">Awaiting a Match <small>${customerData.openJobs.length}</small></div>
-      <div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">These job requests haven't been booked with a provider yet — they'll move to My Bookings automatically once matched.</div>
-      ${customerData.openJobs.map(j => `<div style="padding:8px 0;border-top:1px solid var(--border);"><strong>${j.category}</strong> — ${j.description}${j.budget ? ` · Budget: ${j.budget}` : ''}</div>`).join('')}
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">These job requests haven't been booked with a provider yet — they'll move to My Bookings automatically once matched.</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${customerData.openJobs.map(j => openJobCardHTML(j)).join('')}
+      </div>
     </div>` : ''}
     <div class="panel">${bookingsTable(customerData.bookings)}</div>`,
   messages: () => messagingHTML('customer'),

@@ -133,7 +133,7 @@ router.patch('/users/:id/status', async (req, res) => {
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
   const updated = await db.update('users', target.id, { active });
-  await notify(target.id, active ? '✅' : '⛔', active ? 'Your account has been reactivated.' : 'Your account has been suspended. Contact support for details.');
+  await notify(target.id, active ? '✅' : '⛔', active ? 'Your account has been reactivated.' : 'Your account has been suspended. Contact support for details.', null, { section: 'settings' });
   res.json({ user: publicAdmin(updated) });
 });
 
@@ -146,7 +146,7 @@ router.post('/users/:id/decide', requireDepartment('verification'), async (req, 
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
   const updated = await db.update('users', req.params.id, { verified: decision === 'approve', status: decision === 'approve' ? 'approved' : 'rejected' });
-  await notify(target.id, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? 'Your account has been approved.' : 'Your account application was not approved. Contact support for details.');
+  await notify(target.id, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? 'Your account has been approved.' : 'Your account application was not approved. Contact support for details.', null, { section: 'overview' });
   res.json({ user: publicAdmin(updated) });
 });
 
@@ -174,7 +174,7 @@ router.post('/verification/:id/decide', requireDepartment('verification'), async
   const status = decision === 'approve' ? 'approved' : 'rejected';
   await db.update('verifications', record.id, { status });
   if (decision === 'approve') await db.update('users', record.userId, { verified: true });
-  await notify(record.userId, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? 'Your identity verification was approved.' : 'Your identity verification was rejected — please resubmit your documents.');
+  await notify(record.userId, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? 'Your identity verification was approved.' : 'Your identity verification was rejected — please resubmit your documents.', null, { section: 'verification' });
   res.json({ verification: { ...record, status } });
 });
 
@@ -367,16 +367,16 @@ router.post('/disputes/:id/resolve', requireDepartment('disputes'), async (req, 
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
   const contract = await db.find('contracts', c => c.id === updated.contractId);
   if (contract) {
-    await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved.`, 'bookingUpdates');
+    await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved.`, 'bookingUpdates', { section: 'bookings' });
     if (wasReleased) {
       const providerContracts = await db.filter('contracts', c => c.providerId === contract.providerId);
       const providerContractIds = new Set(providerContracts.map(c => c.id));
       const releasedUnpaid = (await db.filter('escrowTransactions', e => e.status === 'released' && !e.payoutId))
         .filter(e => providerContractIds.has(e.contractId));
       const totalAvailable = releasedUnpaid.reduce((s, e) => s + e.amount, 0);
-      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — escrow released. You now have $${totalAvailable} available to request as a payout.`, 'bookingUpdates');
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — escrow released. You now have $${totalAvailable} available to request as a payout.`, 'bookingUpdates', { section: 'earnings' });
     } else {
-      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved.`, 'bookingUpdates');
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved.`, 'bookingUpdates', { section: 'bookings' });
     }
   }
   res.json({ dispute: updated });
@@ -470,7 +470,7 @@ router.post('/category-requests/:id/approve', requireSuperAdmin, async (req, res
   }
   await db.update('users', request.providerId, { categoryApprovalStatus: 'approved' });
   await db.update('categoryRequests', request.id, { status: 'approved', resolvedAt: new Date().toISOString() });
-  await notify(request.providerId, '✅', `Your category "${finalCategoryName}" was approved — you're now fully listed and bookable.`);
+  await notify(request.providerId, '✅', `Your category "${finalCategoryName}" was approved — you're now fully listed and bookable.`, null, { section: 'settings' });
   res.json({ ok: true, matchedExisting: !!existingCategory, finalCategoryName });
 });
 
@@ -484,7 +484,7 @@ router.post('/category-requests/:id/reject', requireSuperAdmin, async (req, res)
 
   await db.update('users', request.providerId, { categoryApprovalStatus: 'rejected' });
   await db.update('categoryRequests', request.id, { status: 'rejected', resolvedAt: new Date().toISOString() });
-  await notify(request.providerId, '❌', `Your category "${request.requestedCategory}" wasn't approved. Please update your category in Settings to one of our current listed categories.`);
+  await notify(request.providerId, '❌', `Your category "${request.requestedCategory}" wasn't approved. Please update your category in Settings to one of our current listed categories.`, null, { section: 'settings' });
   res.json({ ok: true });
 });
 

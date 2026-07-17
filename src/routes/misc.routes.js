@@ -127,7 +127,7 @@ router.post('/messages', requireAuth, async (req, res) => {
   await db.insert('messages', message);
 
   const sender = await db.find('users', u => u.id === req.user.sub);
-  await notify(toId, '💬', `New message from ${sender ? sender.name : 'someone'}: "${text.trim().slice(0, 50)}${text.length > 50 ? '…' : ''}"`, 'messages');
+  await notify(toId, '💬', `New message from ${sender ? sender.name : 'someone'}: "${text.trim().slice(0, 50)}${text.length > 50 ? '…' : ''}"`, 'messages', { section: 'messages', contactId: req.user.sub });
 
   res.status(201).json({ message });
 });

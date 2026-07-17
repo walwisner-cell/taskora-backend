@@ -13,7 +13,7 @@ const db = require('./db');
 // decisions, disputes) are called with no category, which means they're
 // never suppressible — same principle as why you can't opt out of a bank
 // fraud alert.
-async function notify(userId, icon, text, category = null) {
+async function notify(userId, icon, text, category = null, linkTo = null) {
   if (category) {
     const user = await db.find('users', u => u.id === userId);
     const prefs = user && user.notifPrefs;
@@ -27,6 +27,10 @@ async function notify(userId, icon, text, category = null) {
     text,
     time: 'Just now',
     read: false,
+    // Where clicking this notification should actually take the person —
+    // a dashboard section key, e.g. { section: 'messages' }. Optional:
+    // omitted for notifications with no obvious single destination.
+    linkTo,
     createdAt: new Date().toISOString(),
   });
 }

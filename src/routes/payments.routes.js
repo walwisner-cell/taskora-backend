@@ -287,7 +287,7 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
   }
 
   const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
-  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned) — processing.`, 'payoutAlerts');
+  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned) — processing.`, 'payoutAlerts', { section: 'earnings' });
   res.status(201).json({ payout });
 });
 
@@ -312,7 +312,7 @@ router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), asy
     .filter(e => providerContractIds.has(e.contractId));
   const totalAvailable = releasedUnpaid.reduce((s, e) => s + e.amount, 0);
 
-  await notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts');
+  await notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts', { section: 'earnings' });
   res.json({ contract: updated, escrow: { ...escrow, status: 'released' } });
 });
 
@@ -341,7 +341,7 @@ router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
   const message = escrow
     ? `${canceller ? canceller.name : 'The other party'} cancelled the booking for "${contract.service}". Any held escrow has been refunded.`
     : `${canceller ? canceller.name : 'The other party'} withdrew the offer for "${contract.service}".`;
-  await notify(otherPartyId, '🚫', message, 'bookingUpdates');
+  await notify(otherPartyId, '🚫', message, 'bookingUpdates', { section: 'bookings' });
 
   res.json({ contract: updated, escrow: escrow ? { ...escrow, status: 'refunded' } : null });
 });
