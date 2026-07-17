@@ -82,6 +82,7 @@ function publicProvider(u) {
     plan: u.plan || 'starter',
     profilePhotoUrl: u.profilePhotoUrl || null,
     businessName: u.businessName || null,
+    acceptingBookings: u.acceptingBookings !== false,
   };
 }
 
@@ -566,10 +567,49 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
+  // A provider can pause new bookings without deleting their profile or
+  // going through the confirm/decline dance on every request — the
+  // "vacation mode" pattern TaskRabbit and Thumbtack both have. Checked
+  // before anything else so a customer isn't left holding a pending
+  // request the provider was never going to see.
+  if (provider.acceptingBookings === false) {
+    return res.status(400).json({ error: `${provider.name} isn't currently accepting new bookings. Try another provider, or check back later.` });
+  }
+
   const isNegotiable = provider.pricingModel === 'negotiable';
   if (isNegotiable && (amount === undefined || amount <= 0)) {
     return res.status(400).json({ error: 'Enter your offer amount for this provider' });
   }
+
+  // Every new booking — direct or a Mutual Agreement offer — now genuinely
+  // requires the provider to accept before it's a real, confirmed job.
+  // Previously a direct (non-negotiable) booking skipped this entirely and
+  // went straight to 'active' with escrow already funded, meaning a
+  // provider could have a job "confirmed" on their calendar that they
+  // never actually agreed to take. Funds are still held immediately either
+  // way (the customer is committing real money the moment they book) —
+  // what changed is that the job itself isn't real until a human on the
+  // provider's side says yes, and that decision has a real deadline
+  // instead of being able to sit unanswered forever (see
+  // src/booking-scheduler.js for what happens if they don't respond).
+  //
+  // The deadline itself is tiered by how soon the job actually is (see
+  // src/platform-settings.js), not a flat number — an emergency plumbing
+  // job booked for this afternoon needs a fast response; a mover booked
+  // for next month doesn't. A category can override this entirely (e.g.
+  // "Emergency Plumbing" always needs a 30-minute response regardless of
+  // lead time), set in Categories & Countries.
+  const { getSetting, computeResponseWindowHours } = require('../platform-settings');
+  const tiers = await getSetting('bookingResponseTiers');
+  const categoryRecord = await db.find('categories', c => c.name === provider.category);
+  const jobDateTime = new Date(`${date} ${time}`);
+  const windowHours = computeResponseWindowHours({
+    now: new Date(),
+    jobDateTime,
+    tiers,
+    categoryOverrideHours: categoryRecord ? categoryRecord.responseWindowOverrideHours : null,
+  });
+  const responseDeadline = new Date(Date.now() + windowHours * 60 * 60 * 1000).toISOString();
 
   const contract = {
     id: `ct_${nanoid(10)}`,
@@ -580,14 +620,10 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     date, time, address: address.trim(),
     amount: amount || provider.price * 2,
     materialsAdvance: materialsAdvance || 0,
-    // Mutual Agreement pricing means exactly that — the customer's offer is
-    // a proposal, not a binding charge, until the provider actually agrees
-    // to that specific number. Hourly-rate bookings still confirm and fund
-    // escrow immediately, same as before, since the price was never in
-    // question there.
-    status: isNegotiable ? 'pending_agreement' : 'active',
+    status: isNegotiable ? 'pending_agreement' : 'pending_provider_confirmation',
     payCurrency: payCurrency === 'local' ? 'local' : 'usd',
-    signedAt: isNegotiable ? null : new Date().toISOString().slice(0, 10),
+    signedAt: null,
+    providerResponseDeadline: responseDeadline,
     createdAt: new Date().toISOString(),
   };
   await db.insert('contracts', contract);
@@ -600,38 +636,74 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   await checkPriceAnomaly(provider.category, contract.amount, contract.id, req.user.sub, providerId);
   await checkNewAccountHighValue(req.user.sub, contract.amount);
 
+  // Funds are held immediately regardless of pricing model — a direct
+  // booking is a firm request at a firm price, so there's no reason to
+  // wait on escrow the way a negotiable offer has to wait on the price
+  // itself being agreed. If the provider declines or doesn't respond in
+  // time, this gets refunded automatically (see /respond-offer and
+  // src/booking-scheduler.js).
   let escrow = null;
+  const customer = await db.find('users', u => u.id === req.user.sub);
+  const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
   if (isNegotiable) {
-    const customer = await db.find('users', u => u.id === req.user.sub);
-    await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}" — accept to confirm the booking, or decline.`, null, { section: 'bookings' });
+    await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}" — respond by ${deadlineLabel} or it expires automatically.`, null, { section: 'bookings' });
   } else {
     escrow = await fundEscrowForContract(contract, req.user.sub, payCurrency);
+    await notify(providerId, '📋', `${customer ? customer.name : 'A customer'} booked you for "${contract.service}" on ${date} — confirm by ${deadlineLabel} or the booking is automatically cancelled and refunded.`, null, { section: 'bookings' });
   }
   res.status(201).json({ contract, escrow });
 });
 
 // POST /api/contracts/:id/respond-offer — provider accepts or declines a
-// Mutual Agreement offer. Accepting is the actual moment the fund amount
-// becomes agreed and recorded: only then does a real contract go active and
-// escrow get funded, at exactly the number the provider agreed to.
+// pending booking: either a Mutual Agreement offer (pending_agreement) or
+// a direct booking awaiting confirmation (pending_provider_confirmation).
+// For an offer, accepting is the moment the fund amount becomes agreed and
+// escrow gets funded at exactly that number. For a direct booking, escrow
+// is already funded (see POST /contracts above) — accepting just confirms
+// a human on the provider's side actually agreed to do the job; declining
+// refunds it, same as a cancellation.
 router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider'), async (req, res) => {
   const { decision } = req.body || {};
   if (!['accept', 'decline'].includes(decision)) return res.status(400).json({ error: 'decision must be accept or decline' });
   const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
   if (!contract) return res.status(404).json({ error: 'Offer not found' });
-  if (contract.status !== 'pending_agreement') {
-    return res.status(400).json({ error: `This offer is already ${contract.status} and can't be responded to again` });
+  if (!['pending_agreement', 'pending_provider_confirmation'].includes(contract.status)) {
+    return res.status(400).json({ error: `This booking is already ${contract.status} and can't be responded to again` });
   }
 
+  // Lazy safety net: the scheduled sweep (src/booking-scheduler.js) should
+  // have already caught this, but if it somehow hasn't run yet, don't let
+  // a provider accept something past its own deadline — expire it right
+  // now instead, with the same refund treatment.
+  if (contract.providerResponseDeadline && new Date(contract.providerResponseDeadline) < new Date()) {
+    const { expireOneBooking } = require('../booking-scheduler');
+    await expireOneBooking(contract);
+    return res.status(400).json({ error: 'The response window for this booking has already passed — it was automatically cancelled and refunded.' });
+  }
+
+  const isDirectBooking = contract.status === 'pending_provider_confirmation';
+
   if (decision === 'decline') {
+    if (isDirectBooking) {
+      // Escrow was already funded at booking time for a direct booking —
+      // declining refunds it, same treatment as a cancellation.
+      const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+      if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+    }
     const updated = await db.update('contracts', contract.id, { status: 'declined' });
-    await notify(contract.customerId, '❌', `Your offer of $${contract.amount} for "${contract.service}" was declined.`, null, { section: 'bookings' });
+    const provider = await db.find('users', u => u.id === req.user.sub);
+    await notify(contract.customerId, '❌', `${provider ? provider.name : 'The provider'} can't take "${contract.service}" and declined the booking. Any held funds have been refunded — try another provider.`, null, { section: 'bookings' });
     return res.json({ contract: updated, escrow: null });
   }
 
   const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10) });
-  const escrow = await fundEscrowForContract(contract, contract.customerId, contract.payCurrency);
-  await notify(contract.customerId, '🤝', `Your offer of $${contract.amount} for "${contract.service}" was accepted — escrow funded, booking confirmed.`, null, { section: 'bookings' });
+  const escrow = isDirectBooking
+    ? await db.find('escrowTransactions', e => e.contractId === contract.id) // already funded at booking time
+    : await fundEscrowForContract(contract, contract.customerId, contract.payCurrency); // negotiable offer funds now, at the agreed number
+  const confirmMessage = isDirectBooking
+    ? `Your booking for "${contract.service}" was confirmed by the provider.`
+    : `Your offer of $${contract.amount} for "${contract.service}" was accepted — escrow funded, booking confirmed.`;
+  await notify(contract.customerId, '🤝', confirmMessage, null, { section: 'bookings' });
   res.json({ contract: updated, escrow });
 });
 

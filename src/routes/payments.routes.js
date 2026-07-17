@@ -341,7 +341,7 @@ router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
     c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub)
   );
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
-  if (!['active', 'pending_agreement'].includes(contract.status)) {
+  if (!['active', 'pending_agreement', 'pending_provider_confirmation'].includes(contract.status)) {
     return res.status(400).json({ error: `This booking is already ${contract.status} and can't be cancelled` });
   }
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);

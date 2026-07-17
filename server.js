@@ -102,6 +102,16 @@ seedIfEmpty()
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
     setTimeout(() => { refreshLiveExchangeRates().catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, 5000);
     setInterval(() => { refreshLiveExchangeRates().catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, ONE_DAY_MS);
+
+    // Booking-response expiry sweep (see src/booking-scheduler.js). Runs
+    // every 5 minutes — much more frequent than the FX refresh, since a
+    // provider confirmation window is measured in hours, not days. Without
+    // this, "respond within N hours" would just be text with no actual
+    // consequence.
+    const { expireOverdueBookingResponses } = require('./src/booking-scheduler');
+    const FIVE_MINUTES_MS = 5 * 60 * 1000;
+    setTimeout(() => { expireOverdueBookingResponses().catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, 8000);
+    setInterval(() => { expireOverdueBookingResponses().catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, FIVE_MINUTES_MS);
   })
   .catch(err => {
     console.error('Failed to start server:', err);

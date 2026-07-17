@@ -1415,6 +1415,7 @@ async function loadProviders() {
         availability: p.availability && p.availability.length ? p.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'],
         pricingModel: p.pricingModel || 'hourly',
         profilePhotoUrl: p.profilePhotoUrl || null,
+        acceptingBookings: p.acceptingBookings !== false,
       }));
     }
   } catch (e) { console.warn('Could not load providers from API, using demo data.', e); }
@@ -2507,6 +2508,7 @@ function statusBadge(status) {
     open: ['badge-pending', 'Open'], 'in review': ['badge-warn', 'In Review'],
     resolved: ['badge-success', 'Resolved'], active: ['badge-success', 'Active'],
     pending_agreement: ['badge-warn', 'Awaiting Response'], declined: ['badge-danger', 'Declined'],
+    pending_provider_confirmation: ['badge-warn', 'Awaiting Confirmation'], expired: ['badge-neutral', 'Expired — No Response'],
     cancelled: ['badge-neutral', 'Cancelled'], suspended: ['badge-danger', 'Suspended'],
     verified: ['badge-success', 'Verified'], unverified: ['badge-warn', 'Unverified'],
   };
@@ -2734,7 +2736,7 @@ async function loadCustomerData() {
     const { contracts } = await apiFetch('GET', '/contracts/mine');
     customerData.bookings = contracts.map(c => ({
       id: c.id, bookingNumber: c.bookingNumber, pro: c.providerName, providerId: c.providerId, service: c.service, date: c.signedAt || (c.createdAt || '').slice(0, 10),
-      escrow: c.escrow && c.escrow.status === 'held' ? c.escrow.amount : 0, status: c.status, amount: c.amount, reviewed: c.reviewed,
+      escrow: c.escrow && c.escrow.status === 'held' ? c.escrow.amount : 0, status: c.status, amount: c.amount, reviewed: c.reviewed, providerResponseDeadline: c.providerResponseDeadline,
     }));
     const { notifications } = await apiFetch('GET', '/notifications/mine');
     customerData.notifications = notifications;
@@ -2892,14 +2894,30 @@ async function removePaymentMethod(id) {
 function bookingsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings yet — post a job or book a pro to get started.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Pro</th><th>Service</th><th>Date</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${b.pro}</td><td>${b.service}</td><td>${b.date}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
+  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${b.pro}</td><td>${b.service}</td><td>${b.date}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
   </tbody></table></div>`;
+}
+
+// Shown under the status badge while a booking is awaiting a provider's
+// response — makes the deadline concrete instead of leaving "Awaiting
+// Confirmation" open-ended with no sense of when (or whether) it resolves.
+function responseDeadlineNote(b) {
+  if (!b.providerResponseDeadline || !['pending_agreement', 'pending_provider_confirmation'].includes(b.status)) return '';
+  const deadline = new Date(b.providerResponseDeadline);
+  const hoursLeft = (deadline - new Date()) / (1000 * 60 * 60);
+  const label = hoursLeft > 0
+    ? `Responds by ${deadline.toLocaleString(undefined, { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' })}`
+    : `Response window has passed`;
+  return `<div style="font-size:11px;color:var(--slate);margin-top:3px;">${label}</div>`;
 }
 
 function bookingActionHTML(b) {
   const downloadBtn = `<button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${b.id}')" title="Download a PDF record of this contract">📄 PDF</button>`;
   if (b.status === 'pending_agreement') {
     return `<span style="font-size:12px;color:var(--slate);">Awaiting response</span> <button class="btn-sm btn-sm-ghost" onclick="selectCustomerSection('messages');setTimeout(()=>selectMessageContact('${b.providerId}'),50)">💬 Discuss</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Withdraw Offer</button>`;
+  }
+  if (b.status === 'pending_provider_confirmation') {
+    return `<span style="font-size:12px;color:var(--slate);">Waiting on the provider</span> <button class="btn-sm btn-sm-ghost" onclick="selectCustomerSection('messages');setTimeout(()=>selectMessageContact('${b.providerId}'),50)">💬 Message</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button>`;
   }
   if (b.status === 'active' || b.status === 'confirmed') {
     return `<button class="btn-sm btn-sm-primary" onclick="completeBooking('${b.id}')">Mark Complete</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${b.id}')">Report a Problem</button> ${downloadBtn}`;
@@ -2911,6 +2929,9 @@ function bookingActionHTML(b) {
   }
   if (b.status === 'declined') {
     return `<span style="font-size:12px;color:var(--slate);">Try a new offer, or a different pro</span>`;
+  }
+  if (b.status === 'expired') {
+    return `<span style="font-size:12px;color:var(--slate);">No response in time — refunded. Try another pro?</span>`;
   }
   return downloadBtn;
 }
@@ -3464,7 +3485,9 @@ async function viewProviderProfile(id) {
     <div>
       <div class="profile-card">
         ${priceHTML}
-        <button class="confirm-btn" style="margin-bottom:10px;" onclick="openBooking('${p.id}')">Book Now</button>
+        ${p.acceptingBookings === false
+          ? `<div class="badge badge-neutral" style="display:block;text-align:center;padding:10px;margin-bottom:10px;">Not currently accepting new bookings</div>`
+          : `<button class="confirm-btn" style="margin-bottom:10px;" onclick="openBooking('${p.id}')">Book Now</button>`}
         <button class="pricing-cta" style="width:100%;" onclick="goDashboard('customer');selectCustomerSection('messages')">Message</button>
       </div>
       <div class="profile-card">
@@ -3637,7 +3660,7 @@ async function loadProviderData() {
       id: m.id, customer: m.customerName || 'Customer', service: m.job ? m.job.description : 'Service request',
       budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: (Math.round(Math.random() * 40) / 10) + ' mi',
     }));
-    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow }));
+    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline }));
     providerData.payouts = payouts;
     providerData.portfolioPhotos = photos;
   } catch (e) { console.warn('Falling back to demo provider data', e); }
@@ -3828,6 +3851,16 @@ const PROVIDER_SECTIONS = {
       })()}</div>
       <button class="btn-sm btn-sm-outline" onclick="showPricing()">View Plans & Pricing</button>
     </div>
+    <div class="panel"><div class="panel-title">Accepting New Bookings</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Turn this off any time you're unavailable — on vacation, fully booked, or just need a break. Customers won't be able to book you while it's off; anything already booked is unaffected.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-weight:600;color:var(--navy);">${(AUTH.user && AUTH.user.acceptingBookings === false) ? 'Not accepting new bookings' : 'Accepting new bookings'}</div>
+          <div style="font-size:12px;color:var(--slate);">${(AUTH.user && AUTH.user.acceptingBookings === false) ? "You're hidden from new booking requests right now." : 'Customers can book you normally.'}</div>
+        </div>
+        <button class="btn-sm ${(AUTH.user && AUTH.user.acceptingBookings === false) ? 'btn-sm-primary' : 'btn-sm-outline'}" onclick="toggleAcceptingBookings()">${(AUTH.user && AUTH.user.acceptingBookings === false) ? 'Turn Back On' : 'Pause New Bookings'}</button>
+      </div>
+    </div>
     <div class="panel"><div class="panel-title">Pricing Model</div>
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Choose how customers pay you — either a set hourly rate, or work it out per job.</div>
       <div class="auth-role-grid" style="grid-template-columns:1fr 1fr;margin-bottom:14px;">
@@ -3918,6 +3951,18 @@ async function savePayoutCard() {
   } catch (e) { showToast(e.message || 'Could not save card'); }
 }
 
+async function toggleAcceptingBookings() {
+  const currentlyOff = AUTH.user && AUTH.user.acceptingBookings === false;
+  const patch = { acceptingBookings: currentlyOff };
+  if (!BACKEND_AVAILABLE) { showToast(currentlyOff ? 'Back to accepting bookings (demo mode)' : 'Paused new bookings (demo mode)'); return; }
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', patch);
+    AUTH.user = user;
+    showToast(currentlyOff ? "You're accepting new bookings again" : 'New bookings paused — existing bookings are unaffected');
+    selectProviderSection('settings');
+  } catch (e) { showToast(e.message || 'Could not update this setting'); }
+}
+
 async function savePricingModel() {
   const model = pricingModelUIState || (AUTH.user && AUTH.user.pricingModel) || 'hourly';
   const patch = { pricingModel: model };
@@ -3991,6 +4036,22 @@ async function saveAdminSettings() {
     updateAdminSidebar();
     showToast('Settings saved to your account');
   } catch (e) { showToast(e.message || 'Could not save settings'); }
+}
+
+async function saveBookingWindow() {
+  const within24h = parseFloat(document.getElementById('booking-window-within24h').value);
+  const within7d = parseFloat(document.getElementById('booking-window-within7d').value);
+  const beyond7d = parseFloat(document.getElementById('booking-window-beyond7d').value);
+  for (const [label, v] of [['Job within 24h', within24h], ['Job within 2–7 days', within7d], ['Job beyond 7 days', beyond7d]]) {
+    if (isNaN(v) || v < 0.25 || v > 168) return showToast(`${label}: enter a number of hours between 0.25 and 168`);
+  }
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/settings/booking-window', { within24h, within7d, beyond7d });
+    showToast('Booking confirmation windows updated');
+    await loadAdminData();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not save this setting'); }
 }
 
 async function openPayoutCurrencyChoice() {
@@ -4300,10 +4361,14 @@ function contractsTable(list) {
     let actions = '';
     if (c.status === 'pending_agreement') {
       actions = `<button class="btn-sm btn-sm-primary" onclick="respondToOffer('${c.id}','accept')">Accept Offer</button> <button class="btn-sm btn-sm-outline" onclick="respondToOffer('${c.id}','decline')">Decline</button> <button class="btn-sm btn-sm-ghost" onclick="selectProviderSection('messages');setTimeout(()=>selectMessageContact('${c.customerId}'),50)">💬 Discuss</button>`;
+    } else if (c.status === 'pending_provider_confirmation') {
+      actions = `<button class="btn-sm btn-sm-primary" onclick="respondToOffer('${c.id}','accept')">Confirm Booking</button> <button class="btn-sm btn-sm-outline" onclick="respondToOffer('${c.id}','decline')">Can't Take This</button>`;
     } else if (c.status === 'active') {
       actions = `<button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>`;
+    } else if (c.status === 'expired') {
+      actions = `<span style="font-size:12px;color:var(--slate);">You didn't respond in time — automatically cancelled</span>`;
     }
-    return `<tr><td>${c.bookingNumber || c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${c.signed || '—'}</td><td>${statusBadge(c.status)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
+    return `<tr><td>${c.bookingNumber || c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${c.signed || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
   }).join('')}
   </tbody></table></div>`;
 }
@@ -4328,14 +4393,14 @@ function contractsTableWithEscrow(list) {
 }
 
 async function respondToOffer(contractId, decision) {
-  if (!BACKEND_AVAILABLE) return showToast(decision === 'accept' ? 'Offer accepted (demo mode)' : 'Offer declined (demo mode)');
-  if (decision === 'decline' && !confirm('Decline this offer? The customer will be notified.')) return;
+  if (!BACKEND_AVAILABLE) return showToast(decision === 'accept' ? 'Booking confirmed (demo mode)' : 'Booking declined (demo mode)');
+  if (decision === 'decline' && !confirm("Decline this booking? The customer will be notified and refunded.")) return;
   try {
     const { contract } = await apiFetch('POST', `/contracts/${contractId}/respond-offer`, { decision });
-    showToast(decision === 'accept' ? `Offer accepted — $${contract.amount} now held in escrow` : 'Offer declined');
+    showToast(decision === 'accept' ? `Booking confirmed — $${contract.amount} held in escrow` : 'Booking declined — customer refunded');
     await loadProviderData();
     selectProviderSection('contracts');
-  } catch (e) { showToast(e.message || 'Could not respond to this offer'); }
+  } catch (e) { showToast(e.message || 'Could not respond to this booking'); }
 }
 
 async function cancelProviderContract(contractId) {
@@ -4562,7 +4627,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -4606,7 +4671,7 @@ async function loadAdminData() {
   if (allPeople) adminData.people = allPeople.users.map(u => ({ ...u, role: u.role[0].toUpperCase() + u.role.slice(1), active: u.active !== false }));
   if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status }));
   if (disputes) adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
-  if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active }));
+  if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active, responseWindowOverrideHours: c.responseWindowOverrideHours }));
   if (countries) adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
   if (escrow) adminData.escrow = escrow;
   if (catRequests) adminData.categoryRequests = catRequests.requests;
@@ -4630,14 +4695,16 @@ async function loadAdminData() {
   }
 
   if (AUTH.user && AUTH.user.isSuperAdmin) {
-    const [cities, subAdmins, exchangeRates] = await Promise.all([
+    const [cities, subAdmins, exchangeRates, bookingWindow] = await Promise.all([
       tryFetch('/admin/cities'),
       tryFetch('/admin/sub-admins'),
       tryFetch('/admin/exchange-rates'),
+      tryFetch('/admin/settings/booking-window'),
     ]);
     if (cities) adminData.cities = cities.cities;
     if (subAdmins) adminData.subAdmins = subAdmins.admins;
     if (exchangeRates) adminData.exchangeRates = exchangeRates.rates;
+    if (bookingWindow) adminData.bookingWindowTiers = bookingWindow.tiers;
   }
 }
 
@@ -4852,8 +4919,8 @@ const ADMIN_SECTIONS = {
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitNewCountry()">Create Country</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-country-panel').style.display='none'">Cancel</button></div>
     </div>` : ''}
     <div class="panel"><div class="panel-title">Service Categories <small style="font-weight:400;color:var(--slate);">${adminData.categories.length} total</small></div>
-      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Active</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
-      ${adminData.categories.map(c => `<tr><td>${c.name}</td><td>${c.pros}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteCategory(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Response Window</th><th>Active</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
+      ${adminData.categories.map(c => `<tr><td>${c.name}</td><td>${c.pros}</td><td>${categoryResponseWindowCell(c, isSuper)}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteCategory(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
       </tbody></table></div>
     </div>
     <div class="panel"><div class="panel-title">Countries <small style="font-weight:400;color:var(--slate);">${adminData.countries.length} total</small></div>
@@ -4956,6 +5023,18 @@ const ADMIN_SECTIONS = {
       <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-admin-email" value="${(AUTH.user && AUTH.user.email) || ''}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveAdminSettings()">Save Changes</button>
     </div>
+    ${AUTH.user && AUTH.user.isSuperAdmin ? `
+    <div class="panel"><div class="panel-title">Platform Settings</div>
+      <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Provider Booking Confirmation Window</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">How long a provider has to accept or decline a new booking before it's automatically cancelled and the customer refunded — scaled by how soon the job actually is, not one flat number. A category can override this entirely in Categories & Countries. Changes apply to every new booking made after you save — doesn't affect bookings already pending.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px;">
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job within 24h</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-within24h" value="${adminData.bookingWindowTiers ? adminData.bookingWindowTiers.within24h : 1}"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job within 2–7 days</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-within7d" value="${adminData.bookingWindowTiers ? adminData.bookingWindowTiers.within7d : 4}"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job beyond 7 days</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-beyond7d" value="${adminData.bookingWindowTiers ? adminData.bookingWindowTiers.beyond7d : 24}"/></div>
+      </div>
+      <button class="btn-sm btn-sm-primary" onclick="saveBookingWindow()">Save</button>
+      <div style="font-size:11px;color:var(--slate);margin-top:8px;">Defaults: 1h / 4h / 24h. The deadline is also always automatically capped at the job's own start time, however these are set — a provider can never "confirm" a job after it was supposed to already start.</div>
+    </div>` : ''}
     ${changePasswordPanelHTML('admin')}`,
 };
 
@@ -5737,6 +5816,45 @@ async function toggleCategory(catId) {
     showToast(`${category.name} ${category.active ? 'enabled' : 'disabled'} for booking`);
   } catch (e) { showToast(e.message || 'Could not update category'); }
 }
+
+// The response-window column: read-only for non-super-admins (just shows
+// whether an override is set), and an inline editable input + save/clear
+// for super admins — no modal needed, this is a small enough control to
+// live directly in the table row.
+function categoryResponseWindowCell(c, isSuper) {
+  const hasOverride = c.responseWindowOverrideHours != null;
+  if (!isSuper) {
+    return hasOverride ? `${c.responseWindowOverrideHours}h override` : `<span style="color:var(--slate);">Default tiers</span>`;
+  }
+  return `<div style="display:flex;align-items:center;gap:6px;">
+    <input class="form-input" type="number" min="0.25" max="168" step="0.25" id="cat-window-${c.id}" placeholder="Default" value="${hasOverride ? c.responseWindowOverrideHours : ''}" style="width:80px;padding:5px 8px;font-size:12px;"/>
+    <button class="btn-sm btn-sm-outline" style="padding:4px 8px;font-size:11px;" onclick="saveCategoryResponseWindow('${c.id}')">Save</button>
+    ${hasOverride ? `<button class="btn-sm btn-sm-outline" style="padding:4px 8px;font-size:11px;" onclick="clearCategoryResponseWindow('${c.id}')">Clear</button>` : ''}
+  </div>`;
+}
+
+async function saveCategoryResponseWindow(catId) {
+  const input = document.getElementById(`cat-window-${catId}`);
+  const hours = parseFloat(input.value);
+  if (isNaN(hours) || hours < 0.25 || hours > 168) return showToast('Enter a number of hours between 0.25 and 168, or leave blank and click Clear');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/categories/${catId}/response-window`, { hours });
+    showToast('Response window override saved for this category');
+    await loadAdminData();
+    selectAdminSection('categories');
+  } catch (e) { showToast(e.message || 'Could not save the override'); }
+}
+
+async function clearCategoryResponseWindow(catId) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/categories/${catId}/response-window`, { hours: null });
+    showToast('Reverted to the default tiered response window');
+    await loadAdminData();
+    selectAdminSection('categories');
+  } catch (e) { showToast(e.message || 'Could not clear the override'); }
+}
 async function toggleCountry(cId) {
   if (!BACKEND_AVAILABLE) {
     const c = adminData.countries.find(x => x.id === cId);
@@ -6037,7 +6155,9 @@ function providerCardsHTML(list) {
         <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
         <div class="provider-footer">
           <div class="provider-price">$${p.price}<span>/hr</span></div>
-          <button class="book-btn" onclick="event.stopPropagation();openBooking('${p.id}')">Book Now</button>
+          ${p.acceptingBookings === false
+            ? `<span class="badge badge-neutral" style="font-size:11px;">Not accepting bookings</span>`
+            : `<button class="book-btn" onclick="event.stopPropagation();openBooking('${p.id}')">Book Now</button>`}
         </div>
       </div>
     </div>

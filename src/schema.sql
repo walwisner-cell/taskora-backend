@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS users (
   business_name TEXT,
   business_registration_number TEXT,
   admin_department TEXT,
+  accepting_bookings BOOLEAN NOT NULL DEFAULT TRUE,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ
 );
@@ -52,7 +53,8 @@ CREATE TABLE IF NOT EXISTS categories (
   id      TEXT PRIMARY KEY,
   name    TEXT NOT NULL UNIQUE,
   icon    TEXT DEFAULT '🛠️',
-  active  BOOLEAN NOT NULL DEFAULT TRUE
+  active  BOOLEAN NOT NULL DEFAULT TRUE,
+  response_window_override_hours NUMERIC
 );
 
 CREATE TABLE IF NOT EXISTS countries (
@@ -106,6 +108,7 @@ CREATE TABLE IF NOT EXISTS contracts (
   materials_advance NUMERIC(10,2) DEFAULT 0,
   status         TEXT NOT NULL DEFAULT 'active',
   signed_at      TEXT,
+  provider_response_deadline TIMESTAMPTZ,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -420,6 +423,7 @@ ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS billing_address TEXT;
 ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS billing_zip TEXT;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS booking_number TEXT;
 ALTER TABLE categories ADD COLUMN IF NOT EXISTS icon TEXT DEFAULT '🛠️';
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS response_window_override_hours NUMERIC;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS organization_id TEXT;
@@ -483,3 +487,17 @@ BEGIN
     ALTER TABLE users RENAME COLUMN jobs_completed TO jobs;
   END IF;
 END $$;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS accepting_bookings BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS provider_response_deadline TIMESTAMPTZ;
+
+-- General-purpose key/value settings, first used for the provider
+-- booking-confirmation window (see src/platform-settings.js). Absence of
+-- a row for a given key means "use the built-in default" — same
+-- fallback-chain convention as everywhere else in this app.
+CREATE TABLE IF NOT EXISTS platform_settings (
+  id          TEXT PRIMARY KEY,
+  key         TEXT NOT NULL UNIQUE,
+  value       JSONB NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

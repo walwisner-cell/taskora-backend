@@ -320,9 +320,12 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // PATCH /api/auth/me — update own profile / settings
 router.patch('/me', requireAuth, async (req, res) => {
-  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'plan', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category'];
+  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'plan', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category', 'acceptingBookings'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
+  if ('acceptingBookings' in patch && typeof patch.acceptingBookings !== 'boolean') {
+    return res.status(400).json({ error: 'acceptingBookings must be true or false' });
+  }
   if ('name' in patch && !isValidName(patch.name)) {
     return res.status(400).json({ error: 'Enter a real name — letters, spaces, hyphens, and apostrophes only' });
   }

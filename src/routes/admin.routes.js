@@ -581,6 +581,31 @@ router.get('/categories', async (req, res) => {
 // was already seeded a while ago — new code alone doesn't retroactively
 // add new reference data to an existing database). Never touches real
 // users, bookings, or any existing country/category's settings.
+// GET /api/admin/settings/booking-window — super admin only: the tiered
+// defaults for how long a provider has to accept or decline a new
+// booking, scaled by how soon the job actually is.
+router.get('/settings/booking-window', requireSuperAdmin, async (req, res) => {
+  const { getSetting, DEFAULTS } = require('../platform-settings');
+  const tiers = await getSetting('bookingResponseTiers');
+  res.json({ tiers, isDefault: JSON.stringify(tiers) === JSON.stringify(DEFAULTS.bookingResponseTiers) });
+});
+
+// PATCH /api/admin/settings/booking-window — super admin only: change the
+// tiers. Takes effect immediately for every new booking; doesn't
+// retroactively change the deadline on bookings already awaiting a
+// response.
+router.patch('/settings/booking-window', requireSuperAdmin, async (req, res) => {
+  const { within24h, within7d, beyond7d } = req.body || {};
+  for (const [label, val] of [['within24h', within24h], ['within7d', within7d], ['beyond7d', beyond7d]]) {
+    if (typeof val !== 'number' || val < 0.25 || val > 168) {
+      return res.status(400).json({ error: `${label} must be a number of hours between 0.25 and 168 (one week)` });
+    }
+  }
+  const { setSetting } = require('../platform-settings');
+  await setSetting('bookingResponseTiers', { within24h, within7d, beyond7d });
+  res.json({ ok: true, tiers: { within24h, within7d, beyond7d } });
+});
+
 router.post('/sync-reference-data', requireSuperAdmin, async (req, res) => {
   const { syncReferenceData } = require('../sync-reference-data');
   const result = await syncReferenceData();
@@ -720,6 +745,25 @@ router.patch('/categories/:id', requireSuperAdmin, async (req, res) => {
   const cat = await db.find('categories', c => c.id === req.params.id);
   if (!cat) return res.status(404).json({ error: 'Category not found' });
   const updated = await db.update('categories', cat.id, { active: !cat.active });
+  res.json({ category: updated });
+});
+
+// PATCH /api/admin/categories/:id/response-window — sets (or clears, with
+// hours: null) this category's own booking-confirmation window, overriding
+// the tiered lead-time default for every booking in this category
+// regardless of how soon the job is. Useful for categories with very
+// different urgency profiles than the platform average — e.g. an
+// "Emergency Plumbing" category might always need a fast response, while
+// "Wedding Photography" bookings are usually planned weeks out and don't
+// need one at all.
+router.patch('/categories/:id/response-window', requireSuperAdmin, async (req, res) => {
+  const cat = await db.find('categories', c => c.id === req.params.id);
+  if (!cat) return res.status(404).json({ error: 'Category not found' });
+  const { hours } = req.body || {};
+  if (hours !== null && (typeof hours !== 'number' || hours < 0.25 || hours > 168)) {
+    return res.status(400).json({ error: 'Enter a number of hours between 0.25 and 168, or null to clear the override' });
+  }
+  const updated = await db.update('categories', cat.id, { responseWindowOverrideHours: hours });
   res.json({ category: updated });
 });
 
