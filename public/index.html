@@ -1039,6 +1039,11 @@
           <input class="form-input" type="text" id="auth-skills"/>
           <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Comma-separated — helps the AI match you to the right jobs</div>
         </div>
+        <div class="form-group" id="auth-invite-group">
+          <label class="form-label">Organization Invite Code <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
+          <input class="form-input" type="text" id="auth-invite-code" style="text-transform:uppercase;" oninput="checkInviteCode(this.value)" placeholder="e.g. CY5IGNHP"/>
+          <div id="auth-invite-status" style="font-size:11.5px;margin-top:5px;"></div>
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">Email</label>
@@ -2173,6 +2178,27 @@ function showAuth(mode) {
   loadGeoData();
 }
 
+let inviteCheckTimeout = null;
+function checkInviteCode(code) {
+  clearTimeout(inviteCheckTimeout);
+  const statusEl = document.getElementById('auth-invite-status');
+  const trimmed = (code || '').trim();
+  if (!trimmed) { statusEl.textContent = ''; return; }
+  statusEl.style.color = 'var(--slate)';
+  statusEl.textContent = 'Checking…';
+  inviteCheckTimeout = setTimeout(async () => {
+    if (!BACKEND_AVAILABLE) { statusEl.textContent = ''; return; }
+    try {
+      const result = await apiFetch('GET', `/org-invites/${encodeURIComponent(trimmed.toUpperCase())}`);
+      statusEl.style.color = 'var(--success, #1E7A4C)';
+      statusEl.textContent = `✓ You'll join ${result.organizationName}`;
+    } catch (e) {
+      statusEl.style.color = 'var(--danger, #B23A3A)';
+      statusEl.textContent = e.message || 'Invalid invite code';
+    }
+  }, 500);
+}
+
 /* ══════════════════════ FORGOT / RESET PASSWORD ══════════════════════ */
 let lastTestResetToken = null;
 
@@ -2345,7 +2371,7 @@ async function mockAuth() {
     } else {
       const data = await apiFetch('POST', '/auth/signup/start', {
         name, email, password, role: authState.role, city, country, state, phone, address, zipCode,
-        ...(authState.role === 'provider' ? { category, skills } : {}),
+        ...(authState.role === 'provider' ? { category, skills, inviteCode: document.getElementById('auth-invite-code').value.trim() } : {}),
       });
       pendingSignupId = data.pendingId;
       document.getElementById('auth-main-form').style.display = 'none';
@@ -2386,6 +2412,8 @@ async function submitSignupVerification() {
       pendingPlanSelection = null;
     } else if (data.categoryApprovalStatus === 'pending') {
       showToast(`Account created! Your category "${data.user.category}" is pending a quick admin review (within 24 hours) — you can use your account right away in the meantime.`);
+    } else if (data.joinedOrganizationName) {
+      showToast(`Account created — you've joined ${data.joinedOrganizationName}!`);
     } else {
       showToast('Account created — welcome to Taskora!');
     }
@@ -4468,6 +4496,13 @@ function getAdminNavItems() {
       { key: 'settings', label: 'Settings', icon: '⚙️' },
     ];
   }
+  if (dept === 'sales') {
+    return [
+      { key: 'sales', label: 'Sales Inquiries', icon: '💼' },
+      { key: 'organizations', label: 'Organizations', icon: '🏢' },
+      { key: 'settings', label: 'Settings', icon: '⚙️' },
+    ];
+  }
 
   const base = [
     { key: 'overview', label: 'Overview', icon: '📊' },
@@ -4485,6 +4520,7 @@ function getAdminNavItems() {
   if (AUTH.user && AUTH.user.isSuperAdmin) {
     base.push({ key: 'locations', label: 'Locations & Admins', icon: '🗺️' });
     base.push({ key: 'sales', label: 'Sales Inquiries', icon: '💼' });
+    base.push({ key: 'organizations', label: 'Organizations', icon: '🏢' });
   }
   base.push({ key: 'settings', label: 'Settings', icon: '⚙️' });
   return base;
@@ -4526,7 +4562,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -4545,7 +4581,7 @@ async function loadAdminData() {
     catch (e) { return null; }
   }
 
-  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries, reportsAnalytics] = await Promise.all([
+  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries, reportsAnalytics, salesInquiries, organizations] = await Promise.all([
     tryFetch('/admin/stats'),
     tryFetch('/admin/users/pending'),
     tryFetch('/admin/users/all'),
@@ -4561,6 +4597,8 @@ async function loadAdminData() {
     tryFetch('/admin/plan-pricing'),
     tryFetch('/admin/advertising-inquiries'),
     tryFetch('/admin/reports/analytics'),
+    tryFetch('/admin/sales-inquiries'),
+    tryFetch('/admin/organizations'),
   ]);
 
   if (stats) adminData.stats = stats;
@@ -4578,6 +4616,8 @@ async function loadAdminData() {
   if (planPricing) adminData.planPricing = planPricing;
   if (advertisingInquiries) adminData.advertisingInquiries = advertisingInquiries.inquiries;
   if (reportsAnalytics) adminData.reportsAnalytics = reportsAnalytics;
+  if (salesInquiries) adminData.salesInquiries = salesInquiries.inquiries;
+  if (organizations) adminData.organizations = organizations.organizations;
 
   // A genuine live check, not a hardcoded "everything's fine" badge — this
   // hits the real /api/health endpoint right now and times it.
@@ -4590,15 +4630,13 @@ async function loadAdminData() {
   }
 
   if (AUTH.user && AUTH.user.isSuperAdmin) {
-    const [cities, subAdmins, salesInquiries, exchangeRates] = await Promise.all([
+    const [cities, subAdmins, exchangeRates] = await Promise.all([
       tryFetch('/admin/cities'),
       tryFetch('/admin/sub-admins'),
-      tryFetch('/admin/sales-inquiries'),
       tryFetch('/admin/exchange-rates'),
     ]);
     if (cities) adminData.cities = cities.cities;
     if (subAdmins) adminData.subAdmins = subAdmins.admins;
-    if (salesInquiries) adminData.salesInquiries = salesInquiries.inquiries;
     if (exchangeRates) adminData.exchangeRates = exchangeRates.rates;
   }
 }
@@ -4844,6 +4882,7 @@ const ADMIN_SECTIONS = {
           <option value="financial">Financial Team — global access to escrow & payouts only</option>
           <option value="customer_service">Customer Service — approvals, verification & disputes, to help users directly</option>
           <option value="legal">Legal — read-only access to disputes & transactions, for compliance review</option>
+          <option value="sales">Sales Team — Custom-plan leads and multi-seat organization accounts only</option>
         </select>
       </div>
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="createLocationAdmin()">Create Admin</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-location-panel').style.display='none'">Cancel</button></div>
@@ -4861,6 +4900,9 @@ const ADMIN_SECTIONS = {
   sales: () => `
     <div class="dash-header"><div><div class="dash-title">Sales Inquiries</div><div class="dash-sub">Real submissions from the Custom plan's "Contact Sales" button</div></div></div>
     <div class="panel"><div class="panel-title">All Inquiries <small style="font-weight:400;color:var(--slate);">${(adminData.salesInquiries || []).length} total</small></div>${salesInquiriesTableHTML(adminData.salesInquiries || [])}</div>`,
+  organizations: () => `
+    <div class="dash-header"><div><div class="dash-title">Organizations</div><div class="dash-sub">Multi-seat Custom-plan accounts — created from an agreed Sales Inquiry</div></div></div>
+    <div class="panel"><div class="panel-title">All Organizations <small style="font-weight:400;color:var(--slate);">${(adminData.organizations || []).length} total</small></div>${organizationsListHTML(adminData.organizations || [])}</div>`,
   settings: () => `
     <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Your admin account ${BACKEND_AVAILABLE ? '<span class="badge badge-success" style="margin-left:6px;">Saved to your account</span>' : ''}</div></div></div>
     <div class="panel"><div class="panel-title">Profile</div>
@@ -4879,7 +4921,7 @@ function citiesTable(list) {
   </tbody></table></div>`;
 }
 
-const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disputes Team', financial: 'Financial Team', customer_service: 'Customer Service', legal: 'Legal' };
+const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disputes Team', financial: 'Financial Team', customer_service: 'Customer Service', legal: 'Legal', sales: 'Sales Team' };
 
 function functionalAdminsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No functional team members yet — create one above with a Role other than "Regional Admin".</div>`;
@@ -5152,18 +5194,30 @@ async function updateAdvertisingInquiryStatus(id, status) {
 
 function salesInquiriesTableHTML(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No sales inquiries yet — they'll show up here as soon as someone submits the Custom plan's "Contact Sales" form.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Company</th><th>Contact</th><th>Email</th><th>Team Size</th><th>Message</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Company</th><th>Contact</th><th>Team Size</th><th>Message</th><th>Status</th><th>Deal Terms</th><th>Action</th></tr></thead><tbody>
   ${list.map(i => `<tr>
     <td style="white-space:nowrap;">${(i.createdAt || '').slice(0, 10)}</td>
     <td style="font-weight:600;">${i.companyName}</td>
-    <td>${i.contactName}</td>
-    <td style="font-size:12px;color:var(--slate);">${i.email}</td>
+    <td>
+      <div>${i.contactName}</div>
+      <div style="font-size:12px;color:var(--slate);display:flex;align-items:center;gap:6px;">
+        <span>${i.email}</span>
+        <button class="btn-sm btn-sm-outline" style="padding:2px 7px;font-size:11px;" title="Copy email address" onclick="copyToClipboard('${i.email.replace(/'/g, "&#39;")}', this)">Copy</button>
+      </div>
+    </td>
     <td style="font-size:12px;color:var(--slate);">${i.teamSize || '—'}</td>
-    <td style="max-width:260px;font-size:12.5px;">${i.message}</td>
+    <td style="max-width:220px;font-size:12.5px;">${i.message}</td>
     <td>${adInquiryStatusBadge(i.status)}</td>
+    <td style="font-size:12.5px;">${i.agreedPrice != null ? `$${i.agreedPrice} ${i.agreedCurrency || 'USD'}` : '<span style="color:var(--slate);">Not set</span>'}</td>
     <td class="row-actions">
+      <button class="btn-sm btn-sm-outline" data-mailto-email="${i.email}" data-mailto-company="${i.companyName.replace(/"/g, '&quot;')}" onclick="replyByEmail(this.dataset.mailtoEmail, this.dataset.mailtoCompany)">Reply</button>
       ${i.status !== 'contacted' ? `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'contacted')">Mark Contacted</button>` : ''}
       ${i.status !== 'closed' ? `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'closed')">Close</button>` : `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'new')">Reopen</button>`}
+      <button class="btn-sm btn-sm-primary" data-deal-id="${i.id}" data-deal-company="${i.companyName.replace(/"/g, '&quot;')}" data-deal-price="${i.agreedPrice ?? ''}" data-deal-currency="${i.agreedCurrency || 'USD'}" data-deal-notes="${(i.internalNotes || '').replace(/"/g, '&quot;')}"
+        onclick="openDealNotesForm(this.dataset.dealId, this.dataset.dealCompany, this.dataset.dealPrice, this.dataset.dealCurrency, this.dataset.dealNotes)">Deal Notes</button>
+      ${i.convertedToOrgId
+        ? `<button class="btn-sm btn-sm-outline" onclick="selectAdminSection('organizations')">View Organization</button>`
+        : (i.agreedPrice != null ? `<button class="btn-sm btn-sm-primary" data-conv-id="${i.id}" data-conv-company="${i.companyName.replace(/"/g, '&quot;')}" data-conv-team="${i.teamSize || ''}" onclick="openConvertToOrgForm(this.dataset.convId, this.dataset.convCompany, this.dataset.convTeam)">Convert to Organization</button>` : '')}
     </td>
   </tr>`).join('')}
   </tbody></table></div>`;
@@ -5177,6 +5231,310 @@ async function updateSalesInquiryStatus(id, status) {
     await loadAdminData();
     selectAdminSection('sales');
   } catch (e) { showToast(e.message || 'Could not update status'); }
+}
+
+// Copy-to-clipboard that actually works everywhere, not just modern
+// browsers with the async Clipboard API — falls back to the old
+// textarea+execCommand trick so this never just silently fails.
+async function copyToClipboard(text, buttonEl) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    if (buttonEl) { const original = buttonEl.textContent; buttonEl.textContent = 'Copied!'; setTimeout(() => { buttonEl.textContent = original; }, 1500); }
+    else showToast('Copied to clipboard');
+  } catch (e) { showToast('Could not copy — your browser may be blocking clipboard access'); }
+}
+
+// A deliberate, honest use of mailto: — unlike the old "Advertise Here"
+// and "Contact Sales" buttons this replaced (customer-facing primary
+// actions that silently failed with no fallback), this is an ADMIN
+// convenience shortcut where the Copy button right next to it always
+// works as a fallback if the admin's browser has no mail client
+// configured. Opens their own mail client instead of trying to send mail
+// from inside the app, which this platform has no real capability to do
+// yet (see the [TEST MODE] email notes elsewhere in the codebase).
+function replyByEmail(email, companyName) {
+  const subject = encodeURIComponent(`Re: Your Taskora Custom Plan Inquiry — ${companyName}`);
+  const body = encodeURIComponent(`Hi,\n\nThanks for your interest in Taskora's Custom plan for ${companyName}. \n\n`);
+  window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_blank');
+}
+
+// Deal Notes — an honest record of what was actually negotiated, once a
+// human has talked to this lead. Saving this does NOT create an account,
+// set up billing, or provision anything automatically — there's no
+// multi-seat/organization account system yet for it to attach to. This is
+// just a shared, permanent note so an agreed price and terms aren't
+// trapped in one admin's personal email inbox.
+function openDealNotesForm(id, companyName, price, currency, notes) {
+  const modalHtml = `
+    <div class="modal-overlay open" id="deal-modal-overlay" onclick="if(event.target===this)document.getElementById('deal-modal-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('deal-modal-overlay').remove()">✕</button>
+          <h3>Deal Terms — ${companyName}</h3>
+          <p>A shared record of what was actually agreed — this doesn't provision anything automatically.</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Agreed Price <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="number" min="0" step="0.01" id="deal-price" value="${price || ''}" placeholder="e.g. 15"/></div>
+          <div class="form-group"><label class="form-label">Currency</label><input class="form-input" id="deal-currency" value="${currency || 'USD'}" placeholder="USD"/></div>
+          <div class="form-group"><label class="form-label">Internal Notes</label><textarea class="form-input" id="deal-notes" rows="5" style="resize:vertical;" placeholder="What was discussed, agreed terms, next steps, who talked to them, etc.">${notes || ''}</textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="submitDealNotes('${id}')">Save</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitDealNotes(id) {
+  const priceInput = document.getElementById('deal-price').value;
+  const agreedPrice = priceInput.trim() === '' ? null : parseFloat(priceInput);
+  if (agreedPrice != null && (isNaN(agreedPrice) || agreedPrice < 0)) return showToast('Enter a valid non-negative price, or leave it blank');
+  const agreedCurrency = document.getElementById('deal-currency').value.trim() || 'USD';
+  const internalNotes = document.getElementById('deal-notes').value.trim();
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/sales-inquiries/${id}/deal`, { agreedPrice, agreedCurrency, internalNotes });
+    showToast('Deal terms saved');
+    document.getElementById('deal-modal-overlay').remove();
+    await loadAdminData();
+    selectAdminSection('sales');
+  } catch (e) { showToast(e.message || 'Could not save deal terms'); }
+}
+
+// ── ORGANIZATIONS (multi-seat Custom-plan accounts) ─────────────────────
+
+// The actual "create the account" step, once a deal is agreed. Requires
+// Deal Notes to already have a price set — this form doesn't invent one,
+// it converts an already-negotiated deal into a real account with real
+// seats.
+function openConvertToOrgForm(inquiryId, companyName, teamSize) {
+  const modalHtml = `
+    <div class="modal-overlay open" id="convert-org-modal-overlay" onclick="if(event.target===this)document.getElementById('convert-org-modal-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('convert-org-modal-overlay').remove()">✕</button>
+          <h3>Create Organization — ${companyName}</h3>
+          <p>This creates a real multi-seat account. Providers join it themselves via an invite link (generated after), or you can add existing providers directly.</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Commission Rate <span style="color:var(--slate);font-weight:400;">(decimal, e.g. 0.04 for 4% — the volume discount)</span></label><input class="form-input" type="number" min="0" max="1" step="0.001" id="conv-commission" placeholder="e.g. 0.04"/></div>
+          <div class="form-group"><label class="form-label">Seat Limit <span style="color:var(--slate);font-weight:400;">(optional — blank = unlimited)</span></label><input class="form-input" type="number" min="1" id="conv-seat-limit" value="${(teamSize && parseInt(teamSize, 10)) || ''}" placeholder="e.g. 40"/></div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="submitConvertToOrg('${inquiryId}')">Create Organization</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitConvertToOrg(inquiryId) {
+  const commissionInput = document.getElementById('conv-commission').value;
+  const commissionRate = commissionInput.trim() === '' ? undefined : parseFloat(commissionInput);
+  if (commissionRate !== undefined && (isNaN(commissionRate) || commissionRate < 0 || commissionRate > 1)) return showToast('Commission rate must be a decimal between 0 and 1, e.g. 0.04 for 4%');
+  const seatLimitInput = document.getElementById('conv-seat-limit').value;
+  const seatLimit = seatLimitInput.trim() === '' ? undefined : parseInt(seatLimitInput, 10);
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    const { organization } = await apiFetch('POST', `/admin/sales-inquiries/${inquiryId}/convert-to-org`, { commissionRate, seatLimit });
+    showToast(`${organization.name} is now a real organization account`);
+    document.getElementById('convert-org-modal-overlay').remove();
+    await loadAdminData();
+    selectAdminSection('organizations');
+  } catch (e) { showToast(e.message || 'Could not create the organization'); }
+}
+
+// currentOrgDetailId tracks which org's detail view is open, so actions
+// (add seat, generate invite, etc.) know which org to refresh afterward
+// without needing it threaded through every function call.
+let currentOrgDetailId = null;
+
+function organizationsListHTML(orgs) {
+  if (!orgs.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No organizations yet — convert an agreed Sales Inquiry into one to get started.</div>`;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Organization</th><th>Seats</th><th>Commission Rate</th><th>Account Manager</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  ${orgs.map(o => `<tr>
+    <td style="font-weight:600;">${o.name}</td>
+    <td>${o.seatCount}${o.seatLimit ? ` / ${o.seatLimit}` : ''}</td>
+    <td>${o.commissionRate != null ? `${(o.commissionRate * 100).toFixed(1)}%` : '<span style="color:var(--slate);">Plan default</span>'}</td>
+    <td>${o.accountManagerName || '—'}</td>
+    <td>${o.status === 'active' ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
+    <td><button class="btn-sm btn-sm-primary" onclick="openOrgDetail('${o.id}')">View</button></td>
+  </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+async function openOrgDetail(orgId) {
+  currentOrgDetailId = orgId;
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    const detail = await apiFetch('GET', `/admin/organizations/${orgId}`);
+    renderOrgDetailModal(detail);
+  } catch (e) { showToast(e.message || 'Could not load organization'); }
+}
+
+function renderOrgDetailModal(detail) {
+  const existing = document.getElementById('org-detail-modal-overlay');
+  if (existing) existing.remove();
+  const { organization: o, seats, invites, performance } = detail;
+  const modalHtml = `
+    <div class="modal-overlay open" id="org-detail-modal-overlay" onclick="if(event.target===this)document.getElementById('org-detail-modal-overlay').remove()">
+      <div class="modal" style="max-width:720px;">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('org-detail-modal-overlay').remove()">✕</button>
+          <h3>${o.name}</h3>
+          <p>${o.status === 'active' ? 'Active' : 'Suspended'} · Account manager: ${o.accountManagerName || '—'} · Agreed at $${o.agreedPrice} ${o.agreedCurrency}/mo</p>
+        </div>
+        <div class="modal-body" style="max-height:60vh;overflow-y:auto;">
+
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">
+            <div class="stat-card"><div class="stat-card-label">Seats</div><div class="stat-card-val">${performance.seatCount}${o.seatLimit ? `/${o.seatLimit}` : ''}</div></div>
+            <div class="stat-card"><div class="stat-card-label">Jobs Booked</div><div class="stat-card-val">${performance.jobsBooked}</div></div>
+            <div class="stat-card"><div class="stat-card-label">GMV</div><div class="stat-card-val">$${performance.gmv.toLocaleString()}</div></div>
+            <div class="stat-card"><div class="stat-card-label">Commission Rate</div><div class="stat-card-val">${performance.commissionRate != null ? (performance.commissionRate * 100).toFixed(1) + '%' : '—'}</div></div>
+          </div>
+
+          <div style="font-weight:700;margin-bottom:8px;">Seats (${seats.length})</div>
+          ${seats.length ? `<div class="data-table-wrap" style="margin-bottom:18px;"><table class="data-table"><thead><tr><th>Name</th><th>Category</th><th>City</th><th>Verified</th><th>Action</th></tr></thead><tbody>
+            ${seats.map(s => `<tr><td>${s.name}</td><td>${s.category || '—'}</td><td>${s.city || '—'}</td><td>${s.verified ? '✅' : '⏳'}</td>
+            <td><button class="btn-sm btn-sm-outline" onclick="removeOrgSeat('${o.id}', '${s.id}')">Remove</button></td></tr>`).join('')}
+            </tbody></table></div>` : `<div style="color:var(--slate);font-size:13px;margin-bottom:18px;">No providers have joined yet — share an invite link below, or add one directly.</div>`}
+
+          <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:18px;">
+            <div class="form-group" style="flex:1;margin-bottom:0;"><label class="form-label">Add existing provider by ID</label><input class="form-input" id="add-seat-provider-id" placeholder="Provider user ID"/></div>
+            <button class="btn-sm btn-sm-primary" onclick="addOrgSeat('${o.id}')">Add Seat</button>
+          </div>
+
+          <div style="font-weight:700;margin-bottom:8px;">Invite Links</div>
+          ${invites.length ? `<div class="data-table-wrap" style="margin-bottom:14px;"><table class="data-table"><thead><tr><th>Code</th><th>Uses</th><th>Expires</th><th>Status</th><th>Action</th></tr></thead><tbody>
+            ${invites.map(i => `<tr>
+              <td style="font-family:monospace;font-weight:700;">${i.code}</td>
+              <td>${i.usesCount}${i.maxUses ? ` / ${i.maxUses}` : ''}</td>
+              <td style="font-size:12px;color:var(--slate);">${i.expiresAt ? new Date(i.expiresAt).toLocaleDateString() : 'Never'}</td>
+              <td>${i.status === 'active' ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-neutral">Revoked</span>'}</td>
+              <td class="row-actions">
+                <button class="btn-sm btn-sm-outline" onclick="copyToClipboard('${i.code}', this)">Copy Code</button>
+                ${i.status === 'active' ? `<button class="btn-sm btn-sm-outline" onclick="revokeOrgInvite('${o.id}', '${i.id}')">Revoke</button>` : ''}
+              </td>
+            </tr>`).join('')}
+            </tbody></table></div>` : `<div style="color:var(--slate);font-size:13px;margin-bottom:14px;">No invite links yet.</div>`}
+          <div style="display:flex;gap:8px;align-items:flex-end;">
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Max Uses <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="number" min="1" id="invite-max-uses" style="width:120px;" placeholder="Unlimited"/></div>
+            <div class="form-group" style="margin-bottom:0;"><label class="form-label">Expires in Days <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="number" min="1" id="invite-expires-days" style="width:140px;" placeholder="Never"/></div>
+            <button class="btn-sm btn-sm-primary" onclick="generateOrgInvite('${o.id}')">Generate Invite Link</button>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button class="btn-sm btn-sm-outline" onclick="editOrgSettings('${o.id}', ${o.commissionRate ?? 'null'}, ${o.seatLimit ?? 'null'}, '${o.status}')">Edit Settings</button>
+          <button class="confirm-btn" onclick="document.getElementById('org-detail-modal-overlay').remove()">Done</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function addOrgSeat(orgId) {
+  const providerId = document.getElementById('add-seat-provider-id').value.trim();
+  if (!providerId) return showToast('Enter a provider ID');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('POST', `/admin/organizations/${orgId}/seats`, { providerId });
+    showToast('Seat added');
+    const detail = await apiFetch('GET', `/admin/organizations/${orgId}`);
+    renderOrgDetailModal(detail);
+    await loadAdminData();
+  } catch (e) { showToast(e.message || 'Could not add seat'); }
+}
+
+async function removeOrgSeat(orgId, userId) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('DELETE', `/admin/organizations/${orgId}/seats/${userId}`);
+    showToast('Seat removed — this provider now follows their own individual plan rate');
+    const detail = await apiFetch('GET', `/admin/organizations/${orgId}`);
+    renderOrgDetailModal(detail);
+    await loadAdminData();
+  } catch (e) { showToast(e.message || 'Could not remove seat'); }
+}
+
+async function generateOrgInvite(orgId) {
+  const maxUsesInput = document.getElementById('invite-max-uses').value;
+  const expiresInput = document.getElementById('invite-expires-days').value;
+  const maxUses = maxUsesInput.trim() === '' ? undefined : parseInt(maxUsesInput, 10);
+  const expiresInDays = expiresInput.trim() === '' ? undefined : parseInt(expiresInput, 10);
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    const { invite } = await apiFetch('POST', `/admin/organizations/${orgId}/invites`, { maxUses, expiresInDays });
+    showToast(`Invite link created: ${invite.code}`);
+    const detail = await apiFetch('GET', `/admin/organizations/${orgId}`);
+    renderOrgDetailModal(detail);
+  } catch (e) { showToast(e.message || 'Could not generate invite link'); }
+}
+
+async function revokeOrgInvite(orgId, inviteId) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/organizations/${orgId}/invites/${inviteId}/revoke`);
+    showToast('Invite link revoked');
+    const detail = await apiFetch('GET', `/admin/organizations/${orgId}`);
+    renderOrgDetailModal(detail);
+  } catch (e) { showToast(e.message || 'Could not revoke invite'); }
+}
+
+function editOrgSettings(orgId, commissionRate, seatLimit, status) {
+  document.getElementById('org-detail-modal-overlay').remove();
+  const modalHtml = `
+    <div class="modal-overlay open" id="edit-org-modal-overlay" onclick="if(event.target===this)document.getElementById('edit-org-modal-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('edit-org-modal-overlay').remove()">✕</button>
+          <h3>Edit Organization Settings</h3>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Commission Rate <span style="color:var(--slate);font-weight:400;">(decimal, blank = follow plan default)</span></label><input class="form-input" type="number" min="0" max="1" step="0.001" id="edit-org-commission" value="${commissionRate ?? ''}"/></div>
+          <div class="form-group"><label class="form-label">Seat Limit <span style="color:var(--slate);font-weight:400;">(blank = unlimited)</span></label><input class="form-input" type="number" min="1" id="edit-org-seat-limit" value="${seatLimit ?? ''}"/></div>
+          <div class="form-group"><label class="form-label">Status</label>
+            <select class="form-input" id="edit-org-status">
+              <option value="active" ${status === 'active' ? 'selected' : ''}>Active</option>
+              <option value="suspended" ${status === 'suspended' ? 'selected' : ''}>Suspended</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="submitOrgSettings('${orgId}')">Save</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitOrgSettings(orgId) {
+  const commissionInput = document.getElementById('edit-org-commission').value;
+  const commissionRate = commissionInput.trim() === '' ? null : parseFloat(commissionInput);
+  if (commissionRate != null && (isNaN(commissionRate) || commissionRate < 0 || commissionRate > 1)) return showToast('Commission rate must be a decimal between 0 and 1');
+  const seatLimitInput = document.getElementById('edit-org-seat-limit').value;
+  const seatLimit = seatLimitInput.trim() === '' ? null : parseInt(seatLimitInput, 10);
+  const status = document.getElementById('edit-org-status').value;
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/organizations/${orgId}`, { commissionRate, seatLimit, status });
+    showToast('Organization settings updated');
+    document.getElementById('edit-org-modal-overlay').remove();
+    await loadAdminData();
+    selectAdminSection('organizations');
+  } catch (e) { showToast(e.message || 'Could not update organization'); }
 }
 
 function openNewLocationForm() {
@@ -6009,8 +6367,17 @@ function sendSupportChatMessage() {
   // this is the same code path as clicking "Open Reset Link Now" in test mode.
   const urlParams = new URLSearchParams(window.location.search);
   const urlResetToken = urlParams.get('resetToken');
+  const urlInviteCode = urlParams.get('invite');
   if (urlResetToken) {
     showResetPasswordForm(urlResetToken);
+  } else if (urlInviteCode && !getSavedAuthToken()) {
+    // An organization invite link — jump straight to a provider signup
+    // form with the code pre-filled and already validated, rather than
+    // making someone find the field themselves.
+    showAuth('signup');
+    setAuthRole('provider');
+    const codeInput = document.getElementById('auth-invite-code');
+    if (codeInput) { codeInput.value = urlInviteCode.toUpperCase(); checkInviteCode(urlInviteCode); }
   } else if (BACKEND_AVAILABLE) {
     // Otherwise, try to restore a real prior session — this is what makes an
     // ordinary browser refresh not silently log someone out. The saved

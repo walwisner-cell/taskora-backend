@@ -4,7 +4,7 @@ const db = require('../db');
 const { requireAuth, requireRole, hashPassword } = require('../auth');
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidName, isValidLabel, validate } = require('../validators');
 const { notify } = require('../notify');
-const { commissionRateForPlan } = require('../commission');
+const { commissionRateForPlan, effectiveCommissionRate } = require('../commission');
 const { effectivePlanPricing, PLAN_KEYS, DEFAULT_USD_PRICES } = require('../plan-pricing');
 const { currencyForCountry, APPROX_USD_RATE, CURRENCY_BY_COUNTRY } = require('../currency-data');
 
@@ -52,6 +52,24 @@ async function requireSuperAdmin(req, res, next) {
   const m = await me(req);
   if (!m || !m.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
   next();
+}
+
+// Stricter than requireDepartment: gates a genuinely company-wide business
+// function (Sales Inquiries, Organizations) that a plain regional admin
+// should NOT see just because they have no department set — unlike
+// requireDepartment, only a super admin or an admin explicitly scoped to
+// this exact department passes. A dispute or verification request can come
+// from any city, so those stay open to unscoped regional admins by
+// default; a Custom-plan sales deal or a multi-seat organization account
+// is a different kind of thing entirely, closer to Locations & Admins.
+function requireSuperAdminOrDepartment(dept) {
+  return async (req, res, next) => {
+    const m = await me(req);
+    if (!m) return res.status(403).json({ error: 'Not authorized' });
+    if (m.isSuperAdmin) return next();
+    if (m.adminDepartment === dept) return next();
+    return res.status(403).json({ error: `This requires a super admin account or ${dept === 'sales' ? 'Sales team' : dept} access.` });
+  };
 }
 
 // Gates access to one functional department's endpoints (verification,
@@ -404,16 +422,18 @@ router.get('/transactions', requireDepartment(['financial', 'legal']), async (re
     const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
     return { c, customer, provider, escrow };
   }));
+  const orgsById = new Map((await db.all('organizations')).map(o => [o.id, o]));
 
   const scoped = region ? rows.filter(r => r.customer && r.customer.city === region) : rows;
   const transactions = scoped.map(({ c, customer, provider, escrow }) => {
     const materialsAdvanceAmount = (escrow && escrow.materialsAdvanceAmount) || 0;
     // Real commission is only recorded on the payout itself, once it's
     // actually paid out (see payments.routes.js). Until then, this is a
-    // clearly-labeled *estimate* — amount x the provider's current plan
-    // rate — so admins aren't left guessing what a job will net the
-    // platform before payout happens.
-    const commissionRate = provider ? commissionRateForPlan(provider.plan) : null;
+    // clearly-labeled *estimate* — amount x the provider's effective rate
+    // (their org's volume-discount rate if they're on a Custom-plan org,
+    // otherwise their individual plan rate) — so admins aren't left
+    // guessing what a job will net the platform before payout happens.
+    const commissionRate = provider ? effectiveCommissionRate(provider, orgsById.get(provider.organizationId)) : null;
     const estCommission = commissionRate != null ? Math.round(c.amount * commissionRate * 100) / 100 : null;
     return {
       contractId: c.id,
@@ -472,6 +492,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'legal']), async
     payoutsInScope = payoutsInScope.filter(p => regionalProviderIds.has(p.providerId));
   }
   const payoutsCommissionInScope = payoutsInScope.reduce((s, p) => s + (p.commissionAmount || 0), 0);
+  const orgsById = new Map((await db.all('organizations')).map(o => [o.id, o]));
 
   const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
     res,
@@ -487,7 +508,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'legal']), async
   const totalGMV = scoped.reduce((s, r) => s + r.c.amount, 0);
   const totalHeld = scoped.filter(r => r.escrow && r.escrow.status === 'held').reduce((s, r) => s + r.escrow.amount, 0);
   const totalReleased = scoped.filter(r => r.escrow && r.escrow.status === 'released').reduce((s, r) => s + r.escrow.amount, 0);
-  const totalEstCommission = scoped.reduce((s, r) => s + r.c.amount * commissionRateForPlan(r.provider && r.provider.plan), 0);
+  const totalEstCommission = scoped.reduce((s, r) => s + r.c.amount * effectiveCommissionRate(r.provider, orgsById.get(r.provider && r.provider.organizationId)), 0);
   twoColumnRow('Total GMV', `$${totalGMV.toFixed(2)}`, 'Transactions', String(scoped.length));
   twoColumnRow('Escrow Held', `$${totalHeld.toFixed(2)}`, 'Escrow Released', `$${totalReleased.toFixed(2)}`);
   twoColumnRow('Est. Commission (unpaid + paid)', `$${totalEstCommission.toFixed(2)}`, 'Realized Commission (paid out)', `$${payoutsCommissionInScope.toFixed(2)}`);
@@ -505,7 +526,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'legal']), async
         (provider && provider.category) || '—',
         c.service,
         `$${c.amount}`,
-        `$${(c.amount * commissionRateForPlan(provider && provider.plan)).toFixed(2)}`,
+        `$${(c.amount * effectiveCommissionRate(provider, orgsById.get(provider && provider.organizationId))).toFixed(2)}`,
         c.status,
       ])
     );
@@ -564,6 +585,35 @@ router.post('/sync-reference-data', requireSuperAdmin, async (req, res) => {
   const { syncReferenceData } = require('../sync-reference-data');
   const result = await syncReferenceData();
   res.json(result);
+});
+
+// POST /api/admin/backfill-jobs-completed — one-time correction tool, same
+// spirit as sync-reference-data: "new code doesn't retroactively fix old
+// data" applies here too. The jobs-completed count is now genuinely
+// incremented on every real job completion (see POST
+// /contracts/:id/complete), but that only affects jobs completed AFTER
+// this fix shipped — any provider's existing count is still whatever
+// static seed number they started with. This recomputes every provider's
+// count from their actual completed contracts, once, on demand.
+//
+// Fair warning built into the response, not hidden: for providers with
+// little or no real contract history yet, this will show as a large drop
+// from an impressive-looking seed number down to an honest small one.
+// That's the point — it's real deployments this matters for.
+router.post('/backfill-jobs-completed', requireSuperAdmin, async (req, res) => {
+  const providers = await db.filter('users', u => u.role === 'provider');
+  const contracts = await db.all('contracts');
+  let updated = 0;
+  const changes = [];
+  for (const p of providers) {
+    const realCount = contracts.filter(c => c.providerId === p.id && c.status === 'completed').length;
+    if (realCount !== (p.jobs || 0)) {
+      changes.push({ providerId: p.id, name: p.name, before: p.jobs || 0, after: realCount });
+      await db.update('users', p.id, { jobs: realCount });
+      updated += 1;
+    }
+  }
+  res.json({ ok: true, providersChecked: providers.length, providersUpdated: updated, changes });
 });
 
 router.get('/category-requests', requireSuperAdmin, async (req, res) => {
@@ -764,8 +814,8 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
     ['country', isNonEmptyString(country), 'Country is required'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
-  if (department && !['verification', 'disputes', 'financial', 'customer_service', 'legal'].includes(department)) {
-    return res.status(400).json({ error: 'department must be verification, disputes, or financial' });
+  if (department && !['verification', 'disputes', 'financial', 'customer_service', 'legal', 'sales'].includes(department)) {
+    return res.status(400).json({ error: 'department must be verification, disputes, financial, customer_service, legal, or sales' });
   }
 
   const existing = await db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
@@ -1043,23 +1093,231 @@ router.post('/exchange-rates/refresh', requireSuperAdmin, async (req, res) => {
 });
 
 // GET /api/admin/sales-inquiries — every Custom Plan "Contact Sales"
-// submission, newest first. Same super-admin-only reasoning as
-// advertising-inquiries: an enterprise-sales function, not tied to a city
-// or existing department.
-router.get('/sales-inquiries', requireSuperAdmin, async (req, res) => {
+// submission, newest first. Super admin, or an admin scoped to the Sales
+// department — an enterprise-sales function, not tied to any one city.
+router.get('/sales-inquiries', requireSuperAdminOrDepartment('sales'), async (req, res) => {
   const inquiries = await db.all('salesInquiries');
   inquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json({ inquiries });
 });
 
 // PATCH /api/admin/sales-inquiries/:id/status
-router.patch('/sales-inquiries/:id/status', requireSuperAdmin, async (req, res) => {
+router.patch('/sales-inquiries/:id/status', requireSuperAdminOrDepartment('sales'), async (req, res) => {
   const { status } = req.body || {};
   if (!['new', 'contacted', 'closed'].includes(status)) return res.status(400).json({ error: 'status must be new, contacted, or closed' });
   const target = await db.find('salesInquiries', i => i.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'Inquiry not found' });
   const updated = await db.update('salesInquiries', target.id, { status });
   res.json({ inquiry: updated });
+});
+
+// PATCH /api/admin/sales-inquiries/:id/deal — records what was actually
+// negotiated once a human has talked to this lead. This is deliberately
+// just a record, not automation: saving an agreed price here does NOT
+// create an account, set up billing, or provision anything — there's no
+// multi-seat/organization account system yet for it to attach to (that's
+// bigger future work). What this gives you now is an honest place to
+// write down "we agreed to $X/seat" so it isn't lost in someone's email
+// inbox, without pretending the system did more than it did.
+router.patch('/sales-inquiries/:id/deal', requireSuperAdminOrDepartment('sales'), async (req, res) => {
+  const { agreedPrice, agreedCurrency, internalNotes } = req.body || {};
+  if (agreedPrice !== undefined && agreedPrice !== null && (typeof agreedPrice !== 'number' || agreedPrice < 0)) {
+    return res.status(400).json({ error: 'Enter a valid non-negative price, or leave it blank' });
+  }
+  const target = await db.find('salesInquiries', i => i.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'Inquiry not found' });
+  const patch = { updatedAt: new Date().toISOString() };
+  if (agreedPrice !== undefined) patch.agreedPrice = agreedPrice;
+  if (agreedCurrency !== undefined) patch.agreedCurrency = (agreedCurrency || 'USD').toUpperCase();
+  if (internalNotes !== undefined) patch.internalNotes = (internalNotes || '').trim() || null;
+  const updated = await db.update('salesInquiries', target.id, patch);
+  res.json({ inquiry: updated });
+});
+
+// ── ORGANIZATIONS (Custom-plan multi-seat accounts) ─────────────────────
+// Super admin or Sales-department admin only — creating a company-wide
+// account with its own commission rate is a genuine business decision,
+// closed off to ordinary regional admins (unlike disputes/verification,
+// which stay open to any regional admin with no department set).
+
+// POST /api/admin/sales-inquiries/:id/convert-to-org — the actual "create
+// the account" step once a Custom-plan deal is agreed. Requires deal terms
+// (agreed price) to already be set via /deal — this endpoint doesn't
+// invent a price, it turns an already-negotiated deal into a real account.
+// Closes the originating inquiry and links back to it either direction,
+// so there's always a paper trail from lead to account.
+router.post('/sales-inquiries/:id/convert-to-org', requireSuperAdminOrDepartment('sales'), async (req, res) => {
+  const inquiry = await db.find('salesInquiries', i => i.id === req.params.id);
+  if (!inquiry) return res.status(404).json({ error: 'Inquiry not found' });
+  if (inquiry.convertedToOrgId) return res.status(400).json({ error: 'This inquiry has already been converted to an organization' });
+  if (inquiry.agreedPrice == null) return res.status(400).json({ error: 'Set agreed deal terms (Deal Notes) before converting to an account' });
+
+  const { commissionRate, seatLimit, accountManagerId } = req.body || {};
+  if (commissionRate != null && (typeof commissionRate !== 'number' || commissionRate < 0 || commissionRate > 1)) {
+    return res.status(400).json({ error: 'commissionRate must be a decimal between 0 and 1 (e.g. 0.04 for 4%), or omitted' });
+  }
+  const me_ = await me(req);
+  const parsedSeatLimit = seatLimit != null ? parseInt(seatLimit, 10) : (parseInt(inquiry.teamSize, 10) || null);
+
+  const org = {
+    id: `org_${nanoid(10)}`,
+    name: inquiry.companyName,
+    salesInquiryId: inquiry.id,
+    agreedPrice: inquiry.agreedPrice,
+    agreedCurrency: inquiry.agreedCurrency || 'USD',
+    commissionRate: commissionRate ?? null,
+    seatLimit: (parsedSeatLimit && parsedSeatLimit > 0) ? parsedSeatLimit : null,
+    accountManagerId: accountManagerId || me_.id,
+    billingContactName: inquiry.contactName,
+    billingContactEmail: inquiry.email,
+    status: 'active',
+    createdBy: me_.id,
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('organizations', org);
+  await db.update('salesInquiries', inquiry.id, { convertedToOrgId: org.id, status: 'closed', updatedAt: new Date().toISOString() });
+  res.status(201).json({ organization: org });
+});
+
+// GET /api/admin/organizations — every Custom-plan account, with real
+// seat counts (not a stored counter — counted from actual attached users).
+router.get('/organizations', requireSuperAdminOrDepartment('sales'), async (req, res) => {
+  const orgs = await db.all('organizations');
+  const providers = await db.filter('users', u => u.role === 'provider' && !!u.organizationId);
+  const admins = await db.filter('users', u => u.role === 'admin');
+  const adminById = new Map(admins.map(a => [a.id, a]));
+  const result = orgs.map(o => ({
+    ...o,
+    seatCount: providers.filter(p => p.organizationId === o.id).length,
+    accountManagerName: (adminById.get(o.accountManagerId) || {}).name || null,
+  })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ organizations: result });
+});
+
+// GET /api/admin/organizations/:id — full detail: the org record, its real
+// attached seats, active invite links, and combined performance across
+// every seat (the "centralized reporting" promised on the Custom card) —
+// computed the same honest way as the platform-wide Reports & Analytics
+// (real contracts, not stored counters).
+router.get('/organizations/:id', requireSuperAdminOrDepartment('sales'), async (req, res) => {
+  const org = await db.find('organizations', o => o.id === req.params.id);
+  if (!org) return res.status(404).json({ error: 'Organization not found' });
+
+  const seats = await db.filter('users', u => u.role === 'provider' && u.organizationId === org.id);
+  const seatIds = new Set(seats.map(s => s.id));
+  const allContracts = await db.all('contracts');
+  const orgContracts = allContracts.filter(c => seatIds.has(c.providerId));
+  const completed = orgContracts.filter(c => c.status === 'completed');
+  const gmv = Math.round(orgContracts.reduce((s, c) => s + (c.amount || 0), 0) * 100) / 100;
+  const commissionRate = effectiveCommissionRate(null, org) ?? null;
+  const invites = (await db.filter('organizationInvites', i => i.organizationId === org.id))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const admins = await db.filter('users', u => u.role === 'admin');
+  const accountManager = admins.find(a => a.id === org.accountManagerId) || null;
+
+  res.json({
+    organization: { ...org, accountManagerName: accountManager ? accountManager.name : null },
+    seats: seats.map(s => ({ id: s.id, name: s.name, email: s.email, category: s.category, city: s.city, rating: s.rating, verified: s.verified, active: s.active })),
+    invites,
+    performance: {
+      seatCount: seats.length,
+      jobsBooked: orgContracts.length,
+      jobsCompleted: completed.length,
+      gmv,
+      commissionRate,
+      estCommission: commissionRate != null ? Math.round(gmv * commissionRate * 100) / 100 : null,
+    },
+  });
+});
+
+// PATCH /api/admin/organizations/:id — edit the account: commission rate,
+// seat limit, account manager, billing contact, or suspend/reactivate it.
+router.patch('/organizations/:id', requireSuperAdminOrDepartment('sales'), async (req, res) => {
+  const org = await db.find('organizations', o => o.id === req.params.id);
+  if (!org) return res.status(404).json({ error: 'Organization not found' });
+  const { commissionRate, seatLimit, accountManagerId, billingContactName, billingContactEmail, status } = req.body || {};
+  const patch = { updatedAt: new Date().toISOString() };
+  if (commissionRate !== undefined) {
+    if (commissionRate !== null && (typeof commissionRate !== 'number' || commissionRate < 0 || commissionRate > 1)) {
+      return res.status(400).json({ error: 'commissionRate must be a decimal between 0 and 1, or null to clear it' });
+    }
+    patch.commissionRate = commissionRate;
+  }
+  if (seatLimit !== undefined) patch.seatLimit = seatLimit === null ? null : parseInt(seatLimit, 10);
+  if (accountManagerId !== undefined) patch.accountManagerId = accountManagerId;
+  if (billingContactName !== undefined) patch.billingContactName = billingContactName;
+  if (billingContactEmail !== undefined) patch.billingContactEmail = billingContactEmail;
+  if (status !== undefined) {
+    if (!['active', 'suspended'].includes(status)) return res.status(400).json({ error: 'status must be active or suspended' });
+    patch.status = status;
+  }
+  const updated = await db.update('organizations', org.id, patch);
+  res.json({ organization: updated });
+});
+
+// POST /api/admin/organizations/:id/seats — admin-provisioned seat
+// addition: attach an EXISTING provider account to this org directly
+// (e.g. someone who signed up individually before the org existed).
+// Complements invite links, which are for new/existing providers joining
+// themselves.
+router.post('/organizations/:id/seats', requireSuperAdminOrDepartment('sales'), async (req, res) => {
+  const org = await db.find('organizations', o => o.id === req.params.id);
+  if (!org) return res.status(404).json({ error: 'Organization not found' });
+  const { providerId } = req.body || {};
+  const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
+  if (!provider) return res.status(404).json({ error: 'Provider not found' });
+  if (provider.organizationId) return res.status(400).json({ error: `This provider already belongs to an organization${provider.organizationId === org.id ? ' (this one)' : ''}.` });
+  if (org.seatLimit != null) {
+    const currentSeats = (await db.filter('users', u => u.role === 'provider' && u.organizationId === org.id)).length;
+    if (currentSeats >= org.seatLimit) return res.status(400).json({ error: `This organization is at its ${org.seatLimit}-seat limit.` });
+  }
+  const updated = await db.update('users', provider.id, { organizationId: org.id });
+  res.json({ provider: publicAdmin(updated) });
+});
+
+// DELETE /api/admin/organizations/:id/seats/:userId — remove a provider
+// from the org. They revert to their own individual plan rate immediately
+// — nothing else about their account changes.
+router.delete('/organizations/:id/seats/:userId', requireSuperAdminOrDepartment('sales'), async (req, res) => {
+  const provider = await db.find('users', u => u.id === req.params.userId && u.organizationId === req.params.id);
+  if (!provider) return res.status(404).json({ error: 'This provider is not a seat in this organization' });
+  await db.update('users', provider.id, { organizationId: null });
+  res.json({ ok: true });
+});
+
+// POST /api/admin/organizations/:id/invites — generate a new self-serve
+// join link. A provider (new signup or existing account) who enters this
+// code gets attached to the org automatically — see POST
+// /api/org-invites/:code/redeem in marketplace.routes.js for the
+// redemption side, and the signup flow for how a brand-new provider uses
+// one during signup.
+router.post('/organizations/:id/invites', requireSuperAdminOrDepartment('sales'), async (req, res) => {
+  const org = await db.find('organizations', o => o.id === req.params.id);
+  if (!org) return res.status(404).json({ error: 'Organization not found' });
+  const { maxUses, expiresInDays } = req.body || {};
+  const me_ = await me(req);
+  const invite = {
+    id: `oi_${nanoid(8)}`,
+    organizationId: org.id,
+    code: nanoid(10).replace(/[_-]/g, '').toUpperCase().slice(0, 8),
+    createdBy: me_.id,
+    maxUses: maxUses != null ? parseInt(maxUses, 10) : null,
+    usesCount: 0,
+    expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString() : null,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('organizationInvites', invite);
+  res.status(201).json({ invite });
+});
+
+// PATCH /api/admin/organizations/:id/invites/:inviteId/revoke — disable a
+// join link immediately without deleting its usage history.
+router.patch('/organizations/:id/invites/:inviteId/revoke', requireSuperAdminOrDepartment('sales'), async (req, res) => {
+  const invite = await db.find('organizationInvites', i => i.id === req.params.inviteId && i.organizationId === req.params.id);
+  if (!invite) return res.status(404).json({ error: 'Invite not found' });
+  const updated = await db.update('organizationInvites', invite.id, { status: 'revoked' });
+  res.json({ invite: updated });
 });
 
 module.exports = router;
