@@ -29,7 +29,7 @@ const pool = new Pool({
 // in (snake_case) DB order. Used to build safe, parameterized INSERT/UPDATE
 // statements without ever interpolating arbitrary object keys into SQL.
 const TABLES = {
-  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','state','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs','price','color','provider_since','profile_photo_url','category_approval_status','two_factor_enabled','business_name','business_registration_number','admin_department','organization_id','accepting_bookings','created_at','updated_at'] },
+  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','state','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs','price','color','since','profile_photo_url','category_approval_status','two_factor_enabled','business_name','business_registration_number','admin_department','organization_id','accepting_bookings','created_at','updated_at'] },
   categories: { table: 'categories', columns: ['id','name','icon','active','response_window_override_hours'] },
   countries: { table: 'countries', columns: ['id','name','status'] },
   cities: { table: 'cities', columns: ['id','name','country','admin_id'] },
@@ -67,29 +67,24 @@ const TABLES = {
 // array literal syntax ({a,b,c}) by default, which is NOT valid JSON — these
 // need an explicit JSON.stringify() before going out, and come back already
 // parsed into JS objects/arrays by `pg` automatically on the way in.
-const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs', 'payload', 'line_items', 'link_to']);
+const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs', 'payload', 'line_items', 'link_to', 'value']);
 
-// `pg` returns NUMERIC/DECIMAL columns as JS strings by default (this avoids
-// silently losing precision on very large/precise values) — but every route
-// in this app does real arithmetic on these fields (`sum += e.amount`, etc.)
-// expecting a real JS number, same as the JSON-file store always returned.
-// Left unconverted, `0 + "180.00"` becomes the string "0180.00" (JS coerces
-// to string concatenation, not addition) instead of the number 180 — caught
-// by testing a real payout calculation against a real database, not by
-// reading the code. These are parsed to floats on the way out.
-const NUMERIC_COLUMNS = new Set(['rating', 'price', 'amount']);
+// Postgres's NUMERIC type comes back from the pg driver as a STRING, not a
+// JS number, specifically to avoid silent floating-point precision loss —
+// but every route in this app expects a real number (adding, multiplying,
+// comparing). Left unconverted, `0 + "180.00"` becomes the string
+// "0180.00" (JS string concatenation, not addition) instead of the number
+// 180. This list must include every column declared NUMERIC anywhere in
+// schema.sql — it's checked against the schema, not assembled by memory,
+// specifically because an incomplete list here fails silently (no error,
+// just wrong math) rather than loudly.
+const NUMERIC_COLUMNS = new Set([
+  'rating', 'price', 'amount', 'grossAmount', 'commissionAmount', 'commissionRate',
+  'materialsAdvance', 'materialsAdvanceAmount', 'paidAmountLocal', 'payoutAmountLocal',
+  'usdPrice', 'localPrice', 'rateToUsd', 'agreedPrice', 'responseWindowOverrideHours',
+]);
 
-// Explicit overrides where the automatic snake_case<->camelCase conversion
-// wouldn't match the JS field name the rest of the app already uses.
-// jobs_completed exists as a column name (not just "jobs") specifically to
-// avoid ambiguity with the separate `jobs` table — but every route,
-// publicProvider(), and the seed data all read/write this as plain `.jobs`,
-// so that's the JS-side name that has to come out of the database.
-const COLUMN_ALIASES = { jobs_completed: 'jobs' };
-
-function camelToSnake(s) { return s.replace(/[A-Z]/g, l => '_' + l.toLowerCase()); }
 function snakeToCamel(s) {
-  if (COLUMN_ALIASES[s]) return COLUMN_ALIASES[s];
   return s.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
 }
 
@@ -187,7 +182,7 @@ const db = {
 
   async replaceAll(collection, records) {
     await schemaReady;
-    const { table, columns } = tableInfo(collection);
+    const { table } = tableInfo(collection);
     await pool.query(`DELETE FROM ${table}`);
     for (const record of records) {
       await db.insert(collection, record);

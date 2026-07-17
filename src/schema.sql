@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
   jobs            INTEGER DEFAULT 0,
   price           NUMERIC(8,2),
   color           TEXT,
-  provider_since  TEXT,
+  since           TEXT,
   profile_photo_url TEXT,
   category_approval_status TEXT DEFAULT 'approved',
   two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -495,6 +495,14 @@ ALTER TABLE contracts ADD COLUMN IF NOT EXISTS provider_response_deadline TIMEST
 -- booking-confirmation window (see src/platform-settings.js). Absence of
 -- a row for a given key means "use the built-in default" — same
 -- fallback-chain convention as everywhere else in this app.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'provider_since')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'since') THEN
+    ALTER TABLE users RENAME COLUMN provider_since TO since;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS platform_settings (
   id          TEXT PRIMARY KEY,
   key         TEXT NOT NULL UNIQUE,

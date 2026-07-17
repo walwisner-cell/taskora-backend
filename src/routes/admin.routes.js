@@ -4,7 +4,7 @@ const db = require('../db');
 const { requireAuth, requireRole, hashPassword } = require('../auth');
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidName, isValidLabel, validate } = require('../validators');
 const { notify } = require('../notify');
-const { commissionRateForPlan, effectiveCommissionRate } = require('../commission');
+const { effectiveCommissionRate } = require('../commission');
 const { effectivePlanPricing, PLAN_KEYS, DEFAULT_USD_PRICES } = require('../plan-pricing');
 const { currencyForCountry, APPROX_USD_RATE, CURRENCY_BY_COUNTRY } = require('../currency-data');
 
@@ -36,16 +36,6 @@ async function me(req) {
 async function myRegion(req) {
   const m = await me(req);
   return m && !m.isSuperAdmin && !m.adminDepartment ? m.region : null;
-}
-
-// Same idea as myRegion, but at country granularity — used for plan
-// pricing overrides, since currency (and therefore price) is a
-// country-level concept, not a city-level one. A regional admin can only
-// set pricing for their own assigned country; a super admin (null here)
-// can set it for any country.
-async function myCountry(req) {
-  const m = await me(req);
-  return m && !m.isSuperAdmin && !m.adminDepartment ? m.country : null;
 }
 
 async function requireSuperAdmin(req, res, next) {

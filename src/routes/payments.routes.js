@@ -155,7 +155,7 @@ router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res
   });
 });
 // POST /api/payouts/request — provider requests payout of released escrow
-const { COMMISSION_RATES, effectiveCommissionRate } = require('../commission');
+const { effectiveCommissionRate } = require('../commission');
 
 router.post('/payouts/request', requireAuth, requireRole('provider'), async (req, res) => {
   const { payoutCurrency } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
@@ -183,7 +183,7 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
   // remainder while the advance itself is fully payable right now.
   const allEscrowForProvider = await db.filter('escrowTransactions', e => contractIds.has(e.contractId));
   const payableAdvances = allEscrowForProvider.filter(e =>
-    e.materialsAdvanceReleased && e.materialsAdvanceAmount > 0 && !e.materialsAdvancePayoutId
+    e.materialsAdvanceReleased && e.materialsAdvanceAmount > 0 && !e.materialsAdvancePayoutId && e.status !== 'refunded'
   );
 
   const grossAmount = payableEscrow.reduce((sum, e) => sum + (e.amount - (e.materialsAdvanceAmount || 0)), 0)

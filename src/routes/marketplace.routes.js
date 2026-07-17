@@ -60,11 +60,18 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   };
   await db.insert('escrowTransactions', escrow);
 
-  // If an advance was agreed, it releases immediately — that's the whole
-  // point of it. Everything else about the contract (the remainder,
-  // overall completion) is untouched until the customer confirms the job
-  // is actually done, exactly as before.
-  if (advance > 0) {
+  // A materials advance releases as soon as the JOB itself is confirmed —
+  // not the moment the customer books, before any provider has agreed to
+  // take it. Releasing it earlier would mean a provider could receive (and
+  // even cash out) advance money for a job they later decline or simply
+  // never respond to — exactly the premature-commitment problem the whole
+  // booking-confirmation flow exists to prevent. For a direct booking
+  // (status still pending_provider_confirmation at this point), the
+  // advance stays unreleased until POST /contracts/:id/respond-offer
+  // accepts it. For a negotiable offer, this function is only ever called
+  // AFTER the provider has already accepted (see respond-offer), so
+  // releasing immediately here is correct and unchanged.
+  if (advance > 0 && contract.status !== 'pending_provider_confirmation') {
     await db.update('escrowTransactions', escrow.id, { materialsAdvanceReleased: true });
     escrow.materialsAdvanceReleased = true;
   }
@@ -697,9 +704,19 @@ router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider')
   }
 
   const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10) });
-  const escrow = isDirectBooking
-    ? await db.find('escrowTransactions', e => e.contractId === contract.id) // already funded at booking time
-    : await fundEscrowForContract(contract, contract.customerId, contract.payCurrency); // negotiable offer funds now, at the agreed number
+  let escrow;
+  if (isDirectBooking) {
+    // Already funded at booking time — but the materials advance was
+    // deliberately held back until now (see fundEscrowForContract). This
+    // is the actual confirmation moment, so release it now if one exists.
+    escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+    if (escrow && escrow.materialsAdvanceAmount > 0 && !escrow.materialsAdvanceReleased) {
+      await db.update('escrowTransactions', escrow.id, { materialsAdvanceReleased: true });
+      escrow = { ...escrow, materialsAdvanceReleased: true };
+    }
+  } else {
+    escrow = await fundEscrowForContract(contract, contract.customerId, contract.payCurrency); // negotiable offer funds now, at the agreed number
+  }
   const confirmMessage = isDirectBooking
     ? `Your booking for "${contract.service}" was confirmed by the provider.`
     : `Your offer of $${contract.amount} for "${contract.service}" was accepted — escrow funded, booking confirmed.`;
