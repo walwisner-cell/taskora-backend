@@ -113,6 +113,108 @@ router.get('/stats', async (req, res) => {
   });
 });
 
+// GET /api/admin/reports/analytics — the real data behind Reports &
+// Analytics. Everything here is computed from actual contracts, not
+// stored counters — notably this replaces what the "Demand by Category"
+// chart used to show (verified PROVIDER count per category — supply, not
+// demand) with genuine booking counts, and computes each provider's
+// "jobs completed" from real completed contracts rather than the static
+// `jobs` field on their user record, which is seed data that nothing in
+// this codebase ever increments (worth fixing on provider profile pages
+// too — flagged separately, out of scope for this endpoint).
+router.get('/reports/analytics', async (req, res) => {
+  const region = await myRegion(req);
+  const [allCategories, allProviders, allContracts, allCustomers] = await Promise.all([
+    db.all('categories'),
+    db.filter('users', u => u.role === 'provider'),
+    db.all('contracts'),
+    db.filter('users', u => u.role === 'customer'),
+  ]);
+  const customerById = new Map(allCustomers.map(c => [c.id, c]));
+  const providerById = new Map(allProviders.map(p => [p.id, p]));
+
+  // Scope contracts to this admin's city (via the CUSTOMER's city, same
+  // convention as /stats and everywhere else a region is derived) — a
+  // regional admin's reports should reflect their own city's activity,
+  // not the whole platform's.
+  const contracts = region
+    ? allContracts.filter(c => { const cust = customerById.get(c.customerId); return cust && cust.city === region; })
+    : allContracts;
+  const providers = region ? allProviders.filter(p => p.city === region) : allProviders;
+
+  // ── Category performance: REAL demand (bookings), not provider supply ──
+  const catStats = new Map(); // category -> { jobsBooked, gmv, ratings: [] }
+  for (const c of contracts) {
+    const provider = providerById.get(c.providerId);
+    const category = provider ? (provider.category || 'Uncategorized') : 'Uncategorized';
+    if (!catStats.has(category)) catStats.set(category, { jobsBooked: 0, gmv: 0 });
+    const s = catStats.get(category);
+    s.jobsBooked += 1;
+    s.gmv += c.amount || 0;
+  }
+  const providerCountByCategory = new Map();
+  const ratingsByCategory = new Map();
+  for (const p of providers) {
+    if (!p.category) continue;
+    providerCountByCategory.set(p.category, (providerCountByCategory.get(p.category) || 0) + 1);
+    if (p.rating) {
+      if (!ratingsByCategory.has(p.category)) ratingsByCategory.set(p.category, []);
+      ratingsByCategory.get(p.category).push(p.rating);
+    }
+  }
+  const categoryPerformance = Array.from(catStats.entries()).map(([category, s]) => {
+    const ratings = ratingsByCategory.get(category) || [];
+    return {
+      category,
+      jobsBooked: s.jobsBooked,
+      gmv: Math.round(s.gmv * 100) / 100,
+      avgJobValue: s.jobsBooked ? Math.round((s.gmv / s.jobsBooked) * 100) / 100 : 0,
+      providerCount: providerCountByCategory.get(category) || 0,
+      avgRating: ratings.length ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10 : null,
+    };
+  }).sort((a, b) => b.jobsBooked - a.jobsBooked);
+
+  // ── Jobs over time: last 30 days, real daily counts, zero-filled so a
+  // quiet day shows as a real zero rather than just being absent ──
+  const days = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(d.toISOString().slice(0, 10));
+  }
+  const countByDay = new Map(days.map(d => [d, 0]));
+  for (const c of contracts) {
+    const day = (c.createdAt || '').slice(0, 10);
+    if (countByDay.has(day)) countByDay.set(day, countByDay.get(day) + 1);
+  }
+  const jobsOverTime = days.map(d => ({ date: d, count: countByDay.get(d) }));
+
+  // ── Top providers by REAL completed jobs (not the static `jobs` field
+  // on their profile, which is unmaintained seed data) ──
+  const topProviders = providers.map(p => {
+    const theirContracts = contracts.filter(c => c.providerId === p.id);
+    const completed = theirContracts.filter(c => c.status === 'completed');
+    return {
+      id: p.id,
+      name: p.name,
+      category: p.category || null,
+      city: p.city || null,
+      jobsCompleted: completed.length,
+      jobsBooked: theirContracts.length,
+      gmv: Math.round(completed.reduce((s, c) => s + (c.amount || 0), 0) * 100) / 100,
+      rating: p.rating || null,
+    };
+  }).sort((a, b) => b.jobsCompleted - a.jobsCompleted || b.jobsBooked - a.jobsBooked).slice(0, 10);
+
+  res.json({
+    region: region || 'All Locations',
+    categoryPerformance,
+    totalCategories: allCategories.length,
+    jobsOverTime,
+    topProviders,
+  });
+});
+
 // GET /api/admin/users/pending
 router.get('/users/pending', async (req, res) => {
   const region = await myRegion(req);
@@ -876,33 +978,68 @@ router.delete('/plan-pricing/override/:country/:plan', async (req, res) => {
   res.json({ ok: true });
 });
 
-// GET /api/admin/exchange-rates — super admin only: every currency Taskora
-// operates in, with its effective rate (an edit if one exists, otherwise
-// the static approximate default from src/currency-data.js).
+// GET /api/admin/exchange-rates — super admin only: every currency
+// Taskora operates in, with its effective rate and where it came from —
+// a live daily fetch, a manual admin correction, or (if neither has ever
+// run) the static approximate default from src/currency-data.js.
 router.get('/exchange-rates', requireSuperAdmin, async (req, res) => {
   const rateRows = await db.all('exchangeRates');
   const codes = new Set(Object.values(CURRENCY_BY_COUNTRY).map(c => c.code));
   codes.add('USD');
   const rates = Array.from(codes).sort().map(code => {
     const row = rateRows.find(r => r.currencyCode === code);
-    return { currencyCode: code, rateToUsd: row ? row.rateToUsd : (APPROX_USD_RATE[code] ?? 1), isOverride: !!row };
+    return {
+      currencyCode: code,
+      rateToUsd: row ? row.rateToUsd : (APPROX_USD_RATE[code] ?? 1),
+      isOverride: !!row,
+      source: row ? (row.source || 'manual') : 'default', // rows written before the source column existed are treated as manual
+      fetchedAt: row ? (row.fetchedAt || null) : null,
+      updatedAt: row ? row.updatedAt : null,
+    };
   });
   res.json({ rates });
 });
 
-// PATCH /api/admin/exchange-rates — super admin only: overrides the static
-// approximate rate for one currency. This feeds every conversion in the
-// app that touches that currency — job payments, provider payouts, AND
-// plan pricing alike — not just the pricing page, since they all resolve
-// through the same resolveRate() helper now.
+// PATCH /api/admin/exchange-rates — super admin only: manually overrides
+// the rate for one currency. This feeds every conversion in the app that
+// touches that currency — job payments, provider payouts, AND plan
+// pricing alike, not just the pricing page. Marked source: 'manual' so the
+// daily live-rate refresh (see src/fx-scheduler.js) never silently
+// overwrites this intentional correction — a human decision always wins
+// over automation here.
 router.patch('/exchange-rates', requireSuperAdmin, async (req, res) => {
   const { currencyCode, rateToUsd } = req.body || {};
   if (!isNonEmptyString(currencyCode)) return res.status(400).json({ error: 'currencyCode is required' });
   if (typeof rateToUsd !== 'number' || rateToUsd <= 0) return res.status(400).json({ error: 'Enter a valid positive rate' });
   const existing = await db.find('exchangeRates', r => r.currencyCode === currencyCode);
-  if (existing) await db.update('exchangeRates', existing.id, { rateToUsd, updatedAt: new Date().toISOString() });
-  else await db.insert('exchangeRates', { id: `xr_${currencyCode}`, currencyCode, rateToUsd, updatedAt: new Date().toISOString() });
+  const patch = { rateToUsd, source: 'manual', updatedAt: new Date().toISOString() };
+  if (existing) await db.update('exchangeRates', existing.id, patch);
+  else await db.insert('exchangeRates', { id: `xr_${currencyCode}`, currencyCode, ...patch });
   res.json({ ok: true });
+});
+
+// PATCH /api/admin/exchange-rates/:currencyCode/reset-to-live — clears a
+// manual override so this currency goes back to following the daily live
+// refresh again, instead of staying pinned to a one-time manual correction
+// forever.
+router.patch('/exchange-rates/:currencyCode/reset-to-live', requireSuperAdmin, async (req, res) => {
+  const existing = await db.find('exchangeRates', r => r.currencyCode === req.params.currencyCode);
+  if (!existing) return res.json({ ok: true }); // nothing to reset — already following live/default
+  await db.remove('exchangeRates', existing.id);
+  const { refreshLiveExchangeRates } = require('../fx-scheduler');
+  await refreshLiveExchangeRates(); // immediately re-fetch so it doesn't sit on the static default until the next scheduled run
+  res.json({ ok: true });
+});
+
+// POST /api/admin/exchange-rates/refresh — super admin only: triggers an
+// immediate live-rate refresh instead of waiting for the daily schedule.
+// Useful right after deploying (to confirm the live provider is actually
+// reachable from production) or any time a rate looks stale.
+router.post('/exchange-rates/refresh', requireSuperAdmin, async (req, res) => {
+  const { refreshLiveExchangeRates } = require('../fx-scheduler');
+  const result = await refreshLiveExchangeRates();
+  if (!result.ok) return res.status(502).json({ error: `Could not reach the live exchange rate provider: ${result.error}` });
+  res.json(result);
 });
 
 // GET /api/admin/sales-inquiries — every Custom Plan "Contact Sales"

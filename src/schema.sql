@@ -297,14 +297,17 @@ CREATE TABLE IF NOT EXISTS plan_pricing_overrides (
   UNIQUE (country, plan)
 );
 
--- A super admin's edited exchange rate for one currency — overrides the
--- static approximate table in src/currency-data.js for every conversion
--- in the app (job payments, payouts, plan pricing). Absence of a row here
--- means "use the static default".
+-- A currency's effective rate — either a super admin's manual correction
+-- (source: 'manual', protected from the daily live refresh) or the most
+-- recent successful fetch from the live provider (source: 'live'). Absence
+-- of a row here means "use the static default in src/currency-data.js" —
+-- typically only true before the very first scheduled refresh has run.
 CREATE TABLE IF NOT EXISTS exchange_rates (
   id             TEXT PRIMARY KEY,
   currency_code  TEXT NOT NULL UNIQUE,
   rate_to_usd    NUMERIC NOT NULL,
+  source         TEXT NOT NULL DEFAULT 'manual',
+  fetched_at     TIMESTAMPTZ,
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -412,3 +415,5 @@ ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS display_subtext TEXT;
 ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS display_link TEXT;
 ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS approved_by TEXT;
 ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+ALTER TABLE exchange_rates ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE exchange_rates ADD COLUMN IF NOT EXISTS fetched_at TIMESTAMPTZ;

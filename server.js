@@ -93,6 +93,15 @@ seedIfEmpty()
     app.listen(PORT, () => {
       console.log(`\n  Taskora API + frontend running at http://localhost:${PORT}\n`);
     });
+
+    // Daily live exchange-rate refresh (see src/fx-scheduler.js). Runs once
+    // shortly after boot, then every 24 hours — fire-and-forget, never
+    // blocks server startup or crashes the process if the provider is
+    // briefly unreachable (falls back to whatever rates already exist).
+    const { refreshLiveExchangeRates } = require('./src/fx-scheduler');
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    setTimeout(() => { refreshLiveExchangeRates().catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, 5000);
+    setInterval(() => { refreshLiveExchangeRates().catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, ONE_DAY_MS);
   })
   .catch(err => {
     console.error('Failed to start server:', err);

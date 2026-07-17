@@ -57,7 +57,7 @@ const TABLES = {
   salesInquiries: { table: 'sales_inquiries', columns: ['id','company_name','contact_name','email','team_size','message','status','created_at'] },
   planPricingBase: { table: 'plan_pricing_base', columns: ['id','plan','usd_price','updated_at'] },
   planPricingOverrides: { table: 'plan_pricing_overrides', columns: ['id','country','plan','local_price','currency_code','set_by','updated_at'] },
-  exchangeRates: { table: 'exchange_rates', columns: ['id','currency_code','rate_to_usd','updated_at'] },
+  exchangeRates: { table: 'exchange_rates', columns: ['id','currency_code','rate_to_usd','source','fetched_at','updated_at'] },
 };
 
 // Columns stored as JSONB. `pg` serializes JS arrays using Postgres's native

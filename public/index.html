@@ -2638,6 +2638,35 @@ function barChart(data) {
   return `<div class="bar-chart">${data.map(d => `<div class="bar-col" title="${(d.fullLabel || d.label)}: ${d.val}"><div class="bar-fill" style="height:${Math.max(6, d.val / max * 100)}px"></div><div class="bar-label">${d.label}</div></div>`).join('')}</div>`;
 }
 
+function categoryPerformanceTableHTML(rows) {
+  if (!rows.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No categories have any real bookings yet.</div>`;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Jobs Booked</th><th>GMV</th><th>Avg Job Value</th><th>Providers</th><th>Avg Rating</th></tr></thead><tbody>
+  ${rows.map(c => `<tr>
+    <td style="font-weight:600;">${c.category}</td>
+    <td>${c.jobsBooked}</td>
+    <td>$${c.gmv.toLocaleString()}</td>
+    <td>$${c.avgJobValue.toLocaleString()}</td>
+    <td>${c.providerCount}</td>
+    <td>${c.avgRating != null ? `★ ${c.avgRating}` : '—'}</td>
+  </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+function topProvidersTableHTML(rows) {
+  if (!rows.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No providers to show yet.</div>`;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Category</th><th>City</th><th>Jobs Completed</th><th>Jobs Booked</th><th>GMV Generated</th><th>Rating</th></tr></thead><tbody>
+  ${rows.map(p => `<tr>
+    <td style="font-weight:600;">${p.name}</td>
+    <td>${p.category || '—'}</td>
+    <td>${p.city || '—'}</td>
+    <td>${p.jobsCompleted}</td>
+    <td>${p.jobsBooked}</td>
+    <td>$${p.gmv.toLocaleString()}</td>
+    <td>${p.rating ? `★ ${p.rating}` : '—'}</td>
+  </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
 /* ══════════════════════ CUSTOMER DASHBOARD ══════════════════════ */
 const CUSTOMER_NAV_ITEMS = [
   { key: 'overview', label: 'Overview', icon: '📊' },
@@ -4497,7 +4526,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -4516,7 +4545,7 @@ async function loadAdminData() {
     catch (e) { return null; }
   }
 
-  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries] = await Promise.all([
+  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries, reportsAnalytics] = await Promise.all([
     tryFetch('/admin/stats'),
     tryFetch('/admin/users/pending'),
     tryFetch('/admin/users/all'),
@@ -4531,6 +4560,7 @@ async function loadAdminData() {
     tryFetch('/admin/financial-by-region'),
     tryFetch('/admin/plan-pricing'),
     tryFetch('/admin/advertising-inquiries'),
+    tryFetch('/admin/reports/analytics'),
   ]);
 
   if (stats) adminData.stats = stats;
@@ -4547,6 +4577,7 @@ async function loadAdminData() {
   if (financialByRegion) adminData.financialByRegion = financialByRegion;
   if (planPricing) adminData.planPricing = planPricing;
   if (advertisingInquiries) adminData.advertisingInquiries = advertisingInquiries.inquiries;
+  if (reportsAnalytics) adminData.reportsAnalytics = reportsAnalytics;
 
   // A genuine live check, not a hardcoded "everything's fine" badge — this
   // hits the real /api/health endpoint right now and times it.
@@ -4700,23 +4731,45 @@ const ADMIN_SECTIONS = {
       <div id="admin-transactions-table-wrap">${adminTransactionsTableHTML(adminData.transactions || [])}</div>
     </div>`,
   reports: () => {
-    // Only the top 10 categories by real demand — with 60 categories now
-    // active, charting all of them at once produced an unreadable wall of
-    // tiny bars with 4-character truncated labels. Sorted so the busiest
-    // categories are genuinely the ones shown, and labels are long enough
-    // to actually read (with a tooltip-style title attribute for the full
-    // name, since some category names are longer than the bar is wide).
-    const topCategories = [...adminData.categories]
-      .sort((a, b) => (b.pros || 0) - (a.pros || 0))
-      .slice(0, 10)
-      .map(c => ({ label: c.name.length > 12 ? c.name.slice(0, 11) + '…' : c.name, fullLabel: c.name, val: c.pros || 0 }));
-    const totalCategories = adminData.categories.length;
+    const ra = adminData.reportsAnalytics;
+    if (!ra) return `
+    <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">Real demand and performance insights</div></div></div>
+    <div class="panel">Loading reports…</div>`;
+
+    // Demand chart — how many times a category was actually BOOKED, not
+    // how many providers offer it (that's a separate "Providers" column in
+    // the table below). Previously this chart showed provider supply
+    // mislabeled as demand; this is genuine booking volume.
+    const topDemand = ra.categoryPerformance.slice(0, 10)
+      .map(c => ({ label: c.category.length > 12 ? c.category.slice(0, 11) + '…' : c.category, fullLabel: `${c.category}: ${c.jobsBooked} booking${c.jobsBooked === 1 ? '' : 's'}`, val: c.jobsBooked }));
+    const categoriesWithActivity = ra.categoryPerformance.length;
+
+    // 30-day trend — a label every 5th day keeps it readable; every bar
+    // still has a real per-day count in its hover title.
+    const trendBars = ra.jobsOverTime.map((d, i) => ({
+      label: i % 5 === 0 ? new Date(d.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '',
+      fullLabel: `${d.date}: ${d.count} job${d.count === 1 ? '' : 's'} booked`,
+      val: d.count,
+    }));
+    const trendTotal = ra.jobsOverTime.reduce((s, d) => s + d.count, 0);
 
     return `
-    <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">AI-driven demand and performance insights</div></div></div>
-    <div class="panel"><div class="panel-title">Demand by Category (This Month) <small style="font-weight:400;color:var(--slate);">top 10 of ${totalCategories}</small></div>${topCategories.length ? barChart(topCategories) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No category demand data yet.</div>'}</div>
+    <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">Real demand and performance insights${ra.region !== 'All Locations' ? ` — ${ra.region}` : ''}</div></div></div>
+
+    <div class="panel"><div class="panel-title">Demand by Category (Real Bookings) <small style="font-weight:400;color:var(--slate);">${categoriesWithActivity ? `top ${Math.min(10, categoriesWithActivity)} of ${categoriesWithActivity} with activity` : `0 of ${ra.totalCategories} categories`}</small></div>${topDemand.length ? barChart(topDemand) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings yet — this chart reflects real completed and active jobs, not provider signups.</div>'}</div>
+
+    <div class="panel"><div class="panel-title">Jobs Booked — Last 30 Days <small style="font-weight:400;color:var(--slate);">${trendTotal} total</small></div>${trendTotal ? barChart(trendBars) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings in the last 30 days.</div>'}</div>
+
+    <div class="panel"><div class="panel-title">Category Performance <small style="font-weight:400;color:var(--slate);">only categories with real bookings — ${ra.totalCategories - categoriesWithActivity} of ${ra.totalCategories} categories have none yet</small></div>
+      ${categoryPerformanceTableHTML(ra.categoryPerformance)}
+    </div>
+
+    <div class="panel"><div class="panel-title">Top Providers <small style="font-weight:400;color:var(--slate);">by real completed jobs</small></div>
+      ${topProvidersTableHTML(ra.topProviders)}
+    </div>
+
     <div class="panel"><div class="panel-title">Platform Health</div>
-      <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">Live check against the API right now — no historical uptime monitoring is connected yet (that needs a status-page provider or APM tool), but this row is genuinely real-time, not decorative.</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">Live checks against the API right now — no historical uptime monitoring is connected yet (that needs a status-page provider or APM tool), but these rows are genuinely real-time, not decorative.</div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Service</th><th>Response Time</th><th>Status</th></tr></thead><tbody>
       <tr><td>Marketplace API</td><td>${adminData.apiHealth ? (adminData.apiHealth.ok ? adminData.apiHealth.ms + ' ms' : '—') : 'Checking…'}</td><td>${adminData.apiHealth ? (adminData.apiHealth.ok ? '<span class="badge badge-success">Operational</span>' : '<span class="badge badge-danger">Down</span>') : '<span class="badge badge-neutral">Checking…</span>'}</td></tr>
       </tbody></table></div>
@@ -4989,7 +5042,11 @@ function superAdminPricingSectionHTML() {
     <div class="panel"><div class="panel-title">Country Overrides <small style="font-weight:400;color:var(--slate);">${pp.overrides.length} set</small></div>
       ${planPricingOverridesTableHTML(pp.overrides)}
     </div>
-    <div class="panel"><div class="panel-title">Exchange Rates <small style="font-weight:400;color:var(--slate);">Test-mode approximate rates — edits here flow into job payments and payouts too, not just pricing</small></div>
+    <div class="panel">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>Exchange Rates <small style="font-weight:400;color:var(--slate);">Auto-refreshed daily from a live provider — edits here flow into job payments and payouts too, not just pricing</small></span>
+        <button class="btn-sm btn-sm-primary" onclick="refreshLiveRatesNow()">↻ Refresh Live Rates Now</button>
+      </div>
       ${exchangeRatesTableHTML(adminData.exchangeRates || [])}
     </div>`;
 }
@@ -5025,18 +5082,49 @@ async function saveBasePricing(plan) {
   } catch (e) { showToast(e.message || 'Could not update base price'); }
 }
 
+const RATE_SOURCE_BADGE = {
+  live: '<span class="badge badge-success">Live</span>',
+  manual: '<span class="badge badge-warn">Manual</span>',
+  default: '<span class="badge badge-neutral">Default</span>',
+};
+
 function exchangeRatesTableHTML(rates) {
   const editable = rates.filter(r => r.currencyCode !== 'USD'); // USD is always 1 by definition
   if (!editable.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No exchange rate data loaded.</div>`;
-  return `<div class="data-table-wrap" style="max-height:420px;overflow-y:auto;"><table class="data-table"><thead><tr><th>Currency</th><th>Rate (units per $1 USD)</th><th>New Rate</th><th>Source</th><th>Action</th></tr></thead><tbody>
+  return `<div class="data-table-wrap" style="max-height:420px;overflow-y:auto;"><table class="data-table"><thead><tr><th>Currency</th><th>Rate (units per $1 USD)</th><th>New Rate</th><th>Source</th><th>Last Updated</th><th>Action</th></tr></thead><tbody>
   ${editable.map(r => `<tr>
     <td style="font-weight:600;">${r.currencyCode}</td>
     <td>${r.rateToUsd}</td>
     <td><input class="form-input" type="number" min="0.0001" step="0.0001" id="rate-${r.currencyCode}" placeholder="${r.rateToUsd}" style="width:120px;padding:6px 8px;"/></td>
-    <td>${r.isOverride ? '<span class="badge badge-warn">Edited</span>' : '<span class="badge badge-neutral">Default</span>'}</td>
-    <td><button class="btn-sm btn-sm-primary" onclick="saveExchangeRate('${r.currencyCode}')">Save</button></td>
+    <td>${RATE_SOURCE_BADGE[r.source] || RATE_SOURCE_BADGE.default}</td>
+    <td style="font-size:12px;color:var(--slate);">${r.updatedAt ? new Date(r.updatedAt).toLocaleString() : '—'}</td>
+    <td class="row-actions">
+      <button class="btn-sm btn-sm-primary" onclick="saveExchangeRate('${r.currencyCode}')">Save</button>
+      ${r.source === 'manual' ? `<button class="btn-sm btn-sm-outline" onclick="resetRateToLive('${r.currencyCode}')">Reset to Live</button>` : ''}
+    </td>
   </tr>`).join('')}
   </tbody></table></div>`;
+}
+
+async function refreshLiveRatesNow() {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  showToast('Refreshing live rates…');
+  try {
+    const result = await apiFetch('POST', '/admin/exchange-rates/refresh');
+    showToast(`Refreshed ${result.updated} rate${result.updated === 1 ? '' : 's'}${result.skippedManual ? ` (${result.skippedManual} kept as manual)` : ''}`);
+    await loadAdminData();
+    selectAdminSection('pricing');
+  } catch (e) { showToast(e.message || 'Could not reach the live exchange rate provider'); }
+}
+
+async function resetRateToLive(currencyCode) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/exchange-rates/${currencyCode}/reset-to-live`);
+    showToast(`${currencyCode} now follows the live daily rate again`);
+    await loadAdminData();
+    selectAdminSection('pricing');
+  } catch (e) { showToast(e.message || 'Could not reset this rate'); }
 }
 
 async function saveExchangeRate(currencyCode) {
