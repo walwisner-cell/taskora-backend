@@ -4,6 +4,7 @@ const db = require('../db');
 const { requireAuth, requireRole, hashPassword } = require('../auth');
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidName, isValidLabel, validate } = require('../validators');
 const { notify } = require('../notify');
+const { commissionRateForPlan } = require('../commission');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -291,18 +292,35 @@ router.get('/transactions', requireDepartment(['financial', 'legal']), async (re
   }));
 
   const scoped = region ? rows.filter(r => r.customer && r.customer.city === region) : rows;
-  const transactions = scoped.map(({ c, customer, provider, escrow }) => ({
-    contractId: c.id,
-    bookingNumber: c.bookingNumber || c.id,
-    date: (c.createdAt || '').slice(0, 10),
-    customerName: customer ? customer.name : 'Unknown',
-    providerName: provider ? provider.name : 'Unknown',
-    service: c.service,
-    amount: c.amount,
-    status: c.status,
-    escrowStatus: escrow ? escrow.status : 'none',
-    paidOut: !!(escrow && escrow.payoutId),
-  }));
+  const transactions = scoped.map(({ c, customer, provider, escrow }) => {
+    const materialsAdvanceAmount = (escrow && escrow.materialsAdvanceAmount) || 0;
+    // Real commission is only recorded on the payout itself, once it's
+    // actually paid out (see payments.routes.js). Until then, this is a
+    // clearly-labeled *estimate* — amount x the provider's current plan
+    // rate — so admins aren't left guessing what a job will net the
+    // platform before payout happens.
+    const commissionRate = provider ? commissionRateForPlan(provider.plan) : null;
+    const estCommission = commissionRate != null ? Math.round(c.amount * commissionRate * 100) / 100 : null;
+    return {
+      contractId: c.id,
+      bookingNumber: c.bookingNumber || c.id,
+      date: (c.createdAt || '').slice(0, 10),
+      customerName: customer ? customer.name : 'Unknown',
+      customerEmail: customer ? customer.email : null,
+      providerName: provider ? provider.name : 'Unknown',
+      category: provider ? (provider.category || null) : null,
+      city: customer ? (customer.city || null) : null,
+      country: customer ? (customer.country || null) : null,
+      service: c.service,
+      amount: c.amount,
+      materialsAdvanceAmount,
+      status: c.status,
+      escrowStatus: escrow ? escrow.status : 'none',
+      paidOut: !!(escrow && escrow.payoutId),
+      commissionRate,
+      estCommission,
+    };
+  });
   res.json({ transactions });
 });
 
@@ -327,6 +345,20 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'legal']), async
   const me_ = await me(req);
   const { createReportDoc } = require('../pdf-report-builder');
   const rangeLabel = from || to ? `${from || 'earliest'} to ${to || 'today'}` : 'All time';
+
+  // Realized commission = what's actually been deducted on real payouts,
+  // scoped to the same region and date range as the transactions above —
+  // distinct from the estimate, which projects commission on jobs that
+  // haven't paid out yet.
+  let payoutsInScope = await db.all('payouts');
+  if (from) payoutsInScope = payoutsInScope.filter(p => (p.date || '').slice(0, 10) >= from);
+  if (to) payoutsInScope = payoutsInScope.filter(p => (p.date || '').slice(0, 10) <= to);
+  if (region) {
+    const regionalProviderIds = new Set((await db.filter('users', u => u.role === 'provider' && u.city === region)).map(u => u.id));
+    payoutsInScope = payoutsInScope.filter(p => regionalProviderIds.has(p.providerId));
+  }
+  const payoutsCommissionInScope = payoutsInScope.reduce((s, p) => s + (p.commissionAmount || 0), 0);
+
   const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
     res,
     filename: `Taskora-Platform-Transactions-Report.pdf`,
@@ -341,16 +373,27 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'legal']), async
   const totalGMV = scoped.reduce((s, r) => s + r.c.amount, 0);
   const totalHeld = scoped.filter(r => r.escrow && r.escrow.status === 'held').reduce((s, r) => s + r.escrow.amount, 0);
   const totalReleased = scoped.filter(r => r.escrow && r.escrow.status === 'released').reduce((s, r) => s + r.escrow.amount, 0);
+  const totalEstCommission = scoped.reduce((s, r) => s + r.c.amount * commissionRateForPlan(r.provider && r.provider.plan), 0);
   twoColumnRow('Total GMV', `$${totalGMV.toFixed(2)}`, 'Transactions', String(scoped.length));
   twoColumnRow('Escrow Held', `$${totalHeld.toFixed(2)}`, 'Escrow Released', `$${totalReleased.toFixed(2)}`);
+  twoColumnRow('Est. Commission (unpaid + paid)', `$${totalEstCommission.toFixed(2)}`, 'Realized Commission (paid out)', `$${payoutsCommissionInScope.toFixed(2)}`);
 
   sectionHeader('Transactions');
   if (scoped.length === 0) {
     row('No transactions', 'No transactions were found in this date range.');
   } else {
     table(
-      [{ label: 'Date', width: 60 }, { label: 'Customer', width: 90 }, { label: 'Provider', width: 90 }, { label: 'Service', width: 110 }, { label: 'Amount', width: 50, align: 'right' }, { label: 'Status', width: 60 }],
-      scoped.map(({ c, customer, provider }) => [(c.createdAt || '').slice(0, 10), customer ? customer.name : 'Unknown', provider ? provider.name : 'Unknown', c.service, `$${c.amount}`, c.status])
+      [{ label: 'Date', width: 45 }, { label: 'Customer', width: 75 }, { label: 'Provider', width: 75 }, { label: 'Category', width: 55 }, { label: 'Service', width: 75 }, { label: 'Amount', width: 45, align: 'right' }, { label: 'Est. Comm.', width: 50, align: 'right' }, { label: 'Status', width: 45 }],
+      scoped.map(({ c, customer, provider }) => [
+        (c.createdAt || '').slice(0, 10),
+        customer ? customer.name : 'Unknown',
+        provider ? provider.name : 'Unknown',
+        (provider && provider.category) || '—',
+        c.service,
+        `$${c.amount}`,
+        `$${(c.amount * commissionRateForPlan(provider && provider.plan)).toFixed(2)}`,
+        c.status,
+      ])
     );
   }
 

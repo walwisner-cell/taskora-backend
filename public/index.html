@@ -3921,8 +3921,20 @@ async function downloadFileWithAuth(url, fallbackFilename) {
 
 function adminTransactionsTableHTML(transactions) {
   if (!transactions.length) return '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No transactions in this range.</div>';
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Customer</th><th>Provider</th><th>Service</th><th>Amount</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${transactions.map(t => `<tr><td>${t.date}</td><td>${t.customerName}</td><td>${t.providerName}</td><td>${t.service}</td><td>$${t.amount}</td><td>${t.escrowStatus}${t.paidOut ? ' (paid out)' : ''}</td><td>${statusBadge(t.status)}</td><td><button class="btn-sm btn-sm-outline" onclick="downloadFileWithAuth('${API_BASE}/contracts/${t.contractId}/pdf', 'Taskora-Contract-${t.bookingNumber}.pdf')">📄 PDF</button></td></tr>`).join('')}
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Customer</th><th>Provider</th><th>Category</th><th>Service</th><th>Amount</th><th>Materials Adv.</th><th>Escrow</th><th>Est. Commission</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  ${transactions.map(t => `<tr>
+    <td>${t.date}</td>
+    <td>${t.customerName}</td>
+    <td>${t.providerName}</td>
+    <td>${t.category || '—'}</td>
+    <td>${t.service}</td>
+    <td>$${t.amount}</td>
+    <td>${t.materialsAdvanceAmount ? `$${t.materialsAdvanceAmount}` : '—'}</td>
+    <td>${t.escrowStatus}${t.paidOut ? ' (paid out)' : ''}</td>
+    <td title="${t.commissionRate != null ? Math.round(t.commissionRate * 100) + '% of amount — estimate; only final once paid out' : ''}">${t.estCommission != null ? `$${t.estCommission.toFixed(2)}` : '—'}</td>
+    <td>${statusBadge(t.status)}</td>
+    <td><button class="btn-sm btn-sm-outline" onclick="downloadFileWithAuth('${API_BASE}/contracts/${t.contractId}/pdf', 'Taskora-Contract-${t.bookingNumber}.pdf')">📄 PDF</button></td>
+  </tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -3932,36 +3944,66 @@ function adminTransactionsTableHTML(transactions) {
 // financially, rather than only ever seeing one flattened global number.
 function financialByRegionTableHTML(data) {
   const regions = (data && data.regions) || [];
-  const total = (data && data.total) || { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 };
+  const total = (data && data.total) || { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0, avgTransaction: 0 };
   if (!regions.length) return '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No regional financial activity yet.</div>';
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Region</th><th>Country</th><th>Escrow Held</th><th>Escrow Released</th><th>Commission Revenue</th><th>Transactions</th></tr></thead><tbody>
-  ${regions.map(r => `<tr><td>${r.region}</td><td>${r.country}</td><td>$${r.held.toLocaleString()}</td><td>$${r.released.toLocaleString()}</td><td>$${r.commissionRevenue.toLocaleString()}</td><td>${r.transactionCount}</td></tr>`).join('')}
-  <tr style="font-weight:700;background:var(--offwhite);"><td colspan="2">Total — All Regions</td><td>$${total.held.toLocaleString()}</td><td>$${total.released.toLocaleString()}</td><td>$${total.commissionRevenue.toLocaleString()}</td><td>${total.transactionCount}</td></tr>
+  const totalVolume = total.held + total.released;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Region</th><th>Country</th><th>Escrow Held</th><th>Escrow Released</th><th>Commission Revenue</th><th>Transactions</th><th>Avg. Transaction</th><th>% of Platform Volume</th></tr></thead><tbody>
+  ${regions.map(r => {
+    const volume = r.held + r.released;
+    const pct = totalVolume > 0 ? ((volume / totalVolume) * 100).toFixed(1) : '0.0';
+    return `<tr><td>${r.region}</td><td>${r.country}</td><td>$${r.held.toLocaleString()}</td><td>$${r.released.toLocaleString()}</td><td>$${r.commissionRevenue.toLocaleString()}</td><td>${r.transactionCount}</td><td>$${(r.avgTransaction || 0).toLocaleString()}</td><td>${pct}%</td></tr>`;
+  }).join('')}
+  <tr style="font-weight:700;background:var(--offwhite);"><td colspan="2">Total — All Regions</td><td>$${total.held.toLocaleString()}</td><td>$${total.released.toLocaleString()}</td><td>$${total.commissionRevenue.toLocaleString()}</td><td>${total.transactionCount}</td><td>$${(total.avgTransaction || 0).toLocaleString()}</td><td>100.0%</td></tr>
   </tbody></table></div>`;
 }
 
-async function filterAdminTransactions() {
-  const from = document.getElementById('txn-filter-from').value;
-  const to = document.getElementById('txn-filter-to').value;
+// Holds whatever the server last returned for the current date range —
+// search/status filtering below is applied client-side on top of this,
+// so typing in the search box doesn't need a round trip.
+let currentAdminTransactions = [];
+
+async function filterAdminFinancials() {
+  const from = document.getElementById('fin-filter-from').value;
+  const to = document.getElementById('fin-filter-to').value;
   if (!BACKEND_AVAILABLE) return;
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
   try {
-    const params = new URLSearchParams();
-    if (from) params.set('from', from);
-    if (to) params.set('to', to);
-    const { transactions } = await apiFetch('GET', `/admin/transactions?${params.toString()}`);
-    document.getElementById('admin-transactions-table-wrap').innerHTML = adminTransactionsTableHTML(transactions);
-  } catch (e) { showToast(e.message || 'Could not filter transactions'); }
+    const [{ transactions }, financialByRegion] = await Promise.all([
+      apiFetch('GET', `/admin/transactions?${params.toString()}`),
+      apiFetch('GET', `/admin/financial-by-region?${params.toString()}`),
+    ]);
+    currentAdminTransactions = transactions;
+    adminData.financialByRegion = financialByRegion;
+    document.getElementById('admin-financial-region-wrap').innerHTML = financialByRegionTableHTML(financialByRegion);
+    applyTransactionsClientFilter();
+  } catch (e) { showToast(e.message || 'Could not filter — one of the two panels may not have updated'); }
 }
 
-function clearAdminTransactionsFilter() {
-  document.getElementById('txn-filter-from').value = '';
-  document.getElementById('txn-filter-to').value = '';
-  filterAdminTransactions();
+function clearAdminFinancialsFilter() {
+  document.getElementById('fin-filter-from').value = '';
+  document.getElementById('fin-filter-to').value = '';
+  filterAdminFinancials();
+}
+
+// Search box + status dropdown filter the already-fetched transaction list
+// in-browser (customer name, provider name, or service text) — instant,
+// no extra request, and composes on top of whatever date range is active.
+function applyTransactionsClientFilter() {
+  const q = (document.getElementById('txn-search').value || '').trim().toLowerCase();
+  const status = document.getElementById('txn-status-filter').value;
+  const filtered = currentAdminTransactions.filter(t => {
+    if (status && t.status !== status) return false;
+    if (q && !(`${t.customerName} ${t.providerName} ${t.service}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  document.getElementById('admin-transactions-table-wrap').innerHTML = adminTransactionsTableHTML(filtered);
 }
 
 function downloadAdminTransactionsPDF() {
-  const from = document.getElementById('txn-filter-from').value;
-  const to = document.getElementById('txn-filter-to').value;
+  const from = document.getElementById('fin-filter-from').value;
+  const to = document.getElementById('fin-filter-to').value;
   if (!BACKEND_AVAILABLE) return showToast('PDF download requires a live backend connection');
   const params = new URLSearchParams();
   if (from) params.set('from', from);
@@ -4301,14 +4343,14 @@ async function loadAdminData() {
 
   if (stats) adminData.stats = stats;
   if (pending) adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
-  if (allPeople) adminData.people = allPeople.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), city: u.city, country: u.country, verified: u.verified, active: u.active !== false }));
+  if (allPeople) adminData.people = allPeople.users.map(u => ({ ...u, role: u.role[0].toUpperCase() + u.role.slice(1), active: u.active !== false }));
   if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status }));
   if (disputes) adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
   if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active }));
   if (countries) adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
   if (escrow) adminData.escrow = escrow;
   if (catRequests) adminData.categoryRequests = catRequests.requests;
-  if (transactions) adminData.transactions = transactions.transactions;
+  if (transactions) { adminData.transactions = transactions.transactions; currentAdminTransactions = transactions.transactions; }
   if (fraudFlags) adminData.fraudFlags = fraudFlags.flags;
   if (financialByRegion) adminData.financialByRegion = financialByRegion;
 
@@ -4387,7 +4429,21 @@ const ADMIN_SECTIONS = {
     <div class="panel">${usersTable(adminData.pendingUsers, 'approvals')}</div>`,
   people: () => `
     <div class="dash-header"><div><div class="dash-title">Customers & Providers</div><div class="dash-sub">${AUTH.user && AUTH.user.isSuperAdmin ? 'Every customer and provider, across every city' : `Every customer and provider in ${adminData.stats.region || 'your city'} — this is your community to manage`}</div></div></div>
-    <div class="panel">${peopleTable(adminData.people)}</div>`,
+    <div class="panel">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>Directory <small style="font-weight:400;color:var(--slate);">${adminData.people.length} total</small></span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
+          <input type="text" class="form-input" id="people-search" placeholder="Search name or email…" style="padding:6px 10px;font-size:12.5px;width:200px;" oninput="filterAdminPeople()"/>
+          <select class="form-input" id="people-role-filter" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterAdminPeople()">
+            <option value="">All roles</option>
+            <option value="Customer">Customers</option>
+            <option value="Provider">Providers</option>
+          </select>
+          <button class="btn-sm btn-sm-outline" onclick="clearAdminPeopleFilter()">Clear</button>
+        </div>
+      </div>
+      <div id="admin-people-table-wrap">${peopleTable(adminData.people)}</div>
+    </div>`,
   verification: () => `
     <div class="dash-header"><div><div class="dash-title">Verification Queue</div><div class="dash-sub">ID, BVN/NIN, and passport submissions awaiting review</div></div></div>
     <div class="panel">${verificationQueueTable()}</div>`,
@@ -4416,16 +4472,31 @@ const ADMIN_SECTIONS = {
       <div class="stat-card"><div class="stat-card-label">Escrow Released (Total)</div><div class="stat-card-val">$${adminData.escrow.released.toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-card-label">Commission Revenue</div><div class="stat-card-val">$${(adminData.escrow.commissionRevenue || 0).toLocaleString()}</div></div>
     </div>
-    <div class="panel"><div class="panel-title">Funds by Region</div>${financialByRegionTableHTML(adminData.financialByRegion)}</div>
     <div class="panel">
       <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <span>Platform Transactions</span>
+        <span>Date Range <small style="font-weight:400;color:var(--slate);">applies to both panels below</small></span>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
-          <input type="date" class="form-input" id="txn-filter-from" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterAdminTransactions()"/>
+          <input type="date" class="form-input" id="fin-filter-from" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterAdminFinancials()"/>
           <span style="font-size:12px;color:var(--slate);">to</span>
-          <input type="date" class="form-input" id="txn-filter-to" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterAdminTransactions()"/>
-          <button class="btn-sm btn-sm-outline" onclick="clearAdminTransactionsFilter()">Clear</button>
-          <button class="btn-sm btn-sm-primary" onclick="downloadAdminTransactionsPDF()">⬇ Download PDF</button>
+          <input type="date" class="form-input" id="fin-filter-to" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="filterAdminFinancials()"/>
+          <button class="btn-sm btn-sm-outline" onclick="clearAdminFinancialsFilter()">Clear</button>
+          <button class="btn-sm btn-sm-primary" onclick="downloadAdminTransactionsPDF()">⬇ Download Transactions PDF</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel"><div class="panel-title">Funds by Region</div><div id="admin-financial-region-wrap">${financialByRegionTableHTML(adminData.financialByRegion)}</div></div>
+    <div class="panel">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>Platform Transactions <small style="font-weight:400;color:var(--slate);">${(adminData.transactions || []).length} total</small></span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
+          <input type="text" class="form-input" id="txn-search" placeholder="Search customer, provider, service…" style="padding:6px 10px;font-size:12.5px;width:220px;" oninput="applyTransactionsClientFilter()"/>
+          <select class="form-input" id="txn-status-filter" style="padding:6px 10px;font-size:12.5px;width:auto;" onchange="applyTransactionsClientFilter()">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="disputed">Disputed</option>
+          </select>
         </div>
       </div>
       <div id="admin-transactions-table-wrap">${adminTransactionsTableHTML(adminData.transactions || [])}</div>
@@ -4756,12 +4827,83 @@ async function deleteCountry(cId, name) {
 
 function peopleTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No customers or providers found${AUTH.user && !AUTH.user.isSuperAdmin ? ' in your city yet' : ''}.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Role</th><th>City</th><th>Country</th><th>Verified</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(u => `<tr><td>${u.name}</td><td>${u.role}</td><td>${u.city || '—'}</td><td>${u.country || '—'}</td><td>${u.verified ? statusBadge('verified') : statusBadge('unverified')}</td><td>${u.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
-  <td class="row-actions">${u.active
-    ? `<button class="btn-sm btn-sm-outline" onclick="toggleUserActive('${u.id}', false)">Suspend</button>`
-    : `<button class="btn-sm btn-sm-primary" onclick="toggleUserActive('${u.id}', true)">Reactivate</button>`}</td></tr>`).join('')}
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>Category</th><th>City</th><th>Country</th><th>Joined</th><th>Verified</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  ${list.map(u => `<tr>
+    <td><a href="#" onclick="openPersonDetail('${u.id}');return false;" style="color:var(--navy);font-weight:600;text-decoration:none;">${u.name}</a></td>
+    <td style="font-size:12px;color:var(--slate);">${u.email || '—'}</td>
+    <td>${u.role}</td>
+    <td>${u.role === 'Provider' ? `${u.category || '—'}${u.rating ? ` <span style="color:var(--slate);">★${u.rating}</span>` : ''}` : '—'}</td>
+    <td>${u.city || '—'}</td>
+    <td>${u.country || '—'}</td>
+    <td style="font-size:12px;color:var(--slate);">${u.createdAt ? u.createdAt.slice(0, 10) : '—'}</td>
+    <td>${u.verified ? statusBadge('verified') : statusBadge('unverified')}</td>
+    <td>${u.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
+    <td class="row-actions">
+      <button class="btn-sm btn-sm-outline" onclick="openPersonDetail('${u.id}')">View</button>
+      ${u.active
+        ? `<button class="btn-sm btn-sm-outline" onclick="toggleUserActive('${u.id}', false)">Suspend</button>`
+        : `<button class="btn-sm btn-sm-primary" onclick="toggleUserActive('${u.id}', true)">Reactivate</button>`}
+    </td></tr>`).join('')}
   </tbody></table></div>`;
+}
+
+function filterAdminPeople() {
+  const q = (document.getElementById('people-search').value || '').trim().toLowerCase();
+  const role = document.getElementById('people-role-filter').value;
+  const filtered = adminData.people.filter(u => {
+    if (role && u.role !== role) return false;
+    if (q && !(`${u.name} ${u.email || ''}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  document.getElementById('admin-people-table-wrap').innerHTML = peopleTable(filtered);
+}
+
+function clearAdminPeopleFilter() {
+  document.getElementById('people-search').value = '';
+  document.getElementById('people-role-filter').value = '';
+  filterAdminPeople();
+}
+
+// A full profile view for one customer or provider, pulled from the same
+// data already loaded for the directory table — no extra network round
+// trip needed, since the admin/users/all endpoint already returns the full
+// record (minus the password hash).
+function openPersonDetail(userId) {
+  const u = adminData.people.find(p => p.id === userId);
+  if (!u) return showToast('Could not find that person — try refreshing the page');
+  const isProvider = u.role === 'Provider';
+  const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;"><span style="color:var(--slate);">${label}</span><span style="font-weight:600;text-align:right;">${value ?? '—'}</span></div>`;
+  const modalHtml = `
+    <div class="modal-overlay open" id="person-detail-overlay" onclick="if(event.target===this)document.getElementById('person-detail-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('person-detail-overlay').remove()">✕</button>
+          <h3>${u.name}</h3>
+          <p>${u.role}${isProvider && u.providerRole ? ` — ${u.providerRole}` : ''}</p>
+        </div>
+        <div class="modal-body">
+          ${row('Email', u.email)}
+          ${row('Phone', u.phone)}
+          ${row('Address', [u.address, u.zipCode].filter(Boolean).join(', '))}
+          ${row('City / Country', [u.city, u.country].filter(Boolean).join(', '))}
+          ${isProvider ? row('Category', u.category) : ''}
+          ${isProvider ? row('Rating', u.rating ? `★ ${u.rating} (${u.jobs || 0} jobs completed)` : 'No ratings yet') : ''}
+          ${isProvider ? row('Hourly Rate', u.price != null ? `$${u.price}/hr` : '—') : ''}
+          ${isProvider && u.tags && u.tags.length ? row('Specialties', u.tags.join(', ')) : ''}
+          ${isProvider ? row('Plan', (u.plan || 'starter')[0].toUpperCase() + (u.plan || 'starter').slice(1)) : ''}
+          ${row('Joined', u.createdAt ? u.createdAt.slice(0, 10) : '—')}
+          ${row('Identity Verified', u.verified ? '✅ Verified' : '⏳ Not verified')}
+          ${row('Phone Verified', u.phoneVerified ? '✅ Verified' : '⏳ Not verified')}
+          ${row('Account Status', u.active ? 'Active' : 'Suspended')}
+        </div>
+        <div class="modal-footer">
+          ${u.active
+            ? `<button class="btn-sm btn-sm-outline" onclick="toggleUserActive('${u.id}', false); document.getElementById('person-detail-overlay').remove();">Suspend Account</button>`
+            : `<button class="confirm-btn" onclick="toggleUserActive('${u.id}', true); document.getElementById('person-detail-overlay').remove();">Reactivate Account</button>`}
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
 async function toggleUserActive(userId, active) {

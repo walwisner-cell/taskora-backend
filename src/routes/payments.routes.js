@@ -154,7 +154,7 @@ router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res
   });
 });
 // POST /api/payouts/request — provider requests payout of released escrow
-const COMMISSION_RATES = { starter: 0.12, pro: 0.08, superpro: 0.05 };
+const { COMMISSION_RATES } = require('../commission');
 
 router.post('/payouts/request', requireAuth, requireRole('provider'), async (req, res) => {
   const { payoutCurrency } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
@@ -475,14 +475,36 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
     return res.status(403).json({ error: `Your admin account is scoped to the ${me.adminDepartment} team and doesn't have access to this.` });
   }
 
+  // Optional date range, applied the same way the Platform Transactions
+  // panel applies it (against the contract's createdAt for escrow, and the
+  // payout's own date for commission) — so the two panels stay in sync
+  // when an admin filters by date.
+  const { from, to } = req.query;
+
   const contracts = await db.all('contracts');
-  const escrow = await db.all('escrowTransactions');
-  const payouts = await db.all('payouts');
+  let escrow = await db.all('escrowTransactions');
+  let payouts = await db.all('payouts');
   const customers = await db.filter('users', u => u.role === 'customer');
   const providers = await db.filter('users', u => u.role === 'provider');
   const customerById = new Map(customers.map(c => [c.id, c]));
   const providerById = new Map(providers.map(p => [p.id, p]));
   const contractById = new Map(contracts.map(c => [c.id, c]));
+
+  if (from || to) {
+    escrow = escrow.filter(e => {
+      const contract = contractById.get(e.contractId);
+      const date = (contract && contract.createdAt || '').slice(0, 10);
+      if (from && date < from) return false;
+      if (to && date > to) return false;
+      return true;
+    });
+    payouts = payouts.filter(p => {
+      const date = (p.date || '').slice(0, 10);
+      if (from && date < from) return false;
+      if (to && date > to) return false;
+      return true;
+    });
+  }
 
   // Group everything by the CUSTOMER's city — same convention used
   // everywhere else a "region" is derived (disputes, transactions).
@@ -508,6 +530,14 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
     b.commissionRevenue += (p.commissionAmount || 0);
   }
 
+  // Average transaction value per region — total volume moved (held +
+  // released) divided by however many escrow transactions built that
+  // volume. Guards against divide-by-zero for a region with commission
+  // activity but no escrow transactions in range.
+  for (const b of byRegion.values()) {
+    b.avgTransaction = b.transactionCount > 0 ? Math.round(((b.held + b.released) / b.transactionCount) * 100) / 100 : 0;
+  }
+
   const regions = Array.from(byRegion.values()).sort((a, b) => (b.held + b.released) - (a.held + a.released));
   const total = regions.reduce((acc, r) => ({
     held: acc.held + r.held,
@@ -515,6 +545,7 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
     commissionRevenue: acc.commissionRevenue + r.commissionRevenue,
     transactionCount: acc.transactionCount + r.transactionCount,
   }), { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 });
+  total.avgTransaction = total.transactionCount > 0 ? Math.round(((total.held + total.released) / total.transactionCount) * 100) / 100 : 0;
 
   res.json({ regions, total });
 });
