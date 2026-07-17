@@ -688,6 +688,9 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   sectionHeader('Escrow & Payment');
   if (escrow) {
     twoColumnRow('Escrow Amount (USD)', `$${escrow.amount}`, 'Escrow Status', escrow.status.charAt(0).toUpperCase() + escrow.status.slice(1));
+    if (escrow.materialsAdvanceAmount > 0) {
+      twoColumnRow('Materials Advance', `$${escrow.materialsAdvanceAmount} (released ${escrow.materialsAdvanceReleased ? 'immediately upon booking' : 'pending'})`, 'Remaining Held in Escrow', `$${(escrow.amount - escrow.materialsAdvanceAmount).toFixed(2)}`);
+    }
     // Real local-currency payment record, when the customer chose to pay
     // in their own currency rather than USD — the USD figure above always
     // stays the accounting figure of record; this shows what the customer

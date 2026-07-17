@@ -1480,7 +1480,7 @@ function renderFeaturedCarouselSlides() {
       <div class="featured-slide-avatar" ${p.profilePhotoUrl ? '' : `style="background:${p.color}"`}>${p.profilePhotoUrl ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : p.initials}</div>
       <div class="featured-slide-body">
         <div class="featured-slide-name">${p.name} <span class="badge ${p.plan === 'superpro' ? 'badge-warn' : 'badge-success'}" style="font-size:9.5px;">${p.plan === 'superpro' ? 'SUPER PRO' : 'PRO'}</span></div>
-        <div class="featured-slide-sub">${p.role} · ${p.city} · ★ ${p.rating || 'New'}</div>
+        <div class="featured-slide-sub">${p.role} · ${p.city} · ★ ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
       </div>
       <button class="btn-sm btn-sm-primary featured-slide-cta" onclick="viewProviderProfile('${p.id}')">View</button>
     </div>`;
@@ -1564,7 +1564,7 @@ async function loadPlatformStats() {
   try {
     const stats = await apiFetch('GET', '/platform-stats');
     els.pros.textContent = stats.verifiedProsCount.toLocaleString();
-    els.rating.textContent = stats.averageRating ? `${stats.averageRating}★` : 'New';
+    els.rating.textContent = stats.averageRating ? `${Number(stats.averageRating).toFixed(1)}★` : 'New';
     els.jobs.textContent = stats.jobsCompletedCount.toLocaleString();
   } catch (e) {
     console.warn('Could not load platform stats', e);
@@ -1595,7 +1595,7 @@ function populateAuthStates() {
   const states = (GEO_DATA.statesByCountry && GEO_DATA.statesByCountry[country]) || ['Nationwide'];
   const stateSelect = document.getElementById('auth-state');
   if (stateSelect) {
-    stateSelect.innerHTML = states.map(s => `<option value="${s}">${s}</option>`).join('');
+    stateSelect.innerHTML = `<option value="" disabled selected>Select a state / region</option>` + states.map(s => `<option value="${s}">${s}</option>`).join('');
   }
   // Some countries genuinely have no formal postal code system — for
   // those, the field becomes optional rather than pretending a format
@@ -1955,11 +1955,69 @@ function goHome() {
 // so it must NOT clear auth state itself — only an explicit "Sign Out"
 // action should do that.
 function logout() {
+  stopMessagePolling();
   AUTH.token = null;
   AUTH.user = null;
   clearAuthSession();
   showToast('Signed out');
   goHome();
+}
+
+// Plays a short, soft two-tone chime using the Web Audio API — no external
+// audio file needed. Only ever called when the person has opted in via
+// their notification preferences (default off), so it never surprises
+// anyone who didn't ask for it.
+function playMessageSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = ctx.currentTime;
+    [[880, 0], [1108, 0.1]].forEach(([freq, delay]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + delay);
+      gain.gain.linearRampToValueAtTime(0.15, now + delay + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + delay);
+      osc.stop(now + delay + 0.4);
+    });
+  } catch (e) { /* Web Audio unavailable — fail silently, never break the app over a sound */ }
+}
+
+// Lightweight polling — the app has no real-time push channel, so this is
+// what actually makes "play a sound for a new message" true rather than a
+// setting that does nothing. Checks notifications every 20s while signed
+// in, and only sounds the alert for a message notification whose id genuinely
+// wasn't seen on the previous check (never replays on first load or on a
+// page the person just opened themselves).
+let messagePollInterval = null;
+let seenNotificationIds = null;
+async function startMessagePolling() {
+  stopMessagePolling();
+  if (!BACKEND_AVAILABLE || !AUTH.token) return;
+  try {
+    const { notifications } = await apiFetch('GET', '/notifications/mine');
+    seenNotificationIds = new Set(notifications.map(n => n.id));
+  } catch (e) { seenNotificationIds = new Set(); }
+  messagePollInterval = setInterval(async () => {
+    if (!AUTH.token) return stopMessagePolling();
+    const soundOn = AUTH.user && AUTH.user.notifPrefs && AUTH.user.notifPrefs.messageSound;
+    try {
+      const { notifications } = await apiFetch('GET', '/notifications/mine');
+      const newOnes = notifications.filter(n => !seenNotificationIds.has(n.id));
+      seenNotificationIds = new Set(notifications.map(n => n.id));
+      if (soundOn && newOnes.some(n => n.text && n.text.toLowerCase().includes('message'))) {
+        playMessageSound();
+      }
+    } catch (e) { /* a failed poll just tries again next interval */ }
+  }, 20000);
+}
+function stopMessagePolling() {
+  if (messagePollInterval) clearInterval(messagePollInterval);
+  messagePollInterval = null;
+  seenNotificationIds = null;
 }
 
 /* ══════════════════════ AUTH ══════════════════════ */
@@ -2110,7 +2168,7 @@ async function mockAuth() {
     if (!email || !password) return showToast('Please fill in all fields');
   } else {
     const zipRequired = !(GEO_DATA.noPostalCodeCountries || []).includes(country);
-    if (!email || !password || !name || !phone || !address || !city || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
+    if (!email || !password || !name || !phone || !address || !city || !state || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
     if (authState.role === 'provider' && !skills) return showToast('List at least one skill or specialty');
     if (authState.role === 'provider' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
   }
@@ -2258,8 +2316,8 @@ async function goDashboard(role) {
     showToast(role === 'customer' ? 'Sign in as a customer to continue' : role === 'provider' ? 'Sign in as a provider to continue' : 'Sign in with an admin account to continue');
     return;
   }
-  if (role === 'customer') { showScreen('screen-customer'); await refreshNotifications(); renderNavbar('navbar-customer', 'customer'); await initCustomerDash(); }
-  else if (role === 'provider') { showScreen('screen-provider'); await refreshNotifications(); renderNavbar('navbar-provider', 'provider'); await initProviderDash(); }
+  if (role === 'customer') { showScreen('screen-customer'); await refreshNotifications(); renderNavbar('navbar-customer', 'customer'); await initCustomerDash(); startMessagePolling(); }
+  else if (role === 'provider') { showScreen('screen-provider'); await refreshNotifications(); renderNavbar('navbar-provider', 'provider'); await initProviderDash(); startMessagePolling(); }
   else { showScreen('screen-admin'); await refreshNotifications(); renderNavbar('navbar-admin', role); await initAdminDash(); }
 }
 
@@ -2368,7 +2426,7 @@ function messagingHTML(role) {
 
 async function loadMessageThread() {
   const body = document.getElementById('msg-thread-body');
-  if (!body || !activeMessageContact) return;
+  if (!body || !activeMessageContact || !AUTH.user) return;
   try {
     const { messages } = await apiFetch('GET', `/messages/${activeMessageContact.id}`);
     body.innerHTML = messages.length
@@ -2381,6 +2439,7 @@ async function loadMessageThread() {
 }
 
 function selectMessageContact(id) {
+  if (!AUTH.user) return;
   const role = AUTH.user.role;
   const contacts = getRealContacts(role);
   activeMessageContact = contacts.find(c => c.id === id) || activeMessageContact;
@@ -2870,6 +2929,7 @@ const CUSTOMER_SECTIONS = {
     <div class="panel"><div class="panel-title">Notifications</div>
       ${notifToggleHTML('bookingUpdates', 'Booking updates', 'Status changes on your active bookings', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from pros', true)}
+      ${notifToggleHTML('messageSound', 'Message sound alert', 'Play a sound when a new message arrives, so it doesn\'t come in silently', false)}
       ${notifToggleHTML('promotions', 'Promotions', 'Offers and product news', false)}
     </div>`,
 };
@@ -2925,6 +2985,7 @@ async function verifyPhoneOtp() {
   const code = document.getElementById('phone-otp-input').value.trim();
   if (!code) return showToast('Enter the code you received');
   if (!BACKEND_AVAILABLE) return showToast('Phone verified (demo mode)');
+  if (!AUTH.user) return showToast('Your session expired — please sign in again');
   try {
     const data = await apiFetch('POST', '/auth/verify-phone-otp', { code });
     AUTH.user.phoneVerified = true;
@@ -3032,7 +3093,7 @@ async function viewProviderProfile(id) {
       ${p.businessName ? `<div style="font-size:13px;color:var(--slate);margin-top:-4px;margin-bottom:4px;">${p.businessName}</div>` : ''}
       <div class="profile-role">${p.role} · Serving ${p.city || 'Atlanta'} · Taskora Pro since ${p.since}</div>
       <div class="profile-meta-row">
-        <div class="profile-meta-item">★ ${p.rating || 'No'} rating</div>
+        <div class="profile-meta-item">★ ${p.rating ? Number(p.rating).toFixed(1) : 'No'} rating</div>
         <div class="profile-meta-item">📋 ${p.jobs} jobs completed</div>
         <div class="profile-meta-item">⚡ Responds in ~1 hr</div>
       </div>
@@ -3067,7 +3128,7 @@ async function viewProviderProfile(id) {
     <div>
       <div class="profile-card">
         <div class="profile-card-title">About</div>
-        <div style="font-size:13.5px;color:var(--text);line-height:1.7;">${p.name.split(' ')[0]} is a Taskora-verified ${p.role.toLowerCase()} with ${p.jobs}+ completed jobs${p.rating ? ` and a ${p.rating}★ average rating` : ''}. Every booking runs on an auto-generated contract with funds held in escrow until the job is confirmed complete.</div>
+        <div style="font-size:13.5px;color:var(--text);line-height:1.7;">${p.name.split(' ')[0]} is a Taskora-verified ${p.role.toLowerCase()} with ${p.jobs}+ completed jobs${p.rating ? ` and a ${Number(p.rating).toFixed(1)}★ average rating` : ''}. Every booking runs on an auto-generated contract with funds held in escrow until the job is confirmed complete.</div>
         <div class="provider-tags" style="margin-top:14px;">${(p.tags||[]).map(t => `<span class="tag">${t}</span>`).join('') || '<span style="color:var(--muted);font-size:12px;">No specialties listed yet</span>'}</div>
       </div>
       <div class="profile-card">
@@ -3203,7 +3264,7 @@ async function runAIMatch() {
             : `<div style="width:44px;height:44px;border-radius:50%;background:${p.color};color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-weight:600;flex-shrink:0;">${p.initials}</div>`}
           <div style="flex:1;">
             <div style="font-weight:600;font-size:13.5px;color:var(--navy);">${p.name} <span class="badge badge-success" style="margin-left:4px;">${p.score}% match</span></div>
-            <div style="font-size:12px;color:var(--slate);">${p.role} · $${p.price}/hr · ★ ${p.rating}</div>
+            <div style="font-size:12px;color:var(--slate);">${p.role} · $${p.price}/hr · ★ ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           </div>
           <button class="btn-sm btn-sm-primary" onclick="closePostJobModal();openBooking('${p.id}');">Book</button>
         </div>`).join('')}
@@ -3309,7 +3370,7 @@ const PROVIDER_SECTIONS = {
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">This Month's Earnings</div><div class="stat-card-val">$${earnings.toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-card-label">Active Contracts</div><div class="stat-card-val">${activeContracts}</div></div>
-      <div class="stat-card"><div class="stat-card-label">Average Rating</div><div class="stat-card-val">${(AUTH.user && AUTH.user.rating) ? AUTH.user.rating + '★' : 'New'}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Average Rating</div><div class="stat-card-val">${(AUTH.user && AUTH.user.rating) ? Number(AUTH.user.rating).toFixed(1) + '★' : 'New'}</div></div>
       <div class="stat-card"><div class="stat-card-label">Jobs Completed</div><div class="stat-card-val">${providerData.contracts.filter(c => c.status === 'completed').length}</div></div>
     </div>
     <div class="panel"><div class="panel-title">New AI Matches <small>${providerData.matches.length} pending</small></div>${matchesTable(providerData.matches.slice(0, 3))}</div>
@@ -3474,6 +3535,7 @@ const PROVIDER_SECTIONS = {
       ${notifToggleHTML('newMatches', 'New job matches', 'AI-matched jobs in your category', true)}
       ${notifToggleHTML('payoutAlerts', 'Payout alerts', 'When a payout is released', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from customers', true)}
+      ${notifToggleHTML('messageSound', 'Message sound alert', 'Play a sound when a new message arrives, so it doesn\'t come in silently', false)}
     </div>`,
 };
 
@@ -4698,7 +4760,7 @@ function providerCardsHTML(list) {
         <div class="provider-name">${p.name}</div>
         <div class="provider-role">${p.role}</div>
         <div class="provider-meta">
-          <div class="meta-chip"><span class="stars">★</span> ${p.rating}</div>
+          <div class="meta-chip"><span class="stars">★</span> ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           <div class="meta-chip">📋 ${p.jobs} jobs</div>
           <div class="meta-chip">📍 ${p.city || 'Atlanta'}</div>
         </div>
