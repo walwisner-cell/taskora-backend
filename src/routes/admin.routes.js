@@ -5,6 +5,8 @@ const { requireAuth, requireRole, hashPassword } = require('../auth');
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidName, isValidLabel, validate } = require('../validators');
 const { notify } = require('../notify');
 const { commissionRateForPlan } = require('../commission');
+const { effectivePlanPricing, PLAN_KEYS, DEFAULT_USD_PRICES } = require('../plan-pricing');
+const { currencyForCountry, APPROX_USD_RATE, CURRENCY_BY_COUNTRY } = require('../currency-data');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -34,6 +36,16 @@ async function me(req) {
 async function myRegion(req) {
   const m = await me(req);
   return m && !m.isSuperAdmin && !m.adminDepartment ? m.region : null;
+}
+
+// Same idea as myRegion, but at country granularity — used for plan
+// pricing overrides, since currency (and therefore price) is a
+// country-level concept, not a city-level one. A regional admin can only
+// set pricing for their own assigned country; a super admin (null here)
+// can set it for any country.
+async function myCountry(req) {
+  const m = await me(req);
+  return m && !m.isSuperAdmin && !m.adminDepartment ? m.country : null;
 }
 
 async function requireSuperAdmin(req, res, next) {
@@ -711,6 +723,206 @@ router.delete('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
   }
   await db.remove('users', target.id);
   res.json({ ok: true });
+});
+
+// GET /api/admin/advertising-inquiries — every "Advertise Here" submission
+// this admin has a claim to. A super admin sees all of them, everywhere. A
+// regional admin sees only the ones targeting their own city — this is the
+// regional-autonomy piece: a city's ad inventory belongs to that city's
+// admin, the same way its disputes and verification queue already do.
+// Department-scoped functional admins (Verification, Disputes, Financial,
+// etc.) aren't tied to this at all, so they're blocked, same as elsewhere.
+router.get('/advertising-inquiries', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
+  const region = await myRegion(req); // null for a super admin
+  let inquiries = await db.all('advertisingInquiries');
+  if (region) inquiries = inquiries.filter(i => i.targetCity === region);
+  inquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ inquiries });
+});
+
+// PATCH /api/admin/advertising-inquiries/:id/status — move an inquiry
+// through new -> contacted -> closed as the sales team works it. This is
+// the same lightweight "worked it or not" tracking every other admin queue
+// on the platform already has (disputes, verification, category requests).
+router.patch('/advertising-inquiries/:id/status', async (req, res) => {
+  const { status } = req.body || {};
+  if (!['new', 'contacted', 'closed'].includes(status)) return res.status(400).json({ error: 'status must be new, contacted, or closed' });
+  const target = await db.find('advertisingInquiries', i => i.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'Inquiry not found' });
+  const m = await me(req);
+  if (!m.isSuperAdmin) {
+    if (m.adminDepartment) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+    const region = await myRegion(req);
+    if (target.targetCity !== region) return res.status(403).json({ error: 'This inquiry targets a different city than the one you manage.' });
+  }
+  const updated = await db.update('advertisingInquiries', target.id, { status });
+  res.json({ inquiry: updated });
+});
+
+// PATCH /api/admin/advertising-inquiries/:id/live — the actual regional
+// self-service piece: approve an inquiry into a real, currently-displaying
+// paid ad slot (or take one down), and set what it costs. A regional admin
+// can do this for their own city without ever involving a super admin; a
+// super admin can do it for any city, or for a platform-wide ad (one whose
+// targetCity is null, which only a super admin can approve — that's not
+// any one region's call to make).
+router.patch('/advertising-inquiries/:id/live', async (req, res) => {
+  const { isLive, price, currencyCode, displayHeadline, displaySubtext, displayLink } = req.body || {};
+  const target = await db.find('advertisingInquiries', i => i.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'Inquiry not found' });
+  const m = await me(req);
+  if (!m.isSuperAdmin) {
+    if (m.adminDepartment) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+    const region = await myRegion(req);
+    if (!target.targetCity) return res.status(403).json({ error: 'Platform-wide ads can only be approved by a super admin.' });
+    if (target.targetCity !== region) return res.status(403).json({ error: 'This inquiry targets a different city than the one you manage.' });
+  }
+  if (isLive && (typeof price !== 'number' || price < 0)) return res.status(400).json({ error: 'Enter a valid price to go live' });
+
+  const patch = { isLive: !!isLive };
+  if (isLive) {
+    patch.price = price;
+    patch.currencyCode = currencyCode || currencyForCountry(m.country || 'United States').code;
+    patch.approvedBy = m.id;
+    patch.approvedAt = new Date().toISOString();
+  }
+  if (displayHeadline !== undefined) patch.displayHeadline = (displayHeadline || '').trim() || null;
+  if (displaySubtext !== undefined) patch.displaySubtext = (displaySubtext || '').trim() || null;
+  if (displayLink !== undefined) patch.displayLink = (displayLink || '').trim() || null;
+
+  const updated = await db.update('advertisingInquiries', target.id, patch);
+  res.json({ inquiry: updated });
+});
+
+// GET /api/admin/plan-pricing — pricing oversight, scoped to what this
+// admin can actually see/edit. A super admin gets everything: the global
+// USD base for each plan, every country's override, and (implicitly, via
+// /exchange-rates) the full rate table. A regional admin gets just their
+// own country's current effective pricing — base plus their own override
+// if they've set one — so they can decide whether to set or change it.
+router.get('/plan-pricing', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
+  const [baseRows, overrideRows, rateRows] = await Promise.all([
+    db.all('planPricingBase'), db.all('planPricingOverrides'), db.all('exchangeRates'),
+  ]);
+  if (m.isSuperAdmin) {
+    const usdBase = PLAN_KEYS.map(plan => ({ plan, usdPrice: baseRows.find(r => r.plan === plan)?.usdPrice ?? DEFAULT_USD_PRICES[plan] }));
+    return res.json({ usdBase, overrides: overrideRows });
+  }
+  const country = m.country;
+  const plans = effectivePlanPricing(country, { baseRows, overrideRows, rateRows });
+  res.json({ country, plans });
+});
+
+// PATCH /api/admin/plan-pricing/base — super admin only: edits the global
+// USD starting price for one plan. Every country without its own override
+// automatically reflects this change, converted to their local currency.
+router.patch('/plan-pricing/base', requireSuperAdmin, async (req, res) => {
+  const { plan, usdPrice } = req.body || {};
+  if (!PLAN_KEYS.includes(plan)) return res.status(400).json({ error: 'plan must be starter, pro, or superpro' });
+  if (typeof usdPrice !== 'number' || usdPrice < 0) return res.status(400).json({ error: 'Enter a valid non-negative USD price' });
+  const existing = await db.find('planPricingBase', r => r.plan === plan);
+  if (existing) await db.update('planPricingBase', existing.id, { usdPrice, updatedAt: new Date().toISOString() });
+  else await db.insert('planPricingBase', { id: `ppb_${plan}`, plan, usdPrice, updatedAt: new Date().toISOString() });
+  res.json({ ok: true });
+});
+
+// PATCH /api/admin/plan-pricing/override — set (or update) one country's
+// real local-currency price for one plan. A regional admin can only do
+// this for their own assigned country; a super admin can do it for any
+// country. The USD-equivalent side-by-side figure is computed on read
+// (see effectivePlanPricing), not stored here.
+router.patch('/plan-pricing/override', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
+  const { country, plan, localPrice } = req.body || {};
+  if (!PLAN_KEYS.includes(plan)) return res.status(400).json({ error: 'plan must be starter, pro, or superpro' });
+  if (typeof localPrice !== 'number' || localPrice < 0) return res.status(400).json({ error: 'Enter a valid non-negative price' });
+  if (!isNonEmptyString(country)) return res.status(400).json({ error: 'country is required' });
+  if (!m.isSuperAdmin && country !== m.country) {
+    return res.status(403).json({ error: `Your admin account is scoped to ${m.country} — you can't set pricing for other countries.` });
+  }
+  const currency = currencyForCountry(country);
+  const existing = await db.find('planPricingOverrides', r => r.country === country && r.plan === plan);
+  const patch = { country, plan, localPrice, currencyCode: currency.code, setBy: m.id, updatedAt: new Date().toISOString() };
+  if (existing) await db.update('planPricingOverrides', existing.id, patch);
+  else await db.insert('planPricingOverrides', { id: `ppo_${nanoid(8)}`, ...patch });
+  res.json({ ok: true });
+});
+
+// DELETE /api/admin/plan-pricing/override/:country/:plan — clear an
+// override, reverting that country's plan back to the auto-converted USD
+// base price. Same scoping rule as setting one.
+router.delete('/plan-pricing/override/:country/:plan', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
+  const { country, plan } = req.params;
+  if (!m.isSuperAdmin && country !== m.country) {
+    return res.status(403).json({ error: `Your admin account is scoped to ${m.country} — you can't edit pricing for other countries.` });
+  }
+  const existing = await db.find('planPricingOverrides', r => r.country === country && r.plan === plan);
+  if (existing) await db.remove('planPricingOverrides', existing.id);
+  res.json({ ok: true });
+});
+
+// GET /api/admin/exchange-rates — super admin only: every currency Taskora
+// operates in, with its effective rate (an edit if one exists, otherwise
+// the static approximate default from src/currency-data.js).
+router.get('/exchange-rates', requireSuperAdmin, async (req, res) => {
+  const rateRows = await db.all('exchangeRates');
+  const codes = new Set(Object.values(CURRENCY_BY_COUNTRY).map(c => c.code));
+  codes.add('USD');
+  const rates = Array.from(codes).sort().map(code => {
+    const row = rateRows.find(r => r.currencyCode === code);
+    return { currencyCode: code, rateToUsd: row ? row.rateToUsd : (APPROX_USD_RATE[code] ?? 1), isOverride: !!row };
+  });
+  res.json({ rates });
+});
+
+// PATCH /api/admin/exchange-rates — super admin only: overrides the static
+// approximate rate for one currency. This feeds every conversion in the
+// app that touches that currency — job payments, provider payouts, AND
+// plan pricing alike — not just the pricing page, since they all resolve
+// through the same resolveRate() helper now.
+router.patch('/exchange-rates', requireSuperAdmin, async (req, res) => {
+  const { currencyCode, rateToUsd } = req.body || {};
+  if (!isNonEmptyString(currencyCode)) return res.status(400).json({ error: 'currencyCode is required' });
+  if (typeof rateToUsd !== 'number' || rateToUsd <= 0) return res.status(400).json({ error: 'Enter a valid positive rate' });
+  const existing = await db.find('exchangeRates', r => r.currencyCode === currencyCode);
+  if (existing) await db.update('exchangeRates', existing.id, { rateToUsd, updatedAt: new Date().toISOString() });
+  else await db.insert('exchangeRates', { id: `xr_${currencyCode}`, currencyCode, rateToUsd, updatedAt: new Date().toISOString() });
+  res.json({ ok: true });
+});
+
+// GET /api/admin/sales-inquiries — every Custom Plan "Contact Sales"
+// submission, newest first. Same super-admin-only reasoning as
+// advertising-inquiries: an enterprise-sales function, not tied to a city
+// or existing department.
+router.get('/sales-inquiries', requireSuperAdmin, async (req, res) => {
+  const inquiries = await db.all('salesInquiries');
+  inquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ inquiries });
+});
+
+// PATCH /api/admin/sales-inquiries/:id/status
+router.patch('/sales-inquiries/:id/status', requireSuperAdmin, async (req, res) => {
+  const { status } = req.body || {};
+  if (!['new', 'contacted', 'closed'].includes(status)) return res.status(400).json({ error: 'status must be new, contacted, or closed' });
+  const target = await db.find('salesInquiries', i => i.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'Inquiry not found' });
+  const updated = await db.update('salesInquiries', target.id, { status });
+  res.json({ inquiry: updated });
 });
 
 module.exports = router;

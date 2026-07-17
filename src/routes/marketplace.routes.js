@@ -6,6 +6,7 @@ const { requireAuth, requireRole } = require('../auth');
 const { isNonEmptyString, validate, postalCodeIsOptionalFor } = require('../validators');
 const { notify } = require('../notify');
 const { currencyForCountry, convertFromUSD } = require('../currency-data');
+const { effectivePlanPricing, resolveRate } = require('../plan-pricing');
 
 const router = express.Router();
 
@@ -33,7 +34,8 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   const customer = await db.find('users', u => u.id === customerId);
   const currency = currencyForCountry(customer ? customer.country : 'United States');
   const wantsLocal = payCurrencyChoice === 'local' && currency.code !== 'USD';
-  const paidAmountLocal = wantsLocal ? convertFromUSD(contract.amount, currency.code) : null;
+  const rate = wantsLocal ? resolveRate(currency.code, await db.all('exchangeRates')) : null;
+  const paidAmountLocal = wantsLocal ? convertFromUSD(contract.amount, currency.code, rate) : null;
 
   // A materials advance is tracked on the SAME escrow record as separate
   // fields, rather than as a second record — every existing feature
@@ -149,6 +151,47 @@ router.get('/platform-stats', async (req, res) => {
   });
 });
 
+// GET /api/plan-pricing?country=Nigeria — real plan pricing for the
+// pricing page, signup flow, and a provider's own plan-selection screen.
+// Always returns both the local-currency figure and its USD equivalent
+// side by side, whether the local figure is a regional admin's explicit
+// override or an automatic conversion of the super admin's USD base price
+// — so a visitor (or an admin deciding whether to set an override) can
+// always compare the two. No country given (or an unrecognized one) falls
+// back to USD.
+router.get('/plan-pricing', async (req, res) => {
+  const country = req.query.country || 'United States';
+  const [baseRows, overrideRows, rateRows] = await Promise.all([
+    db.all('planPricingBase'),
+    db.all('planPricingOverrides'),
+    db.all('exchangeRates'),
+  ]);
+  const plans = effectivePlanPricing(country, { baseRows, overrideRows, rateRows });
+  res.json({ country, plans });
+});
+
+// GET /api/live-ads?city=Atlanta — the one currently-live paid ad slot for
+// this city, if any (city-specific ads take priority over a platform-wide
+// one). Public, no auth — this is what powers the real "Advertise Here"
+// banner slide on the homepage. Returns { ad: null } when nothing is live
+// for this city, so the frontend falls back to the generic pitch slide.
+router.get('/live-ads', async (req, res) => {
+  const city = req.query.city || null;
+  const liveAds = await db.filter('advertisingInquiries', a => a.isLive === true);
+  const cityMatch = city ? liveAds.find(a => a.targetCity === city) : null;
+  const globalMatch = liveAds.find(a => !a.targetCity);
+  const ad = cityMatch || globalMatch || null;
+  res.json({
+    ad: ad ? {
+      companyName: ad.companyName,
+      displayHeadline: ad.displayHeadline || ad.companyName,
+      displaySubtext: ad.displaySubtext || `Reach customers browsing Taskora${ad.targetCity ? ` in ${ad.targetCity}` : ''} right now`,
+      displayLink: ad.displayLink || null,
+      targetCity: ad.targetCity || null,
+    } : null,
+  });
+});
+
 router.get('/geo', async (req, res) => {
   const liveCountries = (await db.filter('countries', c => c.status === 'live')).map(c => c.name);
   // Only actually-live countries are offered — matches the super admin's
@@ -173,7 +216,8 @@ router.get('/currency/mine', requireAuth, async (req, res) => {
   const user = await db.find('users', u => u.id === req.user.sub);
   const currency = currencyForCountry(user ? user.country : 'United States');
   const amount = parseFloat(req.query.amount);
-  const converted = (!isNaN(amount) && currency.code !== 'USD') ? convertFromUSD(amount, currency.code) : null;
+  const rate = currency.code !== 'USD' ? resolveRate(currency.code, await db.all('exchangeRates')) : null;
+  const converted = (!isNaN(amount) && currency.code !== 'USD') ? convertFromUSD(amount, currency.code, rate) : null;
   res.json({
     currency,
     isUSD: currency.code === 'USD',

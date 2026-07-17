@@ -67,6 +67,100 @@ router.post('/careers-inquiry', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
+// POST /api/advertising-inquiry — the "Advertise Here" slide's real
+// destination. Previously this button just opened a mailto: link, which
+// silently does nothing on any device without a configured default mail
+// client and leaves no record anywhere on the platform. This follows the
+// same real-storage, real-notification pattern as /contact and
+// /careers-inquiry: genuinely saved, genuinely alerts the super admin team.
+router.post('/advertising-inquiry', async (req, res) => {
+  const { companyName, contactName, email, phone, message, targetCity } = req.body || {};
+  const errors = validate([
+    ['companyName', isNonEmptyString(companyName, { min: 2, max: 150 }), 'Enter your company name'],
+    ['contactName', isNonEmptyString(contactName, { min: 2, max: 100 }), 'Enter your name'],
+    ['email', isNonEmptyString(email, { min: 5, max: 254 }), 'Enter a valid email address'],
+    ['message', isNonEmptyString(message, { min: 10, max: 3000 }), 'Tell us a bit about what you have in mind (at least 10 characters)'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  // targetCity is optional — an empty/missing value means "platform-wide",
+  // which only a super admin can approve (see admin.routes.js). Any
+  // non-empty value is trusted as typed here; it doesn't need to match a
+  // real city exactly for the inquiry to be stored, but it won't show up
+  // in any regional admin's queue unless it matches their city exactly —
+  // that's the same convention used for how a customer's own city already
+  // scopes what a regional admin sees everywhere else in the app.
+  const city = (targetCity || '').trim() || null;
+
+  const submission = {
+    id: `ad_${nanoid(10)}`,
+    companyName: companyName.trim(),
+    contactName: contactName.trim(),
+    email: email.trim(),
+    phone: (phone || '').trim() || null,
+    message: message.trim(),
+    status: 'new',
+    targetCity: city,
+    isLive: false,
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('advertisingInquiries', submission);
+
+  // Notify whoever can actually act on this: the regional admin for the
+  // targeted city (if there is one), plus every super admin regardless —
+  // a platform-wide (city: null) inquiry only reaches super admins, since
+  // only they can approve one.
+  const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+  const regionalAdmins = city
+    ? await db.filter('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === city)
+    : [];
+  const toNotify = [...superAdmins, ...regionalAdmins];
+  for (const admin of toNotify) {
+    await notify(admin.id, '📣', `New advertising inquiry from ${submission.companyName} (${submission.contactName})${city ? ` — targeting ${city}` : ' — platform-wide'}`);
+  }
+  console.log(`[TEST MODE — no email provider connected] Would email sales@taskora.io: new advertising inquiry from ${submission.companyName} <${submission.email}>`);
+
+  res.status(201).json({ ok: true });
+});
+
+// POST /api/sales-inquiry — the Custom Plan pricing card's "Contact Sales"
+// button. Same bug as "Advertise Here" had: previously a mailto: link,
+// meaning it silently did nothing on any device without a configured
+// default mail client, and no enterprise lead was ever actually recorded.
+// Kept in its own table (not merged with advertisingInquiries) since this
+// is a distinct funnel — organizations interested in the platform itself,
+// not media partners — that a sales team would want to work separately.
+router.post('/sales-inquiry', async (req, res) => {
+  const { companyName, contactName, email, teamSize, message } = req.body || {};
+  const errors = validate([
+    ['companyName', isNonEmptyString(companyName, { min: 2, max: 150 }), 'Enter your company name'],
+    ['contactName', isNonEmptyString(contactName, { min: 2, max: 100 }), 'Enter your name'],
+    ['email', isNonEmptyString(email, { min: 5, max: 254 }), 'Enter a valid email address'],
+    ['message', isNonEmptyString(message, { min: 10, max: 3000 }), 'Tell us a bit about what you need (at least 10 characters)'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const submission = {
+    id: `sales_${nanoid(10)}`,
+    companyName: companyName.trim(),
+    contactName: contactName.trim(),
+    email: email.trim(),
+    teamSize: (teamSize || '').trim() || null,
+    message: message.trim(),
+    status: 'new',
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('salesInquiries', submission);
+
+  const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+  for (const admin of superAdmins) {
+    await notify(admin.id, '💼', `New Custom plan sales inquiry from ${submission.companyName} (${submission.contactName})`);
+  }
+  console.log(`[TEST MODE — no email provider connected] Would email sales@taskora.io: new Custom plan inquiry from ${submission.companyName} <${submission.email}>`);
+
+  res.status(201).json({ ok: true });
+});
+
 // GET /api/notifications/mine
 router.get('/notifications/mine', requireAuth, async (req, res) => {
   const notifications = await db.filter('notifications', n => n.userId === req.user.sub);

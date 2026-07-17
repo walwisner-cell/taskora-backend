@@ -241,6 +241,73 @@ CREATE TABLE IF NOT EXISTS careers_inquiries (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS advertising_inquiries (
+  id                TEXT PRIMARY KEY,
+  company_name      TEXT NOT NULL,
+  contact_name      TEXT NOT NULL,
+  email             TEXT NOT NULL,
+  phone             TEXT,
+  message           TEXT NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'new',
+  target_city       TEXT,
+  is_live           BOOLEAN NOT NULL DEFAULT false,
+  price             NUMERIC,
+  currency_code     TEXT,
+  display_headline  TEXT,
+  display_subtext   TEXT,
+  display_link      TEXT,
+  approved_by       TEXT,
+  approved_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS sales_inquiries (
+  id            TEXT PRIMARY KEY,
+  company_name  TEXT NOT NULL,
+  contact_name  TEXT NOT NULL,
+  email         TEXT NOT NULL,
+  team_size     TEXT,
+  message       TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'new',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- The global USD starting price per plan, editable by a super admin. Any
+-- plan not present here falls back to the built-in default in
+-- src/plan-pricing.js — so this table only needs a row once someone
+-- actually edits a price.
+CREATE TABLE IF NOT EXISTS plan_pricing_base (
+  id          TEXT PRIMARY KEY,
+  plan        TEXT NOT NULL UNIQUE,
+  usd_price   NUMERIC NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- A regional admin's (or super admin's) real local-currency price for one
+-- plan in one country — overrides the auto-converted USD base for that
+-- country only. Absence of a row here means "use the converted default".
+CREATE TABLE IF NOT EXISTS plan_pricing_overrides (
+  id             TEXT PRIMARY KEY,
+  country        TEXT NOT NULL,
+  plan           TEXT NOT NULL,
+  local_price    NUMERIC NOT NULL,
+  currency_code  TEXT NOT NULL,
+  set_by         TEXT,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (country, plan)
+);
+
+-- A super admin's edited exchange rate for one currency — overrides the
+-- static approximate table in src/currency-data.js for every conversion
+-- in the app (job payments, payouts, plan pricing). Absence of a row here
+-- means "use the static default".
+CREATE TABLE IF NOT EXISTS exchange_rates (
+  id             TEXT PRIMARY KEY,
+  currency_code  TEXT NOT NULL UNIQUE,
+  rate_to_usd    NUMERIC NOT NULL,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS fraud_flags (
   id             TEXT PRIMARY KEY,
   type           TEXT NOT NULL,
@@ -336,3 +403,12 @@ ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_amoun
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_released BOOLEAN DEFAULT FALSE;
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_payout_id TEXT;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS link_to JSONB;
+ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS target_city TEXT;
+ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS is_live BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS price NUMERIC;
+ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS currency_code TEXT;
+ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS display_headline TEXT;
+ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS display_subtext TEXT;
+ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS display_link TEXT;
+ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS approved_by TEXT;
+ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;

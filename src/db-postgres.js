@@ -53,6 +53,11 @@ const TABLES = {
   fraudFlags: { table: 'fraud_flags', columns: ['id','type','severity','user_id','related_user_id','contract_id','details','status','reviewed_at','created_at'] },
   contactSubmissions: { table: 'contact_submissions', columns: ['id','name','email','subject','message','status','created_at'] },
   careersInquiries: { table: 'careers_inquiries', columns: ['id','name','email','role','message','status','created_at'] },
+  advertisingInquiries: { table: 'advertising_inquiries', columns: ['id','company_name','contact_name','email','phone','message','status','target_city','is_live','price','currency_code','display_headline','display_subtext','display_link','approved_by','approved_at','created_at'] },
+  salesInquiries: { table: 'sales_inquiries', columns: ['id','company_name','contact_name','email','team_size','message','status','created_at'] },
+  planPricingBase: { table: 'plan_pricing_base', columns: ['id','plan','usd_price','updated_at'] },
+  planPricingOverrides: { table: 'plan_pricing_overrides', columns: ['id','country','plan','local_price','currency_code','set_by','updated_at'] },
+  exchangeRates: { table: 'exchange_rates', columns: ['id','currency_code','rate_to_usd','updated_at'] },
 };
 
 // Columns stored as JSONB. `pg` serializes JS arrays using Postgres's native

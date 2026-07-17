@@ -92,9 +92,12 @@ function currencyForCountry(country) {
 
 // Converts a USD amount into the target currency, rounded sensibly (whole
 // units for high-denomination currencies like NGN/IDR, 2 decimals for
-// others).
-function convertFromUSD(usdAmount, currencyCode) {
-  const rate = APPROX_USD_RATE[currencyCode] ?? 1;
+// others). `rateOverride`, if given, is used instead of the static table
+// below — this is how a super admin's edited exchange rate (see
+// src/plan-pricing.js resolveRate) flows through to every conversion in
+// the app without this function needing to know about the database.
+function convertFromUSD(usdAmount, currencyCode, rateOverride) {
+  const rate = rateOverride ?? (APPROX_USD_RATE[currencyCode] ?? 1);
   const converted = usdAmount * rate;
   const wholeUnitCurrencies = new Set(['NGN', 'IDR', 'VND', 'KRW', 'UGX', 'TZS', 'ZWL', 'RWF']);
   return wholeUnitCurrencies.has(currencyCode) ? Math.round(converted) : Math.round(converted * 100) / 100;

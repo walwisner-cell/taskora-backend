@@ -1192,12 +1192,16 @@
         <div class="pricing-eyebrow">Provider Plans</div>
         <div class="pricing-title">Get matched more. Keep more of what you earn.</div>
         <div class="pricing-sub">Every plan includes identity verification, escrow protection, and AI job matching. Higher tiers unlock priority placement and lower commission.</div>
+        <div style="margin-top:16px;display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap;">
+          <label class="form-label" style="margin:0;">Show pricing for</label>
+          <select class="form-input" id="pricing-country-select" style="width:auto;padding:6px 10px;font-size:13px;" onchange="loadPricingPage(this.value)"></select>
+        </div>
       </div>
       <div class="pricing-grid">
         <div class="pricing-card">
           <div class="pricing-plan-name">Starter</div>
           <div class="pricing-plan-desc">For providers just getting started on Taskora</div>
-          <div class="pricing-price">$0<span>/month</span></div>
+          <div class="pricing-price" id="pricing-price-starter">$0<span>/month</span></div>
           <div class="pricing-feat-list">
             <div class="pricing-feat">AI job matching</div>
             <div class="pricing-feat">Identity verification & badge</div>
@@ -1210,7 +1214,7 @@
         <div class="pricing-card">
           <div class="pricing-plan-name">Pro</div>
           <div class="pricing-plan-desc">For providers who want more jobs, lower fees</div>
-          <div class="pricing-price">$20<span>/month</span></div>
+          <div class="pricing-price" id="pricing-price-pro">$20<span>/month</span></div>
           <div class="pricing-feat-list">
             <div class="pricing-feat">Everything in Starter</div>
             <div class="pricing-feat">Priority placement in AI matching</div>
@@ -1224,7 +1228,7 @@
           <div class="pricing-plan-badge">Most Popular</div>
           <div class="pricing-plan-name">Super Pro</div>
           <div class="pricing-plan-desc">For providers who want to lead their community</div>
-          <div class="pricing-price">$27<span>/month</span></div>
+          <div class="pricing-price" id="pricing-price-superpro">$27<span>/month</span></div>
           <div class="pricing-feat-list">
             <div class="pricing-feat">Everything in Pro</div>
             <div class="pricing-feat">Top placement in your zip code / community</div>
@@ -1244,7 +1248,7 @@
             <div class="pricing-feat">Dedicated account manager</div>
             <div class="pricing-feat">Volume commission discounts</div>
           </div>
-          <button class="pricing-cta" onclick="window.location.href='mailto:sales@taskora.io?subject=' + encodeURIComponent('Custom Plan Inquiry') + '&body=' + encodeURIComponent('Hi Taskora team,\n\nI\'m interested in the Custom plan for organizations. Please reach out to discuss details.\n\nCompany name:\nExpected team size:\n')">Contact Sales</button>
+          <button class="pricing-cta" onclick="openSalesInquiryForm()">Contact Sales</button>
         </div>
       </div>
     </div>
@@ -1432,15 +1436,27 @@ async function loadFeaturedCarousel() {
   if (featuredCarouselInterval) { clearInterval(featuredCarouselInterval); featuredCarouselInterval = null; }
 
   let providers = [];
+  let liveAd = null;
   if (BACKEND_AVAILABLE) {
     try {
       const data = await apiFetch('GET', '/providers/featured');
       providers = data.providers || [];
     } catch (e) { console.warn('Could not load featured providers', e); }
+    try {
+      // Same "what city is this visitor in" logic used for search — signed
+      // in, we know their real city; otherwise, whatever they've typed into
+      // the location search box, if anything.
+      const locationInput = document.getElementById('search-location-input');
+      const visitorCity = (AUTH.user && AUTH.user.city) || (locationInput && locationInput.value.trim()) || '';
+      const params = visitorCity ? `?city=${encodeURIComponent(visitorCity)}` : '';
+      const adData = await apiFetch('GET', `/live-ads${params}`);
+      liveAd = adData.ad || null;
+    } catch (e) { console.warn('Could not load live ad', e); }
   }
 
-  if (!providers.length) {
-    // No one is on a paid plan yet — don't show an empty/fake carousel.
+  if (!providers.length && !liveAd) {
+    // No one is on a paid plan yet, and no ad is currently live either —
+    // genuinely nothing to show, so don't render an empty/fake carousel.
     section.style.display = 'none';
     section.innerHTML = '';
     return;
@@ -1449,7 +1465,7 @@ async function loadFeaturedCarousel() {
   // Mix in exactly one ad slot per rotation, positioned roughly in the middle.
   featuredCarouselItems = providers.map(p => ({ type: 'provider', data: p }));
   const adPosition = Math.min(2, featuredCarouselItems.length);
-  featuredCarouselItems.splice(adPosition, 0, { type: 'ad' });
+  featuredCarouselItems.splice(adPosition, 0, { type: 'ad', data: liveAd });
   featuredCarouselIndex = 0;
 
   section.style.display = 'block';
@@ -1471,13 +1487,28 @@ function renderFeaturedCarouselSlides() {
   if (!track || !dots) return;
   track.innerHTML = featuredCarouselItems.map((item, i) => {
     if (item.type === 'ad') {
+      const ad = item.data;
+      if (ad) {
+        // A real, currently-live paid ad — approved and priced by either a
+        // regional admin (for their city) or a super admin (platform-wide).
+        return `<div class="featured-slide featured-slide-ad ${i === featuredCarouselIndex ? 'active' : ''}">
+          <div class="featured-slide-avatar" style="background:rgba(255,255,255,.15);">✦</div>
+          <div class="featured-slide-body">
+            <div class="featured-slide-name">${ad.displayHeadline}</div>
+            <div class="featured-slide-sub">${ad.displaySubtext}</div>
+          </div>
+          ${ad.displayLink ? `<button class="btn-sm" style="background:#fff;color:var(--navy);flex-shrink:0;" onclick="window.open('${ad.displayLink.replace(/'/g, "&#39;")}', '_blank')">Learn More</button>` : ''}
+        </div>`;
+      }
+      // No ad is currently live for this visitor — show the pitch slide
+      // that gets a business to actually submit one.
       return `<div class="featured-slide featured-slide-ad ${i === featuredCarouselIndex ? 'active' : ''}">
         <div class="featured-slide-avatar" style="background:rgba(255,255,255,.15);">✦</div>
         <div class="featured-slide-body">
           <div class="featured-slide-name">Your business could be here</div>
           <div class="featured-slide-sub">Reach customers browsing Taskora right now</div>
         </div>
-        <button class="btn-sm" style="background:#fff;color:var(--navy);flex-shrink:0;" onclick="window.location.href='mailto:sales@taskora.io?subject=' + encodeURIComponent('Advertising Inquiry')">Advertise Here</button>
+        <button class="btn-sm" style="background:#fff;color:var(--navy);flex-shrink:0;" onclick="openAdvertiseForm()">Advertise Here</button>
       </div>`;
     }
     const p = item.data;
@@ -1916,6 +1947,43 @@ document.addEventListener('click', () => {
 function showPricing() {
   showScreen('screen-pricing');
   renderNavbar('navbar-pricing', 'home');
+  loadPricingPage();
+}
+
+// Populates the country selector (if not already done) and fetches real
+// plan pricing for the chosen country — replacing what used to be
+// hardcoded $0/$20/$27 text with the actual current price, which may now
+// be a super admin's edited USD base, a regional admin's local-currency
+// override, or an auto-conversion of either. Called with no argument on
+// first load (defaults to the signed-in user's own country, or US), and
+// with an explicit country when the visitor changes the selector.
+async function loadPricingPage(country) {
+  const select = document.getElementById('pricing-country-select');
+  if (select && !select.dataset.populated) {
+    const countries = (GEO_DATA.countries && GEO_DATA.countries.length) ? GEO_DATA.countries : FALLBACK_GEO.countries;
+    const defaultCountry = country || (AUTH.user && AUTH.user.country) || 'United States';
+    select.innerHTML = countries.map(c => `<option value="${c}" ${c === defaultCountry ? 'selected' : ''}>${c}</option>`).join('');
+    select.dataset.populated = 'true';
+    country = defaultCountry;
+  }
+  country = country || (select && select.value) || (AUTH.user && AUTH.user.country) || 'United States';
+  if (!BACKEND_AVAILABLE) return; // leave the static fallback prices showing
+
+  try {
+    const { plans } = await apiFetch('GET', `/plan-pricing?country=${encodeURIComponent(country)}`);
+    for (const p of plans) {
+      const el = document.getElementById(`pricing-price-${p.plan}`);
+      if (!el) continue;
+      if (p.currencyCode === 'USD') {
+        el.innerHTML = `$${p.localPrice}<span>/month</span>`;
+      } else {
+        // Always show both figures side by side, local first — the same
+        // convention used for job payments and the admin pricing screen —
+        // so it's never ambiguous which currency is which.
+        el.innerHTML = `${p.currencySymbol}${p.localPrice.toLocaleString()}<span>/month (≈ $${p.usdEquivalent} USD)</span>`;
+      }
+    }
+  } catch (e) { console.warn('Could not load plan pricing', e); }
 }
 
 function showAboutPage() {
@@ -2848,6 +2916,125 @@ async function submitDispute(contractId) {
     if (AUTH.user.role === 'customer') { await loadCustomerData(); selectCustomerSection('bookings'); }
     else { await loadProviderData(); selectProviderSection('contracts'); }
   } catch (e) { showToast(e.message || 'Could not submit dispute'); }
+}
+
+// The "Advertise Here" slide's real destination — a genuine inquiry form
+// that's stored and notifies the super admin team (see POST
+// /advertising-inquiry), the same real-storage pattern as Contact Us and
+// Careers. Previously this just opened a mailto: link, which does nothing
+// on a device with no default mail client configured and leaves no record
+// anywhere on the platform.
+async function openAdvertiseForm() {
+  let cities = [];
+  if (BACKEND_AVAILABLE) {
+    try {
+      const data = await apiFetch('GET', '/cities');
+      cities = data.cities || [];
+    } catch (e) { console.warn('Could not load cities for ad targeting', e); }
+  }
+  const cityOptionsHtml = cities.map(c => `<option value="${c.name}">${c.name}, ${c.country}</option>`).join('');
+
+  const modalHtml = `
+    <div class="modal-overlay open" id="advertise-modal-overlay" onclick="if(event.target===this)document.getElementById('advertise-modal-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('advertise-modal-overlay').remove()">✕</button>
+          <h3>Advertise on Taskora</h3>
+          <p>Tell us a bit about your business and what you're looking for — our team will follow up.</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Company Name</label><input class="form-input" id="advertise-company"/></div>
+          <div class="form-group"><label class="form-label">Your Name</label><input class="form-input" id="advertise-name"/></div>
+          <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="advertise-email"/></div>
+          <div class="form-group"><label class="form-label">Phone <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" id="advertise-phone"/></div>
+          <div class="form-group"><label class="form-label">Which city are you targeting?</label>
+            <select class="form-input" id="advertise-target-city">
+              <option value="">All Regions (platform-wide)</option>
+              ${cityOptionsHtml}
+            </select>
+            <div style="font-size:11px;color:var(--muted);margin-top:5px;">A specific city is reviewed by that city's local team, usually faster. Platform-wide requests are reviewed by Taskora HQ.</div>
+          </div>
+          <div class="form-group"><label class="form-label">What did you have in mind?</label><textarea class="form-input" id="advertise-message" rows="4" style="resize:vertical;" placeholder="Categories, budget range, timeline, etc."></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="submitAdvertiseInquiry()">Send Inquiry</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitAdvertiseInquiry() {
+  const companyName = document.getElementById('advertise-company').value.trim();
+  const contactName = document.getElementById('advertise-name').value.trim();
+  const email = document.getElementById('advertise-email').value.trim();
+  const phone = document.getElementById('advertise-phone').value.trim();
+  const targetCity = document.getElementById('advertise-target-city').value;
+  const message = document.getElementById('advertise-message').value.trim();
+  if (!companyName || !contactName || !email || !message) return showToast('Please fill in every required field');
+  if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
+  if (message.length < 10) return showToast('Tell us a bit more about what you have in mind (at least 10 characters)');
+
+  if (!BACKEND_AVAILABLE) {
+    showToast(`Thanks, ${contactName.split(' ')[0]} — we'll be in touch (demo mode)`);
+    document.getElementById('advertise-modal-overlay').remove();
+    return;
+  }
+  try {
+    await apiFetch('POST', '/advertising-inquiry', { companyName, contactName, email, phone, message, targetCity });
+    showToast(`Thanks, ${contactName.split(' ')[0]} — we've got your inquiry and will be in touch.`);
+    document.getElementById('advertise-modal-overlay').remove();
+  } catch (e) { showToast(e.message || 'Could not send your inquiry — please try again'); }
+}
+
+// The Custom Plan pricing card's "Contact Sales" real destination — same
+// fix, same reasoning, as openAdvertiseForm() above: previously a mailto:
+// link that silently did nothing without a configured mail client and left
+// no record of enterprise interest anywhere on the platform.
+function openSalesInquiryForm() {
+  const modalHtml = `
+    <div class="modal-overlay open" id="sales-modal-overlay" onclick="if(event.target===this)document.getElementById('sales-modal-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('sales-modal-overlay').remove()">✕</button>
+          <h3>Let's talk about the Custom plan</h3>
+          <p>Tell us about your organization and what you need — our team will follow up.</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Company Name</label><input class="form-input" id="sales-company"/></div>
+          <div class="form-group"><label class="form-label">Your Name</label><input class="form-input" id="sales-name"/></div>
+          <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="sales-email"/></div>
+          <div class="form-group"><label class="form-label">Expected Team Size <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" id="sales-team-size" placeholder="e.g. 25 providers"/></div>
+          <div class="form-group"><label class="form-label">What do you need?</label><textarea class="form-input" id="sales-message" rows="4" style="resize:vertical;" placeholder="Multi-seat accounts, centralized billing, timeline, etc."></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="submitSalesInquiry()">Send Inquiry</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitSalesInquiry() {
+  const companyName = document.getElementById('sales-company').value.trim();
+  const contactName = document.getElementById('sales-name').value.trim();
+  const email = document.getElementById('sales-email').value.trim();
+  const teamSize = document.getElementById('sales-team-size').value.trim();
+  const message = document.getElementById('sales-message').value.trim();
+  if (!companyName || !contactName || !email || !message) return showToast('Please fill in every required field');
+  if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
+  if (message.length < 10) return showToast('Tell us a bit more about what you need (at least 10 characters)');
+
+  if (!BACKEND_AVAILABLE) {
+    showToast(`Thanks, ${contactName.split(' ')[0]} — we'll be in touch (demo mode)`);
+    document.getElementById('sales-modal-overlay').remove();
+    return;
+  }
+  try {
+    await apiFetch('POST', '/sales-inquiry', { companyName, contactName, email, teamSize, message });
+    showToast(`Thanks, ${contactName.split(' ')[0]} — we've got your inquiry and will be in touch.`);
+    document.getElementById('sales-modal-overlay').remove();
+  } catch (e) { showToast(e.message || 'Could not send your inquiry — please try again'); }
 }
 
 async function cancelBooking(contractId) {
@@ -4261,11 +4448,14 @@ function getAdminNavItems() {
     { key: 'disputes', label: 'Disputes', icon: '⚖️' },
     { key: 'fraud', label: 'Fraud & Safety', icon: '🚩' },
     { key: 'payments', label: 'Payments', icon: '💳' },
+    { key: 'pricing', label: 'Plans & Pricing', icon: '💲' },
+    { key: 'advertising', label: 'Advertising', icon: '📣' },
     { key: 'reports', label: 'Reports', icon: '📈' },
     { key: 'categories', label: 'Categories & Countries', icon: '🌍' },
   ];
   if (AUTH.user && AUTH.user.isSuperAdmin) {
     base.push({ key: 'locations', label: 'Locations & Admins', icon: '🗺️' });
+    base.push({ key: 'sales', label: 'Sales Inquiries', icon: '💼' });
   }
   base.push({ key: 'settings', label: 'Settings', icon: '⚙️' });
   return base;
@@ -4307,7 +4497,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -4326,7 +4516,7 @@ async function loadAdminData() {
     catch (e) { return null; }
   }
 
-  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion] = await Promise.all([
+  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries] = await Promise.all([
     tryFetch('/admin/stats'),
     tryFetch('/admin/users/pending'),
     tryFetch('/admin/users/all'),
@@ -4339,6 +4529,8 @@ async function loadAdminData() {
     tryFetch('/admin/transactions'),
     tryFetch('/admin/fraud-flags'),
     tryFetch('/admin/financial-by-region'),
+    tryFetch('/admin/plan-pricing'),
+    tryFetch('/admin/advertising-inquiries'),
   ]);
 
   if (stats) adminData.stats = stats;
@@ -4353,6 +4545,8 @@ async function loadAdminData() {
   if (transactions) { adminData.transactions = transactions.transactions; currentAdminTransactions = transactions.transactions; }
   if (fraudFlags) adminData.fraudFlags = fraudFlags.flags;
   if (financialByRegion) adminData.financialByRegion = financialByRegion;
+  if (planPricing) adminData.planPricing = planPricing;
+  if (advertisingInquiries) adminData.advertisingInquiries = advertisingInquiries.inquiries;
 
   // A genuine live check, not a hardcoded "everything's fine" badge — this
   // hits the real /api/health endpoint right now and times it.
@@ -4365,12 +4559,16 @@ async function loadAdminData() {
   }
 
   if (AUTH.user && AUTH.user.isSuperAdmin) {
-    const [cities, subAdmins] = await Promise.all([
+    const [cities, subAdmins, salesInquiries, exchangeRates] = await Promise.all([
       tryFetch('/admin/cities'),
       tryFetch('/admin/sub-admins'),
+      tryFetch('/admin/sales-inquiries'),
+      tryFetch('/admin/exchange-rates'),
     ]);
     if (cities) adminData.cities = cities.cities;
     if (subAdmins) adminData.subAdmins = subAdmins.admins;
+    if (salesInquiries) adminData.salesInquiries = salesInquiries.inquiries;
+    if (exchangeRates) adminData.exchangeRates = exchangeRates.rates;
   }
 }
 
@@ -4599,6 +4797,17 @@ const ADMIN_SECTIONS = {
     </div>
     <div class="panel"><div class="panel-title">Cities Under Your Oversight <small>${adminData.cities.length} total</small></div>${citiesTable(adminData.cities)}</div>
     <div class="panel"><div class="panel-title">Functional Team Members</div>${functionalAdminsTable((adminData.subAdmins||[]).filter(a => a.adminDepartment))}</div>`,
+  advertising: () => {
+    const isSuper = AUTH.user && AUTH.user.isSuperAdmin;
+    const scopeLabel = isSuper ? 'across every city' : `for ${AUTH.user.region || AUTH.user.city || 'your city'}`;
+    return `
+    <div class="dash-header"><div><div class="dash-title">Advertising</div><div class="dash-sub">Real submissions from the "Advertise Here" homepage slide, ${scopeLabel}</div></div></div>
+    <div class="panel"><div class="panel-title">Inquiries <small style="font-weight:400;color:var(--slate);">${(adminData.advertisingInquiries || []).length} total</small></div>${advertisingInquiriesTableHTML(adminData.advertisingInquiries || [])}</div>`;
+  },
+  pricing: () => (AUTH.user && AUTH.user.isSuperAdmin) ? superAdminPricingSectionHTML() : regionalPricingSectionHTML(),
+  sales: () => `
+    <div class="dash-header"><div><div class="dash-title">Sales Inquiries</div><div class="dash-sub">Real submissions from the Custom plan's "Contact Sales" button</div></div></div>
+    <div class="panel"><div class="panel-title">All Inquiries <small style="font-weight:400;color:var(--slate);">${(adminData.salesInquiries || []).length} total</small></div>${salesInquiriesTableHTML(adminData.salesInquiries || [])}</div>`,
   settings: () => `
     <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Your admin account ${BACKEND_AVAILABLE ? '<span class="badge badge-success" style="margin-left:6px;">Saved to your account</span>' : ''}</div></div></div>
     <div class="panel"><div class="panel-title">Profile</div>
@@ -4625,6 +4834,261 @@ function functionalAdminsTable(list) {
   ${list.map(a => `<tr><td>${a.name}</td><td>${a.email}</td><td>${DEPARTMENT_LABELS[a.adminDepartment] || a.adminDepartment}</td><td>${statusBadge(a.active === false ? 'suspended' : 'active')}</td>
   ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${a.id}')">${a.active === false ? 'Reactivate' : 'Suspend'}</button> <button class="btn-sm btn-sm-outline" data-admin-id="${a.id}" data-admin-name="${a.name.replace(/"/g, '&quot;')}" data-city-name="${(a.city || '').replace(/"/g, '&quot;')}" onclick="deleteSubAdmin(this.dataset.adminId, this.dataset.adminName, this.dataset.cityName)">Delete</button></td>` : ''}</tr>`).join('')}
   </tbody></table></div>`;
+}
+
+const AD_INQUIRY_STATUS_LABELS = { new: 'New', contacted: 'Contacted', closed: 'Closed' };
+function adInquiryStatusBadge(status) {
+  const cls = status === 'new' ? 'badge-warn' : status === 'contacted' ? 'badge-pending' : 'badge-success';
+  return `<span class="badge ${cls}">${AD_INQUIRY_STATUS_LABELS[status] || status}</span>`;
+}
+
+function advertisingInquiriesTableHTML(list) {
+  if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No advertising inquiries yet — they'll show up here as soon as someone submits the "Advertise Here" form.</div>`;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Company</th><th>Contact</th><th>Email</th><th>Target</th><th>Message</th><th>Status</th><th>Live</th><th>Action</th></tr></thead><tbody>
+  ${list.map(i => `<tr>
+    <td style="white-space:nowrap;">${(i.createdAt || '').slice(0, 10)}</td>
+    <td style="font-weight:600;">${i.companyName}</td>
+    <td>${i.contactName}</td>
+    <td style="font-size:12px;color:var(--slate);">${i.email}</td>
+    <td>${i.targetCity || '<span style="color:var(--slate);">All Regions</span>'}</td>
+    <td style="max-width:220px;font-size:12.5px;">${i.message}</td>
+    <td>${adInquiryStatusBadge(i.status)}</td>
+    <td>${i.isLive ? `<span class="badge badge-success">Live · ${i.price} ${i.currencyCode || ''}</span>` : '<span class="badge badge-neutral">Not live</span>'}</td>
+    <td class="row-actions">
+      ${i.status !== 'contacted' ? `<button class="btn-sm btn-sm-outline" onclick="updateAdvertisingInquiryStatus('${i.id}', 'contacted')">Mark Contacted</button>` : ''}
+      ${i.status !== 'closed' ? `<button class="btn-sm btn-sm-outline" onclick="updateAdvertisingInquiryStatus('${i.id}', 'closed')">Close</button>` : `<button class="btn-sm btn-sm-outline" onclick="updateAdvertisingInquiryStatus('${i.id}', 'new')">Reopen</button>`}
+      ${i.isLive
+        ? `<button class="btn-sm btn-sm-outline" onclick="takeDownAd('${i.id}')">Take Down</button>`
+        : `<button class="btn-sm btn-sm-primary" data-ad-id="${i.id}" data-ad-company="${i.companyName.replace(/"/g, '&quot;')}" data-ad-city="${(i.targetCity || '').replace(/"/g, '&quot;')}" onclick="openGoLiveForm(this.dataset.adId, this.dataset.adCompany, this.dataset.adCity || null)">Approve &amp; Go Live</button>`}
+    </td>
+  </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+// The regional-autonomy piece made visible: turning an inquiry into an
+// actual paid, live homepage ad slot, with a real price set by whichever
+// admin owns that city (or a super admin, for platform-wide slots).
+function openGoLiveForm(id, companyName, targetCity) {
+  const modalHtml = `
+    <div class="modal-overlay open" id="golive-modal-overlay" onclick="if(event.target===this)document.getElementById('golive-modal-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('golive-modal-overlay').remove()">✕</button>
+          <h3>Approve &amp; Go Live — ${companyName}</h3>
+          <p>${targetCity ? `This will start showing on the homepage for visitors in ${targetCity}.` : 'This will start showing on the homepage for every visitor, platform-wide.'}</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Price</label><input class="form-input" type="number" min="0" step="0.01" id="golive-price" placeholder="e.g. 50"/></div>
+          <div class="form-group"><label class="form-label">Currency</label><input class="form-input" id="golive-currency" value="USD" placeholder="USD"/></div>
+          <div class="form-group"><label class="form-label">Headline shown on homepage</label><input class="form-input" id="golive-headline" value="${companyName}"/></div>
+          <div class="form-group"><label class="form-label">Subtext shown on homepage</label><input class="form-input" id="golive-subtext" placeholder="e.g. Your local hardware store, open 7 days"/></div>
+          <div class="form-group"><label class="form-label">Link <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" id="golive-link" placeholder="https://..."/></div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="submitGoLive('${id}')">Go Live</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitGoLive(id) {
+  const price = parseFloat(document.getElementById('golive-price').value);
+  const currencyCode = (document.getElementById('golive-currency').value.trim() || 'USD').toUpperCase();
+  const displayHeadline = document.getElementById('golive-headline').value.trim();
+  const displaySubtext = document.getElementById('golive-subtext').value.trim();
+  const displayLink = document.getElementById('golive-link').value.trim();
+  if (isNaN(price) || price < 0) return showToast('Enter a valid price');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/advertising-inquiries/${id}/live`, { isLive: true, price, currencyCode, displayHeadline, displaySubtext, displayLink });
+    showToast('Ad is now live on the homepage');
+    document.getElementById('golive-modal-overlay').remove();
+    await loadAdminData();
+    selectAdminSection('advertising');
+  } catch (e) { showToast(e.message || 'Could not go live'); }
+}
+
+async function takeDownAd(id) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/advertising-inquiries/${id}/live`, { isLive: false });
+    showToast('Ad taken down');
+    await loadAdminData();
+    selectAdminSection('advertising');
+  } catch (e) { showToast(e.message || 'Could not take down ad'); }
+}
+
+// ── PLANS & PRICING ─────────────────────────────────────────────────────
+const PLAN_LABELS_CLIENT = { starter: 'Starter', pro: 'Pro', superpro: 'Super Pro' };
+
+function regionalPricingSectionHTML() {
+  const pp = adminData.planPricing;
+  if (!pp || !pp.plans) return `<div class="dash-header"><div><div class="dash-title">Plans &amp; Pricing</div></div></div><div class="panel">Loading pricing…</div>`;
+  return `
+    <div class="dash-header"><div><div class="dash-title">Plans &amp; Pricing</div><div class="dash-sub">Your real local price for each plan in ${pp.country}, compared against the global USD base</div></div></div>
+    <div class="panel"><div class="panel-title">${pp.country} Pricing</div>
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Plan</th><th>Global USD Base</th><th>Your Local Price</th><th>USD Equivalent</th><th>Source</th><th>Action</th></tr></thead><tbody>
+      ${pp.plans.map(p => `<tr>
+        <td style="font-weight:600;">${p.label}</td>
+        <td>$${p.usdBase}</td>
+        <td><input class="form-input" type="number" min="0" step="0.01" id="price-override-${p.plan}" value="${p.localPrice}" style="width:120px;padding:6px 8px;"/> ${p.currencyCode}</td>
+        <td>≈ $${p.usdEquivalent}</td>
+        <td>${p.isOverride ? '<span class="badge badge-warn">Your override</span>' : '<span class="badge badge-neutral">Auto-converted</span>'}</td>
+        <td class="row-actions">
+          <button class="btn-sm btn-sm-primary" onclick="savePricingOverride('${p.plan}')">Save</button>
+          ${p.isOverride ? `<button class="btn-sm btn-sm-outline" onclick="clearPricingOverride('${p.plan}')">Reset to Auto</button>` : ''}
+        </td>
+      </tr>`).join('')}
+      </tbody></table></div>
+      <div style="font-size:12px;color:var(--slate);margin-top:10px;">Setting your own price here only applies to ${pp.country} — it doesn't change what any other country pays. Leave it alone and your price automatically follows the global USD base, converted at the current exchange rate.</div>
+    </div>`;
+}
+
+async function savePricingOverride(plan) {
+  const input = document.getElementById(`price-override-${plan}`);
+  const localPrice = parseFloat(input.value);
+  if (isNaN(localPrice) || localPrice < 0) return showToast('Enter a valid non-negative price');
+  const country = adminData.planPricing.country;
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/plan-pricing/override', { country, plan, localPrice });
+    showToast('Price updated');
+    await loadAdminData();
+    selectAdminSection('pricing');
+  } catch (e) { showToast(e.message || 'Could not update price'); }
+}
+
+async function clearPricingOverride(plan) {
+  const country = adminData.planPricing.country;
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('DELETE', `/admin/plan-pricing/override/${encodeURIComponent(country)}/${plan}`);
+    showToast('Reverted to the auto-converted price');
+    await loadAdminData();
+    selectAdminSection('pricing');
+  } catch (e) { showToast(e.message || 'Could not clear override'); }
+}
+
+function superAdminPricingSectionHTML() {
+  const pp = adminData.planPricing;
+  if (!pp || !pp.usdBase) return `<div class="dash-header"><div><div class="dash-title">Plans &amp; Pricing</div></div></div><div class="panel">Loading pricing…</div>`;
+  return `
+    <div class="dash-header"><div><div class="dash-title">Plans &amp; Pricing</div><div class="dash-sub">Global USD base prices, every country's local override, and exchange rates</div></div></div>
+    <div class="panel"><div class="panel-title">Global Base Price (USD)</div>
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Plan</th><th>Current USD Price</th><th>New Price</th><th>Action</th></tr></thead><tbody>
+      ${pp.usdBase.map(b => `<tr>
+        <td style="font-weight:600;">${PLAN_LABELS_CLIENT[b.plan] || b.plan}</td>
+        <td>$${b.usdPrice}</td>
+        <td><input class="form-input" type="number" min="0" step="0.01" id="base-price-${b.plan}" placeholder="${b.usdPrice}" style="width:120px;padding:6px 8px;"/></td>
+        <td><button class="btn-sm btn-sm-primary" onclick="saveBasePricing('${b.plan}')">Save</button></td>
+      </tr>`).join('')}
+      </tbody></table></div>
+      <div style="font-size:12px;color:var(--slate);margin-top:10px;">Every country without its own override automatically follows this price, converted to local currency at the current exchange rate.</div>
+    </div>
+    <div class="panel"><div class="panel-title">Country Overrides <small style="font-weight:400;color:var(--slate);">${pp.overrides.length} set</small></div>
+      ${planPricingOverridesTableHTML(pp.overrides)}
+    </div>
+    <div class="panel"><div class="panel-title">Exchange Rates <small style="font-weight:400;color:var(--slate);">Test-mode approximate rates — edits here flow into job payments and payouts too, not just pricing</small></div>
+      ${exchangeRatesTableHTML(adminData.exchangeRates || [])}
+    </div>`;
+}
+
+function planPricingOverridesTableHTML(overrides) {
+  if (!overrides.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No country has set a custom price yet — every country follows the global USD base.</div>`;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Country</th><th>Plan</th><th>Local Price</th><th>Currency</th><th>Updated</th><th>Action</th></tr></thead><tbody>
+  ${overrides.map(o => `<tr><td>${o.country}</td><td>${PLAN_LABELS_CLIENT[o.plan] || o.plan}</td><td>${o.localPrice}</td><td>${o.currencyCode}</td><td>${(o.updatedAt || '').slice(0, 10)}</td>
+  <td class="row-actions"><button class="btn-sm btn-sm-outline" data-country="${o.country.replace(/"/g, '&quot;')}" data-plan="${o.plan}" onclick="clearAnyPricingOverride(this.dataset.country, this.dataset.plan)">Clear</button></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+async function clearAnyPricingOverride(country, plan) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('DELETE', `/admin/plan-pricing/override/${encodeURIComponent(country)}/${plan}`);
+    showToast(`Override cleared for ${country}`);
+    await loadAdminData();
+    selectAdminSection('pricing');
+  } catch (e) { showToast(e.message || 'Could not clear override'); }
+}
+
+async function saveBasePricing(plan) {
+  const input = document.getElementById(`base-price-${plan}`);
+  const usdPrice = parseFloat(input.value);
+  if (isNaN(usdPrice) || usdPrice < 0) return showToast('Enter a valid non-negative USD price');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/plan-pricing/base', { plan, usdPrice });
+    showToast('Base price updated');
+    await loadAdminData();
+    selectAdminSection('pricing');
+  } catch (e) { showToast(e.message || 'Could not update base price'); }
+}
+
+function exchangeRatesTableHTML(rates) {
+  const editable = rates.filter(r => r.currencyCode !== 'USD'); // USD is always 1 by definition
+  if (!editable.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No exchange rate data loaded.</div>`;
+  return `<div class="data-table-wrap" style="max-height:420px;overflow-y:auto;"><table class="data-table"><thead><tr><th>Currency</th><th>Rate (units per $1 USD)</th><th>New Rate</th><th>Source</th><th>Action</th></tr></thead><tbody>
+  ${editable.map(r => `<tr>
+    <td style="font-weight:600;">${r.currencyCode}</td>
+    <td>${r.rateToUsd}</td>
+    <td><input class="form-input" type="number" min="0.0001" step="0.0001" id="rate-${r.currencyCode}" placeholder="${r.rateToUsd}" style="width:120px;padding:6px 8px;"/></td>
+    <td>${r.isOverride ? '<span class="badge badge-warn">Edited</span>' : '<span class="badge badge-neutral">Default</span>'}</td>
+    <td><button class="btn-sm btn-sm-primary" onclick="saveExchangeRate('${r.currencyCode}')">Save</button></td>
+  </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+async function saveExchangeRate(currencyCode) {
+  const input = document.getElementById(`rate-${currencyCode}`);
+  const rateToUsd = parseFloat(input.value);
+  if (isNaN(rateToUsd) || rateToUsd <= 0) return showToast('Enter a valid positive rate');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/exchange-rates', { currencyCode, rateToUsd });
+    showToast(`${currencyCode} rate updated`);
+    await loadAdminData();
+    selectAdminSection('pricing');
+  } catch (e) { showToast(e.message || 'Could not update rate'); }
+}
+
+async function updateAdvertisingInquiryStatus(id, status) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/advertising-inquiries/${id}/status`, { status });
+    showToast(`Marked as ${AD_INQUIRY_STATUS_LABELS[status].toLowerCase()}`);
+    await loadAdminData();
+    selectAdminSection('advertising');
+  } catch (e) { showToast(e.message || 'Could not update status'); }
+}
+
+function salesInquiriesTableHTML(list) {
+  if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No sales inquiries yet — they'll show up here as soon as someone submits the Custom plan's "Contact Sales" form.</div>`;
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Company</th><th>Contact</th><th>Email</th><th>Team Size</th><th>Message</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  ${list.map(i => `<tr>
+    <td style="white-space:nowrap;">${(i.createdAt || '').slice(0, 10)}</td>
+    <td style="font-weight:600;">${i.companyName}</td>
+    <td>${i.contactName}</td>
+    <td style="font-size:12px;color:var(--slate);">${i.email}</td>
+    <td style="font-size:12px;color:var(--slate);">${i.teamSize || '—'}</td>
+    <td style="max-width:260px;font-size:12.5px;">${i.message}</td>
+    <td>${adInquiryStatusBadge(i.status)}</td>
+    <td class="row-actions">
+      ${i.status !== 'contacted' ? `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'contacted')">Mark Contacted</button>` : ''}
+      ${i.status !== 'closed' ? `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'closed')">Close</button>` : `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'new')">Reopen</button>`}
+    </td>
+  </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+async function updateSalesInquiryStatus(id, status) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/sales-inquiries/${id}/status`, { status });
+    showToast(`Marked as ${AD_INQUIRY_STATUS_LABELS[status].toLowerCase()}`);
+    await loadAdminData();
+    selectAdminSection('sales');
+  } catch (e) { showToast(e.message || 'Could not update status'); }
 }
 
 function openNewLocationForm() {

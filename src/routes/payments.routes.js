@@ -5,6 +5,7 @@ const { requireAuth, requireRole } = require('../auth');
 const { isNonEmptyString, isValidCardExpiry, isValidPostalCode, validate, postalCodeErrorMessage } = require('../validators');
 const { notify } = require('../notify');
 const { currencyForCountry, convertFromUSD } = require('../currency-data');
+const { resolveRate } = require('../plan-pricing');
 
 const router = express.Router();
 
@@ -258,7 +259,8 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
   // balance.
   const currency = currencyForCountry(provider ? provider.country : 'United States');
   const wantsLocal = payoutCurrency === 'local' && currency.code !== 'USD';
-  const payoutAmountLocal = wantsLocal ? convertFromUSD(netAmount, currency.code) : null;
+  const rate = wantsLocal ? resolveRate(currency.code, await db.all('exchangeRates')) : null;
+  const payoutAmountLocal = wantsLocal ? convertFromUSD(netAmount, currency.code, rate) : null;
 
   const payout = {
     id: `po_${nanoid(10)}`,
