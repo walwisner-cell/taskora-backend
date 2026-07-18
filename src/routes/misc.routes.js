@@ -116,7 +116,7 @@ router.post('/advertising-inquiry', async (req, res) => {
     : [];
   const toNotify = [...superAdmins, ...regionalAdmins];
   for (const admin of toNotify) {
-    await notify(admin.id, '📣', `New advertising inquiry from ${submission.companyName} (${submission.contactName})${city ? ` — targeting ${city}` : ' — platform-wide'}`);
+    await notify(admin.id, '📣', `New advertising inquiry from ${submission.companyName} (${submission.contactName})${city ? ` — targeting ${city}` : ' — platform-wide'}`, null, { section: 'advertising' });
   }
   console.log(`[TEST MODE — no email provider connected] Would email sales@taskora.io: new advertising inquiry from ${submission.companyName} <${submission.email}>`);
 
@@ -154,7 +154,7 @@ router.post('/sales-inquiry', async (req, res) => {
 
   const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
   for (const admin of superAdmins) {
-    await notify(admin.id, '💼', `New Custom plan sales inquiry from ${submission.companyName} (${submission.contactName})`);
+    await notify(admin.id, '💼', `New Custom plan sales inquiry from ${submission.companyName} (${submission.contactName})`, null, { section: 'sales' });
   }
   console.log(`[TEST MODE — no email provider connected] Would email sales@taskora.io: new Custom plan inquiry from ${submission.companyName} <${submission.email}>`);
 

@@ -476,7 +476,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   if (!isKnownCategory) {
     const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
     for (const admin of superAdmins) {
-      await notify(admin.id, '📋', `A customer requested "${category}" — not a current category. Consider adding it if you're seeing repeat demand.`);
+      await notify(admin.id, '📋', `A customer requested "${category}" — not a current category. Consider adding it if you're seeing repeat demand.`, null, { section: 'categories' });
     }
   }
 

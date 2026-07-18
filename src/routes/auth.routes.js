@@ -211,7 +211,7 @@ router.post('/signup/verify', async (req, res) => {
     // test-mode rather than silently not happening).
     const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
     for (const admin of superAdmins) {
-      await notify(admin.id, '🆕', `${user.name} signed up wanting to offer "${user.category}" — not a current category. Review within 24 hours in Categories & Countries → Category Requests.`);
+      await notify(admin.id, '🆕', `${user.name} signed up wanting to offer "${user.category}" — not a current category. Review within 24 hours in Categories & Countries → Category Requests.`, null, { section: 'categories' });
       console.log(`[TEST MODE — no email provider connected] Would email ${admin.email}: New category request "${user.category}" from ${user.name} needs review within 24 hours.`);
     }
   }
@@ -435,7 +435,7 @@ router.patch('/me', requireAuth, async (req, res) => {
       await db.insert('categoryRequests', request);
       const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
       for (const admin of superAdmins) {
-        await notify(admin.id, '🆕', `${current.name} updated their category to "${patch.category}" — not a current category. Review within 24 hours in Categories & Countries → Category Requests.`);
+        await notify(admin.id, '🆕', `${current.name} updated their category to "${patch.category}" — not a current category. Review within 24 hours in Categories & Countries → Category Requests.`, null, { section: 'categories' });
         console.log(`[TEST MODE — no email provider connected] Would email ${admin.email}: category update request "${patch.category}" from ${current.name} needs review within 24 hours.`);
       }
     }
