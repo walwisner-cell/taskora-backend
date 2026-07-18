@@ -6364,6 +6364,25 @@ async function handleSearchClick() {
 
 async function openBooking(id) {
   currentPro = PROVIDERS.find(p => p.id === id);
+
+  // A booking has to belong to a real signed-in customer — check this
+  // BEFORE showing any part of the form, not after someone's already
+  // filled out the job description, date, address, and materials advance
+  // and only discovers they need an account at the final "Confirm & Pay"
+  // step. Same rule confirmBooking() already enforced at submission —
+  // just moved to where a visitor actually needs to see it.
+  if (BACKEND_AVAILABLE && (!AUTH.token || AUTH.user.role !== 'customer')) {
+    if (!AUTH.token) {
+      showAuth('signup');
+      setAuthRole('customer');
+      showToast('Create a free customer account to book a pro');
+    } else {
+      showAuth('login');
+      showToast('Sign in as a customer to book a pro');
+    }
+    return;
+  }
+
   const availability = currentPro.availability && currentPro.availability.length ? currentPro.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'];
   const isNegotiable = currentPro.pricingModel === 'negotiable';
 
