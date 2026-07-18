@@ -954,6 +954,21 @@ router.delete('/categories/:id', requireSuperAdmin, async (req, res) => {
   if (providersHere.length > 0) {
     return res.status(409).json({ error: `Can't delete — ${providersHere.length} provider(s) are listed under "${cat.name}". Deactivate it instead to stop new bookings.` });
   }
+
+  // category_images.category_id has a foreign-key reference to this
+  // table with no cascade — on real Postgres, deleting a category that
+  // still has an uploaded image would fail with a foreign-key violation
+  // instead of a clean success. Clean up the image (row + file on disk)
+  // first, same as the dedicated DELETE /category-images/:categoryId
+  // endpoint does, so deleting a category always succeeds regardless of
+  // whether a photo was ever uploaded for it.
+  const existingImage = await db.find('categoryImages', h => h.categoryId === cat.id);
+  if (existingImage) {
+    const imgPath = path.join(UPLOADS_DIR, existingImage.filename);
+    if (existingImage.filename && fs.existsSync(imgPath)) fs.unlink(imgPath, () => {});
+    await db.remove('categoryImages', existingImage.id);
+  }
+
   await db.remove('categories', cat.id);
   res.json({ ok: true });
 });
