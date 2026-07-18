@@ -784,7 +784,7 @@ router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider')
       escrow = { ...escrow, materialsAdvanceReleased: true };
     }
   } else {
-    escrow = await fundEscrowForContract(contract, contract.customerId, contract.payCurrency); // negotiable offer funds now, at the agreed number
+    escrow = await fundEscrowForContract(updated, contract.customerId, contract.payCurrency); // negotiable offer funds now, at the agreed number — pass the freshly-updated contract (status: 'active'), not the stale pre-update object
   }
   const confirmMessage = isDirectBooking
     ? `Your booking for "${contract.service}" was confirmed by the provider.`

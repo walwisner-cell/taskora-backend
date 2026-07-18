@@ -1135,6 +1135,26 @@ router.delete('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
   if (managedCity) {
     return res.status(409).json({ error: `Can't delete — ${target.name} is still the assigned admin for ${managedCity.name}. Assign a new admin to that city first.` });
   }
+
+  // notifications.user_id (and a few other tables) have a foreign-key
+  // reference to this user with no cascade — on real Postgres, deleting
+  // this account while it still has ANY notification history would fail
+  // with a foreign-key violation instead of a clean success. Given every
+  // admin gets notified constantly (every sales inquiry, advertising
+  // inquiry, category request), this was true for essentially every real
+  // admin account, not an edge case. Clean up every table that could
+  // reference this user first, same principle as the category-image
+  // cleanup before a category delete.
+  await db.filter('notifications', n => n.userId === target.id).then(rows =>
+    Promise.all(rows.map(r => db.remove('notifications', r.id)))
+  );
+  await db.filter('passwordResets', r => r.userId === target.id).then(rows =>
+    Promise.all(rows.map(r => db.remove('passwordResets', r.id)))
+  );
+  await db.filter('phoneVerifications', r => r.userId === target.id).then(rows =>
+    Promise.all(rows.map(r => db.remove('phoneVerifications', r.id)))
+  );
+
   await db.remove('users', target.id);
   res.json({ ok: true });
 });
