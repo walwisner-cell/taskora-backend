@@ -621,8 +621,26 @@
   .directory-chip.active { background:var(--navy); border-color:var(--navy); color:#fff; }
   @media (max-width: 760px) { .browse-wrap { padding:24px 16px 40px; } .browse-title { font-size:24px; } }
   /* ── AI SUPPORT CHAT WIDGET ── */
-  .support-chat-bubble { position:fixed; bottom:22px; right:22px; width:56px; height:56px; border-radius:50%; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-size:24px; cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,.25); z-index:400; transition:transform .15s; }
-  .support-chat-bubble:hover { transform:scale(1.06); }
+  .support-chat-bubble {
+    position:fixed; bottom:22px; right:22px; width:60px; height:60px; border-radius:50%;
+    background:linear-gradient(145deg, var(--navy) 0%, #0F3A66 60%, var(--teal) 140%);
+    color:#fff; display:flex; align-items:center; justify-content:center; font-size:26px;
+    cursor:grab; box-shadow:0 8px 24px rgba(15,58,102,.4), 0 2px 8px rgba(0,0,0,.15);
+    z-index:400; transition:transform .18s ease, box-shadow .18s ease;
+    animation:chatBubbleEntrance .5s cubic-bezier(.34,1.56,.64,1) both, chatBubbleBreathe 3.5s ease-in-out 1s infinite;
+    touch-action:none; user-select:none;
+  }
+  .support-chat-bubble:hover { transform:scale(1.08); box-shadow:0 12px 32px rgba(15,58,102,.5), 0 4px 12px rgba(0,0,0,.2); }
+  .support-chat-bubble.dragging { cursor:grabbing; transition:none; animation:none; }
+  .support-chat-bubble svg { width:26px; height:26px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.15)); }
+  @keyframes chatBubbleEntrance { 0% { transform:scale(0) translateY(20px); opacity:0; } 100% { transform:scale(1) translateY(0); opacity:1; } }
+  @keyframes chatBubbleBreathe {
+    0%, 100% { box-shadow:0 8px 24px rgba(15,58,102,.4), 0 2px 8px rgba(0,0,0,.15), 0 0 0 0 rgba(29,95,168,.35); }
+    50% { box-shadow:0 8px 24px rgba(15,58,102,.4), 0 2px 8px rgba(0,0,0,.15), 0 0 0 10px rgba(29,95,168,0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .support-chat-bubble { animation:none !important; }
+  }
   .support-chat-panel { position:fixed; bottom:88px; right:22px; width:340px; max-width:calc(100vw - 32px); height:440px; max-height:calc(100vh - 120px); background:#fff; border-radius:14px; box-shadow:0 24px 64px rgba(0,0,0,.28); z-index:400; display:none; flex-direction:column; overflow:hidden; }
   .support-chat-panel.open { display:flex; }
   .support-chat-header { background:var(--navy); color:#fff; padding:14px 16px; display:flex; justify-content:space-between; align-items:flex-start; }
@@ -1326,7 +1344,14 @@
 <div class="toast" id="toast"><span class="toast-icon">✦</span><span id="toast-msg"></span></div>
 
 <!-- AI SUPPORT CHAT WIDGET -->
-<div id="support-chat-bubble" class="support-chat-bubble" onclick="toggleSupportChat()">💬</div>
+<div id="support-chat-bubble" class="support-chat-bubble" onclick="handleChatBubbleClick(event)">
+  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill="#fff"/>
+    <circle cx="8.5" cy="11" r="1.3" fill="#0F3A66"/>
+    <circle cx="12" cy="11" r="1.3" fill="#0F3A66"/>
+    <circle cx="15.5" cy="11" r="1.3" fill="#0F3A66"/>
+  </svg>
+</div>
 <div id="support-chat-panel" class="support-chat-panel">
   <div class="support-chat-header">
     <div>
@@ -6661,14 +6686,120 @@ function answerSupportQuestion(text) {
   return "I don't have a canned answer for that yet — try asking about escrow, verification, disputes, payments, or pricing. Or reach a real person:" + supportContactHTML();
 }
 
+// The chat bubble is fully draggable — press and drag it anywhere on
+// screen, and it stays there (saved locally, so it's still there next time
+// you visit). A plain click still opens the chat as before; the only
+// difference is a genuine drag (moved more than a few pixels) is treated
+// as repositioning, not a click, so it never accidentally opens the panel
+// mid-drag.
+let chatBubbleDragState = null;
+function initChatBubbleDrag() {
+  const bubble = document.getElementById('support-chat-bubble');
+  if (!bubble) return;
+
+  // Restore a previously-saved position, if any — clamped again here in
+  // case the window is smaller now than when it was saved (e.g. this is a
+  // smaller screen than last time), so it can never restore off-screen.
+  try {
+    const saved = JSON.parse(localStorage.getItem('taskora_chat_bubble_pos') || 'null');
+    if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
+      const size = bubble.offsetWidth || 60;
+      const clampedLeft = Math.min(Math.max(0, saved.left), window.innerWidth - size);
+      const clampedTop = Math.min(Math.max(0, saved.top), window.innerHeight - size);
+      applyBubblePosition(clampedLeft, clampedTop);
+    }
+  } catch (e) { /* ignore a corrupted saved value, just use the default position */ }
+
+  const startDrag = (clientX, clientY) => {
+    const rect = bubble.getBoundingClientRect();
+    chatBubbleDragState = { startX: clientX, startY: clientY, originLeft: rect.left, originTop: rect.top, moved: false };
+    bubble.classList.add('dragging');
+  };
+  const moveDrag = (clientX, clientY) => {
+    if (!chatBubbleDragState) return;
+    const dx = clientX - chatBubbleDragState.startX;
+    const dy = clientY - chatBubbleDragState.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) chatBubbleDragState.moved = true;
+    const size = bubble.offsetWidth;
+    const newLeft = Math.min(Math.max(0, chatBubbleDragState.originLeft + dx), window.innerWidth - size);
+    const newTop = Math.min(Math.max(0, chatBubbleDragState.originTop + dy), window.innerHeight - size);
+    applyBubblePosition(newLeft, newTop);
+  };
+  const endDrag = () => {
+    if (!chatBubbleDragState) return;
+    bubble.classList.remove('dragging');
+    if (chatBubbleDragState.moved) {
+      const rect = bubble.getBoundingClientRect();
+      localStorage.setItem('taskora_chat_bubble_pos', JSON.stringify({ left: rect.left, top: rect.top }));
+    }
+    // Leave chatBubbleDragState set through the click handler below so it
+    // can tell a drag from a click, then clear it right after.
+  };
+
+  bubble.addEventListener('mousedown', (e) => { startDrag(e.clientX, e.clientY); });
+  document.addEventListener('mousemove', (e) => { if (chatBubbleDragState) moveDrag(e.clientX, e.clientY); });
+  document.addEventListener('mouseup', endDrag);
+
+  bubble.addEventListener('touchstart', (e) => { const t = e.touches[0]; startDrag(t.clientX, t.clientY); }, { passive: true });
+  document.addEventListener('touchmove', (e) => { if (chatBubbleDragState) { const t = e.touches[0]; moveDrag(t.clientX, t.clientY); } }, { passive: true });
+  document.addEventListener('touchend', endDrag);
+}
+
+function applyBubblePosition(left, top) {
+  const bubble = document.getElementById('support-chat-bubble');
+  if (!bubble) return;
+  bubble.style.left = `${left}px`;
+  bubble.style.top = `${top}px`;
+  bubble.style.right = 'auto';
+  bubble.style.bottom = 'auto';
+}
+
+function handleChatBubbleClick(event) {
+  // A real drag just happened — swallow this click rather than also
+  // toggling the chat open/closed.
+  const wasDrag = chatBubbleDragState && chatBubbleDragState.moved;
+  chatBubbleDragState = null;
+  if (wasDrag) return;
+  toggleSupportChat();
+}
+
 function toggleSupportChat() {
   const panel = document.getElementById('support-chat-panel');
   const isOpening = !panel.classList.contains('open');
+  if (isOpening) positionChatPanelNearBubble();
   panel.classList.toggle('open');
   if (isOpening && !document.getElementById('support-chat-body').children.length) {
     appendSupportMessage('bot', "Hi! I'm the Taskora Assistant. Ask me anything about escrow, verification, disputes, payments, or how the platform works.");
     appendSupportSuggestions();
   }
+}
+
+// If the bubble has been dragged somewhere other than its default corner,
+// the chat panel needs to open near wherever it actually is now, not silently
+// stay anchored to the original bottom-right corner (which could be nowhere
+// near the bubble, or partly off-screen, after a drag).
+function positionChatPanelNearBubble() {
+  const bubble = document.getElementById('support-chat-bubble');
+  const panel = document.getElementById('support-chat-panel');
+  if (!bubble || !panel) return;
+  const rect = bubble.getBoundingClientRect();
+  const panelWidth = Math.min(340, window.innerWidth - 32);
+  const panelHeight = Math.min(440, window.innerHeight - 120);
+  const margin = 12;
+
+  // Prefer opening above the bubble; flip below it if there's not enough
+  // room above. Prefer aligning to the bubble's right edge; flip to its
+  // left edge if that would run off the right side of the screen.
+  let top = rect.top - panelHeight - margin;
+  if (top < margin) top = Math.min(rect.bottom + margin, window.innerHeight - panelHeight - margin);
+  let left = rect.right - panelWidth;
+  if (left < margin) left = rect.left;
+  left = Math.min(Math.max(margin, left), window.innerWidth - panelWidth - margin);
+
+  panel.style.top = `${top}px`;
+  panel.style.left = `${left}px`;
+  panel.style.right = 'auto';
+  panel.style.bottom = 'auto';
 }
 
 function appendSupportMessage(from, text) {
@@ -6723,6 +6854,7 @@ function sendSupportChatMessage() {
   renderHomeCategories();
   startHeroWordRotation(); // works immediately with the default word list, even offline
   setupScrollFadeIn();
+  initChatBubbleDrag();
   await checkBackend();
   if (BACKEND_AVAILABLE) {
     await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats(), loadSupportContact(), loadHomepageContent()]);
