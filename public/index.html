@@ -5325,6 +5325,11 @@ const ADMIN_SECTIONS = {
       <div style="max-height:420px;overflow-y:auto;">
         ${(adminData.categories || []).map(c => categoryImageUploadRowHTML(c, (adminData.categoryImages || {})[c.id])).join('')}
       </div>
+    </div>
+    <div class="panel"><div class="panel-title">Maintenance Tools</div>
+      <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Fix Old Notification Links</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Category-request, sales-inquiry, and advertising-inquiry notifications only started linking to their real admin section recently — any notification created before that fix has no destination, and new code doesn't rewrite already-saved data on its own. This looks at existing notifications and adds the correct link based on their own text, so old ones become clickable too, not just new ones going forward. Safe to run any time — it only ever fills in a missing link, never changes one that's already set.</div>
+      <button class="btn-sm btn-sm-primary" onclick="backfillNotificationLinks()">Fix Old Notifications</button>
     </div>` : ''}
     ${changePasswordPanelHTML('admin')}`,
 };
@@ -6180,6 +6185,19 @@ async function decideCategoryRequest(requestId, decision) {
     await loadAdminData();
     selectAdminSection('categories');
   } catch (e) { showToast(e.message || `Could not ${decision} this request`); }
+}
+
+async function backfillNotificationLinks() {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  showToast('Checking existing notifications…');
+  try {
+    const result = await apiFetch('POST', '/admin/backfill-notification-links');
+    if (result.updated === 0) {
+      showToast(`Checked ${result.checked} notifications — nothing needed fixing`);
+    } else {
+      showToast(`Fixed ${result.updated} of ${result.checked} notifications — they're clickable now`);
+    }
+  } catch (e) { showToast(e.message || 'Could not run this — try again'); }
 }
 
 async function syncReferenceData() {

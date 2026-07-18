@@ -786,6 +786,35 @@ router.post('/sync-reference-data', requireSuperAdmin, async (req, res) => {
   res.json(result);
 });
 
+// POST /api/admin/backfill-notification-links — same "new code doesn't
+// retroactively fix old data" situation as the jobs-completed backfill:
+// category-request, sales-inquiry, and advertising-inquiry notifications
+// only started carrying a real linkTo destination once that was added to
+// their notify() calls. Any notification created before that still has
+// linkTo: null stored forever — new code doesn't rewrite already-saved
+// rows on its own. This scans existing notifications and infers the
+// correct destination from their own text (the same text each notify()
+// call already writes), so old notifications become clickable too instead
+// of only new ones going forward.
+router.post('/backfill-notification-links', requireSuperAdmin, async (req, res) => {
+  const patterns = [
+    { match: t => t.includes('not a current category'), linkTo: { section: 'categories' } },
+    { match: t => t.includes('New Custom plan sales inquiry'), linkTo: { section: 'sales' } },
+    { match: t => t.includes('New advertising inquiry'), linkTo: { section: 'advertising' } },
+  ];
+  const all = await db.all('notifications');
+  let updated = 0;
+  for (const n of all) {
+    if (n.linkTo) continue; // already has a real destination — don't touch it
+    const rule = patterns.find(p => p.match(n.text || ''));
+    if (rule) {
+      await db.update('notifications', n.id, { linkTo: rule.linkTo });
+      updated += 1;
+    }
+  }
+  res.json({ ok: true, checked: all.length, updated });
+});
+
 // POST /api/admin/backfill-jobs-completed — one-time correction tool, same
 // spirit as sync-reference-data: "new code doesn't retroactively fix old
 // data" applies here too. The jobs-completed count is now genuinely
