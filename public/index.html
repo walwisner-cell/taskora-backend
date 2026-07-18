@@ -56,6 +56,41 @@
   }
   .hero-badge { display:inline-flex; align-items:center; gap:8px; background:transparent; border:1px solid rgba(176,138,62,.5); color:#B08A3E; font-size:11px; font-weight:600; letter-spacing:2px; text-transform:uppercase; padding:7px 18px; border-radius:2px; margin-bottom:24px; }
 
+  /* Only applies when a real hero photo has actually been uploaded (a
+     `has-photo` class gets added by JS once one loads) — the default
+     .hero above is completely untouched when no photo is set, so nothing
+     about the existing design changes unless a super admin uploads one. */
+  .hero.has-photo {
+    background-image:
+      linear-gradient(135deg, rgba(15,20,31,.84) 0%, rgba(27,34,51,.86) 60%, rgba(36,47,69,.88) 100%),
+      var(--hero-photo-url);
+    background-size: cover;
+    background-position: center;
+  }
+
+  .mission-photo { display:none; width:100%; max-width:640px; height:auto; border-radius:14px; box-shadow:0 20px 50px rgba(15,20,31,.18); margin:28px auto; }
+  .mission-photo.loaded { display:block; }
+
+  /* ── POPULAR PROJECTS ── same visual language as .provider-card:
+     var(--card) background, var(--border), teal hover accent, 12px
+     radius — deliberately NOT a generic white-card grid copied from
+     elsewhere, but built to look like it belongs on this page. */
+  .popular-projects-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:20px; }
+  .popular-project-card {
+    background:var(--card); border-radius:12px; overflow:hidden;
+    border:1px solid var(--border); cursor:pointer;
+    transition:all .25s; box-shadow:0 2px 12px rgba(0,0,0,.05);
+  }
+  .popular-project-card:hover { transform:translateY(-5px); box-shadow:0 16px 40px rgba(18,22,31,.14); border-color:var(--teal); }
+  .popular-project-photo { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; background:var(--offwhite); }
+  .popular-project-photo-fallback {
+    width:100%; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center;
+    font-size:44px; background:linear-gradient(135deg, var(--navy) 0%, var(--teal) 140%);
+  }
+  .popular-project-body { padding:16px 18px 18px; }
+  .popular-project-name { font-family:'Fraunces',serif; font-weight:700; font-size:16px; color:var(--navy); margin-bottom:4px; }
+  .popular-project-price { font-size:13px; color:var(--slate); }
+
   /* ── TASTEFUL MOTION ──────────────────────────────────────────────────
      Every animation here is subtle and purposeful: a rotating word in the
      hero, sections fading in as you scroll to them, and a small pulse on
@@ -738,11 +773,24 @@
     </div>
   </div>
 
+  <!-- POPULAR PROJECTS — real categories, real starting prices computed
+       from real provider rates, real (optional) photos per category. -->
+  <div class="section popular-projects-section" id="popular-projects-section" style="display:none;">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Popular Projects</div>
+        <div class="section-sub">Real categories, ranked by how many verified pros are ready right now</div>
+      </div>
+    </div>
+    <div class="popular-projects-grid" id="popular-projects-grid"></div>
+  </div>
+
   <!-- MISSION / WHY TASKORA EXISTS -->
   <div class="mission-section">
     <div class="mission-inner">
       <div class="mission-eyebrow">Why Taskora Exists</div>
       <div class="mission-headline" id="mission-headline">Local services shouldn't require a leap of faith.</div>
+      <img id="mission-photo" class="mission-photo" alt="Taskora in action"/>
       <div class="mission-body" id="mission-body">From Atlanta to Lagos to Accra, hiring a plumber or a tutor has always meant crossing your fingers — no way to know who's really showing up, and no recourse if it goes wrong. Taskora closes that gap: every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is done right. Trust shouldn't be a gamble. On Taskora, it's the default.</div>
       <div class="mission-pillars">
         <div class="mission-pillar"><span class="mission-pillar-icon">🪪</span><div class="mission-pillar-text">Verified before they ever bid</div></div>
@@ -4163,6 +4211,97 @@ async function saveHomepageContent() {
   } catch (e) { showToast(e.message || 'Could not save homepage content'); }
 }
 
+function homepageImageUploadRowHTML(slot, label, currentUrl) {
+  return `<div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border);">
+    ${currentUrl ? `<img src="${currentUrl}" alt="${label}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;"/>` : `<div style="width:64px;height:64px;border-radius:8px;background:var(--offwhite);display:flex;align-items:center;justify-content:center;color:var(--slate);font-size:11px;text-align:center;flex-shrink:0;">No photo</div>`}
+    <div style="flex:1;">
+      <div style="font-weight:600;font-size:13px;color:var(--navy);margin-bottom:6px;">${label}</div>
+      <input type="file" accept="image/jpeg,image/png,image/webp" id="hc-image-${slot}" style="font-size:12px;"/>
+    </div>
+    <div style="display:flex;gap:8px;flex-shrink:0;">
+      <button class="btn-sm btn-sm-primary" onclick="uploadHomepageImage('${slot}')">Upload</button>
+      ${currentUrl ? `<button class="btn-sm btn-sm-outline" onclick="removeHomepageImage('${slot}')">Remove</button>` : ''}
+    </div>
+  </div>`;
+}
+
+async function uploadHomepageImage(slot) {
+  const input = document.getElementById(`hc-image-${slot}`);
+  const file = input.files[0];
+  if (!file) return showToast('Choose an image file first');
+  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large — 5MB max');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  const formData = new FormData();
+  formData.append('image', file);
+  try {
+    const res = await fetch(`${API_BASE}/admin/homepage-images/${slot}/upload`, {
+      method: 'POST',
+      headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
+      body: formData, // deliberately no Content-Type — the browser sets the correct multipart boundary itself
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    showToast('Photo uploaded — live on the homepage now');
+    await loadAdminData();
+    await loadHomepageImages();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not upload this photo'); }
+}
+
+async function removeHomepageImage(slot) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('DELETE', `/admin/homepage-images/${slot}`);
+    showToast('Photo removed — reverted to the default look');
+    await loadAdminData();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not remove this photo'); }
+}
+
+function categoryImageUploadRowHTML(category, currentUrl) {
+  return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+    ${currentUrl
+      ? `<img src="${currentUrl}" alt="${category.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;"/>`
+      : `<div style="width:40px;height:40px;border-radius:6px;background:var(--offwhite);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${category.icon || '🛠️'}</div>`}
+    <div style="flex:1;font-size:13px;font-weight:600;color:var(--navy);">${category.name}</div>
+    <input type="file" accept="image/jpeg,image/png,image/webp" id="ci-image-${category.id}" style="font-size:11px;max-width:150px;"/>
+    <button class="btn-sm btn-sm-primary" style="padding:4px 10px;font-size:11px;" onclick="uploadCategoryImage('${category.id}')">Upload</button>
+    ${currentUrl ? `<button class="btn-sm btn-sm-outline" style="padding:4px 10px;font-size:11px;" onclick="removeCategoryImage('${category.id}')">Remove</button>` : ''}
+  </div>`;
+}
+
+async function uploadCategoryImage(categoryId) {
+  const input = document.getElementById(`ci-image-${categoryId}`);
+  const file = input.files[0];
+  if (!file) return showToast('Choose an image file first');
+  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large — 5MB max');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  const formData = new FormData();
+  formData.append('image', file);
+  try {
+    const res = await fetch(`${API_BASE}/admin/category-images/${categoryId}/upload`, {
+      method: 'POST',
+      headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    showToast('Photo uploaded — live on the homepage now (if this category has verified pros)');
+    await loadAdminData();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not upload this photo'); }
+}
+
+async function removeCategoryImage(categoryId) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('DELETE', `/admin/category-images/${categoryId}`);
+    showToast('Photo removed — reverted to the category icon');
+    await loadAdminData();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not remove this photo'); }
+}
+
 async function openPayoutCurrencyChoice() {
   if (!BACKEND_AVAILABLE) return requestPayout('usd');
   try {
@@ -4736,7 +4875,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, homepageImages: null, categoryImages: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -4804,13 +4943,15 @@ async function loadAdminData() {
   }
 
   if (AUTH.user && AUTH.user.isSuperAdmin) {
-    const [cities, subAdmins, exchangeRates, bookingWindow, supportContact, homepageContent] = await Promise.all([
+    const [cities, subAdmins, exchangeRates, bookingWindow, supportContact, homepageContent, homepageImages, categoryImages] = await Promise.all([
       tryFetch('/admin/cities'),
       tryFetch('/admin/sub-admins'),
       tryFetch('/admin/exchange-rates'),
       tryFetch('/admin/settings/booking-window'),
       tryFetch('/admin/settings/support-contact'),
       tryFetch('/admin/settings/homepage-content'),
+      tryFetch('/homepage-images'),
+      tryFetch('/admin/category-images'),
     ]);
     if (cities) adminData.cities = cities.cities;
     if (subAdmins) adminData.subAdmins = subAdmins.admins;
@@ -4818,6 +4959,8 @@ async function loadAdminData() {
     if (bookingWindow) adminData.bookingWindowTiers = bookingWindow.tiers;
     if (supportContact) adminData.supportContact = supportContact;
     if (homepageContent) adminData.homepageContent = homepageContent;
+    if (homepageImages) adminData.homepageImages = homepageImages;
+    if (categoryImages) adminData.categoryImages = categoryImages;
   }
 }
 
@@ -5167,6 +5310,17 @@ const ADMIN_SECTIONS = {
       <div class="form-group"><label class="form-label">Mission Headline</label><input class="form-input" id="hc-mission-headline" value="${adminData.homepageContent ? adminData.homepageContent.missionHeadline : ''}"/></div>
       <div class="form-group"><label class="form-label">Mission Body</label><textarea class="form-input" id="hc-mission-body" rows="4" style="resize:vertical;">${adminData.homepageContent ? adminData.homepageContent.missionBody : ''}</textarea></div>
       <button class="btn-sm btn-sm-primary" onclick="saveHomepageContent()">Save</button>
+      <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
+      <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Homepage Photos</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Real photos for the hero and mission sections. Neither is required — without one, that section just keeps its current icon/gradient look.</div>
+      ${homepageImageUploadRowHTML('hero', 'Hero Background', adminData.homepageImages && adminData.homepageImages.hero)}
+      ${homepageImageUploadRowHTML('mission', 'Mission Section Photo', adminData.homepageImages && adminData.homepageImages.mission)}
+      <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
+      <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Popular Projects Photos</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">A real photo per category for the homepage "Popular Projects" section. Any category without one just shows its icon instead — the section only ever displays categories that already have real verified pros, so there's always something honest to show even before every photo is uploaded.</div>
+      <div style="max-height:420px;overflow-y:auto;">
+        ${(adminData.categories || []).map(c => categoryImageUploadRowHTML(c, (adminData.categoryImages || {})[c.id])).join('')}
+      </div>
     </div>` : ''}
     ${changePasswordPanelHTML('admin')}`,
 };
@@ -6727,7 +6881,54 @@ function startHeroWordRotation() {
   }, 2600);
 }
 
-// Fades each of a handful of homepage sections in as the visitor actually
+// Real categories, real "starting at" prices (computed server-side from
+// actual provider rates), real optional photos — see GET
+// /api/popular-projects. The whole section stays hidden if there's
+// nothing real to show yet (a brand-new deployment with no verified
+// providers in any category), rather than displaying an empty or
+// placeholder-filled grid.
+async function loadPopularProjects() {
+  const section = document.getElementById('popular-projects-section');
+  if (!section || !BACKEND_AVAILABLE) return;
+  try {
+    const { projects } = await apiFetch('GET', '/popular-projects');
+    if (!projects.length) return; // stays hidden — nothing real to show yet
+    document.getElementById('popular-projects-grid').innerHTML = projects.map(p => `
+      <div class="popular-project-card" onclick="filterCat('${p.name.replace(/'/g, "\\'")}')">
+        ${p.imageUrl
+          ? `<img src="${p.imageUrl}" alt="${p.name}" class="popular-project-photo"/>`
+          : `<div class="popular-project-photo-fallback">${p.icon}</div>`}
+        <div class="popular-project-body">
+          <div class="popular-project-name">${p.name}</div>
+          <div class="popular-project-price">${p.startingAt != null ? `Starting at $${p.startingAt}/hr` : `${p.proCount} verified pro${p.proCount === 1 ? '' : 's'}`}</div>
+        </div>
+      </div>`).join('');
+    section.style.display = '';
+  } catch (e) { console.warn('Could not load popular projects', e); }
+}
+
+// Applies real, admin-uploaded photos to the hero and mission sections, if
+// any have been set (Settings → Platform Settings, super admin). Both
+// slots are designed to degrade invisibly — no photo uploaded means
+// exactly the current icon/gradient look, never a broken image or empty
+// gap.
+async function loadHomepageImages() {
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const images = await apiFetch('GET', '/homepage-images');
+    if (images.hero) {
+      const heroEl = document.querySelector('.hero');
+      if (heroEl) {
+        heroEl.style.setProperty('--hero-photo-url', `url("${images.hero}")`);
+        heroEl.classList.add('has-photo');
+      }
+    }
+    if (images.mission) {
+      const missionImg = document.getElementById('mission-photo');
+      if (missionImg) { missionImg.src = images.mission; missionImg.classList.add('loaded'); }
+    }
+  } catch (e) { console.warn('Could not load homepage images', e); }
+}
 // scrolls to them, instead of everything just being present on load — a
 // standard, subtle technique (used across most modern marketing sites),
 // not applied to content someone needs to read immediately (the hero
@@ -6945,7 +7146,7 @@ function sendSupportChatMessage() {
   initChatBubbleDrag();
   await checkBackend();
   if (BACKEND_AVAILABLE) {
-    await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats(), loadSupportContact(), loadHomepageContent()]);
+    await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats(), loadSupportContact(), loadHomepageContent(), loadHomepageImages(), loadPopularProjects()]);
     renderProviders(PROVIDERS);
     renderHomeCategories();
     console.log('%cTaskora API connected — live data enabled.', 'color:#1D5FA8;font-weight:bold;');

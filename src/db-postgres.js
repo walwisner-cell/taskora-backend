@@ -37,6 +37,8 @@ const TABLES = {
   matches: { table: 'matches', columns: ['id','job_id','provider_id','customer_id','score','same_community','status','created_at'] },
   contracts: { table: 'contracts', columns: ['id','booking_number','customer_id','provider_id','job_id','service','date','time','address','amount','pay_currency','status','signed_at','materials_advance','provider_response_deadline','created_at'] },
   platformSettings: { table: 'platform_settings', columns: ['id','key','value','updated_at'] },
+  homepageImages: { table: 'homepage_images', columns: ['id','slot','filename','url','created_at','updated_at'] },
+  categoryImages: { table: 'category_images', columns: ['id','category_id','filename','url','created_at','updated_at'] },
   escrowTransactions: { table: 'escrow_transactions', columns: ['id','contract_id','amount','paid_currency','paid_amount_local','exchange_rate_note','status','payout_id','materials_advance_amount','materials_advance_released','materials_advance_payout_id','created_at'] },
   payouts: { table: 'payouts', columns: ['id','provider_id','gross_amount','commission_rate','commission_amount','amount','payout_currency','payout_amount_local','exchange_rate_note','method','status','line_items','date'] },
   disputes: { table: 'disputes', columns: ['id','contract_id','reason','amount','status','parties','resolved_at','created_at'] },

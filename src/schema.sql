@@ -509,3 +509,27 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   value       JSONB NOT NULL,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- One row per named homepage image slot (hero, mission, ...). Uploading
+-- again for the same slot replaces the row (and the old file on disk gets
+-- cleaned up) rather than accumulating rows.
+CREATE TABLE IF NOT EXISTS homepage_images (
+  id          TEXT PRIMARY KEY,
+  slot        TEXT NOT NULL UNIQUE,
+  filename    TEXT NOT NULL,
+  url         TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ
+);
+
+-- One real photo per category, for the "Popular Projects" homepage section.
+-- A category with no row here just shows its icon/gradient instead of a
+-- broken image — never required, always optional.
+CREATE TABLE IF NOT EXISTS category_images (
+  id           TEXT PRIMARY KEY,
+  category_id  TEXT NOT NULL UNIQUE REFERENCES categories(id),
+  filename     TEXT NOT NULL,
+  url          TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ
+);

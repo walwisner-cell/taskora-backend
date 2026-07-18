@@ -120,6 +120,43 @@ router.get('/categories', async (req, res) => {
   res.json({ categories: withCounts });
 });
 
+// GET /api/popular-projects — real categories, ranked by real provider
+// coverage (the most honest available "popular" signal — actual bookings
+// data is still thin in a young marketplace, but provider count never
+// lies about which categories are genuinely active right now). "Starting
+// at $X" is computed live from real provider rates, not a marketing
+// number someone typed in once and forgot to update — it's the lowest
+// hourly rate among verified, active providers actually in that category.
+// A category with no providers yet is simply left out, rather than
+// showing a fabricated or zero price.
+router.get('/popular-projects', async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 8, 20);
+  const [categories, providers, images] = await Promise.all([
+    db.filter('categories', c => c.active),
+    db.filter('users', u => u.role === 'provider' && u.verified && u.acceptingBookings !== false),
+    db.all('categoryImages'),
+  ]);
+  const imageByCategory = new Map(images.map(img => [img.categoryId, img.url]));
+
+  const withData = categories.map(c => {
+    const inCategory = providers.filter(p => p.category === c.name && typeof p.price === 'number');
+    const startingAt = inCategory.length ? Math.min(...inCategory.map(p => p.price)) : null;
+    return {
+      id: c.id,
+      name: c.name,
+      icon: c.icon || '🛠️',
+      proCount: inCategory.length,
+      startingAt,
+      imageUrl: imageByCategory.get(c.id) || null,
+    };
+  })
+  .filter(c => c.proCount > 0) // an empty category has nothing real to show yet
+  .sort((a, b) => b.proCount - a.proCount)
+  .slice(0, limit);
+
+  res.json({ projects: withData });
+});
+
 // GET /api/cities — public, name+country only (no admin details — that
 // stays behind /admin/cities). Cities here are ones with a dedicated
 // regional admin assigned — a real, valuable feature, but no longer a
@@ -197,6 +234,17 @@ router.get('/homepage-content', async (req, res) => {
   const { getSetting } = require('../platform-settings');
   const content = await getSetting('homepageContent');
   res.json(content);
+});
+
+// GET /api/homepage-images — public, no auth: the real uploaded photo (if
+// any) for each homepage slot. A slot with no image simply isn't in the
+// response, so the frontend falls back to its existing icon/gradient look
+// — never a broken image.
+router.get('/homepage-images', async (req, res) => {
+  const images = await db.all('homepageImages');
+  const bySlot = {};
+  for (const img of images) bySlot[img.slot] = img.url;
+  res.json(bySlot);
 });
 
 // GET /api/live-ads?city=Atlanta — the one currently-live paid ad slot for

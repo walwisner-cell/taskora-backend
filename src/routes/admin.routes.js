@@ -1,4 +1,7 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole, hashPassword } = require('../auth');
@@ -7,6 +10,7 @@ const { notify } = require('../notify');
 const { effectiveCommissionRate } = require('../commission');
 const { effectivePlanPricing, PLAN_KEYS, DEFAULT_USD_PRICES } = require('../plan-pricing');
 const { currencyForCountry, APPROX_USD_RATE, CURRENCY_BY_COUNTRY } = require('../currency-data');
+const { UPLOADS_DIR } = require('../uploads');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -653,6 +657,127 @@ router.patch('/settings/homepage-content', requireSuperAdmin, async (req, res) =
   };
   await setSetting('homepageContent', content);
   res.json({ ok: true, ...content });
+});
+
+// ── HOMEPAGE IMAGES ──────────────────────────────────────────────────────
+// Real photo uploads for the marketing homepage — the hero and mission
+// sections previously had no photo at all, just icons/gradients. One slot
+// per named position on the page; uploading again for the same slot
+// replaces whatever was there. Same multer/disk-storage approach already
+// proven for provider portfolio photos, just scoped to super admin and
+// keyed by slot instead of by provider.
+const HOMEPAGE_IMAGE_SLOTS = ['hero', 'mission'];
+const homepageImageStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `homepage_${req.params.slot}_${nanoid(10)}${ext}`);
+  },
+});
+function homepageImageFileFilter(req, file, cb) {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowed.includes(file.mimetype)) return cb(new Error('Only JPEG, PNG, or WEBP images are allowed'));
+  cb(null, true);
+}
+const uploadHomepageImage = multer({ storage: homepageImageStorage, fileFilter: homepageImageFileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// POST /api/admin/homepage-images/:slot/upload — super admin only.
+router.post('/homepage-images/:slot/upload', requireSuperAdmin, (req, res) => {
+  if (!HOMEPAGE_IMAGE_SLOTS.includes(req.params.slot)) {
+    return res.status(400).json({ error: `slot must be one of: ${HOMEPAGE_IMAGE_SLOTS.join(', ')}` });
+  }
+  uploadHomepageImage.single('image')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (!req.file) return res.status(400).json({ error: 'No image file was provided' });
+
+    // Same "confirm it actually landed" discipline as portfolio uploads —
+    // reporting success on a write that silently didn't stick is the
+    // failure mode that's hardest to notice until someone reports a
+    // missing homepage image days later.
+    if (!fs.existsSync(req.file.path)) {
+      console.error(`Homepage image upload reported success but file is missing at ${req.file.path} — check UPLOADS_DIR points to a writable, persistent location.`);
+      return res.status(500).json({ error: 'The image could not be saved to disk. Please try again.' });
+    }
+
+    const url = `/uploads/${req.file.filename}`;
+    const existing = await db.find('homepageImages', h => h.slot === req.params.slot);
+    if (existing) {
+      // Clean up the old file on disk now that it's being replaced —
+      // otherwise every re-upload just accumulates orphaned files forever.
+      const oldPath = path.join(UPLOADS_DIR, existing.filename);
+      if (existing.filename && fs.existsSync(oldPath)) fs.unlink(oldPath, () => {});
+      await db.update('homepageImages', existing.id, { filename: req.file.filename, url, updatedAt: new Date().toISOString() });
+    } else {
+      await db.insert('homepageImages', { id: `hi_${req.params.slot}`, slot: req.params.slot, filename: req.file.filename, url, createdAt: new Date().toISOString() });
+    }
+    res.status(201).json({ ok: true, slot: req.params.slot, url });
+  });
+});
+
+// DELETE /api/admin/homepage-images/:slot — super admin only: removes the
+// image, reverting that section back to its icon/gradient look.
+router.delete('/homepage-images/:slot', requireSuperAdmin, async (req, res) => {
+  const existing = await db.find('homepageImages', h => h.slot === req.params.slot);
+  if (!existing) return res.json({ ok: true }); // nothing to remove
+  const filePath = path.join(UPLOADS_DIR, existing.filename);
+  if (existing.filename && fs.existsSync(filePath)) fs.unlink(filePath, () => {});
+  await db.remove('homepageImages', existing.id);
+  res.json({ ok: true });
+});
+
+// ── CATEGORY IMAGES (Popular Projects section) ──────────────────────────
+// GET /api/admin/category-images — super admin only: every category's
+// current photo, as a { categoryId: url } map, for the settings panel.
+router.get('/category-images', requireSuperAdmin, async (req, res) => {
+  const images = await db.all('categoryImages');
+  const bySlot = {};
+  for (const img of images) bySlot[img.categoryId] = img.url;
+  res.json(bySlot);
+});
+
+const categoryImageStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `category_${req.params.categoryId}_${nanoid(10)}${ext}`);
+  },
+});
+const uploadCategoryImage = multer({ storage: categoryImageStorage, fileFilter: homepageImageFileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// POST /api/admin/category-images/:categoryId/upload — super admin only.
+router.post('/category-images/:categoryId/upload', requireSuperAdmin, (req, res) => {
+  uploadCategoryImage.single('image')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (!req.file) return res.status(400).json({ error: 'No image file was provided' });
+    const category = await db.find('categories', c => c.id === req.params.categoryId);
+    if (!category) { fs.unlink(req.file.path, () => {}); return res.status(404).json({ error: 'Category not found' }); }
+
+    if (!fs.existsSync(req.file.path)) {
+      console.error(`Category image upload reported success but file is missing at ${req.file.path} — check UPLOADS_DIR points to a writable, persistent location.`);
+      return res.status(500).json({ error: 'The image could not be saved to disk. Please try again.' });
+    }
+
+    const url = `/uploads/${req.file.filename}`;
+    const existing = await db.find('categoryImages', h => h.categoryId === req.params.categoryId);
+    if (existing) {
+      const oldPath = path.join(UPLOADS_DIR, existing.filename);
+      if (existing.filename && fs.existsSync(oldPath)) fs.unlink(oldPath, () => {});
+      await db.update('categoryImages', existing.id, { filename: req.file.filename, url, updatedAt: new Date().toISOString() });
+    } else {
+      await db.insert('categoryImages', { id: `ci_${req.params.categoryId}`, categoryId: req.params.categoryId, filename: req.file.filename, url, createdAt: new Date().toISOString() });
+    }
+    res.status(201).json({ ok: true, categoryId: req.params.categoryId, url });
+  });
+});
+
+// DELETE /api/admin/category-images/:categoryId — super admin only.
+router.delete('/category-images/:categoryId', requireSuperAdmin, async (req, res) => {
+  const existing = await db.find('categoryImages', h => h.categoryId === req.params.categoryId);
+  if (!existing) return res.json({ ok: true });
+  const filePath = path.join(UPLOADS_DIR, existing.filename);
+  if (existing.filename && fs.existsSync(filePath)) fs.unlink(filePath, () => {});
+  await db.remove('categoryImages', existing.id);
+  res.json({ ok: true });
 });
 
 router.post('/sync-reference-data', requireSuperAdmin, async (req, res) => {
