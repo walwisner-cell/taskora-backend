@@ -389,7 +389,7 @@
   .badge-danger { background:rgba(179,66,58,.12); color:var(--red); }
   .badge-neutral { background:var(--offwhite); color:var(--slate); }
 
-  .row-actions { display:flex; gap:8px; }
+  .row-actions { display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; }
   .btn-sm { border:none; border-radius:6px; padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; font-family:'Inter',sans-serif; }
   .btn-sm-primary { background:var(--navy); color:#fff; }
   .btn-sm-primary:hover { background:var(--teal); color:var(--navy); }
@@ -5358,7 +5358,7 @@ function advertisingInquiriesTableHTML(list) {
     <td>${i.contactName}</td>
     <td style="font-size:12px;color:var(--slate);">${i.email}</td>
     <td>${i.targetCity || '<span style="color:var(--slate);">All Regions</span>'}</td>
-    <td style="max-width:220px;font-size:12.5px;">${i.message}</td>
+    <td style="max-width:220px;font-size:12.5px;word-break:break-word;overflow-wrap:break-word;">${i.message}</td>
     <td>${adInquiryStatusBadge(i.status)}</td>
     <td>${i.isLive ? `<span class="badge badge-success">Live · ${i.price} ${i.currencyCode || ''}</span>` : '<span class="badge badge-neutral">Not live</span>'}</td>
     <td class="row-actions">
@@ -5618,7 +5618,7 @@ function salesInquiriesTableHTML(list) {
       </div>
     </td>
     <td style="font-size:12px;color:var(--slate);">${i.teamSize || '—'}</td>
-    <td style="max-width:220px;font-size:12.5px;">${i.message}</td>
+    <td style="max-width:220px;font-size:12.5px;word-break:break-word;overflow-wrap:break-word;">${i.message}</td>
     <td>${adInquiryStatusBadge(i.status)}</td>
     <td style="font-size:12.5px;">${i.agreedPrice != null ? `$${i.agreedPrice} ${i.agreedCurrency || 'USD'}` : '<span style="color:var(--slate);">Not set</span>'}</td>
     <td class="row-actions">
