@@ -2437,7 +2437,8 @@ async function mockAuth() {
       }
       const user = result;
       showToast(`Welcome back, ${user.name.split(' ')[0]}!`);
-      await goDashboard(user.role);
+      rememberLastLoginEmail(email);
+      await completeAuthAndResumeIntent(user.role);
     } else {
       const data = await apiFetch('POST', '/auth/signup/start', {
         name, email, password, role: authState.role, city, country, state, phone, address, zipCode,
@@ -2487,7 +2488,8 @@ async function submitSignupVerification() {
     } else {
       showToast('Account created — welcome to Taskora!');
     }
-    await goDashboard(data.user.role);
+    rememberLastLoginEmail(data.user.email);
+    await completeAuthAndResumeIntent(data.user.role);
   } catch (e) {
     showToast(e.message || 'Could not verify — check both codes and try again');
   }
@@ -2524,7 +2526,8 @@ async function submitLogin2FA() {
     saveAuthSession(data.token);
     pendingLoginId = null;
     showToast(`Welcome back, ${data.user.name.split(' ')[0]}!`);
-    await goDashboard(data.user.role);
+    rememberLastLoginEmail(data.user.email);
+    await completeAuthAndResumeIntent(data.user.role);
   } catch (e) { showToast(e.message || 'Incorrect code'); }
 }
 
@@ -6362,6 +6365,60 @@ async function handleSearchClick() {
   renderProviders(match.length ? match : PROVIDERS);
 }
 
+// ── RESUME-AFTER-AUTH ────────────────────────────────────────────────────
+// When openBooking() has to redirect an anonymous (or wrong-role) visitor
+// to sign in/sign up, this remembers what they were actually trying to do
+// so they land back on that exact booking form the moment they're
+// authenticated — instead of a real customer completing signup and just
+// being dropped on a generic empty dashboard, having to go find the same
+// provider again. Persisted to localStorage (not just an in-memory
+// variable) so it survives even if the two-step signup verification
+// somehow spans a page reload.
+function setPendingBookingIntent(providerId) {
+  try { localStorage.setItem('taskora_pending_intent', JSON.stringify({ type: 'book', providerId })); } catch (e) { /* private browsing etc. — booking just won't auto-resume, no crash */ }
+}
+function getPendingBookingIntent() {
+  try { return JSON.parse(localStorage.getItem('taskora_pending_intent') || 'null'); } catch (e) { return null; }
+}
+function clearPendingBookingIntent() {
+  try { localStorage.removeItem('taskora_pending_intent'); } catch (e) { /* ignore */ }
+}
+
+// Remembers the email of whoever last signed in/up successfully ON THIS
+// DEVICE — not a session, just enough to recognize "this looks like a
+// returning visitor" so a booking redirect can default to Sign In
+// (pre-filled) instead of guessing Sign Up for someone who actually
+// already has an account. Never stores a password, and this is purely a
+// convenience default — a first-time visitor on a shared/public computer
+// isn't affected since nothing's been remembered on that device yet.
+function rememberLastLoginEmail(email) {
+  try { localStorage.setItem('taskora_last_email', email); } catch (e) { /* ignore */ }
+}
+function getLastLoginEmail() {
+  try { return localStorage.getItem('taskora_last_email'); } catch (e) { return null; }
+}
+
+// After a real sign-in or sign-up completes, resume whatever the visitor
+// was actually trying to do (right now: booking a specific provider)
+// instead of unconditionally dropping them on a generic dashboard. Falls
+// through to the normal dashboard exactly as before whenever there's no
+// pending intent — a direct, ordinary login is completely unaffected.
+async function completeAuthAndResumeIntent(role) {
+  const intent = getPendingBookingIntent();
+  if (intent && intent.type === 'book' && role === 'customer') {
+    clearPendingBookingIntent();
+    const provider = PROVIDERS.find(p => p.id === intent.providerId);
+    if (provider) {
+      showToast(`Welcome! Continuing your booking with ${provider.name}...`);
+      await openBooking(intent.providerId);
+      return;
+    }
+    // The provider's no longer around (removed/deactivated since) — fall
+    // through to the normal dashboard rather than silently doing nothing.
+  }
+  await goDashboard(role);
+}
+
 async function openBooking(id) {
   currentPro = PROVIDERS.find(p => p.id === id);
 
@@ -6372,10 +6429,22 @@ async function openBooking(id) {
   // step. Same rule confirmBooking() already enforced at submission —
   // just moved to where a visitor actually needs to see it.
   if (BACKEND_AVAILABLE && (!AUTH.token || AUTH.user.role !== 'customer')) {
+    setPendingBookingIntent(id);
     if (!AUTH.token) {
-      showAuth('signup');
-      setAuthRole('customer');
-      showToast('Create a free customer account to book a pro');
+      const lastEmail = getLastLoginEmail();
+      if (lastEmail) {
+        // This browser has signed in before — much more likely a returning
+        // visitor than a brand-new one, so default to Sign In (pre-filled)
+        // instead of guessing Sign Up and making them switch tabs.
+        showAuth('login');
+        const emailInput = document.getElementById('auth-email');
+        if (emailInput) emailInput.value = lastEmail;
+        showToast(`Sign in as ${lastEmail} to continue booking ${currentPro.name}`);
+      } else {
+        showAuth('signup');
+        setAuthRole('customer');
+        showToast('Create a free customer account to book a pro');
+      }
     } else {
       showAuth('login');
       showToast('Sign in as a customer to book a pro');
@@ -6914,7 +6983,7 @@ function sendSupportChatMessage() {
         AUTH.token = savedToken;
         const { user } = await apiFetch('GET', '/auth/me');
         AUTH.user = user;
-        await goDashboard(user.role);
+        await completeAuthAndResumeIntent(user.role);
       } catch (e) {
         AUTH.token = null;
         AUTH.user = null;
