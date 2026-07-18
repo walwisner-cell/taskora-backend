@@ -21,6 +21,32 @@ const DEFAULTS = {
     within7d: 4,   // job starts within 2–7 days — respond within 4 hours
     beyond7d: 24,  // job starts more than a week out — respond within 24 hours
   },
+
+  // The homepage support chat's "Chat with us" / "Call" links. Ships with
+  // an obviously-fake placeholder number on purpose — flagged in every
+  // audit rather than silently invented — until a super admin sets the
+  // real one here. whatsapp is digits only (country code, no +/spaces/
+  // dashes, e.g. "15551234567"); phoneDisplay is whatever human-readable
+  // format should actually show on screen.
+  supportContact: {
+    whatsapp: '15551234567',
+    phoneDisplay: '+1 (555) 123-4567',
+  },
+
+  // The homepage's actual on-screen copy — hero headline/subheadline, the
+  // rotating word in the hero, and the mission section. Editable in
+  // Settings → Platform Settings without needing a code deploy. Kept
+  // deliberately small (headline pieces + one paragraph) rather than a
+  // full page-builder — the rest of the homepage (stats, categories,
+  // trust badges) is generated from real data and isn't free-text anyway.
+  homepageContent: {
+    heroPrefix: 'Find Trusted Local',
+    heroRotatingWords: ['Pros', 'Plumbers', 'Cleaners', 'Tutors', 'Electricians'],
+    heroSuffix: 'Instantly',
+    heroSubheadline: "Every pro is ID-verified. Every job runs on an auto-generated contract with funds held in escrow until you're satisfied. Book in under 2 minutes.",
+    missionHeadline: "Local services shouldn't require a leap of faith.",
+    missionBody: "From Atlanta to Lagos to Accra, hiring a plumber or a tutor has always meant crossing your fingers — no way to know who's really showing up, and no recourse if it goes wrong. Taskora closes that gap: every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is done right. Trust shouldn't be a gamble. On Taskora, it's the default.",
+  },
 };
 
 async function getSetting(key) {

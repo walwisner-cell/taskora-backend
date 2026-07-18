@@ -178,6 +178,27 @@ router.get('/plan-pricing', async (req, res) => {
   res.json({ country, plans });
 });
 
+// GET /api/support-contact — public, no auth: the real WhatsApp/phone
+// numbers behind the homepage support chat's "Chat with us" / "Call"
+// links. Ships with an obviously-fake placeholder until a super admin
+// sets the real one in Settings — isPlaceholder tells the frontend
+// whether what it's showing is still that placeholder, so it can be
+// honest about it rather than silently presenting a fake number as real.
+router.get('/support-contact', async (req, res) => {
+  const { getSetting, DEFAULTS } = require('../platform-settings');
+  const contact = await getSetting('supportContact');
+  res.json({ ...contact, isPlaceholder: contact.whatsapp === DEFAULTS.supportContact.whatsapp });
+});
+
+// GET /api/homepage-content — public, no auth: the real, current homepage
+// copy (hero headline pieces, rotating word list, subheadline, mission
+// section). Editable in Settings → Platform Settings (super admin).
+router.get('/homepage-content', async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  const content = await getSetting('homepageContent');
+  res.json(content);
+});
+
 // GET /api/live-ads?city=Atlanta — the one currently-live paid ad slot for
 // this city, if any (city-specific ads take priority over a platform-wide
 // one). Public, no auth — this is what powers the real "Advertise Here"

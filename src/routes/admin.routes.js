@@ -596,6 +596,65 @@ router.patch('/settings/booking-window', requireSuperAdmin, async (req, res) => 
   res.json({ ok: true, tiers: { within24h, within7d, beyond7d } });
 });
 
+// GET /api/admin/settings/support-contact — super admin only: the current
+// WhatsApp/phone numbers behind the homepage support chat, plus whether
+// it's still the built-in fake placeholder.
+router.get('/settings/support-contact', requireSuperAdmin, async (req, res) => {
+  const { getSetting, DEFAULTS } = require('../platform-settings');
+  const contact = await getSetting('supportContact');
+  res.json({ ...contact, isPlaceholder: contact.whatsapp === DEFAULTS.supportContact.whatsapp });
+});
+
+// PATCH /api/admin/settings/support-contact — super admin only: set the
+// real numbers. whatsapp must be digits only (country code, no
+// +/spaces/dashes) since it's used directly in a wa.me deep link.
+router.patch('/settings/support-contact', requireSuperAdmin, async (req, res) => {
+  const { whatsapp, phoneDisplay } = req.body || {};
+  if (!isNonEmptyString(whatsapp) || !/^\d{7,15}$/.test(whatsapp)) {
+    return res.status(400).json({ error: 'WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567' });
+  }
+  if (!isNonEmptyString(phoneDisplay, { min: 5, max: 30 })) {
+    return res.status(400).json({ error: 'Enter a valid display phone number' });
+  }
+  const { setSetting } = require('../platform-settings');
+  await setSetting('supportContact', { whatsapp, phoneDisplay });
+  res.json({ ok: true, whatsapp, phoneDisplay });
+});
+
+// GET /api/admin/settings/homepage-content — super admin only: the current
+// homepage copy, for editing.
+router.get('/settings/homepage-content', requireSuperAdmin, async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  const content = await getSetting('homepageContent');
+  res.json(content);
+});
+
+// PATCH /api/admin/settings/homepage-content — super admin only: update
+// the homepage copy. Takes effect immediately for every visitor — no
+// deploy needed.
+router.patch('/settings/homepage-content', requireSuperAdmin, async (req, res) => {
+  const { heroPrefix, heroRotatingWords, heroSuffix, heroSubheadline, missionHeadline, missionBody } = req.body || {};
+  if (!isNonEmptyString(heroPrefix, { min: 2, max: 60 })) return res.status(400).json({ error: 'Enter a hero headline prefix' });
+  if (!Array.isArray(heroRotatingWords) || heroRotatingWords.length === 0 || heroRotatingWords.some(w => typeof w !== 'string' || !w.trim())) {
+    return res.status(400).json({ error: 'Enter at least one rotating word (comma-separated)' });
+  }
+  if (!isNonEmptyString(heroSuffix, { min: 1, max: 40 })) return res.status(400).json({ error: 'Enter a hero headline suffix' });
+  if (!isNonEmptyString(heroSubheadline, { min: 10, max: 400 })) return res.status(400).json({ error: 'Enter a hero subheadline (10-400 characters)' });
+  if (!isNonEmptyString(missionHeadline, { min: 5, max: 150 })) return res.status(400).json({ error: 'Enter a mission headline' });
+  if (!isNonEmptyString(missionBody, { min: 20, max: 1200 })) return res.status(400).json({ error: 'Enter mission body text (20-1200 characters)' });
+  const { setSetting } = require('../platform-settings');
+  const content = {
+    heroPrefix: heroPrefix.trim(),
+    heroRotatingWords: heroRotatingWords.map(w => w.trim()).filter(Boolean),
+    heroSuffix: heroSuffix.trim(),
+    heroSubheadline: heroSubheadline.trim(),
+    missionHeadline: missionHeadline.trim(),
+    missionBody: missionBody.trim(),
+  };
+  await setSetting('homepageContent', content);
+  res.json({ ok: true, ...content });
+});
+
 router.post('/sync-reference-data', requireSuperAdmin, async (req, res) => {
   const { syncReferenceData } = require('../sync-reference-data');
   const result = await syncReferenceData();

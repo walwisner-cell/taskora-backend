@@ -55,6 +55,28 @@
                 radial-gradient(ellipse 50% 50% at 20% 80%, rgba(176,138,62,.08) 0%, transparent 60%);
   }
   .hero-badge { display:inline-flex; align-items:center; gap:8px; background:transparent; border:1px solid rgba(176,138,62,.5); color:#B08A3E; font-size:11px; font-weight:600; letter-spacing:2px; text-transform:uppercase; padding:7px 18px; border-radius:2px; margin-bottom:24px; }
+
+  /* ── TASTEFUL MOTION ──────────────────────────────────────────────────
+     Every animation here is subtle and purposeful: a rotating word in the
+     hero, sections fading in as you scroll to them, and a small pulse on
+     genuinely-live indicators. None of it is decorative flashing for its
+     own sake, and all of it respects prefers-reduced-motion — someone who
+     has told their OS/browser they don't want motion gets the final state
+     immediately, no animation forced on them. */
+  .hero-rotating-word { display:inline-block; transition:opacity .35s ease, transform .35s ease; }
+  .hero-rotating-word.word-swap { opacity:0; transform:translateY(6px); }
+
+  .scroll-fade-section { opacity:0; transform:translateY(22px); transition:opacity .7s ease, transform .7s ease; }
+  .scroll-fade-section.in-view { opacity:1; transform:translateY(0); }
+
+  .live-pulse-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#2E8C6F; margin-right:5px; position:relative; top:-1px; animation:livePulse 2s ease-in-out infinite; }
+  @keyframes livePulse { 0%,100% { box-shadow:0 0 0 0 rgba(46,140,111,.55); } 50% { box-shadow:0 0 0 5px rgba(46,140,111,0); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-rotating-word, .scroll-fade-section { transition:none !important; }
+    .scroll-fade-section { opacity:1 !important; transform:none !important; }
+    .live-pulse-dot { animation:none !important; }
+  }
   .hero-badge::before { content:'◆'; color:#B08A3E; font-size:8px; }
   .hero-seal { position:absolute; top:34px; right:36px; width:132px; height:132px; z-index:1; opacity:.92; }
   .hero-seal-svg { width:100%; height:100%; }
@@ -650,9 +672,9 @@
         <text font-size="9.5" letter-spacing="3.5" fill="#B08A3E" font-family="Inter"><textPath href="#sealBottomArc" startOffset="50%" text-anchor="middle">EST. 2026 &#183; TASKORA</textPath></text>
         <path d="M70 101 L90 121 L133 76" stroke="#F7F5F0" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
       </svg></div>
-    <div class="hero-badge">AI-Matched · Fully Verified · Escrow-Protected</div>
-    <h1>Find Trusted Local<br/><em>Pros — Instantly</em></h1>
-    <p>Every pro is ID-verified. Every job runs on an auto-generated contract with funds held in escrow until you're satisfied. Book in under 2 minutes.</p>
+    <div class="hero-badge">Smart-Matched · Fully Verified · Escrow-Protected</div>
+    <h1><span id="hero-prefix">Find Trusted Local</span><br/><em><span id="hero-rotating-word" class="hero-rotating-word">Pros</span> — <span id="hero-suffix">Instantly</span></em></h1>
+    <p id="hero-subheadline">Every pro is ID-verified. Every job runs on an auto-generated contract with funds held in escrow until you're satisfied. Book in under 2 minutes.</p>
     <div class="search-bar">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#8A8D96" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       <input type="text" placeholder="What do you need done today?" id="search-input" onkeypress="handleSearch(event)"/>
@@ -694,7 +716,7 @@
       <div class="trust-item"><span class="trust-icon">🪪</span><div><div class="trust-title">Identity Verified</div><div class="trust-sub">Government ID on every pro</div></div></div>
       <div class="trust-item"><span class="trust-icon">📜</span><div><div class="trust-title">Smart Contracts</div><div class="trust-sub">Auto-generated per booking</div></div></div>
       <div class="trust-item"><span class="trust-icon">🔒</span><div><div class="trust-title">Escrow Protected</div><div class="trust-sub">Funds held until you're satisfied</div></div></div>
-      <div class="trust-item"><span class="trust-icon">🤖</span><div><div class="trust-title">AI Fraud Detection</div><div class="trust-sub">Every job screened automatically</div></div></div>
+      <div class="trust-item"><span class="trust-icon">🛡️</span><div><div class="trust-title">Automated Fraud Screening</div><div class="trust-sub">Every job screened automatically</div></div></div>
     </div>
   </div>
 
@@ -702,11 +724,11 @@
   <div class="mission-section">
     <div class="mission-inner">
       <div class="mission-eyebrow">Why Taskora Exists</div>
-      <div class="mission-headline">Local services shouldn't require a leap of faith.</div>
-      <div class="mission-body">From Atlanta to Lagos to Accra, hiring a plumber or a tutor has always meant crossing your fingers — no way to know who's really showing up, and no recourse if it goes wrong. Taskora closes that gap: every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is done right. Trust shouldn't be a gamble. On Taskora, it's the default.</div>
+      <div class="mission-headline" id="mission-headline">Local services shouldn't require a leap of faith.</div>
+      <div class="mission-body" id="mission-body">From Atlanta to Lagos to Accra, hiring a plumber or a tutor has always meant crossing your fingers — no way to know who's really showing up, and no recourse if it goes wrong. Taskora closes that gap: every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is done right. Trust shouldn't be a gamble. On Taskora, it's the default.</div>
       <div class="mission-pillars">
         <div class="mission-pillar"><span class="mission-pillar-icon">🪪</span><div class="mission-pillar-text">Verified before they ever bid</div></div>
-        <div class="mission-pillar"><span class="mission-pillar-icon">🤖</span><div class="mission-pillar-text">Matched by AI, not guesswork</div></div>
+        <div class="mission-pillar"><span class="mission-pillar-icon">🎯</span><div class="mission-pillar-text">Matched by fit, not guesswork</div></div>
         <div class="mission-pillar"><span class="mission-pillar-icon">🔒</span><div class="mission-pillar-text">Protected by escrow, not promises</div></div>
       </div>
     </div>
@@ -729,7 +751,7 @@
     <div class="section-header">
       <div>
         <div class="section-title" id="providers-title">Top Rated Pros</div>
-        <div class="section-sub" id="providers-sub">Hand-picked by our AI matching engine</div>
+        <div class="section-sub" id="providers-sub">Ranked by rating, distance &amp; fit</div>
       </div>
       <a class="see-all" onclick="goDirectory()">View all →</a>
     </div>
@@ -746,13 +768,13 @@
           <div class="step-num">01</div>
           <div class="step-icon">🔍</div>
           <div class="step-title">Post Your Job</div>
-          <div class="step-desc">Describe what you need in plain English. Our AI parses your request and finds the best-matched pros instantly.</div>
+          <div class="step-desc">Describe what you need — we match it against verified pros nearby, ranked by rating, distance, and fit.</div>
         </div>
         <div class="step-card">
           <div class="step-num">02</div>
           <div class="step-icon">🤝</div>
           <div class="step-title">Book with Protection</div>
-          <div class="step-desc">Choose your pro, review their AI-generated contract, and pay securely via escrow. Funds only release when you're satisfied.</div>
+          <div class="step-desc">Choose your pro, review their auto-generated contract, and pay securely via escrow. Funds only release when you're satisfied.</div>
         </div>
         <div class="step-card">
           <div class="step-num">03</div>
@@ -860,7 +882,7 @@
     <div class="confirm-card fade-up">
       <div class="confirm-icon">✓</div>
       <h2>Booking Confirmed!</h2>
-      <p>Your booking is protected by Taskora's AI-generated smart contract and held in escrow. Your pro will confirm within 1 hour.</p>
+      <p>Your booking is protected by Taskora's auto-generated contract and held in escrow. Your pro will confirm shortly.</p>
       <div class="confirm-details" id="confirm-details"></div>
       <button class="back-home-btn" onclick="goHome()">Back to Explore</button>
     </div>
@@ -930,7 +952,7 @@
     <div class="modal-header">
       <button class="modal-close" onclick="closePostJobModal()">✕</button>
       <h3>Post a Job</h3>
-      <p>Describe what you need — Taskora's AI finds your best-matched pros</p>
+      <p>Describe what you need — we'll find your best-matched pros nearby</p>
     </div>
     <div class="modal-body" id="postjob-body">
       <div class="form-group">
@@ -1037,7 +1059,7 @@
         <div class="form-group">
           <label class="form-label">Skills & Specialties</label>
           <input class="form-input" type="text" id="auth-skills"/>
-          <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Comma-separated — helps the AI match you to the right jobs</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Comma-separated — helps us match you to the right jobs</div>
         </div>
         <div class="form-group" id="auth-invite-group">
           <label class="form-label">Organization Invite Code <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
@@ -1196,7 +1218,7 @@
       <div class="pricing-head">
         <div class="pricing-eyebrow">Provider Plans</div>
         <div class="pricing-title">Get matched more. Keep more of what you earn.</div>
-        <div class="pricing-sub">Every plan includes identity verification, escrow protection, and AI job matching. Higher tiers unlock priority placement and lower commission.</div>
+        <div class="pricing-sub">Every plan includes identity verification, escrow protection, and smart job matching. Higher tiers unlock priority placement and lower commission.</div>
         <div style="margin-top:16px;display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap;">
           <label class="form-label" style="margin:0;">Show pricing for</label>
           <select class="form-input" id="pricing-country-select" style="width:auto;padding:6px 10px;font-size:13px;" onchange="loadPricingPage(this.value)"></select>
@@ -1208,7 +1230,7 @@
           <div class="pricing-plan-desc">For providers just getting started on Taskora</div>
           <div class="pricing-price" id="pricing-price-starter">$0<span>/month</span></div>
           <div class="pricing-feat-list">
-            <div class="pricing-feat">AI job matching</div>
+            <div class="pricing-feat">Smart job matching</div>
             <div class="pricing-feat">Identity verification & badge</div>
             <div class="pricing-feat">Escrow-protected payouts</div>
             <div class="pricing-feat">12% commission per job</div>
@@ -1222,7 +1244,7 @@
           <div class="pricing-price" id="pricing-price-pro">$20<span>/month</span></div>
           <div class="pricing-feat-list">
             <div class="pricing-feat">Everything in Starter</div>
-            <div class="pricing-feat">Priority placement in AI matching</div>
+            <div class="pricing-feat">Priority placement in matching</div>
             <div class="pricing-feat">8% commission per job</div>
             <div class="pricing-feat">Portfolio & review boosts</div>
             <div class="pricing-feat">Same-day payout option</div>
@@ -1637,6 +1659,27 @@ const FALLBACK_GEO = {
 };
 let GEO_DATA = FALLBACK_GEO;
 
+// Animates a number counting up from 0 to its real value — purely a
+// presentation effect on top of already-real data (see loadPlatformStats
+// below), not a fake "live ticking counter." Respects prefers-reduced-motion
+// by just jumping straight to the final value for anyone who's asked their
+// OS/browser to minimize motion.
+function animateCountUp(el, target, { suffix = '', decimals = 0, duration = 1200 } = {}) {
+  if (!el) return;
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion || !isFinite(target)) { el.textContent = target.toLocaleString(undefined, { maximumFractionDigits: decimals }) + suffix; return; }
+  const start = performance.now();
+  const from = 0;
+  function tick(now) {
+    const progress = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic — decelerates near the end, reads as more natural than linear
+    const value = from + (target - from) * eased;
+    el.textContent = value.toLocaleString(undefined, { maximumFractionDigits: decimals }) + suffix;
+    if (progress < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
 async function loadPlatformStats() {
   const els = {
     pros: document.getElementById('hero-stat-pros'),
@@ -1650,9 +1693,10 @@ async function loadPlatformStats() {
   }
   try {
     const stats = await apiFetch('GET', '/platform-stats');
-    els.pros.textContent = stats.verifiedProsCount.toLocaleString();
-    els.rating.textContent = stats.averageRating ? `${Number(stats.averageRating).toFixed(1)}★` : 'New';
-    els.jobs.textContent = stats.jobsCompletedCount.toLocaleString();
+    animateCountUp(els.pros, stats.verifiedProsCount);
+    if (stats.averageRating) animateCountUp(els.rating, Number(stats.averageRating), { suffix: '★', decimals: 1 });
+    else els.rating.textContent = 'New';
+    animateCountUp(els.jobs, stats.jobsCompletedCount);
   } catch (e) {
     console.warn('Could not load platform stats', e);
   }
@@ -2541,7 +2585,7 @@ function verificationHTML(role, status) {
     <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Check</th><th>Status</th></tr></thead><tbody>
     <tr><td>Background Check</td><td>${statusBadge('completed')}</td></tr>
     <tr><td>Two-Factor Authentication</td><td>${statusBadge('completed')}</td></tr>
-    <tr><td>AI Fraud Screening</td><td>${statusBadge('completed')}</td></tr>
+    <tr><td>Automated Fraud Screening</td><td>${statusBadge('completed')}</td></tr>
     </tbody></table></div></div>` : ''}`;
 }
 
@@ -3495,7 +3539,7 @@ async function viewProviderProfile(id) {
         <div class="profile-trust-item">🪪 Government ID verified</div>
         <div class="profile-trust-item">📜 Signs a smart contract per job</div>
         <div class="profile-trust-item">🔒 Escrow-protected payments</div>
-        <div class="profile-trust-item">🤖 AI fraud-screened profile</div>
+        <div class="profile-trust-item">🛡️ Fraud-screened profile</div>
         <div class="profile-trust-item">🔐 Two-factor authentication enabled</div>
       </div>
     </div>`;
@@ -3599,7 +3643,7 @@ async function runAIMatch() {
       return;
     }
     body.innerHTML = `
-      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Matched for "<strong style="color:var(--navy)">${desc}</strong>" in <strong style="color:var(--navy)">${cat}</strong> ${realCallSucceeded ? '<span class="badge badge-success">Live AI match</span>' : ''}</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Matched for "<strong style="color:var(--navy)">${desc}</strong>" in <strong style="color:var(--navy)">${cat}</strong> ${realCallSucceeded ? '<span class="badge badge-success">Live match</span>' : ''}</div>
       ${realCallSucceeded && matchScope !== 'city' ? `<div style="font-size:12px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:12px;">📍 No verified "${cat}" pro in your exact city yet, so we widened the search to ${matchScope === 'state' ? 'your state/region' : 'your country'}.</div>` : ''}
       ${pool.map(p => `
         <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;">
@@ -3716,7 +3760,7 @@ const PROVIDER_SECTIONS = {
         </div>`
       : '';
     return `
-    <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Marcus'}</div><div class="dash-sub">Your AI-matched jobs and contract activity</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Marcus'}</div><div class="dash-sub">Your matched jobs and contract activity</div></div></div>
     ${payoutBanner}
     ${catBanner}
     <div class="stat-cards">
@@ -3725,11 +3769,11 @@ const PROVIDER_SECTIONS = {
       <div class="stat-card"><div class="stat-card-label">Average Rating</div><div class="stat-card-val">${(AUTH.user && AUTH.user.rating) ? Number(AUTH.user.rating).toFixed(1) + '★' : 'New'}</div></div>
       <div class="stat-card"><div class="stat-card-label">Jobs Completed</div><div class="stat-card-val">${providerData.contracts.filter(c => c.status === 'completed').length}</div></div>
     </div>
-    <div class="panel"><div class="panel-title">New AI Matches <small>${providerData.matches.length} pending</small></div>${matchesTable(providerData.matches.slice(0, 3))}</div>
+    <div class="panel"><div class="panel-title">New Matches <small>${providerData.matches.length} pending</small></div>${matchesTable(providerData.matches.slice(0, 3))}</div>
     <div class="panel"><div class="panel-title">Recent Contracts</div>${contractsTableWithEscrow(providerData.contracts.slice(0, 3))}</div>`;
   },
   matches: () => `
-    <div class="dash-header"><div><div class="dash-title">Job Matches</div><div class="dash-sub">Ranked by Taskora's AI matching engine — fit, proximity, and your trust score ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Live data</span>' : ''}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Job Matches</div><div class="dash-sub">Ranked by Taskora's matching engine — fit, proximity, and your trust score ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Live data</span>' : ''}</div></div></div>
     <div class="panel">${matchesTable(providerData.matches)}</div>`,
   contracts: () => `
     <div class="dash-header"><div><div class="dash-title">My Contracts</div><div class="dash-sub">Every contract is auto-generated and stored per booking</div></div></div>
@@ -3784,7 +3828,7 @@ const PROVIDER_SECTIONS = {
     </div>`;
   },
   portfolio: () => `
-    <div class="dash-header"><div><div class="dash-title">Portfolio</div><div class="dash-sub">Showcase past work to win more AI matches</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Portfolio</div><div class="dash-sub">Showcase past work to win more matches</div></div></div>
     <div class="panel">
       <label class="upload-box" for="portfolio-file-input" style="cursor:pointer;display:block;">📷 Upload Portfolio Photo</label>
       <input type="file" id="portfolio-file-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none;" onchange="uploadPortfolioPhoto(this.files[0])"/>
@@ -3902,7 +3946,7 @@ const PROVIDER_SECTIONS = {
       <button class="btn-sm btn-sm-primary" onclick="savePayoutCard()">Save Card</button>
     </div>
     <div class="panel"><div class="panel-title">Notifications</div>
-      ${notifToggleHTML('newMatches', 'New job matches', 'AI-matched jobs in your category', true)}
+      ${notifToggleHTML('newMatches', 'New job matches', 'New jobs in your category', true)}
       ${notifToggleHTML('payoutAlerts', 'Payout alerts', 'When a payout is released', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from customers', true)}
       ${notifToggleHTML('messageSound', 'Message sound alert', 'Play a sound when a new message arrives, so it doesn\'t come in silently', false)}
@@ -4052,6 +4096,43 @@ async function saveBookingWindow() {
     await loadAdminData();
     selectAdminSection('settings');
   } catch (e) { showToast(e.message || 'Could not save this setting'); }
+}
+
+async function saveSupportContact() {
+  const whatsapp = document.getElementById('support-whatsapp').value.trim();
+  const phoneDisplay = document.getElementById('support-phone-display').value.trim();
+  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567');
+  if (phoneDisplay.length < 5) return showToast('Enter a valid display phone number');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/settings/support-contact', { whatsapp, phoneDisplay });
+    showToast('Support contact info updated — live on the homepage now');
+    await loadAdminData();
+    await loadSupportContact();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not save this setting'); }
+}
+
+async function saveHomepageContent() {
+  const heroPrefix = document.getElementById('hc-hero-prefix').value.trim();
+  const heroRotatingWords = document.getElementById('hc-hero-words').value.split(',').map(w => w.trim()).filter(Boolean);
+  const heroSuffix = document.getElementById('hc-hero-suffix').value.trim();
+  const heroSubheadline = document.getElementById('hc-hero-subheadline').value.trim();
+  const missionHeadline = document.getElementById('hc-mission-headline').value.trim();
+  const missionBody = document.getElementById('hc-mission-body').value.trim();
+  if (!heroPrefix) return showToast('Enter a hero headline prefix');
+  if (!heroRotatingWords.length) return showToast('Enter at least one rotating word, comma-separated');
+  if (!heroSuffix) return showToast('Enter a hero headline suffix');
+  if (heroSubheadline.length < 10) return showToast('Hero subheadline is too short');
+  if (!missionHeadline) return showToast('Enter a mission headline');
+  if (missionBody.length < 20) return showToast('Mission body is too short');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/settings/homepage-content', { heroPrefix, heroRotatingWords, heroSuffix, heroSubheadline, missionHeadline, missionBody });
+    showToast('Homepage content updated — live now');
+    await loadAdminData();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not save homepage content'); }
 }
 
 async function openPayoutCurrencyChoice() {
@@ -4627,7 +4708,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -4695,16 +4776,20 @@ async function loadAdminData() {
   }
 
   if (AUTH.user && AUTH.user.isSuperAdmin) {
-    const [cities, subAdmins, exchangeRates, bookingWindow] = await Promise.all([
+    const [cities, subAdmins, exchangeRates, bookingWindow, supportContact, homepageContent] = await Promise.all([
       tryFetch('/admin/cities'),
       tryFetch('/admin/sub-admins'),
       tryFetch('/admin/exchange-rates'),
       tryFetch('/admin/settings/booking-window'),
+      tryFetch('/admin/settings/support-contact'),
+      tryFetch('/admin/settings/homepage-content'),
     ]);
     if (cities) adminData.cities = cities.cities;
     if (subAdmins) adminData.subAdmins = subAdmins.admins;
     if (exchangeRates) adminData.exchangeRates = exchangeRates.rates;
     if (bookingWindow) adminData.bookingWindowTiers = bookingWindow.tiers;
+    if (supportContact) adminData.supportContact = supportContact;
+    if (homepageContent) adminData.homepageContent = homepageContent;
   }
 }
 
@@ -4782,7 +4867,7 @@ const ADMIN_SECTIONS = {
     <div class="dash-header"><div><div class="dash-title">Verification Queue</div><div class="dash-sub">ID, BVN/NIN, and passport submissions awaiting review</div></div></div>
     <div class="panel">${verificationQueueTable()}</div>`,
   disputes: () => `
-    <div class="dash-header"><div><div class="dash-title">Disputes</div><div class="dash-sub">AI-flagged and customer/provider-raised disputes</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Disputes</div><div class="dash-sub">Fraud-flagged and customer/provider-raised disputes</div></div></div>
     <div class="panel">
       <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <span>All Disputes</span>
@@ -5034,6 +5119,26 @@ const ADMIN_SECTIONS = {
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveBookingWindow()">Save</button>
       <div style="font-size:11px;color:var(--slate);margin-top:8px;">Defaults: 1h / 4h / 24h. The deadline is also always automatically capped at the job's own start time, however these are set — a provider can never "confirm" a job after it was supposed to already start.</div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
+      <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Support Chat Contact Info</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">The real WhatsApp and phone number behind the homepage support chat's "Chat with us" / "Call" links. ${adminData.supportContact && adminData.supportContact.isPlaceholder ? '<strong style="color:var(--danger,#B23A3A);">These are still the placeholder demo numbers — visitors clicking them right now will not reach you.</strong>' : 'These are your real, live numbers.'}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">WhatsApp Number <span style="color:var(--slate);font-weight:400;">(digits only, country code, e.g. 15551234567)</span></label><input class="form-input" id="support-whatsapp" value="${adminData.supportContact ? adminData.supportContact.whatsapp : ''}" placeholder="15551234567"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Phone Number Shown to Visitors</label><input class="form-input" id="support-phone-display" value="${adminData.supportContact ? adminData.supportContact.phoneDisplay : ''}" placeholder="+1 (555) 123-4567"/></div>
+      </div>
+      <button class="btn-sm btn-sm-primary" onclick="saveSupportContact()">Save</button>
+      <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
+      <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Homepage Content</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">The actual on-screen copy for the homepage hero and mission section. Changes go live immediately for every visitor — no deploy needed.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px;">
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Hero Prefix</label><input class="form-input" id="hc-hero-prefix" value="${adminData.homepageContent ? adminData.homepageContent.heroPrefix : ''}" placeholder="Find Trusted Local"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Rotating Words <span style="color:var(--slate);font-weight:400;">(comma-separated)</span></label><input class="form-input" id="hc-hero-words" value="${adminData.homepageContent ? adminData.homepageContent.heroRotatingWords.join(', ') : ''}" placeholder="Pros, Plumbers, Cleaners"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Hero Suffix</label><input class="form-input" id="hc-hero-suffix" value="${adminData.homepageContent ? adminData.homepageContent.heroSuffix : ''}" placeholder="Instantly"/></div>
+      </div>
+      <div class="form-group"><label class="form-label">Hero Subheadline</label><textarea class="form-input" id="hc-hero-subheadline" rows="2" style="resize:vertical;">${adminData.homepageContent ? adminData.homepageContent.heroSubheadline : ''}</textarea></div>
+      <div class="form-group"><label class="form-label">Mission Headline</label><input class="form-input" id="hc-mission-headline" value="${adminData.homepageContent ? adminData.homepageContent.missionHeadline : ''}"/></div>
+      <div class="form-group"><label class="form-label">Mission Body</label><textarea class="form-input" id="hc-mission-body" rows="4" style="resize:vertical;">${adminData.homepageContent ? adminData.homepageContent.missionBody : ''}</textarea></div>
+      <button class="btn-sm btn-sm-primary" onclick="saveHomepageContent()">Save</button>
     </div>` : ''}
     ${changePasswordPanelHTML('admin')}`,
 };
@@ -6269,7 +6374,7 @@ async function openBooking(id) {
     document.getElementById('booking-summary').innerHTML = `
       <div class="summary-row"><span>Service rate</span><span>$${currentPro.price}/hr</span></div>
       <div class="summary-row"><span>Platform fee</span><span>$${Math.round(currentPro.price*0.08)}</span></div>
-      <div class="summary-row"><span>AI Contract</span><span style="color:#2E8C6F">Included ✓</span></div>
+      <div class="summary-row"><span>Smart Contract</span><span style="color:#2E8C6F">Included ✓</span></div>
       <div class="summary-row total"><span>Escrow hold (2hr)</span><span>$${currentPro.price*2 + Math.round(currentPro.price*0.08)}</span></div>
       ${currencyToggleHTML()}
     `;
@@ -6412,7 +6517,7 @@ async function confirmBooking() {
     <div class="confirm-detail"><span>Date</span><strong>${date} · ${time}</strong></div>
     <div class="confirm-detail"><span>Address</span><strong>${addr}</strong></div>
     <div class="confirm-detail"><span>Escrow held</span><strong>$${total}</strong></div>
-    <div class="confirm-detail"><span>Contract</span><strong style="color:#2E8C6F">AI-Generated ✓</strong></div>
+    <div class="confirm-detail"><span>Contract</span><strong style="color:#2E8C6F">Auto-Generated ✓</strong></div>
   `;
   window.scrollTo(0,0);
 }
@@ -6446,14 +6551,87 @@ document.getElementById('dispute-modal').addEventListener('click', function(e) {
    separate from this always-available baseline rather than silently
    assumed. */
 // ── SUPPORT CONTACT INFO ──────────────────────────────────────────────────
-// Placeholder values — replace with your real WhatsApp number (digits only,
-// country code, no +/spaces/dashes — e.g. "15551234567") and phone number
-// before this goes live. Used to build a real wa.me deep link and a real
-// tel: link in the support chat below.
-const SUPPORT_CONTACT = {
-  whatsapp: '15551234567', // TODO: replace with the real WhatsApp number
-  phoneDisplay: '+1 (555) 123-4567', // TODO: replace with the real support phone number
+// The real numbers live in the database now (Settings → Platform Settings,
+// super admin only) — this starts as the same obviously-fake placeholder
+// as before, purely as a fallback in case the fetch below hasn't completed
+// yet, and gets replaced with the real value (or confirmed still-a-
+// placeholder) as soon as loadSupportContact() resolves.
+let SUPPORT_CONTACT = {
+  whatsapp: '15551234567',
+  phoneDisplay: '+1 (555) 123-4567',
+  isPlaceholder: true,
 };
+async function loadSupportContact() {
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const data = await apiFetch('GET', '/support-contact');
+    SUPPORT_CONTACT = data;
+  } catch (e) { console.warn('Could not load support contact info, using placeholder.', e); }
+}
+
+// Homepage copy — hero prefix/rotating word/suffix/subheadline and the
+// mission section — is real, admin-editable content (Settings → Platform
+// Settings), not hardcoded. This fetches the current version and starts
+// the rotating-word cycle; falls back to whatever's already in the static
+// HTML (the same defaults) if the fetch fails for any reason.
+let HERO_ROTATING_WORDS = ['Pros', 'Plumbers', 'Cleaners', 'Tutors', 'Electricians'];
+let heroRotationTimer = null;
+async function loadHomepageContent() {
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const content = await apiFetch('GET', '/homepage-content');
+    const prefixEl = document.getElementById('hero-prefix');
+    const suffixEl = document.getElementById('hero-suffix');
+    const subheadEl = document.getElementById('hero-subheadline');
+    const missionHeadEl = document.getElementById('mission-headline');
+    const missionBodyEl = document.getElementById('mission-body');
+    if (prefixEl) prefixEl.textContent = content.heroPrefix;
+    if (suffixEl) suffixEl.textContent = content.heroSuffix;
+    if (subheadEl) subheadEl.textContent = content.heroSubheadline;
+    if (missionHeadEl) missionHeadEl.textContent = content.missionHeadline;
+    if (missionBodyEl) missionBodyEl.textContent = content.missionBody;
+    if (Array.isArray(content.heroRotatingWords) && content.heroRotatingWords.length) {
+      HERO_ROTATING_WORDS = content.heroRotatingWords;
+      startHeroWordRotation(); // restart with the real word list
+    }
+  } catch (e) { console.warn('Could not load homepage content, using defaults.', e); }
+}
+
+function startHeroWordRotation() {
+  const el = document.getElementById('hero-rotating-word');
+  if (!el || HERO_ROTATING_WORDS.length < 2) return; // nothing to rotate through
+  if (heroRotationTimer) clearInterval(heroRotationTimer);
+  let i = 0;
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  heroRotationTimer = setInterval(() => {
+    i = (i + 1) % HERO_ROTATING_WORDS.length;
+    if (reduceMotion) { el.textContent = HERO_ROTATING_WORDS[i]; return; }
+    el.classList.add('word-swap');
+    setTimeout(() => {
+      el.textContent = HERO_ROTATING_WORDS[i];
+      el.classList.remove('word-swap');
+    }, 350);
+  }, 2600);
+}
+
+// Fades each of a handful of homepage sections in as the visitor actually
+// scrolls to them, instead of everything just being present on load — a
+// standard, subtle technique (used across most modern marketing sites),
+// not applied to content someone needs to read immediately (the hero
+// itself is untouched, so there's no delay seeing what Taskora is).
+function setupScrollFadeIn() {
+  const selectors = ['.trust-strip', '.mission-section', '.section', '.how-it-works', '#featured-carousel-section'];
+  const els = document.querySelectorAll(selectors.join(','));
+  if (!els.length) return;
+  els.forEach(el => el.classList.add('scroll-fade-section'));
+  if (!('IntersectionObserver' in window)) { els.forEach(el => el.classList.add('in-view')); return; }
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) { entry.target.classList.add('in-view'); observer.unobserve(entry.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(el => observer.observe(el));
+}
 function supportContactHTML() {
   return `<br/><br/>📱 WhatsApp: <a href="https://wa.me/${SUPPORT_CONTACT.whatsapp}" target="_blank" style="color:var(--gold);">Chat with us</a><br/>☎️ Call: <a href="tel:+${SUPPORT_CONTACT.whatsapp}" style="color:var(--gold);">${SUPPORT_CONTACT.phoneDisplay}</a>`;
 }
@@ -6473,7 +6651,7 @@ const SUPPORT_FAQ = [
   { keywords: ['hi', 'hello', 'hey'], answer: "Hi! I'm the Taskora Assistant. Ask me about escrow, verification, disputes, payments, pricing, or how matching works — I'm happy to help." },
 ];
 
-const SUPPORT_SUGGESTIONS = ['How does escrow work?', 'How do I get verified?', 'What are the pricing plans?', 'How does AI matching work?'];
+const SUPPORT_SUGGESTIONS = ['How does escrow work?', 'How do I get verified?', 'What are the pricing plans?', 'How does matching work?'];
 
 function answerSupportQuestion(text) {
   const lower = text.toLowerCase();
@@ -6543,9 +6721,11 @@ function sendSupportChatMessage() {
   renderNavbar('navbar-home', 'home');
   renderProviders(PROVIDERS); // paint immediately with fallback data, then upgrade if backend is live
   renderHomeCategories();
+  startHeroWordRotation(); // works immediately with the default word list, even offline
+  setupScrollFadeIn();
   await checkBackend();
   if (BACKEND_AVAILABLE) {
-    await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats()]);
+    await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats(), loadSupportContact(), loadHomepageContent()]);
     renderProviders(PROVIDERS);
     renderHomeCategories();
     console.log('%cTaskora API connected — live data enabled.', 'color:#1D5FA8;font-weight:bold;');
