@@ -436,6 +436,17 @@
   .auth-form-panel { flex:1; min-width:0; background:var(--white); display:flex; align-items:center; }
   .auth-form-panel .auth-card { box-shadow:none; max-width:none; width:100%; border-radius:0; }
 
+  .faq-list { max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
+  .faq-item { background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden; transition:border-color .15s; }
+  .faq-item.open { border-color:var(--teal); }
+  .faq-question { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; cursor:pointer; font-weight:600; color:var(--navy); font-size:14.5px; }
+  .faq-question:hover { background:var(--offwhite); }
+  .faq-chevron { transition:transform .2s ease; color:var(--slate); flex-shrink:0; margin-left:12px; }
+  .faq-item.open .faq-chevron { transform:rotate(180deg); }
+  .faq-answer { max-height:0; overflow:hidden; transition:max-height .25s ease; }
+  .faq-item.open .faq-answer { max-height:400px; }
+  .faq-answer-inner { padding:0 20px 18px; font-size:13.5px; color:var(--text); line-height:1.65; }
+
   @media (max-width:820px) {
     .auth-brand-panel { display:none; }
     .auth-split { max-width:460px; border-radius:16px; }
@@ -909,6 +920,18 @@
     <div class="providers-grid" id="providers-grid"></div>
   </div>
 
+  <!-- FAQ — real, interactive, reusing the exact same answers the support
+       chat assistant gives, not separate/fabricated copy. -->
+  <div class="section faq-section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Common Questions</div>
+        <div class="section-sub">Same real answers our support assistant gives — click to expand</div>
+      </div>
+    </div>
+    <div class="faq-list" id="homepage-faq-list"></div>
+  </div>
+
   <!-- HOW IT WORKS -->
   <div class="how-section">
     <div class="how-inner">
@@ -1176,7 +1199,7 @@
       <div class="auth-divider">or</div>
       <div class="form-group" id="auth-name-group" style="display:none">
         <label class="form-label">Full Name</label>
-        <input class="form-input" type="text" id="auth-name"/>
+        <input class="form-input" type="text" id="auth-name" autocomplete="name"/>
       </div>
       <div class="dates-row">
         <div class="form-group" id="auth-country-group" style="display:none">
@@ -1196,21 +1219,21 @@
         <label class="form-label">Phone Number</label>
         <div style="display:flex;gap:8px;">
           <div id="auth-phone-dialcode" style="flex-shrink:0;min-width:56px;display:flex;align-items:center;justify-content:center;padding:0 10px;border:1.5px solid var(--border);border-radius:10px;background:var(--offwhite);font-size:14px;color:var(--navy);font-weight:600;">+1</div>
-          <input class="form-input" type="tel" id="auth-phone" style="flex:1;"/>
+          <input class="form-input" type="tel" id="auth-phone" style="flex:1;" autocomplete="tel"/>
         </div>
       </div>
       <div class="form-group" id="auth-address-group" style="display:none">
         <label class="form-label">Street Address</label>
-        <input class="form-input" type="text" id="auth-address"/>
+        <input class="form-input" type="text" id="auth-address" autocomplete="street-address"/>
       </div>
       <div class="dates-row">
         <div class="form-group" id="auth-city-group" style="display:none">
           <label class="form-label">City</label>
-          <input class="form-input" type="text" id="auth-city" placeholder="e.g. Philadelphia"/>
+          <input class="form-input" type="text" id="auth-city" placeholder="e.g. Philadelphia" autocomplete="address-level2"/>
         </div>
         <div class="form-group" id="auth-zip-group" style="display:none">
           <label class="form-label" id="auth-zip-label">Zip / Postal Code</label>
-          <input class="form-input" type="text" id="auth-zip"/>
+          <input class="form-input" type="text" id="auth-zip" autocomplete="postal-code"/>
           <div id="auth-zip-hint" style="display:none;font-size:11px;color:var(--muted);margin-top:3px;">Optional — no formal postal system here.</div>
         </div>
       </div>
@@ -1240,12 +1263,12 @@
       </div>
       <div class="form-group">
         <label class="form-label">Email</label>
-        <input class="form-input" type="email" id="auth-email"/>
+        <input class="form-input" type="email" id="auth-email" autocomplete="username" onkeydown="if(event.key==='Enter')handleAuthSubmit()"/>
       </div>
       <div class="form-group">
         <label class="form-label">Password</label>
         <div class="password-field-wrap">
-          <input class="form-input" type="password" id="auth-password" style="padding-right:40px;" oninput="updatePasswordStrength(this.value)"/>
+          <input class="form-input" type="password" id="auth-password" style="padding-right:40px;" autocomplete="current-password" oninput="updatePasswordStrength(this.value)" onkeydown="if(event.key==='Enter')handleAuthSubmit()"/>
           <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility()" tabindex="-1" id="password-toggle-icon">👁️</button>
         </div>
         <div class="password-strength-meter" id="password-strength-meter">
@@ -1279,11 +1302,11 @@
         </div>
         <div class="form-group">
           <label class="form-label">Code sent to your phone</label>
-          <input class="form-input" type="text" maxlength="6" id="signup-verify-phone-code"/>
+          <input class="form-input" type="text" inputmode="numeric" maxlength="6" id="signup-verify-phone-code" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')submitSignupVerification()"/>
         </div>
         <div class="form-group">
           <label class="form-label">Code sent to your email</label>
-          <input class="form-input" type="text" maxlength="6" id="signup-verify-email-code"/>
+          <input class="form-input" type="text" inputmode="numeric" maxlength="6" id="signup-verify-email-code" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')submitSignupVerification()"/>
         </div>
         <button class="auth-submit" onclick="submitSignupVerification()">Verify & Create Account</button>
         <div class="auth-foot"><a onclick="resendSignupCodes()">Resend codes</a> · <a onclick="cancelSignupVerification()">Start over</a></div>
@@ -1296,7 +1319,7 @@
         </div>
         <div class="form-group">
           <label class="form-label">6-digit code</label>
-          <input class="form-input" type="text" maxlength="6" id="login-2fa-code"/>
+          <input class="form-input" type="text" inputmode="numeric" maxlength="6" id="login-2fa-code" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')submitLogin2FA()"/>
         </div>
         <button class="auth-submit" onclick="submitLogin2FA()">Verify & Sign In</button>
         <div class="auth-foot"><a onclick="cancelLogin2FA()">Back to sign in</a></div>
@@ -1320,7 +1343,7 @@
         <div class="auth-card-sub">Enter your account email and we'll send you a reset link.</div>
         <div class="form-group">
           <label class="form-label">Email</label>
-          <input class="form-input" type="email" id="forgot-email"/>
+          <input class="form-input" type="email" id="forgot-email" autocomplete="username" onkeydown="if(event.key==='Enter')submitForgotPassword()"/>
         </div>
         <button class="auth-submit" onclick="submitForgotPassword()">Send Reset Link</button>
         <div class="auth-foot"><a onclick="showAuth('login')">Back to sign in</a></div>
@@ -1335,11 +1358,11 @@
         <div class="auth-card-sub">Your reset link has been verified.</div>
         <div class="form-group">
           <label class="form-label">New Password</label>
-          <input class="form-input" type="password" id="reset-new-password"/>
+          <input class="form-input" type="password" id="reset-new-password" autocomplete="new-password"/>
         </div>
         <div class="form-group">
           <label class="form-label">Confirm New Password</label>
-          <input class="form-input" type="password" id="reset-confirm-password"/>
+          <input class="form-input" type="password" id="reset-confirm-password" autocomplete="new-password" onkeydown="if(event.key==='Enter')submitResetPassword()"/>
         </div>
         <button class="auth-submit" onclick="submitResetPassword()">Reset Password</button>
         <div class="auth-foot"><a onclick="showAuth('login')">Back to sign in</a></div>
@@ -2075,6 +2098,38 @@ function categoryCardsHTML(list) {
   return list.map(c => `<div class="cat-card" data-catname="${c.name.replace(/"/g, '&quot;')}" onclick="goDirectory(this.dataset.catname)"><span class="cat-emoji">${categoryIcon(c.name)}</span><div class="cat-label">${c.name}</div><div class="cat-count">${c.proCount} pros</div></div>`).join('');
 }
 
+// A curated homepage FAQ — the answers are pulled live from the exact
+// same lookup the support chat itself uses (answerSupportQuestion), not a
+// separate copy of the text. If the chat's real answer ever changes,
+// this section changes with it automatically; there's no second place
+// to remember to update.
+const HOMEPAGE_FAQ_ITEMS = [
+  { question: 'How does escrow actually protect me?', lookup: 'escrow' },
+  { question: 'How are pros verified?', lookup: 'verification' },
+  { question: 'What if something goes wrong with a job?', lookup: 'dispute' },
+  { question: 'How does matching work?', lookup: 'how does matching work' },
+  { question: 'What are the pricing plans?', lookup: 'pricing plan' },
+  { question: 'How do I become a pro on Taskora?', lookup: 'become a pro' },
+];
+
+function renderHomepageFAQ() {
+  const list = document.getElementById('homepage-faq-list');
+  if (!list) return;
+  list.innerHTML = HOMEPAGE_FAQ_ITEMS.map((item, i) => `
+    <div class="faq-item" id="faq-item-${i}">
+      <div class="faq-question" onclick="toggleFAQItem(${i})">
+        <span>${escapeHtml(item.question)}</span>
+        <span class="faq-chevron">▾</span>
+      </div>
+      <div class="faq-answer"><div class="faq-answer-inner">${answerSupportQuestion(item.lookup)}</div></div>
+    </div>`).join('');
+}
+
+function toggleFAQItem(i) {
+  const el = document.getElementById(`faq-item-${i}`);
+  if (el) el.classList.toggle('open');
+}
+
 function renderHomeCategories() {
   document.getElementById('categories-grid').innerHTML = categoryCardsHTML(CATEGORIES);
   document.getElementById('categories-sub').textContent = `${CATEGORIES.length} service type${CATEGORIES.length === 1 ? '' : 's'} — every pro background-checked before they're listed`;
@@ -2642,6 +2697,7 @@ function setAuthMode(mode) {
   document.getElementById('auth-foot').innerHTML = mode === 'login'
     ? `New to Taskora? <a onclick="setAuthMode('signup')">Create an account</a>`
     : `Already have an account? <a onclick="setAuthMode('login')">Sign in</a>`;
+  document.getElementById('auth-password').setAttribute('autocomplete', mode === 'login' ? 'current-password' : 'new-password');
   updatePasswordStrength(document.getElementById('auth-password').value);
 }
 
@@ -7437,6 +7493,7 @@ function sendSupportChatMessage() {
   renderNavbar('navbar-home', 'home');
   renderProviders(PROVIDERS); // paint immediately with fallback data, then upgrade if backend is live
   renderHomeCategories();
+  renderHomepageFAQ();
   startHeroWordRotation(); // works immediately with the default word list, even offline
   setupScrollFadeIn();
   initChatBubbleDrag();
