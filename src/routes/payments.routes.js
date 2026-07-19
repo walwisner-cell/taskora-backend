@@ -9,6 +9,35 @@ const { resolveRate } = require('../plan-pricing');
 
 const router = express.Router();
 
+// Prevents two payout requests for the SAME provider from ever running at
+// the same time. Without this, the payout endpoint has a real
+// time-of-check-to-time-of-use gap: it reads which escrow is unpaid, does
+// real work (customer/review lookups, currency conversion) that takes
+// measurable time, and only stamps those escrow records as paid at the
+// very end. A double-click, or a browser retrying a slow request, could
+// let a second request read the exact same "still unpaid" records before
+// the first had finished stamping them — producing two separate payouts
+// for the same underlying money. This app runs as a single server
+// instance (not horizontally scaled), so a simple in-memory lock keyed by
+// provider ID is a complete fix, not a partial one — this is the same
+// pattern any single-instance Node service uses for this exact problem.
+const payoutLocks = new Set();
+
+// Complete and cancel are two different ways a contract reaches a
+// terminal state, and both follow the same read-status-then-write pattern
+// as everything else fixed this session. Racing them against each other
+// on the SAME contract (a customer double-clicking, or two open tabs)
+// can't double-move money the way the payout race could — escrow status
+// is a single field, not an incrementing balance — but it can leave the
+// contract and its escrow disagreeing with each other: a contract marked
+// "completed" whose escrow actually says "refunded" (so the provider can
+// never actually get paid despite the customer thinking they confirmed
+// the job), or the reverse (a customer who cancelled but whose money
+// never actually came back because the job got marked complete a moment
+// later). A shared lock keyed by contract id means only one of these two
+// endpoints can ever be mid-flight for a given contract at once.
+const contractStatusLocks = new Set();
+
 // ── TEST-MODE PAYMENT METHODS ────────────────────────────────────────────────
 // This is a sandbox stand-in, not a real payment integration. It exists so
 // the booking/escrow flow can be exercised end-to-end during testing without
@@ -159,6 +188,24 @@ const { effectiveCommissionRate } = require('../commission');
 
 router.post('/payouts/request', requireAuth, requireRole('provider'), async (req, res) => {
   const { payoutCurrency } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
+
+  // Reject immediately if this provider already has a payout request in
+  // flight — this is what actually closes the race, not just a courtesy
+  // message. A genuinely concurrent second request never even reaches the
+  // vulnerable read-then-write section below.
+  if (payoutLocks.has(req.user.sub)) {
+    return res.status(409).json({ error: 'A payout request is already being processed — please wait a moment before trying again.' });
+  }
+  payoutLocks.add(req.user.sub);
+
+  try {
+    return await handlePayoutRequest(req, res, payoutCurrency);
+  } finally {
+    payoutLocks.delete(req.user.sub);
+  }
+});
+
+async function handlePayoutRequest(req, res, payoutCurrency) {
   const provider = await db.find('users', u => u.id === req.user.sub);
 
   // What's actually payable is escrow that's been RELEASED (the customer
@@ -294,10 +341,22 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
   const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
   await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned) — processing.`, 'payoutAlerts', { section: 'earnings' });
   res.status(201).json({ payout });
-});
+}
 
 // POST /api/contracts/:id/complete — customer confirms job done -> release escrow
 router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), async (req, res) => {
+  if (contractStatusLocks.has(req.params.id)) {
+    return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
+  }
+  contractStatusLocks.add(req.params.id);
+  try {
+    return await handleContractComplete(req, res);
+  } finally {
+    contractStatusLocks.delete(req.params.id);
+  }
+});
+
+async function handleContractComplete(req, res) {
   const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
   if (contract.status !== 'active') {
@@ -327,7 +386,7 @@ router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), asy
 
   await notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts', { section: 'earnings' });
   res.json({ contract: updated, escrow: { ...escrow, status: 'released' } });
-});
+}
 
 // POST /api/contracts/:id/cancel — either the customer or the provider can
 // cancel a booking before it's marked complete, or withdraw a Mutual
@@ -337,6 +396,18 @@ router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), asy
 // were never held until the provider actually agreed to a number. The other
 // party is notified either way.
 router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
+  if (contractStatusLocks.has(req.params.id)) {
+    return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
+  }
+  contractStatusLocks.add(req.params.id);
+  try {
+    return await handleContractCancel(req, res);
+  } finally {
+    contractStatusLocks.delete(req.params.id);
+  }
+});
+
+async function handleContractCancel(req, res) {
   const contract = await db.find('contracts', c =>
     c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub)
   );
@@ -357,7 +428,7 @@ router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
   await notify(otherPartyId, '🚫', message, 'bookingUpdates', { section: 'bookings' });
 
   res.json({ contract: updated, escrow: escrow ? { ...escrow, status: 'refunded' } : null });
-});
+}
 
 // GET /api/payments/mine — a customer's real payment history: every
 // contract they've funded, who the provider was, and what currency they

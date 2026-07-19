@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS users (
   business_registration_number TEXT,
   admin_department TEXT,
   accepting_bookings BOOLEAN NOT NULL DEFAULT TRUE,
+  token_version   INTEGER NOT NULL DEFAULT 0,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ
 );
@@ -489,6 +490,7 @@ BEGIN
 END $$;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS accepting_bookings BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS provider_response_deadline TIMESTAMPTZ;
 
 -- General-purpose key/value settings, first used for the provider

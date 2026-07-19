@@ -10,6 +10,18 @@ const { effectivePlanPricing, resolveRate } = require('../plan-pricing');
 
 const router = express.Router();
 
+// Same race-condition class as the payout lock in payments.routes.js: an
+// organization's seat limit is checked by reading the current seat count,
+// then writing the new provider's organizationId — with real time between
+// those two steps. Two people redeeming the same invite link within
+// moments of each other (very plausible — an invite is often shared in a
+// group chat or email, and several people click it around the same time)
+// could both pass the "is there room?" check before either had actually
+// claimed a seat, letting an organization exceed its own seat limit. A
+// per-organization lock closes this the same way the payout lock closes
+// its equivalent gap.
+const orgSeatLocks = new Set();
+
 // The internal contract id (ct_xxxxxxxxxx) is what the system/API uses —
 // fine for URLs and database keys, but not something a customer wants to
 // read out over the phone to a provider. This generates a short 6-digit
@@ -293,22 +305,36 @@ router.get('/org-invites/:code', async (req, res) => {
 // existing account instead of a brand-new one.
 router.post('/org-invites/:code/redeem', requireAuth, requireRole('provider'), async (req, res) => {
   const code = (req.params.code || '').trim().toUpperCase();
-  const provider = await db.find('users', u => u.id === req.user.sub);
-  if (provider.organizationId) return res.status(400).json({ error: 'Your account already belongs to an organization' });
-  const invite = await db.find('organizationInvites', i => i.code === code);
-  if (!invite) return res.status(404).json({ error: 'This invite link is invalid' });
-  if (invite.status !== 'active') return res.status(400).json({ error: 'This invite link has been revoked' });
-  if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) return res.status(400).json({ error: 'This invite link has expired' });
-  if (invite.maxUses != null && invite.usesCount >= invite.maxUses) return res.status(400).json({ error: 'This invite link has reached its usage limit' });
-  const org = await db.find('organizations', o => o.id === invite.organizationId);
-  if (!org || org.status !== 'active') return res.status(400).json({ error: 'This organization account is no longer active' });
-  if (org.seatLimit != null) {
-    const currentSeats = (await db.filter('users', u => u.role === 'provider' && u.organizationId === org.id)).length;
-    if (currentSeats >= org.seatLimit) return res.status(400).json({ error: `${org.name} is at its seat limit — contact them to request more seats.` });
+
+  // Locking on the invite code itself (not the org id, which isn't known
+  // yet at this point) closes the race for both checks below in one
+  // step: two people redeeming the same link can't both pass the
+  // maxUses check, and can't both pass the seat-limit check either.
+  if (orgSeatLocks.has(code)) {
+    return res.status(409).json({ error: 'This invite is being processed — please try again in a moment.' });
   }
-  await db.update('users', provider.id, { organizationId: org.id });
-  await db.update('organizationInvites', invite.id, { usesCount: invite.usesCount + 1 });
-  res.json({ ok: true, organizationName: org.name });
+  orgSeatLocks.add(code);
+
+  try {
+    const provider = await db.find('users', u => u.id === req.user.sub);
+    if (provider.organizationId) return res.status(400).json({ error: 'Your account already belongs to an organization' });
+    const invite = await db.find('organizationInvites', i => i.code === code);
+    if (!invite) return res.status(404).json({ error: 'This invite link is invalid' });
+    if (invite.status !== 'active') return res.status(400).json({ error: 'This invite link has been revoked' });
+    if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) return res.status(400).json({ error: 'This invite link has expired' });
+    if (invite.maxUses != null && invite.usesCount >= invite.maxUses) return res.status(400).json({ error: 'This invite link has reached its usage limit' });
+    const org = await db.find('organizations', o => o.id === invite.organizationId);
+    if (!org || org.status !== 'active') return res.status(400).json({ error: 'This organization account is no longer active' });
+    if (org.seatLimit != null) {
+      const currentSeats = (await db.filter('users', u => u.role === 'provider' && u.organizationId === org.id)).length;
+      if (currentSeats >= org.seatLimit) return res.status(400).json({ error: `${org.name} is at its seat limit — contact them to request more seats.` });
+    }
+    await db.update('users', provider.id, { organizationId: org.id });
+    await db.update('organizationInvites', invite.id, { usesCount: invite.usesCount + 1 });
+    res.json({ ok: true, organizationName: org.name });
+  } finally {
+    orgSeatLocks.delete(code);
+  }
 });
 
 router.get('/geo', async (req, res) => {
@@ -721,13 +747,28 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   let escrow = null;
   const customer = await db.find('users', u => u.id === req.user.sub);
   const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
+
+  // This app's booking form uses free-text time slots ("Morning (8–12pm)",
+  // "10:00 AM"), not precise start/end timestamps — so there's no reliable
+  // way to detect a genuine minute-by-minute schedule conflict the way a
+  // real calendar system would. What IS reliably checkable: whether this
+  // provider already has another active or pending job on the exact same
+  // date. Rather than silently letting a provider get double-booked with
+  // no warning, that's surfaced directly in the notification so they can
+  // make an informed accept/decline decision instead of finding out later.
+  const sameDayConflict = await db.find('contracts', c =>
+    c.id !== contract.id && c.providerId === providerId && c.date === date &&
+    ['active', 'pending_provider_confirmation', 'pending_agreement'].includes(c.status)
+  );
+  const conflictNote = sameDayConflict ? ` Note: you already have another job on ${date} — double check your schedule before confirming.` : '';
+
   if (isNegotiable) {
-    await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}" — respond by ${deadlineLabel} or it expires automatically.`, null, { section: 'bookings' });
+    await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}" — respond by ${deadlineLabel} or it expires automatically.${conflictNote}`, null, { section: 'bookings' });
   } else {
     escrow = await fundEscrowForContract(contract, req.user.sub, payCurrency);
-    await notify(providerId, '📋', `${customer ? customer.name : 'A customer'} booked you for "${contract.service}" on ${date} — confirm by ${deadlineLabel} or the booking is automatically cancelled and refunded.`, null, { section: 'bookings' });
+    await notify(providerId, '📋', `${customer ? customer.name : 'A customer'} booked you for "${contract.service}" on ${date} — confirm by ${deadlineLabel} or the booking is automatically cancelled and refunded.${conflictNote}`, null, { section: 'bookings' });
   }
-  res.status(201).json({ contract, escrow });
+  res.status(201).json({ contract, escrow, sameDayConflict: !!sameDayConflict });
 });
 
 // POST /api/contracts/:id/respond-offer — provider accepts or declines a

@@ -1,11 +1,43 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
+const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken, hashResetToken } = require('../auth');
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, isValidName, validate, postalCodeErrorMessage } = require('../validators');
 const { notify } = require('../notify');
 
 const router = express.Router();
+
+// Rate limiting on every sensitive auth endpoint — this genuinely didn't
+// exist anywhere in the app before. Without it, there was no limit at all
+// on how many times someone could try a password against a known email
+// (a real, practical brute-force path — unlike a randomly-generated,
+// short-lived reset token, a person's password doesn't expire), or how
+// many times a 6-digit OTP code could be guessed for signup/login
+// verification or password reset. Keyed by IP, generous enough that a
+// real person fumbling their password a few times never notices it.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please wait 15 minutes and try again.' },
+});
+const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 15, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait 15 minutes and try again.' },
+});
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many signup attempts from this connection. Please try again in an hour.' },
+});
+
+// Same time-of-check-to-time-of-use pattern already fixed for payouts and
+// organization seats: this endpoint checks the email is still free, then
+// creates the account, with real time in between. Two people who both
+// started signup with the same email (one might be retrying after a typo,
+// or it's a genuine coincidence) could both complete verification at
+// nearly the same moment and both pass the "still free" check before
+// either had actually created their account. A per-email lock closes it
+// the same way.
+const signupVerifyLocks = new Set();
 
 function publicUser(u) {
   const { passwordHash, ...rest } = u;
@@ -30,7 +62,7 @@ function generateSixDigitCode() {
 
 // POST /api/auth/signup/start — validates everything and issues both codes,
 // but does NOT create the account yet.
-router.post('/signup/start', async (req, res) => {
+router.post('/signup/start', signupLimiter, async (req, res) => {
   const { name, email, password, role, country, state, city, phone, address, zipCode, category, skills, inviteCode } = req.body || {};
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
@@ -101,7 +133,7 @@ router.post('/signup/start', async (req, res) => {
 
 // POST /api/auth/signup/verify — both codes must match before the account
 // is actually created.
-router.post('/signup/verify', async (req, res) => {
+router.post('/signup/verify', otpLimiter, async (req, res) => {
   const { pendingId, phoneCode, emailCode } = req.body || {};
   if (!isNonEmptyString(pendingId) || !isNonEmptyString(phoneCode) || !isNonEmptyString(emailCode)) {
     return res.status(400).json({ error: 'pendingId, phoneCode, and emailCode are all required' });
@@ -112,6 +144,25 @@ router.post('/signup/verify', async (req, res) => {
     await db.remove('pendingRegistrations', pending.id);
     return res.status(400).json({ error: 'This registration has expired — please start again' });
   }
+
+  // Locking on the email (not the pendingId) is what actually closes the
+  // gap: two DIFFERENT pending registrations sharing the same email are
+  // exactly the scenario that matters here, and they have different
+  // pendingIds by definition.
+  const emailKey = pending.payload.email.toLowerCase();
+  if (signupVerifyLocks.has(emailKey)) {
+    return res.status(409).json({ error: 'This email is already completing signup elsewhere — please wait a moment and try again.' });
+  }
+  signupVerifyLocks.add(emailKey);
+  try {
+    return await completeSignupVerify(req, res, pending);
+  } finally {
+    signupVerifyLocks.delete(emailKey);
+  }
+});
+
+async function completeSignupVerify(req, res, pending) {
+  const { phoneCode, emailCode } = req.body || {};
   if (hashResetToken(phoneCode.trim()) !== pending.phoneCodeHash) {
     return res.status(400).json({ error: 'That phone code is incorrect' });
   }
@@ -224,7 +275,7 @@ router.post('/signup/verify', async (req, res) => {
 
   const token = signToken(user);
   res.status(201).json({ token, user: publicUser(user), categoryApprovalStatus, joinedOrganizationName });
-});
+}
 
 // POST /api/auth/signup/resend — regenerate both codes for an in-progress
 // registration (e.g. the 15-minute window is about to run out, or the codes
@@ -249,7 +300,7 @@ router.post('/signup/resend', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
   const user = await db.find('users', u => u.email.toLowerCase() === (email || '').toLowerCase());
@@ -292,7 +343,7 @@ router.post('/login', async (req, res) => {
 // POST /api/auth/login/verify-2fa — the second factor. Completes the
 // session only if the code matches and hasn't expired; the pending login
 // record is single-use either way, so a code can't be replayed.
-router.post('/login/verify-2fa', async (req, res) => {
+router.post('/login/verify-2fa', otpLimiter, async (req, res) => {
   const { pendingLoginId, code } = req.body || {};
   if (!pendingLoginId || !code) return res.status(400).json({ error: 'pendingLoginId and code are required' });
   const pending = await db.find('pendingLogins', p => p.id === pendingLoginId);
@@ -461,8 +512,10 @@ router.post('/change-password', requireAuth, async (req, res) => {
   if (verifyPassword(newPassword, user.passwordHash)) {
     return res.status(400).json({ error: 'New password must be different from your current password' });
   }
-  await db.update('users', user.id, { passwordHash: hashPassword(newPassword) });
-  res.json({ ok: true });
+  const newTokenVersion = (user.tokenVersion || 0) + 1;
+  await db.update('users', user.id, { passwordHash: hashPassword(newPassword), tokenVersion: newTokenVersion });
+  const freshToken = signToken({ ...user, tokenVersion: newTokenVersion });
+  res.json({ ok: true, token: freshToken });
 });
 
 // ── FORGOT / RESET PASSWORD ──────────────────────────────────────────────────
@@ -494,7 +547,7 @@ function isRateLimited(email) {
 // POST /api/auth/forgot-password — always responds the same way whether or
 // not the email exists, so this endpoint can't be used to discover which
 // emails have accounts.
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', otpLimiter, async (req, res) => {
   const { email } = req.body || {};
   if (!isValidEmail(email)) return res.status(400).json({ error: 'Enter a valid email address' });
   const normalized = email.trim().toLowerCase();
@@ -567,7 +620,7 @@ router.post('/forgot-password', async (req, res) => {
 });
 
 // POST /api/auth/reset-password
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', otpLimiter, async (req, res) => {
   const { token, newPassword } = req.body || {};
   if (!isNonEmptyString(token)) return res.status(400).json({ error: 'Reset token is required' });
   if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol' });
@@ -581,7 +634,7 @@ router.post('/reset-password', async (req, res) => {
   const user = await db.find('users', u => u.id === record.userId);
   if (!user) return res.status(404).json({ error: 'Account not found' });
 
-  await db.update('users', user.id, { passwordHash: hashPassword(newPassword) });
+  await db.update('users', user.id, { passwordHash: hashPassword(newPassword), tokenVersion: (user.tokenVersion || 0) + 1 });
   await db.update('passwordResets', record.id, { used: true });
 
   res.json({ message: 'Password reset successfully — you can now sign in with your new password.' });

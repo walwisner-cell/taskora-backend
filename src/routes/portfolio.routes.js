@@ -5,7 +5,7 @@ const multer = require('multer');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const { UPLOADS_DIR } = require('../uploads');
+const { UPLOADS_DIR, verifyImageMagicBytes } = require('../uploads');
 
 const router = express.Router();
 
@@ -51,6 +51,18 @@ router.post('/portfolio/upload', requireAuth, requireRole('provider'), (req, res
     if (!fs.existsSync(req.file.path)) {
       console.error(`Portfolio upload reported success but file is missing at ${req.file.path} — check that UPLOADS_DIR points to a writable, persistent location.`);
       return res.status(500).json({ error: 'The photo could not be saved to disk. Please try again, or contact support if this keeps happening.' });
+    }
+
+    // The mimetype check above only looked at what the uploader CLAIMED
+    // the file was — trivially spoofable by anyone crafting the request
+    // directly rather than going through a real browser file picker. This
+    // checks the actual bytes now on disk against a real signature for
+    // that image format, and rejects (deleting the file) if they don't
+    // match — the same technique real image-processing libraries use to
+    // identify a file, not trusting what the upload claimed about itself.
+    if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
     }
 
     const existing = await db.filter('portfolioPhotos', p => p.providerId === req.user.sub);
@@ -107,6 +119,11 @@ router.post('/profile-photo/upload', requireAuth, (req, res) => {
     if (!fs.existsSync(req.file.path)) {
       console.error(`Profile photo upload reported success but file is missing at ${req.file.path} — check that UPLOADS_DIR points to a writable, persistent location.`);
       return res.status(500).json({ error: 'The photo could not be saved to disk. Please try again, or contact support if this keeps happening.' });
+    }
+
+    if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
     }
 
     const user = await db.find('users', u => u.id === req.user.sub);

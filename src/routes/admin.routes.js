@@ -10,7 +10,7 @@ const { notify } = require('../notify');
 const { effectiveCommissionRate } = require('../commission');
 const { effectivePlanPricing, PLAN_KEYS, DEFAULT_USD_PRICES } = require('../plan-pricing');
 const { currencyForCountry, APPROX_USD_RATE, CURRENCY_BY_COUNTRY } = require('../currency-data');
-const { UPLOADS_DIR } = require('../uploads');
+const { UPLOADS_DIR, verifyImageMagicBytes } = require('../uploads');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -699,6 +699,11 @@ router.post('/homepage-images/:slot/upload', requireSuperAdmin, (req, res) => {
       return res.status(500).json({ error: 'The image could not be saved to disk. Please try again.' });
     }
 
+    if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
+    }
+
     const url = `/uploads/${req.file.filename}`;
     const existing = await db.find('homepageImages', h => h.slot === req.params.slot);
     if (existing) {
@@ -755,6 +760,11 @@ router.post('/category-images/:categoryId/upload', requireSuperAdmin, (req, res)
     if (!fs.existsSync(req.file.path)) {
       console.error(`Category image upload reported success but file is missing at ${req.file.path} — check UPLOADS_DIR points to a writable, persistent location.`);
       return res.status(500).json({ error: 'The image could not be saved to disk. Please try again.' });
+    }
+
+    if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
     }
 
     const url = `/uploads/${req.file.filename}`;

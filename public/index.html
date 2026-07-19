@@ -400,6 +400,46 @@
 
   /* ── AUTH SCREEN ── */
   .auth-wrap { flex:1; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, var(--navy) 0%, #1B2233 60%, #242F45 100%); padding:40px 20px; }
+
+  /* ── AUTH SPLIT-SCREEN LAYOUT ── a brand panel (trust signals, real
+     platform stats) alongside the actual form. .auth-card and every
+     existing form element inside it are completely untouched — this
+     just gives them a new home next to something worth looking at. */
+  .auth-split {
+    display:flex; max-width:920px; width:100%; border-radius:20px; overflow:hidden;
+    box-shadow:0 30px 90px rgba(0,0,0,.4); animation:authSplitIn .5s cubic-bezier(.22,1,.36,1) both;
+  }
+  @keyframes authSplitIn { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+
+  .auth-brand-panel {
+    flex:1; min-width:0; padding:52px 44px; display:flex; flex-direction:column; justify-content:center;
+    color:#fff; position:relative; overflow:hidden;
+    background:linear-gradient(160deg, var(--navy) 0%, #14304f 55%, #0d2440 100%);
+  }
+  .auth-brand-panel::before {
+    content:''; position:absolute; inset:0;
+    background:
+      radial-gradient(ellipse 60% 50% at 85% 10%, rgba(29,95,168,.28) 0%, transparent 70%),
+      radial-gradient(ellipse 50% 50% at 10% 90%, rgba(176,138,62,.18) 0%, transparent 65%);
+  }
+  .auth-brand-content { position:relative; z-index:1; }
+  .auth-brand-wordmark { font-family:'Fraunces',serif; font-weight:800; font-size:26px; margin-bottom:28px; display:flex; align-items:center; gap:10px; }
+  .auth-brand-headline { font-family:'Fraunces',serif; font-weight:700; font-size:26px; line-height:1.35; margin-bottom:14px; }
+  .auth-brand-sub { font-size:14px; color:rgba(255,255,255,.72); line-height:1.6; margin-bottom:36px; max-width:340px; }
+  .auth-trust-list { display:flex; flex-direction:column; gap:16px; }
+  .auth-trust-item { display:flex; align-items:center; gap:12px; font-size:13.5px; color:rgba(255,255,255,.92); }
+  .auth-trust-item .icon { width:34px; height:34px; border-radius:9px; background:rgba(255,255,255,.1); display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+  .auth-brand-stats { display:flex; gap:28px; margin-top:40px; padding-top:28px; border-top:1px solid rgba(255,255,255,.14); }
+  .auth-brand-stat-val { font-family:'Fraunces',serif; font-weight:800; font-size:22px; }
+  .auth-brand-stat-label { font-size:11px; color:rgba(255,255,255,.6); text-transform:uppercase; letter-spacing:1px; margin-top:2px; }
+
+  .auth-form-panel { flex:1; min-width:0; background:var(--white); display:flex; align-items:center; }
+  .auth-form-panel .auth-card { box-shadow:none; max-width:none; width:100%; border-radius:0; }
+
+  @media (max-width:820px) {
+    .auth-brand-panel { display:none; }
+    .auth-split { max-width:460px; border-radius:16px; }
+  }
   .auth-card { background:var(--white); border-radius:14px; max-width:420px; width:100%; padding:34px 32px; box-shadow:0 24px 80px rgba(0,0,0,.3); }
   .auth-card-title { font-family:'Fraunces',serif; font-weight:800; font-size:22px; color:var(--navy); margin-bottom:4px; text-align:center; }
   .auth-card-sub { text-align:center; color:var(--slate); font-size:13px; margin-bottom:22px; }
@@ -414,7 +454,29 @@
   .auth-divider::before, .auth-divider::after { content:''; flex:1; height:1px; background:var(--border); }
   .oauth-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; border:1.5px solid var(--border); border-radius:7px; padding:11px; font-size:13px; font-weight:600; color:var(--text); background:#fff; cursor:pointer; margin-bottom:10px; font-family:'Inter',sans-serif; }
   .oauth-btn:hover { border-color:var(--teal); }
-  .auth-submit { width:100%; background:var(--navy); color:#fff; border:none; border-radius:8px; padding:14px; font-family:'Fraunces',serif; font-weight:700; font-size:15px; cursor:pointer; margin-top:4px; }
+  .auth-submit { width:100%; background:var(--navy); color:#fff; border:none; border-radius:8px; padding:14px; font-family:'Fraunces',serif; font-weight:700; font-size:15px; cursor:pointer; margin-top:4px; transition:background .15s, transform .1s; }
+  .auth-submit:hover:not(:disabled) { background:#0F3A66; }
+  .auth-submit:active:not(:disabled) { transform:scale(.99); }
+  .auth-submit:disabled { opacity:.75; cursor:default; }
+  .btn-spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%; vertical-align:-2px; margin-right:8px; animation:btnSpin .7s linear infinite; }
+  @keyframes btnSpin { to { transform:rotate(360deg); } }
+
+  /* Password field: a real show/hide toggle (standard practice — typing a
+     password blind is the #1 cause of failed signup attempts) and, only
+     during signup, a live strength meter reflecting the exact same rule
+     the server actually enforces (9+ chars, 6+ numbers, 2+ letters, 1+
+     symbol) — not a generic "weak/strong" guess disconnected from what
+     will actually be accepted. */
+  .password-field-wrap { position:relative; }
+  .password-toggle-btn {
+    position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none;
+    cursor:pointer; font-size:16px; color:var(--slate); padding:4px; line-height:1; opacity:.65;
+  }
+  .password-toggle-btn:hover { opacity:1; }
+  .password-strength-meter { display:none; margin-top:8px; }
+  .password-strength-bar-track { display:flex; gap:4px; margin-bottom:6px; }
+  .password-strength-bar-seg { height:4px; flex:1; border-radius:2px; background:var(--border); transition:background .2s ease; }
+  .password-strength-label { font-size:11.5px; color:var(--slate); }
   .auth-submit:hover { background:var(--teal); color:var(--navy); }
   .auth-foot { text-align:center; font-size:12px; color:var(--slate); margin-top:16px; }
   .auth-foot a { color:var(--teal); font-weight:600; cursor:pointer; }
@@ -1073,6 +1135,26 @@
   <div class="auth-wrap">
     <div style="display:flex;flex-direction:column;align-items:center;">
       <div class="profile-back" onclick="goHome()" style="align-self:flex-start;margin-bottom:14px;color:rgba(255,255,255,.7);">← Back to Home</div>
+      <div class="auth-split">
+      <div class="auth-brand-panel">
+        <div class="auth-brand-content">
+          <div class="auth-brand-wordmark">✦ Taskora</div>
+          <div class="auth-brand-headline">Local services shouldn't require a leap of faith.</div>
+          <div class="auth-brand-sub">Every pro is identity-verified. Every job runs on an auto-generated contract with funds held in escrow until you're satisfied.</div>
+          <div class="auth-trust-list">
+            <div class="auth-trust-item"><span class="icon">🪪</span> Identity verified, every pro</div>
+            <div class="auth-trust-item"><span class="icon">🔒</span> Escrow-protected payments</div>
+            <div class="auth-trust-item"><span class="icon">📜</span> Auto-generated contracts</div>
+            <div class="auth-trust-item"><span class="icon">🛡️</span> Automated fraud screening</div>
+          </div>
+          <div class="auth-brand-stats">
+            <div><div class="auth-brand-stat-val" id="auth-brand-stat-pros">—</div><div class="auth-brand-stat-label">Verified Pros</div></div>
+            <div><div class="auth-brand-stat-val" id="auth-brand-stat-jobs">—</div><div class="auth-brand-stat-label">Jobs Done</div></div>
+            <div><div class="auth-brand-stat-val" id="auth-brand-stat-rating">—</div><div class="auth-brand-stat-label">Avg Rating</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="auth-form-panel">
       <div class="auth-card">
       <div id="auth-main-form">
       <div class="auth-card-title" id="auth-title">Welcome to Taskora</div>
@@ -1162,10 +1244,22 @@
       </div>
       <div class="form-group">
         <label class="form-label">Password</label>
-        <input class="form-input" type="password" id="auth-password"/>
+        <div class="password-field-wrap">
+          <input class="form-input" type="password" id="auth-password" style="padding-right:40px;" oninput="updatePasswordStrength(this.value)"/>
+          <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility()" tabindex="-1" id="password-toggle-icon">👁️</button>
+        </div>
+        <div class="password-strength-meter" id="password-strength-meter">
+          <div class="password-strength-bar-track">
+            <div class="password-strength-bar-seg" id="strength-seg-0"></div>
+            <div class="password-strength-bar-seg" id="strength-seg-1"></div>
+            <div class="password-strength-bar-seg" id="strength-seg-2"></div>
+            <div class="password-strength-bar-seg" id="strength-seg-3"></div>
+          </div>
+          <div class="password-strength-label" id="password-strength-label">9+ characters, 6+ numbers, 2+ letters, 1+ symbol</div>
+        </div>
       </div>
       <div class="auth-foot" id="auth-forgot-link" style="text-align:right;margin-top:-10px;margin-bottom:14px;"><a onclick="showForgotPassword()">Forgot password?</a></div>
-      <button class="auth-submit" onclick="mockAuth()" id="auth-submit-btn">Sign In</button>
+      <button class="auth-submit" onclick="handleAuthSubmit()" id="auth-submit-btn">Sign In</button>
       <div class="auth-foot" id="auth-foot">New to Taskora? <a onclick="setAuthMode('signup')">Create an account</a></div>
       <div class="auth-foot" id="auth-demo-hint" style="margin-top:2px;color:var(--muted); line-height:1.7;">
         Test accounts (password: <code>taskora123</code>):<br/>
@@ -1207,6 +1301,8 @@
         <button class="auth-submit" onclick="submitLogin2FA()">Verify & Sign In</button>
         <div class="auth-foot"><a onclick="cancelLogin2FA()">Back to sign in</a></div>
       </div>
+    </div>
+    </div>
     </div>
     </div>
   </div>
@@ -2350,6 +2446,85 @@ function showAuth(mode) {
   renderNavbar('navbar-auth', 'auth');
   setAuthMode(mode);
   loadGeoData();
+  loadAuthBrandStats();
+}
+
+// The brand panel's stats are the exact same real, live numbers already
+// shown in the homepage hero — fetched fresh each time this screen opens
+// rather than duplicated/hardcoded, so they're never stale or fabricated.
+async function loadAuthBrandStats() {
+  const els = {
+    pros: document.getElementById('auth-brand-stat-pros'),
+    jobs: document.getElementById('auth-brand-stat-jobs'),
+    rating: document.getElementById('auth-brand-stat-rating'),
+  };
+  if (!els.pros) return;
+  if (!BACKEND_AVAILABLE) { els.pros.textContent = '—'; els.jobs.textContent = '—'; els.rating.textContent = '—'; return; }
+  try {
+    const stats = await apiFetch('GET', '/platform-stats');
+    els.pros.textContent = stats.verifiedProsCount.toLocaleString();
+    els.jobs.textContent = stats.jobsCompletedCount.toLocaleString();
+    els.rating.textContent = stats.averageRating ? `${Number(stats.averageRating).toFixed(1)}★` : 'New';
+  } catch (e) { console.warn('Could not load auth screen stats', e); }
+}
+
+// Standard show/hide toggle — typing a password blind is the single
+// biggest cause of failed signup attempts (a typo nobody can see until
+// the next screen rejects it).
+function togglePasswordVisibility() {
+  const input = document.getElementById('auth-password');
+  const icon = document.getElementById('password-toggle-icon');
+  const showing = input.type === 'text';
+  input.type = showing ? 'password' : 'text';
+  icon.textContent = showing ? '👁️' : '🙈';
+}
+
+// Reflects the EXACT rule the server actually enforces (9+ characters,
+// 6+ numbers, 2+ letters, 1+ symbol) — not a generic "weak/medium/strong"
+// guess disconnected from what will actually be accepted at submit time.
+// Only shown during signup; login doesn't need or want this.
+function updatePasswordStrength(value) {
+  const meter = document.getElementById('password-strength-meter');
+  if (!meter) return;
+  if (authState.mode !== 'signup' || !value) { meter.style.display = 'none'; return; }
+  meter.style.display = 'block';
+
+  const hasLength = value.length >= 9;
+  const numbers = (value.match(/[0-9]/g) || []).length >= 6;
+  const letters = (value.match(/[a-zA-Z]/g) || []).length >= 2;
+  const symbols = (value.match(/[^a-zA-Z0-9]/g) || []).length >= 1;
+  const metCount = [hasLength, numbers, letters, symbols].filter(Boolean).length;
+
+  const colors = ['#C0392B', '#C0392B', '#B08A3E', '#2E8C6F']; // 1-2 met: red, 3 met: gold, 4 met: green
+  const color = metCount === 0 ? 'var(--border)' : colors[metCount - 1];
+  for (let i = 0; i < 4; i++) {
+    document.getElementById(`strength-seg-${i}`).style.background = i < metCount ? color : 'var(--border)';
+  }
+  const label = document.getElementById('password-strength-label');
+  label.textContent = metCount === 4
+    ? '✓ Meets every requirement'
+    : '9+ characters, 6+ numbers, 2+ letters, 1+ symbol';
+  label.style.color = metCount === 4 ? '#2E8C6F' : 'var(--slate)';
+}
+
+// A real loading state on submit — disables the button and shows a
+// spinner for the duration of the actual network call, rather than
+// leaving it clickable while a request is in flight (which is exactly
+// how a double-submission happens on a slow connection). This wraps
+// mockAuth() without changing a single line of its own logic — every
+// existing validation, error, and success path inside it runs exactly as
+// before; this just brackets the whole call with a visible busy state.
+async function handleAuthSubmit() {
+  const btn = document.getElementById('auth-submit-btn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="btn-spinner"></span>${authState.mode === 'login' ? 'Signing in…' : 'Creating account…'}`;
+  try {
+    await mockAuth();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 let inviteCheckTimeout = null;
@@ -2467,6 +2642,7 @@ function setAuthMode(mode) {
   document.getElementById('auth-foot').innerHTML = mode === 'login'
     ? `New to Taskora? <a onclick="setAuthMode('signup')">Create an account</a>`
     : `Already have an account? <a onclick="setAuthMode('login')">Sign in</a>`;
+  updatePasswordStrength(document.getElementById('auth-password').value);
 }
 
 function setAuthRole(role) {

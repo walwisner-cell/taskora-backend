@@ -30,4 +30,40 @@ if (usingConfiguredDir) {
   console.log(`⚠️  UPLOADS_DIR is not set — portfolio uploads will be saved to ${UPLOADS_DIR}, which will NOT survive a redeploy or restart on most hosting platforms. Set UPLOADS_DIR to a path on your persistent disk (e.g. /var/data/uploads on Render) for uploads to actually stick around.`);
 }
 
-module.exports = { UPLOADS_DIR };
+module.exports = { UPLOADS_DIR, verifyImageMagicBytes };
+
+// Every upload endpoint in this app validates a file by its CLIENT-DECLARED
+// mimetype (from the multipart form field) — which is exactly what an
+// attacker sending the request controls directly, not something the
+// browser reliably enforces. A file renamed to end in .png with a manually
+// set Content-Type: image/png header would sail through that check
+// regardless of what bytes it actually contains. This reads the first few
+// real bytes of the file ALREADY SAVED to disk and confirms they match a
+// genuine signature for that image format — the same technique real image
+// libraries use to identify a file, not trusting anything the uploader
+// claimed about it. Called after multer saves the file; the route deletes
+// it and rejects the upload if this returns false.
+function verifyImageMagicBytes(filePath, declaredMimetype) {
+  let buf;
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    buf = Buffer.alloc(12);
+    fs.readSync(fd, buf, 0, 12, 0);
+    fs.closeSync(fd);
+  } catch (e) {
+    return false; // couldn't even read the file — treat as invalid, not as a pass
+  }
+
+  const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+  const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF;
+  const isGif = buf.toString('ascii', 0, 6) === 'GIF87a' || buf.toString('ascii', 0, 6) === 'GIF89a';
+  const isWebp = buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP';
+
+  switch (declaredMimetype) {
+    case 'image/png': return isPng;
+    case 'image/jpeg': return isJpeg;
+    case 'image/gif': return isGif;
+    case 'image/webp': return isWebp;
+    default: return false;
+  }
+}

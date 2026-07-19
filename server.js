@@ -37,9 +37,21 @@ const { UPLOADS_DIR } = require('./src/uploads');
   }
 })();
 
+const helmet = require('helmet');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Standard security headers this app had none of before: clickjacking
+// protection (X-Frame-Options), MIME-sniffing protection
+// (X-Content-Type-Options), HSTS, and a few others helmet sets by
+// default. Content-Security-Policy is deliberately turned off here — this
+// app's frontend is a single HTML file with inline <script>/<style>
+// blocks, and helmet's default CSP disallows inline-anything, which would
+// break the entire page. The real defense against injected content is
+// the output-escaping fix already in place; this is additional
+// defense-in-depth for the rest, not a replacement for that.
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
