@@ -30,6 +30,50 @@ function fileFilter(req, file, cb) {
 
 const upload = multer({ storage, fileFilter, limits: { fileSize: MAX_FILE_SIZE_BYTES } });
 
+// ── JOB/BOOKING PHOTOS ───────────────────────────────────────────────────
+// Lets a customer show a provider what the job actually looks like before
+// that provider decides whether to accept — the same real-world pattern
+// TaskRabbit, Thumbtack, and Handy all use. These are NOT public: they
+// attach to one specific job posting or booking and are only ever
+// returned by the already-scoped endpoints that show that job/contract to
+// its actual customer, matched/booked provider, or an admin — never a
+// public listing, never another customer's or provider's view. See the
+// privacy note surfaced in the upload UI itself, not just buried in a
+// terms-of-service page nobody reads.
+const MAX_JOB_PHOTOS = 5;
+const jobPhotoStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `jobphoto_${req.user.sub}_${nanoid(12)}${ext}`);
+  },
+});
+const uploadJobPhoto = multer({ storage: jobPhotoStorage, fileFilter, limits: { fileSize: MAX_FILE_SIZE_BYTES } });
+
+// POST /api/job-photos/upload — customer only. Uploads ONE photo and
+// returns its URL; the frontend collects however many URLs (up to
+// MAX_JOB_PHOTOS) and includes them when actually posting the job or
+// creating the booking — the same "upload first, reference by URL after"
+// pattern already used for profile photos, so posting a job doesn't need
+// to also be a file-upload request.
+router.post('/job-photos/upload', requireAuth, requireRole('customer'), (req, res) => {
+  uploadJobPhoto.single('photo')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (!req.file) return res.status(400).json({ error: 'No photo was provided' });
+
+    if (!fs.existsSync(req.file.path)) {
+      console.error(`Job photo upload reported success but file is missing at ${req.file.path} — check UPLOADS_DIR points to a writable, persistent location.`);
+      return res.status(500).json({ error: 'The photo could not be saved to disk. Please try again.' });
+    }
+    if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
+    }
+
+    res.status(201).json({ url: `/uploads/${req.file.filename}` });
+  });
+});
+
 // GET /api/portfolio/mine — the logged-in provider's own photos
 router.get('/portfolio/mine', requireAuth, requireRole('provider'), async (req, res) => {
   const photos = await db.filter('portfolioPhotos', p => p.providerId === req.user.sub);

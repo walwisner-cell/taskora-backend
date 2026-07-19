@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   description  TEXT NOT NULL,
   budget       TEXT,
   pay_currency TEXT DEFAULT 'usd',
+  photo_urls   JSONB,
   status       TEXT NOT NULL DEFAULT 'open',
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -107,6 +108,7 @@ CREATE TABLE IF NOT EXISTS contracts (
   amount         NUMERIC(10,2) NOT NULL,
   pay_currency   TEXT DEFAULT 'usd',
   materials_advance NUMERIC(10,2) DEFAULT 0,
+  photo_urls     JSONB,
   status         TEXT NOT NULL DEFAULT 'active',
   signed_at      TEXT,
   provider_response_deadline TIMESTAMPTZ,
@@ -492,6 +494,8 @@ END $$;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS accepting_bookings BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS provider_response_deadline TIMESTAMPTZ;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS photo_urls JSONB;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS photo_urls JSONB;
 
 -- General-purpose key/value settings, first used for the provider
 -- booking-confirmation window (see src/platform-settings.js). Absence of

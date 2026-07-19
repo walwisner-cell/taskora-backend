@@ -33,9 +33,9 @@ const TABLES = {
   categories: { table: 'categories', columns: ['id','name','icon','active','response_window_override_hours'] },
   countries: { table: 'countries', columns: ['id','name','status'] },
   cities: { table: 'cities', columns: ['id','name','country','admin_id'] },
-  jobs: { table: 'jobs', columns: ['id','customer_id','category','description','budget','pay_currency','status','created_at'] },
+  jobs: { table: 'jobs', columns: ['id','customer_id','category','description','budget','pay_currency','photo_urls','status','created_at'] },
   matches: { table: 'matches', columns: ['id','job_id','provider_id','customer_id','score','same_community','status','created_at'] },
-  contracts: { table: 'contracts', columns: ['id','booking_number','customer_id','provider_id','job_id','service','date','time','address','amount','pay_currency','status','signed_at','materials_advance','provider_response_deadline','created_at'] },
+  contracts: { table: 'contracts', columns: ['id','booking_number','customer_id','provider_id','job_id','service','date','time','address','amount','pay_currency','status','signed_at','materials_advance','photo_urls','provider_response_deadline','created_at'] },
   platformSettings: { table: 'platform_settings', columns: ['id','key','value','updated_at'] },
   homepageImages: { table: 'homepage_images', columns: ['id','slot','filename','url','created_at','updated_at'] },
   categoryImages: { table: 'category_images', columns: ['id','category_id','filename','url','created_at','updated_at'] },
@@ -69,7 +69,7 @@ const TABLES = {
 // array literal syntax ({a,b,c}) by default, which is NOT valid JSON — these
 // need an explicit JSON.stringify() before going out, and come back already
 // parsed into JS objects/arrays by `pg` automatically on the way in.
-const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs', 'payload', 'line_items', 'link_to', 'value']);
+const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs', 'payload', 'line_items', 'link_to', 'value', 'photo_urls']);
 
 // Postgres's NUMERIC type comes back from the pg driver as a STRING, not a
 // JS number, specifically to avoid silent floating-point precision loss —

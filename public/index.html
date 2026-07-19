@@ -1095,6 +1095,7 @@
         <label class="form-label">Address</label>
         <input class="form-input" type="text" placeholder="Your address in Atlanta, GA" id="job-address"/>
       </div>
+      <div id="booking-photo-upload-container"></div>
       <div class="form-group">
         <label class="form-label">Materials Advance <small style="font-weight:400;color:var(--slate);">optional</small></label>
         <input class="form-input" type="number" min="0" placeholder="e.g. 50 — released to your pro immediately, not held until completion" id="job-materials-advance"/>
@@ -1129,21 +1130,9 @@
       <p>Describe what you need — we'll find your best-matched pros nearby</p>
     </div>
     <div class="modal-body" id="postjob-body">
-      <div class="form-group">
-        <label class="form-label">Category</label>
-        <select class="form-input form-select" id="pj-category">
-          <option>Plumbing</option><option>Cleaning</option><option>Tutoring</option><option>Electrical</option>
-          <option>Moving</option><option>Painting</option><option>Landscaping</option><option>Fitness</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">What do you need done?</label>
-        <input class="form-input" type="text" placeholder="e.g. Fix a leaking kitchen pipe" id="pj-desc"/>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Budget Range</label>
-        <input class="form-input" type="text" placeholder="e.g. $80–150" id="pj-budget"/>
-      </div>
+      <!-- Populated live by postJobFormHTML() the moment openPostJobModal()
+           runs — never shown empty, since this modal can only ever become
+           visible via that function, which always fills this in first. -->
     </div>
     <div class="modal-footer">
       <button class="confirm-btn" onclick="runAIMatch()">🤖 Find My Matches</button>
@@ -3975,10 +3964,106 @@ function postJobFormHTML() {
   <div class="form-group">
     <label class="form-label">Budget Range</label>
     <input class="form-input" type="text" placeholder="e.g. $80–150" id="pj-budget"/>
+  </div>
+  ${jobPhotoUploadHTML('pj')}`;
+}
+
+// Shared by both the Post a Job modal and the direct booking form — same
+// upload mechanism, same privacy disclosure, just a different state array
+// and container prefix so the two don't collide with each other.
+// Uses the same dropzone treatment as Portfolio uploads elsewhere in this
+// app, and is explicit about what actually belongs here (a real photo of
+// the problem or space) since nothing here can verify content, only file
+// type — an unrelated screenshot or unrelated photo will pass validation
+// exactly the same as a genuine one. Being clear about what to upload is
+// the only real lever available for that.
+function jobPhotoUploadHTML(prefix) {
+  const label = prefix === 'pj' ? 'What you need done' : 'the job';
+  return `
+  <div class="form-group">
+    <label class="form-label">Photos of ${label} <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
+    <label class="upload-box" for="${prefix}-photo-input" style="cursor:pointer;display:block;padding:20px;"
+      ondragover="event.preventDefault();this.style.borderColor='var(--teal)';"
+      ondragleave="this.style.borderColor='var(--border)';"
+      ondrop="event.preventDefault();this.style.borderColor='var(--border)';handleJobPhotoSelect({target:{files:event.dataTransfer.files, value:''}}, '${prefix}');">
+      📷 Add Photos <span style="color:var(--muted);font-weight:400;">— tap to choose, or drag and drop</span>
+    </label>
+    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple id="${prefix}-photo-input" style="display:none;" onchange="handleJobPhotoSelect(event, '${prefix}')"/>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:-8px;margin-bottom:10px;line-height:1.5;">
+      A clear photo of the actual problem or space — e.g. the leaking pipe, the room to paint, the yard to clear. Not a screenshot or an unrelated image; it's what your pro sees before deciding whether to take the job. JPEG, PNG, WEBP, or GIF · up to 5MB each · up to 5 photos.
+    </div>
+    <div style="font-size:11.5px;color:var(--slate);margin-bottom:10px;">
+      🔒 Only shared with the pro you book${prefix === 'pj' ? ' or pros matched to your job' : ''} — never made public or shown to anyone else.
+    </div>
+    <div id="${prefix}-photo-previews" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
   </div>`;
 }
 
+// Shared state for in-progress photo uploads, keyed by which form is
+// using them ('pj' for Post a Job, 'booking' for a direct booking) so the
+// two never collide with each other.
+const JOB_PHOTO_STATE = { pj: [], booking: [] };
+
+async function handleJobPhotoSelect(event, prefix) {
+  const files = Array.from(event.target.files || []);
+  event.target.value = ''; // allow re-selecting the same file again later
+  const existing = JOB_PHOTO_STATE[prefix] || (JOB_PHOTO_STATE[prefix] = []);
+  const room = 5 - existing.length;
+  if (room <= 0) return showToast('You can attach up to 5 photos');
+  for (const file of files.slice(0, room)) {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) { showToast(`${file.name} isn't a supported image type — JPEG, PNG, WEBP, or GIF only`); continue; }
+    if (file.size > 5 * 1024 * 1024) { showToast(`${file.name} is too large — 5MB max`); continue; }
+    const placeholder = { url: null, uploading: true, previewSrc: URL.createObjectURL(file) };
+    existing.push(placeholder);
+    renderJobPhotoPreviews(prefix);
+    if (!BACKEND_AVAILABLE) { placeholder.uploading = false; placeholder.url = placeholder.previewSrc; renderJobPhotoPreviews(prefix); continue; }
+    try {
+      const formData = new FormData();
+      formData.append('photo', file);
+      const res = await fetch(API_BASE + '/job-photos/upload', {
+        method: 'POST',
+        headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      placeholder.url = data.url;
+      placeholder.uploading = false;
+    } catch (e) {
+      showToast(e.message || `Could not upload ${file.name}`);
+      const idx = existing.indexOf(placeholder);
+      if (idx > -1) existing.splice(idx, 1);
+    }
+    renderJobPhotoPreviews(prefix);
+  }
+}
+
+function renderJobPhotoPreviews(prefix) {
+  const container = document.getElementById(`${prefix}-photo-previews`);
+  if (!container) return;
+  const photos = JOB_PHOTO_STATE[prefix] || [];
+  container.innerHTML = photos.map((p, i) => `
+    <div style="position:relative;width:64px;height:64px;">
+      <img src="${escapeHtml(p.url || p.previewSrc)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;${p.uploading ? 'opacity:.5;' : ''}"/>
+      ${p.uploading ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span class="btn-spinner" style="border-top-color:var(--navy);border-color:rgba(0,0,0,.2);"></span></div>` : `<button onclick="removeJobPhoto('${prefix}', ${i})" style="position:absolute;top:-6px;right:-6px;background:var(--navy);color:#fff;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:11px;line-height:1;">✕</button>`}
+    </div>`).join('');
+}
+
+function removeJobPhoto(prefix, index) {
+  const photos = JOB_PHOTO_STATE[prefix] || [];
+  photos.splice(index, 1);
+  renderJobPhotoPreviews(prefix);
+}
+
+// Real, uploaded photo URLs only — a still-uploading placeholder is never
+// included, so a slow upload can't accidentally submit a broken/blob URL.
+function getUploadedJobPhotoUrls(prefix) {
+  return (JOB_PHOTO_STATE[prefix] || []).filter(p => p.url && !p.uploading).map(p => p.url);
+}
+
 function openPostJobModal() {
+  JOB_PHOTO_STATE.pj = [];
   document.getElementById('postjob-body').innerHTML = postJobFormHTML();
   const footer = document.querySelector('#postjob-modal .modal-footer');
   footer.innerHTML = `<button class="confirm-btn" onclick="runAIMatch()">🤖 Find My Matches</button>`;
@@ -3998,6 +4083,7 @@ async function runAIMatch() {
   if (isCustom && cat.length < 2) return showToast('Tell us what kind of service you need');
   if (!desc || desc.length < 5) return showToast('Describe the job in at least 5 characters');
   if (budget && budget.length > 40) return showToast('Budget must be under 40 characters');
+  const photoUrls = getUploadedJobPhotoUrls('pj');
 
   const body = document.getElementById('postjob-body');
   body.innerHTML = `<div style="text-align:center;padding:40px 10px;color:var(--slate);font-size:13px;">🤖 Scanning verified pros for the best match…</div>`;
@@ -4009,7 +4095,7 @@ async function runAIMatch() {
   let matchScope = 'city';
   if (BACKEND_AVAILABLE && AUTH.token && AUTH.user && AUTH.user.role === 'customer') {
     try {
-      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, budget, payCurrency: 'local' });
+      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, budget, payCurrency: 'local', photoUrls });
       realCallSucceeded = true;
       isKnownCategory = result.isKnownCategory !== false;
       matchScope = result.matchScope || 'city';
@@ -4113,8 +4199,9 @@ async function loadProviderData() {
     providerData.matches = matches.map(m => ({
       id: m.id, customer: m.customerName || 'Customer', service: m.job ? m.job.description : 'Service request',
       budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: (Math.round(Math.random() * 40) / 10) + ' mi',
+      photoUrls: (m.job && m.job.photoUrls) || [],
     }));
-    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline }));
+    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [] }));
     providerData.payouts = payouts;
     providerData.portfolioPhotos = photos;
   } catch (e) { console.warn('Falling back to demo provider data', e); }
@@ -4240,9 +4327,14 @@ const PROVIDER_SECTIONS = {
   portfolio: () => `
     <div class="dash-header"><div><div class="dash-title">Portfolio</div><div class="dash-sub">Showcase past work to win more matches</div></div></div>
     <div class="panel">
-      <label class="upload-box" for="portfolio-file-input" style="cursor:pointer;display:block;">📷 Upload Portfolio Photo</label>
-      <input type="file" id="portfolio-file-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none;" onchange="uploadPortfolioPhoto(this.files[0])"/>
-      <div style="font-size:11.5px;color:var(--muted);margin-top:8px;">JPEG, PNG, WEBP, or GIF · up to 5MB · up to 12 photos</div>
+      <label class="upload-box" for="portfolio-file-input" style="cursor:pointer;display:block;"
+        ondragover="event.preventDefault();this.style.borderColor='var(--teal)';"
+        ondragleave="this.style.borderColor='var(--border)';"
+        ondrop="event.preventDefault();this.style.borderColor='var(--border)';selectPortfolioPhoto(event.dataTransfer.files[0]);">
+        📷 Upload Portfolio Photo <span style="color:var(--muted);font-weight:400;">— or drag and drop</span>
+      </label>
+      <input type="file" id="portfolio-file-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none;" onchange="selectPortfolioPhoto(this.files[0])"/>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:8px;">A real photo of your actual completed work — customers judge you by these. Not a screenshot, logo, or stock photo. JPEG, PNG, WEBP, or GIF · up to 5MB · up to 12 photos.</div>
       <div id="portfolio-grid-wrap" style="margin-top:16px;">${portfolioGridHTML(providerData.portfolioPhotos || [])}</div>
     </div>`,
   verification: () => verificationHTML('provider', providerData.verificationStatus || 'none'),
@@ -4928,10 +5020,34 @@ function clearAdminDisputesFilter() {
   filterAdminDisputes();
 }
 
+// A simple lightbox for viewing a job's attached photos full-size — used
+// by both the AI-matched job flow and direct bookings, wherever a
+// provider is deciding whether to accept. Photo URLs are already escaped
+// (this only ever receives an array already validated server-side as our
+// own uploaded job-photo paths), so building the img tags directly here
+// is safe.
+function openJobPhotoViewer(photoUrls) {
+  if (!photoUrls || !photoUrls.length) return;
+  const modalHtml = `
+    <div class="modal-overlay open" id="job-photo-viewer-overlay" onclick="if(event.target===this)document.getElementById('job-photo-viewer-overlay').remove()">
+      <div class="modal" style="max-width:600px;">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('job-photo-viewer-overlay').remove()">✕</button>
+          <h3>Job Photos</h3>
+          <p>What the customer shared for this job</p>
+        </div>
+        <div class="modal-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;">
+          ${photoUrls.map(url => `<img src="${escapeHtml(url)}" alt="Job photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;" onclick="window.open('${escapeHtml(url)}','_blank')"/>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
 function matchesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No pending matches right now.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Budget</th><th>Match Score</th><th>Distance</th><th>Action</th></tr></thead><tbody>
-  ${list.map(m => `<tr><td>${m.customer}</td><td>${m.service}</td><td>${m.budget}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td>
+  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick="openJobPhotoViewer(${JSON.stringify(m.photoUrls)})" style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📷 ${m.photoUrls.length} photo${m.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td>
   <td class="row-actions"><button class="btn-sm btn-sm-primary" onclick="respondToMatch('${m.id}','accept')">Accept</button><button class="btn-sm btn-sm-outline" onclick="respondToMatch('${m.id}','decline')">Decline</button></td></tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -4950,7 +5066,7 @@ function contractsTable(list) {
     } else if (c.status === 'expired') {
       actions = `<span style="font-size:12px;color:var(--slate);">You didn't respond in time — automatically cancelled</span>`;
     }
-    return `<tr><td>${c.bookingNumber || c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${c.signed || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
+    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${c.photoUrls && c.photoUrls.length ? ` <a onclick="openJobPhotoViewer(${JSON.stringify(c.photoUrls)})" style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📷 ${c.photoUrls.length} photo${c.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
   }).join('')}
   </tbody></table></div>`;
 }
@@ -5023,6 +5139,54 @@ function portfolioGridHTML(photos) {
       <img src="${p.url}" alt="Portfolio photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block;"/>
       <button onclick="deletePortfolioPhoto('${p.id}')" title="Remove" style="position:absolute;top:6px;right:6px;background:rgba(18,22,31,.75);color:#fff;border:none;border-radius:50%;width:26px;height:26px;cursor:pointer;font-size:13px;line-height:1;">✕</button>
     </div>`).join('')}</div>`;
+}
+
+// Selecting a file no longer uploads it immediately — it shows a real
+// preview first ("is this actually the right photo?") with an explicit
+// Use / Choose Different step. Uploading instantly on selection, with no
+// chance to double-check, is exactly how an unrelated screenshot ends up
+// saved as a portfolio photo.
+function selectPortfolioPhoto(file) {
+  if (!file) return;
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowed.includes(file.type)) return showToast('Only JPEG, PNG, WEBP, or GIF images are allowed');
+  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large — 5MB max');
+  const reader = new FileReader();
+  reader.onload = () => showPortfolioPhotoPreview(reader.result, file);
+  reader.readAsDataURL(file);
+}
+
+function showPortfolioPhotoPreview(dataUrl, file) {
+  const modalHtml = `
+    <div class="modal-overlay open" id="portfolio-preview-overlay">
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('portfolio-preview-overlay').remove()">✕</button>
+          <h3>Use this photo?</h3>
+          <p>Make sure it's a real photo of your completed work</p>
+        </div>
+        <div class="modal-body">
+          <img src="${dataUrl}" style="width:100%;border-radius:10px;display:block;"/>
+        </div>
+        <div class="modal-footer" style="display:flex;gap:10px;">
+          <button class="btn-sm btn-sm-outline" style="flex:1;" onclick="document.getElementById('portfolio-preview-overlay').remove();document.getElementById('portfolio-file-input').value='';">Choose Different</button>
+          <button class="confirm-btn" style="flex:1;" id="portfolio-confirm-upload-btn" onclick="confirmPortfolioPhotoUpload()">Use This Photo</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  window.__pendingPortfolioFile = file;
+}
+
+async function confirmPortfolioPhotoUpload() {
+  const file = window.__pendingPortfolioFile;
+  const btn = document.getElementById('portfolio-confirm-upload-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="btn-spinner" style="border-top-color:#fff;"></span>Uploading…';
+  await uploadPortfolioPhoto(file);
+  const overlay = document.getElementById('portfolio-preview-overlay');
+  if (overlay) overlay.remove();
+  window.__pendingPortfolioFile = null;
 }
 
 async function uploadPortfolioPhoto(file) {
@@ -6961,6 +7125,9 @@ async function openBooking(id) {
   const availability = currentPro.availability && currentPro.availability.length ? currentPro.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'];
   const isNegotiable = currentPro.pricingModel === 'negotiable';
 
+  JOB_PHOTO_STATE.booking = [];
+  document.getElementById('booking-photo-upload-container').innerHTML = jobPhotoUploadHTML('booking');
+
   document.getElementById('modal-pro-name').textContent = 'Book ' + currentPro.name;
   document.getElementById('modal-pro-role').textContent = currentPro.role + (isNegotiable ? ' · Mutual Agreement' : ' · $' + currentPro.price + '/hr');
 
@@ -7090,13 +7257,14 @@ async function confirmBooking() {
   const materialsAdvance = materialsAdvanceInput ? parseFloat(materialsAdvanceInput) : 0;
   if (materialsAdvance < 0) return showToast('Materials advance can\'t be negative');
   if (materialsAdvance > total) return showToast('The materials advance can\'t be more than the total job amount');
+  const photoUrls = getUploadedJobPhotoUrls('booking');
   let contractId = 'CT-' + Math.floor(1000 + Math.random() * 9000);
   let isPendingOffer = false;
 
   if (BACKEND_AVAILABLE) {
     try {
       const { contract } = await apiFetch('POST', '/contracts', {
-        providerId: currentPro.id, service: desc, date, time, address: addr, amount: total, payCurrency: selectedPayCurrency, materialsAdvance,
+        providerId: currentPro.id, service: desc, date, time, address: addr, amount: total, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls,
       });
       contractId = contract.bookingNumber || contract.id;
       isPendingOffer = contract.status === 'pending_agreement';

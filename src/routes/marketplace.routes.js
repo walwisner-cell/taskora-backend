@@ -91,6 +91,26 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   return escrow;
 }
 
+// Strictly validates that every photo URL a customer submits is actually
+// one of OUR OWN uploaded job photos (from POST /job-photos/upload) — not
+// an arbitrary external URL. Without this, someone could submit any URL
+// they want (a tracking pixel, a link to unrelated/inappropriate content)
+// and have it displayed to a real provider as if it were a legitimate
+// part of their job photos. Returns the cleaned array, or null if
+// anything in it doesn't pass.
+const MAX_JOB_PHOTOS_PER_POST = 5;
+function validateJobPhotoUrls(photoUrls) {
+  if (photoUrls === undefined || photoUrls === null) return [];
+  if (!Array.isArray(photoUrls)) return null;
+  if (photoUrls.length > MAX_JOB_PHOTOS_PER_POST) return null;
+  const cleaned = [];
+  for (const url of photoUrls) {
+    if (typeof url !== 'string' || !/^\/uploads\/jobphoto_[\w-]+\.(jpe?g|png|webp|gif)$/i.test(url)) return null;
+    cleaned.push(url);
+  }
+  return cleaned;
+}
+
 function publicProvider(u) {
   return {
     id: u.id, name: u.name, initials: u.initials, role: u.providerRole, category: u.category,
@@ -467,12 +487,14 @@ router.get('/providers/:id', async (req, res) => {
 
 // POST /api/jobs — customer posts a job, triggers AI matching immediately
 router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
-  const { category, description, budget, payCurrency } = req.body || {};
+  const { category, description, budget, payCurrency, photoUrls } = req.body || {};
   const errors = validate([
     ['category', isNonEmptyString(category, { min: 2, max: 60 }), 'Category is required'],
     ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  const validPhotoUrls = validateJobPhotoUrls(photoUrls);
+  if (validPhotoUrls === null) return res.status(400).json({ error: 'Invalid photo — please re-upload your photos and try again' });
 
   const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
   const isKnownCategory = activeCategories.includes(category);
@@ -494,6 +516,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
     // provider accepts the match, but the customer's currency preference is
     // set at the moment they post, not re-asked for later.
     payCurrency: payCurrency === 'local' ? 'local' : 'usd',
+    photoUrls: validPhotoUrls,
     status: 'open',
     createdAt: new Date().toISOString(),
   };
@@ -647,7 +670,7 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async 
 
 // POST /api/contracts — direct booking of a specific provider (skips matching)
 router.post('/contracts', requireAuth, requireRole('customer'), async (req, res) => {
-  const { providerId, service, date, time, address, amount, payCurrency, materialsAdvance } = req.body || {};
+  const { providerId, service, date, time, address, amount, payCurrency, materialsAdvance, photoUrls } = req.body || {};
   const errors = validate([
     ['providerId', isNonEmptyString(providerId), 'A provider must be selected'],
     ['service', isNonEmptyString(service, { min: 3, max: 200 }), 'Describe the service in at least 3 characters'],
@@ -665,6 +688,8 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   if (materialsAdvance && amount && materialsAdvance > amount) {
     return res.status(400).json({ error: 'The materials advance can\'t be more than the total job amount' });
   }
+  const validPhotoUrls = validateJobPhotoUrls(photoUrls);
+  if (validPhotoUrls === null) return res.status(400).json({ error: 'Invalid photo — please re-upload your photos and try again' });
 
   const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
@@ -722,6 +747,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     date, time, address: address.trim(),
     amount: amount || provider.price * 2,
     materialsAdvance: materialsAdvance || 0,
+    photoUrls: validPhotoUrls,
     status: isNegotiable ? 'pending_agreement' : 'pending_provider_confirmation',
     payCurrency: payCurrency === 'local' ? 'local' : 'usd',
     signedAt: null,
