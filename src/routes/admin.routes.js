@@ -801,11 +801,29 @@ router.post('/backfill-notification-links', requireSuperAdmin, async (req, res) 
     { match: t => t.includes('not a current category'), linkTo: { section: 'categories' } },
     { match: t => t.includes('New Custom plan sales inquiry'), linkTo: { section: 'sales' } },
     { match: t => t.includes('New advertising inquiry'), linkTo: { section: 'advertising' } },
+    { match: t => t.includes('job match:') || t.includes('new AI job matches') || t.includes('new job matches'), linkTo: { section: 'matches' } },
+    { match: t => t.includes('Escrow released —') || t.startsWith('Payout of '), linkTo: { section: 'earnings' } },
   ];
   const all = await db.all('notifications');
   let updated = 0;
   for (const n of all) {
     if (n.linkTo) continue; // already has a real destination — don't touch it
+
+    // "New message from X: ..." needs a contactId, not just a section — the
+    // notification text only ever recorded the sender's NAME, never their
+    // ID, so this is a best-effort match: find a user with that exact name
+    // and use them as the contact. Rare-but-possible duplicate names could
+    // match the wrong person; still strictly better than staying dead.
+    const messageMatch = /^New message from (.+?):/.exec(n.text || '');
+    if (messageMatch) {
+      const sender = await db.find('users', u => u.name === messageMatch[1]);
+      if (sender) {
+        await db.update('notifications', n.id, { linkTo: { section: 'messages', contactId: sender.id } });
+        updated += 1;
+      }
+      continue;
+    }
+
     const rule = patterns.find(p => p.match(n.text || ''));
     if (rule) {
       await db.update('notifications', n.id, { linkTo: rule.linkTo });

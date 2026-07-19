@@ -423,9 +423,9 @@ await db.replaceAll('verifications', [
 // ---- Notifications ------------------------------------------------------------
 await db.replaceAll('notifications', [
   { id: id('ntf'), userId: 'u_jordan', icon: '✅', text: 'Your identity verification was approved.', time: '2 hours ago', read: false, createdAt: now() },
-  { id: id('ntf'), userId: 'u_jordan', icon: '💰', text: 'Escrow released — $140 for Deep Clean job.', time: '1 day ago', read: false, createdAt: now() },
-  { id: id('ntf'), userId: 'u_jordan', icon: '💬', text: 'New message from Marcus T.', time: '2 days ago', read: true, createdAt: now() },
-  { id: id('ntf'), userId: 'u_marcus', icon: '🎯', text: 'You have 3 new AI job matches.', time: '1 hour ago', read: false, createdAt: now() },
+  { id: id('ntf'), userId: 'u_jordan', icon: '💰', text: 'Escrow released — $140 for Deep Clean job.', time: '1 day ago', read: false, linkTo: { section: 'bookings' }, createdAt: now() },
+  { id: id('ntf'), userId: 'u_jordan', icon: '💬', text: 'New message from Marcus T.', time: '2 days ago', read: true, linkTo: { section: 'messages', contactId: 'u_marcus' }, createdAt: now() },
+  { id: id('ntf'), userId: 'u_marcus', icon: '🎯', text: 'You have 3 new job matches.', time: '1 hour ago', read: false, linkTo: { section: 'matches' }, createdAt: now() },
 ]);
 
 // ---- Jobs & matches (empty at boot — created live via the Post a Job flow) ---

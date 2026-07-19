@@ -532,7 +532,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
       createdAt: new Date().toISOString(),
     };
     await db.insert('matches', match);
-    await notify(provider.id, '🎯', `New AI job match: ${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''} (${score}% fit)`, 'newMatches', { section: 'matches' });
+    await notify(provider.id, '🎯', `New job match: ${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''} (${score}% fit)`, 'newMatches', { section: 'matches' });
     matches.push({ ...match, provider: publicProvider(provider) });
   }
 
