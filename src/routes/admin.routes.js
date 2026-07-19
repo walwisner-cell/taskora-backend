@@ -1226,7 +1226,13 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
   }
   if (displayHeadline !== undefined) patch.displayHeadline = (displayHeadline || '').trim() || null;
   if (displaySubtext !== undefined) patch.displaySubtext = (displaySubtext || '').trim() || null;
-  if (displayLink !== undefined) patch.displayLink = (displayLink || '').trim() || null;
+  if (displayLink !== undefined) {
+    const trimmedLink = (displayLink || '').trim();
+    if (trimmedLink && !/^https?:\/\//i.test(trimmedLink)) {
+      return res.status(400).json({ error: 'Link must start with http:// or https://' });
+    }
+    patch.displayLink = trimmedLink || null;
+  }
 
   const updated = await db.update('advertisingInquiries', target.id, patch);
   res.json({ inquiry: updated });

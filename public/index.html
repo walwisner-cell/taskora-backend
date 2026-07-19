@@ -458,8 +458,27 @@
 
   .bar-chart { display:flex; align-items:flex-end; gap:10px; height:140px; padding-top:10px; }
   .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
-  .bar-fill { width:100%; background:linear-gradient(180deg, var(--teal), var(--navy)); border-radius:6px 6px 0 0; min-height:4px; }
+  .bar-col-clickable { cursor:pointer; }
+  .bar-fill {
+    width:100%; background:linear-gradient(180deg, var(--teal), var(--navy)); border-radius:6px 6px 0 0; min-height:4px;
+    height:var(--bar-target-height); transform-origin:bottom; transition:filter .15s ease, transform .15s ease;
+    animation:barGrow .6s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--bar-i, 0) * 60ms);
+  }
+  @keyframes barGrow { from { transform:scaleY(0); } to { transform:scaleY(1); } }
+  .bar-col-clickable:hover .bar-fill { filter:brightness(1.15); transform:scaleY(1.02); }
+  .bar-col-selected .bar-fill { filter:brightness(1.25) saturate(1.3); box-shadow:0 0 0 2px var(--gold); }
+  .bar-col-selected .bar-label { color:var(--navy); font-weight:700; }
   .bar-label { font-size:10.5px; color:var(--slate); }
+  .bar-tooltip {
+    position:fixed; z-index:2000; background:var(--navy); color:#fff; font-size:12px; font-weight:600;
+    padding:6px 10px; border-radius:6px; white-space:nowrap; pointer-events:none;
+    opacity:0; transform:translateY(4px); transition:opacity .12s ease, transform .12s ease;
+    box-shadow:0 6px 18px rgba(0,0,0,.2);
+  }
+  .bar-tooltip.visible { opacity:1; transform:translateY(0); }
+  @media (prefers-reduced-motion: reduce) {
+    .bar-fill { animation:none !important; transform:none !important; }
+  }
 
   /* ── TOGGLE SWITCH ── */
   .switch-row { display:flex; align-items:center; justify-content:space-between; padding:14px 0; border-bottom:1px solid var(--border); }
@@ -1440,6 +1459,39 @@ async function apiFetch(method, path, body) {
   return data;
 }
 
+// Escapes text before it goes into innerHTML. This did not exist anywhere
+// in this file before — every render function below builds HTML with
+// template literals, and without this, ANY user-controlled text (a
+// signup name, a company name on the public "Advertise Here"/"Contact
+// Sales" forms, a job description, a message) would render as raw HTML.
+// Since the auth token lives in localStorage (readable by any script on
+// the page), an attacker submitting `<img src=x onerror="...">` as a
+// company name on a public, unauthenticated form could execute code in a
+// super admin's browser the moment they viewed that inquiry or even just
+// their notification bell — a real account-takeover path, not a cosmetic
+// issue. Use this around any interpolated value that came from user
+// input, anywhere it's inserted via innerHTML rather than textContent.
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Opens a live ad's link safely — reads from a data attribute rather than
+// being interpolated into inline JS (see the fix note above this button's
+// markup), and only ever opens genuine http(s) URLs. Without the scheme
+// check, someone could set the ad's "link" field to a javascript: URI and
+// have it execute the moment a visitor clicked "Learn More".
+function openAdLink(button) {
+  const url = button.dataset.adLink;
+  if (!url || !/^https?:\/\//i.test(url)) return;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 function isValidEmailClient(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -1599,10 +1651,10 @@ function renderFeaturedCarouselSlides() {
         return `<div class="featured-slide featured-slide-ad ${i === featuredCarouselIndex ? 'active' : ''}">
           <div class="featured-slide-avatar" style="background:rgba(255,255,255,.15);">✦</div>
           <div class="featured-slide-body">
-            <div class="featured-slide-name">${ad.displayHeadline}</div>
-            <div class="featured-slide-sub">${ad.displaySubtext}</div>
+            <div class="featured-slide-name">${escapeHtml(ad.displayHeadline)}</div>
+            <div class="featured-slide-sub">${escapeHtml(ad.displaySubtext)}</div>
           </div>
-          ${ad.displayLink ? `<button class="btn-sm" style="background:#fff;color:var(--navy);flex-shrink:0;" onclick="window.open('${ad.displayLink.replace(/'/g, "&#39;")}', '_blank')">Learn More</button>` : ''}
+          ${ad.displayLink ? `<button class="btn-sm" style="background:#fff;color:var(--navy);flex-shrink:0;" data-ad-link="${escapeHtml(ad.displayLink)}" onclick="openAdLink(this)">Learn More</button>` : ''}
         </div>`;
       }
       // No ad is currently live for this visitor — show the pitch slide
@@ -1989,7 +2041,7 @@ function navbarHTML(active) {
       <div class="notif-bell" onclick="toggleNotifPanel(event)">🔔${CURRENT_NOTIFICATIONS.some(n => !n.read) ? '<span class="notif-dot"></span>' : ''}</div>
       <div class="notif-panel" id="notif-panel">
         <div class="notif-panel-head">Notifications</div>
-        ${CURRENT_NOTIFICATIONS.length ? CURRENT_NOTIFICATIONS.map(n => `<div class="notif-item ${n.linkTo ? 'notif-clickable' : ''}" ${n.linkTo ? `onclick='navigateFromNotification(${JSON.stringify(n.linkTo)})'` : ''}><span class="notif-item-icon">${n.icon}</span><div><div class="notif-item-text">${n.text}</div><div class="notif-item-time">${n.time}</div></div>${n.linkTo ? '<span class="notif-item-arrow">→</span>' : ''}</div>`).join('') : '<div style="padding:16px;color:var(--slate);font-size:12.5px;text-align:center;">No notifications yet.</div>'}
+        ${CURRENT_NOTIFICATIONS.length ? CURRENT_NOTIFICATIONS.map(n => `<div class="notif-item ${n.linkTo ? 'notif-clickable' : ''}" ${n.linkTo ? `onclick='navigateFromNotification(${JSON.stringify(n.linkTo)})'` : ''}><span class="notif-item-icon">${n.icon}</span><div><div class="notif-item-text">${escapeHtml(n.text)}</div><div class="notif-item-time">${escapeHtml(n.time)}</div></div>${n.linkTo ? '<span class="notif-item-arrow">→</span>' : ''}</div>`).join('') : '<div style="padding:16px;color:var(--slate);font-size:12.5px;text-align:center;">No notifications yet.</div>'}
       </div>
     </div>` : '';
   // Logged-in users get a way back to the public marketplace + notifications
@@ -2713,7 +2765,7 @@ function messagingHTML(role) {
   return `
   <div class="dash-header"><div><div class="dash-title">Messages</div><div class="dash-sub">Real conversations, tied to your actual bookings</div></div></div>
   <div class="msg-layout">
-    <div class="msg-list" id="msg-contact-list">${contacts.map(c => `<div class="msg-item ${c.id === activeMessageContact.id ? 'active' : ''}" data-contact-id="${c.id}" onclick="selectMessageContact('${c.id}')"><div class="msg-item-name">${c.name}</div><div class="msg-item-preview">Tap to view conversation</div></div>`).join('')}</div>
+    <div class="msg-list" id="msg-contact-list">${contacts.map(c => `<div class="msg-item ${c.id === activeMessageContact.id ? 'active' : ''}" data-contact-id="${c.id}" onclick="selectMessageContact('${c.id}')"><div class="msg-item-name">${escapeHtml(c.name)}</div><div class="msg-item-preview">Tap to view conversation</div></div>`).join('')}</div>
     <div class="msg-thread">
       <div class="msg-thread-body" id="msg-thread-body"><div style="text-align:center;color:var(--slate);font-size:12.5px;padding:20px;">Loading…</div></div>
       <div class="msg-input-row"><input type="text" placeholder="Type a message..." id="msg-input" onkeypress="if(event.key==='Enter')sendRealMessage()"/><button onclick="sendRealMessage()">Send</button></div>
@@ -2727,7 +2779,7 @@ async function loadMessageThread() {
   try {
     const { messages } = await apiFetch('GET', `/messages/${activeMessageContact.id}`);
     body.innerHTML = messages.length
-      ? messages.map(m => `<div class="msg-bubble ${m.fromId === AUTH.user.id ? 'me' : 'them'}">${m.text}</div>`).join('')
+      ? messages.map(m => `<div class="msg-bubble ${m.fromId === AUTH.user.id ? 'me' : 'them'}">${escapeHtml(m.text)}</div>`).join('')
       : `<div style="text-align:center;color:var(--slate);font-size:12.5px;padding:20px;">No messages yet — say hello.</div>`;
     body.scrollTop = body.scrollHeight;
   } catch (e) {
@@ -2787,16 +2839,62 @@ function weeklyEarningsChartData(payouts) {
     .map(([label, val]) => ({ label, val }));
 }
 
-function barChart(data) {
+function barChart(data, opts = {}) {
   const max = Math.max(...data.map(d => d.val), 1);
-  return `<div class="bar-chart">${data.map(d => `<div class="bar-col" title="${(d.fullLabel || d.label)}: ${d.val}"><div class="bar-fill" style="height:${Math.max(6, d.val / max * 100)}px"></div><div class="bar-label">${d.label}</div></div>`).join('')}</div>`;
+  return `<div class="bar-chart">${data.map((d, i) => `<div class="bar-col ${opts.clickable ? 'bar-col-clickable' : ''}" style="--bar-i:${i};" data-category="${escapeHtml(d.category || '')}" ${opts.clickable ? `onclick="filterReportsByCategory('${escapeHtml(d.category || '').replace(/'/g, "\\'")}', this)"` : ''} onmouseenter="showBarTooltip(this, '${escapeHtml(d.fullLabel || d.label).replace(/'/g, "\\'")}')" onmouseleave="hideBarTooltip()"><div class="bar-fill" style="--bar-target-height:${Math.max(6, d.val / max * 100)}px"></div><div class="bar-label">${escapeHtml(d.label)}</div></div>`).join('')}</div>`;
+}
+
+// A real floating tooltip, not the browser's native title attribute (which
+// is slow to appear, can't be styled, and gets clipped inside a scrolling
+// panel). Positioned above whichever bar triggered it.
+function showBarTooltip(el, text) {
+  hideBarTooltip();
+  const rect = el.getBoundingClientRect();
+  const tip = document.createElement('div');
+  tip.id = 'bar-tooltip';
+  tip.className = 'bar-tooltip';
+  tip.textContent = text;
+  document.body.appendChild(tip);
+  const tipRect = tip.getBoundingClientRect();
+  tip.style.left = `${rect.left + rect.width / 2 - tipRect.width / 2}px`;
+  tip.style.top = `${rect.top - tipRect.height - 8}px`;
+  requestAnimationFrame(() => tip.classList.add('visible'));
+}
+function hideBarTooltip() {
+  const tip = document.getElementById('bar-tooltip');
+  if (tip) tip.remove();
+}
+
+// Clicking a Demand by Category bar filters the Category Performance and
+// Top Providers tables below it down to just that category — a real
+// drill-down, not just a static chart to look at. Click the same bar
+// again (or "Clear Filter") to go back to seeing everything.
+let reportsySelectedCategory = null;
+function filterReportsByCategory(category, el) {
+  const ra = adminData.reportsAnalytics;
+  if (!ra) return;
+  reportsySelectedCategory = (reportsySelectedCategory === category) ? null : category;
+  document.querySelectorAll('.bar-col-clickable').forEach(b => b.classList.toggle('bar-col-selected', b.dataset.category === reportsySelectedCategory));
+
+  const perfRows = reportsySelectedCategory ? ra.categoryPerformance.filter(c => c.category === reportsySelectedCategory) : ra.categoryPerformance;
+  const perfWrap = document.getElementById('category-performance-table-wrap');
+  if (perfWrap) perfWrap.innerHTML = categoryPerformanceTableHTML(perfRows);
+
+  const provRows = reportsySelectedCategory ? ra.topProviders.filter(p => p.category === reportsySelectedCategory) : ra.topProviders;
+  const provWrap = document.getElementById('top-providers-table-wrap');
+  if (provWrap) provWrap.innerHTML = topProvidersTableHTML(provRows);
+
+  const filterNote = document.getElementById('reports-filter-note');
+  if (filterNote) filterNote.innerHTML = reportsySelectedCategory
+    ? `Showing <strong>${escapeHtml(reportsySelectedCategory)}</strong> only — <a href="#" onclick="filterReportsByCategory('${escapeHtml(reportsySelectedCategory).replace(/'/g, "\\'")}');return false;" style="color:var(--teal);">Clear filter</a>`
+    : '';
 }
 
 function categoryPerformanceTableHTML(rows) {
   if (!rows.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No categories have any real bookings yet.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Jobs Booked</th><th>GMV</th><th>Avg Job Value</th><th>Providers</th><th>Avg Rating</th></tr></thead><tbody>
   ${rows.map(c => `<tr>
-    <td style="font-weight:600;">${c.category}</td>
+    <td style="font-weight:600;">${escapeHtml(c.category)}</td>
     <td>${c.jobsBooked}</td>
     <td>$${c.gmv.toLocaleString()}</td>
     <td>$${c.avgJobValue.toLocaleString()}</td>
@@ -2810,9 +2908,9 @@ function topProvidersTableHTML(rows) {
   if (!rows.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No providers to show yet.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Category</th><th>City</th><th>Jobs Completed</th><th>Jobs Booked</th><th>GMV Generated</th><th>Rating</th></tr></thead><tbody>
   ${rows.map(p => `<tr>
-    <td style="font-weight:600;">${p.name}</td>
-    <td>${p.category || '—'}</td>
-    <td>${p.city || '—'}</td>
+    <td style="font-weight:600;">${escapeHtml(p.name)}</td>
+    <td>${escapeHtml(p.category) || '—'}</td>
+    <td>${escapeHtml(p.city) || '—'}</td>
     <td>${p.jobsCompleted}</td>
     <td>${p.jobsBooked}</td>
     <td>$${p.gmv.toLocaleString()}</td>
@@ -3553,14 +3651,14 @@ async function viewProviderProfile(id) {
   showScreen('screen-profile');
   renderNavbar('navbar-profile', 'home');
   document.getElementById('profile-head').innerHTML = `
-    <div class="profile-avatar-lg" ${p.profilePhotoUrl ? '' : `style="background:${p.color}"`}>${p.profilePhotoUrl ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : p.initials}</div>
+    <div class="profile-avatar-lg" ${p.profilePhotoUrl ? '' : `style="background:${p.color}"`}>${p.profilePhotoUrl ? `<img src="${escapeHtml(p.profilePhotoUrl)}" alt="${escapeHtml(p.name)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : escapeHtml(p.initials)}</div>
     <div>
-      <div class="profile-name-row"><div class="profile-name">${p.name}</div>${p.verified !== false ? '<span class="badge badge-success">✓ Verified</span>' : '<span class="badge badge-warn">Verification pending</span>'}</div>
-      ${p.businessName ? `<div style="font-size:13px;color:var(--slate);margin-top:-4px;margin-bottom:4px;">${p.businessName}</div>` : ''}
-      <div class="profile-role">${p.role} · Serving ${p.city || 'Atlanta'} · Taskora Pro since ${p.since}</div>
+      <div class="profile-name-row"><div class="profile-name">${escapeHtml(p.name)}</div>${p.verified !== false ? '<span class="badge badge-success">✓ Verified</span>' : '<span class="badge badge-warn">Verification pending</span>'}</div>
+      ${p.businessName ? `<div style="font-size:13px;color:var(--slate);margin-top:-4px;margin-bottom:4px;">${escapeHtml(p.businessName)}</div>` : ''}
+      <div class="profile-role">${escapeHtml(p.role)} · Serving ${escapeHtml(p.city) || 'Atlanta'} · Taskora Pro since ${escapeHtml(p.since)}</div>
       <div class="profile-meta-row">
         <div class="profile-meta-item">★ ${p.rating ? Number(p.rating).toFixed(1) : 'No'} rating</div>
-        <div class="profile-meta-item">📋 ${p.jobs} jobs completed</div>
+        <div class="profile-meta-item">📋 ${escapeHtml(p.jobs)} jobs completed</div>
         <div class="profile-meta-item">⚡ Responds in ~1 hr</div>
       </div>
     </div>`;
@@ -3579,23 +3677,23 @@ async function viewProviderProfile(id) {
     } catch (e) { console.warn('Could not load profile data for this provider', e); }
   }
   const reviewsHTML = reviews.length
-    ? reviews.map(r => `<div class="review-item"><div class="review-head"><span>${r.authorName}</span><span>Verified booking</span></div><div class="review-stars">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</div><div class="review-text">${r.text}</div></div>`).join('')
-    : `<div style="color:var(--slate);font-size:13px;padding:8px 0;">No reviews yet — ${p.name.split(' ')[0]} hasn't completed a reviewed job yet.</div>`;
+    ? reviews.map(r => `<div class="review-item"><div class="review-head"><span>${escapeHtml(r.authorName)}</span><span>Verified booking</span></div><div class="review-stars">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</div><div class="review-text">${escapeHtml(r.text)}</div></div>`).join('')
+    : `<div style="color:var(--slate);font-size:13px;padding:8px 0;">No reviews yet — ${escapeHtml(p.name.split(' ')[0])} hasn't completed a reviewed job yet.</div>`;
   const portfolioHTML = portfolio.length
-    ? `<div class="cats-grid">${portfolio.map(ph => `<img src="${ph.url}" alt="Portfolio photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block;"/>`).join('')}</div>`
+    ? `<div class="cats-grid">${portfolio.map(ph => `<img src="${escapeHtml(ph.url)}" alt="Portfolio photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block;"/>`).join('')}</div>`
     : `<div style="color:var(--slate);font-size:13px;padding:4px 0;">No portfolio photos yet.</div>`;
 
   const isNegotiable = p.pricingModel === 'negotiable';
   const priceHTML = isNegotiable
-    ? `<div class="profile-side-price" style="font-size:26px;">Mutual Agreement</div><div style="font-size:12px;color:var(--slate);margin-bottom:16px;">Price is worked out directly with ${p.name.split(' ')[0]} per job</div>`
+    ? `<div class="profile-side-price" style="font-size:26px;">Mutual Agreement</div><div style="font-size:12px;color:var(--slate);margin-bottom:16px;">Price is worked out directly with ${escapeHtml(p.name.split(' ')[0])} per job</div>`
     : `<div class="profile-side-price">$${p.price}<span>/hr</span></div><div style="font-size:12px;color:var(--slate);margin-bottom:16px;">Escrow-protected, released when the job is confirmed done</div>`;
 
   document.getElementById('profile-body').innerHTML = `
     <div>
       <div class="profile-card">
         <div class="profile-card-title">About</div>
-        <div style="font-size:13.5px;color:var(--text);line-height:1.7;">${p.name.split(' ')[0]} is a Taskora-verified ${p.role.toLowerCase()} with ${p.jobs}+ completed jobs${p.rating ? ` and a ${Number(p.rating).toFixed(1)}★ average rating` : ''}. Every booking runs on an auto-generated contract with funds held in escrow until the job is confirmed complete.</div>
-        <div class="provider-tags" style="margin-top:14px;">${(p.tags||[]).map(t => `<span class="tag">${t}</span>`).join('') || '<span style="color:var(--muted);font-size:12px;">No specialties listed yet</span>'}</div>
+        <div style="font-size:13.5px;color:var(--text);line-height:1.7;">${escapeHtml(p.name.split(' ')[0])} is a Taskora-verified ${escapeHtml(p.role.toLowerCase())} with ${escapeHtml(p.jobs)}+ completed jobs${p.rating ? ` and a ${Number(p.rating).toFixed(1)}★ average rating` : ''}. Every booking runs on an auto-generated contract with funds held in escrow until the job is confirmed complete.</div>
+        <div class="provider-tags" style="margin-top:14px;">${(p.tags||[]).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('') || '<span style="color:var(--muted);font-size:12px;">No specialties listed yet</span>'}</div>
       </div>
       <div class="profile-card">
         <div class="profile-card-title">Portfolio</div>
@@ -4411,11 +4509,11 @@ function payoutLineItemDetailHTML(li) {
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
-        <div><span style="color:var(--muted);">Customer:</span> ${li.customerName}${li.customerEmail ? ` · ${li.customerEmail}` : ''}${li.customerPhone ? ` · ${li.customerPhone}` : ''}</div>
-        <div><span style="color:var(--muted);">Scheduled:</span> ${li.jobDate || '—'}${li.jobTime ? ` · ${li.jobTime}` : ''}</div>
-        <div style="grid-column:1/-1;"><span style="color:var(--muted);">Address:</span> ${li.address || '—'}</div>
-        <div style="grid-column:1/-1;"><span style="color:var(--muted);">Contract signed:</span> ${li.signedAt || '—'}</div>
-        ${li.review ? `<div style="grid-column:1/-1;padding-top:6px;border-top:1px dashed var(--border);"><span style="color:var(--muted);">Customer review:</span> ${'★'.repeat(li.review.stars)}${li.review.text ? ` — "${li.review.text}"` : ''}</div>` : ''}
+        <div><span style="color:var(--muted);">Customer:</span> ${escapeHtml(li.customerName)}${li.customerEmail ? ` · ${escapeHtml(li.customerEmail)}` : ''}${li.customerPhone ? ` · ${escapeHtml(li.customerPhone)}` : ''}</div>
+        <div><span style="color:var(--muted);">Scheduled:</span> ${escapeHtml(li.jobDate) || '—'}${li.jobTime ? ` · ${escapeHtml(li.jobTime)}` : ''}</div>
+        <div style="grid-column:1/-1;"><span style="color:var(--muted);">Address:</span> ${escapeHtml(li.address) || '—'}</div>
+        <div style="grid-column:1/-1;"><span style="color:var(--muted);">Contract signed:</span> ${escapeHtml(li.signedAt) || '—'}</div>
+        ${li.review ? `<div style="grid-column:1/-1;padding-top:6px;border-top:1px dashed var(--border);"><span style="color:var(--muted);">Customer review:</span> ${'★'.repeat(li.review.stars)}${li.review.text ? ` — "${escapeHtml(li.review.text)}"` : ''}</div>` : ''}
       </div>
     </div>
   `;
@@ -5106,7 +5204,7 @@ const ADMIN_SECTIONS = {
     // the table below). Previously this chart showed provider supply
     // mislabeled as demand; this is genuine booking volume.
     const topDemand = ra.categoryPerformance.slice(0, 10)
-      .map(c => ({ label: c.category.length > 12 ? c.category.slice(0, 11) + '…' : c.category, fullLabel: `${c.category}: ${c.jobsBooked} booking${c.jobsBooked === 1 ? '' : 's'}`, val: c.jobsBooked }));
+      .map(c => ({ category: c.category, label: c.category.length > 12 ? c.category.slice(0, 11) + '…' : c.category, fullLabel: `${c.category}: ${c.jobsBooked} booking${c.jobsBooked === 1 ? '' : 's'}`, val: c.jobsBooked }));
     const categoriesWithActivity = ra.categoryPerformance.length;
 
     // 30-day trend — a label every 5th day keeps it readable; every bar
@@ -5121,16 +5219,16 @@ const ADMIN_SECTIONS = {
     return `
     <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">Real demand and performance insights${ra.region !== 'All Locations' ? ` — ${ra.region}` : ''}</div></div></div>
 
-    <div class="panel"><div class="panel-title">Demand by Category (Real Bookings) <small style="font-weight:400;color:var(--slate);">${categoriesWithActivity ? `top ${Math.min(10, categoriesWithActivity)} of ${categoriesWithActivity} with activity` : `0 of ${ra.totalCategories} categories`}</small></div>${topDemand.length ? barChart(topDemand) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings yet — this chart reflects real completed and active jobs, not provider signups.</div>'}</div>
+    <div class="panel"><div class="panel-title">Demand by Category (Real Bookings) <small style="font-weight:400;color:var(--slate);">${categoriesWithActivity ? `top ${Math.min(10, categoriesWithActivity)} of ${categoriesWithActivity} with activity` : `0 of ${ra.totalCategories} categories`}</small></div>${topDemand.length ? barChart(topDemand, { clickable: true }) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings yet — this chart reflects real completed and active jobs, not provider signups.</div>'}${topDemand.length ? `<div style="font-size:12px;color:var(--slate);margin-top:10px;">Click a bar to filter the tables below to just that category. <span id="reports-filter-note"></span></div>` : ''}</div>
 
     <div class="panel"><div class="panel-title">Jobs Booked — Last 30 Days <small style="font-weight:400;color:var(--slate);">${trendTotal} total</small></div>${trendTotal ? barChart(trendBars) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings in the last 30 days.</div>'}</div>
 
     <div class="panel"><div class="panel-title">Category Performance <small style="font-weight:400;color:var(--slate);">only categories with real bookings — ${ra.totalCategories - categoriesWithActivity} of ${ra.totalCategories} categories have none yet</small></div>
-      ${categoryPerformanceTableHTML(ra.categoryPerformance)}
+      <div id="category-performance-table-wrap">${categoryPerformanceTableHTML(ra.categoryPerformance)}</div>
     </div>
 
     <div class="panel"><div class="panel-title">Top Providers <small style="font-weight:400;color:var(--slate);">by real completed jobs</small></div>
-      ${topProvidersTableHTML(ra.topProviders)}
+      <div id="top-providers-table-wrap">${topProvidersTableHTML(ra.topProviders)}</div>
     </div>
 
     <div class="panel"><div class="panel-title">Platform Health</div>
@@ -5153,8 +5251,8 @@ const ADMIN_SECTIONS = {
     ${isSuper && adminData.categoryRequests.filter(r => r.status === 'pending').length ? `<div class="panel"><div class="panel-title">Category Requests <small>${adminData.categoryRequests.filter(r => r.status === 'pending').length} pending</small></div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Requested Category</th><th>Requested</th><th>Action</th></tr></thead><tbody>
       ${adminData.categoryRequests.filter(r => r.status === 'pending').map(r => `<tr>
-        <td>${r.providerName}</td>
-        <td>${r.requestedCategory}</td>
+        <td>${escapeHtml(r.providerName)}</td>
+        <td>${escapeHtml(r.requestedCategory)}</td>
         <td>${r.hoursElapsed < 1 ? 'Just now' : r.hoursElapsed + 'h ago'} ${r.overdue ? '<span class="badge badge-danger" style="margin-left:6px;">Overdue (24h+)</span>' : ''}</td>
         <td class="row-actions"><button class="btn-sm btn-sm-primary" onclick="decideCategoryRequest('${r.id}','approve')">Approve</button> <button class="btn-sm btn-sm-outline" onclick="decideCategoryRequest('${r.id}','reject')">Reject</button></td>
       </tr>`).join('')}
@@ -5180,7 +5278,7 @@ const ADMIN_SECTIONS = {
     </div>` : ''}
     <div class="panel"><div class="panel-title">Service Categories <small style="font-weight:400;color:var(--slate);">${adminData.categories.length} total</small></div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Response Window</th><th>Active</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
-      ${adminData.categories.map(c => `<tr><td>${c.name}</td><td>${c.pros}</td><td>${categoryResponseWindowCell(c, isSuper)}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteCategory(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
+      ${adminData.categories.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${c.pros}</td><td>${categoryResponseWindowCell(c, isSuper)}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${escapeHtml(c.name)}" onclick="deleteCategory(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
       </tbody></table></div>
     </div>
     <div class="panel"><div class="panel-title">Countries <small style="font-weight:400;color:var(--slate);">${adminData.countries.length} total</small></div>
@@ -5362,20 +5460,20 @@ function advertisingInquiriesTableHTML(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No advertising inquiries yet — they'll show up here as soon as someone submits the "Advertise Here" form.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Company</th><th>Contact</th><th>Email</th><th>Target</th><th>Message</th><th>Status</th><th>Live</th><th>Action</th></tr></thead><tbody>
   ${list.map(i => `<tr>
-    <td style="white-space:nowrap;">${(i.createdAt || '').slice(0, 10)}</td>
-    <td style="font-weight:600;">${i.companyName}</td>
-    <td>${i.contactName}</td>
-    <td style="font-size:12px;color:var(--slate);">${i.email}</td>
-    <td>${i.targetCity || '<span style="color:var(--slate);">All Regions</span>'}</td>
-    <td style="max-width:220px;font-size:12.5px;word-break:break-word;overflow-wrap:break-word;">${i.message}</td>
+    <td style="white-space:nowrap;">${escapeHtml((i.createdAt || '').slice(0, 10))}</td>
+    <td style="font-weight:600;">${escapeHtml(i.companyName)}</td>
+    <td>${escapeHtml(i.contactName)}</td>
+    <td style="font-size:12px;color:var(--slate);">${escapeHtml(i.email)}</td>
+    <td>${i.targetCity ? escapeHtml(i.targetCity) : '<span style="color:var(--slate);">All Regions</span>'}</td>
+    <td style="max-width:220px;font-size:12.5px;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(i.message)}</td>
     <td>${adInquiryStatusBadge(i.status)}</td>
-    <td>${i.isLive ? `<span class="badge badge-success">Live · ${i.price} ${i.currencyCode || ''}</span>` : '<span class="badge badge-neutral">Not live</span>'}</td>
+    <td>${i.isLive ? `<span class="badge badge-success">Live · ${escapeHtml(i.price)} ${escapeHtml(i.currencyCode) || ''}</span>` : '<span class="badge badge-neutral">Not live</span>'}</td>
     <td class="row-actions">
       ${i.status !== 'contacted' ? `<button class="btn-sm btn-sm-outline" onclick="updateAdvertisingInquiryStatus('${i.id}', 'contacted')">Mark Contacted</button>` : ''}
       ${i.status !== 'closed' ? `<button class="btn-sm btn-sm-outline" onclick="updateAdvertisingInquiryStatus('${i.id}', 'closed')">Close</button>` : `<button class="btn-sm btn-sm-outline" onclick="updateAdvertisingInquiryStatus('${i.id}', 'new')">Reopen</button>`}
       ${i.isLive
         ? `<button class="btn-sm btn-sm-outline" onclick="takeDownAd('${i.id}')">Take Down</button>`
-        : `<button class="btn-sm btn-sm-primary" data-ad-id="${i.id}" data-ad-company="${i.companyName.replace(/"/g, '&quot;')}" data-ad-city="${(i.targetCity || '').replace(/"/g, '&quot;')}" onclick="openGoLiveForm(this.dataset.adId, this.dataset.adCompany, this.dataset.adCity || null)">Approve &amp; Go Live</button>`}
+        : `<button class="btn-sm btn-sm-primary" data-ad-id="${i.id}" data-ad-company="${escapeHtml(i.companyName)}" data-ad-city="${escapeHtml(i.targetCity || '')}" onclick="openGoLiveForm(this.dataset.adId, this.dataset.adCompany, this.dataset.adCity || null)">Approve &amp; Go Live</button>`}
     </td>
   </tr>`).join('')}
   </tbody></table></div>`;
@@ -5390,13 +5488,13 @@ function openGoLiveForm(id, companyName, targetCity) {
       <div class="modal">
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('golive-modal-overlay').remove()">✕</button>
-          <h3>Approve &amp; Go Live — ${companyName}</h3>
-          <p>${targetCity ? `This will start showing on the homepage for visitors in ${targetCity}.` : 'This will start showing on the homepage for every visitor, platform-wide.'}</p>
+          <h3>Approve &amp; Go Live — ${escapeHtml(companyName)}</h3>
+          <p>${targetCity ? `This will start showing on the homepage for visitors in ${escapeHtml(targetCity)}.` : 'This will start showing on the homepage for every visitor, platform-wide.'}</p>
         </div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Price</label><input class="form-input" type="number" min="0" step="0.01" id="golive-price" placeholder="e.g. 50"/></div>
           <div class="form-group"><label class="form-label">Currency</label><input class="form-input" id="golive-currency" value="USD" placeholder="USD"/></div>
-          <div class="form-group"><label class="form-label">Headline shown on homepage</label><input class="form-input" id="golive-headline" value="${companyName}"/></div>
+          <div class="form-group"><label class="form-label">Headline shown on homepage</label><input class="form-input" id="golive-headline" value="${escapeHtml(companyName)}"/></div>
           <div class="form-group"><label class="form-label">Subtext shown on homepage</label><input class="form-input" id="golive-subtext" placeholder="e.g. Your local hardware store, open 7 days"/></div>
           <div class="form-group"><label class="form-label">Link <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" id="golive-link" placeholder="https://..."/></div>
         </div>
@@ -5617,28 +5715,28 @@ function salesInquiriesTableHTML(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No sales inquiries yet — they'll show up here as soon as someone submits the Custom plan's "Contact Sales" form.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Company</th><th>Contact</th><th>Team Size</th><th>Message</th><th>Status</th><th>Deal Terms</th><th>Action</th></tr></thead><tbody>
   ${list.map(i => `<tr>
-    <td style="white-space:nowrap;">${(i.createdAt || '').slice(0, 10)}</td>
-    <td style="font-weight:600;">${i.companyName}</td>
+    <td style="white-space:nowrap;">${escapeHtml((i.createdAt || '').slice(0, 10))}</td>
+    <td style="font-weight:600;">${escapeHtml(i.companyName)}</td>
     <td>
-      <div>${i.contactName}</div>
+      <div>${escapeHtml(i.contactName)}</div>
       <div style="font-size:12px;color:var(--slate);display:flex;align-items:center;gap:6px;">
-        <span>${i.email}</span>
-        <button class="btn-sm btn-sm-outline" style="padding:2px 7px;font-size:11px;" title="Copy email address" onclick="copyToClipboard('${i.email.replace(/'/g, "&#39;")}', this)">Copy</button>
+        <span>${escapeHtml(i.email)}</span>
+        <button class="btn-sm btn-sm-outline" style="padding:2px 7px;font-size:11px;" title="Copy email address" onclick="copyToClipboard('${escapeHtml(i.email).replace(/'/g, "\\'")}', this)">Copy</button>
       </div>
     </td>
-    <td style="font-size:12px;color:var(--slate);">${i.teamSize || '—'}</td>
-    <td style="max-width:220px;font-size:12.5px;word-break:break-word;overflow-wrap:break-word;">${i.message}</td>
+    <td style="font-size:12px;color:var(--slate);">${escapeHtml(i.teamSize) || '—'}</td>
+    <td style="max-width:220px;font-size:12.5px;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(i.message)}</td>
     <td>${adInquiryStatusBadge(i.status)}</td>
-    <td style="font-size:12.5px;">${i.agreedPrice != null ? `$${i.agreedPrice} ${i.agreedCurrency || 'USD'}` : '<span style="color:var(--slate);">Not set</span>'}</td>
+    <td style="font-size:12.5px;">${i.agreedPrice != null ? `$${i.agreedPrice} ${escapeHtml(i.agreedCurrency) || 'USD'}` : '<span style="color:var(--slate);">Not set</span>'}</td>
     <td class="row-actions">
-      <button class="btn-sm btn-sm-outline" data-mailto-email="${i.email}" data-mailto-company="${i.companyName.replace(/"/g, '&quot;')}" onclick="replyByEmail(this.dataset.mailtoEmail, this.dataset.mailtoCompany)">Reply</button>
+      <button class="btn-sm btn-sm-outline" data-mailto-email="${escapeHtml(i.email)}" data-mailto-company="${escapeHtml(i.companyName)}" onclick="replyByEmail(this.dataset.mailtoEmail, this.dataset.mailtoCompany)">Reply</button>
       ${i.status !== 'contacted' ? `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'contacted')">Mark Contacted</button>` : ''}
       ${i.status !== 'closed' ? `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'closed')">Close</button>` : `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'new')">Reopen</button>`}
-      <button class="btn-sm btn-sm-primary" data-deal-id="${i.id}" data-deal-company="${i.companyName.replace(/"/g, '&quot;')}" data-deal-price="${i.agreedPrice ?? ''}" data-deal-currency="${i.agreedCurrency || 'USD'}" data-deal-notes="${(i.internalNotes || '').replace(/"/g, '&quot;')}"
+      <button class="btn-sm btn-sm-primary" data-deal-id="${i.id}" data-deal-company="${escapeHtml(i.companyName)}" data-deal-price="${i.agreedPrice ?? ''}" data-deal-currency="${escapeHtml(i.agreedCurrency) || 'USD'}" data-deal-notes="${escapeHtml(i.internalNotes || '')}"
         onclick="openDealNotesForm(this.dataset.dealId, this.dataset.dealCompany, this.dataset.dealPrice, this.dataset.dealCurrency, this.dataset.dealNotes)">Deal Notes</button>
       ${i.convertedToOrgId
         ? `<button class="btn-sm btn-sm-outline" onclick="selectAdminSection('organizations')">View Organization</button>`
-        : (i.agreedPrice != null ? `<button class="btn-sm btn-sm-primary" data-conv-id="${i.id}" data-conv-company="${i.companyName.replace(/"/g, '&quot;')}" data-conv-team="${i.teamSize || ''}" onclick="openConvertToOrgForm(this.dataset.convId, this.dataset.convCompany, this.dataset.convTeam)">Convert to Organization</button>` : '')}
+        : (i.agreedPrice != null ? `<button class="btn-sm btn-sm-primary" data-conv-id="${i.id}" data-conv-company="${escapeHtml(i.companyName)}" data-conv-team="${escapeHtml(i.teamSize) || ''}" onclick="openConvertToOrgForm(this.dataset.convId, this.dataset.convCompany, this.dataset.convTeam)">Convert to Organization</button>` : '')}
     </td>
   </tr>`).join('')}
   </tbody></table></div>`;
@@ -6238,13 +6336,13 @@ function peopleTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No customers or providers found${AUTH.user && !AUTH.user.isSuperAdmin ? ' in your city yet' : ''}.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>Category</th><th>City</th><th>Country</th><th>Joined</th><th>Verified</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${list.map(u => `<tr>
-    <td><a href="#" onclick="openPersonDetail('${u.id}');return false;" style="color:var(--navy);font-weight:600;text-decoration:none;">${u.name}</a></td>
-    <td style="font-size:12px;color:var(--slate);">${u.email || '—'}</td>
-    <td>${u.role}</td>
-    <td>${u.role === 'Provider' ? `${u.category || '—'}${u.rating ? ` <span style="color:var(--slate);">★${u.rating}</span>` : ''}` : '—'}</td>
-    <td>${u.city || '—'}</td>
-    <td>${u.country || '—'}</td>
-    <td style="font-size:12px;color:var(--slate);">${u.createdAt ? u.createdAt.slice(0, 10) : '—'}</td>
+    <td><a href="#" onclick="openPersonDetail('${u.id}');return false;" style="color:var(--navy);font-weight:600;text-decoration:none;">${escapeHtml(u.name)}</a></td>
+    <td style="font-size:12px;color:var(--slate);">${escapeHtml(u.email) || '—'}</td>
+    <td>${escapeHtml(u.role)}</td>
+    <td>${u.role === 'Provider' ? `${escapeHtml(u.category) || '—'}${u.rating ? ` <span style="color:var(--slate);">★${escapeHtml(u.rating)}</span>` : ''}` : '—'}</td>
+    <td>${escapeHtml(u.city) || '—'}</td>
+    <td>${escapeHtml(u.country) || '—'}</td>
+    <td style="font-size:12px;color:var(--slate);">${u.createdAt ? escapeHtml(u.createdAt.slice(0, 10)) : '—'}</td>
     <td>${u.verified ? statusBadge('verified') : statusBadge('unverified')}</td>
     <td>${u.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
     <td class="row-actions">
@@ -6281,14 +6379,14 @@ function openPersonDetail(userId) {
   const u = adminData.people.find(p => p.id === userId);
   if (!u) return showToast('Could not find that person — try refreshing the page');
   const isProvider = u.role === 'Provider';
-  const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;"><span style="color:var(--slate);">${label}</span><span style="font-weight:600;text-align:right;">${value ?? '—'}</span></div>`;
+  const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;"><span style="color:var(--slate);">${escapeHtml(label)}</span><span style="font-weight:600;text-align:right;">${value === null || value === undefined ? '—' : escapeHtml(value)}</span></div>`;
   const modalHtml = `
     <div class="modal-overlay open" id="person-detail-overlay" onclick="if(event.target===this)document.getElementById('person-detail-overlay').remove()">
       <div class="modal">
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('person-detail-overlay').remove()">✕</button>
-          <h3>${u.name}</h3>
-          <p>${u.role}${isProvider && u.providerRole ? ` — ${u.providerRole}` : ''}</p>
+          <h3>${escapeHtml(u.name)}</h3>
+          <p>${escapeHtml(u.role)}${isProvider && u.providerRole ? ` — ${escapeHtml(u.providerRole)}` : ''}</p>
         </div>
         <div class="modal-body">
           ${row('Email', u.email)}
@@ -6344,7 +6442,7 @@ function verificationQueueTable() {
 function disputesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No disputes.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Dispute</th><th>Parties</th><th>Reason</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(d => `<tr style="cursor:pointer" onclick="viewDispute('${d.id}')"><td>${d.id}</td><td>${d.parties}</td><td>${d.reason}</td><td>$${d.amount}</td><td>${statusBadge(d.status)}</td>
+  ${list.map(d => `<tr style="cursor:pointer" onclick="viewDispute('${d.id}')"><td>${d.id}</td><td>${escapeHtml(d.parties)}</td><td>${escapeHtml(d.reason)}</td><td>$${d.amount}</td><td>${statusBadge(d.status)}</td>
   <td class="row-actions">${d.status!=='resolved' ? `<button class="btn-sm btn-sm-ghost" onclick="event.stopPropagation();resolveDispute('${d.id}')">Resolve</button>` : '—'}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -6386,7 +6484,7 @@ function viewDispute(id) {
   const openedDate = d.createdAt ? new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   document.getElementById('dispute-modal-body').innerHTML = `
     <div class="booking-summary">
-      <div class="summary-row"><span>Reason</span><span>${d.reason}</span></div>
+      <div class="summary-row"><span>Reason</span><span>${escapeHtml(d.reason)}</span></div>
       <div class="summary-row"><span>Amount in escrow</span><span>$${d.amount}</span></div>
       <div class="summary-row total"><span>Status</span><span>${statusBadge(d.status)}</span></div>
     </div>
@@ -6449,19 +6547,19 @@ function providerCardsHTML(list) {
     <div class="provider-card fade-up" onclick="viewProviderProfile('${p.id}')">
       <div class="provider-header" style="background:linear-gradient(135deg,${p.color}22,${p.color}44)">
         ${p.profilePhotoUrl
-          ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" class="provider-avatar" style="object-fit:cover;"/>`
-          : `<div class="provider-avatar" style="background:${p.color};color:#fff">${p.initials}</div>`}
+          ? `<img src="${escapeHtml(p.profilePhotoUrl)}" alt="${escapeHtml(p.name)}" class="provider-avatar" style="object-fit:cover;"/>`
+          : `<div class="provider-avatar" style="background:${p.color};color:#fff">${escapeHtml(p.initials)}</div>`}
         ${p.verified !== false ? '<div class="verified-badge">✓ Verified</div>' : ''}
       </div>
       <div class="provider-body">
-        <div class="provider-name">${p.name}</div>
-        <div class="provider-role">${p.role}</div>
+        <div class="provider-name">${escapeHtml(p.name)}</div>
+        <div class="provider-role">${escapeHtml(p.role)}</div>
         <div class="provider-meta">
           <div class="meta-chip"><span class="stars">★</span> ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
-          <div class="meta-chip">📋 ${p.jobs} jobs</div>
-          <div class="meta-chip">📍 ${p.city || 'Atlanta'}</div>
+          <div class="meta-chip">📋 ${escapeHtml(p.jobs)} jobs</div>
+          <div class="meta-chip">📍 ${escapeHtml(p.city) || 'Atlanta'}</div>
         </div>
-        <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
+        <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
         <div class="provider-footer">
           <div class="provider-price">$${p.price}<span>/hr</span></div>
           ${p.acceptingBookings === false
