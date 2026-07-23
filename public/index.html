@@ -2106,6 +2106,32 @@ function populateSettingsCategory() {
   }
 }
 
+// A real status indicator — expired, expiring soon (within 30 days), or
+// valid — computed from the actual date on file, not decorative. No date
+// on file shows neutrally rather than implying a problem, since this
+// isn't a required field.
+function licenseInsuranceStatusHTML(dateStr, label) {
+  if (!dateStr) return `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">No ${label.toLowerCase()} expiry date on file yet.</div>`;
+  const expiry = new Date(dateStr);
+  const daysLeft = Math.round((expiry - new Date()) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return `<div style="font-size:12px;color:#C0392B;font-weight:600;margin-bottom:6px;">⚠ ${label} expired ${Math.abs(daysLeft)} day${Math.abs(daysLeft) === 1 ? '' : 's'} ago</div>`;
+  if (daysLeft <= 30) return `<div style="font-size:12px;color:#B08A3E;font-weight:600;margin-bottom:6px;">⚠ ${label} expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}</div>`;
+  return `<div style="font-size:12px;color:#2E8C6F;font-weight:600;margin-bottom:6px;">✓ ${label} valid until ${expiry.toLocaleDateString()}</div>`;
+}
+
+async function saveLicenseInsurance() {
+  const licenseExpiryDate = document.getElementById('set-prov-license-expiry').value || null;
+  const insuranceExpiryDate = document.getElementById('set-prov-insurance-expiry').value || null;
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/auth/me', { licenseExpiryDate, insuranceExpiryDate });
+    AUTH.user.licenseExpiryDate = licenseExpiryDate;
+    AUTH.user.insuranceExpiryDate = insuranceExpiryDate;
+    showToast('License & insurance info saved');
+    selectProviderSection('settings');
+  } catch (e) { showToast(e.message || 'Could not save this'); }
+}
+
 async function saveProviderCategory() {
   const select = document.getElementById('set-prov-category').value;
   const category = select === '__other__'
@@ -4253,6 +4279,17 @@ async function runAIMatch() {
   body.innerHTML = `<div style="text-align:center;padding:40px 10px;color:var(--slate);font-size:13px;">🤖 Scanning verified pros for the best match…</div>`;
   document.querySelector('#postjob-modal .modal-footer').innerHTML = '';
 
+  if (AUTH.user && AUTH.user.role !== 'customer') {
+    body.innerHTML = `
+      <div style="text-align:center;padding:24px 10px;">
+        <div style="font-size:28px;margin-bottom:10px;">👋</div>
+        <div style="font-weight:600;color:var(--navy);margin-bottom:6px;">This is for hiring, not offering work</div>
+        <div style="font-size:12.5px;color:var(--slate);line-height:1.6;">You're logged in as a ${AUTH.user.role === 'admin' ? 'admin' : 'provider'} — posting a job to find a pro is a customer feature. Sign out and create a customer account to try it, or check your own dashboard for job matches coming to you.</div>
+      </div>`;
+    document.querySelector('#postjob-modal .modal-footer').innerHTML = `<button class="pricing-cta" style="border-color:var(--border);" onclick="closePostJobModal()">Got it</button>`;
+    return;
+  }
+
   let pool = [];
   let realCallSucceeded = false;
   let isKnownCategory = true;
@@ -4304,6 +4341,7 @@ async function runAIMatch() {
     }
     body.innerHTML = `
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Matched for "<strong style="color:var(--navy)">${desc}</strong>" in <strong style="color:var(--navy)">${cat}</strong> ${realCallSucceeded ? '<span class="badge badge-success">Live match</span>' : ''}</div>
+      ${!realCallSucceeded ? `<div style="font-size:12px;color:var(--slate);background:var(--offwhite);border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px;">📋 Example matches — sign in with a customer account and post a real job to see actual verified pros near you.</div>` : ''}
       ${realCallSucceeded && matchScope !== 'city' ? `<div style="font-size:12px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:12px;">📍 No verified "${cat}" pro in your exact city yet, so we widened the search to ${matchScope === 'state' ? 'your state/region' : 'your country'}.</div>` : ''}
       ${pool.map(p => `
         <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;">
@@ -4431,7 +4469,12 @@ const PROVIDER_SECTIONS = {
     const cancellationRate = cancellationDenominator > 0 ? (countedCancellations / cancellationDenominator) * 100 : 0;
     const rating = AUTH.user && AUTH.user.rating ? Number(AUTH.user.rating) : null;
     const currentPlan = (AUTH.user && AUTH.user.plan) || 'starter';
-    const tierProgressHTML = renderTierProgress(currentPlan, jobsCompleted, rating, cancellationRate);
+    const isOrgAffiliated = !!(AUTH.user && AUTH.user.organizationId);
+    const tierProgressHTML = isOrgAffiliated
+      ? `<div class="panel"><div class="panel-title">Your Rate</div>
+          <div style="font-size:13px;color:var(--text);line-height:1.6;">Your organization has negotiated its own commission rate with Trothen, separate from the standard Starter/Pro/Super-Pro tiers — check with your organization admin for your exact rate, or see it reflected directly on each payout.</div>
+        </div>`
+      : renderTierProgress(currentPlan, jobsCompleted, rating, cancellationRate);
     return `
     <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Marcus'}</div><div class="dash-sub">Your matched jobs and contract activity</div></div></div>
     ${payoutBanner}
@@ -4557,6 +4600,14 @@ const PROVIDER_SECTIONS = {
         <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Not on our current list — a team member reviews new categories within 24 hours. You can keep using your account normally in the meantime.</div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveProviderCategory()">Save Category</button>
+    </div>
+    <div class="panel"><div class="panel-title">License & Insurance</div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:14px;">If your category requires a license or insurance, keep the expiry date current here — customers and Trothen can see your standing, and it helps you avoid an awkward surprise mid-job. This is informational only right now; it doesn't block you from accepting work.</div>
+      ${licenseInsuranceStatusHTML(AUTH.user && AUTH.user.licenseExpiryDate, 'License')}
+      <div class="form-group"><label class="form-label">License Expiry Date</label><input class="form-input" type="date" id="set-prov-license-expiry" value="${(AUTH.user && AUTH.user.licenseExpiryDate) || ''}"/></div>
+      ${licenseInsuranceStatusHTML(AUTH.user && AUTH.user.insuranceExpiryDate, 'Insurance')}
+      <div class="form-group"><label class="form-label">Insurance Expiry Date</label><input class="form-input" type="date" id="set-prov-insurance-expiry" value="${(AUTH.user && AUTH.user.insuranceExpiryDate) || ''}"/></div>
+      <button class="btn-sm btn-sm-primary" onclick="saveLicenseInsurance()">Save Dates</button>
     </div>
     <div class="panel"><div class="panel-title">Business Profile <small style="font-weight:400;color:var(--slate);">optional</small></div>
       <div style="font-size:12px;color:var(--slate);margin-bottom:12px;">If you operate as a registered business rather than as an individual, add your business details here — this appears on your public profile alongside your name.</div>

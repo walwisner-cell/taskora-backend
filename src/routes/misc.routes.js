@@ -1,11 +1,22 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
+const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const { requireAuth } = require('../auth');
 const { isNonEmptyString, validate } = require('../validators');
 const { notify } = require('../notify');
 
 const router = express.Router();
+
+// Messages between two real, identity-verified users had no rate limit at
+// all — a frustrated or malicious user could flood the other party with
+// unlimited messages in rapid succession. Generous enough not to get in
+// the way of a genuine back-and-forth conversation (30/minute is well
+// above any real typing pace), strict enough to stop an actual flood.
+const messageLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Sending messages too quickly — please slow down a moment.' },
+});
 
 // POST /api/contact — the public "Contact Us" form. No auth required (an
 // anonymous visitor should be able to reach out), but genuinely stored and
@@ -206,7 +217,7 @@ router.get('/messages/:withUserId', requireAuth, async (req, res) => {
 });
 
 // POST /api/messages — send a message
-router.post('/messages', requireAuth, async (req, res) => {
+router.post('/messages', requireAuth, messageLimiter, async (req, res) => {
   const { toId, text } = req.body || {};
   const errors = validate([
     ['toId', isNonEmptyString(toId), 'Recipient is required'],

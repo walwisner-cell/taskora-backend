@@ -1,6 +1,7 @@
 const express = require('express');
 const { COUNTRIES, statesForCountry, dialCodeForCountry } = require('../geo-data');
 const { nanoid } = require('nanoid');
+const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { isNonEmptyString, validate, postalCodeIsOptionalFor } = require('../validators');
@@ -9,6 +10,16 @@ const { currencyForCountry, convertFromUSD } = require('../currency-data');
 const { effectivePlanPricing, resolveRate } = require('../plan-pricing');
 
 const router = express.Router();
+
+// A genuine dispute should be rare — this is defense against spam
+// (someone opening dozens in a row), not a barrier to legitimate use. The
+// existing one-open-dispute-per-contract rule already prevents the same
+// contract being disputed repeatedly; this catches the same person
+// hammering the endpoint across many different contracts.
+const disputeLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many disputes filed recently — please contact support directly if you need to report something urgent.' },
+});
 
 // Same race-condition class as the payout lock in payments.routes.js: an
 // organization's seat limit is checked by reading the current seat count,
@@ -115,9 +126,20 @@ const PROHIBITED_CONTENT_PATTERNS = [
   { pattern: /\b(surgery|surgical|inject(ion)?|prescription|veterinary procedure|medical procedure)\b/i, reason: 'medical or veterinary procedures' },
   { pattern: /\b(hazardous waste|biohazard|biological waste|toxic waste|radioactive)\b/i, reason: 'hazardous or biological waste' },
 ];
-function findProhibitedContent(text) {
+// Categories where escorting/accompanying a client somewhere is a normal,
+// expected, already-vetted-for part of the job — a caregiver driving an
+// elderly client to a doctor's appointment, or a nanny picking a child up
+// from school, isn't the unauthorized-rideshare risk this rule exists to
+// catch. The same phrase from an unrelated category (a plumber offering
+// to "drive someone" as a side gig) is exactly that risk, so the
+// exemption is narrow and specific rather than loosening the rule
+// generally.
+const TRANSPORT_EXEMPT_CATEGORIES = new Set(['Elder Care', 'Babysitting & Nanny Services']);
+
+function findProhibitedContent(text, category) {
   if (!text) return null;
   for (const { pattern, reason } of PROHIBITED_CONTENT_PATTERNS) {
+    if (reason === 'transporting people' && category && TRANSPORT_EXEMPT_CATEGORIES.has(category)) continue;
     if (pattern.test(text)) return reason;
   }
   return null;
@@ -530,7 +552,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
     ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
-  const prohibitedHit = findProhibitedContent(category) || findProhibitedContent(description);
+  const prohibitedHit = findProhibitedContent(category, category) || findProhibitedContent(description, category);
   if (prohibitedHit) {
     return res.status(400).json({ error: `This can't be posted on Trothen — jobs involving ${prohibitedHit} are never permitted on the platform.` });
   }
@@ -720,7 +742,9 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     ['address', isNonEmptyString(address, { min: 5, max: 200 }), 'Enter a valid address'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
-  const prohibitedHit = findProhibitedContent(service);
+  const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
+  if (!provider) return res.status(404).json({ error: 'Provider not found' });
+  const prohibitedHit = findProhibitedContent(service, provider.category);
   if (prohibitedHit) {
     return res.status(400).json({ error: `This can't be booked on Trothen — jobs involving ${prohibitedHit} are never permitted on the platform.` });
   }
@@ -735,9 +759,6 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   }
   const validPhotoUrls = validateJobPhotoUrls(photoUrls);
   if (validPhotoUrls === null) return res.status(400).json({ error: 'Invalid photo — please re-upload your photos and try again' });
-
-  const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
-  if (!provider) return res.status(404).json({ error: 'Provider not found' });
 
   // A provider can pause new bookings without deleting their profile or
   // going through the confirm/decline dance on every request — the
@@ -1189,7 +1210,7 @@ router.post('/reviews', requireAuth, requireRole('customer'), async (req, res) =
 // contract they're actually party to. Previously the UI claimed "customer/
 // provider-raised disputes" but no such endpoint existed at all — only
 // admins could resolve pre-existing (seeded) disputes.
-router.post('/disputes', requireAuth, async (req, res) => {
+router.post('/disputes', requireAuth, disputeLimiter, async (req, res) => {
   const { contractId, reason } = req.body || {};
   const errors = validate([
     ['contractId', isNonEmptyString(contractId), 'A booking must be selected'],

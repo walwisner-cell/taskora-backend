@@ -52,7 +52,25 @@ const PORT = process.env.PORT || 3000;
 // the output-escaping fix already in place; this is additional
 // defense-in-depth for the rest, not a replacement for that.
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors());
+// CORS was wide open (any origin, unconditionally) with no way to
+// restrict it. Given this app authenticates with a Bearer token rather
+// than cookies, the classic CSRF risk CORS restriction primarily guards
+// against doesn't directly apply — a malicious site can't get a victim's
+// browser to automatically attach their token to a forged request the
+// way it could with cookies. Still, allowing literally any origin is
+// looser than it needs to be. This adds a real restriction that's
+// entirely opt-in: set ALLOWED_ORIGINS (comma-separated) once you have a
+// real domain, and only those origins (plus requests with no Origin
+// header at all — same-origin page loads, curl, mobile apps, server-to-
+// server calls) will be allowed. Leave it unset and behavior is
+// unchanged from today, so this can't break your live site by itself.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+app.use(cors(allowedOrigins.length ? {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
+} : undefined));
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -64,7 +82,23 @@ app.use('/api/admin', adminRoutes);
 app.use('/api', miscRoutes);
 app.use('/api', portfolioRoutes);
 
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'trothen-api', time: new Date().toISOString() }));
+// A real health check — Render (and any monitoring) uses this to decide
+// whether this instance is actually healthy enough to route traffic to.
+// Always returning ok:true regardless of what's actually happening
+// underneath means a genuinely broken instance (database unreachable)
+// would keep receiving traffic with no early warning. This does one real,
+// cheap query against the actual datastore in use (JSON file or Postgres)
+// and only reports healthy if that genuinely succeeds.
+app.get('/api/health', async (req, res) => {
+  try {
+    const db = require('./src/db');
+    await db.all('categories');
+    res.json({ ok: true, service: 'trothen-api', time: new Date().toISOString() });
+  } catch (e) {
+    console.error('Health check failed — datastore unreachable:', e.message);
+    res.status(503).json({ ok: false, service: 'trothen-api', error: 'Datastore unreachable', time: new Date().toISOString() });
+  }
+});
 
 // ---- Serve uploaded portfolio photos ----
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -87,6 +121,14 @@ app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// A request to a genuinely unknown /api/* route (a typo, an old removed
+// endpoint, whatever) was falling through to Express's default 404 —
+// a raw HTML page, not the JSON format every real endpoint in this app
+// actually returns. Anything calling this API expects JSON back, always.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Not found' });
 });
 
 // ---- Error handler ----

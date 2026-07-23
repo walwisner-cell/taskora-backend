@@ -399,6 +399,13 @@ router.patch('/me', requireAuth, async (req, res) => {
   if ('acceptingBookings' in patch && typeof patch.acceptingBookings !== 'boolean') {
     return res.status(400).json({ error: 'acceptingBookings must be true or false' });
   }
+  for (const dateField of ['licenseExpiryDate', 'insuranceExpiryDate']) {
+    if (dateField in patch && patch[dateField] !== null) {
+      if (typeof patch[dateField] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(patch[dateField]) || isNaN(new Date(patch[dateField]).getTime())) {
+        return res.status(400).json({ error: `${dateField === 'licenseExpiryDate' ? 'License' : 'Insurance'} expiry must be a real date` });
+      }
+    }
+  }
   if ('name' in patch && !isValidName(patch.name)) {
     return res.status(400).json({ error: 'Enter a real name — letters, spaces, hyphens, and apostrophes only' });
   }
