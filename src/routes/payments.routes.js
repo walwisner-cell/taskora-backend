@@ -407,7 +407,25 @@ router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
   }
 });
 
+// These specific reasons are explicitly protected by policy — a provider
+// stopping a job for one of these must never count against them anywhere
+// a cancellation rate is calculated (this file, or the tier-progress
+// dashboard). This is enforced as a real system rule here, not left to
+// support discretion downstream.
+const PROTECTED_CANCEL_REASONS = new Set(['not_as_described', 'unsafe', 'out_of_category', 'unlicensed_required']);
+const CANCEL_REASON_LABELS = {
+  not_as_described: 'Job not as described',
+  unsafe: 'Became unsafe to continue',
+  out_of_category: 'Turned out to need a different trade/category',
+  unlicensed_required: 'Requires a license I don\'t hold',
+  customer_request: 'Customer asked to cancel',
+  schedule_conflict: 'Scheduling conflict',
+  other: 'Other',
+};
+
 async function handleContractCancel(req, res) {
+  const { reason } = req.body || {};
+  const reasonCategory = (reason && CANCEL_REASON_LABELS[reason]) ? reason : 'other';
   const contract = await db.find('contracts', c =>
     c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub)
   );
@@ -417,14 +435,22 @@ async function handleContractCancel(req, res) {
   }
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
-  const updated = await db.update('contracts', contract.id, { status: 'cancelled' });
+  const iAmProvider = contract.providerId === req.user.sub;
+  const isProtected = iAmProvider && PROTECTED_CANCEL_REASONS.has(reasonCategory);
+  const updated = await db.update('contracts', contract.id, {
+    status: 'cancelled',
+    cancelReasonCategory: reasonCategory,
+    cancelledByRole: iAmProvider ? 'provider' : 'customer',
+    protectedCancellation: isProtected,
+  });
 
   const iAmCustomer = contract.customerId === req.user.sub;
   const otherPartyId = iAmCustomer ? contract.providerId : contract.customerId;
   const canceller = await db.find('users', u => u.id === req.user.sub);
+  const reasonNote = isProtected ? ` Reason: ${CANCEL_REASON_LABELS[reasonCategory]} — this does not count against them.` : '';
   const message = escrow
-    ? `${canceller ? canceller.name : 'The other party'} cancelled the booking for "${contract.service}". Any held escrow has been refunded.`
-    : `${canceller ? canceller.name : 'The other party'} withdrew the offer for "${contract.service}".`;
+    ? `${canceller ? canceller.name : 'The other party'} cancelled the booking for "${contract.service}". Any held escrow has been refunded.${reasonNote}`
+    : `${canceller ? canceller.name : 'The other party'} withdrew the offer for "${contract.service}".${reasonNote}`;
   await notify(otherPartyId, '🚫', message, 'bookingUpdates', { section: 'bookings' });
 
   res.json({ contract: updated, escrow: escrow ? { ...escrow, status: 'refunded' } : null });

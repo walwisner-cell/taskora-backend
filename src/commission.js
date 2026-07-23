@@ -3,7 +3,11 @@
 // time). It's pulled out here so admin.routes.js can also use it to show an
 // *estimated* commission on transactions that haven't been paid out yet,
 // without duplicating (and risking drifting from) the real rate table.
-const COMMISSION_RATES = { starter: 0.12, pro: 0.08, superpro: 0.05 };
+// Rates match the officially published Fees and Payment Policy exactly:
+// Starter 13%, Pro 9%, Super-Pro 7%. If these ever change, update the
+// actual policy document first — this constant should always follow the
+// published policy, never the other way around.
+const COMMISSION_RATES = { starter: 0.13, pro: 0.09, superpro: 0.07 };
 
 function commissionRateForPlan(plan) {
   return COMMISSION_RATES[plan] ?? COMMISSION_RATES.starter;

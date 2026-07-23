@@ -370,6 +370,28 @@ router.get('/me', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/auth/me — update own profile / settings
+// Current version string for the Community/Customer Standards agreement.
+// Bump this any time the actual terms change — any user whose stored
+// terms_version doesn't match this gets shown the agreement gate again on
+// their next visit, rather than being grandfathered into terms they never
+// actually saw. Keep this in sync with CURRENT_TERMS_VERSION on the
+// frontend (public/index.html) — both must agree for the gate to work.
+const CURRENT_TERMS_VERSION = 'v1-2026';
+
+// POST /api/auth/accept-terms — records genuine, deliberate consent: a
+// real timestamp and the exact version being agreed to, not an implied
+// "they must have agreed since they're using the app" assumption. This is
+// what actually lets the business prove consent happened, the same way a
+// real company needs to be able to.
+router.post('/accept-terms', requireAuth, async (req, res) => {
+  const { version } = req.body || {};
+  if (version !== CURRENT_TERMS_VERSION) {
+    return res.status(400).json({ error: 'This isn\'t the current version of the agreement — please refresh and try again.' });
+  }
+  await db.update('users', req.user.sub, { termsAcceptedAt: new Date().toISOString(), termsVersion: version });
+  res.json({ ok: true, termsVersion: version });
+});
+
 router.patch('/me', requireAuth, async (req, res) => {
   const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'plan', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category', 'acceptingBookings'];
   const patch = {};

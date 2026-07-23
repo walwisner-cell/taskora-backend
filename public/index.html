@@ -1534,12 +1534,15 @@
 <div id="support-chat-panel" class="support-chat-panel">
   <div class="support-chat-header">
     <div>
-      <div class="support-chat-title">Trothen Assistant</div>
+      <div class="support-chat-title">Trothen Assistant <span style="background:rgba(255,255,255,.18);font-size:9.5px;font-weight:700;letter-spacing:.5px;padding:2px 6px;border-radius:4px;margin-left:6px;vertical-align:1px;">AI · NOT A PERSON</span></div>
       <div class="support-chat-sub">Ask about escrow, verification, disputes & more</div>
     </div>
     <button class="support-chat-close" onclick="toggleSupportChat()">✕</button>
   </div>
   <div class="support-chat-body" id="support-chat-body"></div>
+  <div style="padding:8px 14px;border-top:1px solid var(--border);background:var(--offwhite);text-align:center;">
+    <a onclick="requestHumanSupport()" style="font-size:11.5px;color:var(--teal);cursor:pointer;font-weight:600;">💬 Talk to a real person instead</a>
+  </div>
   <div class="support-chat-input-row">
     <input type="text" id="support-chat-input" placeholder="Type your question..." onkeypress="if(event.key==='Enter')sendSupportChatMessage()"/>
     <button onclick="sendSupportChatMessage()">Send</button>
@@ -2885,9 +2888,88 @@ async function goDashboard(role) {
     showToast(role === 'customer' ? 'Sign in as a customer to continue' : role === 'provider' ? 'Sign in as a provider to continue' : 'Sign in with an admin account to continue');
     return;
   }
-  if (role === 'customer') { showScreen('screen-customer'); await refreshNotifications(); renderNavbar('navbar-customer', 'customer'); await initCustomerDash(); startMessagePolling(); }
-  else if (role === 'provider') { showScreen('screen-provider'); await refreshNotifications(); renderNavbar('navbar-provider', 'provider'); await initProviderDash(); startMessagePolling(); }
+  if (role === 'customer') { showScreen('screen-customer'); await refreshNotifications(); renderNavbar('navbar-customer', 'customer'); await initCustomerDash(); startMessagePolling(); checkTermsGate('customer'); }
+  else if (role === 'provider') { showScreen('screen-provider'); await refreshNotifications(); renderNavbar('navbar-provider', 'provider'); await initProviderDash(); startMessagePolling(); checkTermsGate('provider'); }
   else { showScreen('screen-admin'); await refreshNotifications(); renderNavbar('navbar-admin', role); await initAdminDash(); }
+}
+
+// Current version of the customer/provider agreement — must match
+// CURRENT_TERMS_VERSION in src/routes/auth.routes.js exactly, or the
+// backend will reject the acceptance. Bumping this (after the actual
+// terms change) makes every existing user see the gate again on their
+// next visit, rather than silently staying agreed to terms they never
+// saw.
+const CURRENT_TERMS_VERSION = 'v1-2026';
+
+// A real, deliberate consent gate — not a pre-checked box, not something
+// implied by using the app. Shown once per version, to every customer and
+// provider whose stored agreement doesn't match the current version
+// (which covers both brand-new signups and every existing account from
+// before this existed — nobody is grandfathered into terms they never
+// actually saw). Blocking: no way to close it or click through to the
+// dashboard underneath without actually agreeing.
+function checkTermsGate(role) {
+  if (!BACKEND_AVAILABLE || !AUTH.user) return;
+  if (AUTH.user.termsVersion === CURRENT_TERMS_VERSION) return; // already agreed to the current version — nothing to show
+
+  const isProvider = role === 'provider';
+  const title = isProvider ? 'Trothen Community Standards' : 'Before You Continue';
+  const intro = isProvider
+    ? `You're an independent contractor using Trothen to find work — not an employee. You choose which jobs to accept, when to work, and how the work gets done. Nothing here changes that.`
+    : `A quick, plain-language summary of what Trothen promises you, and what we ask of you in return.`;
+  const standards = [
+    ['Keep what you promised', isProvider ? 'Show up for the window you accepted, or say so early if you can\'t.' : 'Be there for the window you booked, or say so early if plans change.'],
+    ['Be honest', isProvider ? 'Describe your work accurately. If a job needs a licensed trade or is bigger than described, stop and tell the customer — that cancellation never counts against you.' : 'Describe the job accurately, including anything difficult about it, and rate honestly on what actually happened.'],
+    ['Be safe', isProvider ? 'Never work impaired or endangered. Stop and report if a job becomes unsafe — no job is worth an injury.' : 'Disclose hazards before a job — pets, structural issues, chemicals — so your pro can work safely.'],
+    ['Treat people with respect', isProvider ? 'No harassment, discrimination, or unwanted contact. Never enter a space you weren\'t invited into.' : 'Providers are independent professionals running their own businesses — not staff, and not yours to direct beyond what the job describes.'],
+    ['Keep it on the platform', 'Arrange and pay for work through Trothen. Off the platform there is no payment protection and no insurance, for either side.'],
+  ];
+  const providerFinePrint = isProvider
+    ? `<div style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.6;">Providers are independent contractors, not employees, agents, partners, or joint venturers of Trothen. Nothing here creates an employment relationship. You're responsible for your own taxes, insurance, and business expenses.</div>`
+    : `<div style="font-size:11.5px;color:var(--muted);margin-top:16px;line-height:1.6;">Trothen operates a marketplace connecting customers with independent contractors. Trothen does not perform the services and does not employ the people who do them.</div>`;
+
+  const modalHtml = `
+    <div class="modal-overlay open" id="terms-gate-overlay" style="z-index:5000;">
+      <div class="modal" style="max-width:520px;" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <h3>${title}</h3>
+          <p>${intro}</p>
+        </div>
+        <div class="modal-body">
+          ${standards.map(([label, detail]) => `
+            <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+              <span style="color:var(--teal);font-weight:700;flex-shrink:0;">✓</span>
+              <div><div style="font-weight:600;font-size:13.5px;color:var(--navy);">${label}</div><div style="font-size:12.5px;color:var(--text);margin-top:2px;line-height:1.5;">${detail}</div></div>
+            </div>`).join('')}
+          ${providerFinePrint}
+          <label style="display:flex;align-items:flex-start;gap:10px;margin-top:18px;cursor:pointer;font-size:13px;">
+            <input type="checkbox" id="terms-gate-checkbox" onchange="document.getElementById('terms-gate-agree-btn').disabled = !this.checked" style="margin-top:2px;"/>
+            <span>I have read and agree to these standards.</span>
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" id="terms-gate-agree-btn" disabled onclick="submitTermsAgreement()">I Agree — Continue</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitTermsAgreement() {
+  const btn = document.getElementById('terms-gate-agree-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="btn-spinner" style="border-top-color:#fff;"></span>Saving…';
+  try {
+    await apiFetch('POST', '/auth/accept-terms', { version: CURRENT_TERMS_VERSION });
+    AUTH.user.termsVersion = CURRENT_TERMS_VERSION;
+    const overlay = document.getElementById('terms-gate-overlay');
+    if (overlay) overlay.remove();
+    showToast('Thanks — you\'re all set.');
+  } catch (e) {
+    showToast(e.message || 'Could not save your agreement — please try again');
+    btn.disabled = false;
+    btn.textContent = 'I Agree — Continue';
+  }
 }
 
 /* ══════════════════════ SHARED DASHBOARD HELPERS ══════════════════════ */
@@ -5101,11 +5183,47 @@ async function respondToOffer(contractId, decision) {
   } catch (e) { showToast(e.message || 'Could not respond to this booking'); }
 }
 
-async function cancelProviderContract(contractId) {
+function cancelProviderContract(contractId) {
   if (!BACKEND_AVAILABLE) return showToast('Contract cancelled (demo mode)');
-  if (!confirm("Cancel this contract? The customer's held escrow will be refunded, and you won't be paid for this job.")) return;
+  const reasons = [
+    ['not_as_described', "Job wasn't as described"],
+    ['unsafe', 'Became unsafe to continue'],
+    ['out_of_category', 'Turned out to need a different trade/category'],
+    ['unlicensed_required', "Requires a license I don't hold"],
+    ['schedule_conflict', 'Scheduling conflict'],
+    ['other', 'Other'],
+  ];
+  const modalHtml = `
+    <div class="modal-overlay open" id="cancel-reason-overlay" onclick="if(event.target===this)document.getElementById('cancel-reason-overlay').remove()">
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('cancel-reason-overlay').remove()">✕</button>
+          <h3>Why are you cancelling?</h3>
+          <p>The customer's held escrow will be refunded, and you won't be paid for this job.</p>
+        </div>
+        <div class="modal-body">
+          ${reasons.map(([val, label], i) => `
+            <label style="display:flex;align-items:center;gap:10px;padding:9px 0;cursor:pointer;font-size:13.5px;">
+              <input type="radio" name="cancel-reason" value="${val}" ${i === 0 ? 'checked' : ''}/>
+              <span>${label}</span>
+            </label>`).join('')}
+          <div style="font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5;">Cancelling because a job wasn't as described, became unsafe, needs a different trade, or requires a license you don't hold never counts against your standing — that's a system rule, not a judgment call.</div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="confirmProviderCancel('${contractId}')">Cancel This Job</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function confirmProviderCancel(contractId) {
+  const selected = document.querySelector('input[name="cancel-reason"]:checked');
+  const reason = selected ? selected.value : 'other';
   try {
-    await apiFetch('POST', `/contracts/${contractId}/cancel`);
+    await apiFetch('POST', `/contracts/${contractId}/cancel`, { reason });
+    const overlay = document.getElementById('cancel-reason-overlay');
+    if (overlay) overlay.remove();
     showToast('Contract cancelled — customer notified and refunded');
     await loadProviderData();
     selectProviderSection('contracts');
@@ -7482,7 +7600,7 @@ const SUPPORT_FAQ = [
   { keywords: ['community', 'zip', 'postal', 'location match'], answer: "We use your zip/postal code to find pros right in your community first, before widening to your broader city — this tends to mean faster response times and pros who already know the area." },
   { keywords: ['phone verif', 'otp', 'verify my phone', 'text code'], answer: "Phone verification now happens as part of signing up — you'll get a code on screen (test mode, since live SMS isn't connected yet) alongside an email code, and both are required before your account is created." },
   { keywords: ['human', 'agent', 'real person', 'support team', 'talk to someone', 'whatsapp', 'call'], answer: "Of course — reach a real person any time:" + supportContactHTML() + "<br/><br/>Or email support@trothen.io." },
-  { keywords: ['hi', 'hello', 'hey'], answer: "Hi! I'm the Trothen Assistant. Ask me about escrow, verification, disputes, payments, pricing, or how matching works — I'm happy to help." },
+  { keywords: ['hi', 'hello', 'hey'], answer: "Hi! I'm Trothen's AI assistant, not a person. Ask me about escrow, verification, disputes, payments, pricing, or how matching works — or ask for a real person any time." },
 ];
 
 const SUPPORT_SUGGESTIONS = ['How does escrow work?', 'How do I get verified?', 'What are the pricing plans?', 'How does matching work?'];
@@ -7578,9 +7696,16 @@ function toggleSupportChat() {
   if (isOpening) positionChatPanelNearBubble();
   panel.classList.toggle('open');
   if (isOpening && !document.getElementById('support-chat-body').children.length) {
-    appendSupportMessage('bot', "Hi! I'm the Trothen Assistant. Ask me anything about escrow, verification, disputes, payments, or how the platform works.");
+    appendSupportMessage('bot', "Hi — I'm Trothen's AI assistant, not a person. I can answer most questions about escrow, verification, disputes, payments, or how the platform works. If you'd rather talk to a real person, just ask, or use the link below any time.");
     appendSupportSuggestions();
   }
+}
+
+// Skips straight past the AI entirely — genuinely one request away, not
+// buried behind having to guess the right keyword first.
+function requestHumanSupport() {
+  appendSupportMessage('user', 'Talk to a real person');
+  appendSupportMessage('bot', "Of course — reach a real person any time:" + supportContactHTML() + "<br/><br/>Or email support@trothen.io.");
 }
 
 // If the bubble has been dragged somewhere other than its default corner,

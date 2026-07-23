@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS users (
   admin_department TEXT,
   accepting_bookings BOOLEAN NOT NULL DEFAULT TRUE,
   token_version   INTEGER NOT NULL DEFAULT 0,
+  terms_accepted_at TIMESTAMPTZ,
+  terms_version   TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ
 );
@@ -112,6 +114,9 @@ CREATE TABLE IF NOT EXISTS contracts (
   status         TEXT NOT NULL DEFAULT 'active',
   signed_at      TEXT,
   provider_response_deadline TIMESTAMPTZ,
+  cancel_reason_category TEXT,
+  cancelled_by_role TEXT,
+  protected_cancellation BOOLEAN NOT NULL DEFAULT FALSE,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -493,9 +498,14 @@ END $$;
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS accepting_bookings BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version TEXT;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS provider_response_deadline TIMESTAMPTZ;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS photo_urls JSONB;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS photo_urls JSONB;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS cancel_reason_category TEXT;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS cancelled_by_role TEXT;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS protected_cancellation BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- General-purpose key/value settings, first used for the provider
 -- booking-confirmation window (see src/platform-settings.js). Absence of
