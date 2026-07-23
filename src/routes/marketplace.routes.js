@@ -98,6 +98,31 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
 // and have it displayed to a real provider as if it were a legitimate
 // part of their job photos. Returns the cleaned array, or null if
 // anything in it doesn't pass.
+// Some categories of work are never permitted on the platform at all, per
+// policy — blocked at the moment of posting rather than caught
+// afterwards. This is a plain-language keyword check on the free-text
+// description and custom category name, not a perfect classifier — it
+// can't catch everything, and it can occasionally flag something
+// innocent (a false positive is a minor annoyance; a missed real one is
+// a real safety failure, so this deliberately errs toward over-catching).
+// A flagged post is rejected outright, with a clear reason, rather than
+// silently allowed through.
+const PROHIBITED_CONTENT_PATTERNS = [
+  { pattern: /\b(transport|drive|ride|shuttle|pick up|drop off|take)\b.*\b(person|people|passenger|kid|child|children|someone|anybody|mother|father|mom|dad|parent|grandma|grandpa|grandmother|grandfather|wife|husband|spouse|friend|relative|elderly|patient|guest)\b/i, reason: 'transporting people' },
+  { pattern: /\b(unsupervised|alone)\b.*\b(minor|child|kid|children)\b/i, reason: 'unsupervised minors' },
+  { pattern: /\b(gun|firearm|weapon|ammunition|ammo)\b/i, reason: 'weapons' },
+  { pattern: /\b(drugs?|narcotics?|cocaine|heroin|meth(amphetamine)?|marijuana|cannabis|weed)\b/i, reason: 'controlled substances' },
+  { pattern: /\b(surgery|surgical|inject(ion)?|prescription|veterinary procedure|medical procedure)\b/i, reason: 'medical or veterinary procedures' },
+  { pattern: /\b(hazardous waste|biohazard|biological waste|toxic waste|radioactive)\b/i, reason: 'hazardous or biological waste' },
+];
+function findProhibitedContent(text) {
+  if (!text) return null;
+  for (const { pattern, reason } of PROHIBITED_CONTENT_PATTERNS) {
+    if (pattern.test(text)) return reason;
+  }
+  return null;
+}
+
 const MAX_JOB_PHOTOS_PER_POST = 5;
 function validateJobPhotoUrls(photoUrls) {
   if (photoUrls === undefined || photoUrls === null) return [];
@@ -266,6 +291,18 @@ router.get('/homepage-content', async (req, res) => {
   const { getSetting } = require('../platform-settings');
   const content = await getSetting('homepageContent');
   res.json(content);
+});
+
+// GET /api/about-us-content, /api/terms-of-service-content — public, no
+// auth: these are real pages anyone can read, not admin-only data.
+router.get('/about-us-content', async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ content: await getSetting('aboutUsContent') });
+});
+
+router.get('/terms-of-service-content', async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ content: await getSetting('termsOfServiceContent') });
 });
 
 // GET /api/homepage-images — public, no auth: the real uploaded photo (if
@@ -493,6 +530,10 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
     ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  const prohibitedHit = findProhibitedContent(category) || findProhibitedContent(description);
+  if (prohibitedHit) {
+    return res.status(400).json({ error: `This can't be posted on Trothen — jobs involving ${prohibitedHit} are never permitted on the platform.` });
+  }
   const validPhotoUrls = validateJobPhotoUrls(photoUrls);
   if (validPhotoUrls === null) return res.status(400).json({ error: 'Invalid photo — please re-upload your photos and try again' });
 
@@ -679,6 +720,10 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     ['address', isNonEmptyString(address, { min: 5, max: 200 }), 'Enter a valid address'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  const prohibitedHit = findProhibitedContent(service);
+  if (prohibitedHit) {
+    return res.status(400).json({ error: `This can't be booked on Trothen — jobs involving ${prohibitedHit} are never permitted on the platform.` });
+  }
   if (amount !== undefined && (typeof amount !== 'number' || amount <= 0)) {
     return res.status(400).json({ error: 'Amount must be a positive number' });
   }

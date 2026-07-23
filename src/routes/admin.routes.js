@@ -659,6 +659,42 @@ router.patch('/settings/homepage-content', requireSuperAdmin, async (req, res) =
   res.json({ ok: true, ...content });
 });
 
+// ── ABOUT US & TERMS OF SERVICE ──────────────────────────────────────────
+// Real, admin-editable long-form pages — previously both were hardcoded
+// directly in the HTML with no way to change them without a code deploy.
+// Deliberately generous length limit: this is meant for genuinely
+// substantial content (a real About page, a real Terms of Service), not a
+// short marketing blurb like the homepage copy above.
+router.get('/settings/about-us', requireSuperAdmin, async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ content: await getSetting('aboutUsContent') });
+});
+
+router.patch('/settings/about-us', requireSuperAdmin, async (req, res) => {
+  const { content } = req.body || {};
+  if (!isNonEmptyString(content, { min: 10, max: 50000 })) {
+    return res.status(400).json({ error: 'Enter some content (up to 50,000 characters)' });
+  }
+  const { setSetting } = require('../platform-settings');
+  await setSetting('aboutUsContent', content.trim());
+  res.json({ ok: true, content: content.trim() });
+});
+
+router.get('/settings/terms-of-service', requireSuperAdmin, async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ content: await getSetting('termsOfServiceContent') });
+});
+
+router.patch('/settings/terms-of-service', requireSuperAdmin, async (req, res) => {
+  const { content } = req.body || {};
+  if (!isNonEmptyString(content, { min: 10, max: 50000 })) {
+    return res.status(400).json({ error: 'Enter some content (up to 50,000 characters)' });
+  }
+  const { setSetting } = require('../platform-settings');
+  await setSetting('termsOfServiceContent', content.trim());
+  res.json({ ok: true, content: content.trim() });
+});
+
 // ── HOMEPAGE IMAGES ──────────────────────────────────────────────────────
 // Real photo uploads for the marketing homepage — the hero and mission
 // sections previously had no photo at all, just icons/gradients. One slot

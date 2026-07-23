@@ -967,6 +967,7 @@
         <a onclick="showAboutPage()" style="color:rgba(255,255,255,.7);cursor:pointer;">About Us</a>
         <a onclick="showCareersPage()" style="color:rgba(255,255,255,.7);cursor:pointer;">Careers</a>
         <a onclick="showContactPage()" style="color:rgba(255,255,255,.7);cursor:pointer;">Contact Us</a>
+        <a onclick="showTermsPage()" style="color:rgba(255,255,255,.7);cursor:pointer;">Terms of Service</a>
       </div>
       <div class="footer-text">© 2026 Trothen Tech Group · Atlanta, GA · support@trothen.io</div>
     </div>
@@ -983,12 +984,7 @@
     <div class="pricing-inner" style="max-width:760px;">
       <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
       <div class="pricing-eyebrow">About Us</div>
-      <div class="pricing-title" style="font-size:32px;">Built to make hiring someone feel safe again</div>
-      <div style="font-size:15px;line-height:1.8;color:var(--slate);margin-top:24px;">
-        <p style="margin-bottom:16px;">Trothen started with a simple frustration: hiring a plumber, a tutor, or a mover in your own neighborhood shouldn't feel like a gamble. Across every market we operate in — Atlanta to Lagos to Accra — the same problem kept coming up: no way to know who's really showing up, and no real recourse if something goes wrong.</p>
-        <p style="margin-bottom:16px;">So we built a platform where every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is actually done. Trust shouldn't be something you hope for — it should be the default.</p>
-        <p>We're a small, distributed team building this because we've personally been on both sides of a bad hire and a missed payment. We're still early, and we're building this in the open — if something's not working the way it should, we want to hear about it.</p>
-      </div>
+      <div style="font-size:15px;color:var(--slate);margin-top:24px;" id="about-us-body">Loading…</div>
     </div>
   </div>
   <footer class="footer">
@@ -999,6 +995,23 @@
 </div>
 
 <!-- ════════════════════════════ SCREEN: CAREERS ════════════════════════════ -->
+<!-- ════════════════════════════ SCREEN: TERMS OF SERVICE ════════════════════════════ -->
+<div class="screen" id="screen-terms">
+  <nav class="navbar" id="navbar-terms"></nav>
+  <div class="pricing-wrap">
+    <div class="pricing-inner" style="max-width:760px;">
+      <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
+      <div class="pricing-eyebrow">Legal</div>
+      <div style="font-size:15px;color:var(--slate);margin-top:24px;" id="terms-of-service-body">Loading…</div>
+    </div>
+  </div>
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-text">© 2026 Trothen Tech Group · Atlanta, GA · support@trothen.io</div>
+    </div>
+  </footer>
+</div>
+
 <div class="screen" id="screen-careers">
   <nav class="navbar" id="navbar-careers"></nav>
   <div class="pricing-wrap">
@@ -2308,9 +2321,54 @@ async function loadPricingPage(country) {
   } catch (e) { console.warn('Could not load plan pricing', e); }
 }
 
-function showAboutPage() {
+// Renders the lightweight formatting supported in admin-editable long-form
+// content (About Us, Terms of Service): "# " starts a section heading,
+// "- " starts a bullet, "**text**" becomes bold, and a blank line starts a
+// new paragraph. All actual text content is escaped — only the specific
+// markers above become real markup, nothing else ever does, so this stays
+// safe even though it renders via innerHTML.
+function renderFormattedContent(raw) {
+  if (!raw) return '';
+  const inlineFormat = (line) => escapeHtml(line).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  const blocks = raw.split(/\n\s*\n/);
+  let html = '';
+  for (const block of blocks) {
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) continue;
+    if (lines[0].startsWith('# ')) {
+      html += `<h3 style="font-family:'Fraunces',serif;font-weight:700;font-size:24px;color:var(--navy);margin:28px 0 14px;">${inlineFormat(lines[0].slice(2))}</h3>`;
+      lines.shift();
+      if (!lines.length) continue;
+    }
+    if (lines.every(l => l.startsWith('- '))) {
+      html += `<ul style="margin:0 0 16px;padding-left:22px;">${lines.map(l => `<li style="margin-bottom:6px;line-height:1.7;">${inlineFormat(l.slice(2))}</li>`).join('')}</ul>`;
+    } else {
+      html += `<p style="margin-bottom:16px;line-height:1.8;">${lines.map(inlineFormat).join(' ')}</p>`;
+    }
+  }
+  return html;
+}
+
+async function showAboutPage() {
   showScreen('screen-about');
   renderNavbar('navbar-about', 'home');
+  const body = document.getElementById('about-us-body');
+  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable — no backend connection.</p>'; return; }
+  try {
+    const { content } = await apiFetch('GET', '/about-us-content');
+    body.innerHTML = renderFormattedContent(content);
+  } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
+}
+
+async function showTermsPage() {
+  showScreen('screen-terms');
+  renderNavbar('navbar-terms', 'home');
+  const body = document.getElementById('terms-of-service-body');
+  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable — no backend connection.</p>'; return; }
+  try {
+    const { content } = await apiFetch('GET', '/terms-of-service-content');
+    body.innerHTML = renderFormattedContent(content);
+  } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
 }
 
 function showCareersPage() {
@@ -2944,7 +3002,7 @@ function checkTermsGate(role) {
           ${providerFinePrint}
           <label style="display:flex;align-items:flex-start;gap:10px;margin-top:18px;cursor:pointer;font-size:13px;">
             <input type="checkbox" id="terms-gate-checkbox" onchange="document.getElementById('terms-gate-agree-btn').disabled = !this.checked" style="margin-top:2px;"/>
-            <span>I have read and agree to these standards.</span>
+            <span>I have read and agree to these standards and the <a onclick="event.preventDefault();showTermsPage();" style="color:var(--teal);">full Terms of Service</a>.</span>
           </label>
         </div>
         <div class="modal-footer">
@@ -4283,7 +4341,7 @@ async function loadProviderData() {
       budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: (Math.round(Math.random() * 40) / 10) + ' mi',
       photoUrls: (m.job && m.job.photoUrls) || [],
     }));
-    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [] }));
+    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation }));
     providerData.payouts = payouts;
     providerData.portfolioPhotos = photos;
   } catch (e) { console.warn('Falling back to demo provider data', e); }
@@ -4338,6 +4396,18 @@ const PROVIDER_SECTIONS = {
           <button class="btn-sm btn-sm-primary" onclick="selectProviderSection('earnings')">Go to Payouts →</button>
         </div>`
       : '';
+    const jobsCompleted = providerData.contracts.filter(c => c.status === 'completed').length;
+    const providerCancellations = providerData.contracts.filter(c => c.status === 'cancelled' && c.cancelReasonCategory !== undefined);
+    // Only cancellations the PROVIDER made, and only the ones NOT
+    // protected by policy, count against them — a job stopped because it
+    // wasn't as described, was unsafe, or needed a different trade never
+    // factors into this number, per the system rule this is built on.
+    const countedCancellations = providerCancellations.filter(c => !c.protectedCancellation).length;
+    const cancellationDenominator = jobsCompleted + providerCancellations.length;
+    const cancellationRate = cancellationDenominator > 0 ? (countedCancellations / cancellationDenominator) * 100 : 0;
+    const rating = AUTH.user && AUTH.user.rating ? Number(AUTH.user.rating) : null;
+    const currentPlan = (AUTH.user && AUTH.user.plan) || 'starter';
+    const tierProgressHTML = renderTierProgress(currentPlan, jobsCompleted, rating, cancellationRate);
     return `
     <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Marcus'}</div><div class="dash-sub">Your matched jobs and contract activity</div></div></div>
     ${payoutBanner}
@@ -4348,6 +4418,7 @@ const PROVIDER_SECTIONS = {
       <div class="stat-card"><div class="stat-card-label">Average Rating</div><div class="stat-card-val">${(AUTH.user && AUTH.user.rating) ? Number(AUTH.user.rating).toFixed(1) + '★' : 'New'}</div></div>
       <div class="stat-card"><div class="stat-card-label">Jobs Completed</div><div class="stat-card-val">${providerData.contracts.filter(c => c.status === 'completed').length}</div></div>
     </div>
+    ${tierProgressHTML}
     <div class="panel"><div class="panel-title">New Matches <small>${providerData.matches.length} pending</small></div>${matchesTable(providerData.matches.slice(0, 3))}</div>
     <div class="panel"><div class="panel-title">Recent Contracts</div>${contractsTableWithEscrow(providerData.contracts.slice(0, 3))}</div>`;
   },
@@ -5157,6 +5228,59 @@ function contractsTable(list) {
 // released (ready for payout), or already paid out — so the Overview
 // page's contract list carries genuine financial detail instead of just
 // the booking status.
+// The exact thresholds from the published Fees and Payment Policy — if
+// those numbers ever change, update them here to match, not the other
+// way around.
+const TIER_THRESHOLDS = {
+  starter: { next: 'pro', nextLabel: 'Pro', nextRate: '9%', jobs: 50, rating: 4.7, cancellationRate: 5 },
+  pro: { next: 'superpro', nextLabel: 'Super-Pro', nextRate: '7%', jobs: 500, rating: 4.85, cancellationRate: 2 },
+};
+const TIER_LABELS = { starter: 'Starter', pro: 'Pro', superpro: 'Super-Pro' };
+const TIER_RATES = { starter: '13%', pro: '9%', superpro: '7%' };
+
+function renderTierProgress(currentPlan, jobsCompleted, rating, cancellationRate) {
+  const currentLabel = TIER_LABELS[currentPlan] || 'Starter';
+  const currentRate = TIER_RATES[currentPlan] || '13%';
+  const threshold = TIER_THRESHOLDS[currentPlan];
+
+  if (!threshold) {
+    // Already at Super-Pro — nothing further to climb toward from here.
+    return `<div class="panel"><div class="panel-title">Your Tier</div>
+      <div style="font-size:14px;color:var(--navy);font-weight:700;">${currentLabel} · ${currentRate} commission</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-top:4px;">You've reached the top individual tier. Thank you for the record that got you here.</div>
+    </div>`;
+  }
+
+  const bar = (label, current, target, unit, lowerIsBetter) => {
+    const metGoal = lowerIsBetter ? current <= target : current >= target;
+    const displayPct = lowerIsBetter ? Math.min(100, Math.max(0, 100 - (current / (target * 2)) * 100)) : Math.min(100, (current / target) * 100);
+    return `
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px;">
+          <span style="color:var(--navy);font-weight:600;">${label}</span>
+          <span style="color:${metGoal ? '#2E8C6F' : 'var(--slate)'};font-weight:600;">${current}${unit} ${metGoal ? '✓' : `/ ${target}${unit} needed`}</span>
+        </div>
+        <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;">
+          <div style="background:${metGoal ? '#2E8C6F' : 'var(--teal)'};height:100%;width:${displayPct}%;border-radius:4px;"></div>
+        </div>
+      </div>`;
+  };
+
+  const jobsMet = jobsCompleted >= threshold.jobs;
+  const ratingMet = rating !== null && rating >= threshold.rating;
+  const cancellationMet = cancellationRate <= threshold.cancellationRate;
+  const allMet = jobsMet && ratingMet && cancellationMet;
+
+  return `<div class="panel">
+    <div class="panel-title">Your Path to ${threshold.nextLabel} <small style="font-weight:400;color:var(--slate);">currently ${currentLabel} · ${currentRate} commission</small></div>
+    ${allMet ? `<div style="background:#EAF4EF;border:1px solid #2E8C6F;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:#1C5C42;">✓ You meet every published requirement for ${threshold.nextLabel} (${threshold.nextRate} commission). Tier changes are reviewed, not automatic — reach out if you'd like it looked at.</div>` : ''}
+    ${bar('Jobs completed', jobsCompleted, threshold.jobs, '', false)}
+    ${bar('Average rating', rating !== null ? rating.toFixed(2) : 0, threshold.rating, '★', false)}
+    ${bar('Cancellation rate', cancellationRate.toFixed(1), threshold.cancellationRate, '%', true)}
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">Cancelling because a job wasn't as described, was unsafe, needed a different trade, or required a license you don't hold never counts here. ${threshold.next === 'superpro' ? 'Super-Pro also requires 12 months active with no upheld serious complaint.' : ''}</div>
+  </div>`;
+}
+
 function contractsTableWithEscrow(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No contracts yet.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Customer</th><th>Service</th><th>Amount</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
@@ -5491,7 +5615,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, homepageImages: null, categoryImages: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, homepageImages: null, categoryImages: null, aboutUsContent: null, termsOfServiceContent: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -5559,7 +5683,7 @@ async function loadAdminData() {
   }
 
   if (AUTH.user && AUTH.user.isSuperAdmin) {
-    const [cities, subAdmins, exchangeRates, bookingWindow, supportContact, homepageContent, homepageImages, categoryImages] = await Promise.all([
+    const [cities, subAdmins, exchangeRates, bookingWindow, supportContact, homepageContent, homepageImages, categoryImages, aboutUsContent, termsContent] = await Promise.all([
       tryFetch('/admin/cities'),
       tryFetch('/admin/sub-admins'),
       tryFetch('/admin/exchange-rates'),
@@ -5568,6 +5692,8 @@ async function loadAdminData() {
       tryFetch('/admin/settings/homepage-content'),
       tryFetch('/homepage-images'),
       tryFetch('/admin/category-images'),
+      tryFetch('/admin/settings/about-us'),
+      tryFetch('/admin/settings/terms-of-service'),
     ]);
     if (cities) adminData.cities = cities.cities;
     if (subAdmins) adminData.subAdmins = subAdmins.admins;
@@ -5577,6 +5703,8 @@ async function loadAdminData() {
     if (homepageContent) adminData.homepageContent = homepageContent;
     if (homepageImages) adminData.homepageImages = homepageImages;
     if (categoryImages) adminData.categoryImages = categoryImages;
+    if (aboutUsContent) adminData.aboutUsContent = aboutUsContent.content;
+    if (termsContent) adminData.termsOfServiceContent = termsContent.content;
   }
 }
 
@@ -5937,6 +6065,23 @@ const ADMIN_SECTIONS = {
       <div style="max-height:420px;overflow-y:auto;">
         ${(adminData.categories || []).map(c => categoryImageUploadRowHTML(c, (adminData.categoryImages || {})[c.id])).join('')}
       </div>
+    </div>
+    <div class="panel"><div class="panel-title">Site Content — About Us & Terms of Service</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:16px;line-height:1.6;">
+        Write as much as you need — there's no meaningful length limit. A simple format is supported: a line starting with <code>#&nbsp;</code> becomes a heading, a line starting with <code>-&nbsp;</code> becomes a bullet point, <code>**text**</code> becomes <strong>bold</strong>, and a blank line starts a new paragraph.
+      </div>
+      <div class="form-group">
+        <label class="form-label">About Us <small id="about-us-charcount" style="font-weight:400;color:var(--slate);"></small></label>
+        <textarea class="form-input" id="settings-about-us" rows="10" style="resize:vertical;font-family:ui-monospace,monospace;font-size:12.5px;" oninput="document.getElementById('about-us-charcount').textContent = this.value.length.toLocaleString() + ' characters'">${escapeHtml(adminData.aboutUsContent || '')}</textarea>
+      </div>
+      <button class="btn-sm btn-sm-primary" onclick="saveAboutUsContent()">Save About Us</button>
+      <hr style="border:none;border-top:1px solid var(--border);margin:22px 0;"/>
+      <div class="form-group">
+        <label class="form-label">Terms of Service <small id="terms-charcount" style="font-weight:400;color:var(--slate);"></small></label>
+        <textarea class="form-input" id="settings-terms" rows="16" style="resize:vertical;font-family:ui-monospace,monospace;font-size:12.5px;" oninput="document.getElementById('terms-charcount').textContent = this.value.length.toLocaleString() + ' characters'">${escapeHtml(adminData.termsOfServiceContent || '')}</textarea>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;">This is real legal content shown to every user before they can use the platform. Consider having a lawyer review it before you rely on it — this starting draft reflects the policies you've already written, structured the way real marketplace Terms of Service are, but it isn't a substitute for legal review.</div>
+      </div>
+      <button class="btn-sm btn-sm-primary" onclick="saveTermsContent()">Save Terms of Service</button>
     </div>
     <div class="panel"><div class="panel-title">Maintenance Tools</div>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Fix Old Notification Links</div>
@@ -6797,6 +6942,28 @@ async function decideCategoryRequest(requestId, decision) {
     await loadAdminData();
     selectAdminSection('categories');
   } catch (e) { showToast(e.message || `Could not ${decision} this request`); }
+}
+
+async function saveAboutUsContent() {
+  const content = document.getElementById('settings-about-us').value.trim();
+  if (content.length < 10) return showToast('Enter some real content first');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/settings/about-us', { content });
+    showToast('About Us updated — live now');
+    adminData.aboutUsContent = content;
+  } catch (e) { showToast(e.message || 'Could not save this'); }
+}
+
+async function saveTermsContent() {
+  const content = document.getElementById('settings-terms').value.trim();
+  if (content.length < 10) return showToast('Enter some real content first');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/settings/terms-of-service', { content });
+    showToast('Terms of Service updated — live now');
+    adminData.termsOfServiceContent = content;
+  } catch (e) { showToast(e.message || 'Could not save this'); }
 }
 
 async function backfillNotificationLinks() {
