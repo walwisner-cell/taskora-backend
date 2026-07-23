@@ -1,11 +1,11 @@
-# Taskora Backend
+# Trothen Backend
 
-A real, runnable API for the Taskora prototype: authentication, provider search,
+A real, runnable API for the Trothen prototype: authentication, provider search,
 job posting + AI matching, contracts & escrow, disputes, admin approvals, and
 notifications — all persisted to disk so nothing resets when you refresh the
 page.
 
-It also serves the Taskora frontend directly, so running one command gives
+It also serves the Trothen frontend directly, so running one command gives
 you the whole app, frontend and backend together, talking to each other for
 real.
 
@@ -25,7 +25,7 @@ persistence is a two-line change once you decide you want it — see "Adding
 real persistence" below.
 
 ### Option A — Blueprint (recommended, fully automatic)
-1. Push this `taskora-backend` folder to its own GitHub repo.
+1. Push this `trothen-backend` folder to its own GitHub repo.
 2. In the Render dashboard: **New +** → **Blueprint** → connect that repo.
 3. Render reads `render.yaml` and creates the service and environment
    variables (including a freshly generated JWT secret) automatically.
@@ -35,16 +35,16 @@ real persistence" below.
    plan (no disk), that means it re-seeds fairly often, since the
    filesystem doesn't survive spin-downs. That's expected on this plan.
 
-If you want an even more distinct name than the default `taskora-api` (e.g.
+If you want an even more distinct name than the default `trothen-api` (e.g.
 if you're worried about visually telling it apart from your other project in
 the dashboard list), change the `name:` field in `render.yaml` before you
 connect the repo.
 
 ### Option B — Manual, no Blueprint
 1. **New +** → **Web Service** → connect the repo.
-2. Name it something distinct, e.g. `taskora-api` or `taskora-staging`.
+2. Name it something distinct, e.g. `trothen-api` or `trothen-staging`.
 3. Runtime: Node. Build command: `npm install`. Start command: `npm start`.
-4. Add environment variable `TASKORA_JWT_SECRET` — any long random string.
+4. Add environment variable `TROTHEN_JWT_SECRET` — any long random string.
 5. Deploy. Same auto-seed-on-first-boot behavior as Option A.
 
 ### Adding real persistence (data survives redeploys/idle spin-downs)
@@ -66,24 +66,24 @@ resets it back to clean demo data.
 ### Preparing for the actual live system
 Neither option above is meant to be the permanent production setup — a
 single disk (or no disk) isn't how you'd run this for real users. Follow the
-Postgres migration path in `Taskora_Technical_Spec.docx` instead once you're
+Postgres migration path in `Trothen_Technical_Spec.docx` instead once you're
 past testing.
 
 ## Quick start
 
 ```bash
-cd taskora-backend
+cd trothen-backend
 npm install
 npm run seed      # creates /data with demo users, providers, contracts, etc.
 npm start         # starts the API + frontend at http://localhost:3000
 ```
 
-Open **http://localhost:3000** in your browser. That's the same Taskora
+Open **http://localhost:3000** in your browser. That's the same Trothen
 interface you've seen, now backed by a real API — sign in, post a job, accept
 a match, approve a user as admin, refresh the page, and it's all still there.
 
 ### Demo accounts
-Every seeded account uses the password `taskora123`:
+Every seeded account uses the password `trothen123`:
 
 | Role      | Email                  |
 |-----------|-------------------------|
@@ -127,7 +127,7 @@ surface once you've picked partners.
 ## Project structure
 
 ```
-taskora-backend/
+trothen-backend/
   server.js                 — Express app entrypoint, serves API + frontend
   src/
     db.js                   — JSON-file datastore (see note below)
@@ -140,7 +140,7 @@ taskora-backend/
       admin.routes.js        — approvals, verification queue, disputes, categories/countries, stats
       misc.routes.js         — notifications, verification submission, messages
   data/                      — JSON data files (created by seed, gitignored in real use)
-  public/                    — the Taskora frontend (index.html)
+  public/                    — the Trothen frontend (index.html)
 ```
 
 ## Datastore: JSON files by default, real Postgres when you want it
@@ -167,7 +167,7 @@ JSON store and against a real running Postgres database.
 
 1. **Local development:** install Postgres, create a database, then run:
    ```
-   DATABASE_URL="postgresql://user:password@localhost:5432/taskora_dev" npm start
+   DATABASE_URL="postgresql://user:password@localhost:5432/trothen_dev" npm start
    ```
    The schema (`src/schema.sql`) is applied automatically on first boot —
    no separate migration step to run.

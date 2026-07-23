@@ -1,4 +1,4 @@
--- Taskora PostgreSQL schema.
+-- Trothen PostgreSQL schema.
 -- Mirrors exactly what the JSON-file datastore has been storing — every
 -- field here is already in use by the running application, not aspirational.
 

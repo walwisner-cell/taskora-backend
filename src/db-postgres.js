@@ -6,7 +6,7 @@
 // Design note on find/filter: these fetch the full table and apply the
 // caller's JS predicate function in Node, rather than translating arbitrary
 // JS predicates into SQL WHERE clauses. That's a deliberate, honest
-// trade-off: at Taskora's current scale (hundreds, not millions, of rows)
+// trade-off: at Trothen's current scale (hundreds, not millions, of rows)
 // this is fast and correct, and it means every route handler already
 // written against the old JSON store needed zero predicate-logic changes
 // to run against real Postgres. If a table's row count grows into the

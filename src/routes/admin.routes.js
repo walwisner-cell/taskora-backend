@@ -372,7 +372,7 @@ router.get('/disputes/pdf', requireDepartment(['disputes', 'customer_service', '
   const rangeLabel = from || to ? `${from || 'earliest'} to ${to || 'today'}` : 'All time';
   const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
     res,
-    filename: `Taskora-Disputes-Report.pdf`,
+    filename: `Trothen-Disputes-Report.pdf`,
     title: 'Disputes Report',
     subtitle: region ? `Scoped to ${region}` : 'All locations',
     docId: rangeLabel,
@@ -395,7 +395,7 @@ router.get('/disputes/pdf', requireDepartment(['disputes', 'customer_service', '
     );
   }
 
-  finish({ closingNote: 'This report reflects Taskora\'s dispute records within the scope and date range shown, as of the moment it was generated.' });
+  finish({ closingNote: 'This report reflects Trothen\'s dispute records within the scope and date range shown, as of the moment it was generated.' });
 });
 
 // GET /api/admin/transactions — every real contract on the platform (or
@@ -490,7 +490,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'legal']), async
 
   const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
     res,
-    filename: `Taskora-Platform-Transactions-Report.pdf`,
+    filename: `Trothen-Platform-Transactions-Report.pdf`,
     title: 'Platform Transactions Report',
     subtitle: region ? `Scoped to ${region}` : 'All locations',
     docId: rangeLabel,
@@ -526,7 +526,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'legal']), async
     );
   }
 
-  finish({ closingNote: 'This report reflects Taskora\'s transaction records within the scope and date range shown, as of the moment it was generated. GMV figures are gross booking values, not net of commission.' });
+  finish({ closingNote: 'This report reflects Trothen\'s transaction records within the scope and date range shown, as of the moment it was generated. GMV figures are gross booking values, not net of commission.' });
 });
 
 router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_service']), async (req, res) => {
@@ -1345,7 +1345,7 @@ router.delete('/plan-pricing/override/:country/:plan', async (req, res) => {
 });
 
 // GET /api/admin/exchange-rates — super admin only: every currency
-// Taskora operates in, with its effective rate and where it came from —
+// Trothen operates in, with its effective rate and where it came from —
 // a live daily fetch, a manual admin correction, or (if neither has ever
 // run) the static approximate default from src/currency-data.js.
 router.get('/exchange-rates', requireSuperAdmin, async (req, res) => {

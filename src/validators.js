@@ -37,7 +37,7 @@ function isNonEmptyString(value, { min = 1, max = 500 } = {}) {
 const COMMON_WEAK_PASSWORDS = new Set([
   'password', 'password1', 'password123', '12345678', '123456789', '1234567890',
   'qwerty123', 'qwertyuiop', 'letmein123', 'welcome123', 'admin1234', 'iloveyou1',
-  'abc123456', '11111111', '00000000', 'taskora123', // yes, even our own demo password shouldn't be reused for a real account
+  'abc123456', '11111111', '00000000', 'trothen123', // yes, even our own demo password shouldn't be reused for a real account
 ]);
 
 function isValidPassword(password) {
@@ -53,7 +53,7 @@ function isValidPassword(password) {
   return true;
 }
 
-// Deliberately permissive on exact format — Taskora operates across the US,
+// Deliberately permissive on exact format — Trothen operates across the US,
 // Nigeria, Ghana, and Liberia, and phone formats vary a lot by country. This
 // checks for "plausible," not one country's exact pattern: digits (with
 // optional +, spaces, dashes, parens), a realistic length, and rejects

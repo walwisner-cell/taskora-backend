@@ -7,7 +7,7 @@ const { nanoid } = require('nanoid');
 const db = require('./db');
 const { hashPassword } = require('./auth');
 
-const DEMO_PASSWORD = 'taskora123';
+const DEMO_PASSWORD = 'trothen123';
 
 function id(prefix) {
   return `${prefix}_${nanoid(10)}`;
@@ -59,7 +59,7 @@ const users = [
     region: 'Lagos', isSuperAdmin: false, active: true },
   { id: 'u_kwame', name: 'Kwame B.', email: 'kwame@example.com', role: 'admin', city: 'Accra', country: 'Ghana', initials: 'KB', verified: true,
     region: 'Accra', isSuperAdmin: false, active: true },
-  { id: 'u_superadmin', name: 'Taskora HQ', email: 'superadmin@taskora.io', role: 'admin', city: null, country: null, initials: 'TH', verified: true,
+  { id: 'u_superadmin', name: 'Trothen HQ', email: 'superadmin@trothen.io', role: 'admin', city: null, country: null, initials: 'TH', verified: true,
     region: null, isSuperAdmin: true, active: true },
 ].map((u, i) => ({
   ...u,
@@ -452,7 +452,7 @@ await db.replaceAll('reviews', [
 
 console.log('✅ Seed complete.');
 console.log(`   ${users.length} users created. Demo password for all accounts: "${DEMO_PASSWORD}"`);
-console.log('   Super Admin:   superadmin@taskora.io  (sees & manages everything, creates location admins)');
+console.log('   Super Admin:   superadmin@trothen.io  (sees & manages everything, creates location admins)');
 console.log('   Atlanta Admin: amara@example.com   (US)');
 console.log('   Lagos Admin:   ngozi@example.com    (Nigeria)');
 console.log('   Accra Admin:   kwame@example.com    (Ghana)');

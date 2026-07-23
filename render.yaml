@@ -1,4 +1,4 @@
-# Render Blueprint for Taskora.
+# Render Blueprint for Trothen (formerly Taskora — renamed, same service).
 #
 # This defines a standalone, independently-named Web Service so it can sit
 # in the same Render account as other projects without any naming, port, or
@@ -13,7 +13,7 @@
 
 services:
   - type: web
-    name: taskora-api
+    name: trothen-api
     runtime: node
     plan: starter
     region: oregon                # pick whichever region is closest to you
@@ -22,7 +22,7 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      - key: TASKORA_JWT_SECRET
+      - key: TROTHEN_JWT_SECRET
         generateValue: true       # Render generates a strong random secret — never commit one
       - key: NODE_ENV
         value: production
@@ -39,9 +39,19 @@ services:
       # not image files.
       # - key: DATABASE_URL
       #   fromDatabase:
-      #     name: taskora-db
+      #     name: trothen-db
       #     property: connectionString
     disk:
+      # Deliberately left as "taskora-data", not renamed to match the new
+      # brand — this is the actual identifier of your real, already-created
+      # persistent disk with real data on it. If this were changed to
+      # "trothen-data", Render could interpret it as a request for a
+      # DIFFERENT, brand-new disk rather than your existing one, which risks
+      # either an error or — worse — silently provisioning a second, empty
+      # disk while your real data stays on the old one, invisible to the
+      # running service. Renaming this is possible, but only by doing it
+      # directly in the Render dashboard first (which handles the existing
+      # resource correctly) — never just by editing this identifier here.
       name: taskora-data
       mountPath: /var/data
       sizeGB: 1
@@ -52,7 +62,7 @@ services:
 # switch to Postgres:
 #
 #   1. In the Render dashboard: "New +" → "PostgreSQL". Name it (e.g.
-#      "taskora-db"), pick the free tier to start, create it.
+#      "trothen-db"), pick the free tier to start, create it.
 #   2. Back in this file, uncomment the DATABASE_URL env var above and make
 #      sure the `name:` under fromDatabase matches exactly what you named
 #      the Postgres instance in step 1.

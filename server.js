@@ -64,7 +64,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api', miscRoutes);
 app.use('/api', portfolioRoutes);
 
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'taskora-api', time: new Date().toISOString() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, service: 'trothen-api', time: new Date().toISOString() }));
 
 // ---- Serve uploaded portfolio photos ----
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -103,7 +103,7 @@ app.use((err, req, res, next) => {
 seedIfEmpty()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`\n  Taskora API + frontend running at http://localhost:${PORT}\n`);
+      console.log(`\n  Trothen API + frontend running at http://localhost:${PORT}\n`);
     });
 
     // Daily live exchange-rate refresh (see src/fx-scheduler.js). Runs once

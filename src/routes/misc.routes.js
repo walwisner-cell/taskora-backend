@@ -33,7 +33,7 @@ router.post('/contact', async (req, res) => {
   for (const admin of superAdmins) {
     await notify(admin.id, '✉️', `New contact form message from ${submission.name}: "${submission.subject}"`);
   }
-  console.log(`[TEST MODE — no email provider connected] Would email support@taskora.io: new contact form submission from ${submission.email}`);
+  console.log(`[TEST MODE — no email provider connected] Would email support@trothen.io: new contact form submission from ${submission.email}`);
 
   res.status(201).json({ ok: true });
 });
@@ -62,7 +62,7 @@ router.post('/careers-inquiry', async (req, res) => {
   for (const admin of superAdmins) {
     await notify(admin.id, '💼', `New careers inquiry from ${submission.name} — interested in: "${submission.role}"`);
   }
-  console.log(`[TEST MODE — no email provider connected] Would email support@taskora.io: new careers inquiry from ${submission.email}`);
+  console.log(`[TEST MODE — no email provider connected] Would email support@trothen.io: new careers inquiry from ${submission.email}`);
 
   res.status(201).json({ ok: true });
 });
@@ -118,7 +118,7 @@ router.post('/advertising-inquiry', async (req, res) => {
   for (const admin of toNotify) {
     await notify(admin.id, '📣', `New advertising inquiry from ${submission.companyName} (${submission.contactName})${city ? ` — targeting ${city}` : ' — platform-wide'}`, null, { section: 'advertising' });
   }
-  console.log(`[TEST MODE — no email provider connected] Would email sales@taskora.io: new advertising inquiry from ${submission.companyName} <${submission.email}>`);
+  console.log(`[TEST MODE — no email provider connected] Would email sales@trothen.io: new advertising inquiry from ${submission.companyName} <${submission.email}>`);
 
   res.status(201).json({ ok: true });
 });
@@ -156,7 +156,7 @@ router.post('/sales-inquiry', async (req, res) => {
   for (const admin of superAdmins) {
     await notify(admin.id, '💼', `New Custom plan sales inquiry from ${submission.companyName} (${submission.contactName})`, null, { section: 'sales' });
   }
-  console.log(`[TEST MODE — no email provider connected] Would email sales@taskora.io: new Custom plan inquiry from ${submission.companyName} <${submission.email}>`);
+  console.log(`[TEST MODE — no email provider connected] Would email sales@trothen.io: new Custom plan inquiry from ${submission.companyName} <${submission.email}>`);
 
   res.status(201).json({ ok: true });
 });

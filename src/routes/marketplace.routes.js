@@ -294,7 +294,7 @@ router.get('/live-ads', async (req, res) => {
     ad: ad ? {
       companyName: ad.companyName,
       displayHeadline: ad.displayHeadline || ad.companyName,
-      displaySubtext: ad.displaySubtext || `Reach customers browsing Taskora${ad.targetCity ? ` in ${ad.targetCity}` : ''} right now`,
+      displaySubtext: ad.displaySubtext || `Reach customers browsing Trothen${ad.targetCity ? ` in ${ad.targetCity}` : ''} right now`,
       displayLink: ad.displayLink || null,
       targetCity: ad.targetCity || null,
     } : null,
@@ -879,7 +879,7 @@ router.get('/contracts/mine', requireAuth, async (req, res) => {
 // over a dispute — not a screenshot, and not a bare data dump either. That
 // means: a plain-language declaration of what the document is, full
 // identification of both parties, a real chronological timeline (not just
-// a snapshot), a short explanation of how Taskora's escrow/dispute process
+// a snapshot), a short explanation of how Trothen's escrow/dispute process
 // works (a reader outside the platform won't know this), the review if one
 // exists, and a verification ID so the document can't be casually altered
 // without it being obvious.
@@ -899,11 +899,11 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   const path = require('path');
   const fs = require('fs');
   const crypto = require('crypto');
-  const logoPath = path.join(__dirname, '..', 'assets', 'taskora-logo.png');
+  const logoPath = path.join(__dirname, '..', 'assets', 'trothen-logo.png');
 
   const doc = new PDFDocument({ size: 'LETTER', margin: 0, bufferPages: true });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="Taskora-Contract-${contract.bookingNumber || contract.id}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="Trothen-Contract-${contract.bookingNumber || contract.id}.pdf"`);
   doc.pipe(res);
 
   const navy = '#12161F';
@@ -919,7 +919,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   // A short, stable checksum tying this document's content to a specific
   // moment — not cryptographic proof of anything, but enough that a
   // casually altered copy (a changed amount, a swapped name) won't match
-  // if someone checks it against Taskora's own records.
+  // if someone checks it against Trothen's own records.
   const verificationId = crypto.createHash('sha256')
     .update(`${contract.id}|${contract.status}|${contract.amount}|${escrow ? escrow.status : 'none'}|${generatedAt.toISOString()}`)
     .digest('hex').slice(0, 16).toUpperCase();
@@ -927,7 +927,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   function drawLetterhead() {
     doc.rect(0, 0, pageWidth, 118).fill(navy);
     if (fs.existsSync(logoPath)) doc.image(logoPath, margin, 28, { width: 56, height: 56 });
-    doc.fillColor('#FFFFFF').fontSize(22).font('Helvetica-Bold').text('TASKORA', margin + 70, 36);
+    doc.fillColor('#FFFFFF').fontSize(22).font('Helvetica-Bold').text('TROTHEN', margin + 70, 36);
     doc.fillColor(gold).fontSize(10).font('Helvetica-Bold').text('SERVICE CONTRACT & ESCROW RECORD', margin + 70, 62, { characterSpacing: 1.2 });
     doc.fillColor('#B7BAC2').fontSize(8.5).font('Helvetica').text('AI-Matched · Identity-Verified · Escrow-Protected', margin + 70, 78);
     doc.fillColor('#B7BAC2').fontSize(8).font('Helvetica').text(`Generated ${generatedAt.toLocaleString('en-US')}`, margin, 96, { width: contentWidth - 140 });
@@ -935,7 +935,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   }
 
   function drawContinuationHeader() {
-    doc.fillColor(slate).fontSize(8).font('Helvetica-Bold').text(`TASKORA — CONTRACT #${contract.bookingNumber || contract.id} (CONTINUED)`, margin, 32, { characterSpacing: 0.5 });
+    doc.fillColor(slate).fontSize(8).font('Helvetica-Bold').text(`TROTHEN — CONTRACT #${contract.bookingNumber || contract.id} (CONTINUED)`, margin, 32, { characterSpacing: 0.5 });
     doc.strokeColor('#D8D3C8').lineWidth(0.5).moveTo(margin, 48).lineTo(pageWidth - margin, 48).stroke();
   }
 
@@ -986,10 +986,10 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
 
   // ── OPENING DECLARATION ─────────────────────────────────────────────────
   // States plainly, in the first thing anyone reads, what this document is
-  // and what it's for — a lawyer or clerk unfamiliar with Taskora should not
+  // and what it's for — a lawyer or clerk unfamiliar with Trothen should not
   // have to guess.
   paragraph(
-    `This document certifies the terms and current status of a service engagement facilitated through the Taskora platform between the customer and service provider identified below. It is generated on request directly from Taskora's records and reflects the state of the booking as of the date and time shown above.`,
+    `This document certifies the terms and current status of a service engagement facilitated through the Trothen platform between the customer and service provider identified below. It is generated on request directly from Trothen's records and reflects the state of the booking as of the date and time shown above.`,
     { color: navy, size: 9.5, gapAfter: 14 }
   );
 
@@ -1059,12 +1059,12 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   }
 
   // ── HOW ESCROW & DISPUTES WORK ───────────────────────────────────────────
-  // Written for a reader who has never used Taskora — a lawyer, a judge, a
+  // Written for a reader who has never used Trothen — a lawyer, a judge, a
   // bank — so the record above makes sense without needing to ask the
   // parties to explain the platform first.
-  sectionHeader("How Taskora's Escrow & Dispute Process Works");
+  sectionHeader("How Trothen's Escrow & Dispute Process Works");
   paragraph(
-    `Under Taskora's terms of service, payment for a booking is collected from the customer and held in escrow — not released to the provider — until the customer confirms the work was completed. Either party may raise a dispute before that confirmation, which freezes the contract and holds escrow in place pending review. A resolved dispute results in escrow being released to the provider, refunded to the customer, or otherwise apportioned according to Taskora's review of the matter. This structure is designed so that no party is paid, or loses funds, before the outcome of the booking is settled.`,
+    `Under Trothen's terms of service, payment for a booking is collected from the customer and held in escrow — not released to the provider — until the customer confirms the work was completed. Either party may raise a dispute before that confirmation, which freezes the contract and holds escrow in place pending review. A resolved dispute results in escrow being released to the provider, refunded to the customer, or otherwise apportioned according to Trothen's review of the matter. This structure is designed so that no party is paid, or loses funds, before the outcome of the booking is settled.`,
     { gapAfter: 14 }
   );
 
@@ -1074,7 +1074,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   doc.fillColor(navy).fontSize(9).font('Helvetica-Bold').text('RECORD OF AGREEMENT', margin, y, { characterSpacing: 0.6 });
   y += 16;
   paragraph(
-    `This contract was formed electronically when both parties confirmed the booking through the Taskora platform, and constitutes the agreement between the customer and provider named above for the service described. No physical signature is required for a Taskora contract to be valid. This printout reflects Taskora's records as of the moment it was generated; the authoritative, continuously updated record remains within Taskora's systems and may be requested again at any time by either party to this agreement.`,
+    `This contract was formed electronically when both parties confirmed the booking through the Trothen platform, and constitutes the agreement between the customer and provider named above for the service described. No physical signature is required for a Trothen contract to be valid. This printout reflects Trothen's records as of the moment it was generated; the authoritative, continuously updated record remains within Trothen's systems and may be requested again at any time by either party to this agreement.`,
     { size: 8.5 }
   );
 
@@ -1092,7 +1092,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
       `Page ${i - pageRange.start + 1} of ${pageRange.count}`,
       pageWidth - margin - 90, footerY + 8, { width: 90, align: 'right' }
     );
-    doc.fillColor(gold).fontSize(7.5).font('Helvetica-Bold').text('support@taskora.io', margin, footerY + 26);
+    doc.fillColor(gold).fontSize(7.5).font('Helvetica-Bold').text('support@trothen.io', margin, footerY + 26);
   }
 
   doc.end();

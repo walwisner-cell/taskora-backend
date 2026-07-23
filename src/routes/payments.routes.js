@@ -147,7 +147,7 @@ router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res
   const rangeLabel = from || to ? `${from || 'earliest'} to ${to || 'today'}` : 'All time';
   const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
     res,
-    filename: `Taskora-Payout-History-${provider.name.replace(/\s+/g, '-')}.pdf`,
+    filename: `Trothen-Payout-History-${provider.name.replace(/\s+/g, '-')}.pdf`,
     title: 'Payout History Report',
     subtitle: 'AI-Matched · Identity-Verified · Escrow-Protected',
     docId: rangeLabel,
@@ -180,7 +180,7 @@ router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res
   }
 
   finish({
-    closingNote: 'This report reflects Taskora\'s payout records for this provider account as of the moment it was generated. Commission is deducted according to the provider\'s plan at the time of each payout. Provided for the provider\'s own recordkeeping.',
+    closingNote: 'This report reflects Trothen\'s payout records for this provider account as of the moment it was generated. Commission is deducted according to the provider\'s plan at the time of each payout. Provided for the provider\'s own recordkeeping.',
   });
 });
 // POST /api/payouts/request — provider requests payout of released escrow
@@ -487,7 +487,7 @@ router.get('/payments/pdf', requireAuth, requireRole('customer'), async (req, re
   const rangeLabel = from || to ? `${from || 'earliest'} to ${to || 'today'}` : 'All time';
   const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
     res,
-    filename: `Taskora-Payment-History-${customer.name.replace(/\s+/g, '-')}.pdf`,
+    filename: `Trothen-Payment-History-${customer.name.replace(/\s+/g, '-')}.pdf`,
     title: 'Payment History Report',
     subtitle: 'AI-Matched · Identity-Verified · Escrow-Protected',
     docId: rangeLabel,
@@ -510,7 +510,7 @@ router.get('/payments/pdf', requireAuth, requireRole('customer'), async (req, re
   }
 
   finish({
-    closingNote: 'This report reflects Taskora\'s payment records for this customer account as of the moment it was generated. All amounts shown are in USD, the platform\'s canonical accounting currency, regardless of what currency was actually charged at checkout. Provided for the customer\'s own recordkeeping.',
+    closingNote: 'This report reflects Trothen\'s payment records for this customer account as of the moment it was generated. All amounts shown are in USD, the platform\'s canonical accounting currency, regardless of what currency was actually charged at checkout. Provided for the customer\'s own recordkeeping.',
   });
 });
 

@@ -14,7 +14,7 @@ const PAGE_WIDTH = 612; // LETTER width in points
 const PAGE_BOTTOM = 700; // leave room for the footer below this
 const MARGIN = 56;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
-const LOGO_PATH = path.join(__dirname, 'assets', 'taskora-logo.png');
+const LOGO_PATH = path.join(__dirname, 'assets', 'trothen-logo.png');
 
 // Creates a new report document with the shared letterhead/footer/section
 // helpers attached. `title`/`subtitle` go in the letterhead; `docId` shows
@@ -35,7 +35,7 @@ function createReportDoc({ res, filename, title, subtitle, docId, verificationSe
   function drawLetterhead() {
     doc.rect(0, 0, PAGE_WIDTH, 118).fill(NAVY);
     if (fs.existsSync(LOGO_PATH)) doc.image(LOGO_PATH, MARGIN, 28, { width: 56, height: 56 });
-    doc.fillColor('#FFFFFF').fontSize(20).font('Helvetica-Bold').text('TASKORA', MARGIN + 70, 36);
+    doc.fillColor('#FFFFFF').fontSize(20).font('Helvetica-Bold').text('TROTHEN', MARGIN + 70, 36);
     doc.fillColor(GOLD).fontSize(9.5).font('Helvetica-Bold').text(title.toUpperCase(), MARGIN + 70, 61, { characterSpacing: 1.1 });
     if (subtitle) doc.fillColor('#B7BAC2').fontSize(8.5).font('Helvetica').text(subtitle, MARGIN + 70, 78);
     doc.fillColor('#B7BAC2').fontSize(8).font('Helvetica').text(`Generated ${generatedAt.toLocaleString('en-US')}`, MARGIN, 96, { width: CONTENT_WIDTH - 140 });
@@ -43,7 +43,7 @@ function createReportDoc({ res, filename, title, subtitle, docId, verificationSe
   }
 
   function drawContinuationHeader() {
-    doc.fillColor(SLATE).fontSize(8).font('Helvetica-Bold').text(`TASKORA — ${title.toUpperCase()} (CONTINUED)`, MARGIN, 32, { characterSpacing: 0.5 });
+    doc.fillColor(SLATE).fontSize(8).font('Helvetica-Bold').text(`TROTHEN — ${title.toUpperCase()} (CONTINUED)`, MARGIN, 32, { characterSpacing: 0.5 });
     doc.strokeColor('#D8D3C8').lineWidth(0.5).moveTo(MARGIN, 48).lineTo(PAGE_WIDTH - MARGIN, 48).stroke();
   }
 
@@ -131,14 +131,14 @@ function createReportDoc({ res, filename, title, subtitle, docId, verificationSe
       const footerY = 740;
       doc.strokeColor('#D8D3C8').lineWidth(0.5).moveTo(MARGIN, footerY).lineTo(PAGE_WIDTH - MARGIN, footerY).stroke();
       doc.fillColor(SLATE).fontSize(7.5).font('Helvetica').text(
-        `Verification ID ${verificationId} · This document is a system-generated record reflecting Taskora's records at the time of generation.`,
+        `Verification ID ${verificationId} · This document is a system-generated record reflecting Trothen's records at the time of generation.`,
         MARGIN, footerY + 8, { width: CONTENT_WIDTH - 90 }
       );
       doc.fillColor(SLATE).fontSize(7.5).font('Helvetica').text(
         `Page ${i - pageRange.start + 1} of ${pageRange.count}`,
         PAGE_WIDTH - MARGIN - 90, footerY + 8, { width: 90, align: 'right' }
       );
-      doc.fillColor(GOLD).fontSize(7.5).font('Helvetica-Bold').text('support@taskora.io', MARGIN, footerY + 26);
+      doc.fillColor(GOLD).fontSize(7.5).font('Helvetica-Bold').text('support@trothen.io', MARGIN, footerY + 26);
     }
     doc.end();
   }

@@ -19,16 +19,29 @@ const crypto = require('crypto');
 // the app stays up, but never signs a real token with a secret anyone
 // could just read here.
 function resolveJwtSecret() {
-  if (process.env.TASKORA_JWT_SECRET) return process.env.TASKORA_JWT_SECRET;
+  if (process.env.TROTHEN_JWT_SECRET) return process.env.TROTHEN_JWT_SECRET;
+
+  // Transition fallback: this app was renamed from Taskora to Trothen. The
+  // live Render service may still have the OLD env var name set from
+  // before the rename, and hasn't been updated to the new one yet. Reading
+  // it here means nothing breaks — no forced logout, no downtime — in the
+  // window between deploying this rename and actually adding
+  // TROTHEN_JWT_SECRET in Render's dashboard. Once that new var is added
+  // and confirmed working, this fallback (and the old var itself) should
+  // be removed.
+  if (process.env.TASKORA_JWT_SECRET) {
+    console.warn('⚠️  Using legacy TASKORA_JWT_SECRET — add TROTHEN_JWT_SECRET in your Render environment settings and remove this old one once confirmed working.');
+    return process.env.TASKORA_JWT_SECRET;
+  }
 
   const randomFallback = crypto.randomBytes(48).toString('hex');
   const isProduction = process.env.NODE_ENV === 'production';
   const banner = isProduction
-    ? '🚨🚨🚨 CRITICAL: TASKORA_JWT_SECRET is not set in production! 🚨🚨🚨'
-    : '⚠️  TASKORA_JWT_SECRET is not set (expected in local dev).';
+    ? '🚨🚨🚨 CRITICAL: TROTHEN_JWT_SECRET is not set in production! 🚨🚨🚨'
+    : '⚠️  TROTHEN_JWT_SECRET is not set (expected in local dev).';
   console.error(banner);
   console.error(isProduction
-    ? '   Generated a random secret for THIS boot only — every existing login session just became invalid, and will again on every future restart until a real TASKORA_JWT_SECRET is set as an environment variable. Set this in your hosting platform\'s environment settings immediately — do not rely on this fallback.'
+    ? '   Generated a random secret for THIS boot only — every existing login session just became invalid, and will again on every future restart until a real TROTHEN_JWT_SECRET is set as an environment variable. Set this in your hosting platform\'s environment settings immediately — do not rely on this fallback.'
     : '   Using a random secret for this local session — fine for local development.');
   return randomFallback;
 }

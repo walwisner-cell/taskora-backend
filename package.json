@@ -1,7 +1,7 @@
 {
-  "name": "taskora-backend",
+  "name": "trothen-backend",
   "version": "1.0.0",
-  "description": "Taskora API — auth, marketplace, matching, contracts, escrow, disputes, admin",
+  "description": "Trothen API — auth, marketplace, matching, contracts, escrow, disputes, admin",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {

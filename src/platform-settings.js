@@ -45,7 +45,7 @@ const DEFAULTS = {
     heroSuffix: 'Instantly',
     heroSubheadline: "Every pro is ID-verified. Every job runs on an auto-generated contract with funds held in escrow until you're satisfied. Book in under 2 minutes.",
     missionHeadline: "Local services shouldn't require a leap of faith.",
-    missionBody: "From Atlanta to Lagos to Accra, hiring a plumber or a tutor has always meant crossing your fingers — no way to know who's really showing up, and no recourse if it goes wrong. Taskora closes that gap: every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is done right. Trust shouldn't be a gamble. On Taskora, it's the default.",
+    missionBody: "From Atlanta to Lagos to Accra, hiring a plumber or a tutor has always meant crossing your fingers — no way to know who's really showing up, and no recourse if it goes wrong. Trothen closes that gap: every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is done right. Trust shouldn't be a gamble. On Trothen, it's the default.",
   },
 };
 
