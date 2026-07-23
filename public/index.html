@@ -229,12 +229,33 @@
   .how-inner { max-width:1100px; margin:0 auto; }
   .how-title { font-family:'Fraunces',serif; font-size:32px; font-weight:800; color:var(--white); text-align:center; margin-bottom:8px; }
   .how-sub { color:var(--mint); text-align:center; margin-bottom:44px; font-size:15px; }
-  .steps-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:24px; }
-  .step-card { background:rgba(255,255,255,.06); border:1px solid rgba(29,95,168,.2); border-radius:12px; padding:28px 24px; position:relative; }
-  .step-num { font-family:'Fraunces',serif; font-size:48px; font-weight:800; color:rgba(29,95,168,.15); position:absolute; top:16px; right:20px; line-height:1; }
-  .step-icon { font-size:32px; margin-bottom:14px; }
+  .steps-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:24px; position:relative; }
+  .step-card {
+    background:rgba(255,255,255,.06); border:1px solid rgba(29,95,168,.2); border-radius:12px; padding:28px 24px;
+    position:relative; transition:transform .25s ease, border-color .25s ease, background .25s ease; cursor:default;
+  }
+  .step-card.step-clickable { cursor:pointer; }
+  .step-card.step-clickable:hover { transform:translateY(-6px); border-color:var(--gold); background:rgba(255,255,255,.1); }
+  .step-card.step-clickable:hover .step-num { color:rgba(176,138,62,.35); }
+  .step-card.step-clickable:hover .step-icon { transform:scale(1.15); }
+  .step-card.step-clickable:active { transform:translateY(-2px); }
+  .step-num { font-family:'Fraunces',serif; font-size:48px; font-weight:800; color:rgba(29,95,168,.15); position:absolute; top:16px; right:20px; line-height:1; transition:color .25s ease; }
+  .step-icon { font-size:32px; margin-bottom:14px; display:inline-block; transition:transform .25s ease; }
   .step-title { font-family:'Fraunces',serif; font-size:16px; font-weight:700; color:var(--white); margin-bottom:8px; }
   .step-desc { font-size:13px; color:var(--mint); line-height:1.6; }
+  .step-cta { font-size:12px; color:var(--gold); font-weight:700; margin-top:12px; opacity:0; transition:opacity .2s ease; }
+  .step-card.step-clickable:hover .step-cta { opacity:1; }
+  /* A connecting line between steps on wider screens — draws attention to
+     the actual sequence (01 -> 02 -> 03) rather than three cards that
+     could be read in any order. */
+  @media (min-width: 761px) {
+    .steps-grid::before {
+      content:''; position:absolute; top:52px; left:16%; right:16%; height:2px;
+      background:repeating-linear-gradient(90deg, rgba(176,138,62,.35) 0 8px, transparent 8px 16px);
+      z-index:0;
+    }
+    .step-card { z-index:1; }
+  }
 
   /* ── BOOKING MODAL ── */
   .modal-overlay {
@@ -938,23 +959,26 @@
       <div class="how-title">How Trothen Works</div>
       <div class="how-sub">From request to completion in 3 simple steps</div>
       <div class="steps-grid">
-        <div class="step-card">
+        <div class="step-card step-clickable" onclick="openPostJobModal()">
           <div class="step-num">01</div>
           <div class="step-icon">🔍</div>
           <div class="step-title">Post Your Job</div>
           <div class="step-desc">Describe what you need — we match it against verified pros nearby, ranked by rating, distance, and fit.</div>
+          <div class="step-cta">Try it now →</div>
         </div>
-        <div class="step-card">
+        <div class="step-card step-clickable" onclick="document.getElementById('providers-grid').scrollIntoView({behavior:'smooth', block:'center'})">
           <div class="step-num">02</div>
           <div class="step-icon">🤝</div>
           <div class="step-title">Book with Protection</div>
           <div class="step-desc">Choose your pro, review their auto-generated contract, and pay securely via escrow. Funds only release when you're satisfied.</div>
+          <div class="step-cta">Browse pros →</div>
         </div>
-        <div class="step-card">
+        <div class="step-card step-clickable" onclick="document.getElementById('homepage-faq-list').scrollIntoView({behavior:'smooth'})">
           <div class="step-num">03</div>
           <div class="step-icon">⭐</div>
           <div class="step-title">Rate & Review</div>
           <div class="step-desc">Only verified customers can leave reviews. Your rating helps build the most trusted service community in your city.</div>
+          <div class="step-cta">Common questions →</div>
         </div>
       </div>
     </div>
