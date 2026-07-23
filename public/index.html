@@ -30,13 +30,13 @@
 
   /* ── NAVBAR ── */
   .navbar {
-    background:var(--navy); padding:0 24px; height:68px;
+    background:var(--navy); padding:0 24px; height:88px;
     display:flex; align-items:center; justify-content:space-between;
     position:sticky; top:0; z-index:100; box-shadow:0 2px 20px rgba(0,0,0,.25);
   }
   .navbar-logo { font-family:'Fraunces',serif; font-size:21px; font-weight:800; color:var(--white); display:flex; align-items:center; gap:9px; cursor:pointer; letter-spacing:.2px; }
-  .navbar-logo-img { height:58px; width:auto; display:block; }
-  .footer-logo-img { height:64px; width:auto; display:block; }
+  .navbar-logo-img { height:76px; width:auto; display:block; }
+  .footer-logo-img { height:84px; width:auto; display:block; }
   .logo-mark { width:26px; height:26px; display:inline-flex; flex-shrink:0; }
   .navbar-nav { display:flex; gap:6px; }
   .nav-btn { background:none; border:none; color:var(--mint); font-family:'Inter',sans-serif; font-size:13px; padding:6px 14px; border-radius:12px; cursor:pointer; transition:all .2s; }
@@ -642,9 +642,9 @@
 
   @media (max-width: 760px) {
     /* ── Navbar: scrolls horizontally within itself instead of overflowing ── */
-    .navbar { padding: 0 12px; gap: 8px; }
+    .navbar { padding: 0 12px; gap: 8px; height: 72px; }
     .navbar-logo { font-size: 16px; gap: 6px; flex-shrink: 0; }
-    .navbar-logo-img { height: 42px; }
+    .navbar-logo-img { height: 58px; }
     .logo-mark { width: 20px; height: 20px; }
     .navbar-nav {
       gap: 4px; flex-shrink: 0; min-width: 0;
