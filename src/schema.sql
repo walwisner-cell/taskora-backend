@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS contracts (
   amount         NUMERIC(10,2) NOT NULL,
   pay_currency   TEXT DEFAULT 'usd',
   materials_advance NUMERIC(10,2) DEFAULT 0,
+  service_fee    NUMERIC(10,2) DEFAULT 0,
   photo_urls     JSONB,
   status         TEXT NOT NULL DEFAULT 'active',
   signed_at      TEXT,
@@ -127,6 +128,7 @@ CREATE TABLE IF NOT EXISTS escrow_transactions (
   id                 TEXT PRIMARY KEY,
   contract_id        TEXT NOT NULL REFERENCES contracts(id),
   amount             NUMERIC(10,2) NOT NULL,
+  service_fee        NUMERIC(10,2) DEFAULT 0,
   paid_currency      TEXT DEFAULT 'USD',
   paid_amount_local   NUMERIC(14,2),
   exchange_rate_note TEXT,
@@ -463,6 +465,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS business_registration_number TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_department TEXT;
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS line_items JSONB;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS materials_advance NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS service_fee NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS service_fee NUMERIC(10,2) DEFAULT 0;
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_amount NUMERIC(10,2) DEFAULT 0;
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_released BOOLEAN DEFAULT FALSE;
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_payout_id TEXT;

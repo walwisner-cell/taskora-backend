@@ -572,7 +572,13 @@ router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res
   // Real commission revenue — the sum of what's actually been deducted
   // across every payout ever made, not a placeholder figure.
   const commissionRevenue = payouts.reduce((s, p) => s + (p.commissionAmount || 0), 0);
-  res.json({ held, released, count: all.length, commissionRevenue });
+  // Real service fee revenue — the customer-side fee, genuinely separate
+  // from commission (which comes from the provider's side). Summed across
+  // every contract that actually reached a real transaction, matching the
+  // same escrow records already being counted above, not a separate,
+  // possibly-inconsistent query.
+  const serviceFeeRevenue = all.reduce((s, e) => s + (e.serviceFee || 0), 0);
+  res.json({ held, released, count: all.length, commissionRevenue, serviceFeeRevenue });
 });
 
 // GET /api/admin/financial-by-region — a real, per-city breakdown of escrow
@@ -618,9 +624,9 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
 
   // Group everything by the CUSTOMER's city — same convention used
   // everywhere else a "region" is derived (disputes, transactions).
-  const byRegion = new Map(); // region -> { region, country, held, released, commissionRevenue, transactionCount }
+  const byRegion = new Map(); // region -> { region, country, held, released, commissionRevenue, serviceFeeRevenue, transactionCount }
   function bucket(region, country) {
-    if (!byRegion.has(region)) byRegion.set(region, { region, country, held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 });
+    if (!byRegion.has(region)) byRegion.set(region, { region, country, held: 0, released: 0, commissionRevenue: 0, serviceFeeRevenue: 0, transactionCount: 0 });
     return byRegion.get(region);
   }
 
@@ -631,6 +637,7 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
     const b = bucket(customer.city || 'Unknown', customer.country || 'Unknown');
     if (e.status === 'held') b.held += e.amount;
     if (e.status === 'released') b.released += e.amount;
+    b.serviceFeeRevenue += (e.serviceFee || 0);
     b.transactionCount += 1;
   }
   for (const p of payouts) {
@@ -653,8 +660,9 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
     held: acc.held + r.held,
     released: acc.released + r.released,
     commissionRevenue: acc.commissionRevenue + r.commissionRevenue,
+    serviceFeeRevenue: acc.serviceFeeRevenue + r.serviceFeeRevenue,
     transactionCount: acc.transactionCount + r.transactionCount,
-  }), { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 });
+  }), { held: 0, released: 0, commissionRevenue: 0, serviceFeeRevenue: 0, transactionCount: 0 });
   total.avgTransaction = total.transactionCount > 0 ? Math.round(((total.held + total.released) / total.transactionCount) * 100) / 100 : 0;
 
   res.json({ regions, total });

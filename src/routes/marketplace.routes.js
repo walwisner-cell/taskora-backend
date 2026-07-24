@@ -72,6 +72,7 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
     id: `esc_${nanoid(10)}`,
     contractId: contract.id,
     amount: contract.amount, // canonical USD amount — always the accounting figure of record
+    serviceFee: contract.serviceFee || 0, // tracked separately — real revenue tied to this booking, distinct from the provider's commission
     paidCurrency: wantsLocal ? currency.code : 'USD',
     paidAmountLocal,
     exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
@@ -694,11 +695,58 @@ router.get('/matches/mine', requireAuth, requireRole('provider'), async (req, re
 });
 
 // POST /api/matches/:id/respond  { decision: 'accept' | 'decline' }
+// Trades where accepting real work without a real, current license is a
+// genuine safety issue, not just a policy formality — matches the
+// Restricted/Documented tier distinction in the published category
+// policy. Rather than deactivating these categories outright (which
+// would remove real, valuable business from the platform), participation
+// is gated behind an actual verified license on file, the same pattern
+// real competitors (Thumbtack, Angi) use.
+const LICENSED_TRADE_CATEGORIES = new Set([
+  'Plumbing', 'Electrical', 'Roofing',
+  // Added on the same reasoning: genuinely, near-universally licensed
+  // professions in real jurisdictions, not just skilled trades.
+  // Deliberately left out ambiguous ones — Accounting & Bookkeeping (plain
+  // bookkeeping usually needs no license, only formal CPA work does),
+  // Elder Care and Auto Repair (requirements vary too much by location to
+  // treat as a universal rule the way these do).
+  'HVAC & Air Conditioning', 'General Contracting', 'Legal Consulting',
+  'Pest Control', 'Locksmith', 'Massage Therapy', 'Notary Services', 'Security Services',
+]);
+
+// The customer-side service fee — 9% with a $1.99 minimum, exactly
+// matching the published Fees and Payment Policy. This is separate from
+// (and in addition to) the Provider's commission: the Provider is still
+// paid out based on the job amount alone, unaffected by this — this fee
+// is pure, additional revenue on the customer side, shown to them
+// itemized before they ever confirm a booking.
+const SERVICE_FEE_RATE = 0.09;
+const MIN_SERVICE_FEE = 1.99;
+function computeServiceFee(amount) {
+  return Math.round(Math.max(amount * SERVICE_FEE_RATE, MIN_SERVICE_FEE) * 100) / 100;
+}
+
+function hasValidLicense(provider) {
+  if (!provider.licenseExpiryDate) return false;
+  // Same timezone-safe comparison already used elsewhere for this exact
+  // field — valid through the end of the stated day, not its first UTC
+  // instant.
+  const expiry = new Date(provider.licenseExpiryDate + 'T23:59:59.999Z');
+  return expiry > new Date();
+}
+
 router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async (req, res) => {
   const { decision } = req.body || {};
   const match = await db.find('matches', m => m.id === req.params.id && m.providerId === req.user.sub);
   if (!match) return res.status(404).json({ error: 'Match not found' });
   if (!['accept', 'decline'].includes(decision)) return res.status(400).json({ error: 'decision must be accept or decline' });
+
+  if (decision === 'accept') {
+    const provider = await db.find('users', u => u.id === req.user.sub);
+    if (provider && LICENSED_TRADE_CATEGORIES.has(provider.category) && !hasValidLicense(provider)) {
+      return res.status(403).json({ error: `${provider.category} requires a current, verified license on file before you can accept jobs — add your license expiry date in Settings.` });
+    }
+  }
 
   await db.update('matches', match.id, { status: decision === 'accept' ? 'accepted' : 'declined' });
 
@@ -715,6 +763,7 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async 
       jobId: match.jobId,
       service: job ? job.description : 'Service',
       amount,
+      serviceFee: computeServiceFee(amount),
       status: 'active',
       signedAt: new Date().toISOString().slice(0, 10),
       createdAt: new Date().toISOString(),
@@ -822,6 +871,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     service: service.trim(),
     date, time, address: address.trim(),
     amount: amount || provider.price * 2,
+    serviceFee: computeServiceFee(amount || provider.price * 2),
     materialsAdvance: materialsAdvance || 0,
     photoUrls: validPhotoUrls,
     status: isNegotiable ? 'pending_agreement' : 'pending_provider_confirmation',
@@ -913,6 +963,11 @@ router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider')
     const provider = await db.find('users', u => u.id === req.user.sub);
     await notify(contract.customerId, '❌', `${provider ? provider.name : 'The provider'} can't take "${contract.service}" and declined the booking. Any held funds have been refunded — try another provider.`, null, { section: 'bookings' });
     return res.json({ contract: updated, escrow: null });
+  }
+
+  const acceptingProvider = await db.find('users', u => u.id === req.user.sub);
+  if (acceptingProvider && LICENSED_TRADE_CATEGORIES.has(acceptingProvider.category) && !hasValidLicense(acceptingProvider)) {
+    return res.status(403).json({ error: `${acceptingProvider.category} requires a current, verified license on file before you can accept jobs — add your license expiry date in Settings.` });
   }
 
   const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10) });
