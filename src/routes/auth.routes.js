@@ -384,11 +384,18 @@ const CURRENT_TERMS_VERSION = 'v1-2026';
 // what actually lets the business prove consent happened, the same way a
 // real company needs to be able to.
 router.post('/accept-terms', requireAuth, async (req, res) => {
-  const { version } = req.body || {};
+  const { version, viewedFullTerms } = req.body || {};
   if (version !== CURRENT_TERMS_VERSION) {
     return res.status(400).json({ error: 'This isn\'t the current version of the agreement — please refresh and try again.' });
   }
-  await db.update('users', req.user.sub, { termsAcceptedAt: new Date().toISOString(), termsVersion: version });
+  // A purely client-side "did they open it" check is trivially bypassed
+  // with dev tools — this has real legal weight, so the server refuses
+  // to record acceptance unless the request itself explicitly claims the
+  // full Terms of Service was actually opened first.
+  if (viewedFullTerms !== true) {
+    return res.status(400).json({ error: 'You need to open the full Terms of Service before you can agree.' });
+  }
+  await db.update('users', req.user.sub, { termsAcceptedAt: new Date().toISOString(), termsVersion: version, termsViewedFull: true });
   res.json({ ok: true, termsVersion: version });
 });
 

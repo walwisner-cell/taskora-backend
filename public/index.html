@@ -3037,9 +3037,16 @@ const CURRENT_TERMS_VERSION = 'v1-2026';
 // before this existed — nobody is grandfathered into terms they never
 // actually saw). Blocking: no way to close it or click through to the
 // dashboard underneath without actually agreeing.
+// Tracks whether the full Terms of Service has actually been opened
+// during this specific agreement flow — reset every time the gate opens.
+// The Agree button checks this directly; there is no way to reach it
+// without this having been set to true first.
+let TERMS_GATE_VIEWED = false;
+
 function checkTermsGate(role) {
   if (!BACKEND_AVAILABLE || !AUTH.user) return;
   if (AUTH.user.termsVersion === CURRENT_TERMS_VERSION) return; // already agreed to the current version — nothing to show
+  TERMS_GATE_VIEWED = false;
 
   const isProvider = role === 'provider';
   const title = isProvider ? 'Trothen Community Standards' : 'Before You Continue';
@@ -3064,17 +3071,26 @@ function checkTermsGate(role) {
           <h3>${title}</h3>
           <p>${intro}</p>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" id="terms-gate-summary-view">
           ${standards.map(([label, detail]) => `
             <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
               <span style="color:var(--teal);font-weight:700;flex-shrink:0;">✓</span>
               <div><div style="font-weight:600;font-size:13.5px;color:var(--navy);">${label}</div><div style="font-size:12.5px;color:var(--text);margin-top:2px;line-height:1.5;">${detail}</div></div>
             </div>`).join('')}
           ${providerFinePrint}
-          <label style="display:flex;align-items:flex-start;gap:10px;margin-top:18px;cursor:pointer;font-size:13px;">
-            <input type="checkbox" id="terms-gate-checkbox" onchange="document.getElementById('terms-gate-agree-btn').disabled = !this.checked" style="margin-top:2px;"/>
-            <span>I have read and agree to these standards and the <a onclick="event.preventDefault();showTermsPage('${role}');" style="color:var(--teal);">full Terms of Service</a>.</span>
+          <button onclick="openFullTermsInGate('${role}')" style="width:100%;margin-top:18px;padding:11px;background:var(--offwhite);border:1px solid var(--border);border-radius:8px;font-weight:600;font-size:13px;color:var(--navy);cursor:pointer;text-align:left;display:flex;align-items:center;justify-content:space-between;">
+            <span>📄 Read the full Terms of Service <span style="color:#C0392B;">(required)</span></span>
+            <span style="color:var(--slate);">→</span>
+          </button>
+          <label style="display:flex;align-items:flex-start;gap:10px;margin-top:16px;cursor:pointer;font-size:13px;">
+            <input type="checkbox" id="terms-gate-checkbox" onchange="updateTermsAgreeButton()" style="margin-top:2px;"/>
+            <span>I have read and agree to these standards and the full Terms of Service.</span>
           </label>
+          <div id="terms-gate-hint" style="font-size:11.5px;color:#C0392B;margin-top:8px;">You need to open the full Terms of Service above before you can continue.</div>
+        </div>
+        <div class="modal-body" id="terms-gate-full-view" style="display:none;">
+          <button onclick="closeFullTermsInGate()" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:13px;cursor:pointer;padding:0;margin-bottom:14px;">← Back to Agreement</button>
+          <div id="terms-gate-full-content" style="font-size:13px;color:var(--text);">Loading…</div>
         </div>
         <div class="modal-footer">
           <button class="confirm-btn" id="terms-gate-agree-btn" disabled onclick="submitTermsAgreement()">I Agree — Continue</button>
@@ -3084,12 +3100,50 @@ function checkTermsGate(role) {
   document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
+async function openFullTermsInGate(role) {
+  TERMS_GATE_VIEWED = true;
+  document.getElementById('terms-gate-summary-view').style.display = 'none';
+  document.getElementById('terms-gate-full-view').style.display = 'block';
+  const contentEl = document.getElementById('terms-gate-full-content');
+  try {
+    const { content } = await apiFetch('GET', `/terms-of-service-${role}-content`);
+    contentEl.innerHTML = renderFormattedContent(content);
+  } catch (e) { contentEl.innerHTML = '<p>Could not load the Terms of Service — please try again.</p>'; }
+  updateTermsAgreeButton();
+}
+
+function closeFullTermsInGate() {
+  document.getElementById('terms-gate-full-view').style.display = 'none';
+  document.getElementById('terms-gate-summary-view').style.display = 'block';
+}
+
+// The Agree button — and the checkbox itself — genuinely require the full
+// Terms of Service to have been opened first. This isn't cosmetic: it's
+// checked here, again, independent of whatever the UI shows, since this
+// has real legal weight and needs to actually be true, not just appear
+// true.
+function updateTermsAgreeButton() {
+  const checkbox = document.getElementById('terms-gate-checkbox');
+  const hint = document.getElementById('terms-gate-hint');
+  const btn = document.getElementById('terms-gate-agree-btn');
+  if (!TERMS_GATE_VIEWED) {
+    checkbox.checked = false;
+    checkbox.disabled = true;
+    hint.style.display = 'block';
+    btn.disabled = true;
+    return;
+  }
+  checkbox.disabled = false;
+  hint.style.display = 'none';
+  btn.disabled = !checkbox.checked;
+}
+
 async function submitTermsAgreement() {
   const btn = document.getElementById('terms-gate-agree-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="btn-spinner" style="border-top-color:#fff;"></span>Saving…';
   try {
-    await apiFetch('POST', '/auth/accept-terms', { version: CURRENT_TERMS_VERSION });
+    await apiFetch('POST', '/auth/accept-terms', { version: CURRENT_TERMS_VERSION, viewedFullTerms: TERMS_GATE_VIEWED });
     AUTH.user.termsVersion = CURRENT_TERMS_VERSION;
     const overlay = document.getElementById('terms-gate-overlay');
     if (overlay) overlay.remove();
