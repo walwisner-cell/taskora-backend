@@ -457,6 +457,8 @@
   .auth-form-panel { flex:1; min-width:0; background:var(--white); display:flex; align-items:center; }
   .auth-form-panel .auth-card { box-shadow:none; max-width:none; width:100%; border-radius:0; }
 
+  .terms-toggle-btn { border:none; background:transparent; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:600; color:var(--slate); cursor:pointer; transition:all .15s ease; }
+  .terms-toggle-btn.active { background:var(--navy); color:#fff; }
   .faq-list { max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
   .faq-item { background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden; transition:border-color .15s; }
   .faq-item.open { border-color:var(--teal); }
@@ -1026,6 +1028,10 @@
     <div class="pricing-inner" style="max-width:760px;">
       <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
       <div class="pricing-eyebrow">Legal</div>
+      <div style="display:flex;gap:8px;margin-top:20px;background:var(--offwhite);border-radius:10px;padding:4px;width:fit-content;">
+        <button id="terms-toggle-customer" class="terms-toggle-btn" onclick="loadTermsContent('customer')">For Customers</button>
+        <button id="terms-toggle-provider" class="terms-toggle-btn" onclick="loadTermsContent('provider')">For Providers</button>
+      </div>
       <div style="font-size:15px;color:var(--slate);margin-top:24px;" id="terms-of-service-body">Loading…</div>
     </div>
   </div>
@@ -2410,13 +2416,28 @@ async function showAboutPage() {
   } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
 }
 
-async function showTermsPage() {
+async function showTermsPage(preferredRole) {
   showScreen('screen-terms');
   renderNavbar('navbar-terms', 'home');
+  // Default to whichever role we actually know the visitor is (signed-in
+  // user's real role, or the role the consent gate was just shown for),
+  // falling back to the customer version for a random footer click from
+  // someone not signed in at all — a reasonable default, not a guess that
+  // matters much since the toggle right below lets anyone switch instantly.
+  const role = preferredRole || (AUTH.user && AUTH.user.role === 'provider' ? 'provider' : 'customer');
+  document.getElementById('terms-toggle-customer').classList.toggle('active', role === 'customer');
+  document.getElementById('terms-toggle-provider').classList.toggle('active', role === 'provider');
+  await loadTermsContent(role);
+}
+
+async function loadTermsContent(role) {
   const body = document.getElementById('terms-of-service-body');
+  document.getElementById('terms-toggle-customer').classList.toggle('active', role === 'customer');
+  document.getElementById('terms-toggle-provider').classList.toggle('active', role === 'provider');
   if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable — no backend connection.</p>'; return; }
+  body.innerHTML = '<p style="color:var(--slate);">Loading…</p>';
   try {
-    const { content } = await apiFetch('GET', '/terms-of-service-content');
+    const { content } = await apiFetch('GET', `/terms-of-service-${role}-content`);
     body.innerHTML = renderFormattedContent(content);
   } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
 }
@@ -3052,7 +3073,7 @@ function checkTermsGate(role) {
           ${providerFinePrint}
           <label style="display:flex;align-items:flex-start;gap:10px;margin-top:18px;cursor:pointer;font-size:13px;">
             <input type="checkbox" id="terms-gate-checkbox" onchange="document.getElementById('terms-gate-agree-btn').disabled = !this.checked" style="margin-top:2px;"/>
-            <span>I have read and agree to these standards and the <a onclick="event.preventDefault();showTermsPage();" style="color:var(--teal);">full Terms of Service</a>.</span>
+            <span>I have read and agree to these standards and the <a onclick="event.preventDefault();showTermsPage('${role}');" style="color:var(--teal);">full Terms of Service</a>.</span>
           </label>
         </div>
         <div class="modal-footer">
@@ -5690,7 +5711,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, homepageImages: null, categoryImages: null, aboutUsContent: null, termsOfServiceContent: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, homepageImages: null, categoryImages: null, aboutUsContent: null, termsOfServiceCustomerContent: null, termsOfServiceProviderContent: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -5758,7 +5779,7 @@ async function loadAdminData() {
   }
 
   if (AUTH.user && AUTH.user.isSuperAdmin) {
-    const [cities, subAdmins, exchangeRates, bookingWindow, supportContact, homepageContent, homepageImages, categoryImages, aboutUsContent, termsContent] = await Promise.all([
+    const [cities, subAdmins, exchangeRates, bookingWindow, supportContact, homepageContent, homepageImages, categoryImages, aboutUsContent, termsCustomerContent, termsProviderContent] = await Promise.all([
       tryFetch('/admin/cities'),
       tryFetch('/admin/sub-admins'),
       tryFetch('/admin/exchange-rates'),
@@ -5768,7 +5789,8 @@ async function loadAdminData() {
       tryFetch('/homepage-images'),
       tryFetch('/admin/category-images'),
       tryFetch('/admin/settings/about-us'),
-      tryFetch('/admin/settings/terms-of-service'),
+      tryFetch('/admin/settings/terms-of-service-customer'),
+      tryFetch('/admin/settings/terms-of-service-provider'),
     ]);
     if (cities) adminData.cities = cities.cities;
     if (subAdmins) adminData.subAdmins = subAdmins.admins;
@@ -5779,7 +5801,8 @@ async function loadAdminData() {
     if (homepageImages) adminData.homepageImages = homepageImages;
     if (categoryImages) adminData.categoryImages = categoryImages;
     if (aboutUsContent) adminData.aboutUsContent = aboutUsContent.content;
-    if (termsContent) adminData.termsOfServiceContent = termsContent.content;
+    if (termsCustomerContent) adminData.termsOfServiceCustomerContent = termsCustomerContent.content;
+    if (termsProviderContent) adminData.termsOfServiceProviderContent = termsProviderContent.content;
   }
 }
 
@@ -6152,11 +6175,17 @@ const ADMIN_SECTIONS = {
       <button class="btn-sm btn-sm-primary" onclick="saveAboutUsContent()">Save About Us</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:22px 0;"/>
       <div class="form-group">
-        <label class="form-label">Terms of Service <small id="terms-charcount" style="font-weight:400;color:var(--slate);"></small></label>
-        <textarea class="form-input" id="settings-terms" rows="16" style="resize:vertical;font-family:ui-monospace,monospace;font-size:12.5px;" oninput="document.getElementById('terms-charcount').textContent = this.value.length.toLocaleString() + ' characters'">${escapeHtml(adminData.termsOfServiceContent || '')}</textarea>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;">This is real legal content shown to every user before they can use the platform. Consider having a lawyer review it before you rely on it — this starting draft reflects the policies you've already written, structured the way real marketplace Terms of Service are, but it isn't a substitute for legal review.</div>
+        <label class="form-label">Terms of Service — Customers <small id="terms-customer-charcount" style="font-weight:400;color:var(--slate);"></small></label>
+        <textarea class="form-input" id="settings-terms-customer" rows="14" style="resize:vertical;font-family:ui-monospace,monospace;font-size:12.5px;" oninput="document.getElementById('terms-customer-charcount').textContent = this.value.length.toLocaleString() + ' characters'">${escapeHtml(adminData.termsOfServiceCustomerContent || '')}</textarea>
       </div>
-      <button class="btn-sm btn-sm-primary" onclick="saveTermsContent()">Save Terms of Service</button>
+      <button class="btn-sm btn-sm-primary" onclick="saveTermsContent('customer')">Save Customer Terms</button>
+      <hr style="border:none;border-top:1px solid var(--border);margin:22px 0;"/>
+      <div class="form-group">
+        <label class="form-label">Terms of Service — Providers <small id="terms-provider-charcount" style="font-weight:400;color:var(--slate);"></small></label>
+        <textarea class="form-input" id="settings-terms-provider" rows="14" style="resize:vertical;font-family:ui-monospace,monospace;font-size:12.5px;" oninput="document.getElementById('terms-provider-charcount').textContent = this.value.length.toLocaleString() + ' characters'">${escapeHtml(adminData.termsOfServiceProviderContent || '')}</textarea>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;">Customer and Provider Terms are genuinely separate documents — a Customer only ever sees the Customer version, a Provider only ever sees the Provider version. This is real legal content shown before either can use the platform. Consider having a lawyer review both before you rely on them — these starting drafts reflect the policies you've already written, structured the way real marketplace Terms of Service are, but they aren't a substitute for legal review.</div>
+      </div>
+      <button class="btn-sm btn-sm-primary" onclick="saveTermsContent('provider')">Save Provider Terms</button>
     </div>
     <div class="panel"><div class="panel-title">Maintenance Tools</div>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Fix Old Notification Links</div>
@@ -7030,14 +7059,15 @@ async function saveAboutUsContent() {
   } catch (e) { showToast(e.message || 'Could not save this'); }
 }
 
-async function saveTermsContent() {
-  const content = document.getElementById('settings-terms').value.trim();
+async function saveTermsContent(role) {
+  const content = document.getElementById(`settings-terms-${role}`).value.trim();
   if (content.length < 10) return showToast('Enter some real content first');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
-    await apiFetch('PATCH', '/admin/settings/terms-of-service', { content });
-    showToast('Terms of Service updated — live now');
-    adminData.termsOfServiceContent = content;
+    await apiFetch('PATCH', `/admin/settings/terms-of-service-${role}`, { content });
+    showToast(`${role === 'customer' ? 'Customer' : 'Provider'} Terms of Service updated — live now`);
+    if (role === 'customer') adminData.termsOfServiceCustomerContent = content;
+    else adminData.termsOfServiceProviderContent = content;
   } catch (e) { showToast(e.message || 'Could not save this'); }
 }
 
@@ -7439,6 +7469,7 @@ async function completeAuthAndResumeIntent(role) {
     clearPendingBookingIntent();
     const provider = PROVIDERS.find(p => p.id === intent.providerId);
     if (provider) {
+      checkTermsGate(role); // this path skips goDashboard(), the only other place this fires — never skip the agreement screen just because someone signed up mid-booking
       showToast(`Welcome! Continuing your booking with ${provider.name}...`);
       await openBooking(intent.providerId);
       return;

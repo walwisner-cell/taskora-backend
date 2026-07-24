@@ -46,59 +46,113 @@ So we built a platform where every professional is identity-verified before they
 
 We're a small, distributed team building this because we've personally been on both sides of a bad hire and a missed payment. We're still early, and we're building this in the open — if something's not working the way it should, we want to hear about it.`,
 
-  termsOfServiceContent: `Trothen Terms of Service
+  termsOfServiceCustomerContent: `Trothen Terms of Service — Customers
 
 Last updated: [set this date when you actually publish these terms]
 
 # 1. Who These Terms Are Between
 
-These Terms of Service ("Terms") govern your use of Trothen (the "Platform"), operated by Trothen Tech Group ("Trothen," "we," "us"). By creating an account, you agree to these Terms. If you don't agree, don't use the Platform.
+These Terms of Service ("Terms") govern your use of Trothen (the "Platform") as a Customer, operated by Trothen Tech Group ("Trothen," "we," "us"). By creating a Customer account, you agree to these Terms. If you don't agree, don't use the Platform.
 
 # 2. What Trothen Is — and Isn't
 
-Trothen is a marketplace that connects Customers who need local services with independent Providers who perform them. **Trothen does not perform the services listed on the Platform, and does not employ the Providers who do.** We verify identity, hold payment in escrow, generate contracts, and provide dispute support — we are not a party to the actual work performed.
+Trothen is a marketplace that connects you with independent Providers who perform local services. **Trothen does not perform the services listed on the Platform, and does not employ the Providers who do.** We verify Provider identity before they can accept work, hold your payment in escrow, generate a contract for every booking, and provide dispute support — we are not a party to the actual work performed.
 
-# 3. Provider Relationship
-
-Providers are independent contractors, not employees, agents, partners, or joint venturers of Trothen. Nothing in these Terms creates an employment relationship. Providers choose which jobs to accept, when to work, and how the work gets done. Providers are responsible for their own taxes, insurance, and business expenses.
-
-# 4. Account Eligibility
+# 3. Account Eligibility
 
 You must be at least 18 years old and able to form a binding contract to use Trothen. You're responsible for keeping your login credentials secure and for everything that happens under your account. Provide accurate information when you register, and keep it up to date.
 
-# 5. Community Standards
+# 4. What You Agree To As a Customer
 
-Every Customer and Provider agrees to Trothen's Community Standards as a condition of using the Platform:
+- **Keep what you promised** — be there for the window you booked, or say so early if plans change.
+- **Be honest** — describe the job accurately, including anything difficult about it, and rate honestly on what actually happened.
+- **Be safe** — disclose hazards before a job (pets, structural issues, chemicals) so your Provider can work safely.
+- **Treat people with respect** — Providers are independent professionals running their own businesses, not staff, and not yours to direct beyond what the job describes.
+- **Keep it on the platform** — arrange and pay for work through Trothen. Off the platform, there is no payment protection and no insurance, for either side.
 
-- **Keep what you promised** — show up for the window you accepted, or say so early if you can't.
-- **Be honest** — describe the job and the work accurately.
-- **Be safe** — never work impaired or endangered; stop and report if something becomes unsafe.
-- **Treat people with respect** — no harassment, discrimination, or unwanted contact.
-- **Keep it on the platform** — arrange and pay for work through Trothen. Off-platform, there is no payment protection and no insurance, for either side.
+# 5. Payment, Fees, and Escrow
 
-# 6. Payment, Fees, and Escrow
+When you book a job, your payment is held in escrow until you confirm the work is complete, at which point funds release to the Provider. Any applicable Customer service fee is shown to you before you confirm a booking — the Platform will always display the actual, current fee, never a hidden charge added afterward.
 
-Payment for a job is held in escrow from the time a booking is confirmed until the Customer confirms the job is complete, at which point funds release to the Provider (less Trothen's commission). Trothen's current commission rates by Provider tier, and any applicable Customer service fee, are published on the Platform and may change from time to time — the Platform will always show the actual, current rate before you confirm a booking.
+# 6. Cancellations
 
-# 7. Cancellations
+You may cancel a booking before it's completed, subject to the cancellation terms shown on the Platform at the time of booking.
 
-Either party may cancel a booking before it's completed, subject to the cancellation terms shown on the Platform at the time. A Provider cancelling because a job wasn't accurately described, became unsafe, needed a different trade, or required a license they don't hold will never have that cancellation counted against their standing on the Platform — that's a system rule, not a case-by-case judgment call.
-
-# 8. Prohibited Activity
+# 7. Prohibited Activity
 
 The following can never be posted or booked on Trothen, regardless of category: transporting people, unsupervised care of minors, work involving weapons or controlled substances, medical or veterinary procedures, or handling of hazardous or biological waste. Trothen may remove any listing or booking that violates this, and may suspend the account responsible.
 
+# 8. Disputes
+
+If something goes wrong with a job, contact Trothen support. A real person reviews every dispute — no automated system makes a final call on a dispute. Response-time targets for different types of issues are published on the Platform.
+
+# 9. Account Suspension
+
+Trothen may suspend or terminate your account for violating these Terms or applicable law. Every such decision is made by a person, not an algorithm, and can be questioned — contact support if you believe a decision was made in error.
+
+# 10. Limitation of Liability
+
+Trothen provides the Platform "as is." To the maximum extent permitted by law, Trothen is not liable for the acts or omissions of Providers, or for indirect, incidental, or consequential damages arising from use of the Platform. Nothing in these Terms limits liability where the law does not allow it to be limited.
+
+# 11. Changes to These Terms
+
+Trothen may update these Terms from time to time. If a change is material, you'll be asked to review and accept the updated Terms before continuing to use the Platform.
+
+# 12. Contact
+
+Questions about these Terms: support@trothen.io`,
+
+  termsOfServiceProviderContent: `Trothen Terms of Service — Providers
+
+Last updated: [set this date when you actually publish these terms]
+
+# 1. Who These Terms Are Between
+
+These Terms of Service ("Terms") govern your use of Trothen (the "Platform") as a Provider, operated by Trothen Tech Group ("Trothen," "we," "us"). By creating a Provider account, you agree to these Terms. If you don't agree, don't use the Platform.
+
+# 2. What Trothen Is — and Isn't
+
+Trothen is a marketplace that connects you with Customers who need local services. **Trothen does not perform the services you list, and does not employ you.** We verify your identity before you can accept work, hold Customer payment in escrow until a job is confirmed complete, generate a contract for every booking, and provide dispute support — we are not a party to the actual work you perform.
+
+# 3. Your Relationship With Trothen
+
+You are an independent contractor, not an employee, agent, partner, or joint venturer of Trothen. **Nothing in these Terms creates an employment relationship.** You choose which jobs to accept, when to work, and how the work gets done — Trothen never directs your method, hours, route, or acceptance decisions. You are responsible for your own taxes, insurance, and business expenses.
+
+# 4. Account Eligibility
+
+You must be at least 18 years old and able to form a binding contract to use Trothen. You're responsible for keeping your login credentials secure — never lend your account to anyone else — and for everything that happens under it. Provide accurate information when you register, and keep it up to date, including any license or insurance information your category requires.
+
+# 5. What You Agree To As a Provider
+
+- **Keep what you promised** — show up for the window you accepted, or say so early if you can't.
+- **Be honest** — describe your work accurately. If a job needs a licensed trade or is bigger than described, stop and tell the Customer.
+- **Be safe** — never work impaired or endangered. Stop and report if a job becomes unsafe — no job is worth an injury.
+- **Treat people with respect** — no harassment, discrimination, or unwanted contact. Never enter a space you weren't invited into.
+- **Keep it on the platform** — arrange and get paid for work through Trothen. Off the platform, there is no payment protection and no insurance, for either side.
+
+# 6. Commission and Payment
+
+Trothen deducts a commission from each completed job before paying you out; the current rate for your tier is always shown on your dashboard and on each payout. Rates may change from time to time, and the Platform will always reflect the actual, current rate — never a rate you weren't shown.
+
+# 7. Cancellations
+
+You may cancel a job before it's completed, subject to the cancellation terms shown on the Platform. **Cancelling because a job wasn't accurately described, became unsafe, needed a different trade, or required a license you don't hold will never count against your standing on the Platform** — that's a system rule, not a case-by-case judgment call.
+
+# 8. Prohibited Activity
+
+The following can never be posted, accepted, or performed through Trothen, regardless of category: transporting people, unsupervised care of minors, work involving weapons or controlled substances, medical or veterinary procedures, or handling of hazardous or biological waste. Trothen may remove any listing or booking that violates this, and may suspend the account responsible.
+
 # 9. Disputes
 
-If something goes wrong with a job, contact Trothen support. A real person reviews every dispute — no automated system suspends an account or makes a final call on a dispute. Response-time targets for different types of issues are published on the Platform.
+If something goes wrong with a job, contact Trothen support. A real person reviews every dispute — no automated system suspends your account or makes a final call on a dispute. Response-time targets for different types of issues are published on the Platform.
 
 # 10. Account Suspension
 
-Trothen may suspend or terminate an account for violating these Terms, the Community Standards, or applicable law. Every such decision is made by a person, not an algorithm, and can be questioned — contact support if you believe a decision was made in error.
+Trothen may suspend or terminate your account for violating these Terms, the Community Standards, or applicable law. Every such decision is made by a person, not an algorithm, and can be questioned — contact support if you believe a decision was made in error.
 
 # 11. Limitation of Liability
 
-Trothen provides the Platform "as is." To the maximum extent permitted by law, Trothen is not liable for the acts or omissions of Customers or Providers, or for indirect, incidental, or consequential damages arising from use of the Platform. Nothing in these Terms limits liability where the law does not allow it to be limited.
+Trothen provides the Platform "as is." To the maximum extent permitted by law, Trothen is not liable for indirect, incidental, or consequential damages arising from use of the Platform. Nothing in these Terms limits liability where the law does not allow it to be limited.
 
 # 12. Changes to These Terms
 

@@ -315,16 +315,26 @@ router.get('/homepage-content', async (req, res) => {
   res.json(content);
 });
 
-// GET /api/about-us-content, /api/terms-of-service-content — public, no
-// auth: these are real pages anyone can read, not admin-only data.
+// GET /api/about-us-content, /api/terms-of-service-customer-content,
+// /api/terms-of-service-provider-content — public, no auth: these are
+// real pages anyone can read, not admin-only data. Customer and Provider
+// versions are genuinely separate documents, not one shared page —
+// what each side actually agrees to is different enough (independent
+// contractor status, commission structure, cancellation protection) that
+// a single mixed document was doing neither side justice.
 router.get('/about-us-content', async (req, res) => {
   const { getSetting } = require('../platform-settings');
   res.json({ content: await getSetting('aboutUsContent') });
 });
 
-router.get('/terms-of-service-content', async (req, res) => {
+router.get('/terms-of-service-customer-content', async (req, res) => {
   const { getSetting } = require('../platform-settings');
-  res.json({ content: await getSetting('termsOfServiceContent') });
+  res.json({ content: await getSetting('termsOfServiceCustomerContent') });
+});
+
+router.get('/terms-of-service-provider-content', async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ content: await getSetting('termsOfServiceProviderContent') });
 });
 
 // GET /api/homepage-images — public, no auth: the real uploaded photo (if

@@ -680,18 +680,33 @@ router.patch('/settings/about-us', requireSuperAdmin, async (req, res) => {
   res.json({ ok: true, content: content.trim() });
 });
 
-router.get('/settings/terms-of-service', requireSuperAdmin, async (req, res) => {
+router.get('/settings/terms-of-service-customer', requireSuperAdmin, async (req, res) => {
   const { getSetting } = require('../platform-settings');
-  res.json({ content: await getSetting('termsOfServiceContent') });
+  res.json({ content: await getSetting('termsOfServiceCustomerContent') });
 });
 
-router.patch('/settings/terms-of-service', requireSuperAdmin, async (req, res) => {
+router.patch('/settings/terms-of-service-customer', requireSuperAdmin, async (req, res) => {
   const { content } = req.body || {};
   if (!isNonEmptyString(content, { min: 10, max: 50000 })) {
     return res.status(400).json({ error: 'Enter some content (up to 50,000 characters)' });
   }
   const { setSetting } = require('../platform-settings');
-  await setSetting('termsOfServiceContent', content.trim());
+  await setSetting('termsOfServiceCustomerContent', content.trim());
+  res.json({ ok: true, content: content.trim() });
+});
+
+router.get('/settings/terms-of-service-provider', requireSuperAdmin, async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ content: await getSetting('termsOfServiceProviderContent') });
+});
+
+router.patch('/settings/terms-of-service-provider', requireSuperAdmin, async (req, res) => {
+  const { content } = req.body || {};
+  if (!isNonEmptyString(content, { min: 10, max: 50000 })) {
+    return res.status(400).json({ error: 'Enter some content (up to 50,000 characters)' });
+  }
+  const { setSetting } = require('../platform-settings');
+  await setSetting('termsOfServiceProviderContent', content.trim());
   res.json({ ok: true, content: content.trim() });
 });
 
