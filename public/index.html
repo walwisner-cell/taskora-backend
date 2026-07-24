@@ -291,6 +291,8 @@
     font-size:16px; font-weight:700; cursor:pointer; transition:all .2s;
   }
   .confirm-btn:hover { background:var(--teal); color:var(--navy); }
+  .confirm-btn:disabled { background:#C8CCD2; color:#8A8F98; cursor:not-allowed; }
+  .confirm-btn:disabled:hover { background:#C8CCD2; color:#8A8F98; }
   .booking-summary {
     background:var(--offwhite); border-radius:8px; padding:14px 16px;
     margin-bottom:18px; font-size:13px;
@@ -3078,15 +3080,22 @@ function checkTermsGate(role) {
               <div><div style="font-weight:600;font-size:13.5px;color:var(--navy);">${label}</div><div style="font-size:12.5px;color:var(--text);margin-top:2px;line-height:1.5;">${detail}</div></div>
             </div>`).join('')}
           ${providerFinePrint}
-          <button onclick="openFullTermsInGate('${role}')" style="width:100%;margin-top:18px;padding:11px;background:var(--offwhite);border:1px solid var(--border);border-radius:8px;font-weight:600;font-size:13px;color:var(--navy);cursor:pointer;text-align:left;display:flex;align-items:center;justify-content:space-between;">
-            <span>📄 Read the full Terms of Service <span style="color:#C0392B;">(required)</span></span>
-            <span style="color:var(--slate);">→</span>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:20px;font-size:11px;font-weight:700;letter-spacing:.4px;color:var(--slate);text-transform:uppercase;">
+            <span id="terms-step-1-badge" style="width:20px;height:20px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;">1</span>
+            <span>Read the full terms</span>
+            <span style="flex:1;height:1px;background:var(--border);"></span>
+            <span id="terms-step-2-badge" style="width:20px;height:20px;border-radius:50%;background:var(--border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:11px;">2</span>
+            <span>Agree</span>
+          </div>
+          <button id="terms-read-btn" onclick="openFullTermsInGate('${role}')" style="width:100%;margin-top:10px;padding:12px;background:var(--offwhite);border:1.5px solid var(--navy);border-radius:8px;font-weight:600;font-size:13.5px;color:var(--navy);cursor:pointer;text-align:left;display:flex;align-items:center;justify-content:space-between;transition:all .15s ease;">
+            <span>📄 Read the full Terms of Service</span>
+            <span style="color:var(--navy);font-weight:700;">→</span>
           </button>
-          <label style="display:flex;align-items:flex-start;gap:10px;margin-top:16px;cursor:pointer;font-size:13px;">
-            <input type="checkbox" id="terms-gate-checkbox" onchange="updateTermsAgreeButton()" style="margin-top:2px;"/>
+          <label id="terms-checkbox-label" style="display:flex;align-items:flex-start;gap:10px;margin-top:16px;cursor:not-allowed;font-size:13px;opacity:.5;">
+            <input type="checkbox" id="terms-gate-checkbox" disabled onchange="updateTermsAgreeButton()" style="margin-top:2px;"/>
             <span>I have read and agree to these standards and the full Terms of Service.</span>
           </label>
-          <div id="terms-gate-hint" style="font-size:11.5px;color:#C0392B;margin-top:8px;">You need to open the full Terms of Service above before you can continue.</div>
+          <div id="terms-gate-hint" style="font-size:11.5px;color:var(--slate);margin-top:8px;">↑ Open the full Terms of Service first — this unlocks once you have.</div>
         </div>
         <div class="modal-body" id="terms-gate-full-view" style="display:none;">
           <button onclick="closeFullTermsInGate()" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:13px;cursor:pointer;padding:0;margin-bottom:14px;">← Back to Agreement</button>
@@ -3124,16 +3133,33 @@ function closeFullTermsInGate() {
 // true.
 function updateTermsAgreeButton() {
   const checkbox = document.getElementById('terms-gate-checkbox');
+  const checkboxLabel = document.getElementById('terms-checkbox-label');
   const hint = document.getElementById('terms-gate-hint');
   const btn = document.getElementById('terms-gate-agree-btn');
+  const step1Badge = document.getElementById('terms-step-1-badge');
+  const step2Badge = document.getElementById('terms-step-2-badge');
+  const readBtn = document.getElementById('terms-read-btn');
   if (!TERMS_GATE_VIEWED) {
     checkbox.checked = false;
     checkbox.disabled = true;
+    checkboxLabel.style.cursor = 'not-allowed';
+    checkboxLabel.style.opacity = '.5';
     hint.style.display = 'block';
     btn.disabled = true;
     return;
   }
+  // Step 1 genuinely complete — reflect that clearly rather than leaving
+  // the button looking identical to its unclicked state.
+  step1Badge.style.background = '#2E8C6F';
+  step1Badge.innerHTML = '✓';
+  step2Badge.style.background = 'var(--navy)';
+  step2Badge.style.color = '#fff';
+  readBtn.style.borderColor = '#2E8C6F';
+  readBtn.style.background = '#EAF4EF';
+  readBtn.querySelector('span').innerHTML = '✓ Terms of Service opened';
   checkbox.disabled = false;
+  checkboxLabel.style.cursor = 'pointer';
+  checkboxLabel.style.opacity = '1';
   hint.style.display = 'none';
   btn.disabled = !checkbox.checked;
 }
