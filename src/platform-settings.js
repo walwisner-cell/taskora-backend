@@ -6,6 +6,17 @@ const db = require('./db');
 // convention used everywhere else in this app (plan pricing, exchange
 // rates, category active-toggles).
 const DEFAULTS = {
+  // The real WhatsApp number and display phone number shown to visitors
+  // (homepage, and the "talk to a real person" path in the support chat).
+  // Starts as an obviously-fake placeholder until a real super admin sets
+  // the actual number in Settings — isPlaceholder (computed where this is
+  // read, not stored here) tells the frontend whether what it's showing
+  // is still this placeholder, so it can be honest about it rather than
+  // silently presenting a fake number as real.
+  supportContact: {
+    whatsapp: '15551234567',
+    phoneDisplay: '+1 (555) 123-4567',
+  },
   // How long a provider has to accept or decline a new booking (direct or
   // a Mutual Agreement offer) before it auto-expires and the customer is
   // refunded — tiered by how soon the job actually is, not a flat number.
