@@ -282,6 +282,16 @@
     color:var(--text); outline:none; transition:border-color .2s;
   }
   .form-input:focus { border-color:var(--teal); }
+  /* Real keyboard-navigation focus indicators — genuinely missing before
+     this across almost every interactive element in the app (buttons,
+     links, checkboxes). :focus-visible specifically (not plain :focus)
+     is the modern best practice here: it shows this ring for someone
+     tabbing through with a keyboard, without adding a visible ring every
+     time a mouse user clicks something, which most people find visually
+     noisy. */
+  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+    outline: 2.5px solid var(--teal); outline-offset: 2px; border-radius: 4px;
+  }
   .form-select { appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748B' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 14px center; }
   .dates-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .modal-footer { padding:0 24px 24px; }
@@ -2120,8 +2130,14 @@ function populateSettingsCategory() {
 // isn't a required field.
 function licenseInsuranceStatusHTML(dateStr, label) {
   if (!dateStr) return `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">No ${label.toLowerCase()} expiry date on file yet.</div>`;
-  const expiry = new Date(dateStr);
-  const daysLeft = Math.round((expiry - new Date()) / (1000 * 60 * 60 * 24));
+  // A plain date string like "2026-08-01" parses as UTC midnight — the
+  // very first instant of that day. Comparing straight against "now"
+  // would make the license look expired hours before that day is
+  // actually over, in every timezone. Treating it as valid through the
+  // end of that day (23:59:59 UTC) is the correct, timezone-consistent
+  // reading of "expires on this date."
+  const expiry = new Date(dateStr + 'T23:59:59.999Z');
+  const daysLeft = Math.ceil((expiry - new Date()) / (1000 * 60 * 60 * 24));
   if (daysLeft < 0) return `<div style="font-size:12px;color:#C0392B;font-weight:600;margin-bottom:6px;">⚠ ${label} expired ${Math.abs(daysLeft)} day${Math.abs(daysLeft) === 1 ? '' : 's'} ago</div>`;
   if (daysLeft <= 30) return `<div style="font-size:12px;color:#B08A3E;font-weight:600;margin-bottom:6px;">⚠ ${label} expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}</div>`;
   return `<div style="font-size:12px;color:#2E8C6F;font-weight:600;margin-bottom:6px;">✓ ${label} valid until ${expiry.toLocaleDateString()}</div>`;
@@ -3199,6 +3215,7 @@ function statusBadge(status) {
     pending_provider_confirmation: ['badge-warn', 'Awaiting Confirmation'], expired: ['badge-neutral', 'Expired — No Response'],
     cancelled: ['badge-neutral', 'Cancelled'], suspended: ['badge-danger', 'Suspended'],
     verified: ['badge-success', 'Verified'], unverified: ['badge-warn', 'Unverified'],
+    reviewed: ['badge-success', 'Reviewed'], dismissed: ['badge-neutral', 'Dismissed'],
   };
   const m = map[status] || ['badge-neutral', status];
   return `<span class="badge ${m[0]}">${m[1]}</span>`;
@@ -7241,6 +7258,21 @@ function clearAdminPeopleFilter() {
 // data already loaded for the directory table — no extra network round
 // trip needed, since the admin/users/all endpoint already returns the full
 // record (minus the password hash).
+// Same real date math as licenseInsuranceStatusHTML (the provider-facing
+// version), but returns plain text — this feeds into the admin detail
+// row() helper, which escapes whatever it's given, so HTML/color markup
+// here would just show up as literal text instead of rendering.
+function formatAdminExpiryStatus(dateStr) {
+  // Same timezone-consistency fix as licenseInsuranceStatusHTML — treat
+  // the stored date as valid through the end of that day, not its very
+  // first UTC instant.
+  const expiry = new Date(dateStr + 'T23:59:59.999Z');
+  const daysLeft = Math.ceil((expiry - new Date()) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return `⚠ Expired ${Math.abs(daysLeft)} day${Math.abs(daysLeft) === 1 ? '' : 's'} ago`;
+  if (daysLeft <= 30) return `⚠ Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+  return `✓ Valid until ${expiry.toLocaleDateString()}`;
+}
+
 function openPersonDetail(userId) {
   const u = adminData.people.find(p => p.id === userId);
   if (!u) return showToast('Could not find that person — try refreshing the page');
@@ -7268,6 +7300,9 @@ function openPersonDetail(userId) {
           ${row('Identity Verified', u.verified ? '✅ Verified' : '⏳ Not verified')}
           ${row('Phone Verified', u.phoneVerified ? '✅ Verified' : '⏳ Not verified')}
           ${row('Account Status', u.active ? 'Active' : 'Suspended')}
+          ${row('Terms Accepted', u.termsAcceptedAt ? `✅ ${u.termsAcceptedAt.slice(0, 10)} (v${u.termsVersion || '?'})` : '⏳ Not yet agreed')}
+          ${isProvider && u.licenseExpiryDate ? row('License Expiry', formatAdminExpiryStatus(u.licenseExpiryDate)) : ''}
+          ${isProvider && u.insuranceExpiryDate ? row('Insurance Expiry', formatAdminExpiryStatus(u.insuranceExpiryDate)) : ''}
         </div>
         <div class="modal-footer">
           ${u.active
@@ -7327,7 +7362,7 @@ function fraudFlagsTableHTML(flags) {
   return `
     ${open.length ? `<div style="font-size:12px;color:var(--slate);font-weight:600;margin-bottom:8px;">${open.length} open</div>` : ''}
     <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Type</th><th>Severity</th><th>Account</th><th>Details</th><th>Flagged</th><th>Status</th><th>Action</th></tr></thead><tbody>
-    ${flags.map(f => `<tr><td>${FRAUD_TYPE_LABELS[f.type] || f.type}</td><td>${f.severity==='high' ? '<span class="badge badge-danger">High</span>' : '<span class="badge badge-warn">Medium</span>'}</td><td>${f.userName || '—'}${f.relatedUserName ? ` ↔ ${f.relatedUserName}` : ''}</td><td style="max-width:280px;">${f.details}</td><td>${new Date(f.createdAt).toLocaleDateString()}</td><td>${f.status === 'open' ? '<span class="badge badge-pending">Open</span>' : f.status === 'reviewed' ? '<span class="badge badge-success">Reviewed</span>' : '<span class="badge badge-neutral">Dismissed</span>'}</td>
+    ${flags.map(f => `<tr><td>${FRAUD_TYPE_LABELS[f.type] || f.type}</td><td>${f.severity==='high' ? '<span class="badge badge-danger">High</span>' : '<span class="badge badge-warn">Medium</span>'}</td><td>${f.userName || '—'}${f.relatedUserName ? ` ↔ ${f.relatedUserName}` : ''}</td><td style="max-width:280px;">${f.details}</td><td>${new Date(f.createdAt).toLocaleDateString()}</td><td>${f.status === 'open' ? '<span class="badge badge-pending">Open</span>' : statusBadge(f.status)}</td>
     <td class="row-actions">${f.status === 'open' ? `<button class="btn-sm btn-sm-outline" onclick="resolveFraudFlag('${f.id}','reviewed')">Mark Reviewed</button> <button class="btn-sm btn-sm-ghost" onclick="resolveFraudFlag('${f.id}','dismissed')">Dismiss</button>` : '—'}</td></tr>`).join('')}
     </tbody></table></div>`;
 }
