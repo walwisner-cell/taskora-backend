@@ -826,6 +826,8 @@
   .support-chat-body { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:9px; background:var(--offwhite); }
   .support-chat-bubble-msg { max-width:82%; padding:9px 12px; border-radius:12px; font-size:12.5px; line-height:1.55; }
   .support-chat-bubble-msg.bot { background:#fff; border:1px solid var(--border); align-self:flex-start; }
+  [id^="thinking-"] { animation: chatThinkingPulse 1.2s ease-in-out infinite; letter-spacing:2px; color:var(--slate); }
+  @keyframes chatThinkingPulse { 0%,100% { opacity:.35; } 50% { opacity:1; } }
   .support-chat-bubble-msg.user { background:var(--navy); color:#fff; align-self:flex-end; }
   .support-chat-suggestions { display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
   .support-chat-suggestion { font-size:11px; padding:5px 10px; border:1px solid var(--border); border-radius:20px; background:#fff; cursor:pointer; color:var(--navy); }
@@ -2140,15 +2142,14 @@ function populateSettingsCategory() {
 // isn't a required field.
 function licenseInsuranceStatusHTML(dateStr, label) {
   if (!dateStr) return `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">No ${label.toLowerCase()} expiry date on file yet.</div>`;
-  // A plain date string like "2026-08-01" parses as UTC midnight — the
-  // very first instant of that day. Comparing straight against "now"
-  // would make the license look expired hours before that day is
-  // actually over, in every timezone. Treating it as valid through the
-  // end of that day (23:59:59 UTC) is the correct, timezone-consistent
-  // reading of "expires on this date."
-  const expiry = new Date(dateStr + 'T23:59:59.999Z');
+  // Matches the real enforcement in hasValidLicense() exactly: the
+  // stated expiry date is the first invalid day, not the day after —
+  // "no grace period" per the Provider Agreement. This display must
+  // agree with that cutoff, or a provider could see "still valid" while
+  // simultaneously being blocked from accepting a job.
+  const expiry = new Date(dateStr + 'T00:00:00.000Z');
   const daysLeft = Math.ceil((expiry - new Date()) / (1000 * 60 * 60 * 24));
-  if (daysLeft < 0) return `<div style="font-size:12px;color:#C0392B;font-weight:600;margin-bottom:6px;">⚠ ${label} expired ${Math.abs(daysLeft)} day${Math.abs(daysLeft) === 1 ? '' : 's'} ago</div>`;
+  if (daysLeft <= 0) return `<div style="font-size:12px;color:#C0392B;font-weight:600;margin-bottom:6px;">⚠ ${label} expired${daysLeft < 0 ? ` ${Math.abs(daysLeft)} day${Math.abs(daysLeft) === 1 ? '' : 's'} ago` : ' today'}</div>`;
   if (daysLeft <= 30) return `<div style="font-size:12px;color:#B08A3E;font-weight:600;margin-bottom:6px;">⚠ ${label} expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}</div>`;
   return `<div style="font-size:12px;color:#2E8C6F;font-weight:600;margin-bottom:6px;">✓ ${label} valid until ${expiry.toLocaleDateString()}</div>`;
 }
@@ -3620,6 +3621,66 @@ function filterReportsByCategory(category, el) {
   if (filterNote) filterNote.innerHTML = reportsySelectedCategory
     ? `Showing <strong>${escapeHtml(reportsySelectedCategory)}</strong> only — <a href="#" onclick="filterReportsByCategory('${escapeHtml(reportsySelectedCategory).replace(/'/g, "\\'")}');return false;" style="color:var(--teal);">Clear filter</a>`
     : '';
+}
+
+let LAST_REPORT_BUILDER_ROWS = [];
+
+async function runReportBuilder() {
+  const resultsEl = document.getElementById('report-builder-results');
+  resultsEl.innerHTML = '<div style="color:var(--slate);font-size:13px;">Running report…</div>';
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  const params = new URLSearchParams();
+  const dateFrom = document.getElementById('rb-date-from').value;
+  const dateTo = document.getElementById('rb-date-to').value;
+  const category = document.getElementById('rb-category').value.trim();
+  const city = document.getElementById('rb-city').value.trim();
+  const status = document.getElementById('rb-status').value;
+  const providerTier = document.getElementById('rb-tier').value;
+  if (dateFrom) params.set('dateFrom', dateFrom);
+  if (dateTo) params.set('dateTo', dateTo);
+  if (category) params.set('category', category);
+  if (city) params.set('city', city);
+  if (status) params.set('status', status);
+  if (providerTier) params.set('providerTier', providerTier);
+  try {
+    const { rows, total } = await apiFetch('GET', `/admin/report-builder?${params.toString()}`);
+    LAST_REPORT_BUILDER_ROWS = rows;
+    document.getElementById('rb-export-btn').style.display = rows.length ? 'inline-block' : 'none';
+    if (!rows.length) {
+      resultsEl.innerHTML = '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings match these filters.</div>';
+      return;
+    }
+    resultsEl.innerHTML = `
+      <div class="stat-cards" style="margin-bottom:16px;">
+        <div class="stat-card"><div class="stat-card-label">Bookings Found</div><div class="stat-card-val">${total.count}</div></div>
+        <div class="stat-card"><div class="stat-card-label">GMV</div><div class="stat-card-val">$${total.gmv.toLocaleString()}</div></div>
+        <div class="stat-card"><div class="stat-card-label">Service Fee Revenue</div><div class="stat-card-val">$${total.serviceFeeRevenue.toLocaleString()}</div></div>
+        <div class="stat-card"><div class="stat-card-label">Completed / Cancelled</div><div class="stat-card-val" style="font-size:20px;">${total.completed} / ${total.cancelled}</div></div>
+      </div>
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Service</th><th>Status</th><th>Amount</th><th>Fee</th><th>Customer</th><th>Provider</th><th>Category</th><th>Tier</th><th>City</th><th>Date</th></tr></thead><tbody>
+      ${rows.slice(0, 200).map(r => `<tr><td>${escapeHtml(r.bookingNumber || '—')}</td><td>${escapeHtml((r.service || '').slice(0, 40))}</td><td>${statusBadge(r.status)}</td><td>$${r.amount}</td><td>$${r.serviceFee}</td><td>${escapeHtml(r.customerName)}</td><td>${escapeHtml(r.providerName)}</td><td>${escapeHtml(r.providerCategory) || '—'}</td><td>${tierBadgeHTML(r.providerTier)}</td><td>${escapeHtml(r.city) || '—'}</td><td>${r.createdAt ? r.createdAt.slice(0,10) : '—'}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${rows.length > 200 ? `<div style="font-size:12px;color:var(--slate);margin-top:8px;">Showing the first 200 of ${rows.length} — export to CSV for the complete set.</div>` : ''}
+    `;
+  } catch (e) { resultsEl.innerHTML = `<div style="color:var(--red);font-size:13px;">${escapeHtml(e.message || 'Could not run this report')}</div>`; }
+}
+
+function exportReportBuilderCSV() {
+  if (!LAST_REPORT_BUILDER_ROWS.length) return showToast('Run a report first');
+  const headers = ['Booking Number', 'Service', 'Status', 'Amount', 'Service Fee', 'Customer', 'Provider', 'Category', 'Tier', 'City', 'Country', 'Date'];
+  const csvRows = LAST_REPORT_BUILDER_ROWS.map(r => [
+    r.bookingNumber, r.service, r.status, r.amount, r.serviceFee, r.customerName, r.providerName, r.providerCategory, r.providerTier, r.city, r.country, r.createdAt ? r.createdAt.slice(0, 10) : '',
+  ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
+  const csv = [headers.join(','), ...csvRows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `trothen-report-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function categoryPerformanceTableHTML(rows) {
@@ -6107,6 +6168,9 @@ async function loadAdminData() {
 }
 
 async function adminDecide(listName, id, decision, sectionKey) {
+  if (listName === 'users' && decision === 'reject') {
+    if (!confirm('Reject this account application? This will permanently block them from logging in — this is not the same as leaving them pending, and is harder to casually undo. Continue?')) return;
+  }
   if (!BACKEND_AVAILABLE) {
     const list = listName === 'users' ? adminData.pendingUsers : adminData.verificationQueue;
     const item = list.find(x => x.id === id);
@@ -6259,6 +6323,37 @@ const ADMIN_SECTIONS = {
 
     return `
     <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">Real demand and performance insights${ra.region !== 'All Locations' ? ` — ${ra.region}` : ''}</div></div></div>
+
+    <div class="panel"><div class="panel-title">Report Builder <small style="font-weight:400;color:var(--slate);">build a custom report from real booking data</small></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;">
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">From date</label><input class="form-input" type="date" id="rb-date-from"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">To date</label><input class="form-input" type="date" id="rb-date-to"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Category</label><input class="form-input" id="rb-category" placeholder="e.g. Plumbing"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">City</label><input class="form-input" id="rb-city" placeholder="e.g. Atlanta"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Status</label>
+          <select class="form-input" id="rb-status">
+            <option value="">Any status</option>
+            <option value="completed">Completed</option>
+            <option value="active">Active</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="pending_provider_confirmation">Pending confirmation</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Provider Tier</label>
+          <select class="form-input" id="rb-tier">
+            <option value="">Any tier</option>
+            <option value="starter">Starter</option>
+            <option value="pro">Pro</option>
+            <option value="superpro">Super-Pro</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-sm btn-sm-primary" onclick="runReportBuilder()">Run Report</button>
+        <button class="btn-sm btn-sm-outline" onclick="exportReportBuilderCSV()" id="rb-export-btn" style="display:none;">⬇ Export CSV</button>
+      </div>
+      <div id="report-builder-results" style="margin-top:16px;"></div>
+    </div>
 
     <div class="panel"><div class="panel-title">Demand by Category (Real Bookings) <small style="font-weight:400;color:var(--slate);">${categoriesWithActivity ? `top ${Math.min(10, categoriesWithActivity)} of ${categoriesWithActivity} with activity` : `0 of ${ra.totalCategories} categories`}</small></div>${topDemand.length ? barChart(topDemand, { clickable: true }) : '<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings yet — this chart reflects real completed and active jobs, not provider signups.</div>'}${topDemand.length ? `<div style="font-size:12px;color:var(--slate);margin-top:10px;">Click a bar to filter the tables below to just that category. <span id="reports-filter-note"></span></div>` : ''}</div>
 
@@ -7488,12 +7583,12 @@ function clearAdminPeopleFilter() {
 // row() helper, which escapes whatever it's given, so HTML/color markup
 // here would just show up as literal text instead of rendering.
 function formatAdminExpiryStatus(dateStr) {
-  // Same timezone-consistency fix as licenseInsuranceStatusHTML — treat
-  // the stored date as valid through the end of that day, not its very
-  // first UTC instant.
-  const expiry = new Date(dateStr + 'T23:59:59.999Z');
+  // Matches hasValidLicense() exactly — the stated expiry date is the
+  // first invalid day, not the day after. "No grace period" per the
+  // Provider Agreement.
+  const expiry = new Date(dateStr + 'T00:00:00.000Z');
   const daysLeft = Math.ceil((expiry - new Date()) / (1000 * 60 * 60 * 24));
-  if (daysLeft < 0) return `⚠ Expired ${Math.abs(daysLeft)} day${Math.abs(daysLeft) === 1 ? '' : 's'} ago`;
+  if (daysLeft <= 0) return `⚠ Expired${daysLeft < 0 ? ` ${Math.abs(daysLeft)} day${Math.abs(daysLeft) === 1 ? '' : 's'} ago` : ' today'}`;
   if (daysLeft <= 30) return `⚠ Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
   return `✓ Valid until ${expiry.toLocaleDateString()}`;
 }
@@ -8241,7 +8336,7 @@ const SUPPORT_FAQ = [
   { keywords: ['dispute', 'problem', 'complaint', 'refund', 'bad job', 'not happy'], answer: "If something's wrong with a job, don't mark it complete — that releases escrow. Instead, message your pro first to try to resolve it, and if that doesn't work, our Finance & Dispute team can step in to review and resolve it fairly." },
   { keywords: ['pay', 'payment', 'card', 'billing'], answer: "You can add a payment method in Customer → Payments. Right now this runs in test mode (no real charges) while we finalize our payment processor — you can use any test card number to try the flow." },
   { keywords: ['become a pro', 'sign up as provider', 'join as provider', 'provider account'], answer: "Click \"Become a Pro\" at the top of the page, or choose \"Provider\" when you sign up. You'll need your category, skills, and location — new providers start unverified until an admin approves their documents." },
-  { keywords: ['price', 'pricing', 'plan', 'cost', 'subscription', 'fee'], answer: "Trothen has four plans: Starter ($0/mo, 12% commission), Pro ($20/mo, 8% commission), Super Pro ($27/mo, 5% commission + top community placement), and Custom for organizations. Check the Pricing page for the full breakdown." },
+  { keywords: ['price', 'pricing', 'plan', 'cost', 'subscription', 'fee'], answer: "Trothen has three provider tiers: Starter ($15/mo, 13% commission), Pro ($20/mo, 12% commission — reached automatically once you qualify), and Super Pro ($27/mo, 10% commission — reviewed by our team once you qualify). Check the Pricing page for the full breakdown." },
   { keywords: ['categor', 'service', 'what can i book', 'what do you offer'], answer: "Trothen covers Plumbing, Cleaning, Tutoring, Electrical, Moving, Painting, Landscaping, Fitness, Pick & Drop, and more — browse them all from \"See all categories\" on the homepage." },
   { keywords: ['match', 'ai match', 'how does matching work', 'algorithm'], answer: "When you post a job, our matching engine ranks verified pros in your category and community by rating, experience, and proximity (we prioritize pros in your exact zip code first). You'll see the top matches with a fit score." },
   { keywords: ['community', 'zip', 'postal', 'location match'], answer: "We use your zip/postal code to find pros right in your community first, before widening to your broader city — this tends to mean faster response times and pros who already know the area." },
@@ -8413,13 +8508,59 @@ function askSupportSuggestion(el) {
   setTimeout(() => appendSupportMessage('bot', answerSupportQuestion(text)), 300);
 }
 
+let SUPPORT_CHAT_HISTORY = [];
+
 function sendSupportChatMessage() {
   const input = document.getElementById('support-chat-input');
   const text = input.value.trim();
   if (!text) return;
   appendSupportMessage('user', text);
+  SUPPORT_CHAT_HISTORY.push({ from: 'user', text });
   input.value = '';
-  setTimeout(() => appendSupportMessage('bot', answerSupportQuestion(text)), 350);
+
+  const lower = text.toLowerCase();
+  const keywordMatch = SUPPORT_FAQ.find(entry => entry.keywords.some(k => lower.includes(k)));
+  if (keywordMatch) {
+    setTimeout(() => {
+      appendSupportMessage('bot', keywordMatch.answer);
+      SUPPORT_CHAT_HISTORY.push({ from: 'bot', text: keywordMatch.answer });
+    }, 350);
+    return;
+  }
+
+  // No canned answer covers this — try the real assistant instead of
+  // immediately giving up with a generic "I don't have an answer"
+  // message. Shows a genuine "thinking" indicator since this is a real
+  // network call, not an instant local lookup.
+  const thinkingId = 'thinking-' + Date.now();
+  const body = document.getElementById('support-chat-body');
+  const thinkingBubble = document.createElement('div');
+  thinkingBubble.className = 'support-chat-bubble-msg bot';
+  thinkingBubble.id = thinkingId;
+  thinkingBubble.textContent = '···';
+  body.appendChild(thinkingBubble);
+  body.scrollTop = body.scrollHeight;
+
+  askRealSupportChat(text).then(answer => {
+    document.getElementById(thinkingId)?.remove();
+    // The AI's response is genuinely generated text, not a pre-written
+    // FAQ answer — escaped here, unlike the trusted canned answers above,
+    // since this is the same category of content as any other untrusted
+    // text in this app.
+    appendSupportMessage('bot', escapeHtml(answer));
+    SUPPORT_CHAT_HISTORY.push({ from: 'bot', text: answer });
+  }).catch(() => {
+    document.getElementById(thinkingId)?.remove();
+    const fallback = "I don't have a confident answer for that — let's get you a real person:" + supportContactHTML();
+    appendSupportMessage('bot', fallback);
+    SUPPORT_CHAT_HISTORY.push({ from: 'bot', text: fallback });
+  });
+}
+
+async function askRealSupportChat(message) {
+  if (!BACKEND_AVAILABLE) throw new Error('offline');
+  const { answer } = await apiFetch('POST', '/support-chat/ask', { message, history: SUPPORT_CHAT_HISTORY.slice(-6) });
+  return answer;
 }
 
 (async function initApp() {

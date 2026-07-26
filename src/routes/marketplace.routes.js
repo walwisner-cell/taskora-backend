@@ -741,10 +741,16 @@ function computeServiceFee(amount) {
 
 function hasValidLicense(provider) {
   if (!provider.licenseExpiryDate) return false;
-  // Same timezone-safe comparison already used elsewhere for this exact
-  // field — valid through the end of the stated day, not its first UTC
-  // instant.
-  const expiry = new Date(provider.licenseExpiryDate + 'T23:59:59.999Z');
+  // The Provider Agreement is explicit: "Expired documents block
+  // acceptance automatically on the day they lapse. There is no grace
+  // period and no override." That means the stated expiry date itself is
+  // the first invalid day — not the day after. An earlier fix here (for
+  // a genuine, different bug: a license briefly looking expired hours
+  // before its actual day was over) had the side effect of granting a
+  // full extra day of validity past the stated date, which is exactly
+  // the grace period this policy explicitly rules out. This compares
+  // against the start of the expiry date, not its end.
+  const expiry = new Date(provider.licenseExpiryDate + 'T00:00:00.000Z');
   return expiry > new Date();
 }
 

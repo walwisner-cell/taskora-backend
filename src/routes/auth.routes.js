@@ -310,6 +310,9 @@ router.post('/login', loginLimiter, async (req, res) => {
   if (user.active === false) {
     return res.status(403).json({ error: 'This account has been suspended. Contact a super admin for access.' });
   }
+  if (user.status === 'rejected') {
+    return res.status(403).json({ error: 'This account application was not approved. Contact support if you believe this was a mistake.' });
+  }
 
   // Two-factor is opt-in (Settings), not forced on every account — when a
   // person has turned it on, a correct password is only the first factor.

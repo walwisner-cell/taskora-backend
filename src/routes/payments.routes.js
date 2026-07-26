@@ -676,4 +676,54 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
   res.json({ regions, total });
 });
 
+// GET /api/admin/report-builder — a real, flexible query over actual
+// contracts: any combination of date range, category, city, country,
+// status, and provider tier. Returns both the filtered rows themselves
+// (for a real table or CSV export) and honest aggregate stats computed
+// from exactly those same rows — never a separately-computed, possibly
+// inconsistent summary number.
+router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (req, res) => {
+  const { dateFrom, dateTo, category, city, country, status, providerTier } = req.query;
+  const requestingAdmin = await db.find('users', u => u.id === req.user.sub);
+  const region = requestingAdmin && !requestingAdmin.isSuperAdmin && !requestingAdmin.adminDepartment ? requestingAdmin.region : null;
+  const allContracts = await db.all('contracts');
+  const allUsers = await db.all('users');
+  const userById = new Map(allUsers.map(u => [u.id, u]));
+
+  const rows = [];
+  for (const c of allContracts) {
+    const provider = userById.get(c.providerId);
+    const customer = userById.get(c.customerId);
+    if (!provider || !customer) continue;
+    if (region && provider.city !== region) continue; // regional admins only ever see their own city's real activity
+    if (city && provider.city !== city) continue;
+    if (country && provider.country !== country) continue;
+    if (category && provider.category !== category) continue;
+    if (status && c.status !== status) continue;
+    if (providerTier && (provider.plan || 'starter') !== providerTier) continue;
+    const created = c.createdAt ? c.createdAt.slice(0, 10) : null;
+    if (dateFrom && created && created < dateFrom) continue;
+    if (dateTo && created && created > dateTo) continue;
+
+    rows.push({
+      bookingNumber: c.bookingNumber, service: c.service, status: c.status,
+      amount: c.amount, serviceFee: c.serviceFee || 0,
+      customerName: customer.name, providerName: provider.name,
+      providerCategory: provider.category, providerTier: provider.plan || 'starter',
+      city: provider.city, country: provider.country,
+      createdAt: c.createdAt,
+    });
+  }
+
+  const total = {
+    count: rows.length,
+    gmv: Math.round(rows.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100,
+    serviceFeeRevenue: Math.round(rows.reduce((s, r) => s + (r.serviceFee || 0), 0) * 100) / 100,
+    completed: rows.filter(r => r.status === 'completed').length,
+    cancelled: rows.filter(r => r.status === 'cancelled').length,
+  };
+
+  res.json({ rows, total });
+});
+
 module.exports = router;

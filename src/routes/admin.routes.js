@@ -262,6 +262,26 @@ router.patch('/users/:id/status', async (req, res) => {
   if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
   const updated = await db.update('users', target.id, { active });
   await notify(target.id, active ? '✅' : '⛔', active ? 'Your account has been reactivated.' : 'Your account has been suspended. Contact support for details.', null, { section: 'settings' });
+
+  // A suspended provider's in-progress jobs don't resolve themselves —
+  // previously nothing happened to them at all, and a customer with real
+  // money already in escrow would have no idea anything was wrong. This
+  // doesn't auto-refund (the right call depends on why the suspension
+  // happened, which this endpoint has no way to know) — it makes sure a
+  // real person sees it and the affected customer isn't left in the dark.
+  if (!active && target.role === 'provider') {
+    const activeContracts = await db.filter('contracts', c => c.providerId === target.id && ['active', 'pending_agreement', 'pending_provider_confirmation'].includes(c.status));
+    for (const contract of activeContracts) {
+      await notify(contract.customerId, '⚠️', `Your provider for "${contract.service}" has had their account suspended. Our team is reviewing your booking and will follow up shortly — contact support if you need this resolved sooner.`, 'bookingUpdates', { section: 'bookings' });
+    }
+    if (activeContracts.length) {
+      const supers = await db.filter('users', u => u.isSuperAdmin === true);
+      for (const admin of supers) {
+        await notify(admin.id, '⚠️', `${target.name} was just suspended with ${activeContracts.length} active booking${activeContracts.length === 1 ? '' : 's'} still in progress — these need a real decision (refund, reassign, etc.).`, null, { section: 'disputes' });
+      }
+    }
+  }
+
   res.json({ user: publicAdmin(updated) });
 });
 

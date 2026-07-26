@@ -18,6 +18,15 @@ const messageLimiter = rateLimit({
   message: { error: 'Sending messages too quickly — please slow down a moment.' },
 });
 
+// The AI chat calls a real, metered external API per question — a
+// genuine back-and-forth conversation needs room to breathe, but nothing
+// should be able to hammer this endpoint the way it could a free,
+// in-memory keyword match.
+const supportChatLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many questions in a row — please wait a moment, or ask to talk to a real person.' },
+});
+
 // POST /api/contact — the public "Contact Us" form. No auth required (an
 // anonymous visitor should be able to reach out), but genuinely stored and
 // genuinely alerts the team — not just a toast that pretends to send
@@ -236,6 +245,32 @@ router.get('/messages/:withUserId', requireAuth, async (req, res) => {
 });
 
 // POST /api/messages — send a message
+// POST /api/support-chat/ask — real chat intelligence, not keyword
+// matching. Anonymous visitors can use this too (the chat widget is
+// visible on the public homepage), so no auth is required, but it's
+// rate-limited since each real question costs a real API call. Fails
+// honestly (a clear error, not a fabricated answer) if the API key
+// isn't configured, so the frontend can fall back to the existing FAQ +
+// human-handoff path rather than silently pretending to be smarter than
+// it is.
+router.post('/support-chat/ask', supportChatLimiter, async (req, res) => {
+  const { message, history } = req.body || {};
+  if (!isNonEmptyString(message, { min: 1, max: 1000 })) {
+    return res.status(400).json({ error: 'Enter a real question (up to 1000 characters)' });
+  }
+  try {
+    const { askSupportChat } = require('../support-chat');
+    const answer = await askSupportChat(message, Array.isArray(history) ? history : []);
+    res.json({ answer });
+  } catch (e) {
+    if (e.code === 'NOT_CONFIGURED') {
+      return res.status(503).json({ error: 'not_configured' });
+    }
+    console.error('[support-chat] Real API call failed:', e.message);
+    res.status(502).json({ error: 'Could not reach the assistant right now — try again, or talk to a real person.' });
+  }
+});
+
 router.post('/messages', requireAuth, messageLimiter, async (req, res) => {
   const { toId, text } = req.body || {};
   const errors = validate([
