@@ -6,7 +6,15 @@
 // this fails honestly rather than pretending to be smarter than it is —
 // the frontend falls back to the existing FAQ + human-handoff path.
 
-const SYSTEM_PROMPT = `You are the Trothen Assistant — a real, working support chat embedded in the Trothen app, a local-services marketplace. You are genuinely AI, not a human, and you must say so plainly if anyone asks. You are not a general-purpose assistant; you only help with real questions about using Trothen.
+// Built as a function (not a static string) that reads the real,
+// current values from ../commission at the moment it's called — if
+// those rates are ever updated again, this briefing updates itself
+// automatically instead of silently quoting stale numbers the way a
+// hardcoded copy would.
+function buildSystemPrompt() {
+  const { COMMISSION_RATES } = require('./commission');
+  const pct = r => Math.round(r * 100);
+  return `You are the Trothen Assistant — a real, working support chat embedded in the Trothen app, a local-services marketplace. You are genuinely AI, not a human, and you must say so plainly if anyone asks. You are not a general-purpose assistant; you only help with real questions about using Trothen.
 
 Real, accurate facts about how Trothen actually works — never contradict these, never make up numbers that aren't here:
 
@@ -15,7 +23,7 @@ ROLES & RELATIONSHIP
 - Every Customer and Provider must be approved by an admin before they can book or accept jobs. New signups start unverified/pending.
 
 MONEY
-- Providers pay a commission per completed job based on their tier: Starter 13%, Pro 12%, Super-Pro 10%.
+- Providers pay a commission per completed job based on their tier: Starter ${pct(COMMISSION_RATES.starter)}%, Pro ${pct(COMMISSION_RATES.pro)}%, Super-Pro ${pct(COMMISSION_RATES.superpro)}%.
 - Customers pay a separate service fee on top of the job price: 9% of the job amount, with a $2.99 minimum and a $25 maximum per booking.
 - Payment is held in escrow from booking until the Customer marks the job complete, at which point it releases to the Provider (minus commission).
 
@@ -45,6 +53,7 @@ WHAT YOU SHOULD DO
 - If you're not sure of a real numeric fact, say you're not certain rather than guessing a number.
 - Keep answers short and conversational — a few sentences, not an essay. This is a chat widget, not a document.
 - Never pretend to be a human. Never claim you can take an action (refunds, approvals, suspensions) — you can only explain how things work.`;
+}
 
 async function askSupportChat(message, history = []) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -61,20 +70,40 @@ async function askSupportChat(message, history = []) {
     { role: 'user', content: message },
   ];
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-5',
-      max_tokens: 400,
-      system: SYSTEM_PROMPT,
-      messages,
-    }),
-  });
+  // A real timeout — without this, any slowness or outage on Anthropic's
+  // end would hang this request indefinitely, leaving the "thinking"
+  // indicator stuck forever on the frontend and tying up a server
+  // connection the whole time. 20 seconds is generous for a genuinely
+  // complex answer, short enough nobody is stuck waiting forever.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  let response;
+  try {
+    response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 400,
+        system: buildSystemPrompt(),
+        messages,
+      }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      const err = new Error('Anthropic API timed out after 20s');
+      err.code = 'TIMEOUT';
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');

@@ -8549,9 +8549,17 @@ function sendSupportChatMessage() {
     // text in this app.
     appendSupportMessage('bot', escapeHtml(answer));
     SUPPORT_CHAT_HISTORY.push({ from: 'bot', text: answer });
-  }).catch(() => {
+  }).catch(e => {
     document.getElementById(thinkingId)?.remove();
-    const fallback = "I don't have a confident answer for that — let's get you a real person:" + supportContactHTML();
+    // Deliberately different messages for two genuinely different
+    // situations — previously both looked identical, making it
+    // impossible to tell "the smart-answer feature isn't set up yet"
+    // apart from "it tried and genuinely couldn't help," which matters a
+    // lot if you're the site owner testing whether this is even on.
+    const notConfigured = e && e.data && e.data.error === 'not_configured';
+    const fallback = notConfigured
+      ? "The smart-answer feature isn't turned on yet — it needs a real API key added as an environment variable on the server (not something set through this website). Here's a real person in the meantime:" + supportContactHTML()
+      : "I don't have a confident answer for that — let's get you a real person:" + supportContactHTML();
     appendSupportMessage('bot', fallback);
     SUPPORT_CHAT_HISTORY.push({ from: 'bot', text: fallback });
   });
