@@ -265,6 +265,24 @@ router.patch('/users/:id/status', async (req, res) => {
   res.json({ user: publicAdmin(updated) });
 });
 
+// PATCH /api/admin/users/:id/plan — admin-only tier change. A provider can
+// no longer set their own plan (that was the actual bug: anyone could
+// click a button and set themselves to Pro or Super-Pro with zero check
+// on whether they'd earned it). Pro now advances automatically once real
+// stats qualify (see checkAndAdvanceProviderTier); Super-Pro is
+// explicitly "reviewed, not automatic" per policy, so this is the real
+// approval action an admin takes after that automatic check flags
+// someone as eligible.
+router.patch('/users/:id/plan', requireSuperAdmin, async (req, res) => {
+  const { plan } = req.body || {};
+  if (!['starter', 'pro', 'superpro'].includes(plan)) return res.status(400).json({ error: 'plan must be starter, pro, or superpro' });
+  const target = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
+  if (!target) return res.status(404).json({ error: 'Provider not found' });
+  const updated = await db.update('users', target.id, { plan, superProEligibleSince: plan === 'superpro' ? target.superProEligibleSince : null });
+  await notify(target.id, '🏆', `Your plan has been updated to ${plan === 'superpro' ? 'Super-Pro' : plan === 'pro' ? 'Pro' : 'Starter'} by an admin.`, null, { section: 'settings' });
+  res.json({ user: publicAdmin(updated) });
+});
+
 // POST /api/admin/users/:id/decide  { decision: 'approve' | 'reject' }
 router.post('/users/:id/decide', requireDepartment(['verification', 'customer_service']), async (req, res) => {
   const { decision } = req.body || {};

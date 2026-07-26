@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS users (
   license_expiry_date DATE,
   insurance_expiry_date DATE,
   terms_viewed_full BOOLEAN NOT NULL DEFAULT FALSE,
+  super_pro_eligible_since TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ
 );
@@ -510,6 +511,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS license_expiry_date DATE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS insurance_expiry_date DATE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_viewed_full BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS super_pro_eligible_since TIMESTAMPTZ;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS provider_response_deadline TIMESTAMPTZ;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS photo_urls JSONB;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS photo_urls JSONB;

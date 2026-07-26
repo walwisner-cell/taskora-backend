@@ -29,6 +29,22 @@ function isNonEmptyString(value, { min = 1, max = 500 } = {}) {
   return typeof value === 'string' && value.trim().length >= min && value.trim().length <= max;
 }
 
+// A simple, honest heuristic for "does this look like real language" —
+// not true gibberish detection (that's a much bigger, fuzzier problem),
+// just catching the obvious keyboard-mashing case: real descriptions,
+// even short ones ("AC repair", "fix leaky sink"), almost always have at
+// least a couple of actual word-like tokens with a vowel in them.
+// Something like "dghhjnjjjkkll;;''''''''" never does. A false rejection
+// here is a minor annoyance (re-word your description); a false
+// acceptance means a nonsense job sits in the system generating
+// nonsense "AI match" notifications for real providers, which is worse.
+function looksLikeRealText(str) {
+  const words = str.trim().split(/\s+/).filter(w => w.length > 0);
+  if (words.length < 2) return false;
+  const wordLikeCount = words.filter(w => /[a-zA-Z]{3,}/.test(w) && /[aeiouAEIOU]/.test(w)).length;
+  return wordLikeCount >= 2;
+}
+
 // A short, well-known list of the most common breached/weak passwords
 // (per guidance like NIST 800-63B, which recommends checking against known-
 // compromised passwords over arbitrary complexity rules). This is not
@@ -353,5 +369,5 @@ function validate(rules) {
 module.exports = {
   isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode,
   isValidName, isValidCardExpiry, isValidLabel, validate, EMAIL_RE, postalCodeErrorMessage,
-  postalCodeIsOptionalFor,
+  postalCodeIsOptionalFor, looksLikeRealText,
 };

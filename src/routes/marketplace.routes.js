@@ -4,7 +4,7 @@ const { nanoid } = require('nanoid');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const { isNonEmptyString, validate, postalCodeIsOptionalFor } = require('../validators');
+const { isNonEmptyString, validate, postalCodeIsOptionalFor, looksLikeRealText } = require('../validators');
 const { notify } = require('../notify');
 const { currencyForCountry, convertFromUSD } = require('../currency-data');
 const { effectivePlanPricing, resolveRate } = require('../plan-pricing');
@@ -557,10 +557,15 @@ router.get('/providers/:id', async (req, res) => {
 
 // POST /api/jobs — customer posts a job, triggers AI matching immediately
 router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
+  const customer = await db.find('users', u => u.id === req.user.sub);
+  if (!customer || customer.verified !== true) {
+    return res.status(403).json({ error: 'Your account is still pending admin approval — you\'ll be able to post a job once it\'s approved.' });
+  }
   const { category, description, budget, payCurrency, photoUrls } = req.body || {};
   const errors = validate([
     ['category', isNonEmptyString(category, { min: 2, max: 60 }), 'Category is required'],
     ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
+    ['description', typeof description !== 'string' || looksLikeRealText(description), 'Please describe the job in real words so we can match you correctly'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
   const prohibitedHit = findProhibitedContent(category, category) || findProhibitedContent(description, category);
@@ -614,7 +619,6 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   // state/region; only if THAT comes up empty does it widen to the whole
   // country. A customer in Lagos is never matched to a provider in Abuja
   // over one in a different country, no matter how good that provider is.
-  const customer = await db.find('users', u => u.id === req.user.sub);
   const allInCategory = await db.filter('users', u => u.role === 'provider' && u.category === category && u.verified);
 
   let candidates = [];
@@ -720,10 +724,19 @@ const LICENSED_TRADE_CATEGORIES = new Set([
 // paid out based on the job amount alone, unaffected by this — this fee
 // is pure, additional revenue on the customer side, shown to them
 // itemized before they ever confirm a booking.
+// The customer-side service fee — 9% with a $2.99 minimum and a $25
+// maximum, exactly matching the current Master Reference and Fees and
+// Payment Policy. This is separate from (and in addition to) the
+// Provider's commission: the Provider is still paid out based on the job
+// amount alone, unaffected by this — this fee is pure, additional revenue
+// on the customer side, shown to them itemized before they ever confirm
+// a booking.
 const SERVICE_FEE_RATE = 0.09;
-const MIN_SERVICE_FEE = 1.99;
+const MIN_SERVICE_FEE = 2.99;
+const MAX_SERVICE_FEE = 25;
 function computeServiceFee(amount) {
-  return Math.round(Math.max(amount * SERVICE_FEE_RATE, MIN_SERVICE_FEE) * 100) / 100;
+  const raw = Math.max(amount * SERVICE_FEE_RATE, MIN_SERVICE_FEE);
+  return Math.round(Math.min(raw, MAX_SERVICE_FEE) * 100) / 100;
 }
 
 function hasValidLicense(provider) {
@@ -792,10 +805,15 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async 
 
 // POST /api/contracts — direct booking of a specific provider (skips matching)
 router.post('/contracts', requireAuth, requireRole('customer'), async (req, res) => {
+  const customer = await db.find('users', u => u.id === req.user.sub);
+  if (!customer || customer.verified !== true) {
+    return res.status(403).json({ error: 'Your account is still pending admin approval — you\'ll be able to book a pro once it\'s approved.' });
+  }
   const { providerId, service, date, time, address, amount, payCurrency, materialsAdvance, photoUrls } = req.body || {};
   const errors = validate([
     ['providerId', isNonEmptyString(providerId), 'A provider must be selected'],
     ['service', isNonEmptyString(service, { min: 3, max: 200 }), 'Describe the service in at least 3 characters'],
+    ['service', typeof service !== 'string' || looksLikeRealText(service), 'Please describe the job in real words so we can match you correctly'],
     ['date', isNonEmptyString(date), 'Pick a date for the job'],
     ['time', isNonEmptyString(time), 'Pick a time for the job'],
     ['address', isNonEmptyString(address, { min: 5, max: 200 }), 'Enter a valid address'],
@@ -897,7 +915,6 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   // time, this gets refunded automatically (see /respond-offer and
   // src/booking-scheduler.js).
   let escrow = null;
-  const customer = await db.find('users', u => u.id === req.user.sub);
   const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
 
   // This app's booking form uses free-text time slots ("Morning (8–12pm)",

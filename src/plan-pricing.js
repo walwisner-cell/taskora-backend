@@ -4,7 +4,7 @@ const { currencyForCountry, convertFromUSD, APPROX_USD_RATE } = require('./curre
 // the pricing page HTML. These now act as the fallback base price for any
 // plan the super admin hasn't explicitly edited yet, so the site keeps
 // working identically until someone actually opens the new pricing screen.
-const DEFAULT_USD_PRICES = { starter: 0, pro: 20, superpro: 27 };
+const DEFAULT_USD_PRICES = { starter: 15, pro: 20, superpro: 27 };
 const PLAN_LABELS = { starter: 'Starter', pro: 'Pro', superpro: 'Super Pro' };
 const PLAN_KEYS = ['starter', 'pro', 'superpro'];
 

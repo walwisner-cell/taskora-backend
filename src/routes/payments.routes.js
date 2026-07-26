@@ -374,6 +374,14 @@ async function handleContractComplete(req, res) {
   const provider = await db.find('users', u => u.id === contract.providerId);
   if (provider) await db.update('users', provider.id, { jobs: (provider.jobs || 0) + 1 });
 
+  // Real tier-advancement check — the actual fix for providers previously
+  // being able to just click a button and set their own tier regardless
+  // of whether they'd earned it. This runs on the exact same event that
+  // updates their completed-jobs count, so it always checks against
+  // genuinely current data.
+  const { checkAndAdvanceProviderTier } = require('../commission');
+  await checkAndAdvanceProviderTier(contract.providerId).catch(e => console.error('[tier-advancement] Unexpected error:', e));
+
   // The alert tells the provider their real, current total available
   // balance — not just this one job's amount — so it's an accurate,
   // actionable number the moment they see it, matching exactly what

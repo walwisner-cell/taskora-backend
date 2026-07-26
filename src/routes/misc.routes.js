@@ -178,6 +178,25 @@ router.get('/notifications/mine', requireAuth, async (req, res) => {
   res.json({ notifications });
 });
 
+// DELETE /api/notifications/:id — dismiss a single notification for good.
+// Previously there was no way to ever actually remove one; marking it
+// "read" only ever hid the unread indicator, it stayed in the list
+// forever.
+router.delete('/notifications/:id', requireAuth, async (req, res) => {
+  const record = await db.find('notifications', n => n.id === req.params.id && n.userId === req.user.sub);
+  if (!record) return res.status(404).json({ error: 'Notification not found' });
+  await db.remove('notifications', record.id);
+  res.json({ ok: true });
+});
+
+// DELETE /api/notifications — clear every notification for the current
+// user at once.
+router.delete('/notifications', requireAuth, async (req, res) => {
+  const mine = await db.filter('notifications', n => n.userId === req.user.sub);
+  for (const n of mine) await db.remove('notifications', n.id);
+  res.json({ ok: true, cleared: mine.length });
+});
+
 // POST /api/notifications/:id/read
 router.post('/notifications/:id/read', requireAuth, async (req, res) => {
   const record = await db.find('notifications', n => n.id === req.params.id);

@@ -615,7 +615,9 @@
   .notif-panel { position:absolute; top:48px; right:0; width:320px; background:#fff; border-radius:10px; border:1px solid var(--border); box-shadow:0 16px 48px rgba(0,0,0,.2); z-index:250; display:none; overflow:hidden; }
   .notif-panel.open { display:block; }
   .notif-panel-head { padding:14px 16px; border-bottom:1px solid var(--border); font-family:'Fraunces',serif; font-weight:600; color:var(--navy); font-size:14px; }
-  .notif-item { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; gap:10px; transition:background .15s ease; }
+  .notif-item { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; gap:10px; transition:background .15s ease; position:relative; }
+  .notif-dismiss-btn { position:absolute; top:8px; right:8px; background:none; border:none; color:var(--muted); font-size:11px; cursor:pointer; padding:3px 5px; border-radius:4px; opacity:.5; }
+  .notif-dismiss-btn:hover { opacity:1; background:var(--offwhite); color:var(--red); }
   .notif-item.notif-clickable { cursor:pointer; }
   .notif-item.notif-clickable:hover { background:var(--offwhite); }
   .notif-item.notif-clickable:active { background:var(--border); }
@@ -1478,7 +1480,7 @@
       <div class="pricing-head">
         <div class="pricing-eyebrow">Provider Plans</div>
         <div class="pricing-title">Get matched more. Keep more of what you earn.</div>
-        <div class="pricing-sub">Every plan includes identity verification, escrow protection, and smart job matching. Higher tiers unlock priority placement and lower commission.</div>
+        <div class="pricing-sub">Every provider starts on Starter. You're moved up automatically as you complete real jobs and build a real track record — there's no way to pay or click your way to a higher tier.</div>
         <div style="margin-top:16px;display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap;">
           <label class="form-label" style="margin:0;">Show pricing for</label>
           <select class="form-input" id="pricing-country-select" style="width:auto;padding:6px 10px;font-size:13px;" onchange="loadPricingPage(this.value)"></select>
@@ -1487,43 +1489,43 @@
       <div class="pricing-grid">
         <div class="pricing-card">
           <div class="pricing-plan-name">Starter</div>
-          <div class="pricing-plan-desc">For providers just getting started on Trothen</div>
-          <div class="pricing-price" id="pricing-price-starter">$0<span>/month</span></div>
+          <div class="pricing-plan-desc">Where every provider begins</div>
+          <div class="pricing-price" id="pricing-price-starter">$15<span>/month</span></div>
           <div class="pricing-feat-list">
             <div class="pricing-feat">Smart job matching</div>
             <div class="pricing-feat">Identity verification & badge</div>
             <div class="pricing-feat">Escrow-protected payouts</div>
-            <div class="pricing-feat">12% commission per job</div>
+            <div class="pricing-feat">13% commission per job</div>
             <div class="pricing-feat">Standard placement in search</div>
           </div>
-          <button class="pricing-cta" onclick="selectPlan('starter')">Start Free</button>
+          <button class="pricing-cta" onclick="selectPlan('starter')">Get Started</button>
         </div>
         <div class="pricing-card">
           <div class="pricing-plan-name">Pro</div>
-          <div class="pricing-plan-desc">For providers who want more jobs, lower fees</div>
+          <div class="pricing-plan-desc">Unlocked automatically — 50 completed jobs, 4.7+ rating, under 5% cancellation</div>
           <div class="pricing-price" id="pricing-price-pro">$20<span>/month</span></div>
           <div class="pricing-feat-list">
             <div class="pricing-feat">Everything in Starter</div>
             <div class="pricing-feat">Priority placement in matching</div>
-            <div class="pricing-feat">8% commission per job</div>
+            <div class="pricing-feat">12% commission per job</div>
             <div class="pricing-feat">Portfolio & review boosts</div>
             <div class="pricing-feat">Same-day payout option</div>
           </div>
-          <button class="pricing-cta" onclick="selectPlan('pro')">Start Pro Trial</button>
+          <div style="text-align:center;font-size:12px;color:var(--slate);padding:12px 8px;background:var(--offwhite);border-radius:8px;">🔒 Reached automatically once you qualify — track your progress on your dashboard.</div>
         </div>
         <div class="pricing-card featured">
           <div class="pricing-plan-badge">Most Popular</div>
           <div class="pricing-plan-name">Super Pro</div>
-          <div class="pricing-plan-desc">For providers who want to lead their community</div>
+          <div class="pricing-plan-desc">500 completed jobs, 4.85+ rating, 12 months active — reviewed by our team, not automatic</div>
           <div class="pricing-price" id="pricing-price-superpro">$27<span>/month</span></div>
           <div class="pricing-feat-list">
             <div class="pricing-feat">Everything in Pro</div>
             <div class="pricing-feat">Top placement in your zip code / community</div>
-            <div class="pricing-feat">5% commission per job</div>
+            <div class="pricing-feat">10% commission per job</div>
             <div class="pricing-feat">List in multiple categories</div>
             <div class="pricing-feat">Dedicated support line</div>
           </div>
-          <button class="pricing-cta primary" onclick="selectPlan('superpro')">Start Super Pro Trial</button>
+          <div style="text-align:center;font-size:12px;color:var(--slate);padding:12px 8px;background:var(--offwhite);border-radius:8px;">🔒 Once you qualify, our team personally reviews and confirms it — this tier is never automatic.</div>
         </div>
         <div class="pricing-card">
           <div class="pricing-plan-name">Custom</div>
@@ -2438,10 +2440,7 @@ function navbarHTML(active) {
   const bell = isDash ? `
     <div style="position:relative;">
       <div class="notif-bell" onclick="toggleNotifPanel(event)">🔔${CURRENT_NOTIFICATIONS.some(n => !n.read) ? '<span class="notif-dot"></span>' : ''}</div>
-      <div class="notif-panel" id="notif-panel">
-        <div class="notif-panel-head">Notifications</div>
-        ${CURRENT_NOTIFICATIONS.length ? CURRENT_NOTIFICATIONS.map(n => `<div class="notif-item ${n.linkTo ? 'notif-clickable' : ''}" ${n.linkTo ? `onclick='navigateFromNotification(${JSON.stringify(n.linkTo)})'` : ''}><span class="notif-item-icon">${n.icon}</span><div><div class="notif-item-text">${escapeHtml(n.text)}</div><div class="notif-item-time">${escapeHtml(n.time)}</div></div>${n.linkTo ? '<span class="notif-item-arrow">→</span>' : ''}</div>`).join('') : '<div style="padding:16px;color:var(--slate);font-size:12.5px;text-align:center;">No notifications yet.</div>'}
-      </div>
+      <div class="notif-panel" id="notif-panel">${notifPanelInnerHTML()}</div>
     </div>` : '';
   // Logged-in users get a way back to the public marketplace + notifications
   // + a real Sign Out. Anonymous visitors only ever see Become a Pro / Sign
@@ -2477,6 +2476,42 @@ async function refreshNotifications() {
     const { notifications } = await apiFetch('GET', '/notifications/mine');
     CURRENT_NOTIFICATIONS = notifications;
   } catch (e) { CURRENT_NOTIFICATIONS = FALLBACK_NOTIFICATIONS; }
+}
+
+function notifPanelInnerHTML() {
+  return `
+    <div class="notif-panel-head" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Notifications</span>
+      ${CURRENT_NOTIFICATIONS.length ? `<a onclick="clearAllNotifications()" style="font-size:11.5px;font-weight:600;color:var(--teal);cursor:pointer;">Clear all</a>` : ''}
+    </div>
+    ${CURRENT_NOTIFICATIONS.length ? CURRENT_NOTIFICATIONS.map(n => `<div class="notif-item ${n.linkTo ? 'notif-clickable' : ''}" ${n.linkTo ? `onclick='navigateFromNotification(${JSON.stringify(n.linkTo)})'` : ''}><span class="notif-item-icon">${n.icon}</span><div><div class="notif-item-text">${escapeHtml(n.text)}</div><div class="notif-item-time">${escapeHtml(n.time)}</div></div>${n.linkTo ? '<span class="notif-item-arrow">→</span>' : ''}<button class="notif-dismiss-btn" onclick="event.stopPropagation();dismissNotification('${n.id}')" title="Dismiss">✕</button></div>`).join('') : '<div style="padding:16px;color:var(--slate);font-size:12.5px;text-align:center;">No notifications yet.</div>'}`;
+}
+
+// The real fix for notifications that never went away — previously
+// there was no way to actually remove one at all, only a "read" flag
+// that just hid the unread dot while the notification itself stayed in
+// the list forever. Updates just the panel's own content (not the whole
+// navbar), so this works correctly while the panel is open without
+// closing it out from under whoever's using it.
+async function dismissNotification(id) {
+  CURRENT_NOTIFICATIONS = CURRENT_NOTIFICATIONS.filter(n => n.id !== id);
+  const panel = document.getElementById('notif-panel');
+  if (panel) panel.innerHTML = notifPanelInnerHTML();
+  if (BACKEND_AVAILABLE) {
+    try { await apiFetch('DELETE', `/notifications/${id}`); } catch (e) { /* already removed from view; a failed background delete isn't worth interrupting anyone over */ }
+  }
+}
+
+async function clearAllNotifications() {
+  const previous = CURRENT_NOTIFICATIONS;
+  CURRENT_NOTIFICATIONS = [];
+  const panel = document.getElementById('notif-panel');
+  if (panel) panel.innerHTML = notifPanelInnerHTML();
+  document.querySelectorAll('.notif-dot').forEach(dot => dot.remove());
+  if (BACKEND_AVAILABLE) {
+    try { await apiFetch('DELETE', '/notifications'); }
+    catch (e) { CURRENT_NOTIFICATIONS = previous; if (panel) panel.innerHTML = notifPanelInnerHTML(); showToast('Could not clear notifications — please try again'); }
+  }
 }
 
 // Turns a stored notification's linkTo into a real jump to the relevant
@@ -2691,18 +2726,11 @@ function setAuthRolePreselect(role) {
 const PLAN_LABELS = { starter: 'Starter', pro: 'Pro', superpro: 'Super Pro' };
 
 async function selectPlan(plan) {
-  // Already signed in as a provider — set their real plan right now, no
-  // detour through signup. This is test mode (no real billing wired in
-  // yet), same honest pattern as payments and phone verification: the plan
-  // genuinely changes on the account, but no card is actually charged.
+  // Only the Starter button calls this now — Pro and Super-Pro are
+  // reached automatically (Pro) or by real admin review (Super-Pro), not
+  // by clicking a button, which was the actual bug this replaced.
   if (AUTH.token && AUTH.user && AUTH.user.role === 'provider') {
-    if (!BACKEND_AVAILABLE) return showToast(`${PLAN_LABELS[plan]} plan selected (demo mode)`);
-    try {
-      const { user } = await apiFetch('PATCH', '/auth/me', { plan });
-      AUTH.user = user;
-      showToast(`You're now on the ${PLAN_LABELS[plan]} plan${plan !== 'starter' ? ' (test mode — no real charge yet, billing connects before this goes live)' : ''}`);
-    } catch (e) { showToast(e.message || 'Could not update your plan'); }
-    return;
+    return showToast(AUTH.user.plan === 'starter' ? "You're already on the Starter plan" : `You're on the ${PLAN_LABELS[AUTH.user.plan] || 'Starter'} plan — check your dashboard to see your progress toward the next tier.`);
   }
   // Not signed in as a provider yet — get them signed up first, and
   // remember which plan they picked so we can apply it right after.
@@ -3085,7 +3113,7 @@ async function mockAuth() {
       }
       const user = result;
       showToast(`Welcome back, ${user.name.split(' ')[0]}!`);
-      rememberLastLoginEmail(email);
+      rememberLastLoginEmail(email, user.role);
       await completeAuthAndResumeIntent(user.role);
     } else {
       const data = await apiFetch('POST', '/auth/signup/start', {
@@ -3123,11 +3151,13 @@ async function submitSignupVerification() {
     document.getElementById('signup-verify-view').style.display = 'none';
     document.getElementById('auth-main-form').style.display = 'block';
     if (pendingPlanSelection && data.user.role === 'provider') {
-      try {
-        const { user } = await apiFetch('PATCH', '/auth/me', { plan: pendingPlanSelection });
-        AUTH.user = user;
-        showToast(`Account created — you're on the ${PLAN_LABELS[pendingPlanSelection]} plan (test mode)`);
-      } catch (e) { showToast('Account created — welcome to Trothen!'); }
+      // Every provider starts on Starter by default already — this used
+      // to PATCH the account to whatever plan was clicked before signing
+      // up, which was itself the actual bug (letting anyone skip
+      // straight to Pro or Super-Pro). Only the Starter button sets this
+      // now, and Starter is already the default, so there's genuinely
+      // nothing left to do here except clear it.
+      showToast('Account created — welcome to Trothen!');
       pendingPlanSelection = null;
     } else if (data.categoryApprovalStatus === 'pending') {
       showToast(`Account created! Your category "${data.user.category}" is pending a quick admin review (within 24 hours) — you can use your account right away in the meantime.`);
@@ -3136,7 +3166,7 @@ async function submitSignupVerification() {
     } else {
       showToast('Account created — welcome to Trothen!');
     }
-    rememberLastLoginEmail(data.user.email);
+    rememberLastLoginEmail(data.user.email, data.user.role);
     await completeAuthAndResumeIntent(data.user.role);
   } catch (e) {
     showToast(e.message || 'Could not verify — check both codes and try again');
@@ -3174,7 +3204,7 @@ async function submitLogin2FA() {
     saveAuthSession(data.token);
     pendingLoginId = null;
     showToast(`Welcome back, ${data.user.name.split(' ')[0]}!`);
-    rememberLastLoginEmail(data.user.email);
+    rememberLastLoginEmail(data.user.email, data.user.role);
     await completeAuthAndResumeIntent(data.user.role);
   } catch (e) { showToast(e.message || 'Incorrect code'); }
 }
@@ -7389,14 +7419,35 @@ async function deleteCountry(cId, name) {
   } catch (e) { showToast(e.message || 'Could not delete country'); }
 }
 
+function tierBadgeHTML(plan, superProEligibleSince) {
+  const p = plan || 'starter';
+  if (p === 'superpro') return '<span class="badge badge-success">★ Super-Pro</span>';
+  if (superProEligibleSince) return `<span class="badge badge-warn">${p === 'pro' ? 'Pro' : 'Starter'} · Super-Pro ready</span>`;
+  if (p === 'pro') return '<span class="badge badge-pending">Pro</span>';
+  return '<span class="badge badge-neutral">Starter</span>';
+}
+
+async function approveProviderTier(userId, plan) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/users/${userId}/plan`, { plan });
+    showToast(`Provider moved to ${plan === 'superpro' ? 'Super-Pro' : plan}`);
+    const overlay = document.getElementById('person-detail-overlay');
+    if (overlay) overlay.remove();
+    await loadAdminData();
+    selectAdminSection('people');
+  } catch (e) { showToast(e.message || 'Could not update this provider\'s tier'); }
+}
+
 function peopleTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No customers or providers found${AUTH.user && !AUTH.user.isSuperAdmin ? ' in your city yet' : ''}.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>Category</th><th>City</th><th>Country</th><th>Joined</th><th>Verified</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>Category</th><th>Tier</th><th>City</th><th>Country</th><th>Joined</th><th>Verified</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${list.map(u => `<tr>
     <td><a href="#" onclick="openPersonDetail('${u.id}');return false;" style="color:var(--navy);font-weight:600;text-decoration:none;">${escapeHtml(u.name)}</a></td>
     <td style="font-size:12px;color:var(--slate);">${escapeHtml(u.email) || '—'}</td>
     <td>${escapeHtml(u.role)}</td>
     <td>${u.role === 'Provider' ? `${escapeHtml(u.category) || '—'}${u.rating ? ` <span style="color:var(--slate);">★${escapeHtml(u.rating)}</span>` : ''}` : '—'}</td>
+    <td>${u.role === 'Provider' ? tierBadgeHTML(u.plan, u.superProEligibleSince) : '—'}</td>
     <td>${escapeHtml(u.city) || '—'}</td>
     <td>${escapeHtml(u.country) || '—'}</td>
     <td style="font-size:12px;color:var(--slate);">${u.createdAt ? escapeHtml(u.createdAt.slice(0, 10)) : '—'}</td>
@@ -7469,7 +7520,7 @@ function openPersonDetail(userId) {
           ${isProvider ? row('Rating', u.rating ? `★ ${u.rating} (${u.jobs || 0} jobs completed)` : 'No ratings yet') : ''}
           ${isProvider ? row('Hourly Rate', u.price != null ? `$${u.price}/hr` : '—') : ''}
           ${isProvider && u.tags && u.tags.length ? row('Specialties', u.tags.join(', ')) : ''}
-          ${isProvider ? row('Plan', (u.plan || 'starter')[0].toUpperCase() + (u.plan || 'starter').slice(1)) : ''}
+          ${isProvider ? row('Tier', tierBadgeHTML(u.plan, u.superProEligibleSince)) : ''}
           ${row('Joined', u.createdAt ? u.createdAt.slice(0, 10) : '—')}
           ${row('Identity Verified', u.verified ? '✅ Verified' : '⏳ Not verified')}
           ${row('Phone Verified', u.phoneVerified ? '✅ Verified' : '⏳ Not verified')}
@@ -7479,6 +7530,9 @@ function openPersonDetail(userId) {
           ${isProvider && u.insuranceExpiryDate ? row('Insurance Expiry', formatAdminExpiryStatus(u.insuranceExpiryDate)) : ''}
         </div>
         <div class="modal-footer">
+          ${isProvider && u.superProEligibleSince && u.plan !== 'superpro'
+            ? `<button class="confirm-btn" style="margin-bottom:8px;" onclick="approveProviderTier('${u.id}','superpro')">🏆 Approve Super-Pro (eligible since ${u.superProEligibleSince.slice(0,10)})</button>`
+            : ''}
           ${u.active
             ? `<button class="btn-sm btn-sm-outline" onclick="toggleUserActive('${u.id}', false); document.getElementById('person-detail-overlay').remove();">Suspend Account</button>`
             : `<button class="confirm-btn" onclick="toggleUserActive('${u.id}', true); document.getElementById('person-detail-overlay').remove();">Reactivate Account</button>`}
@@ -7740,11 +7794,26 @@ function clearPendingBookingIntent() {
 // already has an account. Never stores a password, and this is purely a
 // convenience default — a first-time visitor on a shared/public computer
 // isn't affected since nothing's been remembered on that device yet.
-function rememberLastLoginEmail(email) {
-  try { localStorage.setItem('trothen_last_email', email); } catch (e) { /* ignore */ }
+function rememberLastLoginEmail(email, role) {
+  try {
+    localStorage.setItem('trothen_last_email', email);
+    localStorage.setItem('trothen_last_role', role || '');
+  } catch (e) { /* ignore */ }
 }
 function getLastLoginEmail() {
   try { return localStorage.getItem('trothen_last_email'); } catch (e) { return null; }
+}
+// Specifically for contexts like "continue booking a provider" — only
+// ever meaningful for a customer account. Suggesting a remembered admin
+// or provider email here would be nonsensical (they can't book a service
+// as themselves) and would expose whose account that is to anyone using
+// a shared device, so this returns null for any non-customer role rather
+// than the email itself.
+function getLastCustomerLoginEmail() {
+  try {
+    const role = localStorage.getItem('trothen_last_role');
+    return role === 'customer' ? localStorage.getItem('trothen_last_email') : null;
+  } catch (e) { return null; }
 }
 
 // After a real sign-in or sign-up completes, resume whatever the visitor
@@ -7781,7 +7850,7 @@ async function openBooking(id) {
   if (BACKEND_AVAILABLE && (!AUTH.token || AUTH.user.role !== 'customer')) {
     setPendingBookingIntent(id);
     if (!AUTH.token) {
-      const lastEmail = getLastLoginEmail();
+      const lastEmail = getLastCustomerLoginEmail();
       if (lastEmail) {
         // This browser has signed in before — much more likely a returning
         // visitor than a brand-new one, so default to Sign In (pre-filled)
@@ -7838,11 +7907,11 @@ async function openBooking(id) {
     `;
   } else {
     const jobAmount = currentPro.price * 2;
-    const fee = Math.round(Math.max(jobAmount * 0.09, 1.99) * 100) / 100;
+    const fee = Math.round(Math.min(Math.max(jobAmount * 0.09, 2.99), 25) * 100) / 100;
     document.getElementById('booking-summary').innerHTML = `
       <div class="summary-row"><span>Service rate</span><span>$${currentPro.price}/hr</span></div>
       <div class="summary-row"><span>Job amount (2hr)</span><span>$${jobAmount}</span></div>
-      <div class="summary-row"><span>Service fee <small style="color:var(--muted);">(9%, $1.99 min)</small></span><span>$${fee.toFixed(2)}</span></div>
+      <div class="summary-row"><span>Service fee <small style="color:var(--muted);">(9%, $2.99–$25)</small></span><span>$${fee.toFixed(2)}</span></div>
       <div class="summary-row"><span>Smart Contract</span><span style="color:#2E8C6F">Included ✓</span></div>
       <div class="summary-row total"><span>Total charged</span><span>$${(jobAmount + fee).toFixed(2)}</span></div>
       ${currencyToggleHTML()}
@@ -7886,8 +7955,8 @@ async function updateCurrencyPreview() {
   if (offerInput && feeEl && totalEl) {
     const offerAmount = parseFloat(offerInput.value) || 0;
     if (offerAmount > 0) {
-      const fee = Math.round(Math.max(offerAmount * 0.09, 1.99) * 100) / 100;
-      feeEl.textContent = `$${fee.toFixed(2)} (9%, $1.99 min)`;
+      const fee = Math.round(Math.min(Math.max(offerAmount * 0.09, 2.99), 25) * 100) / 100;
+      feeEl.textContent = `$${fee.toFixed(2)} (9%, $2.99–$25)`;
       totalEl.textContent = `$${(offerAmount + fee).toFixed(2)}`;
     } else {
       feeEl.textContent = 'Calculated from your offer';
