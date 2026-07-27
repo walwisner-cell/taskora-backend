@@ -327,10 +327,20 @@
   .back-home-btn:hover { background:var(--teal); color:var(--navy); }
 
   /* ── STATS STRIP ── */
-  .customer-welcome-banner { max-width:1120px; margin:0 auto; padding:20px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-  .customer-welcome-text { font-family:'Fraunces',serif; font-size:19px; color:var(--navy); font-weight:600; }
-  .customer-welcome-sub { font-size:13px; color:var(--slate); margin-top:2px; }
-  .customer-welcome-actions { display:flex; gap:10px; flex-wrap:wrap; }
+  .customer-welcome-banner { max-width:1120px; margin:20px auto; padding:28px 32px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; background:linear-gradient(135deg,var(--navy),#1a3a5c); border-radius:16px; box-shadow:0 8px 28px rgba(20,40,70,.18); }
+  .customer-welcome-text { font-family:'Fraunces',serif; font-size:28px; color:#fff; font-weight:700; line-height:1.2; }
+  .customer-welcome-sub { font-size:15px; color:rgba(255,255,255,.82); margin-top:6px; }
+  .customer-welcome-actions { display:flex; gap:12px; flex-wrap:wrap; }
+  .customer-welcome-actions .btn-sm-outline { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.35); color:#fff; padding:11px 20px; font-size:14px; }
+  .customer-welcome-actions .btn-sm-outline:hover { background:rgba(255,255,255,.18); }
+  .customer-welcome-actions .nav-cta { padding:11px 22px; font-size:14px; background:var(--gold); color:var(--navy); }
+  @media (max-width:700px) {
+    .customer-welcome-banner { margin:14px 16px; padding:22px 20px; flex-direction:column; align-items:flex-start; }
+    .customer-welcome-text { font-size:22px; }
+    .customer-welcome-sub { font-size:13px; }
+    .customer-welcome-actions { width:100%; }
+    .customer-welcome-actions button { flex:1; }
+  }
   .stats-strip { background:var(--teal); padding:20px 24px; }
 
   /* ── FEATURED PROVIDER CAROUSEL ── */
@@ -2920,13 +2930,24 @@ function goHome() {
         <div class="customer-welcome-banner">
           <div>
             <div class="customer-welcome-text">Welcome back, ${escapeHtml(AUTH.user.name.split(' ')[0])} 👋</div>
-            <div class="customer-welcome-sub">${AUTH.user.verified ? '✓ Verified account' : '⏳ Verification pending'} — showing pros in ${escapeHtml(AUTH.user.country || 'your area')}</div>
+            <div class="customer-welcome-sub" id="welcome-banner-stats">${AUTH.user.verified ? '✓ Verified account' : '⏳ Verification pending'} — showing pros in ${escapeHtml(AUTH.user.country || 'your area')}</div>
           </div>
           <div class="customer-welcome-actions">
             <button class="btn-sm btn-sm-outline" onclick="goToCustomerDashboard('bookings')">My Bookings</button>
             <button class="nav-btn nav-cta" onclick="openPostJobModal()">+ Post a Job</button>
           </div>
         </div>`;
+      // A real, live count — not a placeholder — of this customer's
+      // actual active bookings, added to the subtitle once it's loaded.
+      if (BACKEND_AVAILABLE) {
+        loadCustomerData().then(() => {
+          const statsEl = document.getElementById('welcome-banner-stats');
+          if (!statsEl) return; // navigated away before this resolved
+          const active = customerData.bookings.filter(b => b.status === 'confirmed' || b.status === 'active').length;
+          const bookingText = active > 0 ? ` · ${active} active booking${active === 1 ? '' : 's'}` : '';
+          statsEl.textContent = `${AUTH.user.verified ? '✓ Verified account' : '⏳ Verification pending'} — showing pros in ${AUTH.user.country || 'your area'}${bookingText}`;
+        }).catch(() => {});
+      }
     } else {
       welcomeBanner.style.display = 'none';
       welcomeBanner.innerHTML = '';
