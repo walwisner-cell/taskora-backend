@@ -6527,7 +6527,7 @@ const ADMIN_SECTIONS = {
       </div>
       <div class="form-group"><label class="form-label">City</label><input class="form-input" id="loc-city" placeholder="e.g. Monrovia"/><div style="font-size:11px;color:var(--muted);margin-top:5px;">Still required even for a functional-team member (their base location for contact purposes) — it just won't restrict what they can see if a department is selected below.</div></div>
       <div class="form-group"><label class="form-label">Role</label>
-        <select class="form-input form-select" id="loc-department">
+        <select class="form-input form-select" id="loc-department" onchange="document.getElementById('loc-department-warning').style.display = this.value ? 'block' : 'none';">
           <option value="">Regional Admin — full access, scoped to this one city</option>
           <option value="verification">Verification Team — global access to identity verification only</option>
           <option value="disputes">Disputes Team — global access to disputes only</option>
@@ -6536,6 +6536,7 @@ const ADMIN_SECTIONS = {
           <option value="legal">Legal — read-only access to disputes & transactions, for compliance review</option>
           <option value="sales">Sales Team — Custom-plan leads and multi-seat organization accounts only</option>
         </select>
+        <div id="loc-department-warning" style="display:none;margin-top:8px;font-size:12.5px;color:#8a5a00;background:#fff8e6;border:1px solid #f0d896;border-radius:8px;padding:10px 12px;">⚠️ This is a <strong>global</strong> role — this person will see data from <strong>every city and country</strong>, not just the one entered above. If you actually want someone scoped to just one location, choose "Regional Admin" instead.</div>
       </div>
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="createLocationAdmin()">Create Admin</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-location-panel').style.display='none'">Cancel</button></div>
     </div>
@@ -7355,6 +7356,16 @@ async function createLocationAdmin() {
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
   if (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
+  // A real, cheap safeguard against exactly the mistake that likely
+  // caused a real regional-scoping bug elsewhere: typing a country name
+  // into the City field. A "Regional Admin" scoped to "Liberia" (the
+  // country, not a real city) would never match any actual provider's
+  // city, silently breaking their entire view. This won't catch every
+  // typo, but it catches the single most likely and most damaging one —
+  // for free, before it ever reaches an admin account.
+  if ((GEO_DATA.countries && GEO_DATA.countries.length ? GEO_DATA.countries : FALLBACK_GEO.countries).some(c => c.toLowerCase() === city.toLowerCase())) {
+    return showToast(`"${city}" looks like a country, not a city — enter the actual city this admin is based in (e.g. Monrovia, not Liberia).`);
+  }
   if (!BACKEND_AVAILABLE) return showToast(`${city} admin created (demo mode — no backend detected)`);
   try {
     const { admin } = await apiFetch('POST', '/admin/sub-admins', { name, email, password, city, country, department });
@@ -7899,7 +7910,7 @@ function providerCardsHTML(list) {
         <div class="provider-meta">
           <div class="meta-chip"><span class="stars">★</span> ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           <div class="meta-chip">📋 ${escapeHtml(p.jobs)} jobs</div>
-          <div class="meta-chip">📍 ${escapeHtml(p.city) || 'Atlanta'}</div>
+          <div class="meta-chip">📍 ${[escapeHtml(p.city), escapeHtml(p.country)].filter(Boolean).join(', ') || 'Location not set'}</div>
         </div>
         <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
         <div class="provider-footer">
@@ -7927,6 +7938,21 @@ function filterCat(cat) {
 
 function handleSearch(e) { if(e.key === 'Enter') handleSearchClick(); }
 
+// A genuine, explicit choice — shown only after a real search comes back
+// completely empty for someone's own country, and only acted on if they
+// actually click it. Never substitutes another country's results
+// automatically.
+async function searchOtherCountry(country) {
+  document.getElementById('providers-sub').textContent = 'Searching…';
+  try {
+    const result = await apiFetch('GET', `/providers?country=${encodeURIComponent(country)}`);
+    document.getElementById('providers-sub').textContent = `${result.providers.length} pros found in ${country}`;
+    document.getElementById('providers-grid').innerHTML =
+      `<div style="grid-column:1/-1;font-size:12.5px;color:var(--slate);margin-bottom:14px;">Showing pros in ${escapeHtml(country)} — a suggestion you chose to view, not your own country's results.</div>` +
+      providerCardsHTML(result.providers);
+  } catch (e) { showToast('Could not load that suggestion right now'); }
+}
+
 async function handleSearchClick() {
   const q = document.getElementById('search-input').value.trim();
   const locationRaw = document.getElementById('search-location-input').value.trim();
@@ -7950,21 +7976,23 @@ async function handleSearchClick() {
   }
   const country = (AUTH.user && AUTH.user.country) || null;
 
-  if (BACKEND_AVAILABLE && country && cityPart) {
+  if (BACKEND_AVAILABLE && country) {
     try {
       const params = new URLSearchParams();
       if (q) params.set('q', q);
-      params.set('city', cityPart);
+      if (cityPart) params.set('city', cityPart);
       if (statePart) params.set('state', statePart);
       params.set('country', country);
       const result = await apiFetch('GET', `/providers?${params.toString()}`);
       const scopeNote = result.locationScope === 'state'
         ? `<div style="grid-column:1/-1;font-size:12.5px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:14px;">📍 No matches in ${cityPart} yet, so we widened to your state/region.</div>`
         : result.locationScope === 'country'
-        ? `<div style="grid-column:1/-1;font-size:12.5px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:14px;">📍 No matches nearby yet, so we widened the search to all of ${country}.</div>`
+        ? (cityPart ? `<div style="grid-column:1/-1;font-size:12.5px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:14px;">📍 No matches nearby yet, so we widened the search to all of ${country}.</div>` : '')
+        : result.locationScope === 'country_empty'
+        ? `<div style="grid-column:1/-1;font-size:12.5px;color:var(--navy);background:var(--offwhite);border:1px dashed var(--border);border-radius:8px;padding:12px 14px;margin-bottom:14px;">📍 No pros in ${country} yet for this search.${result.suggestedCountry ? ` <a onclick="searchOtherCountry('${result.suggestedCountry}')" style="cursor:pointer;font-weight:600;">Would you like to see pros in ${result.suggestedCountry} instead?</a> This is only a suggestion — nothing is booked or shown automatically.` : ''}</div>`
         : '';
       document.getElementById('providers-sub').textContent = `${result.providers.length} pros found`;
-      document.getElementById('providers-grid').innerHTML = scopeNote + providerCardsHTML(result.providers);
+      document.getElementById('providers-grid').innerHTML = scopeNote + (result.providers.length ? providerCardsHTML(result.providers) : '');
       return;
     } catch (e) {
       console.warn('Real location search failed, falling back to local filtering', e);

@@ -513,35 +513,60 @@ router.get('/providers', async (req, res) => {
 
   // Geographic scope expands outward the same way job matching does: exact
   // city first, then the same state/region, then the whole country —
-  // never crossing into another country. Searching "Philadelphia" with no
-  // results there should show nearby Pennsylvania pros before giving up,
-  // not just come back empty.
+  // never crossing into another country automatically. Searching
+  // "Philadelphia" with no results there should show nearby Pennsylvania
+  // pros before giving up, not just come back empty. Country alone (with
+  // no city) is a fully real, supported case on its own — someone
+  // selecting just their country to browse shouldn't require a city too.
   let locationScope = 'none';
-  if (city) {
-    const cityMatches = providers.filter(p => p.city && p.city.toLowerCase() === city.toLowerCase() && (!country || p.country === country));
-    if (cityMatches.length) {
-      providers = cityMatches;
-      locationScope = 'city';
-    } else if (state) {
-      const stateMatches = providers.filter(p => p.state && p.state.toLowerCase() === state.toLowerCase() && (!country || p.country === country));
-      if (stateMatches.length) {
-        providers = stateMatches;
-        locationScope = 'state';
-      } else if (country) {
-        providers = providers.filter(p => p.country === country);
+  let suggestedCountry = null;
+  if (city || country) {
+    let scoped = providers;
+    if (city) {
+      const cityMatches = scoped.filter(p => p.city && p.city.toLowerCase() === city.toLowerCase() && (!country || p.country === country));
+      if (cityMatches.length) { providers = cityMatches; locationScope = 'city'; }
+    }
+    if (locationScope === 'none' && city && state) {
+      const stateMatches = scoped.filter(p => p.state && p.state.toLowerCase() === state.toLowerCase() && (!country || p.country === country));
+      if (stateMatches.length) { providers = stateMatches; locationScope = 'state'; }
+    }
+    if (locationScope === 'none' && country) {
+      const countryMatches = scoped.filter(p => p.country === country);
+      if (countryMatches.length) {
+        providers = countryMatches;
         locationScope = 'country';
       } else {
+        // The real extreme case: nothing anywhere in the whole country.
+        // Never silently substitute another country's results — offer
+        // the nearest real alternative as an explicit, separate
+        // suggestion the customer can choose to look at or ignore.
         providers = [];
+        locationScope = 'country_empty';
+        const otherCountryProviders = scoped.filter(p => p.country && p.country !== country);
+        if (otherCountryProviders.length) {
+          const { regionForCountry } = require('../region-map');
+          const myRegion = regionForCountry(country);
+          const counts = new Map();
+          for (const p of otherCountryProviders) counts.set(p.country, (counts.get(p.country) || 0) + 1);
+          // Prefer a country in the same real-world region first (a
+          // customer in Liberia gets a genuinely useful suggestion —
+          // another West African country with real providers — rather
+          // than just whichever country happens to have the most total
+          // sellers on the platform, which might be on the other side of
+          // the world and no more relevant to them than a random guess).
+          const sameRegionCandidates = myRegion
+            ? [...counts.entries()].filter(([c]) => regionForCountry(c) === myRegion)
+            : [];
+          const ranked = sameRegionCandidates.length ? sameRegionCandidates : [...counts.entries()];
+          suggestedCountry = ranked.sort((a, b) => b[1] - a[1])[0][0];
+        }
       }
-    } else if (country) {
-      providers = providers.filter(p => p.country === country);
-      locationScope = 'country';
-    } else {
+    } else if (locationScope === 'none') {
       providers = [];
     }
   }
 
-  res.json({ providers: providers.map(publicProvider), locationScope });
+  res.json({ providers: providers.map(publicProvider), locationScope, suggestedCountry });
 });
 
 // GET /api/providers/:id  (profile page: includes reviews and portfolio photos)
