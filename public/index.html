@@ -1750,8 +1750,25 @@ let PROVIDERS = FALLBACK_PROVIDERS.slice();
 async function loadProviders() {
   if (!BACKEND_AVAILABLE) return;
   try {
-    const data = await apiFetch('GET', '/providers');
-    if (data.providers && data.providers.length) {
+    // Scope the homepage's own provider grid the same way real search
+    // already works — a logged-in customer with a known country
+    // shouldn't see an unrelated mix of every country on the platform on
+    // their very first screen, the same reasoning already applied to
+    // search and the featured carousel.
+    const country = (AUTH.user && AUTH.user.country) || '';
+    const params = new URLSearchParams();
+    if (country) params.set('country', country);
+    if (MY_REAL_LOCATION) { params.set('lat', MY_REAL_LOCATION.lat); params.set('lng', MY_REAL_LOCATION.lng); }
+    const query = params.toString();
+    const data = await apiFetch('GET', `/providers${query ? `?${query}` : ''}`);
+    // An empty result is only treated as "nothing real to show yet" when
+    // we deliberately scoped by country — that's a genuine, honest
+    // signal (no local providers yet), not a fetch failure, and showing
+    // stale fallback/demo data instead would silently reintroduce the
+    // exact "pros from the wrong country" problem this fix exists to
+    // solve. Without a country param, an empty response is more likely a
+    // transient issue, so the previous list is kept rather than wiped.
+    if (data.providers && (data.providers.length || country)) {
       PROVIDERS = data.providers.map(p => ({
         id: p.id, name: p.name, initials: p.initials, role: p.role, cat: p.category,
         rating: p.rating, jobs: p.jobs, price: p.price, tags: p.tags || [], color: p.color, since: p.since,
@@ -1786,11 +1803,15 @@ async function loadFeaturedCarousel() {
   if (featuredCarouselInterval) { clearInterval(featuredCarouselInterval); featuredCarouselInterval = null; }
 
   let providers = [];
+  let featuredScope = 'mixed';
   let liveAd = null;
   if (BACKEND_AVAILABLE) {
     try {
-      const data = await apiFetch('GET', '/providers/featured');
+      const country = (AUTH.user && AUTH.user.country) || '';
+      const params = country ? `?country=${encodeURIComponent(country)}` : '';
+      const data = await apiFetch('GET', `/providers/featured${params}`);
       providers = data.providers || [];
+      featuredScope = data.scope || 'mixed';
     } catch (e) { console.warn('Could not load featured providers', e); }
     try {
       // Same "what city is this visitor in" logic used for search — signed
@@ -2855,6 +2876,10 @@ function goHome() {
   if (locInput && AUTH.user && AUTH.user.city) {
     locInput.value = AUTH.user.state ? `${AUTH.user.city}, ${AUTH.user.state}` : AUTH.user.city;
   }
+  // Re-fetch the main provider grid too — otherwise a customer who signs
+  // in and comes back to Explore would still see the stale, unscoped mix
+  // of every country that loaded before we knew who they were.
+  if (BACKEND_AVAILABLE) loadProviders().then(() => renderProviders(PROVIDERS));
 }
 
 // Distinct from goHome(): this actually ends the session (clears the token

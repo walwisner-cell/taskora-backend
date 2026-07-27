@@ -474,9 +474,29 @@ router.get('/currency/mine', requireAuth, async (req, res) => {
 // verifiable by anyone pulling this endpoint repeatedly, not a fixed fake
 // schedule.
 router.get('/providers/featured', async (req, res) => {
+  const { country } = req.query;
   const paid = await db.filter('users', u => u.role === 'provider' && u.verified && ['pro', 'superpro'].includes(u.plan));
+
+  // If we actually know the customer's country, showing a plumber from a
+  // completely different one on their very first screen isn't a
+  // "featured pro" — it's just confusing, and out of step with the real
+  // country/GPS matching used everywhere else in this app. Prefer a
+  // real, local selection first; only fall back to a general,
+  // all-locations showcase if there genuinely isn't enough local data yet
+  // — and say so plainly rather than silently mixing in unrelated pros.
+  const MIN_FOR_LOCAL_SCOPE = 3;
+  let pool = paid;
+  let scope = 'mixed';
+  if (country) {
+    const local = paid.filter(p => p.country === country);
+    if (local.length >= MIN_FOR_LOCAL_SCOPE) {
+      pool = local;
+      scope = 'country';
+    }
+  }
+
   const weighted = [];
-  for (const p of paid) {
+  for (const p of pool) {
     const weight = p.plan === 'superpro' ? 2 : 1;
     for (let i = 0; i < weight; i++) weighted.push(p);
   }
@@ -492,7 +512,7 @@ router.get('/providers/featured', async (req, res) => {
   for (const p of weighted) {
     if (!seen.has(p.id)) { seen.add(p.id); ordered.push(p); }
   }
-  res.json({ providers: ordered.map(publicProvider) });
+  res.json({ providers: ordered.map(publicProvider), scope });
 });
 
 router.get('/providers', async (req, res) => {
