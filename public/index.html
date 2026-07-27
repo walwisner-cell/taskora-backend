@@ -4254,7 +4254,28 @@ async function submitDispute(contractId) {
 // Careers. Previously this just opened a mailto: link, which does nothing
 // on a device with no default mail client configured and leaves no record
 // anywhere on the platform.
-function openSelfServeAdConfirm() {
+async function openSelfServeAdConfirm() {
+  if (BACKEND_AVAILABLE) {
+    try {
+      const { ad } = await apiFetch('GET', '/my-ad-status');
+      if (ad) {
+        const modalHtml = `
+          <div class="modal-overlay open" id="selfserve-status-overlay" onclick="if(event.target===this)this.remove()">
+            <div class="modal" style="max-width:440px;text-align:center;">
+              <div class="modal-body" style="padding-top:28px;">
+                <div style="font-size:36px;margin-bottom:12px;">${ad.isLive ? '✅' : '⏳'}</div>
+                <h3 style="margin-bottom:10px;">${ad.isLive ? 'Your ad is live' : 'Your ad is pending review'}</h3>
+                <p style="color:var(--slate);font-size:14px;margin-bottom:6px;">"${escapeHtml(ad.displayHeadline)}"${ad.targetCity ? ` — showing in ${escapeHtml(ad.targetCity)}` : ' — platform-wide'}</p>
+                <p style="color:var(--slate);font-size:13px;">${ad.isLive ? 'Contact support if you\'d like to take it down or make changes.' : 'Usually reviewed quickly — check back soon.'}</p>
+                <button class="btn-sm btn-sm-outline" style="margin-top:16px;" onclick="document.getElementById('selfserve-status-overlay').remove()">Close</button>
+              </div>
+            </div>
+          </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        return;
+      }
+    } catch (e) { console.warn('Could not check existing ad status', e); }
+  }
   const modalHtml = `
     <div class="modal-overlay open" id="selfserve-confirm-overlay" onclick="if(event.target===this)this.remove()">
       <div class="modal" style="max-width:440px;text-align:center;">

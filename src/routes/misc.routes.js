@@ -97,6 +97,16 @@ router.post('/careers-inquiry', async (req, res) => {
 // GET /api/ad-pricing?city=X — the real, current self-serve ad price,
 // so a provider sees the actual cost before deciding to submit, not a
 // surprise after the fact.
+// GET /api/my-ad-status — lets a provider see the real, current status
+// of their own self-serve ad, if they have one. Real ad platforms always
+// give a seller this visibility rather than leaving them to wonder what
+// happened after they paid.
+router.get('/my-ad-status', requireAuth, requireRole('provider'), async (req, res) => {
+  const ad = await db.find('advertisingInquiries', a => a.providerId === req.user.sub && (a.isLive === true || a.status === 'new'));
+  if (!ad) return res.json({ ad: null });
+  res.json({ ad: { id: ad.id, isLive: ad.isLive, price: ad.price, displayHeadline: ad.displayHeadline, targetCity: ad.targetCity, createdAt: ad.createdAt } });
+});
+
 router.get('/ad-pricing', async (req, res) => {
   const { selfServeAdPriceForCity } = require('../ad-pricing');
   const price = await selfServeAdPriceForCity(req.query.city || null);
@@ -120,6 +130,23 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
   const provider = await db.find('users', u => u.id === req.user.sub);
+  // Consistent with every other real-money action already gated by a
+  // fraud hold (new bookings, accepting jobs, payouts) — an account
+  // under active review shouldn't be able to pay for and submit a new
+  // ad in the meantime either.
+  if (provider.onHold) {
+    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to submit an ad again shortly.' });
+  }
+  // A provider paying for a second ad while their first is still pending
+  // review or already live isn't a real, separate purchase — it's the
+  // same promotion, and letting it happen would mean charging them
+  // twice for essentially one thing. Real ad platforms (Etsy, Amazon
+  // Seller) all cap this at one active promotion per seller for exactly
+  // this reason.
+  const existingActive = await db.find('advertisingInquiries', a => a.providerId === provider.id && (a.isLive === true || a.status === 'new'));
+  if (existingActive) {
+    return res.status(409).json({ error: existingActive.isLive ? 'You already have a live ad running — take it down first if you want to submit a new one.' : 'You already have an ad pending review — please wait for that one before submitting another.' });
+  }
   // A provider can only ever target their own city, or genuinely go
   // platform-wide — never claim to represent a city they're not
   // actually based in.
