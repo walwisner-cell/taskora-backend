@@ -4254,7 +4254,85 @@ async function submitDispute(contractId) {
 // Careers. Previously this just opened a mailto: link, which does nothing
 // on a device with no default mail client configured and leaves no record
 // anywhere on the platform.
+function openSelfServeAdConfirm() {
+  const modalHtml = `
+    <div class="modal-overlay open" id="selfserve-confirm-overlay" onclick="if(event.target===this)this.remove()">
+      <div class="modal" style="max-width:440px;text-align:center;">
+        <div class="modal-body" style="padding-top:28px;">
+          <div style="font-size:36px;margin-bottom:12px;">📣</div>
+          <h3 style="margin-bottom:10px;">Advertise your own profile?</h3>
+          <p style="color:var(--slate);font-size:14px;margin-bottom:20px;">You're signed in as a provider — would you like to promote your own Trothen profile as a featured ad, rather than submit a request for a different business?</p>
+          <div style="display:flex;gap:10px;justify-content:center;">
+            <button class="btn-sm btn-sm-outline" onclick="document.getElementById('selfserve-confirm-overlay').remove()">No, never mind</button>
+            <button class="confirm-btn" style="width:auto;padding:10px 20px;" onclick="document.getElementById('selfserve-confirm-overlay').remove();openSelfServeAdForm()">Yes, continue</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function openSelfServeAdForm() {
+  const u = AUTH.user;
+  let price = 25;
+  if (BACKEND_AVAILABLE) {
+    try {
+      const data = await apiFetch('GET', `/ad-pricing?city=${encodeURIComponent(u.city || '')}`);
+      price = data.price;
+    } catch (e) { console.warn('Could not load real ad pricing, showing a default', e); }
+  }
+  const modalHtml = `
+    <div class="modal-overlay open" id="selfserve-form-overlay" onclick="if(event.target===this)this.remove()">
+      <div class="modal" style="max-width:480px;">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('selfserve-form-overlay').remove()">✕</button>
+          <h3>Promote Your Profile</h3>
+          <p>Real cost: $${price} — reviewed for content before it goes live, usually quick</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Headline</label><input class="form-input" id="selfserve-headline" maxlength="100" value="${escapeHtml(u.businessName || u.name)}" placeholder="e.g. Marcus T. Plumbing"/></div>
+          <div class="form-group"><label class="form-label">Short description</label><textarea class="form-input" id="selfserve-subtext" rows="2" style="resize:vertical;" maxlength="200" placeholder="e.g. Licensed plumber serving Atlanta — book me directly on Trothen">${escapeHtml(`${u.category || 'Trusted local pro'} on Trothen — ★ ${u.rating ? Number(u.rating).toFixed(1) : 'New'}`)}</textarea></div>
+          <div class="form-group"><label class="form-label">Link (optional)</label><input class="form-input" id="selfserve-link" placeholder="https://your-real-website.com"/></div>
+          <div class="form-group">
+            <label class="form-label">Where should this show?</label>
+            <select class="form-input" id="selfserve-target">
+              <option value="${escapeHtml(u.city || '')}">${escapeHtml(u.city || 'My city')} only</option>
+              <option value="">Platform-wide (reviewed by Trothen HQ)</option>
+            </select>
+          </div>
+          <div style="font-size:12px;color:var(--muted);">Test mode — this simulates a real $${price} charge; no actual payment is taken yet.</div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="submitSelfServeAd(${price})">Pay $${price} & Submit for Review</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitSelfServeAd(price) {
+  const displayHeadline = document.getElementById('selfserve-headline').value.trim();
+  const displaySubtext = document.getElementById('selfserve-subtext').value.trim();
+  const displayLink = document.getElementById('selfserve-link').value.trim();
+  const targetCity = document.getElementById('selfserve-target').value;
+  if (!displayHeadline) return showToast('Enter a headline for your ad');
+  if (!displaySubtext) return showToast('Enter a short description');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('POST', '/advertising-inquiry/self-serve', { displayHeadline, displaySubtext, displayLink, targetCity });
+    showToast(`Paid $${price} (test mode) — submitted for a quick content review before it goes live`);
+    document.getElementById('selfserve-form-overlay').remove();
+  } catch (e) { showToast(e.message || 'Could not submit your ad'); }
+}
+
 async function openAdvertiseForm() {
+  // An existing, already-verified provider gets a completely different,
+  // much shorter path — we already know exactly who they are, so there's
+  // no reason to make them fill out a cold-inquiry contact form asking
+  // for their own name and email.
+  if (AUTH.user && AUTH.user.role === 'provider') {
+    return openSelfServeAdConfirm();
+  }
   let cities = [];
   if (BACKEND_AVAILABLE) {
     try {

@@ -265,6 +265,7 @@ CREATE TABLE IF NOT EXISTS careers_inquiries (
 
 CREATE TABLE IF NOT EXISTS advertising_inquiries (
   id                TEXT PRIMARY KEY,
+  provider_id       TEXT REFERENCES users(id),
   company_name      TEXT NOT NULL,
   contact_name      TEXT NOT NULL,
   email             TEXT NOT NULL,
@@ -522,6 +523,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS on_hold BOOLEAN NOT NULL DEFAULT FALS
 ALTER TABLE users ADD COLUMN IF NOT EXISTS hold_reason TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS hold_since TIMESTAMPTZ;
 ALTER TABLE fraud_flags ADD COLUMN IF NOT EXISTS review_deadline TIMESTAMPTZ;
+ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS provider_id TEXT REFERENCES users(id);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS provider_response_deadline TIMESTAMPTZ;

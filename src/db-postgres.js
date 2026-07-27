@@ -56,7 +56,7 @@ const TABLES = {
   fraudFlags: { table: 'fraud_flags', columns: ['id','type','severity','user_id','related_user_id','contract_id','details','status','review_deadline','reviewed_at','created_at'] },
   contactSubmissions: { table: 'contact_submissions', columns: ['id','name','email','subject','message','status','created_at'] },
   careersInquiries: { table: 'careers_inquiries', columns: ['id','name','email','role','message','status','created_at'] },
-  advertisingInquiries: { table: 'advertising_inquiries', columns: ['id','company_name','contact_name','email','phone','message','status','target_city','is_live','price','currency_code','display_headline','display_subtext','display_link','approved_by','approved_at','created_at'] },
+  advertisingInquiries: { table: 'advertising_inquiries', columns: ['id','provider_id','company_name','contact_name','email','phone','message','status','target_city','is_live','price','currency_code','display_headline','display_subtext','display_link','approved_by','approved_at','created_at'] },
   salesInquiries: { table: 'sales_inquiries', columns: ['id','company_name','contact_name','email','team_size','message','status','agreed_price','agreed_currency','internal_notes','converted_to_org_id','updated_at','created_at'] },
   organizations: { table: 'organizations', columns: ['id','name','sales_inquiry_id','agreed_price','agreed_currency','commission_rate','seat_limit','account_manager_id','billing_contact_name','billing_contact_email','status','created_by','created_at','updated_at'] },
   organizationInvites: { table: 'organization_invites', columns: ['id','organization_id','code','created_by','max_uses','uses_count','expires_at','status','created_at'] },

@@ -2,9 +2,10 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
-const { requireAuth } = require('../auth');
+const { requireAuth, requireRole } = require('../auth');
 const { isNonEmptyString, validate } = require('../validators');
 const { notify } = require('../notify');
+const { currencyForCountry } = require('../currency-data');
 
 const router = express.Router();
 
@@ -93,6 +94,77 @@ router.post('/careers-inquiry', async (req, res) => {
 // client and leaves no record anywhere on the platform. This follows the
 // same real-storage, real-notification pattern as /contact and
 // /careers-inquiry: genuinely saved, genuinely alerts the super admin team.
+// GET /api/ad-pricing?city=X — the real, current self-serve ad price,
+// so a provider sees the actual cost before deciding to submit, not a
+// surprise after the fact.
+router.get('/ad-pricing', async (req, res) => {
+  const { selfServeAdPriceForCity } = require('../ad-pricing');
+  const price = await selfServeAdPriceForCity(req.query.city || null);
+  res.json({ price });
+});
+
+// POST /api/advertising-inquiry/self-serve — an existing, already
+// identity-verified provider promoting their own real profile, not an
+// outside company. Skips the cold-inquiry contact form (we already know
+// exactly who this is), captures the real, current price immediately
+// (test-mode, same "genuinely happens, no real money yet" convention as
+// every other payment in this app) — but still goes through the same
+// quick admin content review before actually going live. The price
+// isn't being negotiated at review time, just the content itself.
+router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provider'), async (req, res) => {
+  const { displayHeadline, displaySubtext, displayLink, targetCity } = req.body || {};
+  const errors = validate([
+    ['displayHeadline', isNonEmptyString(displayHeadline, { min: 2, max: 100 }), 'Enter a real headline for your ad'],
+    ['displaySubtext', isNonEmptyString(displaySubtext, { min: 5, max: 200 }), 'Enter a short description (at least 5 characters)'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  // A provider can only ever target their own city, or genuinely go
+  // platform-wide — never claim to represent a city they're not
+  // actually based in.
+  const wantsOwnCity = targetCity === provider.city;
+  const wantsPlatformWide = !targetCity;
+  if (!wantsOwnCity && !wantsPlatformWide) {
+    return res.status(400).json({ error: 'You can only target your own city, or the whole platform' });
+  }
+  const city = wantsOwnCity ? provider.city : null;
+
+  const { selfServeAdPriceForCity } = require('../ad-pricing');
+  const price = await selfServeAdPriceForCity(city);
+
+  const submission = {
+    id: `ad_${nanoid(10)}`,
+    providerId: provider.id,
+    companyName: provider.businessName || provider.name,
+    contactName: provider.name,
+    email: provider.email,
+    phone: provider.phone || null,
+    message: `Self-serve submission from an existing provider (${provider.category || 'no category set'}).`,
+    status: 'new',
+    targetCity: city,
+    isLive: false, // still requires the same quick admin content review — the price is fixed, but the content isn't approved yet
+    price,
+    currencyCode: currencyForCountry(provider.country || 'United States').code,
+    displayHeadline: displayHeadline.trim(),
+    displaySubtext: displaySubtext.trim(),
+    displayLink: (displayLink || '').trim() || null,
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('advertisingInquiries', submission);
+
+  const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+  const regionalAdmins = city
+    ? await db.filter('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === city)
+    : [];
+  const toNotify = [...superAdmins, ...regionalAdmins];
+  for (const admin of toNotify) {
+    await notify(admin.id, '📣', `${provider.name} (an existing provider) submitted a self-serve ad, already paid ($${price}) — just needs a quick content review${city ? ` for ${city}` : ' (platform-wide)'}`, null, { section: 'advertising' });
+  }
+
+  res.json({ submission });
+});
+
 router.post('/advertising-inquiry', async (req, res) => {
   const { companyName, contactName, email, phone, message, targetCity } = req.body || {};
   const errors = validate([
