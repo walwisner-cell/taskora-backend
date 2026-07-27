@@ -926,6 +926,9 @@
 
   <div id="customer-welcome-banner" style="display:none;"></div>
 
+  <!-- FEATURED PROVIDERS CAROUSEL (Pro/Super Pro perk — real data, not decorative) -->
+  <div id="featured-carousel-section" style="display:none;"></div>
+
   <!-- STATS -->
   <div class="stats-strip">
     <div class="stats-inner">
@@ -935,9 +938,6 @@
       <div class="stat"><div class="stat-val">$0</div><div class="stat-label">Booking Fee — Always</div></div>
     </div>
   </div>
-
-  <!-- FEATURED PROVIDERS CAROUSEL (Pro/Super Pro perk — real data, not decorative) -->
-  <div id="featured-carousel-section" style="display:none;"></div>
 
   <!-- TRUST LAYER -->
   <div class="trust-strip">
@@ -1884,18 +1884,16 @@ async function loadFeaturedCarousel() {
   // than let it clobber the correct, more current one.
   if (requestId !== featuredCarouselRequestId) return;
 
-  if (!providers.length && !liveAd) {
-    // No one is on a paid plan yet, and no ad is currently live either —
-    // genuinely nothing to show, so don't render an empty/fake carousel.
-    section.style.display = 'none';
-    section.innerHTML = '';
-    return;
-  }
-
-  // Mix in exactly one ad slot per rotation, positioned roughly in the middle.
-  featuredCarouselItems = providers.map(p => ({ type: 'provider', data: p }));
-  const adPosition = Math.min(2, featuredCarouselItems.length);
-  featuredCarouselItems.splice(adPosition, 0, { type: 'ad', data: liveAd });
+  // The ad slot — a real live ad, or the "Advertise Here" invitation
+  // pitch — exists to attract advertisers on its own merits, regardless
+  // of how many Pro-tier providers happen to be featured alongside it.
+  // Previously this whole section only rendered if there were also
+  // featured providers to show, which meant it silently vanished
+  // entirely the moment there were zero Pro-tier providers — exactly
+  // what a brand-new site looks like before anyone's earned that tier.
+  // The ad slot itself is now always shown; providers are added in
+  // alongside it only when there actually are any.
+  featuredCarouselItems = [{ type: 'ad', data: liveAd }, ...providers.map(p => ({ type: 'provider', data: p }))];
   featuredCarouselIndex = 0;
 
   section.style.display = 'block';
