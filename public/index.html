@@ -327,33 +327,33 @@
   .back-home-btn:hover { background:var(--teal); color:var(--navy); }
 
   /* ── STATS STRIP ── */
-  .customer-welcome-banner { max-width:1120px; margin:20px auto; padding:28px 32px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; background:linear-gradient(135deg,var(--navy),#1a3a5c); border-radius:16px; box-shadow:0 8px 28px rgba(20,40,70,.18); }
-  .customer-welcome-text { font-family:'Fraunces',serif; font-size:28px; color:#fff; font-weight:700; line-height:1.2; }
-  .customer-welcome-sub { font-size:15px; color:rgba(255,255,255,.82); margin-top:6px; }
-  .customer-welcome-actions { display:flex; gap:12px; flex-wrap:wrap; }
-  .customer-welcome-actions .btn-sm-outline { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.35); color:#fff; padding:11px 20px; font-size:14px; }
+  .customer-welcome-banner { max-width:1180px; margin:24px auto; padding:38px 40px; display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap; background:linear-gradient(135deg,var(--navy),#1a3a5c); border-radius:18px; box-shadow:0 10px 34px rgba(20,40,70,.2); }
+  .customer-welcome-text { font-family:'Fraunces',serif; font-size:36px; color:#fff; font-weight:700; line-height:1.2; }
+  .customer-welcome-sub { font-size:17px; color:rgba(255,255,255,.85); margin-top:8px; }
+  .customer-welcome-actions { display:flex; gap:14px; flex-wrap:wrap; }
+  .customer-welcome-actions .btn-sm-outline { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.35); color:#fff; padding:14px 26px; font-size:16px; }
   .customer-welcome-actions .btn-sm-outline:hover { background:rgba(255,255,255,.18); }
-  .customer-welcome-actions .nav-cta { padding:11px 22px; font-size:14px; background:var(--gold); color:var(--navy); }
+  .customer-welcome-actions .nav-cta { padding:14px 28px; font-size:16px; background:var(--gold); color:var(--navy); }
   @media (max-width:700px) {
-    .customer-welcome-banner { margin:14px 16px; padding:22px 20px; flex-direction:column; align-items:flex-start; }
-    .customer-welcome-text { font-size:22px; }
-    .customer-welcome-sub { font-size:13px; }
+    .customer-welcome-banner { margin:16px 16px; padding:26px 22px; flex-direction:column; align-items:flex-start; }
+    .customer-welcome-text { font-size:26px; }
+    .customer-welcome-sub { font-size:14.5px; }
     .customer-welcome-actions { width:100%; }
     .customer-welcome-actions button { flex:1; }
   }
   .stats-strip { background:var(--teal); padding:20px 24px; }
 
   /* ── FEATURED PROVIDER CAROUSEL ── */
-  .featured-carousel { background:var(--offwhite); padding:28px 24px; border-bottom:1px solid var(--border); }
-  .featured-carousel-inner { max-width:900px; margin:0 auto; }
-  .featured-carousel-label { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gold); text-align:center; margin-bottom:14px; }
-  .featured-carousel-track { position:relative; height:96px; }
-  .featured-slide { position:absolute; inset:0; display:flex; align-items:center; gap:16px; background:#fff; border:1px solid var(--border); border-radius:14px; padding:16px 20px; opacity:0; transform:translateX(12px); transition:opacity .4s ease, transform .4s ease; pointer-events:none; }
+  .featured-carousel { background:var(--offwhite); padding:38px 24px; border-bottom:1px solid var(--border); }
+  .featured-carousel-inner { max-width:1040px; margin:0 auto; }
+  .featured-carousel-label { font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gold); text-align:center; margin-bottom:18px; }
+  .featured-carousel-track { position:relative; height:120px; }
+  .featured-slide { position:absolute; inset:0; display:flex; align-items:center; gap:22px; background:#fff; border:1px solid var(--border); border-radius:16px; padding:22px 28px; opacity:0; transform:translateX(12px); transition:opacity .4s ease, transform .4s ease; pointer-events:none; }
   .featured-slide.active { opacity:1; transform:translateX(0); pointer-events:auto; }
-  .featured-slide-avatar { width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-weight:600; font-size:17px; color:#fff; flex-shrink:0; }
+  .featured-slide-avatar { width:66px; height:66px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-weight:600; font-size:21px; color:#fff; flex-shrink:0; }
   .featured-slide-body { flex:1; min-width:0; }
-  .featured-slide-name { font-weight:600; font-size:14.5px; color:var(--navy); display:flex; align-items:center; gap:8px; }
-  .featured-slide-sub { font-size:12px; color:var(--slate); margin-top:2px; }
+  .featured-slide-name { font-weight:600; font-size:18px; color:var(--navy); display:flex; align-items:center; gap:10px; }
+  .featured-slide-sub { font-size:14.5px; color:var(--slate); margin-top:4px; }
   .featured-slide-cta { flex-shrink:0; }
   .featured-carousel-dots { display:flex; justify-content:center; gap:6px; margin-top:12px; }
   .featured-carousel-dot { width:6px; height:6px; border-radius:50%; background:var(--border); cursor:pointer; transition:background .2s; }
@@ -361,9 +361,11 @@
   .featured-slide-ad { background:linear-gradient(135deg, var(--navy), #1B2233); border-color:var(--navy); }
   .featured-slide-ad .featured-slide-name, .featured-slide-ad .featured-slide-sub { color:#fff; }
   @media (max-width:600px) {
-    .featured-slide { padding:12px 14px; gap:12px; }
-    .featured-slide-avatar { width:42px; height:42px; font-size:14px; }
-    .featured-carousel-track { height:110px; }
+    .featured-slide { padding:16px 18px; gap:14px; }
+    .featured-slide-avatar { width:52px; height:52px; font-size:17px; }
+    .featured-slide-name { font-size:15px; }
+    .featured-slide-sub { font-size:12.5px; }
+    .featured-carousel-track { height:130px; }
   }
   .stats-inner { max-width:1100px; margin:0 auto; display:flex; justify-content:space-around; flex-wrap:wrap; gap:16px; }
   .stat { text-align:center; }
@@ -1764,8 +1766,11 @@ const FALLBACK_PROVIDERS = [
 ];
 let PROVIDERS = FALLBACK_PROVIDERS.slice();
 
+let loadProvidersRequestId = 0;
+
 async function loadProviders() {
   if (!BACKEND_AVAILABLE) return;
+  const requestId = ++loadProvidersRequestId;
   try {
     // Scope the homepage's own provider grid the same way real search
     // already works — a logged-in customer with a known country
@@ -1778,6 +1783,11 @@ async function loadProviders() {
     if (MY_REAL_LOCATION) { params.set('lat', MY_REAL_LOCATION.lat); params.set('lng', MY_REAL_LOCATION.lng); }
     const query = params.toString();
     const data = await apiFetch('GET', `/providers${query ? `?${query}` : ''}`);
+    // Same real race as the featured carousel: this can be called once
+    // anonymously during initial load and again after session restore
+    // completes with the real country — a slower, stale anonymous call
+    // must never overwrite a newer, correctly-scoped result.
+    if (requestId !== loadProvidersRequestId) return;
     // Tell the person plainly what they're looking at — critical the
     // moment we're NOT showing them their own country's pros, so nobody
     // mistakes an unrelated-country listing for something meant for
@@ -1830,10 +1840,21 @@ let featuredCarouselInterval = null;
 let featuredCarouselIndex = 0;
 let featuredCarouselItems = [];
 
+let featuredCarouselRequestId = 0;
+
 async function loadFeaturedCarousel() {
   const section = document.getElementById('featured-carousel-section');
   if (!section) return;
   if (featuredCarouselInterval) { clearInterval(featuredCarouselInterval); featuredCarouselInterval = null; }
+
+  // A real race exists here: this gets called once during initial page
+  // load (before we know who's logged in) and again right after session
+  // restore completes (once we do). Normal network timing means the
+  // first, anonymous call can genuinely resolve AFTER the second,
+  // correct one — silently overwriting a real, personalized result with
+  // a stale, anonymous one. This version guard makes sure only the
+  // most-recently-started call is ever allowed to actually render.
+  const requestId = ++featuredCarouselRequestId;
 
   let providers = [];
   let featuredScope = 'mixed';
@@ -1857,6 +1878,11 @@ async function loadFeaturedCarousel() {
       liveAd = adData.ad || null;
     } catch (e) { console.warn('Could not load live ad', e); }
   }
+
+  // A newer call already started (and possibly already finished) while
+  // this one was in flight — this result is stale, discard it rather
+  // than let it clobber the correct, more current one.
+  if (requestId !== featuredCarouselRequestId) return;
 
   if (!providers.length && !liveAd) {
     // No one is on a paid plan yet, and no ad is currently live either —
