@@ -327,6 +327,10 @@
   .back-home-btn:hover { background:var(--teal); color:var(--navy); }
 
   /* ── STATS STRIP ── */
+  .customer-welcome-banner { max-width:1120px; margin:0 auto; padding:20px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .customer-welcome-text { font-family:'Fraunces',serif; font-size:19px; color:var(--navy); font-weight:600; }
+  .customer-welcome-sub { font-size:13px; color:var(--slate); margin-top:2px; }
+  .customer-welcome-actions { display:flex; gap:10px; flex-wrap:wrap; }
   .stats-strip { background:var(--teal); padding:20px 24px; }
 
   /* ── FEATURED PROVIDER CAROUSEL ── */
@@ -908,6 +912,8 @@
     <div class="hero-locales">Live in the U.S. · Nigeria · Ghana · Liberia — expanding globally</div>
   </div>
 
+  <div id="customer-welcome-banner" style="display:none;"></div>
+
   <!-- STATS -->
   <div class="stats-strip">
     <div class="stats-inner">
@@ -976,6 +982,7 @@
       <div>
         <div class="section-title" id="providers-title">Top Rated Pros</div>
         <div class="section-sub" id="providers-sub">Ranked by rating, distance &amp; fit</div>
+        <div id="providers-scope-note" style="display:none;font-size:12px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-top:8px;max-width:480px;"></div>
       </div>
       <a class="see-all" onclick="goDirectory()">View all →</a>
     </div>
@@ -1761,6 +1768,22 @@ async function loadProviders() {
     if (MY_REAL_LOCATION) { params.set('lat', MY_REAL_LOCATION.lat); params.set('lng', MY_REAL_LOCATION.lng); }
     const query = params.toString();
     const data = await apiFetch('GET', `/providers${query ? `?${query}` : ''}`);
+    // Tell the person plainly what they're looking at — critical the
+    // moment we're NOT showing them their own country's pros, so nobody
+    // mistakes an unrelated-country listing for something meant for
+    // them specifically.
+    const scopeNote = document.getElementById('providers-scope-note');
+    if (scopeNote) {
+      if (!country) {
+        scopeNote.style.display = 'block';
+        scopeNote.textContent = '📍 Showing pros from across all locations — sign in or search your city to see pros near you specifically.';
+      } else if (data.locationScope === 'country_empty') {
+        scopeNote.style.display = 'block';
+        scopeNote.textContent = `📍 No pros in ${country} yet.`;
+      } else {
+        scopeNote.style.display = 'none';
+      }
+    }
     // An empty result is only treated as "nothing real to show yet" when
     // we deliberately scoped by country — that's a genuine, honest
     // signal (no local providers yet), not a fetch failure, and showing
@@ -2501,7 +2524,13 @@ function navbarHTML(active) {
           <div class="account-dropdown-role">${escapeHtml(roleLabel)}</div>
         </div>
         <div class="account-menu-item" onclick="closeAccountMenu();goHome()">🏠 Explore</div>
-        <div class="account-menu-item" onclick="closeAccountMenu();${settingsSectionFn}('settings')">⚙️ Settings</div>
+        ${active === 'customer' ? `
+        <div class="account-menu-item" onclick="closeAccountMenu();goToCustomerDashboard('bookings')">📋 My Bookings</div>
+        <div class="account-menu-item" onclick="closeAccountMenu();goToCustomerDashboard('messages')">💬 Messages</div>
+        <div class="account-menu-item" onclick="closeAccountMenu();goToCustomerDashboard('payments')">💳 Payments</div>
+        <div class="account-menu-item" onclick="closeAccountMenu();goToCustomerDashboard('verification')">🪪 Verification</div>
+        <div class="account-menu-item" onclick="closeAccountMenu();goToCustomerDashboard('settings')">⚙️ Settings</div>` : `
+        <div class="account-menu-item" onclick="closeAccountMenu();${settingsSectionFn}('settings')">⚙️ Settings</div>`}
         <div class="account-menu-item" onclick="closeAccountMenu();toggleSupportChat()">💬 Get Help</div>
         <div class="account-menu-divider"></div>
         <div class="account-menu-item" onclick="closeAccountMenu();showTermsPageModal('${active === 'provider' ? 'provider' : 'customer'}')">📄 Terms of Service</div>
@@ -2867,9 +2896,42 @@ function showScreen(id) {
   window.scrollTo(0, 0);
 }
 
+async function goToCustomerDashboard(sectionKey) {
+  showScreen('screen-customer');
+  await refreshNotifications();
+  renderNavbar('navbar-customer', 'customer');
+  await initCustomerDash();
+  selectCustomerSection(sectionKey || 'overview');
+}
+
 function goHome() {
   showScreen('screen-home');
-  renderNavbar('navbar-home', 'home');
+  // A logged-in customer still gets their real navbar (bell + account
+  // menu) on the homepage — only an actual signed-out visitor, or a
+  // logged-in provider/admin who's navigated here, sees the plain
+  // signed-out version.
+  const navbarActive = AUTH.user ? (AUTH.user.role === 'admin' ? (AUTH.user.isSuperAdmin ? 'superadmin' : 'admin') : AUTH.user.role) : 'home';
+  renderNavbar('navbar-home', navbarActive);
+  const welcomeBanner = document.getElementById('customer-welcome-banner');
+  if (welcomeBanner) {
+    if (AUTH.user && AUTH.user.role === 'customer') {
+      welcomeBanner.style.display = 'block';
+      welcomeBanner.innerHTML = `
+        <div class="customer-welcome-banner">
+          <div>
+            <div class="customer-welcome-text">Welcome back, ${escapeHtml(AUTH.user.name.split(' ')[0])} 👋</div>
+            <div class="customer-welcome-sub">${AUTH.user.verified ? '✓ Verified account' : '⏳ Verification pending'} — showing pros in ${escapeHtml(AUTH.user.country || 'your area')}</div>
+          </div>
+          <div class="customer-welcome-actions">
+            <button class="btn-sm btn-sm-outline" onclick="goToCustomerDashboard('bookings')">My Bookings</button>
+            <button class="nav-btn nav-cta" onclick="openPostJobModal()">+ Post a Job</button>
+          </div>
+        </div>`;
+    } else {
+      welcomeBanner.style.display = 'none';
+      welcomeBanner.innerHTML = '';
+    }
+  }
   loadFeaturedCarousel();
   loadPlatformStats();
   const locInput = document.getElementById('search-location-input');
@@ -3358,7 +3420,18 @@ async function goDashboard(role) {
     showToast(role === 'customer' ? 'Sign in as a customer to continue' : role === 'provider' ? 'Sign in as a provider to continue' : 'Sign in with an admin account to continue');
     return;
   }
-  if (role === 'customer') { showScreen('screen-customer'); await refreshNotifications(); renderNavbar('navbar-customer', 'customer'); await initCustomerDash(); startMessagePolling(); checkTermsGate('customer'); }
+  if (role === 'customer') {
+    // A customer's post-login landing page is the homepage itself, not a
+    // separate dashboard — matching how Airbnb or Amazon keep you on the
+    // main browsing experience once you're signed in, rather than
+    // routing you away from it. My Bookings, Messages, Payments,
+    // Verification, and Settings all stay real, dedicated pages — just
+    // reachable from the account menu, not forced on login.
+    await refreshNotifications();
+    startMessagePolling();
+    checkTermsGate('customer');
+    goHome();
+  }
   else if (role === 'provider') { showScreen('screen-provider'); await refreshNotifications(); renderNavbar('navbar-provider', 'provider'); await initProviderDash(); startMessagePolling(); checkTermsGate('provider'); }
   else { showScreen('screen-admin'); await refreshNotifications(); renderNavbar('navbar-admin', role); await initAdminDash(); }
 }
