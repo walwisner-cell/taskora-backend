@@ -164,6 +164,7 @@ function publicProvider(u) {
     id: u.id, name: u.name, initials: u.initials, role: u.providerRole, category: u.category,
     rating: u.rating, jobs: u.jobs, price: u.price, tags: u.tags, color: u.color, since: u.since,
     verified: u.verified, country: u.country, city: u.city, state: u.state, zipCode: u.zipCode,
+    latitude: u.latitude != null ? u.latitude : null, longitude: u.longitude != null ? u.longitude : null,
     availability: u.availability && u.availability.length ? u.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'],
     pricingModel: u.pricingModel || 'hourly',
     plan: u.plan || 'starter',
@@ -495,7 +496,9 @@ router.get('/providers/featured', async (req, res) => {
 });
 
 router.get('/providers', async (req, res) => {
-  const { category, q, city, state, country } = req.query;
+  const { category, q, city, state, country, lat, lng } = req.query;
+  const customerLat = lat !== undefined ? parseFloat(lat) : null;
+  const customerLng = lng !== undefined ? parseFloat(lng) : null;
   // Only verified providers appear in the public directory — showing an
   // unverified provider here (even briefly, while their documents are in
   // review) would contradict the "Fully Verified" promise shown on the
@@ -566,7 +569,28 @@ router.get('/providers', async (req, res) => {
     }
   }
 
-  res.json({ providers: providers.map(publicProvider), locationScope, suggestedCountry });
+  let finalProviders = providers.map(publicProvider);
+  const { distanceInMiles, isValidCoordinate } = require('../geo-distance');
+  if (isValidCoordinate(customerLat, customerLng)) {
+    finalProviders = finalProviders.map(p => ({
+      ...p,
+      distanceMiles: isValidCoordinate(p.latitude, p.longitude)
+        ? Math.round(distanceInMiles(customerLat, customerLng, p.latitude, p.longitude) * 10) / 10
+        : null,
+    }));
+    // Nearest real distance first; providers who haven't shared GPS yet
+    // (distanceMiles is null) sort after everyone who has, but are still
+    // shown — not sharing a precise location isn't a reason to hide
+    // someone who otherwise matches on city/category.
+    finalProviders.sort((a, b) => {
+      if (a.distanceMiles == null && b.distanceMiles == null) return 0;
+      if (a.distanceMiles == null) return 1;
+      if (b.distanceMiles == null) return -1;
+      return a.distanceMiles - b.distanceMiles;
+    });
+  }
+
+  res.json({ providers: finalProviders, locationScope, suggestedCountry });
 });
 
 // GET /api/providers/:id  (profile page: includes reviews and portfolio photos)

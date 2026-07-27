@@ -403,7 +403,7 @@ router.post('/accept-terms', requireAuth, async (req, res) => {
 });
 
 router.patch('/me', requireAuth, async (req, res) => {
-  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category', 'acceptingBookings', 'licenseExpiryDate', 'insuranceExpiryDate'];
+  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'notifPrefs', 'availability', 'pricingModel', 'price', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category', 'acceptingBookings', 'licenseExpiryDate', 'insuranceExpiryDate', 'latitude', 'longitude'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
   if ('acceptingBookings' in patch && typeof patch.acceptingBookings !== 'boolean') {
@@ -414,6 +414,15 @@ router.patch('/me', requireAuth, async (req, res) => {
       if (typeof patch[dateField] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(patch[dateField]) || isNaN(new Date(patch[dateField]).getTime())) {
         return res.status(400).json({ error: `${dateField === 'licenseExpiryDate' ? 'License' : 'Insurance'} expiry must be a real date` });
       }
+    }
+  }
+  if (('latitude' in patch) !== ('longitude' in patch)) {
+    return res.status(400).json({ error: 'latitude and longitude must be set together' });
+  }
+  if ('latitude' in patch && patch.latitude !== null) {
+    const { isValidCoordinate } = require('../geo-distance');
+    if (!isValidCoordinate(patch.latitude, patch.longitude)) {
+      return res.status(400).json({ error: 'That doesn\'t look like a real GPS location' });
     }
   }
   if ('name' in patch && !isValidName(patch.name)) {

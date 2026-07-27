@@ -716,6 +716,8 @@
     .nav-btn { padding: 5px 9px; font-size: 11px; flex-shrink: 0; white-space: nowrap; }
     .nav-cta { padding: 5px 12px; }
     .notif-bell { width: 30px; height: 30px; font-size: 13px; flex-shrink: 0; }
+    .account-menu-btn { padding: 5px 9px; font-size: 11px; flex-shrink: 0; white-space: nowrap; gap: 4px; }
+    .account-dropdown { min-width: 190px; max-width: calc(100vw - 24px); }
 
     /* ── Hero: stack the search bar instead of one cramped row ── */
     .hero { padding: 40px 16px 56px; }
@@ -890,6 +892,7 @@
       <div class="location-tag">
         <svg width="14" height="14" fill="#1D5FA8" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
         <input type="text" id="search-location-input" placeholder="Your city" style="border:none;background:transparent;outline:none;font-size:14px;color:var(--navy);width:120px;font-family:inherit;" onkeypress="handleSearch(event)"/>
+        <button type="button" onclick="useMyLocation()" title="Use my real location" style="border:none;background:none;cursor:pointer;font-size:15px;padding:0 2px;" id="use-location-btn">📍</button>
       </div>
       <button class="search-btn" onclick="handleSearchClick()">Search</button>
     </div>
@@ -5082,6 +5085,12 @@ const PROVIDER_SECTIONS = {
       <div class="form-group"><label class="form-label">Insurance Expiry Date</label><input class="form-input" type="date" id="set-prov-insurance-expiry" value="${(AUTH.user && AUTH.user.insuranceExpiryDate) || ''}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveLicenseInsurance()">Save Dates</button>
     </div>
+    <div class="panel"><div class="panel-title">Service Location <small style="font-weight:400;color:var(--slate);">optional</small></div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:12px;">Share your exact location so nearby customers see real distance to you, not just your city name — this can help you show up first for customers genuinely close by. Entirely optional; your city still works fine for matching without this.</div>
+      <div id="prov-location-status" style="font-size:12.5px;color:${AUTH.user && AUTH.user.latitude != null ? 'var(--teal)' : 'var(--slate)'};margin-bottom:10px;">${AUTH.user && AUTH.user.latitude != null ? '✓ Real location shared' : 'Not shared yet'}</div>
+      <button class="btn-sm btn-sm-primary" onclick="shareProviderLocation()">📍 Share My Real Location</button>
+      ${AUTH.user && AUTH.user.latitude != null ? `<button class="btn-sm btn-sm-outline" style="margin-left:8px;" onclick="clearProviderLocation()">Remove</button>` : ''}
+    </div>
     <div class="panel"><div class="panel-title">Business Profile <small style="font-weight:400;color:var(--slate);">optional</small></div>
       <div style="font-size:12px;color:var(--slate);margin-bottom:12px;">If you operate as a registered business rather than as an individual, add your business details here — this appears on your public profile alongside your name.</div>
       <div class="form-group"><label class="form-label">Business Name</label><input class="form-input" type="text" id="set-prov-business-name" value="${(AUTH.user && AUTH.user.businessName) || ''}" placeholder="e.g. Marcus T. Plumbing LLC"/></div>
@@ -7910,7 +7919,7 @@ function providerCardsHTML(list) {
         <div class="provider-meta">
           <div class="meta-chip"><span class="stars">★</span> ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           <div class="meta-chip">📋 ${escapeHtml(p.jobs)} jobs</div>
-          <div class="meta-chip">📍 ${[escapeHtml(p.city), escapeHtml(p.country)].filter(Boolean).join(', ') || 'Location not set'}</div>
+          <div class="meta-chip">📍 ${p.distanceMiles != null ? `${p.distanceMiles} mi away` : ([escapeHtml(p.city), escapeHtml(p.country)].filter(Boolean).join(', ') || 'Location not set')}</div>
         </div>
         <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
         <div class="provider-footer">
@@ -7936,7 +7945,79 @@ function filterCat(cat) {
   document.getElementById('providers-grid').scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
+let MY_REAL_LOCATION = null; // { lat, lng } once genuinely shared — never guessed, never assumed
+
+async function shareProviderLocation() {
+  if (!navigator.geolocation) return showToast('Your browser doesn\'t support sharing location');
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+      try {
+        const { user } = await apiFetch('PATCH', '/auth/me', { latitude: position.coords.latitude, longitude: position.coords.longitude });
+        AUTH.user = user;
+        showToast('Your real location is now shared — nearby customers will see actual distance to you');
+        selectProviderSection('settings');
+      } catch (e) { showToast(e.message || 'Could not save your location'); }
+    },
+    (error) => {
+      const message = error.code === error.PERMISSION_DENIED
+        ? 'Location permission was declined'
+        : 'Could not get your location right now';
+      showToast(message);
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+async function clearProviderLocation() {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { latitude: null, longitude: null });
+    AUTH.user = user;
+    showToast('Real location removed — matching falls back to your city');
+    selectProviderSection('settings');
+  } catch (e) { showToast(e.message || 'Could not remove your location'); }
+}
+
+function useMyLocation() {
+  if (!navigator.geolocation) {
+    return showToast('Your browser doesn\'t support location — try typing your city instead');
+  }
+  const btn = document.getElementById('use-location-btn');
+  const originalText = btn.textContent;
+  btn.textContent = '⏳';
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      MY_REAL_LOCATION = { lat: position.coords.latitude, lng: position.coords.longitude };
+      btn.textContent = '✅';
+      document.getElementById('search-location-input').value = 'Current location';
+      document.getElementById('search-location-input').readOnly = true;
+      showToast('Using your real location — pros will be sorted by actual distance');
+      handleSearchClick();
+    },
+    (error) => {
+      btn.textContent = originalText;
+      const message = error.code === error.PERMISSION_DENIED
+        ? 'Location permission was declined — you can still search by typing your city'
+        : 'Could not get your location right now — try typing your city instead';
+      showToast(message);
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+// Lets someone go back to typing a city manually after having used real
+// location — clears the stored coordinates and unlocks the text field.
+function clearMyLocation() {
+  MY_REAL_LOCATION = null;
+  const input = document.getElementById('search-location-input');
+  input.value = '';
+  input.readOnly = false;
+  document.getElementById('use-location-btn').textContent = '📍';
+}
+
 function handleSearch(e) { if(e.key === 'Enter') handleSearchClick(); }
+
 
 // A genuine, explicit choice — shown only after a real search comes back
 // completely empty for someone's own country, and only acted on if they
@@ -7956,7 +8037,7 @@ async function searchOtherCountry(country) {
 async function handleSearchClick() {
   const q = document.getElementById('search-input').value.trim();
   const locationRaw = document.getElementById('search-location-input').value.trim();
-  if (!q && !locationRaw) return;
+  if (!q && !locationRaw && !MY_REAL_LOCATION) return;
 
   document.querySelector('.section').scrollIntoView({ behavior: 'smooth' });
   document.getElementById('providers-title').textContent = q ? `Results for "${q}"` : 'Pros near you';
@@ -7969,20 +8050,21 @@ async function handleSearchClick() {
   // against whatever's already loaded, rather than hitting the real
   // country-scoped endpoint.
   let cityPart = '', statePart = '';
-  if (locationRaw) {
+  if (locationRaw && !MY_REAL_LOCATION) {
     const parts = locationRaw.split(',').map(s => s.trim());
     cityPart = parts[0] || '';
     statePart = parts[1] || '';
   }
   const country = (AUTH.user && AUTH.user.country) || null;
 
-  if (BACKEND_AVAILABLE && country) {
+  if (BACKEND_AVAILABLE && (country || MY_REAL_LOCATION)) {
     try {
       const params = new URLSearchParams();
       if (q) params.set('q', q);
       if (cityPart) params.set('city', cityPart);
       if (statePart) params.set('state', statePart);
-      params.set('country', country);
+      if (country) params.set('country', country);
+      if (MY_REAL_LOCATION) { params.set('lat', MY_REAL_LOCATION.lat); params.set('lng', MY_REAL_LOCATION.lng); }
       const result = await apiFetch('GET', `/providers?${params.toString()}`);
       const scopeNote = result.locationScope === 'state'
         ? `<div style="grid-column:1/-1;font-size:12.5px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:14px;">📍 No matches in ${cityPart} yet, so we widened to your state/region.</div>`
