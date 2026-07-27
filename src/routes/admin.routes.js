@@ -293,6 +293,29 @@ router.patch('/users/:id/status', async (req, res) => {
 // explicitly "reviewed, not automatic" per policy, so this is the real
 // approval action an admin takes after that automatic check flags
 // someone as eligible.
+// PATCH /api/admin/users/:id/hold — release an account from a temporary
+// hold (or place one manually, for cases a real admin wants to pause
+// without waiting for an automatic flag). This is the actual human
+// decision every hold ultimately routes to — nothing about the hold
+// system can resolve itself.
+router.patch('/users/:id/hold', async (req, res) => {
+  const { onHold, reason } = req.body || {};
+  if (typeof onHold !== 'boolean') return res.status(400).json({ error: 'onHold must be true or false' });
+  const region = await myRegion(req);
+  const target = await db.find('users', u => u.id === req.params.id && (u.role === 'customer' || u.role === 'provider'));
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  const updated = await db.update('users', target.id, {
+    onHold,
+    holdReason: onHold ? (reason || 'Placed on hold by an admin') : null,
+    holdSince: onHold ? new Date().toISOString() : null,
+  });
+  await notify(target.id, onHold ? '⏸️' : '✅', onHold
+    ? `Your account has been temporarily paused${reason ? `: ${reason}` : ''}. Contact support if you have questions.`
+    : 'Your account hold has been cleared — you can book and accept jobs normally again.', null, { section: 'settings' });
+  res.json({ user: publicAdmin(updated) });
+});
+
 router.patch('/users/:id/plan', requireSuperAdmin, async (req, res) => {
   const { plan } = req.body || {};
   if (!['starter', 'pro', 'superpro'].includes(plan)) return res.status(400).json({ error: 'plan must be starter, pro, or superpro' });

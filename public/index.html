@@ -2480,8 +2480,8 @@ function navbarHTML(active) {
         <div class="account-menu-item" onclick="closeAccountMenu();${settingsSectionFn}('settings')">⚙️ Settings</div>
         <div class="account-menu-item" onclick="closeAccountMenu();toggleSupportChat()">💬 Get Help</div>
         <div class="account-menu-divider"></div>
-        <div class="account-menu-item" onclick="closeAccountMenu();showTermsPage('${active === 'provider' ? 'provider' : 'customer'}')">📄 Terms of Service</div>
-        <div class="account-menu-item" onclick="closeAccountMenu();showAboutPage()">ℹ️ About Us</div>
+        <div class="account-menu-item" onclick="closeAccountMenu();showTermsPageModal('${active === 'provider' ? 'provider' : 'customer'}')">📄 Terms of Service</div>
+        <div class="account-menu-item" onclick="closeAccountMenu();showAboutPageModal()">ℹ️ About Us</div>
         <div class="account-menu-divider"></div>
         <div class="account-menu-item danger" onclick="closeAccountMenu();logout()">🚪 Sign Out</div>
       </div>
@@ -2672,6 +2672,55 @@ function renderFormattedContent(raw) {
     }
   }
   return html;
+}
+
+// Shown as a real overlay on top of whatever screen is currently
+// active — not a full navigation away from it. Used specifically from
+// the account menu, where someone is in the middle of using their
+// dashboard and shouldn't lose their place just to glance at a legal
+// page. The public footer and consent-gate links still use the
+// full-page versions above, where navigating away makes sense since
+// there's no "current dashboard state" to preserve in those contexts.
+async function showAboutPageModal() {
+  const html = `
+    <div class="modal-overlay open" id="about-modal-overlay" onclick="if(event.target===this)this.remove()">
+      <div class="modal" style="max-width:640px;">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('about-modal-overlay').remove()">✕</button>
+          <h3>About Us</h3>
+        </div>
+        <div class="modal-body" id="about-modal-body"><p style="color:var(--slate);">Loading…</p></div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  const body = document.getElementById('about-modal-body');
+  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable — no backend connection.</p>'; return; }
+  try {
+    const { content } = await apiFetch('GET', '/about-us-content');
+    body.innerHTML = renderFormattedContent(content);
+  } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
+}
+
+async function showTermsPageModal(preferredRole) {
+  const role = preferredRole || (AUTH.user && AUTH.user.role === 'provider' ? 'provider' : 'customer');
+  const html = `
+    <div class="modal-overlay open" id="terms-modal-overlay" onclick="if(event.target===this)this.remove()">
+      <div class="modal" style="max-width:640px;">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('terms-modal-overlay').remove()">✕</button>
+          <h3>Terms of Service</h3>
+          <p>${role === 'provider' ? 'Provider' : 'Customer'} version</p>
+        </div>
+        <div class="modal-body" id="terms-modal-body"><p style="color:var(--slate);">Loading…</p></div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  const body = document.getElementById('terms-modal-body');
+  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable — no backend connection.</p>'; return; }
+  try {
+    const { content } = await apiFetch('GET', `/terms-of-service-${role}-content`);
+    body.innerHTML = renderFormattedContent(content);
+  } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
 }
 
 async function showAboutPage() {
@@ -7564,6 +7613,30 @@ function tierBadgeHTML(plan, superProEligibleSince) {
   return '<span class="badge badge-neutral">Starter</span>';
 }
 
+async function releaseUserHold(userId) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/users/${userId}/hold`, { onHold: false });
+    showToast('Hold released — account back to normal');
+    document.getElementById('person-detail-overlay')?.remove();
+    await loadAdminData();
+    selectAdminSection('people');
+  } catch (e) { showToast(e.message || 'Could not release this hold'); }
+}
+
+async function placeUserHold(userId) {
+  const reason = prompt('Why are you placing this account on hold? (shown to the account holder)');
+  if (reason === null) return; // cancelled
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/users/${userId}/hold`, { onHold: true, reason: reason || undefined });
+    showToast('Account placed on hold');
+    document.getElementById('person-detail-overlay')?.remove();
+    await loadAdminData();
+    selectAdminSection('people');
+  } catch (e) { showToast(e.message || 'Could not place this hold'); }
+}
+
 async function approveProviderTier(userId, plan) {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
@@ -7661,12 +7734,15 @@ function openPersonDetail(userId) {
           ${row('Joined', u.createdAt ? u.createdAt.slice(0, 10) : '—')}
           ${row('Identity Verified', u.verified ? '✅ Verified' : '⏳ Not verified')}
           ${row('Phone Verified', u.phoneVerified ? '✅ Verified' : '⏳ Not verified')}
-          ${row('Account Status', u.active ? 'Active' : 'Suspended')}
+          ${row('Account Status', u.onHold ? `⏸️ On hold — ${escapeHtml(u.holdReason || 'pending review')}${u.holdSince ? ` (since ${u.holdSince.slice(0,10)})` : ''}` : (u.active ? 'Active' : 'Suspended'))}
           ${row('Terms Accepted', u.termsAcceptedAt ? `✅ ${u.termsAcceptedAt.slice(0, 10)} (v${u.termsVersion || '?'})` : '⏳ Not yet agreed')}
           ${isProvider && u.licenseExpiryDate ? row('License Expiry', formatAdminExpiryStatus(u.licenseExpiryDate)) : ''}
           ${isProvider && u.insuranceExpiryDate ? row('Insurance Expiry', formatAdminExpiryStatus(u.insuranceExpiryDate)) : ''}
         </div>
         <div class="modal-footer">
+          ${u.onHold
+            ? `<button class="confirm-btn" style="margin-bottom:8px;" onclick="releaseUserHold('${u.id}')">▶️ Release Hold</button>`
+            : `<button class="btn-sm btn-sm-outline" style="margin-bottom:8px;" onclick="placeUserHold('${u.id}')">⏸️ Place on Hold</button>`}
           ${isProvider && u.superProEligibleSince && u.plan !== 'superpro'
             ? `<button class="confirm-btn" style="margin-bottom:8px;" onclick="approveProviderTier('${u.id}','superpro')">🏆 Approve Super-Pro (eligible since ${u.superProEligibleSince.slice(0,10)})</button>`
             : ''}

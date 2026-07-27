@@ -52,6 +52,7 @@ async function checkAndAdvanceProviderTier(providerId) {
   const { notify } = require('./notify');
   const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
   if (!provider || provider.plan === 'superpro') return; // already at the top, or not a real provider
+  if (provider.onHold) return; // under active fraud review — advancing their tier doesn't make sense until that clears
 
   const contracts = await db.filter('contracts', c => c.providerId === providerId);
   const jobsCompleted = contracts.filter(c => c.status === 'completed').length;

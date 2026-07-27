@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS users (
   insurance_expiry_date DATE,
   terms_viewed_full BOOLEAN NOT NULL DEFAULT FALSE,
   super_pro_eligible_since TIMESTAMPTZ,
+  on_hold BOOLEAN NOT NULL DEFAULT FALSE,
+  hold_reason TEXT,
+  hold_since TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ
 );
@@ -381,6 +384,7 @@ CREATE TABLE IF NOT EXISTS fraud_flags (
   contract_id    TEXT REFERENCES contracts(id),
   details        TEXT NOT NULL,
   status         TEXT NOT NULL DEFAULT 'open',
+  review_deadline TIMESTAMPTZ,
   reviewed_at    TIMESTAMPTZ,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -512,6 +516,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS license_expiry_date DATE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS insurance_expiry_date DATE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_viewed_full BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS super_pro_eligible_since TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS on_hold BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS hold_reason TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS hold_since TIMESTAMPTZ;
+ALTER TABLE fraud_flags ADD COLUMN IF NOT EXISTS review_deadline TIMESTAMPTZ;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS provider_response_deadline TIMESTAMPTZ;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS photo_urls JSONB;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS photo_urls JSONB;

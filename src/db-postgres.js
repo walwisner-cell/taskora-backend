@@ -29,7 +29,7 @@ const pool = new Pool({
 // in (snake_case) DB order. Used to build safe, parameterized INSERT/UPDATE
 // statements without ever interpolating arbitrary object keys into SQL.
 const TABLES = {
-  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','state','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs','price','color','since','profile_photo_url','category_approval_status','two_factor_enabled','business_name','business_registration_number','admin_department','organization_id','accepting_bookings','token_version','terms_accepted_at','terms_version','license_expiry_date','insurance_expiry_date','terms_viewed_full','super_pro_eligible_since','created_at','updated_at'] },
+  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','state','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs','price','color','since','profile_photo_url','category_approval_status','two_factor_enabled','business_name','business_registration_number','admin_department','organization_id','accepting_bookings','token_version','terms_accepted_at','terms_version','license_expiry_date','insurance_expiry_date','terms_viewed_full','super_pro_eligible_since','on_hold','hold_reason','hold_since','created_at','updated_at'] },
   categories: { table: 'categories', columns: ['id','name','icon','active','response_window_override_hours'] },
   countries: { table: 'countries', columns: ['id','name','status'] },
   cities: { table: 'cities', columns: ['id','name','country','admin_id'] },
@@ -53,7 +53,7 @@ const TABLES = {
   pendingRegistrations: { table: 'pending_registrations', columns: ['id','payload','phone_code_hash','email_code_hash','phone_verified','email_verified','expires_at','created_at'] },
   categoryRequests: { table: 'category_requests', columns: ['id','provider_id','requested_category','status','created_at','resolved_at'] },
   pendingLogins: { table: 'pending_logins', columns: ['id','user_id','code_hash','expires_at','created_at'] },
-  fraudFlags: { table: 'fraud_flags', columns: ['id','type','severity','user_id','related_user_id','contract_id','details','status','reviewed_at','created_at'] },
+  fraudFlags: { table: 'fraud_flags', columns: ['id','type','severity','user_id','related_user_id','contract_id','details','status','review_deadline','reviewed_at','created_at'] },
   contactSubmissions: { table: 'contact_submissions', columns: ['id','name','email','subject','message','status','created_at'] },
   careersInquiries: { table: 'careers_inquiries', columns: ['id','name','email','role','message','status','created_at'] },
   advertisingInquiries: { table: 'advertising_inquiries', columns: ['id','company_name','contact_name','email','phone','message','status','target_city','is_live','price','currency_code','display_headline','display_subtext','display_link','approved_by','approved_at','created_at'] },

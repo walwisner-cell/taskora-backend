@@ -561,6 +561,9 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   if (!customer || customer.verified !== true) {
     return res.status(403).json({ error: 'Your account is still pending admin approval — you\'ll be able to post a job once it\'s approved.' });
   }
+  if (customer.onHold) {
+    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to post a job again shortly. Contact support if you need this resolved sooner.' });
+  }
   const { category, description, budget, payCurrency, photoUrls } = req.body || {};
   const errors = validate([
     ['category', isNonEmptyString(category, { min: 2, max: 60 }), 'Category is required'],
@@ -762,6 +765,9 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async 
 
   if (decision === 'accept') {
     const provider = await db.find('users', u => u.id === req.user.sub);
+    if (provider && provider.onHold) {
+      return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to accept new jobs again shortly. Contact support if you need this resolved sooner.' });
+    }
     if (provider && LICENSED_TRADE_CATEGORIES.has(provider.category) && !hasValidLicense(provider)) {
       return res.status(403).json({ error: `${provider.category} requires a current, verified license on file before you can accept jobs — add your license expiry date in Settings.` });
     }
@@ -814,6 +820,9 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   const customer = await db.find('users', u => u.id === req.user.sub);
   if (!customer || customer.verified !== true) {
     return res.status(403).json({ error: 'Your account is still pending admin approval — you\'ll be able to book a pro once it\'s approved.' });
+  }
+  if (customer.onHold) {
+    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to book again shortly. Contact support if you need this resolved sooner.' });
   }
   const { providerId, service, date, time, address, amount, payCurrency, materialsAdvance, photoUrls } = req.body || {};
   const errors = validate([
@@ -989,6 +998,9 @@ router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider')
   }
 
   const acceptingProvider = await db.find('users', u => u.id === req.user.sub);
+  if (acceptingProvider && acceptingProvider.onHold) {
+    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to accept new jobs again shortly. Contact support if you need this resolved sooner.' });
+  }
   if (acceptingProvider && LICENSED_TRADE_CATEGORIES.has(acceptingProvider.category) && !hasValidLicense(acceptingProvider)) {
     return res.status(403).json({ error: `${acceptingProvider.category} requires a current, verified license on file before you can accept jobs — add your license expiry date in Settings.` });
   }

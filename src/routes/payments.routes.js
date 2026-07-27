@@ -187,6 +187,10 @@ router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res
 const { effectiveCommissionRate } = require('../commission');
 
 router.post('/payouts/request', requireAuth, requireRole('provider'), async (req, res) => {
+  const requestingProvider = await db.find('users', u => u.id === req.user.sub);
+  if (requestingProvider && requestingProvider.onHold) {
+    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — payouts will resume once this clears, usually within a couple hours. Contact support if you need this resolved sooner.' });
+  }
   const { payoutCurrency } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
 
   // Reject immediately if this provider already has a payout request in
@@ -330,6 +334,9 @@ async function handlePayoutRequest(req, res, payoutCurrency) {
   };
   await db.insert('payouts', payout);
 
+  const { checkPayoutVelocity } = require('../fraud-detection');
+  await checkPayoutVelocity(req.user.sub);
+
   // Stamp every included escrow record so it can never be paid out again.
   for (const e of payableEscrow) {
     await db.update('escrowTransactions', e.id, { payoutId: payout.id });
@@ -451,6 +458,11 @@ async function handleContractCancel(req, res) {
     cancelledByRole: iAmProvider ? 'provider' : 'customer',
     protectedCancellation: isProtected,
   });
+
+  if (isProtected) {
+    const { checkProtectedCancellationAbuse } = require('../fraud-detection');
+    await checkProtectedCancellationAbuse(contract.providerId);
+  }
 
   const iAmCustomer = contract.customerId === req.user.sub;
   const otherPartyId = iAmCustomer ? contract.providerId : contract.customerId;

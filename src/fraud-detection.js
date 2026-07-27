@@ -10,6 +10,14 @@ const db = require('./db');
 const { nanoid } = require('nanoid');
 
 async function createFlag({ type, severity, userId, relatedUserId, contractId, details }) {
+  // High-severity flags get a real, fast review deadline — 2 hours, not
+  // sitting in a general queue with no urgency. Medium/low flags still
+  // get reviewed, just without the same time pressure, since a
+  // lower-confidence signal doesn't justify treating every review as an
+  // emergency.
+  const reviewDeadline = severity === 'high'
+    ? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
+    : null;
   const flag = {
     id: `flag_${nanoid(10)}`,
     type, severity,
@@ -18,6 +26,7 @@ async function createFlag({ type, severity, userId, relatedUserId, contractId, d
     contractId: contractId || null,
     details,
     status: 'open',
+    reviewDeadline,
     reviewedAt: null,
     createdAt: new Date().toISOString(),
   };
@@ -26,8 +35,24 @@ async function createFlag({ type, severity, userId, relatedUserId, contractId, d
   // automatically" true rather than a flag nobody ever sees.
   const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
   for (const admin of superAdmins) {
-    await require('./notify').notify(admin.id, '🚩', `Fraud check flagged: ${details}`);
+    await require('./notify').notify(admin.id, '🚩', `${severity === 'high' ? 'URGENT — review within 2hrs: ' : ''}Fraud check flagged: ${details}`);
   }
+
+  // The actual new protection: a high-severity flag with a specific
+  // at-fault account automatically pauses that account's new activity —
+  // not a full suspension (they can still log in, see their history,
+  // reach support), just paused until a real person reviews it. No
+  // algorithm ever locks someone out entirely; this only ever limits
+  // what they can start doing next, and only for the highest-confidence
+  // signals, with a real, fast human deadline attached.
+  if (severity === 'high' && userId) {
+    const user = await db.find('users', u => u.id === userId);
+    if (user && !user.onHold && user.active !== false) {
+      await db.update('users', userId, { onHold: true, holdReason: details, holdSince: new Date().toISOString() });
+      await require('./notify').notify(userId, '⏸️', `Your account has been temporarily paused pending a quick review — you can still log in and see your history, but can't start new bookings or request payouts until this is cleared, usually within a couple hours. Contact support if you believe this is a mistake.`, null, { section: 'settings' });
+    }
+  }
+
   return flag;
 }
 
@@ -120,4 +145,46 @@ async function checkNewAccountHighValue(userId, amount, threshold = 500) {
   return null;
 }
 
-module.exports = { checkDuplicateIdentity, checkPriceAnomaly, checkRapidDisputes, checkNewAccountHighValue, createFlag };
+// Rule 5 — Gaming protected cancellations: a provider citing a protected
+// reason (unsafe, wrong category, unlicensed) repeatedly in a short
+// window is a real, new signal this session's protected-cancellation
+// feature made possible to detect — that protection exists so a
+// genuinely good provider never gets penalized for a real safety issue
+// or a real mismatch, but nothing before this stopped someone from
+// citing it every single time to dodge real work while still surfacing
+// for new offers.
+async function checkProtectedCancellationAbuse(providerId) {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const contracts = await db.filter('contracts', c =>
+    c.providerId === providerId && c.status === 'cancelled' && c.cancelledByRole === 'provider' &&
+    c.protectedCancellation && c.createdAt >= thirtyDaysAgo);
+  if (contracts.length >= 4) {
+    return createFlag({
+      type: 'protected_cancellation_pattern',
+      severity: 'high',
+      userId: providerId,
+      details: `This provider has cited a protected cancellation reason ${contracts.length} times in the last 30 days — worth checking whether these are genuine or a pattern of avoiding real jobs.`,
+    });
+  }
+  return null;
+}
+
+// Rule 6 — Payout velocity: several payout requests in rapid succession
+// is a real signal of either a compromised account being drained
+// quickly, or a provider structuring withdrawals to stay under some
+// perceived threshold.
+async function checkPayoutVelocity(providerId) {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const recentPayouts = await db.filter('payouts', p => p.providerId === providerId && p.createdAt >= oneHourAgo);
+  if (recentPayouts.length >= 3) {
+    return createFlag({
+      type: 'payout_velocity',
+      severity: 'high',
+      userId: providerId,
+      details: `${recentPayouts.length} payout requests from this account in the last hour — unusually fast, worth a look before more go through.`,
+    });
+  }
+  return null;
+}
+
+module.exports = { checkDuplicateIdentity, checkPriceAnomaly, checkRapidDisputes, checkNewAccountHighValue, checkProtectedCancellationAbuse, checkPayoutVelocity, createFlag };
