@@ -3828,6 +3828,36 @@ async function submitTermsAgreement() {
 }
 
 /* ══════════════════════ SHARED DASHBOARD HELPERS ══════════════════════ */
+// A section's render function (CUSTOMER_SECTIONS[key](), etc.) is a plain
+// JS function building a big HTML string — if it throws partway through
+// (a bad assumption about some piece of data), the assignment to
+// .innerHTML never happens and whatever was already on screen just sits
+// there unchanged, or the page can end up looking blank/broken depending
+// on what ran right before. Either way, to someone who isn't looking at
+// the browser console, that's indistinguishable from "the app just
+// logged me out" — nothing about it is actually a real sign-out, but it
+// looks exactly like one. This wraps every section render so a real
+// error shows a real, readable message in that same spot instead, and
+// logs the actual error and which section caused it to the console —
+// turning "it logs me out and I don't know why" into something we can
+// actually point at and fix. This never touches AUTH.token or AUTH.user.
+function renderSectionSafely(containerId, sectionKey, renderFn) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  try {
+    container.innerHTML = renderFn();
+  } catch (err) {
+    console.error(`[renderSectionSafely] "${sectionKey}" failed to render:`, err);
+    container.innerHTML = `
+      <div class="panel" style="text-align:center;padding:40px;">
+        <div style="font-size:32px;margin-bottom:12px;">⚠️</div>
+        <div style="font-weight:700;color:var(--navy);font-size:15px;margin-bottom:8px;">This section hit a problem loading</div>
+        <div style="font-size:12.5px;color:var(--slate);margin-bottom:16px;">You're still signed in — this is a display problem, not a sign-out. Try another tab, or come back to this one in a moment.</div>
+        <div style="font-size:11px;color:var(--muted);font-family:monospace;background:var(--offwhite);padding:8px 12px;border-radius:6px;display:inline-block;max-width:100%;overflow-wrap:break-word;">${escapeHtml(err && err.message || String(err))}</div>
+      </div>`;
+  }
+}
+
 function renderDashNav(containerId, items, activeKey, fnName) {
   document.getElementById(containerId).innerHTML = items.map(it =>
     `<div class="dash-nav-item ${it.key === activeKey ? 'active' : ''}" onclick="${fnName}('${it.key}')"><span>${it.icon}</span>${it.label}${it.dot ? '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#2E8C6F;margin-left:6px;"></span>' : ''}</div>`
@@ -5089,7 +5119,7 @@ async function saveCustomerSettings() {
 
 function selectCustomerSection(key) {
   renderDashNav('customer-nav', CUSTOMER_NAV_ITEMS, key, 'selectCustomerSection');
-  document.getElementById('customer-main').innerHTML = CUSTOMER_SECTIONS[key]();
+  renderSectionSafely('customer-main', key, () => CUSTOMER_SECTIONS[key]());
   if (key === 'messages') loadMessageThread();
   if (key === 'settings') { populateSettingsCountry('cust'); loadReferralPanel(); }
   if (key === 'verification') loadVerificationOptions();
@@ -6618,7 +6648,7 @@ function selectProviderSection(key) {
     .reduce((s, c) => s + c.escrow.amount, 0);
   const navItems = PROVIDER_NAV_ITEMS.map(it => it.key === 'earnings' ? { ...it, dot: availableForPayout > 0 } : it);
   renderDashNav('provider-nav', navItems, key, 'selectProviderSection');
-  document.getElementById('provider-main').innerHTML = PROVIDER_SECTIONS[key]();
+  renderSectionSafely('provider-main', key, () => PROVIDER_SECTIONS[key]());
   if (key === 'messages') loadMessageThread();
   if (key === 'settings') { populateSettingsCountry('prov'); populateSettingsCategory(); loadReferralPanel(); }
   if (key === 'verification') loadVerificationOptions();
@@ -8584,7 +8614,7 @@ function closeDisputeModal() {
 function selectAdminSection(key) {
   if (!ADMIN_SECTIONS[key]) key = 'overview';
   renderDashNav('admin-nav', getAdminNavItems(), key, 'selectAdminSection');
-  document.getElementById('admin-main').innerHTML = ADMIN_SECTIONS[key]();
+  renderSectionSafely('admin-main', key, () => ADMIN_SECTIONS[key]());
 }
 
 function updateAdminSidebar() {
