@@ -29,13 +29,13 @@ const pool = new Pool({
 // in (snake_case) DB order. Used to build safe, parameterized INSERT/UPDATE
 // statements without ever interpolating arbitrary object keys into SQL.
 const TABLES = {
-  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','state','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs','price','color','since','profile_photo_url','category_approval_status','two_factor_enabled','business_name','business_registration_number','admin_department','organization_id','accepting_bookings','token_version','terms_accepted_at','terms_version','license_expiry_date','insurance_expiry_date','terms_viewed_full','super_pro_eligible_since','on_hold','hold_reason','hold_since','latitude','longitude','created_at','updated_at'] },
+  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','state','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs','price','color','since','profile_photo_url','category_approval_status','two_factor_enabled','business_name','business_registration_number','admin_department','organization_id','accepting_bookings','token_version','terms_accepted_at','terms_version','license_expiry_date','insurance_expiry_date','terms_viewed_full','super_pro_eligible_since','on_hold','hold_reason','hold_since','latitude','longitude','referral_code','referred_by_user_id','must_change_password','license_expiry_reminder_sent_for','created_at','updated_at'] },
   categories: { table: 'categories', columns: ['id','name','icon','active','response_window_override_hours'] },
   countries: { table: 'countries', columns: ['id','name','status'] },
   cities: { table: 'cities', columns: ['id','name','country','admin_id'] },
   jobs: { table: 'jobs', columns: ['id','customer_id','category','description','budget','pay_currency','photo_urls','status','created_at'] },
   matches: { table: 'matches', columns: ['id','job_id','provider_id','customer_id','score','same_community','status','created_at'] },
-  contracts: { table: 'contracts', columns: ['id','booking_number','customer_id','provider_id','job_id','service','date','time','address','amount','pay_currency','status','signed_at','materials_advance','service_fee','photo_urls','provider_response_deadline','cancel_reason_category','cancelled_by_role','protected_cancellation','created_at'] },
+  contracts: { table: 'contracts', columns: ['id','booking_number','customer_id','provider_id','job_id','service','date','time','address','amount','pay_currency','status','signed_at','materials_advance','service_fee','photo_urls','provider_response_deadline','cancel_reason_category','cancelled_by_role','protected_cancellation','negotiation_transcript','on_my_way_at','on_my_way_location','arrived_at','arrived_location','created_at'] },
   platformSettings: { table: 'platform_settings', columns: ['id','key','value','updated_at'] },
   homepageImages: { table: 'homepage_images', columns: ['id','slot','filename','url','created_at','updated_at'] },
   categoryImages: { table: 'category_images', columns: ['id','category_id','filename','url','created_at','updated_at'] },
@@ -44,9 +44,10 @@ const TABLES = {
   disputes: { table: 'disputes', columns: ['id','contract_id','reason','amount','status','parties','resolved_at','created_at'] },
   reviews: { table: 'reviews', columns: ['id','contract_id','provider_id','author_name','stars','text','created_at'] },
   notifications: { table: 'notifications', columns: ['id','user_id','icon','text','time','read','link_to','created_at'] },
-  messages: { table: 'messages', columns: ['id','from_id','to_id','text','created_at'] },
+  messages: { table: 'messages', columns: ['id','from_id','to_id','text','job_id','created_at'] },
   verifications: { table: 'verifications', columns: ['id','user_id','doc_type','status','created_at'] },
-  paymentMethods: { table: 'payment_methods', columns: ['id','user_id','brand','last4','name_on_card','expiry','billing_address','billing_zip','is_default','mode','created_at'] },
+  referrals: { table: 'referrals', columns: ['id','referrer_id','referred_user_id','referred_role','created_at'] },
+  paymentMethods: { table: 'payment_methods', columns: ['id','user_id','type','brand','last4','name_on_card','expiry','billing_address','billing_zip','paypal_email','is_default','mode','created_at'] },
   passwordResets: { table: 'password_resets', columns: ['id','user_id','token_hash','expires_at','used','created_at'] },
   phoneVerifications: { table: 'phone_verifications', columns: ['id','user_id','code_hash','expires_at','used','created_at'] },
   portfolioPhotos: { table: 'portfolio_photos', columns: ['id','provider_id','filename','url','created_at'] },
@@ -69,7 +70,7 @@ const TABLES = {
 // array literal syntax ({a,b,c}) by default, which is NOT valid JSON — these
 // need an explicit JSON.stringify() before going out, and come back already
 // parsed into JS objects/arrays by `pg` automatically on the way in.
-const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs', 'payload', 'line_items', 'link_to', 'value', 'photo_urls']);
+const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs', 'payload', 'line_items', 'link_to', 'value', 'photo_urls', 'negotiation_transcript', 'on_my_way_location', 'arrived_location']);
 
 // Postgres's NUMERIC type comes back from the pg driver as a STRING, not a
 // JS number, specifically to avoid silent floating-point precision loss —

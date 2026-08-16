@@ -533,6 +533,47 @@ ALTER TABLE contracts ADD COLUMN IF NOT EXISTS cancel_reason_category TEXT;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS cancelled_by_role TEXT;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS protected_cancellation BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Added for the open-job-board negotiation feature, referral links,
+-- forced password change, document-expiry reminders, GPS status stamps,
+-- and Apple Pay/PayPal — every field these route handlers write that
+-- didn't already have a column. Same rule as above: CREATE TABLE IF NOT
+-- EXISTS alone would silently skip these on a database that already
+-- existed before this line was added.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by_user_id TEXT REFERENCES users(id);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS license_expiry_reminder_sent_for DATE;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS negotiation_transcript JSONB;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS on_my_way_at TIMESTAMPTZ;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS on_my_way_location JSONB;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS arrived_at TIMESTAMPTZ;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS arrived_location JSONB;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS job_id TEXT REFERENCES jobs(id);
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'card';
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS paypal_email TEXT;
+-- last4, name_on_card, and expiry are all now optional (NULL for
+-- apple_pay/paypal rows, which don't have card details) — a fresh
+-- CREATE TABLE already allows NULL by default, but a payment_methods
+-- table that existed before Apple Pay/PayPal shipped may have set these
+-- NOT NULL; this line is a no-op if it wasn't, and a real fix if it was.
+ALTER TABLE payment_methods ALTER COLUMN last4 DROP NOT NULL;
+ALTER TABLE payment_methods ALTER COLUMN name_on_card DROP NOT NULL;
+ALTER TABLE payment_methods ALTER COLUMN expiry DROP NOT NULL;
+
+-- Referral tracking — who signed up through whose link. Doesn't exist at
+-- all until now, so this is a real CREATE (not a migration ALTER) but
+-- lives down here with the other additions from this same round of
+-- changes rather than up with the original tables, so it's easy to see
+-- everything that shipped together.
+CREATE TABLE IF NOT EXISTS referrals (
+  id                TEXT PRIMARY KEY,
+  referrer_id       TEXT NOT NULL REFERENCES users(id),
+  referred_user_id  TEXT NOT NULL REFERENCES users(id),
+  referred_role     TEXT NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id);
+
 -- General-purpose key/value settings, first used for the provider
 -- booking-confirmation window (see src/platform-settings.js). Absence of
 -- a row for a given key means "use the built-in default" — same
