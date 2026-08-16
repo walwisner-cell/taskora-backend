@@ -661,19 +661,39 @@ router.patch('/settings/booking-window', requireSuperAdmin, async (req, res) => 
   res.json({ ok: true, tiers: { within24h, within7d, beyond7d } });
 });
 
-// GET /api/admin/settings/support-contact — super admin only: the current
-// WhatsApp/phone numbers behind the homepage support chat, plus whether
-// it's still the built-in fake placeholder.
-router.get('/settings/support-contact', requireSuperAdmin, async (req, res) => {
+// GET /api/admin/settings/support-contact — the current WhatsApp/phone
+// numbers behind the support chat. A super admin sees and edits the
+// platform-wide fallback number. A plain regional admin sees and edits
+// their own city's number instead — same "own city, not the whole
+// platform" pattern already used for ad pricing and advertising
+// inquiries. Falls back to the platform-wide number (isPlaceholder still
+// computed honestly) if this city hasn't set its own yet.
+router.get('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
   const { getSetting, DEFAULTS } = require('../platform-settings');
-  const contact = await getSetting('supportContact');
-  res.json({ ...contact, isPlaceholder: contact.whatsapp === DEFAULTS.supportContact.whatsapp });
+  const region = await myRegion(req);
+  const global = await getSetting('supportContact');
+  if (!region) {
+    return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null });
+  }
+  const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
+  const own = regionalContacts[region];
+  if (own) return res.json({ ...own, isPlaceholder: false, region, usingPlatformFallback: false });
+  return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region, usingPlatformFallback: true });
 });
 
-// PATCH /api/admin/settings/support-contact — super admin only: set the
-// real numbers. whatsapp must be digits only (country code, no
-// +/spaces/dashes) since it's used directly in a wa.me deep link.
-router.patch('/settings/support-contact', requireSuperAdmin, async (req, res) => {
+// PATCH /api/admin/settings/support-contact — a super admin sets the
+// platform-wide fallback; a regional admin sets their own city's real
+// number, stored separately so one region's number never overwrites
+// another's or the global fallback.
+router.patch('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
   const { whatsapp, phoneDisplay } = req.body || {};
   if (!isNonEmptyString(whatsapp) || !/^\d{7,15}$/.test(whatsapp)) {
     return res.status(400).json({ error: 'WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567' });
@@ -681,9 +701,34 @@ router.patch('/settings/support-contact', requireSuperAdmin, async (req, res) =>
   if (!isNonEmptyString(phoneDisplay, { min: 5, max: 30 })) {
     return res.status(400).json({ error: 'Enter a valid display phone number' });
   }
-  const { setSetting } = require('../platform-settings');
-  await setSetting('supportContact', { whatsapp, phoneDisplay });
-  res.json({ ok: true, whatsapp, phoneDisplay });
+  const { getSetting, setSetting } = require('../platform-settings');
+  const region = await myRegion(req);
+  if (!region) {
+    await setSetting('supportContact', { whatsapp, phoneDisplay });
+    return res.json({ ok: true, whatsapp, phoneDisplay, region: null });
+  }
+  const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
+  regionalContacts[region] = { whatsapp, phoneDisplay };
+  await setSetting('regionalSupportContacts', regionalContacts);
+  res.json({ ok: true, whatsapp, phoneDisplay, region });
+});
+
+// DELETE /api/admin/settings/support-contact — a regional admin can remove
+// their own city's number to fall back to the platform-wide one again
+// (e.g. their staff line changed and isn't set up yet). Not available to
+// a super admin, who has no "fallback" of their own to fall back to.
+router.delete('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
+  const region = await myRegion(req);
+  if (!region) return res.status(400).json({ error: 'The platform-wide number can be changed, but not removed — set a new one instead.' });
+  const { getSetting, setSetting } = require('../platform-settings');
+  const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
+  delete regionalContacts[region];
+  await setSetting('regionalSupportContacts', regionalContacts);
+  res.json({ ok: true, region });
 });
 
 // GET /api/admin/settings/homepage-content — super admin only: the current
@@ -1234,6 +1279,12 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
     verified: true,
     initials: name.trim().split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
     passwordHash: hashPassword(password),
+    // Whoever created this account chose the starting password (visible
+    // to them on-screen), not this admin — requireAuth blocks every other
+    // request until they set their own real password via
+    // /auth/change-password, the same enforcement point already used for
+    // suspended accounts and stale tokens.
+    mustChangePassword: true,
     createdAt: new Date().toISOString(),
   };
   await db.insert('users', admin);

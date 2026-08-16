@@ -5,6 +5,7 @@ const db = require('../db');
 const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken, hashResetToken } = require('../auth');
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, isValidName, validate, postalCodeErrorMessage } = require('../validators');
 const { notify } = require('../notify');
+const { generateUniqueReferralCode } = require('../referral-code');
 
 const router = express.Router();
 
@@ -63,7 +64,7 @@ function generateSixDigitCode() {
 // POST /api/auth/signup/start — validates everything and issues both codes,
 // but does NOT create the account yet.
 router.post('/signup/start', signupLimiter, async (req, res) => {
-  const { name, email, password, role, country, state, city, phone, address, zipCode, category, skills, inviteCode } = req.body || {};
+  const { name, email, password, role, country, state, city, phone, address, zipCode, category, skills, inviteCode, referralCode } = req.body || {};
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
@@ -103,12 +104,29 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
     inviteOrgId = invite.organizationId;
   }
 
+  // A referral link/code just credits whoever shared it — it doesn't gate
+  // anything, unlike an org invite. A bad or missing code never blocks
+  // signup; it just means no referral gets recorded. Self-referral (code
+  // belongs to the email currently signing up — can't happen yet since
+  // the account doesn't exist, but a code typed in manually could in
+  // theory match an already-existing account with the same email) isn't
+  // really reachable here, but a code matching no one at all is checked
+  // now so the person gets an honest error immediately rather than the
+  // referral silently not counting after they've already verified both
+  // codes.
+  let referrer = null;
+  const trimmedReferralCode = (referralCode || '').trim().toUpperCase();
+  if (trimmedReferralCode) {
+    referrer = await db.find('users', u => u.referralCode === trimmedReferralCode);
+    if (!referrer) return res.status(400).json({ error: 'This referral link isn\'t valid' });
+  }
+
   const phoneCode = generateSixDigitCode();
   const emailCode = generateSixDigitCode();
 
   const pending = {
     id: `preg_${nanoid(12)}`,
-    payload: { name: name.trim(), email: email.trim(), password, role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category, skills, inviteCode: trimmedInviteCode || null },
+    payload: { name: name.trim(), email: email.trim(), password, role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category, skills, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null },
     phoneCodeHash: hashResetToken(phoneCode),
     emailCodeHash: hashResetToken(emailCode),
     phoneVerified: false,
@@ -208,6 +226,8 @@ async function completeSignupVerify(req, res, pending) {
     initials: trimmedName.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
     verified: false,
     passwordHash: hashPassword(payload.password),
+    referralCode: await generateUniqueReferralCode(),
+    referredByUserId: payload.referredByUserId || null,
     createdAt: new Date().toISOString(),
     ...(payload.role === 'provider' ? {
       providerRole: 'New Provider',
@@ -220,6 +240,19 @@ async function completeSignupVerify(req, res, pending) {
   };
   await db.insert('users', user);
   await db.remove('pendingRegistrations', pending.id);
+
+  if (payload.referredByUserId) {
+    await db.insert('referrals', {
+      id: `ref_${nanoid(10)}`,
+      referrerId: payload.referredByUserId,
+      referredUserId: user.id,
+      referredRole: user.role,
+      createdAt: new Date().toISOString(),
+    });
+    const firstName = trimmedName.split(' ')[0];
+    const lastInitial = trimmedName.split(' ')[1] ? ` ${trimmedName.split(' ')[1][0]}.` : '';
+    await notify(payload.referredByUserId, '🎉', `${firstName}${lastInitial} just joined Trothen as a ${user.role} using your referral link!`, null, { section: 'referrals' });
+  }
 
   // Consume the org invite (if any) now that the account genuinely exists
   // — re-validated here rather than trusting the check from /signup/start,
@@ -561,7 +594,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'New password must be different from your current password' });
   }
   const newTokenVersion = (user.tokenVersion || 0) + 1;
-  await db.update('users', user.id, { passwordHash: hashPassword(newPassword), tokenVersion: newTokenVersion });
+  await db.update('users', user.id, { passwordHash: hashPassword(newPassword), tokenVersion: newTokenVersion, mustChangePassword: false });
   const freshToken = signToken({ ...user, tokenVersion: newTokenVersion });
   res.json({ ok: true, token: freshToken });
 });

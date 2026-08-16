@@ -71,7 +71,9 @@ app.use(cors(allowedOrigins.length ? {
     callback(new Error('Not allowed by CORS'));
   },
 } : undefined));
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use(morgan('dev'));
 
 // ---- API routes ----
@@ -166,6 +168,14 @@ seedIfEmpty()
     const FIVE_MINUTES_MS = 5 * 60 * 1000;
     setTimeout(() => { expireOverdueBookingResponses().catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, 8000);
     setInterval(() => { expireOverdueBookingResponses().catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, FIVE_MINUTES_MS);
+
+    // Document (license) expiry reminder sweep (see
+    // src/document-expiry-scheduler.js). Runs once shortly after boot, then
+    // once every 24 hours — a 30-day warning has no reason to run more
+    // often than that, same cadence as the exchange-rate refresh above.
+    const { sweepExpiringDocuments } = require('./src/document-expiry-scheduler');
+    setTimeout(() => { sweepExpiringDocuments().catch(e => console.error('[document-expiry-scheduler] Unexpected error during scheduled sweep:', e)); }, 11000);
+    setInterval(() => { sweepExpiringDocuments().catch(e => console.error('[document-expiry-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
   })
   .catch(err => {
     console.error('Failed to start server:', err);

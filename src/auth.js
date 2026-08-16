@@ -115,6 +115,19 @@ async function requireAuth(req, res, next) {
     if ((payload.tokenVersion || 0) !== (current.tokenVersion || 0)) {
       return res.status(401).json({ error: 'Your session is no longer valid — please sign in again.' });
     }
+    // An account created with a starting temp password (see POST
+    // /admin/sub-admins) can't do anything else on the platform until a
+    // real password is set — GET /auth/me still has to work (the frontend
+    // needs it to even know this flag is set) and the change-password
+    // endpoint itself obviously has to work, but every other request is
+    // blocked with a distinct error code the frontend recognizes.
+    if (current.mustChangePassword) {
+      const isMe = req.originalUrl.startsWith('/api/auth/me') && req.method === 'GET';
+      const isChangePassword = req.originalUrl.startsWith('/api/auth/change-password');
+      if (!isMe && !isChangePassword) {
+        return res.status(403).json({ error: 'You must set a new password before continuing.', code: 'MUST_CHANGE_PASSWORD' });
+      }
+    }
   } catch (e) {
     // A database hiccup here shouldn't lock every single request out — log
     // it and fall back to trusting the JWT's own signature/expiry, same

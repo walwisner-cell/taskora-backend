@@ -298,14 +298,22 @@ router.get('/plan-pricing', async (req, res) => {
 
 // GET /api/support-contact — public, no auth: the real WhatsApp/phone
 // numbers behind the homepage support chat's "Chat with us" / "Call"
-// links. Ships with an obviously-fake placeholder until a super admin
-// sets the real one in Settings — isPlaceholder tells the frontend
-// whether what it's showing is still that placeholder, so it can be
-// honest about it rather than silently presenting a fake number as real.
+// links. Optional ?city= returns that region's own number if a regional
+// admin has set one, falling back to the platform-wide number otherwise.
+// Ships with an obviously-fake placeholder until a real number is set
+// anywhere in the chain — isPlaceholder tells the frontend whether what
+// it's showing is still that placeholder, so it can be honest about it
+// rather than silently presenting a fake number as real.
 router.get('/support-contact', async (req, res) => {
   const { getSetting, DEFAULTS } = require('../platform-settings');
-  const contact = await getSetting('supportContact');
-  res.json({ ...contact, isPlaceholder: contact.whatsapp === DEFAULTS.supportContact.whatsapp });
+  const global = await getSetting('supportContact');
+  const city = (req.query.city || '').trim();
+  if (city) {
+    const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
+    const own = regionalContacts[city];
+    if (own) return res.json({ ...own, isPlaceholder: false, region: city });
+  }
+  res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null });
 });
 
 // GET /api/homepage-content — public, no auth: the real, current homepage
@@ -680,10 +688,16 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
     }
   }
 
-  // --- AI matching (deterministic scoring stand-in for a real ranking model) ---
-  // Score = base 70 + rating weight + experience weight + community-proximity
-  // boost + small deterministic jitter derived from the job id, so results
-  // are stable but vary per job.
+  // --- Matching (deterministic scoring stand-in for a real ranking model) ---
+  // Every verified provider in the resolved geographic scope gets notified
+  // and can respond — this used to cut the list down to the top 3 scored
+  // candidates, which meant most verified providers never even saw a job
+  // in their own category and city. Score = base 70 + rating weight +
+  // experience weight + community-proximity boost + small deterministic
+  // jitter derived from the job id (stable per job, varies across jobs).
+  // It's still computed and returned so the customer can sort/see who's
+  // the strongest fit among everyone who responds — it just no longer
+  // decides who gets left out.
   //
   // Geographic scope expands outward in real stages, never skipping ahead
   // and never crossing into another country: try the customer's exact city
@@ -716,7 +730,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
     const communityBoost = sameCommunity ? 8 : 0;
     const score = Math.min(99, Math.round(70 + p.rating * 4 + Math.min(p.jobs, 300) / 30 + communityBoost + jitter));
     return { provider: p, score, sameCommunity };
-  }).sort((a, b) => b.score - a.score).slice(0, 3);
+  }).sort((a, b) => b.score - a.score);
 
   const matches = [];
   for (const { provider, score, sameCommunity } of scored) {
@@ -759,9 +773,13 @@ router.post('/jobs/:id/cancel', requireAuth, requireRole('customer'), async (req
   res.json({ job: updated });
 });
 
-// GET /api/matches/mine — provider's pending AI matches
+// GET /api/matches/mine — a provider's own view of jobs matched to them:
+// ones still awaiting their response, plus ones they've already expressed
+// interest in (so the job doesn't disappear from their list the moment
+// they respond — they can keep negotiating, or see it marked filled/not
+// selected once the customer hires someone).
 router.get('/matches/mine', requireAuth, requireRole('provider'), async (req, res) => {
-  const matches = await db.filter('matches', m => m.providerId === req.user.sub && m.status === 'pending');
+  const matches = await db.filter('matches', m => m.providerId === req.user.sub && ['pending', 'interested'].includes(m.status));
   const withJob = await Promise.all(matches.map(async m => {
     const customer = await db.find('users', u => u.id === m.customerId);
     const job = await db.find('jobs', j => j.id === m.jobId);
@@ -826,6 +844,16 @@ function hasValidLicense(provider) {
   return expiry > new Date();
 }
 
+// POST /api/matches/:id/respond  { decision: 'accept' | 'decline' }
+// 'accept' used to immediately create a contract and fund escrow — the
+// first provider to click won the job outright, with no negotiation and
+// no actual choice for the customer. That's not what the platform
+// promises (see the handbook: customers review who responded and choose
+// who to hire) and it meant a job could be taken before a customer even
+// saw who else was interested. Accepting now just means "I'm interested
+// and available" — it notifies the customer and shows up in their list of
+// responses, but the job isn't filled until the customer actually hires
+// someone via POST /jobs/:id/select-provider below.
 router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async (req, res) => {
   const { decision } = req.body || {};
   const match = await db.find('matches', m => m.id === req.params.id && m.providerId === req.user.sub);
@@ -835,51 +863,118 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async 
   if (decision === 'accept') {
     const provider = await db.find('users', u => u.id === req.user.sub);
     if (provider && provider.onHold) {
-      return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to accept new jobs again shortly. Contact support if you need this resolved sooner.' });
+      return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to respond to jobs again shortly. Contact support if you need this resolved sooner.' });
     }
     if (provider && LICENSED_TRADE_CATEGORIES.has(provider.category) && !hasValidLicense(provider)) {
-      return res.status(403).json({ error: `${provider.category} requires a current, verified license on file before you can accept jobs — add your license expiry date in Settings.` });
+      return res.status(403).json({ error: `${provider.category} requires a current, verified license on file before you can respond to jobs — add your license expiry date in Settings.` });
     }
   }
 
-  await db.update('matches', match.id, { status: decision === 'accept' ? 'accepted' : 'declined' });
+  const updated = await db.update('matches', match.id, { status: decision === 'accept' ? 'interested' : 'declined' });
 
-  let contract = null;
-  let escrow = null;
   if (decision === 'accept') {
+    const provider = await db.find('users', u => u.id === req.user.sub);
     const job = await db.find('jobs', j => j.id === match.jobId);
-    const amount = parseBudgetAmount(job && job.budget, 100);
-    contract = {
-      id: `ct_${nanoid(10)}`,
-      bookingNumber: await generateBookingNumber(),
-      customerId: match.customerId,
-      providerId: match.providerId,
-      jobId: match.jobId,
-      service: job ? job.description : 'Service',
-      amount,
-      serviceFee: computeServiceFee(amount),
-      status: 'active',
-      signedAt: new Date().toISOString().slice(0, 10),
-      createdAt: new Date().toISOString(),
-    };
-    await db.insert('contracts', contract);
-    // Every accepted contract holds funds in escrow — this was previously only
-    // happening for direct bookings (POST /contracts), not AI-matched ones,
-    // which meant matched jobs could never be paid out. Fixed here so both
-    // paths behave identically.
-    escrow = await fundEscrowForContract(contract, match.customerId, job ? job.payCurrency : 'usd');
-    if (job) await db.update('jobs', job.id, { status: 'matched' });
-    const provider = await db.find('users', u => u.id === match.providerId);
-
-    // Same real fraud/safety screening as direct bookings — every accepted
-    // match gets checked too, not just ones booked directly.
-    const { checkPriceAnomaly, checkNewAccountHighValue } = require('../fraud-detection');
-    if (provider) await checkPriceAnomaly(provider.category, contract.amount, contract.id, match.customerId, match.providerId);
-    await checkNewAccountHighValue(match.customerId, contract.amount);
-
-    await notify(match.customerId, '🤝', `${provider ? provider.name : 'Your matched pro'} accepted your job — contract signed and escrow funded.`, 'bookingUpdates', { section: 'bookings' });
+    await notify(match.customerId, '🙋', `${provider ? provider.name : 'A provider'} is interested in your job${job ? ` — "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}"` : ''}. Review responses and message them to agree on a price.`, 'newMatches', { section: 'bookings' });
   }
-  res.json({ match, contract, escrow });
+
+  res.json({ match: updated });
+});
+
+// GET /api/jobs/:id/candidates — a customer's own view of everyone who's
+// responded to one of their open jobs: every match (whatever its status)
+// with the provider's public profile and their message thread for this
+// specific job, so the customer can compare responses and negotiate
+// without extra round trips.
+router.get('/jobs/:id/candidates', requireAuth, requireRole('customer'), async (req, res) => {
+  const job = await db.find('jobs', j => j.id === req.params.id && j.customerId === req.user.sub);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  const matches = (await db.filter('matches', m => m.jobId === job.id)).sort((a, b) => b.score - a.score);
+  const candidates = await Promise.all(matches.map(async m => {
+    const provider = await db.find('users', u => u.id === m.providerId);
+    if (!provider) return null;
+    const messages = (await db.filter('messages', msg => msg.jobId === job.id && (msg.fromId === m.providerId || msg.toId === m.providerId)))
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    return { matchId: m.id, status: m.status, score: m.score, sameCommunity: m.sameCommunity, provider: publicProvider(provider), messages };
+  }));
+  res.json({ job, candidates: candidates.filter(Boolean) });
+});
+
+// POST /api/jobs/:id/select-provider — the actual "hire" action once a
+// customer has reviewed responses and (optionally) negotiated a price by
+// message. Creates the real contract at the agreed amount, funds escrow,
+// snapshots the negotiation thread onto the contract for the record, and
+// closes the job out for every other provider who'd responded.
+router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), async (req, res) => {
+  const job = await db.find('jobs', j => j.id === req.params.id && j.customerId === req.user.sub);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  if (job.status !== 'open') return res.status(400).json({ error: `This job is already ${job.status} — it can't be hired out again.` });
+
+  const { providerId, amount } = req.body || {};
+  if (!isNonEmptyString(providerId)) return res.status(400).json({ error: 'A provider must be selected' });
+  const match = await db.find('matches', m => m.jobId === job.id && m.providerId === providerId);
+  if (!match) return res.status(404).json({ error: 'This provider hasn\'t responded to this job' });
+  if (match.status === 'declined') return res.status(400).json({ error: 'This provider declined this job' });
+
+  const provider = await db.find('users', u => u.id === providerId);
+  if (!provider) return res.status(404).json({ error: 'Provider not found' });
+  if (provider.onHold) return res.status(403).json({ error: 'This provider\'s account is temporarily paused — choose another provider, or check back shortly.' });
+  if (LICENSED_TRADE_CATEGORIES.has(provider.category) && !hasValidLicense(provider)) {
+    return res.status(403).json({ error: `${provider.name} doesn't have a current, verified license on file for ${provider.category} and can't be hired for this job right now.` });
+  }
+
+  let finalAmount = parseBudgetAmount(job.budget, 100);
+  if (amount !== undefined) {
+    if (typeof amount !== 'number' || amount <= 0) return res.status(400).json({ error: 'Amount must be a positive number' });
+    finalAmount = amount;
+  }
+
+  // The actual negotiation — every message either side sent about this
+  // specific job — frozen onto the contract right now, exactly as it
+  // happened. Anything said after this point (small talk, scheduling
+  // logistics) is a normal message, not part of the negotiation record.
+  const jobMessages = (await db.filter('messages', m => m.jobId === job.id && (m.fromId === providerId || m.toId === providerId)))
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const negotiationTranscript = jobMessages.map(m => ({
+    from: m.fromId === req.user.sub ? 'customer' : 'provider',
+    text: m.text,
+    at: m.createdAt,
+  }));
+
+  const contract = {
+    id: `ct_${nanoid(10)}`,
+    bookingNumber: await generateBookingNumber(),
+    customerId: req.user.sub,
+    providerId,
+    jobId: job.id,
+    service: job.description,
+    amount: finalAmount,
+    serviceFee: computeServiceFee(finalAmount),
+    status: 'active',
+    signedAt: new Date().toISOString().slice(0, 10),
+    negotiationTranscript,
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('contracts', contract);
+  const escrow = await fundEscrowForContract(contract, req.user.sub, job.payCurrency);
+  await db.update('jobs', job.id, { status: 'matched' });
+  await db.update('matches', match.id, { status: 'accepted' });
+
+  const { checkPriceAnomaly, checkNewAccountHighValue } = require('../fraud-detection');
+  await checkPriceAnomaly(provider.category, contract.amount, contract.id, req.user.sub, providerId);
+  await checkNewAccountHighValue(req.user.sub, contract.amount);
+
+  await notify(providerId, '🎉', `You've been hired for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" at $${finalAmount} — contract signed and escrow funded.`, null, { section: 'bookings' });
+
+  // Every other provider who responded needs to know the job's filled —
+  // not left wondering why a job they were interested in just vanished.
+  const otherMatches = await db.filter('matches', m => m.jobId === job.id && m.id !== match.id && ['pending', 'interested'].includes(m.status));
+  for (const other of otherMatches) {
+    await db.update('matches', other.id, { status: 'not_selected' });
+    await notify(other.providerId, '📋', `The customer hired another provider for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" — this job is no longer available.`, null, { section: 'matches' });
+  }
+
+  res.status(201).json({ contract, escrow });
 });
 
 // ---- Contracts / bookings ----------------------------------------------------
@@ -1263,6 +1358,27 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
     row('Escrow Status', 'No escrow was funded for this booking — see status above');
   }
 
+  // ── NEGOTIATION RECORD ────────────────────────────────────────────────
+  // Only present for jobs where the customer picked a provider out of
+  // several who responded to an open job post — a snapshot of the actual
+  // chat that led to this price and terms, taken at the moment the
+  // customer hired this provider (see POST /jobs/:id/select-provider).
+  // Frozen at that point on purpose: later messages between the same two
+  // people (about a different job, or just chit-chat) shouldn't quietly
+  // become part of this contract's record.
+  if (Array.isArray(contract.negotiationTranscript) && contract.negotiationTranscript.length) {
+    sectionHeader('Negotiation Record');
+    paragraph(
+      `The messages below were exchanged between the customer and provider before this booking was confirmed, and are preserved here exactly as sent — this is the actual conversation that led to the terms above, not a summary.`,
+      { gapAfter: 10 }
+    );
+    for (const msg of contract.negotiationTranscript) {
+      const who = msg.from === 'customer' ? (customer ? customer.name : 'Customer') : (provider ? provider.name : 'Provider');
+      const when = new Date(msg.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      row(`${who} — ${when}`, msg.text);
+    }
+  }
+
   // ── TIMELINE ─────────────────────────────────────────────────────────────
   // A dispute or legal review cares about sequence as much as current
   // state — when was this actually booked, completed, contested. Built
@@ -1271,6 +1387,8 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   const timelineEvents = [];
   timelineEvents.push({ date: new Date(contract.createdAt), label: 'Booking created and contract formed' });
   if (escrow) timelineEvents.push({ date: new Date(escrow.createdAt), label: `Escrow funded ($${escrow.amount})` });
+  if (contract.onMyWayAt) timelineEvents.push({ date: new Date(contract.onMyWayAt), label: `Provider marked on the way${contract.onMyWayLocation ? ' (GPS location recorded)' : ''}` });
+  if (contract.arrivedAt) timelineEvents.push({ date: new Date(contract.arrivedAt), label: `Provider marked arrived${contract.arrivedLocation ? ' (GPS location recorded)' : ''}` });
   if (dispute) timelineEvents.push({ date: new Date(dispute.createdAt), label: `Dispute opened: "${dispute.reason}"` });
   if (dispute && dispute.status === 'resolved') timelineEvents.push({ date: new Date(dispute.resolvedAt || dispute.createdAt), label: 'Dispute resolved and escrow released' });
   if (contract.status === 'completed' && escrow && escrow.status === 'released') timelineEvents.push({ date: generatedAt, label: 'Marked complete — escrow released to provider' });

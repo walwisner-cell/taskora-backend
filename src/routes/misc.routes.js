@@ -6,6 +6,7 @@ const { requireAuth, requireRole } = require('../auth');
 const { isNonEmptyString, validate } = require('../validators');
 const { notify } = require('../notify');
 const { currencyForCountry } = require('../currency-data');
+const { generateUniqueReferralCode } = require('../referral-code');
 
 const router = express.Router();
 
@@ -334,12 +335,77 @@ router.post('/verification/submit', requireAuth, async (req, res) => {
   res.status(201).json({ verification: record });
 });
 
+// GET /api/verification/start — whether real, live ID verification
+// (Persona) is actually connected. When it is, hands back the hosted
+// flow URL to send the person to; the result comes back later via the
+// Persona webhook below, not synchronously here. When it isn't
+// configured, the frontend falls back to the existing manual
+// document-upload + admin-review flow (POST /verification/submit above)
+// — same honest "tell the truth about what's real" pattern used
+// elsewhere in this app for payments and notifications.
+router.get('/verification/start', requireAuth, async (req, res) => {
+  const { isPersonaConfigured, isPersonaWebhookConfigured, buildHostedFlowUrl } = require('../persona-verification');
+  if (!isPersonaConfigured() || !isPersonaWebhookConfigured()) {
+    return res.json({ configured: false });
+  }
+  res.json({ configured: true, hostedFlowUrl: buildHostedFlowUrl(req.user.sub) });
+});
+
+// POST /api/webhooks/persona — real-time result from Persona once someone
+// completes (or fails) hosted verification. Public — Persona calls this
+// directly, not a signed-in user — so trust comes entirely from the
+// signature check, not from auth middleware. Rejects anything that
+// doesn't verify rather than trusting the payload's own claims about
+// who it's for.
+router.post('/webhooks/persona', async (req, res) => {
+  const { verifyWebhookSignature } = require('../persona-verification');
+  const signature = req.headers['persona-signature'];
+  if (!req.rawBody || !verifyWebhookSignature(req.rawBody.toString('utf8'), signature)) {
+    return res.status(401).json({ error: 'Invalid webhook signature' });
+  }
+
+  const event = req.body;
+  const eventType = event && event.data && event.data.attributes && event.data.attributes.name;
+  const inquiry = event && event.data && event.data.attributes && event.data.attributes.payload && event.data.attributes.payload.data;
+  const userId = inquiry && inquiry.attributes && inquiry.attributes['reference-id'];
+  if (!userId) return res.status(200).json({ ok: true }); // nothing to act on, but acknowledge receipt so Persona doesn't retry forever
+
+  const user = await db.find('users', u => u.id === userId);
+  if (!user) return res.status(200).json({ ok: true });
+
+  if (eventType === 'inquiry.approved') {
+    await db.update('users', user.id, { verified: true });
+    await db.insert('verifications', {
+      id: `ver_${nanoid(10)}`, userId: user.id, docType: 'ID + selfie (Persona, automated)',
+      status: 'approved', createdAt: new Date().toISOString(),
+    });
+    await notify(user.id, '✅', 'Your identity was verified automatically.', null, { section: 'verification' });
+  } else if (eventType === 'inquiry.declined' || eventType === 'inquiry.failed') {
+    await db.insert('verifications', {
+      id: `ver_${nanoid(10)}`, userId: user.id, docType: 'ID + selfie (Persona, automated)',
+      status: 'in review', createdAt: new Date().toISOString(),
+    });
+    const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+    const regionalAdmins = user.city
+      ? await db.filter('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === user.city)
+      : [];
+    for (const admin of [...superAdmins, ...regionalAdmins]) {
+      await notify(admin.id, '⚠️', `${user.name}'s automated ID verification didn't pass — needs manual review.`, null, { section: 'verification' });
+    }
+    await notify(user.id, '⚠️', 'Automated identity verification didn\'t go through — a real person will review it shortly.', null, { section: 'verification' });
+  }
+  res.status(200).json({ ok: true });
+});
+
 // GET /api/messages/:withUserId — simple thread between the logged-in user and another
 router.get('/messages/:withUserId', requireAuth, async (req, res) => {
+  const { jobId } = req.query;
   const all = (await db.filter('messages', m =>
     (m.fromId === req.user.sub && m.toId === req.params.withUserId) ||
     (m.toId === req.user.sub && m.fromId === req.params.withUserId)
-  )).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  ))
+    .filter(m => !jobId || m.jobId === jobId)
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   res.json({ messages: all });
 });
 
@@ -371,7 +437,7 @@ router.post('/support-chat/ask', supportChatLimiter, async (req, res) => {
 });
 
 router.post('/messages', requireAuth, messageLimiter, async (req, res) => {
-  const { toId, text } = req.body || {};
+  const { toId, text, jobId } = req.body || {};
   const errors = validate([
     ['toId', isNonEmptyString(toId), 'Recipient is required'],
     ['text', isNonEmptyString(text, { min: 1, max: 2000 }), 'Message cannot be empty'],
@@ -381,13 +447,72 @@ router.post('/messages', requireAuth, messageLimiter, async (req, res) => {
   const recipient = await db.find('users', u => u.id === toId);
   if (!recipient) return res.status(404).json({ error: 'Recipient not found' });
 
-  const message = { id: `msg_${nanoid(10)}`, fromId: req.user.sub, toId, text: text.trim(), createdAt: new Date().toISOString() };
+  let job = null;
+  if (jobId) {
+    job = await db.find('jobs', j => j.id === jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    // Whoever's sending this must actually be one of the two real parties
+    // to that job — either the customer who posted it, or a provider
+    // messaging that customer about it. Stops a jobId being attached to a
+    // conversation neither side of the job is actually part of.
+    const isJobCustomer = job.customerId === req.user.sub && recipient.id !== job.customerId;
+    const isJobProvider = recipient.id === job.customerId && req.user.role === 'provider';
+    if (!isJobCustomer && !isJobProvider) return res.status(403).json({ error: 'This job doesn\'t belong to either you or the person you\'re messaging' });
+  }
+
+  const message = { id: `msg_${nanoid(10)}`, fromId: req.user.sub, toId, text: text.trim(), jobId: jobId || null, createdAt: new Date().toISOString() };
   await db.insert('messages', message);
 
   const sender = await db.find('users', u => u.id === req.user.sub);
-  await notify(toId, '💬', `New message from ${sender ? sender.name : 'someone'}: "${text.trim().slice(0, 50)}${text.length > 50 ? '…' : ''}"`, 'messages', { section: 'messages', contactId: req.user.sub });
+  await notify(toId, '💬', `New message from ${sender ? sender.name : 'someone'}: "${text.trim().slice(0, 50)}${text.length > 50 ? '…' : ''}"`, 'messages', { section: 'messages', contactId: req.user.sub, jobId: jobId || undefined });
+
+  // A provider messaging a customer about their open job is a real
+  // response, the same as clicking "I'm Interested" — this keeps the
+  // job's candidate list honest even for a provider who jumped straight
+  // to negotiating instead of clicking the button first. Only touches
+  // the match if one already exists and is still just 'pending'; never
+  // overwrites 'interested', 'accepted', or 'not_selected'.
+  if (job && req.user.sub !== job.customerId) {
+    const match = await db.find('matches', m => m.jobId === job.id && m.providerId === req.user.sub);
+    if (match && match.status === 'pending') {
+      await db.update('matches', match.id, { status: 'interested' });
+    }
+  }
 
   res.status(201).json({ message });
+});
+
+// GET /api/referrals/mine — a customer or provider's own referral code
+// and who's actually joined through it so far. Every account gets a
+// referral code at signup (see auth.routes.js), so this never 404s for a
+// real signed-in user. Referred people are shown as first name + last
+// initial only — enough to feel real without exposing a referred
+// person's full identity to whoever referred them.
+router.get('/referrals/mine', requireAuth, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me) return res.status(404).json({ error: 'Account not found' });
+  let code = me.referralCode;
+  if (!code) {
+    // An account created before referrals existed — give it a real code
+    // now rather than leaving this feature permanently unavailable to
+    // everyone who signed up before this shipped.
+    code = await generateUniqueReferralCode();
+    await db.update('users', me.id, { referralCode: code });
+  }
+  const records = (await db.filter('referrals', r => r.referrerId === me.id))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const referred = await Promise.all(records.map(async r => {
+    const u = await db.find('users', u => u.id === r.referredUserId);
+    if (!u) return null;
+    const parts = u.name.split(' ');
+    const displayName = parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : parts[0];
+    return { name: displayName, role: r.referredRole, joinedAt: r.createdAt };
+  }));
+  res.json({
+    code,
+    totalReferred: records.length,
+    referred: referred.filter(Boolean),
+  });
 });
 
 module.exports = router;

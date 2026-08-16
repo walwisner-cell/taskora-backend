@@ -63,32 +63,84 @@ router.get('/payment-methods/mine', requireAuth, async (req, res) => {
   res.json({ methods });
 });
 
-// POST /api/payment-methods — add a test payment method (any input accepted;
-// only last 4 digits + brand are ever kept)
+// POST /api/payment-methods — add a test payment method. Three types:
+// - 'card' (default, unchanged): any input accepted, only last 4 + brand kept.
+// - 'apple_pay': Apple Pay is authenticated on-device via the browser's
+//   Payment Request API and a real Apple merchant account — neither
+//   exists yet, so this simulates the same end state Stripe would give
+//   back (a device-linked token), clearly labeled test mode, same
+//   honesty convention used for signup codes and 2FA elsewhere in this
+//   app. Wiring in the real Payment Request API later means replacing
+//   what creates this record, not the record shape itself.
+// - 'paypal': simulates a linked PayPal account by email — a real
+//   integration exchanges this for a PayPal-issued billing agreement ID
+//   instead of storing the email directly, but the method record shape
+//   (type + a display label) doesn't change.
 router.post('/payment-methods', requireAuth, async (req, res) => {
-  const { cardNumber, expiry, nameOnCard, billingAddress, billingZip } = req.body || {};
+  const { type, cardNumber, expiry, nameOnCard, billingAddress, billingZip, paypalEmail } = req.body || {};
   const accountHolder = await db.find('users', u => u.id === req.user.sub);
-  const errors = validate([
-    ['cardNumber', isNonEmptyString(cardNumber, { min: 4 }), 'Enter a card number (any digits — this is test mode)'],
-    ['expiry', isValidCardExpiry(expiry), 'Enter a valid, non-expired expiry date in MM/YY format'],
-    ['nameOnCard', isNonEmptyString(nameOnCard, { min: 2 }), 'Enter the name on the card'],
-    ['billingAddress', isNonEmptyString(billingAddress, { min: 3, max: 200 }), 'Enter the billing address'],
-    ['billingZip', isValidPostalCode(billingZip, accountHolder && accountHolder.country), postalCodeErrorMessage(accountHolder && accountHolder.country)],
-  ]);
-  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  const methodType = ['card', 'apple_pay', 'paypal'].includes(type) ? type : 'card';
 
-  const digitsOnly = String(cardNumber).replace(/\D/g, '');
-  if (digitsOnly.length < 4) return res.status(400).json({ error: 'Card number must contain at least 4 digits' });
-  const last4 = digitsOnly.slice(-4);
-  const brand = detectCardBrand(digitsOnly);
+  if (methodType === 'card') {
+    const errors = validate([
+      ['cardNumber', isNonEmptyString(cardNumber, { min: 4 }), 'Enter a card number (any digits — this is test mode)'],
+      ['expiry', isValidCardExpiry(expiry), 'Enter a valid, non-expired expiry date in MM/YY format'],
+      ['nameOnCard', isNonEmptyString(nameOnCard, { min: 2 }), 'Enter the name on the card'],
+      ['billingAddress', isNonEmptyString(billingAddress, { min: 3, max: 200 }), 'Enter the billing address'],
+      ['billingZip', isValidPostalCode(billingZip, accountHolder && accountHolder.country), postalCodeErrorMessage(accountHolder && accountHolder.country)],
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
+    const digitsOnly = String(cardNumber).replace(/\D/g, '');
+    if (digitsOnly.length < 4) return res.status(400).json({ error: 'Card number must contain at least 4 digits' });
+    const last4 = digitsOnly.slice(-4);
+    const brand = detectCardBrand(digitsOnly);
+
+    const existing = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+    const method = {
+      id: `pm_${nanoid(10)}`,
+      userId: req.user.sub,
+      type: 'card',
+      brand, last4, nameOnCard: nameOnCard.trim(), expiry: expiry.trim(),
+      billingAddress: billingAddress.trim(), billingZip: billingZip.trim(),
+      isDefault: existing.length === 0, // first one added becomes default automatically
+      mode: 'test',
+      createdAt: new Date().toISOString(),
+    };
+    await db.insert('paymentMethods', method);
+    return res.status(201).json({ method });
+  }
+
+  if (methodType === 'paypal') {
+    const errors = validate([
+      ['paypalEmail', isNonEmptyString(paypalEmail, { min: 5, max: 254 }) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(paypalEmail), 'Enter the email address linked to your PayPal account'],
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors[0], errors });
+    const existing = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+    const method = {
+      id: `pm_${nanoid(10)}`,
+      userId: req.user.sub,
+      type: 'paypal',
+      brand: 'PayPal',
+      paypalEmail: paypalEmail.trim(),
+      isDefault: existing.length === 0,
+      mode: 'test',
+      createdAt: new Date().toISOString(),
+    };
+    await db.insert('paymentMethods', method);
+    return res.status(201).json({ method });
+  }
+
+  // apple_pay — no form fields at all in a real integration (the device
+  // handles authentication); nothing to validate beyond that the account
+  // exists, which requireAuth already confirmed.
   const existing = await db.filter('paymentMethods', m => m.userId === req.user.sub);
   const method = {
     id: `pm_${nanoid(10)}`,
     userId: req.user.sub,
-    brand, last4, nameOnCard: nameOnCard.trim(), expiry: expiry.trim(),
-    billingAddress: billingAddress.trim(), billingZip: billingZip.trim(),
-    isDefault: existing.length === 0, // first one added becomes default automatically
+    type: 'apple_pay',
+    brand: 'Apple Pay',
+    isDefault: existing.length === 0,
     mode: 'test',
     createdAt: new Date().toISOString(),
   };
@@ -351,6 +403,57 @@ async function handlePayoutRequest(req, res, payoutCurrency) {
 }
 
 // POST /api/contracts/:id/complete — customer confirms job done -> release escrow
+// POST /api/contracts/:id/on-my-way — a provider marks that they've left
+// for an active job, optionally with a real GPS coordinate captured once
+// at that moment (not continuous tracking — see the audit note on why:
+// this app matches tasks like cleaning/repairs/deliveries, not a live
+// rideshare map, and one-time stamps at meaningful moments cost far less
+// battery/privacy than streaming location the whole time). The customer
+// gets a real, timestamped notification either way, with or without a
+// coordinate.
+router.post('/contracts/:id/on-my-way', requireAuth, requireRole('provider'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status} — it can't be marked on the way` });
+  if (contract.onMyWayAt) return res.status(400).json({ error: 'Already marked on the way for this booking' });
+
+  const { latitude, longitude } = req.body || {};
+  const hasValidCoords = typeof latitude === 'number' && typeof longitude === 'number' && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
+
+  const updated = await db.update('contracts', contract.id, {
+    onMyWayAt: new Date().toISOString(),
+    onMyWayLocation: hasValidCoords ? { latitude, longitude } : null,
+  });
+
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  await notify(contract.customerId, '🚗', `${provider ? provider.name : 'Your provider'} is on the way for "${contract.service}".`, 'bookingUpdates', { section: 'bookings' });
+  res.json({ contract: updated });
+});
+
+// POST /api/contracts/:id/arrived — same pattern as on-my-way, for the
+// moment the provider actually shows up. Together these two timestamps
+// (plus an optional coordinate each) give both sides a real, honest
+// pickup/drop-off record without building a full live-tracking system
+// this kind of marketplace doesn't really need.
+router.post('/contracts/:id/arrived', requireAuth, requireRole('provider'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status} — it can't be marked arrived` });
+  if (contract.arrivedAt) return res.status(400).json({ error: 'Already marked arrived for this booking' });
+
+  const { latitude, longitude } = req.body || {};
+  const hasValidCoords = typeof latitude === 'number' && typeof longitude === 'number' && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
+
+  const updated = await db.update('contracts', contract.id, {
+    arrivedAt: new Date().toISOString(),
+    arrivedLocation: hasValidCoords ? { latitude, longitude } : null,
+  });
+
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  await notify(contract.customerId, '📍', `${provider ? provider.name : 'Your provider'} has arrived for "${contract.service}".`, 'bookingUpdates', { section: 'bookings' });
+  res.json({ contract: updated });
+});
+
 router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), async (req, res) => {
   if (contractStatusLocks.has(req.params.id)) {
     return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
@@ -610,6 +713,13 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
   if (!me.isSuperAdmin && me.adminDepartment && !['financial', 'legal'].includes(me.adminDepartment)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${me.adminDepartment} team and doesn't have access to this.` });
   }
+  // Same fix as /escrow/summary above: a plain regional admin (no
+  // department, just assigned a city) must only ever see their own
+  // region's row here — this endpoint was the one place in the file that
+  // still returned every region's real financial data to whoever asked,
+  // regardless of which city they actually administer. A super admin or
+  // an unscoped financial/legal admin still sees every region unchanged.
+  const region = (!me.isSuperAdmin && !me.adminDepartment) ? me.region : null;
 
   // Optional date range, applied the same way the Platform Transactions
   // panel applies it (against the contract's createdAt for escrow, and the
@@ -675,7 +785,10 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
     b.avgTransaction = b.transactionCount > 0 ? Math.round(((b.held + b.released) / b.transactionCount) * 100) / 100 : 0;
   }
 
-  const regions = Array.from(byRegion.values()).sort((a, b) => (b.held + b.released) - (a.held + a.released));
+  let regions = Array.from(byRegion.values()).sort((a, b) => (b.held + b.released) - (a.held + a.released));
+  if (region) {
+    regions = regions.filter(r => r.region === region);
+  }
   const total = regions.reduce((acc, r) => ({
     held: acc.held + r.held,
     released: acc.released + r.released,
