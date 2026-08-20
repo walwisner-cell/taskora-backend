@@ -1121,8 +1121,15 @@
         <div class="panel-title">Get in touch about opportunities</div>
         <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" type="text" id="careers-name"/></div>
         <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="careers-email"/></div>
+        <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" type="tel" id="careers-phone" placeholder="A real number we can reach you at"/></div>
         <div class="form-group"><label class="form-label">What role or area interests you?</label><input class="form-input" type="text" id="careers-role"/></div>
-        <div class="form-group"><label class="form-label">Tell us a bit about yourself</label><textarea class="form-input" id="careers-message" rows="4" style="resize:vertical;"></textarea></div>
+        <div class="form-group"><label class="form-label">Cover Letter</label><textarea class="form-input" id="careers-message" rows="5" style="resize:vertical;" placeholder="Tell us a bit about yourself and why you're interested"></textarea></div>
+        <div class="form-group">
+          <label class="form-label">Resume / CV <span style="color:var(--slate);font-weight:400;">(PDF, up to 8MB — optional but strongly recommended)</span></label>
+          <input type="file" id="careers-resume" accept="application/pdf" style="display:none;" onchange="document.getElementById('careers-resume-name').textContent = this.files[0] ? this.files[0].name : 'No file chosen'"/>
+          <button class="btn-sm btn-sm-outline" onclick="document.getElementById('careers-resume').click()" type="button">Choose PDF</button>
+          <span id="careers-resume-name" style="font-size:12px;color:var(--slate);margin-left:8px;">No file chosen</span>
+        </div>
         <button class="pricing-cta" onclick="submitCareersInquiry()">Send</button>
       </div>
     </div>
@@ -1192,11 +1199,8 @@
         </div>
         <div class="form-group">
           <label class="form-label">Time</label>
-          <select class="form-input form-select" id="job-time">
-            <option>Morning (8–12pm)</option>
-            <option>Afternoon (12–5pm)</option>
-            <option>Evening (5–8pm)</option>
-          </select>
+          <input class="form-input" type="time" id="job-time"/>
+          <div id="job-time-availability-note" style="font-size:11px;color:var(--muted);margin-top:5px;"></div>
         </div>
       </div>
       <div class="form-group">
@@ -2771,9 +2775,9 @@ function navbarHTML(active) {
 }
 
 const FALLBACK_NOTIFICATIONS = [
-  { icon: '✅', text: 'Your identity verification was approved.', time: '2 hours ago' },
-  { icon: '💰', text: 'Escrow released — $140 for Deep Clean job.', time: '1 day ago' },
-  { icon: '💬', text: 'New message from Marcus T.', time: '2 days ago' },
+  { id: 'demo_1', icon: '✅', text: 'Your identity verification was approved.', createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
+  { id: 'demo_2', icon: '💰', text: 'Escrow released — $140 for Deep Clean job.', createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
+  { id: 'demo_3', icon: '💬', text: 'New message from Marcus T.', createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() },
 ];
 let CURRENT_NOTIFICATIONS = FALLBACK_NOTIFICATIONS;
 
@@ -2791,7 +2795,7 @@ function notifPanelInnerHTML() {
       <span>Notifications</span>
       ${CURRENT_NOTIFICATIONS.length ? `<a onclick="clearAllNotifications()" style="font-size:11.5px;font-weight:600;color:var(--teal);cursor:pointer;">Clear all</a>` : ''}
     </div>
-    ${CURRENT_NOTIFICATIONS.length ? CURRENT_NOTIFICATIONS.map(n => `<div class="notif-item ${n.linkTo ? 'notif-clickable' : ''}" ${n.linkTo ? `onclick='navigateFromNotification(${JSON.stringify(n.linkTo)})'` : ''}><span class="notif-item-icon">${n.icon}</span><div><div class="notif-item-text">${escapeHtml(n.text)}</div><div class="notif-item-time">${escapeHtml(n.time)}</div></div>${n.linkTo ? '<span class="notif-item-arrow">→</span>' : ''}<button class="notif-dismiss-btn" onclick="event.stopPropagation();dismissNotification('${n.id}')" title="Dismiss">✕</button></div>`).join('') : '<div style="padding:16px;color:var(--slate);font-size:12.5px;text-align:center;">No notifications yet.</div>'}`;
+    ${CURRENT_NOTIFICATIONS.length ? CURRENT_NOTIFICATIONS.map(n => `<div class="notif-item ${n.linkTo ? 'notif-clickable' : ''}" ${n.linkTo ? `onclick='navigateFromNotification(${JSON.stringify(n.linkTo)})'` : ''}><span class="notif-item-icon">${n.icon}</span><div><div class="notif-item-text">${escapeHtml(n.text)}</div><div class="notif-item-time">${escapeHtml(timeAgo(n.createdAt))}</div></div>${n.linkTo ? '<span class="notif-item-arrow">→</span>' : ''}<button class="notif-dismiss-btn" onclick="event.stopPropagation();dismissNotification('${n.id}')" title="Dismiss">✕</button></div>`).join('') : '<div style="padding:16px;color:var(--slate);font-size:12.5px;text-align:center;">No notifications yet.</div>'}`;
 }
 
 // The real fix for notifications that never went away — previously
@@ -3067,21 +3071,40 @@ async function submitContactForm() {
 async function submitCareersInquiry() {
   const name = document.getElementById('careers-name').value.trim();
   const email = document.getElementById('careers-email').value.trim();
+  const phone = document.getElementById('careers-phone').value.trim();
   const role = document.getElementById('careers-role').value.trim();
   const message = document.getElementById('careers-message').value.trim();
-  if (!name || !email || !role || !message) return showToast('Please fill in every field');
+  const resumeFile = document.getElementById('careers-resume').files[0];
+  if (!name || !email || !phone || !role || !message) return showToast('Please fill in every field');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
+  if (phone.length < 7) return showToast('Enter a real phone number we can reach you at');
   if (message.length < 10) return showToast('Tell us a bit more about yourself (at least 10 characters)');
+  if (resumeFile && resumeFile.type !== 'application/pdf') return showToast('Resume must be a PDF file');
+  if (resumeFile && resumeFile.size > 8 * 1024 * 1024) return showToast('Resume must be under 8MB');
 
   if (!BACKEND_AVAILABLE) return showToast("Inquiry sent (demo mode) — we'll be in touch");
   try {
-    await apiFetch('POST', '/careers-inquiry', { name, email, role, message });
-    showToast(`Thanks, ${name.split(' ')[0]} — we've got your inquiry and will reach out if there's a fit.`);
+    // Multipart, not the usual JSON apiFetch — same pattern as
+    // uploadProfilePhoto, since a file needs FormData, not a JSON body.
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('email', email);
+    formData.append('phone', phone);
+    formData.append('role', role);
+    formData.append('coverLetter', message);
+    if (resumeFile) formData.append('resume', resumeFile);
+    const res = await fetch(API_BASE + '/careers-inquiry', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not send your application');
+    showToast(`Thanks, ${name.split(' ')[0]} — we've got your application and will reach out if there's a fit.`);
     document.getElementById('careers-name').value = '';
     document.getElementById('careers-email').value = '';
+    document.getElementById('careers-phone').value = '';
     document.getElementById('careers-role').value = '';
     document.getElementById('careers-message').value = '';
-  } catch (e) { showToast(e.message || 'Could not send your inquiry — please try again'); }
+    document.getElementById('careers-resume').value = '';
+    document.getElementById('careers-resume-name').textContent = 'No file chosen';
+  } catch (e) { showToast(e.message || 'Could not send your application — please try again'); }
 }
 
 function setAuthRolePreselect(role) {
@@ -3198,18 +3221,26 @@ function playMessageSound() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const now = ctx.currentTime;
-    [[880, 0], [1108, 0.1]].forEach(([freq, delay]) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, now + delay);
-      gain.gain.linearRampToValueAtTime(0.15, now + delay + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.35);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(now + delay);
-      osc.stop(now + delay + 0.4);
-    });
+    // Three rings, evenly spaced, each ring being the same two-tone chime
+    // the old single beep used — a real short ringtone cadence instead of
+    // one blip that's easy to miss if you're not looking right at the
+    // screen the instant it happens.
+    const ringSpacing = 0.55;
+    for (let ring = 0; ring < 3; ring++) {
+      const ringStart = ring * ringSpacing;
+      [[880, 0], [1108, 0.1]].forEach(([freq, delay]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, now + ringStart + delay);
+        gain.gain.linearRampToValueAtTime(0.15, now + ringStart + delay + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + ringStart + delay + 0.35);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now + ringStart + delay);
+        osc.stop(now + ringStart + delay + 0.4);
+      });
+    }
   } catch (e) { /* Web Audio unavailable — fail silently, never break the app over a sound */ }
 }
 
@@ -3226,6 +3257,7 @@ async function startMessagePolling() {
   if (!BACKEND_AVAILABLE || !AUTH.token) return;
   try {
     const { notifications } = await apiFetch('GET', '/notifications/mine');
+    CURRENT_NOTIFICATIONS = notifications;
     seenNotificationIds = new Set(notifications.map(n => n.id));
   } catch (e) { seenNotificationIds = new Set(); }
   messagePollInterval = setInterval(async () => {
@@ -3235,9 +3267,24 @@ async function startMessagePolling() {
       const { notifications } = await apiFetch('GET', '/notifications/mine');
       const newOnes = notifications.filter(n => !seenNotificationIds.has(n.id));
       seenNotificationIds = new Set(notifications.map(n => n.id));
+      if (!newOnes.length) return; // nothing changed — don't touch the DOM for no reason
+      CURRENT_NOTIFICATIONS = notifications;
       if (soundOn && newOnes.some(n => n.text && n.text.toLowerCase().includes('message'))) {
         playMessageSound();
       }
+      // Show the unread dot on whichever bell is actually in the DOM right
+      // now, without re-rendering the whole navbar (which would be
+      // disruptive if a dropdown happens to be open at that moment) — same
+      // lightweight direct-DOM-update approach dismissNotification and
+      // clearAllNotifications already use for this exact dot.
+      document.querySelectorAll('.notif-bell').forEach(bell => {
+        if (!bell.querySelector('.notif-dot')) bell.insertAdjacentHTML('beforeend', '<span class="notif-dot"></span>');
+      });
+      // If the panel happens to already be open when a new one arrives,
+      // update its contents live rather than making the person close and
+      // reopen it to see what just came in.
+      const panel = document.getElementById('notif-panel');
+      if (panel && panel.classList.contains('open')) panel.innerHTML = notifPanelInnerHTML();
     } catch (e) { /* a failed poll just tries again next interval */ }
   }, 20000);
 }
@@ -3539,8 +3586,8 @@ async function mockAuth() {
       document.getElementById('signup-verify-view').style.display = 'block';
       if (data.testMode) {
         document.getElementById('signup-verify-test-banner').style.display = 'block';
-        document.getElementById('signup-verify-phone-code-display').textContent = data.phoneCode;
-        document.getElementById('signup-verify-email-code-display').textContent = data.emailCode;
+        document.getElementById('signup-verify-phone-code-display').textContent = data.phoneCode !== undefined ? data.phoneCode : 'Sent to your phone';
+        document.getElementById('signup-verify-email-code-display').textContent = data.emailCode !== undefined ? data.emailCode : 'Sent to your email';
       }
       showToast('Enter both codes to finish creating your account');
     }
@@ -3595,8 +3642,8 @@ async function resendSignupCodes() {
     const data = await apiFetch('POST', '/auth/signup/resend', { pendingId: pendingSignupId });
     if (data.testMode) {
       document.getElementById('signup-verify-test-banner').style.display = 'block';
-      document.getElementById('signup-verify-phone-code-display').textContent = data.phoneCode;
-      document.getElementById('signup-verify-email-code-display').textContent = data.emailCode;
+      document.getElementById('signup-verify-phone-code-display').textContent = data.phoneCode !== undefined ? data.phoneCode : 'Sent to your phone';
+      document.getElementById('signup-verify-email-code-display').textContent = data.emailCode !== undefined ? data.emailCode : 'Sent to your email';
     }
     showToast('New codes sent');
   } catch (e) { showToast(e.message || 'Could not resend codes'); }
@@ -3667,7 +3714,7 @@ async function goDashboard(role) {
     goHome();
   }
   else if (role === 'provider') { showScreen('screen-provider'); await refreshNotifications(); renderNavbar('navbar-provider', 'provider'); await initProviderDash(); startMessagePolling(); checkTermsGate('provider'); }
-  else { showScreen('screen-admin'); await refreshNotifications(); renderNavbar('navbar-admin', role); await initAdminDash(); }
+  else { showScreen('screen-admin'); await refreshNotifications(); renderNavbar('navbar-admin', role); await initAdminDash(); startMessagePolling(); }
 }
 
 // Current version of the customer/provider agreement — must match
@@ -5322,7 +5369,7 @@ function renderJobPhotoPreviews(prefix) {
   const photos = JOB_PHOTO_STATE[prefix] || [];
   container.innerHTML = photos.map((p, i) => `
     <div style="position:relative;width:64px;height:64px;">
-      <img src="${escapeHtml(p.url || p.previewSrc)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;${p.uploading ? 'opacity:.5;' : ''}"/>
+      <img src="${escapeHtml(p.url || p.previewSrc)}" alt="Uploaded photo of the job" style="width:100%;height:100%;object-fit:cover;border-radius:8px;${p.uploading ? 'opacity:.5;' : ''}"/>
       ${p.uploading ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span class="btn-spinner" style="border-top-color:var(--navy);border-color:rgba(0,0,0,.2);"></span></div>` : `<button onclick="removeJobPhoto('${prefix}', ${i})" style="position:absolute;top:-6px;right:-6px;background:var(--navy);color:#fff;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:11px;line-height:1;">✕</button>`}
     </div>`).join('');
 }
@@ -6697,7 +6744,7 @@ function showPortfolioPhotoPreview(dataUrl, file) {
           <p>Make sure it's a real photo of your completed work</p>
         </div>
         <div class="modal-body">
-          <img src="${dataUrl}" style="width:100%;border-radius:10px;display:block;"/>
+          <img src="${dataUrl}" alt="Preview of the completed-work photo you're about to add to your portfolio" style="width:100%;border-radius:10px;display:block;"/>
         </div>
         <div class="modal-footer" style="display:flex;gap:10px;">
           <button class="btn-sm btn-sm-outline" style="flex:1;" onclick="document.getElementById('portfolio-preview-overlay').remove();document.getElementById('portfolio-file-input').value='';">Choose Different</button>
@@ -6835,6 +6882,7 @@ function getAdminNavItems() {
     return [
       { key: 'disputes', label: 'Disputes', icon: '⚖️' },
       { key: 'payments', label: 'Payments', icon: '💳' },
+      { key: 'accesslogs', label: 'Access Logs', icon: '🔍' },
       { key: 'settings', label: 'Settings', icon: '⚙️' },
     ];
   }
@@ -6842,6 +6890,12 @@ function getAdminNavItems() {
     return [
       { key: 'sales', label: 'Sales Inquiries', icon: '💼' },
       { key: 'organizations', label: 'Organizations', icon: '🏢' },
+      { key: 'settings', label: 'Settings', icon: '⚙️' },
+    ];
+  }
+  if (dept === 'hr') {
+    return [
+      { key: 'careers', label: 'Job Applications', icon: '💼' },
       { key: 'settings', label: 'Settings', icon: '⚙️' },
     ];
   }
@@ -6863,6 +6917,8 @@ function getAdminNavItems() {
     base.push({ key: 'locations', label: 'Locations & Admins', icon: '🗺️' });
     base.push({ key: 'sales', label: 'Sales Inquiries', icon: '💼' });
     base.push({ key: 'organizations', label: 'Organizations', icon: '🏢' });
+    base.push({ key: 'careers', label: 'Job Applications', icon: '💼' });
+    base.push({ key: 'accesslogs', label: 'Access Logs', icon: '🔍' });
   }
   base.push({ key: 'settings', label: 'Settings', icon: '⚙️' });
   return base;
@@ -6923,7 +6979,7 @@ async function loadAdminData() {
     catch (e) { return null; }
   }
 
-  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries, reportsAnalytics, salesInquiries, organizations] = await Promise.all([
+  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries, reportsAnalytics, salesInquiries, organizations, careersInquiries, accessLogs] = await Promise.all([
     tryFetch('/admin/stats'),
     tryFetch('/admin/users/pending'),
     tryFetch('/admin/users/all'),
@@ -6941,6 +6997,8 @@ async function loadAdminData() {
     tryFetch('/admin/reports/analytics'),
     tryFetch('/admin/sales-inquiries'),
     tryFetch('/admin/organizations'),
+    tryFetch('/admin/careers-inquiries'),
+    tryFetch('/admin/access-logs'),
   ]);
 
   if (stats) adminData.stats = stats;
@@ -6960,6 +7018,8 @@ async function loadAdminData() {
   if (reportsAnalytics) adminData.reportsAnalytics = reportsAnalytics;
   if (salesInquiries) adminData.salesInquiries = salesInquiries.inquiries;
   if (organizations) adminData.organizations = organizations.organizations;
+  if (careersInquiries) adminData.careersInquiries = careersInquiries.inquiries;
+  if (accessLogs) adminData.accessLogs = accessLogs.logs;
 
   // A genuine live check, not a hardcoded "everything's fine" badge — this
   // hits the real /api/health endpoint right now and times it.
@@ -7279,6 +7339,7 @@ const ADMIN_SECTIONS = {
           <option value="customer_service">Customer Service — approvals, verification & disputes, to help users directly</option>
           <option value="legal">Legal — read-only access to disputes & transactions, for compliance review</option>
           <option value="sales">Sales Team — Custom-plan leads and multi-seat organization accounts only</option>
+          <option value="hr">HR Team — job applications only</option>
         </select>
         <div id="loc-department-warning" style="display:none;margin-top:8px;font-size:12.5px;color:#8a5a00;background:#fff8e6;border:1px solid #f0d896;border-radius:8px;padding:10px 12px;">⚠️ This is a <strong>global</strong> role — this person will see data from <strong>every city and country</strong>, not just the one entered above. If you actually want someone scoped to just one location, choose "Regional Admin" instead.</div>
       </div>
@@ -7294,6 +7355,57 @@ const ADMIN_SECTIONS = {
     <div class="panel"><div class="panel-title">Inquiries <small style="font-weight:400;color:var(--slate);">${(adminData.advertisingInquiries || []).length} total</small></div>${advertisingInquiriesTableHTML(adminData.advertisingInquiries || [])}</div>`;
   },
   pricing: () => (AUTH.user && AUTH.user.isSuperAdmin) ? superAdminPricingSectionHTML() : regionalPricingSectionHTML(),
+  accesslogs: () => {
+    const list = adminData.accessLogs || [];
+    const RESOURCE_LABELS = {
+      transactions_list: 'Viewed transactions list',
+      transactions_pdf_download: 'Downloaded transactions PDF',
+      disputes_list: 'Viewed disputes list',
+      financial_by_region: 'Viewed financial-by-region data',
+      people_list: 'Viewed customer/provider list',
+    };
+    return `
+    <div class="dash-header"><div><div class="dash-title">Access Logs</div><div class="dash-sub">A real record of who on the admin team has viewed sensitive data, and when</div></div></div>
+    <div class="panel">
+      <div class="panel-title">Recent Access <small style="font-weight:400;color:var(--slate);">Last ${list.length} events</small></div>
+      ${!list.length ? `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No access recorded yet.</div>` : `
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Admin</th><th>What They Viewed</th><th>IP Address</th><th>When</th></tr></thead><tbody>
+      ${list.map(l => `<tr>
+        <td>${escapeHtml(l.adminName)}${l.adminEmail ? `<br/><span style="color:var(--slate);font-size:11.5px;">${escapeHtml(l.adminEmail)}</span>` : ''}</td>
+        <td>${escapeHtml(RESOURCE_LABELS[l.resourceType] || l.resourceType)}</td>
+        <td style="color:var(--slate);font-size:11.5px;">${escapeHtml(l.ipAddress || '—')}</td>
+        <td style="white-space:nowrap;font-size:11.5px;color:var(--slate);">${new Date(l.createdAt).toLocaleString()}</td>
+      </tr>`).join('')}
+      </tbody></table></div>`}
+    </div>`;
+  },
+  careers: () => {
+    const list = adminData.careersInquiries || [];
+    const newCount = list.filter(i => i.status === 'new').length;
+    return `
+    <div class="dash-header"><div><div class="dash-title">Job Applications</div><div class="dash-sub">Real submissions from the Careers page</div></div></div>
+    <div class="stat-cards">
+      <div class="stat-card"><div class="stat-card-label">Total Applications</div><div class="stat-card-val">${list.length}</div></div>
+      <div class="stat-card"><div class="stat-card-label">New</div><div class="stat-card-val">${newCount}</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">All Applications <small style="font-weight:400;color:var(--slate);">${list.length} total</small></div>
+      ${!list.length ? `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No applications yet.</div>` : `
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Role Interest</th><th>Contact</th><th>Cover Letter</th><th>Resume</th><th>Status</th><th>Applied</th></tr></thead><tbody>
+      ${list.map(i => `<tr>
+        <td>${escapeHtml(i.name)}</td>
+        <td>${escapeHtml(i.role)}</td>
+        <td>${escapeHtml(i.email)}<br/><span style="color:var(--slate);font-size:11.5px;">${escapeHtml(i.phone || '—')}</span></td>
+        <td style="max-width:260px;white-space:normal;font-size:12px;color:var(--slate);">${escapeHtml((i.coverLetter || '').slice(0, 160))}${(i.coverLetter || '').length > 160 ? '…' : ''}</td>
+        <td>${i.resumeUrl ? `<a href="${i.resumeUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);">📄 View PDF</a>` : '<span style="color:var(--muted);">None</span>'}</td>
+        <td><select class="form-input" style="padding:4px 8px;font-size:12px;" onchange="updateCareersInquiryStatus('${i.id}', this.value)">
+          ${['new', 'reviewed', 'contacted', 'rejected'].map(s => `<option value="${s}" ${i.status === s ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}
+        </select></td>
+        <td style="white-space:nowrap;font-size:11.5px;color:var(--slate);">${timeAgo(i.createdAt)}</td>
+      </tr>`).join('')}
+      </tbody></table></div>`}
+    </div>`;
+  },
   sales: () => {
     const list = adminData.salesInquiries || [];
     const newCount = list.filter(i => i.status === 'new').length;
@@ -7747,6 +7859,16 @@ function salesInquiriesTableHTML(list) {
     </td>
   </tr>`).join('')}
   </tbody></table></div>`;
+}
+
+async function updateCareersInquiryStatus(id, status) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/careers-inquiries/${id}/status`, { status });
+    showToast(`Marked as ${status}`);
+    await loadAdminData();
+    selectAdminSection('careers');
+  } catch (e) { showToast(e.message || 'Could not update status'); }
 }
 
 async function updateSalesInquiryStatus(id, status) {
@@ -8981,10 +9103,14 @@ async function openBooking(id) {
   document.getElementById('modal-pro-name').textContent = 'Book ' + currentPro.name;
   document.getElementById('modal-pro-role').textContent = currentPro.role + (isNegotiable ? ' · Mutual Agreement' : ' · $' + currentPro.price + '/hr');
 
-  // Time slots come from THIS provider's own availability, set by them in
-  // Settings — not a generic morning/afternoon/evening bucket every provider
-  // is forced into.
-  document.getElementById('job-time').innerHTML = availability.map(a => `<option>${a}</option>`).join('');
+  // Previously this forced the customer to pick one of the provider's own
+  // availability labels as the "time" — meaning even a provider who'd set
+  // real windows still only ever gave a customer a coarse range, never an
+  // actual time. Now it's shown as context under a real time input
+  // instead of being the only option: the customer picks the exact time
+  // they actually want, and can see when this provider tends to be free.
+  document.getElementById('job-time').value = '';
+  document.getElementById('job-time-availability-note').textContent = `${currentPro.name.split(' ')[0]}'s usual availability: ${availability.join(', ')}`;
 
   // Real currency choice — only shown when the signed-in customer's actual
   // country uses a non-USD currency. The contract is always denominated in
@@ -9088,7 +9214,8 @@ function closeModal() {
 async function confirmBooking() {
   const desc = document.getElementById('job-desc').value.trim();
   const date = document.getElementById('job-date').value;
-  const time = document.getElementById('job-time').value;
+  const rawTime = document.getElementById('job-time').value;
+  const time = rawTime ? new Date(`2000-01-01T${rawTime}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
   const addr = document.getElementById('job-address').value.trim();
 
   // Client-side validation — mirrors what the backend requires, so the user

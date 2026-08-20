@@ -25,7 +25,6 @@ async function notify(userId, icon, text, category = null, linkTo = null) {
     userId,
     icon,
     text,
-    time: 'Just now',
     read: false,
     // Where clicking this notification should actually take the person —
     // a dashboard section key, e.g. { section: 'messages' }. Optional:

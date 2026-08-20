@@ -136,15 +136,35 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
   };
   await db.insert('pendingRegistrations', pending);
 
-  console.log(`[TEST MODE] Registration codes for ${email.trim()} — phone: ${phoneCode}, email: ${emailCode}`);
+  const { isSmsConfigured, isEmailConfigured, sendSms, sendEmail } = require('../delivery');
+  const phoneDelivered = isSmsConfigured()
+    ? (await sendSms(phone.trim(), `Your Trothen phone verification code is ${phoneCode}.`)).sent
+    : false;
+  const emailDelivered = isEmailConfigured()
+    ? (await sendEmail(email.trim(), 'Verify your Trothen email', `Your Trothen email verification code is ${emailCode}.`)).sent
+    : false;
+
+  if (phoneDelivered && emailDelivered) {
+    return res.status(201).json({
+      pendingId: pending.id,
+      message: `Enter the code sent to ${phone.trim()} and the code sent to ${email.trim()} to finish creating your account.`,
+      testMode: false,
+      joiningOrganization: inviteOrgId ? true : false,
+    });
+  }
+
+  // At least one channel isn't delivering for real yet (not configured, or
+  // a send just failed) — same test-mode fallback as before for whichever
+  // code(s) didn't go out, so signup is never blocked by a delivery gap.
+  console.log(`[TEST MODE] Registration codes for ${email.trim()} — phone: ${phoneDelivered ? 'sent for real' : phoneCode}, email: ${emailDelivered ? 'sent for real' : emailCode}`);
 
   res.status(201).json({
     pendingId: pending.id,
     message: `Enter the code sent to ${phone.trim()} and the code sent to ${email.trim()} to finish creating your account.`,
     testMode: true,
     testModeNote: 'No real SMS or email provider is configured yet — both codes are returned directly instead of being sent. Do not do this in production.',
-    phoneCode,
-    emailCode,
+    phoneCode: phoneDelivered ? undefined : phoneCode,
+    emailCode: emailDelivered ? undefined : emailCode,
     joiningOrganization: inviteOrgId ? true : false,
   });
 });
@@ -327,9 +347,21 @@ router.post('/signup/resend', async (req, res) => {
     expiresAt: new Date(Date.now() + REGISTRATION_TTL_MS).toISOString(),
   });
 
-  console.log(`[TEST MODE] Resent registration codes for ${pending.payload.email} — phone: ${phoneCode}, email: ${emailCode}`);
+  const { isSmsConfigured, isEmailConfigured, sendSms, sendEmail } = require('../delivery');
+  const phoneDelivered = isSmsConfigured()
+    ? (await sendSms(pending.payload.phone, `Your Trothen phone verification code is ${phoneCode}.`)).sent
+    : false;
+  const emailDelivered = isEmailConfigured()
+    ? (await sendEmail(pending.payload.email, 'Verify your Trothen email', `Your Trothen email verification code is ${emailCode}.`)).sent
+    : false;
 
-  res.json({ testMode: true, phoneCode, emailCode });
+  if (phoneDelivered && emailDelivered) {
+    return res.json({ testMode: false });
+  }
+
+  console.log(`[TEST MODE] Resent registration codes for ${pending.payload.email} — phone: ${phoneDelivered ? 'sent for real' : phoneCode}, email: ${emailDelivered ? 'sent for real' : emailCode}`);
+
+  res.json({ testMode: true, phoneCode: phoneDelivered ? undefined : phoneCode, emailCode: emailDelivered ? undefined : emailCode });
 });
 
 // POST /api/auth/login
@@ -363,6 +395,22 @@ router.post('/login', loginLimiter, async (req, res) => {
       createdAt: new Date().toISOString(),
     };
     await db.insert('pendingLogins', pendingLogin);
+
+    const { isSmsConfigured, isEmailConfigured, sendSms, sendEmail } = require('../delivery');
+    let delivered = false;
+    if (isSmsConfigured() && user.phone) {
+      delivered = (await sendSms(user.phone, `Your Trothen sign-in code is ${code}. It expires in 10 minutes.`)).sent;
+    }
+    if (!delivered && isEmailConfigured()) {
+      delivered = (await sendEmail(user.email, 'Your Trothen sign-in code', `Your sign-in code is ${code}. It expires in 10 minutes.`)).sent;
+    }
+    if (delivered) {
+      return res.json({ requires2FA: true, pendingLoginId: pendingLogin.id, testMode: false });
+    }
+
+    // Not configured, or a real send just failed — same test-mode
+    // fallback as before, so a delivery hiccup never locks someone out
+    // of their own account.
     return res.json({
       requires2FA: true,
       pendingLoginId: pendingLogin.id,
@@ -690,6 +738,19 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
   };
   await db.insert('passwordResets', record);
 
+  const { isEmailConfigured, sendEmail } = require('../delivery');
+  const resetLink = `${(process.env.APP_URL || '').replace(/\/$/, '')}/?resetToken=${rawToken}`;
+  let delivered = false;
+  if (isEmailConfigured()) {
+    delivered = (await sendEmail(
+      user.email, 'Reset your Trothen password',
+      `Someone requested a password reset for your Trothen account. If this was you, use this link within 30 minutes: ${resetLink}\n\nIf you didn't request this, you can safely ignore this email — your password hasn't been changed.`
+    )).sent;
+  }
+  if (delivered) {
+    return res.json({ ...genericResponse, testMode: false });
+  }
+
   console.log(`[TEST MODE] Password reset requested for ${user.email}. Reset token: ${rawToken} (expires in 30 min)`);
 
   res.json({
@@ -756,6 +817,12 @@ router.post('/send-phone-otp', requireAuth, async (req, res) => {
     used: false,
     createdAt: new Date().toISOString(),
   });
+
+  const { isSmsConfigured, sendSms } = require('../delivery');
+  const delivered = isSmsConfigured() ? (await sendSms(user.phone, `Your Trothen phone verification code is ${code}.`)).sent : false;
+  if (delivered) {
+    return res.json({ message: `A verification code was sent to ${user.phone}.`, testMode: false });
+  }
 
   console.log(`[TEST MODE] Phone verification code for ${user.phone}: ${code} (expires in 10 min)`);
 

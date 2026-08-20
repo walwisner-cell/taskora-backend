@@ -30,7 +30,7 @@ if (usingConfiguredDir) {
   console.log(`⚠️  UPLOADS_DIR is not set — portfolio uploads will be saved to ${UPLOADS_DIR}, which will NOT survive a redeploy or restart on most hosting platforms. Set UPLOADS_DIR to a path on your persistent disk (e.g. /var/data/uploads on Render) for uploads to actually stick around.`);
 }
 
-module.exports = { UPLOADS_DIR, verifyImageMagicBytes };
+module.exports = { UPLOADS_DIR, verifyImageMagicBytes, verifyPdfMagicBytes };
 
 // Every upload endpoint in this app validates a file by its CLIENT-DECLARED
 // mimetype (from the multipart form field) — which is exactly what an
@@ -66,4 +66,23 @@ function verifyImageMagicBytes(filePath, declaredMimetype) {
     case 'image/webp': return isWebp;
     default: return false;
   }
+}
+
+// Same real-bytes-not-claimed-type technique as verifyImageMagicBytes
+// above, for resume/CV uploads on the Careers page. PDF only — DOC/DOCX
+// magic bytes are far less reliable to verify this way (DOCX is just a
+// ZIP file, indistinguishable at the byte level from any other ZIP), and
+// PDF is universally readable by anyone reviewing applications, so
+// restricting to PDF is a real safety choice, not just a convenience one.
+function verifyPdfMagicBytes(filePath) {
+  let buf;
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    buf = Buffer.alloc(5);
+    fs.readSync(fd, buf, 0, 5, 0);
+    fs.closeSync(fd);
+  } catch (e) {
+    return false;
+  }
+  return buf.toString('ascii', 0, 5) === '%PDF-';
 }

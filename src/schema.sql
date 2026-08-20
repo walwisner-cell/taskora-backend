@@ -574,6 +574,29 @@ CREATE TABLE IF NOT EXISTS referrals (
 );
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id);
 
+-- Careers page went from a bare "get in touch" note to a real job
+-- application: a phone number, an actual cover letter (replacing the old
+-- generic "message" column, kept in place rather than dropped so nothing
+-- already stored there is lost), and an optional resume PDF.
+ALTER TABLE careers_inquiries ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE careers_inquiries ADD COLUMN IF NOT EXISTS cover_letter TEXT;
+ALTER TABLE careers_inquiries ADD COLUMN IF NOT EXISTS resume_url TEXT;
+
+-- Real access logs — who on the admin team viewed sensitive data, and
+-- when. See src/access-log.js for what writes to this and why it's
+-- scoped to only the genuinely sensitive endpoints, not every admin
+-- route in the app.
+CREATE TABLE IF NOT EXISTS access_logs (
+  id            TEXT PRIMARY KEY,
+  admin_id      TEXT NOT NULL REFERENCES users(id),
+  resource_type TEXT NOT NULL,
+  resource_id   TEXT,
+  ip_address    TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_access_logs_admin ON access_logs(admin_id);
+CREATE INDEX IF NOT EXISTS idx_access_logs_created ON access_logs(created_at);
+
 -- General-purpose key/value settings, first used for the provider
 -- booking-confirmation window (see src/platform-settings.js). Absence of
 -- a row for a given key means "use the built-in default" — same

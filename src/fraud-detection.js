@@ -187,4 +187,42 @@ async function checkPayoutVelocity(providerId) {
   return null;
 }
 
-module.exports = { checkDuplicateIdentity, checkPriceAnomaly, checkRapidDisputes, checkNewAccountHighValue, checkProtectedCancellationAbuse, checkPayoutVelocity, createFlag };
+// A genuine, checkable anti-spoofing signal — not a claim that this
+// prevents someone from faking their GPS (nothing running in a browser
+// really can; the browser's location API can always be overridden by
+// the person using the device, on any platform, with freely available
+// tools). What this DOES catch: two real location pings from the same
+// booking that are physically impossible to both be true — e.g.
+// "on my way" from one point and "arrived" three states away four
+// minutes later. That's not proof of fraud on its own (poor GPS
+// accuracy indoors, a VPN messing with an unrelated signal, etc. can
+// also produce a large jump), which is exactly why this creates a
+// review flag for a human to look at, not an automatic block — same
+// principle as every other check in this file.
+async function checkImplausibleTravelSpeed(contract) {
+  if (!contract.onMyWayLocation || !contract.arrivedLocation || !contract.onMyWayAt || !contract.arrivedAt) return null;
+  const { distanceInMiles } = require('./geo-distance');
+  const miles = distanceInMiles(
+    contract.onMyWayLocation.latitude, contract.onMyWayLocation.longitude,
+    contract.arrivedLocation.latitude, contract.arrivedLocation.longitude
+  );
+  const hours = (new Date(contract.arrivedAt).getTime() - new Date(contract.onMyWayAt).getTime()) / (1000 * 60 * 60);
+  if (hours <= 0) return null; // clock skew or same-instant taps — nothing meaningful to compute
+  const impliedMph = miles / hours;
+  // 90mph sustained is already generous (well above any real door-to-door
+  // trip, even highway-only) — this is deliberately loose so normal GPS
+  // drift, a long highway leg, or a slightly-off phone clock don't create
+  // false alarms. It only fires for genuinely impossible numbers.
+  if (impliedMph > 90 && miles > 5) {
+    return createFlag({
+      type: 'implausible_travel_speed',
+      severity: 'medium',
+      userId: contract.providerId,
+      contractId: contract.id,
+      details: `"On my way" and "arrived" locations for this booking are ${Math.round(miles)} miles apart, ${hours.toFixed(2)} hours apart — implies ~${Math.round(impliedMph)} mph average, which isn't realistic. Could be a genuine GPS/clock glitch, or could be a spoofed location — worth a quick look.`,
+    });
+  }
+  return null;
+}
+
+module.exports = { checkDuplicateIdentity, checkPriceAnomaly, checkRapidDisputes, checkNewAccountHighValue, checkProtectedCancellationAbuse, checkPayoutVelocity, checkImplausibleTravelSpeed, createFlag };

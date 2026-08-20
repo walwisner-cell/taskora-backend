@@ -1,4 +1,7 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { nanoid } = require('nanoid');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
@@ -7,6 +10,7 @@ const { isNonEmptyString, validate } = require('../validators');
 const { notify } = require('../notify');
 const { currencyForCountry } = require('../currency-data');
 const { generateUniqueReferralCode } = require('../referral-code');
+const { UPLOADS_DIR, verifyPdfMagicBytes } = require('../uploads');
 
 const router = express.Router();
 
@@ -60,31 +64,71 @@ router.post('/contact', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-// POST /api/careers-inquiry — same real-storage, real-notification pattern
-// as the contact form, for the Careers page's "get in touch" form.
-router.post('/careers-inquiry', async (req, res) => {
-  const { name, email, role, message } = req.body || {};
+// POST /api/careers-inquiry — a real job application, not just a "get in
+// touch" note. Previously this only collected a name, email, a free-text
+// message, and fired a one-time notification with nowhere for anyone to
+// actually go review it — no resume, no phone number, no admin screen to
+// see submissions at all. Now accepts a resume (PDF only, verified by
+// real file bytes — see verifyPdfMagicBytes — not just the filename or
+// declared type), a phone number, and a proper cover letter, and routes
+// to whichever HR-department admins exist, falling back to every super
+// admin if no HR department admin has been set up yet (see
+// GET /admin/careers-inquiries below for where these actually get
+// reviewed).
+const resumeStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => cb(null, `resume_${nanoid(16)}.pdf`),
+});
+const resumeFileFilter = (req, file, cb) => {
+  if (file.mimetype !== 'application/pdf') return cb(new Error('Resume must be a PDF file'));
+  cb(null, true);
+};
+const uploadResume = multer({ storage: resumeStorage, fileFilter: resumeFileFilter, limits: { fileSize: 8 * 1024 * 1024 } });
+
+router.post('/careers-inquiry', (req, res, next) => {
+  uploadResume.single('resume')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message === 'Resume must be a PDF file' ? err.message : 'Resume upload failed — must be a PDF under 8MB' });
+    next();
+  });
+}, async (req, res) => {
+  const { name, email, phone, role, coverLetter } = req.body || {};
   const errors = validate([
     ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Enter your name'],
     ['email', isNonEmptyString(email, { min: 5, max: 254 }), 'Enter a valid email address'],
+    ['phone', isNonEmptyString(phone, { min: 7, max: 30 }), 'Enter a real phone number we can reach you at'],
     ['role', isNonEmptyString(role, { min: 2, max: 200 }), 'Tell us what role or area interests you'],
-    ['message', isNonEmptyString(message, { min: 10, max: 3000 }), 'Tell us a bit about yourself (at least 10 characters)'],
+    ['coverLetter', isNonEmptyString(coverLetter, { min: 10, max: 5000 }), 'Tell us a bit about yourself (at least 10 characters)'],
   ]);
-  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  if (errors.length) {
+    if (req.file) fs.unlink(req.file.path, () => {}); // don't leave an orphaned file if the rest of the form is invalid
+    return res.status(400).json({ error: errors[0], errors });
+  }
+
+  let resumeUrl = null;
+  if (req.file) {
+    if (!verifyPdfMagicBytes(req.file.path)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'That file doesn\'t look like a real PDF — please upload an actual PDF resume' });
+    }
+    resumeUrl = `/uploads/${req.file.filename}`;
+  }
 
   const submission = {
     id: `career_${nanoid(10)}`,
-    name: name.trim(), email: email.trim(), role: role.trim(), message: message.trim(),
+    name: name.trim(), email: email.trim(), phone: phone.trim(), role: role.trim(), coverLetter: coverLetter.trim(),
+    resumeUrl,
     status: 'new',
     createdAt: new Date().toISOString(),
   };
   await db.insert('careersInquiries', submission);
 
+  const hrAdmins = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'hr');
   const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
-  for (const admin of superAdmins) {
-    await notify(admin.id, '💼', `New careers inquiry from ${submission.name} — interested in: "${submission.role}"`);
+  const recipients = hrAdmins.length ? hrAdmins : superAdmins; // no HR team set up yet? falls to super admin rather than nobody
+  for (const admin of recipients) {
+    await notify(admin.id, '💼', `New job application from ${submission.name} — interested in: "${submission.role}"${resumeUrl ? ' (resume attached)' : ''}`, null, { section: 'careers' });
   }
-  console.log(`[TEST MODE — no email provider connected] Would email support@trothen.io: new careers inquiry from ${submission.email}`);
+  console.log(`[TEST MODE — no email provider connected] Would email ${recipients.length ? recipients.map(a => a.email).join(', ') : 'support@trothen.io'}: new job application from ${submission.email}`);
 
   res.status(201).json({ ok: true });
 });

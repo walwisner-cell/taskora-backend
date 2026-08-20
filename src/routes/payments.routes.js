@@ -449,6 +449,11 @@ router.post('/contracts/:id/arrived', requireAuth, requireRole('provider'), asyn
     arrivedLocation: hasValidCoords ? { latitude, longitude } : null,
   });
 
+  if (hasValidCoords) {
+    const { checkImplausibleTravelSpeed } = require('../fraud-detection');
+    await checkImplausibleTravelSpeed(updated);
+  }
+
   const provider = await db.find('users', u => u.id === req.user.sub);
   await notify(contract.customerId, '📍', `${provider ? provider.name : 'Your provider'} has arrived for "${contract.service}".`, 'bookingUpdates', { section: 'bookings' });
   res.json({ contract: updated });
@@ -709,6 +714,8 @@ router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res
 // super admin (or the financial team) can actually see how each region is
 // performing rather than only ever seeing one flattened global number.
 router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), async (req, res) => {
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'financial_by_region');
   const me = await db.find('users', u => u.id === req.user.sub);
   if (!me.isSuperAdmin && me.adminDepartment && !['financial', 'legal'].includes(me.adminDepartment)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${me.adminDepartment} team and doesn't have access to this.` });

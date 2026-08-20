@@ -241,6 +241,8 @@ router.get('/users/pending', async (req, res) => {
 // passes no region filter here, so they always see (and can act on)
 // everyone, everywhere, regardless of what any location admin's scope is.
 router.get('/users/all', async (req, res) => {
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'people_list');
   const region = await myRegion(req);
   const { role } = req.query;
   let users = await db.filter('users', u => u.role === 'customer' || u.role === 'provider');
@@ -369,6 +371,8 @@ router.post('/verification/:id/decide', requireDepartment(['verification', 'cust
 
 // GET /api/admin/disputes
 router.get('/disputes', requireDepartment(['disputes', 'customer_service', 'legal']), async (req, res) => {
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'disputes_list');
   const region = await myRegion(req);
   const { from, to } = req.query;
   const all = await db.all('disputes');
@@ -464,6 +468,8 @@ router.get('/disputes/pdf', requireDepartment(['disputes', 'customer_service', '
 // what the admin Payments page actually needs — previously it was showing
 // unrelated demo data, not real platform transactions.
 router.get('/transactions', requireDepartment(['financial', 'legal']), async (req, res) => {
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'transactions_list');
   const region = await myRegion(req);
   const { from, to } = req.query;
   let contracts = await db.all('contracts');
@@ -516,6 +522,8 @@ router.get('/transactions', requireDepartment(['financial', 'legal']), async (re
 // GET /api/admin/transactions/pdf — a real, downloadable platform
 // transactions report, same scoping and date range as the JSON endpoint.
 router.get('/transactions/pdf', requireDepartment(['financial', 'legal']), async (req, res) => {
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'transactions_pdf_download');
   const region = await myRegion(req);
   const { from, to } = req.query;
   let contracts = await db.all('contracts');
@@ -1261,8 +1269,8 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
     ['country', isNonEmptyString(country), 'Country is required'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
-  if (department && !['verification', 'disputes', 'financial', 'customer_service', 'legal', 'sales'].includes(department)) {
-    return res.status(400).json({ error: 'department must be verification, disputes, financial, customer_service, legal, or sales' });
+  if (department && !['verification', 'disputes', 'financial', 'customer_service', 'legal', 'sales', 'hr'].includes(department)) {
+    return res.status(400).json({ error: 'department must be verification, disputes, financial, customer_service, legal, sales, or hr' });
   }
 
   const existing = await db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
@@ -1350,7 +1358,53 @@ router.delete('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-// GET /api/admin/advertising-inquiries — every "Advertise Here" submission
+// GET /api/admin/careers-inquiries — every job application on file.
+// Scoped to HR-department admins and super admins only — this is company
+// hiring, not a per-city customer/provider concern, so it doesn't follow
+// the regional-scoping pattern the way disputes or ad inquiries do.
+router.get('/careers-inquiries', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment !== 'hr') {
+    return res.status(403).json({ error: 'Only HR or a super admin can view job applications.' });
+  }
+  const inquiries = (await db.all('careersInquiries')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ inquiries });
+});
+
+// PATCH /api/admin/careers-inquiries/:id/status — track an application
+// through new -> reviewed -> contacted -> rejected, same lightweight
+// tracking every other admin queue on this platform already has.
+router.patch('/careers-inquiries/:id/status', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment !== 'hr') {
+    return res.status(403).json({ error: 'Only HR or a super admin can update job applications.' });
+  }
+  const { status } = req.body || {};
+  if (!['new', 'reviewed', 'contacted', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'status must be new, reviewed, contacted, or rejected' });
+  }
+  const target = await db.find('careersInquiries', i => i.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'Application not found' });
+  const updated = await db.update('careersInquiries', target.id, { status });
+  res.json({ inquiry: updated });
+});
+
+// GET /api/admin/access-logs — who on the admin team has actually viewed
+// sensitive data, and when. Super admin and Legal only — this log is
+// itself sensitive (it's a record of admin activity), so it gets the
+// same tight scoping as everything it's tracking.
+router.get('/access-logs', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment !== 'legal') {
+    return res.status(403).json({ error: 'Only Legal or a super admin can view access logs.' });
+  }
+  const logs = (await db.all('accessLogs')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 500);
+  const withAdminNames = await Promise.all(logs.map(async l => {
+    const admin = await db.find('users', u => u.id === l.adminId);
+    return { ...l, adminName: admin ? admin.name : 'Unknown', adminEmail: admin ? admin.email : null };
+  }));
+  res.json({ logs: withAdminNames });
+});
 // this admin has a claim to. A super admin sees all of them, everywhere. A
 // regional admin sees only the ones targeting their own city — this is the
 // regional-autonomy piece: a city's ad inventory belongs to that city's
