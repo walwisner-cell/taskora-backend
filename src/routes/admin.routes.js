@@ -37,9 +37,24 @@ async function me(req) {
 
 // null region = super admin = sees everything. A non-null region scopes
 // every query below to that one city.
+// A department admin (Verification, Disputes, Financial, HR, etc.) is
+// global by default — but can now be scoped to their own city too, via
+// the explicit regionScoped flag set at creation (see POST
+// /admin/sub-admins). Defaults to false/unset, so every admin account
+// created before this existed keeps behaving exactly as it does today —
+// nothing silently changes for anyone already set up.
+//
+// 'sales' deliberately never regionalizes even if the flag is somehow
+// set: sales leads are about custom multi-seat organization deals, which
+// aren't really a per-city concept the way disputes or verification
+// queues are.
 async function myRegion(req) {
   const m = await me(req);
-  return m && !m.isSuperAdmin && !m.adminDepartment ? m.region : null;
+  if (!m) return null;
+  if (m.isSuperAdmin) return null;
+  if (!m.adminDepartment) return m.region; // plain regional admin — unchanged, always scoped
+  if (m.adminDepartment !== 'sales' && m.regionScoped) return m.city;
+  return null;
 }
 
 async function requireSuperAdmin(req, res, next) {
@@ -287,7 +302,81 @@ router.patch('/users/:id/status', async (req, res) => {
   res.json({ user: publicAdmin(updated) });
 });
 
-// PATCH /api/admin/users/:id/plan — admin-only tier change. A provider can
+// POST /api/admin/providers/:id/propose-commission-rate — a regional
+// admin's way to reward a specific provider's excellent performance with
+// a better individual commission rate, outside the normal Starter/Pro/
+// Super-Pro tier ladder. This only ever proposes — it takes effect
+// nowhere until a super admin approves it below. A regional admin can
+// only propose this for a provider in their own city; a super admin can
+// propose (and approve their own proposal) for anyone.
+router.post('/providers/:id/propose-commission-rate', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
+  const { rate, reason } = req.body || {};
+  if (typeof rate !== 'number' || rate < 0 || rate > 0.5) {
+    return res.status(400).json({ error: 'Rate must be a number between 0 and 0.5 (e.g. 0.08 for 8%)' });
+  }
+  if (!isNonEmptyString(reason, { min: 10, max: 500 })) {
+    return res.status(400).json({ error: 'Explain why this provider has earned a custom rate (at least 10 characters) — a super admin needs this to actually decide' });
+  }
+  const region = await myRegion(req);
+  const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
+  if (!provider) return res.status(404).json({ error: 'Provider not found' });
+  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  if (provider.commissionRateOverrideStatus === 'pending') {
+    return res.status(400).json({ error: 'This provider already has a proposal awaiting approval' });
+  }
+
+  const updated = await db.update('users', provider.id, {
+    commissionRateOverride: rate,
+    commissionRateOverrideStatus: 'pending',
+    commissionRateOverrideReason: reason.trim(),
+    commissionRateOverrideProposedBy: m.id,
+  });
+
+  const supers = await db.filter('users', u => u.isSuperAdmin === true);
+  for (const admin of supers) {
+    await notify(admin.id, '💲', `${m.name} proposed a custom ${(rate * 100).toFixed(1)}% commission rate for ${provider.name}: "${reason.trim().slice(0, 80)}${reason.length > 80 ? '…' : ''}" — needs your approval.`, null, { section: 'people' });
+  }
+
+  res.json({ user: publicAdmin(updated) });
+});
+
+// POST /api/admin/providers/:id/commission-rate/:decision — super admin
+// only. Approving actually activates the rate (see
+// effectiveCommissionRate in src/commission.js); rejecting clears the
+// proposal entirely rather than leaving a rejected rate sitting on the
+// record.
+router.post('/providers/:id/commission-rate/:decision', requireSuperAdmin, async (req, res) => {
+  const { decision } = req.params;
+  if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ error: 'decision must be approve or reject' });
+  const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
+  if (!provider) return res.status(404).json({ error: 'Provider not found' });
+  if (provider.commissionRateOverrideStatus !== 'pending') {
+    return res.status(400).json({ error: 'This provider has no pending commission rate proposal' });
+  }
+
+  if (decision === 'approve') {
+    const updated = await db.update('users', provider.id, { commissionRateOverrideStatus: 'approved' });
+    await notify(provider.id, '🎉', `You've been approved for a custom ${(provider.commissionRateOverride * 100).toFixed(1)}% commission rate, effective immediately — recognition for your excellent performance.`, null, { section: 'settings' });
+    if (provider.commissionRateOverrideProposedBy) {
+      await notify(provider.commissionRateOverrideProposedBy, '✅', `Your proposed commission rate for ${provider.name} was approved.`, null, { section: 'people' });
+    }
+    return res.json({ user: publicAdmin(updated) });
+  }
+
+  const updated = await db.update('users', provider.id, {
+    commissionRateOverride: null,
+    commissionRateOverrideStatus: null,
+    commissionRateOverrideReason: null,
+  });
+  if (provider.commissionRateOverrideProposedBy) {
+    await notify(provider.commissionRateOverrideProposedBy, '❌', `Your proposed commission rate for ${provider.name} was not approved.`, null, { section: 'people' });
+  }
+  res.json({ user: publicAdmin(updated) });
+});
 // no longer set their own plan (that was the actual bug: anyone could
 // click a button and set themselves to Pro or Super-Pro with zero check
 // on whether they'd earned it). Pro now advances automatically once real
@@ -1260,7 +1349,7 @@ router.get('/sub-admins', requireSuperAdmin, async (req, res) => {
 
 // POST /api/admin/sub-admins — create a new location admin for a city
 router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
-  const { name, email, password, city, country, department } = req.body || {};
+  const { name, email, password, city, country, department, regionScoped } = req.body || {};
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
@@ -1364,10 +1453,16 @@ router.delete('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
 // the regional-scoping pattern the way disputes or ad inquiries do.
 router.get('/careers-inquiries', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment !== 'hr') {
-    return res.status(403).json({ error: 'Only HR or a super admin can view job applications.' });
+  const isPlainRegionalManager = !m.isSuperAdmin && !m.adminDepartment;
+  const isGlobalHr = m.adminDepartment === 'hr' && !m.regionScoped;
+  const isRegionalHr = m.adminDepartment === 'hr' && m.regionScoped;
+  if (!m.isSuperAdmin && !isPlainRegionalManager && !isGlobalHr && !isRegionalHr) {
+    return res.status(403).json({ error: 'Only HR, a regional manager, or a super admin can view job applications.' });
   }
-  const inquiries = (await db.all('careersInquiries')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  let inquiries = (await db.all('careersInquiries')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  if (isPlainRegionalManager || isRegionalHr) {
+    inquiries = inquiries.filter(i => i.city === m.city);
+  }
   res.json({ inquiries });
 });
 
@@ -1376,8 +1471,11 @@ router.get('/careers-inquiries', async (req, res) => {
 // tracking every other admin queue on this platform already has.
 router.patch('/careers-inquiries/:id/status', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment !== 'hr') {
-    return res.status(403).json({ error: 'Only HR or a super admin can update job applications.' });
+  const isPlainRegionalManager = !m.isSuperAdmin && !m.adminDepartment;
+  const isGlobalHr = m.adminDepartment === 'hr' && !m.regionScoped;
+  const isRegionalHr = m.adminDepartment === 'hr' && m.regionScoped;
+  if (!m.isSuperAdmin && !isPlainRegionalManager && !isGlobalHr && !isRegionalHr) {
+    return res.status(403).json({ error: 'Only HR, a regional manager, or a super admin can update job applications.' });
   }
   const { status } = req.body || {};
   if (!['new', 'reviewed', 'contacted', 'rejected'].includes(status)) {
@@ -1385,8 +1483,62 @@ router.patch('/careers-inquiries/:id/status', async (req, res) => {
   }
   const target = await db.find('careersInquiries', i => i.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'Application not found' });
+  if ((isPlainRegionalManager || isRegionalHr) && target.city !== m.city) {
+    return res.status(403).json({ error: 'That application is outside your assigned city' });
+  }
   const updated = await db.update('careersInquiries', target.id, { status });
   res.json({ inquiry: updated });
+});
+
+// GET /api/admin/referrals-overview — super admin only: real, platform-
+// wide visibility into the referral system. Previously an admin had
+// zero way to see this at all — referrals were entirely
+// customer/provider-facing (their own code, their own referred list),
+// with no admin-side view of who's actually driving signups. This
+// doesn't change what any individual sees on their own referral panel —
+// it's a separate, aggregate view for the team running the platform.
+router.get('/referrals-overview', requireSuperAdmin, async (req, res) => {
+  const allReferrals = await db.all('referrals');
+  const byReferrer = new Map();
+  for (const r of allReferrals) {
+    if (!byReferrer.has(r.referrerId)) byReferrer.set(r.referrerId, []);
+    byReferrer.get(r.referrerId).push(r);
+  }
+  const topReferrers = await Promise.all(
+    [...byReferrer.entries()]
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, 25)
+      .map(async ([referrerId, refs]) => {
+        const referrer = await db.find('users', u => u.id === referrerId);
+        return {
+          referrerId,
+          referrerName: referrer ? referrer.name : 'Unknown (deleted account)',
+          referrerRole: referrer ? referrer.role : null,
+          referralCode: referrer ? referrer.referralCode : null,
+          totalReferred: refs.length,
+        };
+      })
+  );
+  const recent = (await Promise.all(allReferrals
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 50)
+    .map(async r => {
+      const referrer = await db.find('users', u => u.id === r.referrerId);
+      const referred = await db.find('users', u => u.id === r.referredUserId);
+      return {
+        id: r.id,
+        referrerName: referrer ? referrer.name : 'Unknown',
+        referredName: referred ? referred.name : 'Unknown',
+        referredRole: r.referredRole,
+        createdAt: r.createdAt,
+      };
+    })));
+  res.json({
+    totalReferrals: allReferrals.length,
+    totalReferrers: byReferrer.size,
+    topReferrers,
+    recent,
+  });
 });
 
 // GET /api/admin/access-logs — who on the admin team has actually viewed

@@ -543,6 +543,19 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by_user_id TEXT REFERENCES users(id);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS license_expiry_reminder_sent_for DATE;
+
+-- Added this round: commission-rate proposals (regional admin proposes,
+-- super admin approves — see effectiveCommissionRate in
+-- src/commission.js), whether a department admin is scoped to just
+-- their own city, and a PayPal payout email alongside the existing
+-- payout method field.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate_override NUMERIC;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate_override_status TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate_override_reason TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate_override_proposed_by TEXT REFERENCES users(id);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS region_scoped BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_paypal_email TEXT;
+ALTER TABLE careers_inquiries ADD COLUMN IF NOT EXISTS city TEXT;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS negotiation_transcript JSONB;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS on_my_way_at TIMESTAMPTZ;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS on_my_way_location JSONB;

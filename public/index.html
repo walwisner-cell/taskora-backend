@@ -1122,6 +1122,7 @@
         <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" type="text" id="careers-name"/></div>
         <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="careers-email"/></div>
         <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" type="tel" id="careers-phone" placeholder="A real number we can reach you at"/></div>
+        <div class="form-group"><label class="form-label">City</label><input class="form-input" type="text" id="careers-city" placeholder="Which city are you applying near?"/></div>
         <div class="form-group"><label class="form-label">What role or area interests you?</label><input class="form-input" type="text" id="careers-role"/></div>
         <div class="form-group"><label class="form-label">Cover Letter</label><textarea class="form-input" id="careers-message" rows="5" style="resize:vertical;" placeholder="Tell us a bit about yourself and why you're interested"></textarea></div>
         <div class="form-group">
@@ -1570,7 +1571,7 @@
     <aside class="dash-sidebar">
       <div class="dash-sidebar-user">
         <div class="dash-avatar" id="admin-sidebar-avatar" style="background:#6B4C7A">AO</div>
-        <div><div class="dash-user-name" id="admin-sidebar-name">Amara O.</div><div class="dash-user-role" id="admin-sidebar-role">Admin · Atlanta Region</div></div>
+        <div><div class="dash-user-name" id="admin-sidebar-name">Loading…</div><div class="dash-user-role" id="admin-sidebar-role">&nbsp;</div></div>
       </div>
       <nav class="dash-nav" id="admin-nav"></nav>
     </aside>
@@ -3072,6 +3073,7 @@ async function submitCareersInquiry() {
   const name = document.getElementById('careers-name').value.trim();
   const email = document.getElementById('careers-email').value.trim();
   const phone = document.getElementById('careers-phone').value.trim();
+  const city = document.getElementById('careers-city').value.trim();
   const role = document.getElementById('careers-role').value.trim();
   const message = document.getElementById('careers-message').value.trim();
   const resumeFile = document.getElementById('careers-resume').files[0];
@@ -3090,6 +3092,7 @@ async function submitCareersInquiry() {
     formData.append('name', name);
     formData.append('email', email);
     formData.append('phone', phone);
+    if (city) formData.append('city', city);
     formData.append('role', role);
     formData.append('coverLetter', message);
     if (resumeFile) formData.append('resume', resumeFile);
@@ -3100,6 +3103,7 @@ async function submitCareersInquiry() {
     document.getElementById('careers-name').value = '';
     document.getElementById('careers-email').value = '';
     document.getElementById('careers-phone').value = '';
+    document.getElementById('careers-city').value = '';
     document.getElementById('careers-role').value = '';
     document.getElementById('careers-message').value = '';
     document.getElementById('careers-resume').value = '';
@@ -3714,7 +3718,7 @@ async function goDashboard(role) {
     goHome();
   }
   else if (role === 'provider') { showScreen('screen-provider'); await refreshNotifications(); renderNavbar('navbar-provider', 'provider'); await initProviderDash(); startMessagePolling(); checkTermsGate('provider'); }
-  else { showScreen('screen-admin'); await refreshNotifications(); renderNavbar('navbar-admin', role); await initAdminDash(); startMessagePolling(); }
+  else { showScreen('screen-admin'); updateAdminSidebar(); await refreshNotifications(); renderNavbar('navbar-admin', role); await initAdminDash(); startMessagePolling(); }
 }
 
 // Current version of the customer/provider agreement — must match
@@ -5804,9 +5808,15 @@ const PROVIDER_SECTIONS = {
           <option value="Bank Transfer" ${(!AUTH.user || !AUTH.user.payoutMethod || AUTH.user.payoutMethod === 'Bank Transfer') ? 'selected' : ''}>Bank Transfer — Chase •••• 1123</option>
           <option value="Wallet / Mobile Money" ${(AUTH.user && AUTH.user.payoutMethod === 'Wallet / Mobile Money') ? 'selected' : ''}>Wallet / Mobile Money</option>
           <option value="Debit Card" ${(AUTH.user && AUTH.user.payoutMethod === 'Debit Card') ? 'selected' : ''}>Debit Card</option>
+          <option value="PayPal" ${(AUTH.user && AUTH.user.payoutMethod === 'PayPal') ? 'selected' : ''}>PayPal</option>
         </select>
-        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Card payouts are test mode until a real payment processor is connected — same as everywhere else money touches this app.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Card and PayPal payouts are test mode until a real payment processor is connected — same as everywhere else money touches this app.</div>
       </div>
+    </div>
+    <div class="panel" id="prov-payout-paypal-panel" style="display:${(AUTH.user && AUTH.user.payoutMethod === 'PayPal') ? 'block' : 'none'};">
+      <div class="panel-title">PayPal for Payouts</div>
+      <div class="form-group"><label class="form-label">PayPal Email</label><input class="form-input" id="prov-payout-paypal-email" placeholder="you@example.com" value="${escapeHtml((AUTH.user && AUTH.user.payoutPaypalEmail) || '')}"/></div>
+      <button class="btn-sm btn-sm-primary" onclick="savePayoutPaypalEmail()">Save</button>
     </div>
     <div class="panel" id="prov-billing-card-panel" style="display:${(AUTH.user && AUTH.user.payoutMethod === 'Debit Card') ? 'block' : 'none'};">
       <div class="panel-title">Debit Card for Payouts</div>
@@ -5838,12 +5848,25 @@ function setPricingModelUI(model) {
 async function savePayoutMethod(method) {
   const cardPanel = document.getElementById('prov-billing-card-panel');
   if (cardPanel) cardPanel.style.display = method === 'Debit Card' ? 'block' : 'none';
+  const paypalPanel = document.getElementById('prov-payout-paypal-panel');
+  if (paypalPanel) paypalPanel.style.display = method === 'PayPal' ? 'block' : 'none';
   if (!BACKEND_AVAILABLE) return showToast('Payout method updated (demo mode)');
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { payoutMethod: method });
     AUTH.user = user;
     showToast('Payout method updated — future payouts will use this');
   } catch (e) { showToast(e.message || 'Could not update payout method'); }
+}
+
+async function savePayoutPaypalEmail() {
+  const email = document.getElementById('prov-payout-paypal-email').value.trim();
+  if (!isValidEmailClient(email)) return showToast('Enter a valid PayPal email address');
+  if (!BACKEND_AVAILABLE) return showToast('PayPal email saved (demo mode)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { payoutPaypalEmail: email });
+    AUTH.user = user;
+    showToast('PayPal email saved — future payouts will go here');
+  } catch (e) { showToast(e.message || 'Could not save PayPal email'); }
 }
 
 async function savePayoutCard() {
@@ -6441,7 +6464,7 @@ function openJobPhotoViewer(photoUrls) {
 function matchesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No pending matches right now.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Budget</th><th>Match Score</th><th>Distance</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick="openJobPhotoViewer(${JSON.stringify(m.photoUrls)})" style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📷 ${m.photoUrls.length} photo${m.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
+  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📷 ${m.photoUrls.length} photo${m.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
   <td class="row-actions">${m.status === 'interested'
     ? `<button class="btn-sm btn-sm-outline" onclick="messageCustomerAboutJob('${m.customerId}','${m.jobId}')">💬 Message</button>`
     : `<button class="btn-sm btn-sm-primary" onclick="respondToMatch('${m.id}','accept')">I'm Interested</button><button class="btn-sm btn-sm-outline" onclick="respondToMatch('${m.id}','decline')">Decline</button>`
@@ -6517,7 +6540,7 @@ function contractsTable(list) {
     } else if (c.status === 'expired') {
       actions = `<span style="font-size:12px;color:var(--slate);">You didn't respond in time — automatically cancelled</span>`;
     }
-    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${c.photoUrls && c.photoUrls.length ? ` <a onclick="openJobPhotoViewer(${JSON.stringify(c.photoUrls)})" style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📷 ${c.photoUrls.length} photo${c.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
+    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${c.photoUrls && c.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(c.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📷 ${c.photoUrls.length} photo${c.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
   }).join('')}
   </tbody></table></div>`;
 }
@@ -6910,6 +6933,7 @@ function getAdminNavItems() {
     { key: 'payments', label: 'Payments', icon: '💳' },
     { key: 'pricing', label: 'Plans & Pricing', icon: '💲' },
     { key: 'advertising', label: 'Advertising', icon: '📣' },
+    { key: 'careers', label: 'Job Applications', icon: '💼' },
     { key: 'reports', label: 'Reports', icon: '📈' },
     { key: 'categories', label: 'Categories & Countries', icon: '🌍' },
   ];
@@ -6917,7 +6941,7 @@ function getAdminNavItems() {
     base.push({ key: 'locations', label: 'Locations & Admins', icon: '🗺️' });
     base.push({ key: 'sales', label: 'Sales Inquiries', icon: '💼' });
     base.push({ key: 'organizations', label: 'Organizations', icon: '🏢' });
-    base.push({ key: 'careers', label: 'Job Applications', icon: '💼' });
+    base.push({ key: 'referrals', label: 'Referrals', icon: '🔗' });
     base.push({ key: 'accesslogs', label: 'Access Logs', icon: '🔍' });
   }
   base.push({ key: 'settings', label: 'Settings', icon: '⚙️' });
@@ -6979,7 +7003,7 @@ async function loadAdminData() {
     catch (e) { return null; }
   }
 
-  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries, reportsAnalytics, salesInquiries, organizations, careersInquiries, accessLogs] = await Promise.all([
+  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries, reportsAnalytics, salesInquiries, organizations, careersInquiries, accessLogs, referralsOverview] = await Promise.all([
     tryFetch('/admin/stats'),
     tryFetch('/admin/users/pending'),
     tryFetch('/admin/users/all'),
@@ -6999,6 +7023,7 @@ async function loadAdminData() {
     tryFetch('/admin/organizations'),
     tryFetch('/admin/careers-inquiries'),
     tryFetch('/admin/access-logs'),
+    tryFetch('/admin/referrals-overview'),
   ]);
 
   if (stats) adminData.stats = stats;
@@ -7020,6 +7045,7 @@ async function loadAdminData() {
   if (organizations) adminData.organizations = organizations.organizations;
   if (careersInquiries) adminData.careersInquiries = careersInquiries.inquiries;
   if (accessLogs) adminData.accessLogs = accessLogs.logs;
+  if (referralsOverview) adminData.referralsOverview = referralsOverview;
 
   // A genuine live check, not a hardcoded "everything's fine" badge — this
   // hits the real /api/health endpoint right now and times it.
@@ -7331,7 +7357,7 @@ const ADMIN_SECTIONS = {
       </div>
       <div class="form-group"><label class="form-label">City</label><input class="form-input" id="loc-city" placeholder="e.g. Monrovia"/><div style="font-size:11px;color:var(--muted);margin-top:5px;">Still required even for a functional-team member (their base location for contact purposes) — it just won't restrict what they can see if a department is selected below.</div></div>
       <div class="form-group"><label class="form-label">Role</label>
-        <select class="form-input form-select" id="loc-department" onchange="document.getElementById('loc-department-warning').style.display = this.value ? 'block' : 'none';">
+        <select class="form-input form-select" id="loc-department" onchange="handleLocDepartmentChange(this.value)">
           <option value="">Regional Admin — full access, scoped to this one city</option>
           <option value="verification">Verification Team — global access to identity verification only</option>
           <option value="disputes">Disputes Team — global access to disputes only</option>
@@ -7341,7 +7367,13 @@ const ADMIN_SECTIONS = {
           <option value="sales">Sales Team — Custom-plan leads and multi-seat organization accounts only</option>
           <option value="hr">HR Team — job applications only</option>
         </select>
-        <div id="loc-department-warning" style="display:none;margin-top:8px;font-size:12.5px;color:#8a5a00;background:#fff8e6;border:1px solid #f0d896;border-radius:8px;padding:10px 12px;">⚠️ This is a <strong>global</strong> role — this person will see data from <strong>every city and country</strong>, not just the one entered above. If you actually want someone scoped to just one location, choose "Regional Admin" instead.</div>
+        <div id="loc-department-warning" style="display:none;margin-top:8px;font-size:12.5px;color:#8a5a00;background:#fff8e6;border:1px solid #f0d896;border-radius:8px;padding:10px 12px;">⚠️ This is a <strong>global</strong> role — this person will see data from <strong>every city and country</strong>, not just the one entered above. If you actually want someone scoped to just one location, choose "Regional Admin" instead, or check the box below to scope this role to just the city entered above.</div>
+        <div id="loc-region-scoped-row" style="display:none;margin-top:8px;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
+            <input type="checkbox" id="loc-region-scoped"/>
+            Scope this role to just the city entered above, instead of every city
+          </label>
+        </div>
       </div>
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="createLocationAdmin()">Create Admin</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-location-panel').style.display='none'">Cancel</button></div>
     </div>
@@ -7355,6 +7387,29 @@ const ADMIN_SECTIONS = {
     <div class="panel"><div class="panel-title">Inquiries <small style="font-weight:400;color:var(--slate);">${(adminData.advertisingInquiries || []).length} total</small></div>${advertisingInquiriesTableHTML(adminData.advertisingInquiries || [])}</div>`;
   },
   pricing: () => (AUTH.user && AUTH.user.isSuperAdmin) ? superAdminPricingSectionHTML() : regionalPricingSectionHTML(),
+  referrals: () => {
+    const data = adminData.referralsOverview || { totalReferrals: 0, totalReferrers: 0, topReferrers: [], recent: [] };
+    return `
+    <div class="dash-header"><div><div class="dash-title">Referrals</div><div class="dash-sub">Real, platform-wide referral activity</div></div></div>
+    <div class="stat-cards">
+      <div class="stat-card"><div class="stat-card-label">Total Referrals</div><div class="stat-card-val">${data.totalReferrals}</div></div>
+      <div class="stat-card"><div class="stat-card-label">People Who've Referred Someone</div><div class="stat-card-val">${data.totalReferrers}</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Top Referrers</div>
+      ${!data.topReferrers.length ? `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No referral activity yet.</div>` : `
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Role</th><th>Referral Code</th><th>People Referred</th></tr></thead><tbody>
+      ${data.topReferrers.map(r => `<tr><td>${escapeHtml(r.referrerName)}</td><td>${escapeHtml(r.referrerRole || '—')}</td><td><code>${escapeHtml(r.referralCode || '—')}</code></td><td>${r.totalReferred}</td></tr>`).join('')}
+      </tbody></table></div>`}
+    </div>
+    <div class="panel">
+      <div class="panel-title">Recent Referral Signups <small style="font-weight:400;color:var(--slate);">Last ${data.recent.length}</small></div>
+      ${!data.recent.length ? `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No signups through a referral link yet.</div>` : `
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Referred By</th><th>New Signup</th><th>Role</th><th>When</th></tr></thead><tbody>
+      ${data.recent.map(r => `<tr><td>${escapeHtml(r.referrerName)}</td><td>${escapeHtml(r.referredName)}</td><td>${escapeHtml(r.referredRole)}</td><td style="white-space:nowrap;font-size:11.5px;color:var(--slate);">${timeAgo(r.createdAt)}</td></tr>`).join('')}
+      </tbody></table></div>`}
+    </div>`;
+  },
   accesslogs: () => {
     const list = adminData.accessLogs || [];
     const RESOURCE_LABELS = {
@@ -7382,8 +7437,9 @@ const ADMIN_SECTIONS = {
   careers: () => {
     const list = adminData.careersInquiries || [];
     const newCount = list.filter(i => i.status === 'new').length;
+    const isRegionallyScoped = AUTH.user && !AUTH.user.isSuperAdmin && (!AUTH.user.adminDepartment || AUTH.user.regionScoped);
     return `
-    <div class="dash-header"><div><div class="dash-title">Job Applications</div><div class="dash-sub">Real submissions from the Careers page</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Job Applications</div><div class="dash-sub">Real submissions from the Careers page${isRegionallyScoped ? ` — ${escapeHtml(AUTH.user.city || AUTH.user.region || 'your city')} only` : ''}</div></div></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Applications</div><div class="stat-card-val">${list.length}</div></div>
       <div class="stat-card"><div class="stat-card-label">New</div><div class="stat-card-val">${newCount}</div></div>
@@ -7391,9 +7447,10 @@ const ADMIN_SECTIONS = {
     <div class="panel">
       <div class="panel-title">All Applications <small style="font-weight:400;color:var(--slate);">${list.length} total</small></div>
       ${!list.length ? `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No applications yet.</div>` : `
-      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Role Interest</th><th>Contact</th><th>Cover Letter</th><th>Resume</th><th>Status</th><th>Applied</th></tr></thead><tbody>
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>City</th><th>Role Interest</th><th>Contact</th><th>Cover Letter</th><th>Resume</th><th>Status</th><th>Applied</th></tr></thead><tbody>
       ${list.map(i => `<tr>
         <td>${escapeHtml(i.name)}</td>
+        <td>${escapeHtml(i.city || '—')}</td>
         <td>${escapeHtml(i.role)}</td>
         <td>${escapeHtml(i.email)}<br/><span style="color:var(--slate);font-size:11.5px;">${escapeHtml(i.phone || '—')}</span></td>
         <td style="max-width:260px;white-space:normal;font-size:12px;color:var(--slate);">${escapeHtml((i.coverLetter || '').slice(0, 160))}${(i.coverLetter || '').length > 160 ? '…' : ''}</td>
@@ -8219,6 +8276,21 @@ function openNewLocationForm() {
   countrySelect.innerHTML = countries.map(c => `<option value="${c}" ${c === current ? 'selected' : ''}>${c}</option>`).join('');
 }
 
+function handleLocDepartmentChange(department) {
+  document.getElementById('loc-department-warning').style.display = department ? 'block' : 'none';
+  const scopedRow = document.getElementById('loc-region-scoped-row');
+  const scopedCheckbox = document.getElementById('loc-region-scoped');
+  // 'sales' never regionalizes (multi-seat org deals aren't a per-city
+  // concept) — hide the option entirely rather than show a checkbox that
+  // would silently do nothing if checked.
+  if (department && department !== 'sales') {
+    scopedRow.style.display = 'block';
+  } else {
+    scopedRow.style.display = 'none';
+    scopedCheckbox.checked = false;
+  }
+}
+
 async function createLocationAdmin() {
   const name = document.getElementById('loc-admin-name').value.trim();
   const email = document.getElementById('loc-admin-email').value.trim();
@@ -8230,6 +8302,7 @@ async function createLocationAdmin() {
   const city = cityRaw.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
   const country = document.getElementById('loc-country').value;
   const department = document.getElementById('loc-department').value || null;
+  const regionScoped = document.getElementById('loc-region-scoped').checked;
   if (!name || !email || !password || !city || !country) return showToast('Please fill in every field');
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
@@ -8246,8 +8319,8 @@ async function createLocationAdmin() {
   }
   if (!BACKEND_AVAILABLE) return showToast(`${city} admin created (demo mode — no backend detected)`);
   try {
-    const { admin } = await apiFetch('POST', '/admin/sub-admins', { name, email, password, city, country, department });
-    showToast(department ? `${admin.name} is now on the ${department} team` : `${admin.name} is now the admin for ${city}, ${country}`);
+    const { admin } = await apiFetch('POST', '/admin/sub-admins', { name, email, password, city, country, department, regionScoped: department && department !== 'sales' ? regionScoped : false });
+    showToast(department ? `${admin.name} is now on the ${department} team${regionScoped && department !== 'sales' ? ` (scoped to ${city})` : ' (global)'}` : `${admin.name} is now the admin for ${city}, ${country}`);
     await loadAdminData();
     selectAdminSection('locations');
   } catch (e) { showToast(e.message || 'Could not create admin'); }

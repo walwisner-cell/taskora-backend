@@ -91,7 +91,7 @@ router.post('/careers-inquiry', (req, res, next) => {
     next();
   });
 }, async (req, res) => {
-  const { name, email, phone, role, coverLetter } = req.body || {};
+  const { name, email, phone, city, role, coverLetter } = req.body || {};
   const errors = validate([
     ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Enter your name'],
     ['email', isNonEmptyString(email, { min: 5, max: 254 }), 'Enter a valid email address'],
@@ -115,18 +115,33 @@ router.post('/careers-inquiry', (req, res, next) => {
 
   const submission = {
     id: `career_${nanoid(10)}`,
-    name: name.trim(), email: email.trim(), phone: phone.trim(), role: role.trim(), coverLetter: coverLetter.trim(),
+    name: name.trim(), email: email.trim(), phone: phone.trim(), city: (city || '').trim() || null, role: role.trim(), coverLetter: coverLetter.trim(),
     resumeUrl,
     status: 'new',
     createdAt: new Date().toISOString(),
   };
   await db.insert('careersInquiries', submission);
 
-  const hrAdmins = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'hr');
-  const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
-  const recipients = hrAdmins.length ? hrAdmins : superAdmins; // no HR team set up yet? falls to super admin rather than nobody
+  // Who actually sees this depends on whether the applicant gave a city.
+  // With a city: the city's own regional manager (a plain regional
+  // admin has a real, direct stake in who joins their own team — this is
+  // the literal "let application be regional manager" request), plus any
+  // HR admin specifically scoped to that same city, plus any HR admin
+  // who's global. Without a city, or if genuinely nobody above exists:
+  // every super admin, so an application never just goes nowhere.
+  let recipients = [];
+  if (submission.city) {
+    const regionalManager = await db.find('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === submission.city);
+    const cityHr = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'hr' && u.regionScoped && u.city === submission.city);
+    const globalHr = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'hr' && !u.regionScoped);
+    recipients = [regionalManager, ...cityHr, ...globalHr].filter(Boolean);
+  } else {
+    recipients = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'hr');
+  }
+  if (!recipients.length) recipients = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+
   for (const admin of recipients) {
-    await notify(admin.id, '💼', `New job application from ${submission.name} — interested in: "${submission.role}"${resumeUrl ? ' (resume attached)' : ''}`, null, { section: 'careers' });
+    await notify(admin.id, '💼', `New job application from ${submission.name}${submission.city ? ` (${submission.city})` : ''} — interested in: "${submission.role}"${resumeUrl ? ' (resume attached)' : ''}`, null, { section: 'careers' });
   }
   console.log(`[TEST MODE — no email provider connected] Would email ${recipients.length ? recipients.map(a => a.email).join(', ') : 'support@trothen.io'}: new job application from ${submission.email}`);
 
