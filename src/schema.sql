@@ -556,6 +556,18 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate_override_proposed_by 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS region_scoped BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_paypal_email TEXT;
 ALTER TABLE careers_inquiries ADD COLUMN IF NOT EXISTS city TEXT;
+
+-- Provider Trust Score (see src/provider-score.js) — the computed score
+-- itself, its component breakdown (kept as JSONB so the exact 8-part
+-- structure doesn't need its own 8 columns), when it was last computed,
+-- and a real expiry date on a hold so a score-based pause can actually
+-- auto-reactivate instead of staying paused until someone remembers to
+-- clear it by hand.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score NUMERIC;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score_breakdown JSONB;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score_updated_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS hold_until TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS service_radius_miles NUMERIC;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS negotiation_transcript JSONB;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS on_my_way_at TIMESTAMPTZ;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS on_my_way_location JSONB;
@@ -595,6 +607,11 @@ ALTER TABLE careers_inquiries ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE careers_inquiries ADD COLUMN IF NOT EXISTS cover_letter TEXT;
 ALTER TABLE careers_inquiries ADD COLUMN IF NOT EXISTS resume_url TEXT;
 
+-- Whether a resolved dispute released escrow to the provider or
+-- refunded the customer — previously every resolution meant the same
+-- thing (release), so this distinction didn't need to exist yet.
+ALTER TABLE disputes ADD COLUMN IF NOT EXISTS resolution TEXT;
+
 -- Real access logs — who on the admin team viewed sensitive data, and
 -- when. See src/access-log.js for what writes to this and why it's
 -- scoped to only the genuinely sensitive endpoints, not every admin
@@ -609,6 +626,24 @@ CREATE TABLE IF NOT EXISTS access_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_access_logs_admin ON access_logs(admin_id);
 CREATE INDEX IF NOT EXISTS idx_access_logs_created ON access_logs(created_at);
+
+-- Promotion/campaign banners a super admin or regional manager can post,
+-- shown on the customer and/or provider dashboard. A null region means
+-- platform-wide; a specific city scopes it to just that city — see
+-- POST /admin/promotions in admin.routes.js for who can set which.
+CREATE TABLE IF NOT EXISTS promotions (
+  id           TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  message      TEXT NOT NULL,
+  image_url    TEXT,
+  created_by   TEXT NOT NULL REFERENCES users(id),
+  region       TEXT,
+  audience     TEXT NOT NULL DEFAULT 'both',
+  active       BOOLEAN NOT NULL DEFAULT TRUE,
+  expires_at   TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_promotions_region ON promotions(region);
 
 -- General-purpose key/value settings, first used for the provider
 -- booking-confirmation window (see src/platform-settings.js). Absence of

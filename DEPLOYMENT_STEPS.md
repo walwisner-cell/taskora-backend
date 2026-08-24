@@ -1,31 +1,38 @@
 # Trothen — Deployment Steps (Final)
 
-18 files total: 13 modified, 5 new. Every backend file re-checked for syntax errors, and every file below matches what's actually in the package.
+28 files total. Every backend file syntax-checked, plus a runtime sanity check confirming every new frontend function is both defined and actually called (no leftover dead code, no dangling references).
 
 ## 1. Files and where they go
 
-Drop these into your local `trothen-backend` clone at the **exact same relative paths** — all complete drop-in replacements, not diffs.
-
 | File | Status | Bytes |
 |---|---|---|
-| `public/index.html` | **modified again — see section 3 below** | 752,089 |
+| `public/index.html` | modified | 785,251 |
 | `public/manifest.json` | new | 793 |
 | `public/sw.js` | new | 700 |
 | `public/icon-192.png` | new | 15,672 |
 | `public/icon-512.png` | new | 67,430 |
 | `public/apple-touch-icon.png` | new | 14,158 |
-| `server.js` | modified | 9,431 |
+| `server.js` | modified | 10,042 |
+| `src/access-log.js` | new | 1,867 |
 | `src/auth.js` | modified | 7,606 |
-| `src/db-postgres.js` | modified | 13,013 |
-| `src/schema.sql` | modified | 27,115 |
+| `src/commission.js` | modified | 5,856 |
+| `src/db-postgres.js` | modified | 13,633 |
+| `src/schema.sql` | modified | 30,872 |
+| `src/delivery.js` | new | 3,661 |
 | `src/document-expiry-scheduler.js` | new | 3,689 |
+| `src/provider-score.js` | new | 8,968 |
+| `src/provider-score-scheduler.js` | new | 3,810 |
+| `src/fraud-detection.js` | modified | 11,770 |
+| `src/notify.js` | modified | 1,532 |
 | `src/persona-verification.js` | new | 3,253 |
 | `src/referral-code.js` | new | 1,000 |
-| `src/routes/admin.routes.js` | modified | 101,108 |
-| `src/routes/auth.routes.js` | modified | 41,325 |
-| `src/routes/marketplace.routes.js` | modified | 88,761 |
-| `src/routes/misc.routes.js` | modified | 27,231 |
-| `src/routes/payments.routes.js` | modified | 46,408 |
+| `src/uploads.js` | **modified again this round** | 5,353 |
+| `src/routes/admin.routes.js` | **modified again this round** | 121,608 |
+| `src/routes/auth.routes.js` | **modified again this round** | 45,286 |
+| `src/routes/marketplace.routes.js` | **modified again this round** | 89,787 |
+| `src/routes/misc.routes.js` | **modified again this round** | 32,231 |
+| `src/routes/payments.routes.js` | modified | 46,657 |
+| `src/routes/portfolio.routes.js` | **modified this round** | 11,681 |
 
 ## 2. cmd.exe deploy steps
 
@@ -33,17 +40,26 @@ Drop these into your local `trothen-backend` clone at the **exact same relative 
 cd path\to\trothen-backend
 dir public\index.html
 dir server.js
+dir src\access-log.js
 dir src\auth.js
+dir src\commission.js
 dir src\db-postgres.js
 dir src\schema.sql
+dir src\delivery.js
 dir src\document-expiry-scheduler.js
+dir src\provider-score.js
+dir src\provider-score-scheduler.js
+dir src\fraud-detection.js
+dir src\notify.js
 dir src\persona-verification.js
 dir src\referral-code.js
+dir src\uploads.js
 dir src\routes\admin.routes.js
 dir src\routes\auth.routes.js
 dir src\routes\marketplace.routes.js
 dir src\routes\misc.routes.js
 dir src\routes\payments.routes.js
+dir src\routes\portfolio.routes.js
 dir public\manifest.json
 dir public\sw.js
 dir public\icon-192.png
@@ -55,50 +71,28 @@ Compare against the table above, then:
 
 ```
 git add .
-git commit -m "Add safety net for the settings logout issue, plus ID verification, referrals, wallets, PWA, open job board, GPS stamps, database schema updates"
+git commit -m "Add service radius, video uploads for job photos, promotion banners"
 git push
 ```
 
-## 3. About the logout problem — what actually changed this round
+## 3. What's new this round
 
-I went through the code again, from a new angle: checked every place the server could suspend an account or invalidate a session, and traced it all the way through the settings-save process. None of it touches those triggers. That rules out the last real theory I had.
+- **Service radius for providers.** Set in Settings, right next to the existing real-location sharing. Honest about its real limit: it only actually filters search results once *both* the provider and the customer have shared real GPS coordinates — if either hasn't, nobody gets hidden by a filter with no real data behind it.
+- **Video uploads for job photos.** Customers can now attach a short video (MP4, MOV, or WebM — up to 50MB, vs. 5MB for photos) alongside images when posting a job or booking directly. Real file-content verification on video too (checking actual file bytes, not just trusting the file extension — same principle already used for photos and resumes). The photo viewer now plays video inline instead of trying to show it as a broken image.
+- **Promotion/campaign banners.** Both super admins and regional managers can post one — a regional manager's promo is automatically scoped to just their own city; a super admin can go platform-wide or target a specific city. Shows as a dismissible banner at the top of the customer and/or provider dashboard (you choose the audience when posting). New "Promotions" section in the admin panel to create, activate/deactivate, and remove them.
 
-Since more code-reading wasn't finding it, I added something that will actually help: **every dashboard section now has a safety net.** If a section ever hits an error while loading — instead of the screen going blank or looking broken (which looks exactly like getting logged out, even though it isn't one), it now shows a plain message on screen that says "you're still signed in, this is a display problem" along with the actual technical error underneath it.
+## 4. Post-deploy smoke test
 
-Two things this gets you:
+1. As a provider, set a service radius in Settings, share your real location, then search for that provider as a customer with your own location shared — confirm distance and radius filtering both work.
+2. Post a job or make a direct booking with a short test video attached — confirm it uploads, and that opening it (as the provider, from Job Matches or Contracts) actually plays the video.
+3. As a regional admin, post a promotion — confirm it only appears for customers/providers in your own city, not other cities. As a super admin, post a platform-wide one and confirm it reaches everyone.
+4. Dismiss a promotion banner and refresh — confirm it stays dismissed in that browser.
 
-- If this *was* the cause of what you're seeing, it's fixed now — you'll see a real message instead of a blank/broken screen.
-- If it happens again for any other reason, you can screenshot that on-screen error and send it to me. That turns "I don't know what's happening" into an exact line of code I can go fix — the difference between guessing and actually solving it.
+## 5. What's still open
 
-This doesn't touch your sign-in state at all either way, so it can't make anything about signing in or out behave differently than it already does.
+- **Live GPS "show provider position" tracking** — same answer as before: real status stamps exist, continuous live tracking is a distinct, larger project.
+- **Formal provider quotes to customers** — likely already substantially covered by the existing negotiation/messaging system; want to understand the specific gap before building a second, separate feature.
+- **App feels slow** — can't diagnose without live testing on your end.
+- Unchanged: the provider settings logout bug (needs your repro steps), "make money Money," and "add content to AI chats" (still need more detail on both).
 
-## 4. Persona verification env vars (unchanged)
-
-| Variable | What it is |
-|---|---|
-| `PERSONA_TEMPLATE_ID` | The verification template you build in Persona's dashboard |
-| `PERSONA_ENVIRONMENT_ID` | Your sandbox or production environment id from Persona |
-| `PERSONA_WEBHOOK_SECRET` | The signing secret Persona gives you for a webhook pointed at `https://<your-render-domain>/api/webhooks/persona` |
-
-All three need to exist at once to activate — missing any one just keeps the manual verification flow, no error.
-
-## 5. Post-deploy smoke test
-
-1. Logo — renders properly sized in the navbar and footer.
-2. Sign-in screen — old plaintext demo-credentials block is gone.
-3. Create a location admin — forced to set their own password on first login.
-4. Regional support contact — a regional admin can set their own city's number.
-5. Referrals — a real link loads in Settings and copies correctly.
-6. Payment methods — Card / Apple Pay / PayPal tabs all render and save.
-7. PWA install — the browser offers to add Trothen to the home screen.
-8. Open job board + negotiation — post a job, confirm every verified provider in that category/city gets notified. Express interest as a provider, confirm no contract yet. Negotiate by message, then hire — confirm the contract's created at the agreed amount and the PDF includes the real chat.
-9. GPS status stamps — mark a booking "On My Way" then "Arrived," confirm both show up on the customer's side.
-10. Document expiry reminders — confirm the server boots with no errors in the logs.
-11. ID verification — confirms either the real Persona flow (if set up) or the manual flow (if not).
-12. **The settings logout issue** — go back through provider settings the way you normally would when it happens. If it still happens, you should now see the on-screen error message described in section 3 instead of a blank/broken screen — screenshot it and send it over.
-
-## 6. What's still open
-
-The logout problem itself isn't confirmed fixed — I couldn't find its actual cause through the code, so what shipped this round is a safety net, not a guaranteed fix. If step 12 above still shows something going wrong, the new error message on screen is what gets this closed out for real.
-
-Everything else from your original list is done.
+Everything else across every round of feedback is done and in this package.

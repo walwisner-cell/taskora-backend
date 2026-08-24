@@ -30,7 +30,34 @@ if (usingConfiguredDir) {
   console.log(`⚠️  UPLOADS_DIR is not set — portfolio uploads will be saved to ${UPLOADS_DIR}, which will NOT survive a redeploy or restart on most hosting platforms. Set UPLOADS_DIR to a path on your persistent disk (e.g. /var/data/uploads on Render) for uploads to actually stick around.`);
 }
 
-module.exports = { UPLOADS_DIR, verifyImageMagicBytes, verifyPdfMagicBytes };
+// MP4 and MOV (QuickTime) both store their container type in a 'ftyp' box
+// that appears within the first ~12-16 bytes of a real file — checking
+// for the literal ASCII bytes 'ftyp' at offset 4 catches both formats,
+// the same way real media libraries identify them. WebM is a different
+// container format entirely (Matroska/EBML) with its own fixed magic
+// header at the very start of the file. Between the two checks, this
+// covers every format the upload form actually offers.
+function verifyVideoMagicBytes(filePath, declaredMimetype) {
+  let buf;
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+  } catch (e) {
+    return false;
+  }
+  const isMp4OrMov = buf.toString('ascii', 4, 8) === 'ftyp';
+  const isWebm = buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3;
+  switch (declaredMimetype) {
+    case 'video/mp4': return isMp4OrMov;
+    case 'video/quicktime': return isMp4OrMov;
+    case 'video/webm': return isWebm;
+    default: return false;
+  }
+}
+
+module.exports = { UPLOADS_DIR, verifyImageMagicBytes, verifyPdfMagicBytes, verifyVideoMagicBytes };
 
 // Every upload endpoint in this app validates a file by its CLIENT-DECLARED
 // mimetype (from the multipart form field) — which is exactly what an

@@ -5,7 +5,7 @@ const multer = require('multer');
 const { nanoid } = require('nanoid');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const { UPLOADS_DIR, verifyImageMagicBytes } = require('../uploads');
+const { UPLOADS_DIR, verifyImageMagicBytes, verifyVideoMagicBytes } = require('../uploads');
 
 const router = express.Router();
 
@@ -41,6 +41,7 @@ const upload = multer({ storage, fileFilter, limits: { fileSize: MAX_FILE_SIZE_B
 // privacy note surfaced in the upload UI itself, not just buried in a
 // terms-of-service page nobody reads.
 const MAX_JOB_PHOTOS = 5;
+const MAX_JOB_MEDIA_SIZE_BYTES = 50 * 1024 * 1024; // 50MB — video files are a lot bigger than photos, hence a separate, larger limit that only applies here, not to profile/portfolio photo uploads
 const jobPhotoStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => {
@@ -48,7 +49,19 @@ const jobPhotoStorage = multer.diskStorage({
     cb(null, `jobphoto_${req.user.sub}_${nanoid(12)}${ext}`);
   },
 });
-const uploadJobPhoto = multer({ storage: jobPhotoStorage, fileFilter, limits: { fileSize: MAX_FILE_SIZE_BYTES } });
+// A customer showing a provider what the job actually looks like isn't
+// always well-served by a still photo — a short video of a leaking pipe
+// or a strange noise a machine is making often explains the job far
+// better than any picture could. Images plus the three common video
+// formats browsers can record/export directly (MP4, MOV, WebM).
+function jobMediaFileFilter(req, file, cb) {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime', 'video/webm'];
+  if (!allowed.includes(file.mimetype)) {
+    return cb(new Error('Only JPEG, PNG, WEBP, GIF images or MP4, MOV, WEBM videos are allowed'));
+  }
+  cb(null, true);
+}
+const uploadJobPhoto = multer({ storage: jobPhotoStorage, fileFilter: jobMediaFileFilter, limits: { fileSize: MAX_JOB_MEDIA_SIZE_BYTES } });
 
 // POST /api/job-photos/upload — customer only. Uploads ONE photo and
 // returns its URL; the frontend collects however many URLs (up to
@@ -63,14 +76,18 @@ router.post('/job-photos/upload', requireAuth, requireRole('customer'), (req, re
 
     if (!fs.existsSync(req.file.path)) {
       console.error(`Job photo upload reported success but file is missing at ${req.file.path} — check UPLOADS_DIR points to a writable, persistent location.`);
-      return res.status(500).json({ error: 'The photo could not be saved to disk. Please try again.' });
+      return res.status(500).json({ error: 'The file could not be saved to disk. Please try again.' });
     }
-    if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
+    const isVideo = req.file.mimetype.startsWith('video/');
+    const verified = isVideo
+      ? verifyVideoMagicBytes(req.file.path, req.file.mimetype)
+      : verifyImageMagicBytes(req.file.path, req.file.mimetype);
+    if (!verified) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
+      return res.status(400).json({ error: `This file does not appear to be a genuine ${isVideo ? 'video' : 'image'} — please upload a real ${isVideo ? 'video' : 'photo'}.` });
     }
 
-    res.status(201).json({ url: `/uploads/${req.file.filename}` });
+    res.status(201).json({ url: `/uploads/${req.file.filename}`, isVideo });
   });
 });
 

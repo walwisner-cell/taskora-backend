@@ -266,6 +266,75 @@ router.get('/users/all', async (req, res) => {
   res.json({ users: users.map(publicAdmin) });
 });
 
+// GET /api/admin/providers/:id/score — a live, freshly-computed trust
+// score for one provider (not just whatever was last saved by the daily
+// sweep) — useful when reviewing a specific account right now rather
+// than waiting for the next scheduled run.
+router.get('/providers/:id/score', async (req, res) => {
+  const region = await myRegion(req);
+  const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
+  if (!provider) return res.status(404).json({ error: 'Provider not found' });
+  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  const { computeProviderScore, recommendedActionForScore } = require('../provider-score');
+  const result = await computeProviderScore(provider.id);
+  res.json({ ...result, recommendedAction: recommendedActionForScore(result.total) });
+});
+
+// GET /api/admin/providers/leaderboard — every provider ranked by trust
+// score, highest first. Uses whatever was last computed by the daily
+// sweep (see src/provider-score-scheduler.js) rather than recomputing
+// everyone live on every request — a ranked list doesn't need to be
+// second-by-second fresh the way reviewing one specific account does.
+router.get('/providers/leaderboard', async (req, res) => {
+  const region = await myRegion(req);
+  const { recommendedActionForScore } = require('../provider-score');
+  let providers = await db.filter('users', u => u.role === 'provider' && u.trustScore != null);
+  if (region) providers = providers.filter(p => p.city === region);
+  providers.sort((a, b) => (b.trustScore || 0) - (a.trustScore || 0));
+  res.json({
+    providers: providers.map(p => ({
+      id: p.id, name: p.name, city: p.city, category: p.category,
+      trustScore: p.trustScore, plan: p.plan, rating: p.rating, jobs: p.jobs,
+      trustScoreUpdatedAt: p.trustScoreUpdatedAt,
+      onHold: p.onHold, holdUntil: p.holdUntil,
+      recommendedAction: recommendedActionForScore(p.trustScore),
+    })),
+  });
+});
+
+// POST /api/admin/providers/:id/apply-score-pause — the real, human
+// action behind a score-based pause recommendation. Pre-fills from
+// recommendedActionForScore if no duration is given, but always requires
+// a real click from a real admin — nothing pauses a provider's account
+// on its own. Reuses the existing onHold mechanism (same one manual
+// holds already use) with a new holdUntil so it auto-expires — see
+// src/document-expiry-scheduler.js-style daily sweep pattern; the
+// hold-expiry sweep itself is in provider-score-scheduler's neighbor,
+// wired in server.js.
+router.post('/providers/:id/apply-score-pause', async (req, res) => {
+  const region = await myRegion(req);
+  const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
+  if (!provider) return res.status(404).json({ error: 'Provider not found' });
+  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+
+  const { recommendedActionForScore } = require('../provider-score');
+  const recommended = recommendedActionForScore(provider.trustScore);
+  const months = typeof req.body.months === 'number' && req.body.months > 0 ? req.body.months : (recommended ? recommended.months : null);
+  if (!months) return res.status(400).json({ error: 'No recommended pause for this provider\'s current score, and no custom duration was given' });
+
+  const holdUntil = new Date();
+  holdUntil.setMonth(holdUntil.getMonth() + months);
+
+  const updated = await db.update('users', provider.id, {
+    onHold: true,
+    holdReason: `Trust score-based pause (score: ${provider.trustScore}/99) — ${months} month${months === 1 ? '' : 's'}`,
+    holdSince: new Date().toISOString(),
+    holdUntil: holdUntil.toISOString(),
+  });
+  await notify(provider.id, '⏸️', `Your account has been paused for ${months} month${months === 1 ? '' : 's'} based on your current trust score (${provider.trustScore}/99). It will automatically reactivate on ${holdUntil.toLocaleDateString()}. Contact support if you have questions.`, null, { section: 'settings' });
+  res.json({ user: publicAdmin(updated) });
+});
+
 // PATCH /api/admin/users/:id/status  { active: true|false } — suspend or
 // reactivate a customer or provider account. Location admins can only do
 // this to people in their own city; a super admin can do it to anyone,
@@ -692,11 +761,34 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   const dispute = await db.find('disputes', d => d.id === req.params.id);
   if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
   if (region && (await disputeCity(dispute)) !== region) return res.status(403).json({ error: 'That dispute is outside your assigned city' });
-  const updated = await db.update('disputes', dispute.id, { status: 'resolved', resolvedAt: new Date().toISOString() });
+
+  // Previously this only ever had one outcome: release escrow to the
+  // provider, no matter what the dispute was actually about. If a
+  // customer's complaint was legitimate — the provider never showed up,
+  // did damage, didn't finish the job — there was no way to refund them
+  // instead. Now the admin picks: release to the provider (defaults to
+  // this when no decision is given, so nothing about existing behavior
+  // silently changes for a request that doesn't specify one) or refund
+  // the customer.
+  const { decision } = req.body || {};
+  const outcome = decision === 'refund_customer' ? 'refund_customer' : 'release_to_provider';
+
+  const updated = await db.update('disputes', dispute.id, { status: 'resolved', resolvedAt: new Date().toISOString(), resolution: outcome });
   const escrow = await db.find('escrowTransactions', e => e.contractId === updated.contractId);
+  const contract = await db.find('contracts', c => c.id === updated.contractId);
+
+  if (outcome === 'refund_customer') {
+    const wasRefunded = escrow && escrow.status === 'refunded';
+    if (escrow && !wasRefunded) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+    if (contract) {
+      await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved in your favor — ${wasRefunded ? 'your payment was already refunded.' : 'your payment has been refunded.'}`, 'bookingUpdates', { section: 'bookings' });
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — the customer was refunded, so this booking's escrow will not be released to you.`, 'bookingUpdates', { section: 'bookings' });
+    }
+    return res.json({ dispute: updated });
+  }
+
   const wasReleased = escrow && escrow.status !== 'released';
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
-  const contract = await db.find('contracts', c => c.id === updated.contractId);
   if (contract) {
     await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved.`, 'bookingUpdates', { section: 'bookings' });
     if (wasReleased) {
@@ -1539,6 +1631,87 @@ router.get('/referrals-overview', requireSuperAdmin, async (req, res) => {
     topReferrers,
     recent,
   });
+});
+
+// GET /api/admin/promotions — every promotion this admin has a real
+// reason to manage: a super admin sees all of them; a regional manager
+// sees their own city's plus any platform-wide ones (for visibility, not
+// editing — see the ownership check in PATCH/DELETE below).
+router.get('/promotions', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
+  let promos = (await db.all('promotions')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  if (!m.isSuperAdmin) promos = promos.filter(p => !p.region || p.region === m.city);
+  res.json({ promotions: promos });
+});
+
+// POST /api/admin/promotions — a regional manager's promo is always
+// scoped to their own city (no way to post platform-wide from here,
+// same "own city, not the whole platform" boundary already used for ad
+// pricing and regional support contacts). A super admin can post
+// platform-wide (leave region blank) or target a specific city.
+router.post('/promotions', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
+  const { title, message, imageUrl, audience, region, expiresAt } = req.body || {};
+  const errors = validate([
+    ['title', isNonEmptyString(title, { min: 2, max: 120 }), 'Enter a short title'],
+    ['message', isNonEmptyString(message, { min: 5, max: 500 }), 'Enter the promotion message'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  if (audience && !['customers', 'providers', 'both'].includes(audience)) {
+    return res.status(400).json({ error: 'audience must be customers, providers, or both' });
+  }
+
+  const promo = {
+    id: `promo_${nanoid(10)}`,
+    title: title.trim(),
+    message: message.trim(),
+    imageUrl: imageUrl || null,
+    createdBy: m.id,
+    region: m.isSuperAdmin ? (region || null) : m.city,
+    audience: audience || 'both',
+    active: true,
+    expiresAt: expiresAt || null,
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('promotions', promo);
+  res.status(201).json({ promotion: promo });
+});
+
+// PATCH /api/admin/promotions/:id — toggle active/inactive, or edit.
+// Only the admin who created it, or a super admin, can touch it — a
+// regional manager can see a platform-wide promo (GET above) but can't
+// edit or remove something they didn't post.
+router.patch('/promotions/:id', async (req, res) => {
+  const m = await me(req);
+  const promo = await db.find('promotions', p => p.id === req.params.id);
+  if (!promo) return res.status(404).json({ error: 'Promotion not found' });
+  if (!m.isSuperAdmin && promo.createdBy !== m.id) {
+    return res.status(403).json({ error: 'You can only edit promotions you created' });
+  }
+  const patch = {};
+  if ('active' in req.body) patch.active = !!req.body.active;
+  if ('title' in req.body && isNonEmptyString(req.body.title, { min: 2, max: 120 })) patch.title = req.body.title.trim();
+  if ('message' in req.body && isNonEmptyString(req.body.message, { min: 5, max: 500 })) patch.message = req.body.message.trim();
+  const updated = await db.update('promotions', promo.id, patch);
+  res.json({ promotion: updated });
+});
+
+// DELETE /api/admin/promotions/:id — same ownership rule as PATCH.
+router.delete('/promotions/:id', async (req, res) => {
+  const m = await me(req);
+  const promo = await db.find('promotions', p => p.id === req.params.id);
+  if (!promo) return res.status(404).json({ error: 'Promotion not found' });
+  if (!m.isSuperAdmin && promo.createdBy !== m.id) {
+    return res.status(403).json({ error: 'You can only remove promotions you created' });
+  }
+  await db.remove('promotions', promo.id);
+  res.json({ ok: true });
 });
 
 // GET /api/admin/access-logs — who on the admin team has actually viewed

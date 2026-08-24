@@ -171,6 +171,7 @@ function publicProvider(u) {
     profilePhotoUrl: u.profilePhotoUrl || null,
     businessName: u.businessName || null,
     acceptingBookings: u.acceptingBookings !== false,
+    serviceRadiusMiles: u.serviceRadiusMiles != null ? u.serviceRadiusMiles : null,
   };
 }
 
@@ -606,6 +607,13 @@ router.get('/providers', async (req, res) => {
         ? Math.round(distanceInMiles(customerLat, customerLng, p.latitude, p.longitude) * 10) / 10
         : null,
     }));
+    // A provider's own service radius only ever excludes them here when
+    // there's a real distance to compare it against — a provider who set
+    // a radius but hasn't shared their live location, or a customer who
+    // hasn't shared theirs, means there's nothing real to filter on, so
+    // they're never silently hidden based on a distance nobody actually
+    // knows.
+    finalProviders = finalProviders.filter(p => p.distanceMiles == null || p.serviceRadiusMiles == null || p.distanceMiles <= p.serviceRadiusMiles);
     // Nearest real distance first; providers who haven't shared GPS yet
     // (distanceMiles is null) sort after everyone who has, but are still
     // shown — not sharing a precise location isn't a reason to hide
@@ -1546,3 +1554,9 @@ router.post('/disputes', requireAuth, disputeLimiter, async (req, res) => {
 });
 
 module.exports = router;
+// Attached rather than replacing the export — a router is a function, so
+// it can carry extra named properties without affecting its use as
+// Express middleware. Lets src/provider-score.js reuse the exact same
+// license-validity rule instead of a second, possibly-drifting copy of it.
+module.exports.LICENSED_TRADE_CATEGORIES = LICENSED_TRADE_CATEGORIES;
+module.exports.hasValidLicense = hasValidLicense;

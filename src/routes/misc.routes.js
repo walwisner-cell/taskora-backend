@@ -547,6 +547,35 @@ router.post('/messages', requireAuth, messageLimiter, async (req, res) => {
 // real signed-in user. Referred people are shown as first name + last
 // initial only — enough to feel real without exposing a referred
 // person's full identity to whoever referred them.
+// GET /api/provider-score/mine — a provider's own real, live trust score
+// and breakdown, the same numbers an admin sees, so there's nothing
+// hidden about how it's calculated.
+// GET /api/promotions/mine — active promotions actually meant for this
+// person: matching their role (or posted to 'both'), and either
+// platform-wide or specifically targeting their own city. Expired ones
+// (past expiresAt) are filtered out here too, so nothing stale ever
+// reaches a dashboard even if an admin forgets to deactivate it.
+router.get('/promotions/mine', requireAuth, async (req, res) => {
+  if (!['customer', 'provider'].includes(req.user.role)) return res.json({ promotions: [] });
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const audienceKey = req.user.role === 'customer' ? 'customers' : 'providers';
+  const now = new Date();
+  const all = await db.filter('promotions', p =>
+    p.active &&
+    (p.audience === audienceKey || p.audience === 'both') &&
+    (!p.region || p.region === (me && me.city)) &&
+    (!p.expiresAt || new Date(p.expiresAt) > now)
+  );
+  res.json({ promotions: all.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) });
+});
+
+router.get('/provider-score/mine', requireAuth, requireRole('provider'), async (req, res) => {
+  const { computeProviderScore } = require('../provider-score');
+  const result = await computeProviderScore(req.user.sub);
+  if (!result) return res.status(404).json({ error: 'Account not found' });
+  res.json(result);
+});
+
 router.get('/referrals/mine', requireAuth, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: 'Account not found' });

@@ -2058,6 +2058,18 @@ function categoryIcon(name) {
   return CATEGORY_ICONS[name] || '🛠️';
 }
 
+// A real, clickable navigation link for a job address — opens Google
+// Maps with the address pre-filled, no API key needed (this is Google's
+// public universal search-link format, works on both mobile and
+// desktop, and opens the Google Maps app directly on a phone that has
+// it installed). Returns an empty string if there's no address to show,
+// so callers can just drop this inline without an extra existence check.
+function addressLinkHTML(address) {
+  if (!address) return '';
+  const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+  return ` <a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;" title="${escapeHtml(address)}">📍 ${escapeHtml(address.length > 28 ? address.slice(0, 28) + '…' : address)}</a>`;
+}
+
 function timeAgo(isoString) {
   if (!isoString) return '';
   const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
@@ -4279,7 +4291,7 @@ async function loadCustomerData() {
   try {
     const { contracts } = await apiFetch('GET', '/contracts/mine');
     customerData.bookings = contracts.map(c => ({
-      id: c.id, bookingNumber: c.bookingNumber, pro: c.providerName, providerId: c.providerId, service: c.service, date: c.signedAt || (c.createdAt || '').slice(0, 10),
+      id: c.id, bookingNumber: c.bookingNumber, pro: c.providerName, providerId: c.providerId, service: c.service, address: c.address, date: c.signedAt || (c.createdAt || '').slice(0, 10),
       escrow: c.escrow && c.escrow.status === 'held' ? c.escrow.amount : 0, status: c.status, amount: c.amount, serviceFee: c.serviceFee || 0, reviewed: c.reviewed, providerResponseDeadline: c.providerResponseDeadline,
       onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt,
     }));
@@ -4467,7 +4479,7 @@ async function removePaymentMethod(id) {
 function bookingsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings yet — post a job or book a pro to get started.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Pro</th><th>Service</th><th>Date</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${b.pro}</td><td>${b.service}</td><td>${b.date}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
+  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${b.pro}</td><td>${b.service}${addressLinkHTML(b.address)}</td><td>${b.date}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -4878,6 +4890,7 @@ const CUSTOMER_SECTIONS = {
     return `
     <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Jordan'}</div><div class="dash-sub">Here's what's happening with your bookings</div></div>
     <button class="btn-sm btn-sm-primary" onclick="openPostJobModal()">+ Post a New Job</button></div>
+    <div id="customer-promotions-banner"></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Active Bookings</div><div class="stat-card-val">${active}</div></div>
       <div class="stat-card"><div class="stat-card-label">In Escrow</div><div class="stat-card-val">$${inEscrow}</div></div>
@@ -5068,6 +5081,72 @@ function referralPanelHTML() {
   </div>`;
 }
 
+// Loads the provider's real, live trust score into the overview panel —
+// a targeted update on #provider-score-body, not a full section
+// re-render, so it's a no-op if the person's navigated away before this
+// resolves.
+// Loads and renders any active promotions targeting this person (see
+// GET /api/promotions/mine) into whichever banner container exists for
+// their role. Dismissing a banner is stored in localStorage, per
+// browser — reasonable for a promo banner (it's not sensitive account
+// state that needs to follow someone across devices), and means a
+// dismissed banner won't come back on next login in the same browser,
+// but naturally reappears if they check from somewhere new.
+async function loadPromotionsBanner(containerId) {
+  if (!BACKEND_AVAILABLE) return;
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  try {
+    const { promotions } = await apiFetch('GET', '/promotions/mine');
+    const target = document.getElementById(containerId);
+    if (!target) return;
+    let dismissed = [];
+    try { dismissed = JSON.parse(localStorage.getItem('dismissedPromotions') || '[]'); } catch (e) {}
+    const visible = promotions.filter(p => !dismissed.includes(p.id));
+    target.innerHTML = visible.map(p => `
+      <div class="panel" style="background:var(--offwhite);border:1px solid var(--gold);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:200px;">
+          ${p.imageUrl ? `<img src="${escapeHtml(p.imageUrl)}" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:8px;flex-shrink:0;"/>` : '<div style="font-size:22px;">📣</div>'}
+          <div><div style="font-weight:700;color:var(--navy);font-size:13.5px;">${escapeHtml(p.title)}</div><div style="font-size:12.5px;color:var(--slate);margin-top:2px;">${escapeHtml(p.message)}</div></div>
+        </div>
+        <button class="btn-sm btn-sm-ghost" onclick="dismissPromotionBanner('${p.id}','${containerId}')">Dismiss</button>
+      </div>`).join('');
+  } catch (e) { /* a promo banner failing to load is never worth interrupting the dashboard over */ }
+}
+
+function dismissPromotionBanner(promoId, containerId) {
+  let dismissed = [];
+  try { dismissed = JSON.parse(localStorage.getItem('dismissedPromotions') || '[]'); } catch (e) {}
+  if (!dismissed.includes(promoId)) dismissed.push(promoId);
+  try { localStorage.setItem('dismissedPromotions', JSON.stringify(dismissed)); } catch (e) {}
+  loadPromotionsBanner(containerId);
+}
+
+async function loadProviderScorePanel() {
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const data = await apiFetch('GET', '/provider-score/mine');
+    const body = document.getElementById('provider-score-body');
+    if (!body) return;
+    const COMPONENT_LABELS = {
+      identityVerification: 'Identity Verification', documentVerification: 'License/Document (if required)',
+      jobsCompleted: 'Jobs Completed', arrivedOnTime: 'On-Time Arrival', repeatedCustomers: 'Repeat Customers',
+      responseTime: 'Responding to Jobs', backgroundCheck: 'Background Check', cancellationRate: 'Cancellation Rate',
+    };
+    body.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px;">
+        <div style="font-size:32px;font-weight:800;color:var(--navy);">${data.total}</div>
+        <div style="color:var(--slate);">/ 99</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;">
+        ${Object.keys(data.weights).map(key => `<div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--slate);">${COMPONENT_LABELS[key]}</span><span style="font-weight:600;color:var(--navy);">${data.breakdown[key]}/${data.weights[key]}</span></div>`).join('')}
+      </div>`;
+  } catch (e) {
+    const body = document.getElementById('provider-score-body');
+    if (body) body.textContent = 'Could not load your score right now.';
+  }
+}
+
 async function loadReferralPanel() {
   if (!BACKEND_AVAILABLE) return;
   try {
@@ -5174,6 +5253,7 @@ function selectCustomerSection(key) {
   if (key === 'messages') loadMessageThread();
   if (key === 'settings') { populateSettingsCountry('cust'); loadReferralPanel(); }
   if (key === 'verification') loadVerificationOptions();
+  if (key === 'overview') loadPromotionsBanner('customer-promotions-banner');
 }
 
 function updateCustomerSidebar() {
@@ -5314,11 +5394,11 @@ function jobPhotoUploadHTML(prefix) {
       ondragover="event.preventDefault();this.style.borderColor='var(--teal)';"
       ondragleave="this.style.borderColor='var(--border)';"
       ondrop="event.preventDefault();this.style.borderColor='var(--border)';handleJobPhotoSelect({target:{files:event.dataTransfer.files, value:''}}, '${prefix}');">
-      📷 Add Photos <span style="color:var(--muted);font-weight:400;">— tap to choose, or drag and drop</span>
+      📷 Add Photos or Videos <span style="color:var(--muted);font-weight:400;">— tap to choose, or drag and drop</span>
     </label>
-    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple id="${prefix}-photo-input" style="display:none;" onchange="handleJobPhotoSelect(event, '${prefix}')"/>
+    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm" multiple id="${prefix}-photo-input" style="display:none;" onchange="handleJobPhotoSelect(event, '${prefix}')"/>
     <div style="font-size:11.5px;color:var(--muted);margin-top:-8px;margin-bottom:10px;line-height:1.5;">
-      A clear photo of the actual problem or space — e.g. the leaking pipe, the room to paint, the yard to clear. Not a screenshot or an unrelated image; it's what your pro sees before deciding whether to take the job. JPEG, PNG, WEBP, or GIF · up to 5MB each · up to 5 photos.
+      A clear photo or short video of the actual problem or space — e.g. the leaking pipe, the room to paint, the strange noise the machine is making. A video often explains a problem faster than a photo can. Not a screenshot or an unrelated file; it's what your pro sees before deciding whether to take the job. JPEG, PNG, WEBP, GIF (5MB max) or MP4, MOV, WEBM (50MB max) · up to 5 files.
     </div>
     <div style="font-size:11.5px;color:var(--slate);margin-bottom:10px;">
       🔒 Only shared with the pro you book${prefix === 'pj' ? ' or pros matched to your job' : ''} — never made public or shown to anyone else.
@@ -5337,12 +5417,15 @@ async function handleJobPhotoSelect(event, prefix) {
   event.target.value = ''; // allow re-selecting the same file again later
   const existing = JOB_PHOTO_STATE[prefix] || (JOB_PHOTO_STATE[prefix] = []);
   const room = 5 - existing.length;
-  if (room <= 0) return showToast('You can attach up to 5 photos');
+  if (room <= 0) return showToast('You can attach up to 5 photos or videos');
   for (const file of files.slice(0, room)) {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!allowedTypes.includes(file.type)) { showToast(`${file.name} isn't a supported image type — JPEG, PNG, WEBP, or GIF only`); continue; }
-    if (file.size > 5 * 1024 * 1024) { showToast(`${file.name} is too large — 5MB max`); continue; }
-    const placeholder = { url: null, uploading: true, previewSrc: URL.createObjectURL(file) };
+    const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
+    const isVideo = allowedVideoTypes.includes(file.type);
+    if (!isVideo && !allowedImageTypes.includes(file.type)) { showToast(`${file.name} isn't a supported type — JPEG, PNG, WEBP, GIF images or MP4, MOV, WEBM videos only`); continue; }
+    const maxSize = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
+    if (file.size > maxSize) { showToast(`${file.name} is too large — ${isVideo ? '50MB' : '5MB'} max`); continue; }
+    const placeholder = { url: null, uploading: true, previewSrc: URL.createObjectURL(file), isVideo };
     existing.push(placeholder);
     renderJobPhotoPreviews(prefix);
     if (!BACKEND_AVAILABLE) { placeholder.uploading = false; placeholder.url = placeholder.previewSrc; renderJobPhotoPreviews(prefix); continue; }
@@ -5367,15 +5450,29 @@ async function handleJobPhotoSelect(event, prefix) {
   }
 }
 
+// A video URL is only ever one we generated ourselves at upload time
+// (jobphoto_..., with a real video extension) — checking the extension
+// is enough here since these URLs never come from anywhere else.
+function isVideoUrl(url) {
+  return /\.(mp4|mov|webm)(\?|$)/i.test(url || '');
+}
+
 function renderJobPhotoPreviews(prefix) {
   const container = document.getElementById(`${prefix}-photo-previews`);
   if (!container) return;
   const photos = JOB_PHOTO_STATE[prefix] || [];
-  container.innerHTML = photos.map((p, i) => `
+  container.innerHTML = photos.map((p, i) => {
+    const src = p.url || p.previewSrc;
+    const showAsVideo = p.isVideo || isVideoUrl(src);
+    const media = showAsVideo
+      ? `<video src="${escapeHtml(src)}" muted style="width:100%;height:100%;object-fit:cover;border-radius:8px;${p.uploading ? 'opacity:.5;' : ''}"></video><div style="position:absolute;bottom:2px;left:2px;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:1px 4px;border-radius:4px;">▶ Video</div>`
+      : `<img src="${escapeHtml(src)}" alt="Uploaded photo of the job" style="width:100%;height:100%;object-fit:cover;border-radius:8px;${p.uploading ? 'opacity:.5;' : ''}"/>`;
+    return `
     <div style="position:relative;width:64px;height:64px;">
-      <img src="${escapeHtml(p.url || p.previewSrc)}" alt="Uploaded photo of the job" style="width:100%;height:100%;object-fit:cover;border-radius:8px;${p.uploading ? 'opacity:.5;' : ''}"/>
+      ${media}
       ${p.uploading ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span class="btn-spinner" style="border-top-color:var(--navy);border-color:rgba(0,0,0,.2);"></span></div>` : `<button onclick="removeJobPhoto('${prefix}', ${i})" style="position:absolute;top:-6px;right:-6px;background:var(--navy);color:#fff;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:11px;line-height:1;">✕</button>`}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function removeJobPhoto(prefix, index) {
@@ -5542,7 +5639,7 @@ async function loadProviderData() {
       budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: (Math.round(Math.random() * 40) / 10) + ' mi',
       photoUrls: (m.job && m.job.photoUrls) || [],
     }));
-    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt }));
+    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, address: c.address, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt }));
     providerData.payouts = payouts;
     providerData.portfolioPhotos = photos;
   } catch (e) { console.warn('Falling back to demo provider data', e); }
@@ -5616,6 +5713,7 @@ const PROVIDER_SECTIONS = {
       : renderTierProgress(currentPlan, jobsCompleted, rating, cancellationRate);
     return `
     <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Marcus'}</div><div class="dash-sub">Your matched jobs and contract activity</div></div></div>
+    <div id="provider-promotions-banner"></div>
     ${payoutBanner}
     ${catBanner}
     <div class="stat-cards">
@@ -5625,11 +5723,12 @@ const PROVIDER_SECTIONS = {
       <div class="stat-card"><div class="stat-card-label">Jobs Completed</div><div class="stat-card-val">${providerData.contracts.filter(c => c.status === 'completed').length}</div></div>
     </div>
     ${tierProgressHTML}
+    <div class="panel" id="provider-score-panel"><div class="panel-title">Your Provider Score</div><div id="provider-score-body" style="color:var(--slate);font-size:12.5px;">Loading your score…</div></div>
     <div class="panel"><div class="panel-title">New Matches <small>${providerData.matches.length} pending</small></div>${matchesTable(providerData.matches.slice(0, 3))}</div>
     <div class="panel"><div class="panel-title">Recent Contracts</div>${contractsTableWithEscrow(providerData.contracts.slice(0, 3))}</div>`;
   },
   matches: () => `
-    <div class="dash-header"><div><div class="dash-title">Job Matches</div><div class="dash-sub">Ranked by Trothen's matching engine — fit, proximity, and your trust score ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Live data</span>' : ''}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Job Matches</div><div class="dash-sub">Ranked by Trothen's matching engine — fit, proximity, and how you're doing overall ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Live data</span>' : ''}</div></div></div>
     <div class="panel">${matchesTable(providerData.matches)}</div>`,
   contracts: () => `
     <div class="dash-header"><div><div class="dash-title">My Contracts</div><div class="dash-sub">Every contract is auto-generated and stored per booking</div></div></div>
@@ -5753,6 +5852,15 @@ const PROVIDER_SECTIONS = {
       <div id="prov-location-status" style="font-size:12.5px;color:${AUTH.user && AUTH.user.latitude != null ? 'var(--teal)' : 'var(--slate)'};margin-bottom:10px;">${AUTH.user && AUTH.user.latitude != null ? '✓ Real location shared' : 'Not shared yet'}</div>
       <button class="btn-sm btn-sm-primary" onclick="shareProviderLocation()">📍 Share My Real Location</button>
       ${AUTH.user && AUTH.user.latitude != null ? `<button class="btn-sm btn-sm-outline" style="margin-left:8px;" onclick="clearProviderLocation()">Remove</button>` : ''}
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+        <label class="form-label">How far will you travel for a job?</label>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Only takes effect once you and a customer have both shared real locations — leave blank to be shown regardless of distance.</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="form-input" type="number" min="1" max="500" style="max-width:120px;" id="set-prov-service-radius" placeholder="e.g. 25" value="${(AUTH.user && AUTH.user.serviceRadiusMiles) || ''}"/>
+          <span style="font-size:12.5px;color:var(--slate);">miles</span>
+          <button class="btn-sm btn-sm-primary" onclick="saveServiceRadius()">Save</button>
+        </div>
+      </div>
     </div>
     <div class="panel"><div class="panel-title">Business Profile <small style="font-weight:400;color:var(--slate);">optional</small></div>
       <div style="font-size:12px;color:var(--slate);margin-bottom:12px;">If you operate as a registered business rather than as an individual, add your business details here — this appears on your public profile alongside your name.</div>
@@ -6450,11 +6558,14 @@ function openJobPhotoViewer(photoUrls) {
       <div class="modal" style="max-width:600px;">
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('job-photo-viewer-overlay').remove()">✕</button>
-          <h3>Job Photos</h3>
+          <h3>Job Photos & Videos</h3>
           <p>What the customer shared for this job</p>
         </div>
         <div class="modal-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;">
-          ${photoUrls.map(url => `<img src="${escapeHtml(url)}" alt="Job photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;" onclick="window.open('${escapeHtml(url)}','_blank')"/>`).join('')}
+          ${photoUrls.map(url => isVideoUrl(url)
+            ? `<video src="${escapeHtml(url)}" controls style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;background:#000;"></video>`
+            : `<img src="${escapeHtml(url)}" alt="Job photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;" onclick="window.open('${escapeHtml(url)}','_blank')"/>`
+          ).join('')}
         </div>
       </div>
     </div>`;
@@ -6464,7 +6575,7 @@ function openJobPhotoViewer(photoUrls) {
 function matchesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No pending matches right now.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Budget</th><th>Match Score</th><th>Distance</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📷 ${m.photoUrls.length} photo${m.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
+  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
   <td class="row-actions">${m.status === 'interested'
     ? `<button class="btn-sm btn-sm-outline" onclick="messageCustomerAboutJob('${m.customerId}','${m.jobId}')">💬 Message</button>`
     : `<button class="btn-sm btn-sm-primary" onclick="respondToMatch('${m.id}','accept')">I'm Interested</button><button class="btn-sm btn-sm-outline" onclick="respondToMatch('${m.id}','decline')">Decline</button>`
@@ -6540,7 +6651,7 @@ function contractsTable(list) {
     } else if (c.status === 'expired') {
       actions = `<span style="font-size:12px;color:var(--slate);">You didn't respond in time — automatically cancelled</span>`;
     }
-    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${c.photoUrls && c.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(c.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📷 ${c.photoUrls.length} photo${c.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
+    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${addressLinkHTML(c.address)}${c.photoUrls && c.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(c.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📎 ${c.photoUrls.length} file${c.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
   }).join('')}
   </tbody></table></div>`;
 }
@@ -6722,6 +6833,7 @@ function selectProviderSection(key) {
   if (key === 'messages') loadMessageThread();
   if (key === 'settings') { populateSettingsCountry('prov'); populateSettingsCategory(); loadReferralPanel(); }
   if (key === 'verification') loadVerificationOptions();
+  if (key === 'overview') { loadProviderScorePanel(); loadPromotionsBanner('provider-promotions-banner'); }
 }
 
 function updateProviderSidebar() {
@@ -6877,6 +6989,7 @@ function getAdminNavItems() {
     return [
       { key: 'approvals', label: 'User Approvals', icon: '✅' },
       { key: 'verification', label: 'Verification Queue', icon: '🪪' },
+      { key: 'providerscores', label: 'Provider Scores', icon: '📊' },
       { key: 'settings', label: 'Settings', icon: '⚙️' },
     ];
   }
@@ -6928,11 +7041,13 @@ function getAdminNavItems() {
     { key: 'approvals', label: 'User Approvals', icon: '✅' },
     { key: 'people', label: 'Customers & Providers', icon: '👥' },
     { key: 'verification', label: 'Verification Queue', icon: '🪪' },
+    { key: 'providerscores', label: 'Provider Scores', icon: '📊' },
     { key: 'disputes', label: 'Disputes', icon: '⚖️' },
     { key: 'fraud', label: 'Fraud & Safety', icon: '🚩' },
     { key: 'payments', label: 'Payments', icon: '💳' },
     { key: 'pricing', label: 'Plans & Pricing', icon: '💲' },
     { key: 'advertising', label: 'Advertising', icon: '📣' },
+    { key: 'promotions', label: 'Promotions', icon: '🎉' },
     { key: 'careers', label: 'Job Applications', icon: '💼' },
     { key: 'reports', label: 'Reports', icon: '📈' },
     { key: 'categories', label: 'Categories & Countries', icon: '🌍' },
@@ -7109,17 +7224,17 @@ async function adminDecide(listName, id, decision, sectionKey) {
   } catch (e) { showToast(e.message || 'Could not update'); }
 }
 
-async function resolveDispute(id) {
+async function resolveDispute(id, decision) {
   if (!BACKEND_AVAILABLE) {
     const d = adminData.disputes.find(x => x.id === id);
     if (!d) return;
     d.status = 'resolved';
-    showToast(`Dispute ${id} marked resolved`);
+    showToast(decision === 'refund_customer' ? `Dispute ${id} marked resolved — customer refunded` : `Dispute ${id} marked resolved — escrow released`);
     return selectAdminSection('disputes');
   }
   try {
-    await apiFetch('POST', `/admin/disputes/${id}/resolve`);
-    showToast(`Dispute ${id} marked resolved — escrow released`);
+    await apiFetch('POST', `/admin/disputes/${id}/resolve`, { decision });
+    showToast(decision === 'refund_customer' ? `Dispute ${id} marked resolved — customer refunded` : `Dispute ${id} marked resolved — escrow released`);
     await loadAdminData();
     selectAdminSection('disputes');
   } catch (e) { showToast(e.message || 'Could not resolve dispute'); }
@@ -7164,6 +7279,27 @@ const ADMIN_SECTIONS = {
   verification: () => `
     <div class="dash-header"><div><div class="dash-title">Verification Queue</div><div class="dash-sub">ID, BVN/NIN, and passport submissions awaiting review</div></div></div>
     <div class="panel">${verificationQueueTable()}</div>`,
+  providerscores: () => `
+    <div class="dash-header"><div><div class="dash-title">Provider Scores</div><div class="dash-sub">Ranked by real, computed trust score — updated daily. Flags a recommended pause when a score drops, but never applies one automatically; that's always a real click from a real admin.</div></div></div>
+    <div class="panel" id="provider-scores-panel"><div style="color:var(--slate);font-size:12.5px;padding:12px 0;">Loading…</div></div>`,
+  promotions: () => `
+    <div class="dash-header"><div><div class="dash-title">Promotions</div><div class="dash-sub">${AUTH.user && AUTH.user.isSuperAdmin ? 'Post platform-wide, or target one city' : `Post to ${AUTH.user.region || AUTH.user.city || 'your city'} — your promotions only reach your own city`}</div></div>
+    <button class="btn-sm btn-sm-primary" onclick="openNewPromotionForm()">+ New Promotion</button></div>
+    <div class="panel" id="new-promotion-panel" style="display:none;">
+      <div class="panel-title">New Promotion</div>
+      <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="promo-title" placeholder="e.g. Refer a friend this month"/></div>
+      <div class="form-group"><label class="form-label">Message</label><textarea class="form-input" id="promo-message" rows="3" style="resize:vertical;" placeholder="What's the promotion?"></textarea></div>
+      <div class="form-group"><label class="form-label">Show to</label>
+        <select class="form-input form-select" id="promo-audience">
+          <option value="both">Customers & Providers</option>
+          <option value="customers">Customers only</option>
+          <option value="providers">Providers only</option>
+        </select>
+      </div>
+      ${AUTH.user && AUTH.user.isSuperAdmin ? `<div class="form-group"><label class="form-label">Region</label><input class="form-input" id="promo-region" placeholder="Leave blank for platform-wide, or enter a city to target just that city"/></div>` : ''}
+      <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitPromotion()">Post Promotion</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-promotion-panel').style.display='none'">Cancel</button></div>
+    </div>
+    <div class="panel" id="promotions-list-panel"><div style="color:var(--slate);font-size:12.5px;padding:12px 0;">Loading…</div></div>`,
   disputes: () => `
     <div class="dash-header"><div><div class="dash-title">Disputes</div><div class="dash-sub">Fraud-flagged and customer/provider-raised disputes</div></div></div>
     <div class="panel">
@@ -7916,6 +8052,118 @@ function salesInquiriesTableHTML(list) {
     </td>
   </tr>`).join('')}
   </tbody></table></div>`;
+}
+
+async function loadProviderScoresPanel() {
+  if (!BACKEND_AVAILABLE) return;
+  const panel = document.getElementById('provider-scores-panel');
+  if (!panel) return;
+  try {
+    const { providers } = await apiFetch('GET', '/admin/providers/leaderboard');
+    const target = document.getElementById('provider-scores-panel');
+    if (!target) return;
+    if (!providers.length) {
+      target.innerHTML = `<div style="color:var(--slate);font-size:12.5px;padding:12px 0;">No scores computed yet — this fills in after the first daily scoring run.</div>`;
+      return;
+    }
+    target.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Rank</th><th>Provider</th><th>City</th><th>Category</th><th>Score</th><th>Status</th><th>Action</th></tr></thead><tbody>
+      ${providers.map((p, i) => `<tr>
+        <td>#${i + 1}</td>
+        <td>${escapeHtml(p.name)}</td>
+        <td>${escapeHtml(p.city || '—')}</td>
+        <td>${escapeHtml(p.category || '—')}</td>
+        <td><strong style="color:${p.trustScore >= 70 ? 'var(--success,#2E8C6F)' : p.trustScore >= 40 ? 'var(--gold,#B08A3E)' : '#C1554D'};">${p.trustScore}/99</strong></td>
+        <td>${p.onHold ? `<span class="badge badge-warn">Paused${p.holdUntil ? ' until ' + new Date(p.holdUntil).toLocaleDateString() : ''}</span>` : (p.recommendedAction ? `<span class="badge" style="background:#FDECEA;color:#C1554D;">${escapeHtml(p.recommendedAction.label)}</span>` : '<span class="badge badge-success">Good standing</span>')}</td>
+        <td>${(p.recommendedAction && !p.onHold) ? `<button class="btn-sm btn-sm-outline" onclick="applyProviderScorePause('${p.id}', ${p.recommendedAction.months})">Apply Pause</button>` : '—'}</td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
+  } catch (e) {
+    const target = document.getElementById('provider-scores-panel');
+    if (target) target.textContent = 'Could not load provider scores right now.';
+  }
+}
+
+async function applyProviderScorePause(providerId, recommendedMonths) {
+  if (!confirm(`Pause this provider for ${recommendedMonths} month${recommendedMonths === 1 ? '' : 's'} based on their trust score? They'll be notified and automatically reactivated when the pause ends.`)) return;
+  try {
+    await apiFetch('POST', `/admin/providers/${providerId}/apply-score-pause`, {});
+    showToast('Provider paused — they\'ve been notified');
+    await loadProviderScoresPanel();
+  } catch (e) { showToast(e.message || 'Could not apply pause'); }
+}
+
+function openNewPromotionForm() {
+  const panel = document.getElementById('new-promotion-panel');
+  if (panel) panel.style.display = 'block';
+}
+
+async function submitPromotion() {
+  const title = document.getElementById('promo-title').value.trim();
+  const message = document.getElementById('promo-message').value.trim();
+  const audience = document.getElementById('promo-audience').value;
+  const regionInput = document.getElementById('promo-region');
+  const region = regionInput ? regionInput.value.trim() : '';
+  if (!title || title.length < 2) return showToast('Enter a short title');
+  if (!message || message.length < 5) return showToast('Enter the promotion message');
+  if (!BACKEND_AVAILABLE) return showToast('Promotion posted (demo mode)');
+  try {
+    await apiFetch('POST', '/admin/promotions', { title, message, audience, region: region || undefined });
+    showToast('Promotion posted');
+    document.getElementById('promo-title').value = '';
+    document.getElementById('promo-message').value = '';
+    if (regionInput) regionInput.value = '';
+    document.getElementById('new-promotion-panel').style.display = 'none';
+    await loadAdminPromotionsPanel();
+  } catch (e) { showToast(e.message || 'Could not post promotion'); }
+}
+
+async function loadAdminPromotionsPanel() {
+  if (!BACKEND_AVAILABLE) return;
+  const panel = document.getElementById('promotions-list-panel');
+  if (!panel) return;
+  try {
+    const { promotions } = await apiFetch('GET', '/admin/promotions');
+    const target = document.getElementById('promotions-list-panel');
+    if (!target) return;
+    if (!promotions.length) {
+      target.innerHTML = `<div style="color:var(--slate);font-size:12.5px;padding:12px 0;">No promotions posted yet.</div>`;
+      return;
+    }
+    const AUDIENCE_LABEL = { customers: 'Customers only', providers: 'Providers only', both: 'Customers & Providers' };
+    target.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Title</th><th>Message</th><th>Region</th><th>Audience</th><th>Status</th><th>Action</th></tr></thead><tbody>
+      ${promotions.map(p => `<tr>
+        <td>${escapeHtml(p.title)}</td>
+        <td style="max-width:240px;white-space:normal;font-size:12px;color:var(--slate);">${escapeHtml(p.message)}</td>
+        <td>${escapeHtml(p.region || 'Platform-wide')}</td>
+        <td>${AUDIENCE_LABEL[p.audience] || p.audience}</td>
+        <td>${p.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
+        <td class="row-actions">
+          <button class="btn-sm btn-sm-outline" onclick="togglePromotionActive('${p.id}', ${!p.active})">${p.active ? 'Deactivate' : 'Activate'}</button>
+          <button class="btn-sm btn-sm-ghost" onclick="deletePromotion('${p.id}')">Delete</button>
+        </td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
+  } catch (e) {
+    const target = document.getElementById('promotions-list-panel');
+    if (target) target.textContent = 'Could not load promotions right now.';
+  }
+}
+
+async function togglePromotionActive(id, active) {
+  try {
+    await apiFetch('PATCH', `/admin/promotions/${id}`, { active });
+    showToast(active ? 'Promotion activated' : 'Promotion deactivated');
+    await loadAdminPromotionsPanel();
+  } catch (e) { showToast(e.message || 'Could not update promotion'); }
+}
+
+async function deletePromotion(id) {
+  if (!confirm('Remove this promotion? This can\'t be undone.')) return;
+  try {
+    await apiFetch('DELETE', `/admin/promotions/${id}`);
+    showToast('Promotion removed');
+    await loadAdminPromotionsPanel();
+  } catch (e) { showToast(e.message || 'Could not remove promotion'); }
 }
 
 async function updateCareersInquiryStatus(id, status) {
@@ -8747,7 +8995,7 @@ function disputesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No disputes.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Dispute</th><th>Parties</th><th>Reason</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${list.map(d => `<tr style="cursor:pointer" onclick="viewDispute('${d.id}')"><td>${d.id}</td><td>${escapeHtml(d.parties)}</td><td>${escapeHtml(d.reason)}</td><td>$${d.amount}</td><td>${statusBadge(d.status)}</td>
-  <td class="row-actions">${d.status!=='resolved' ? `<button class="btn-sm btn-sm-ghost" onclick="event.stopPropagation();resolveDispute('${d.id}')">Resolve</button>` : '—'}</td></tr>`).join('')}
+  <td class="row-actions">${d.status!=='resolved' ? `<button class="btn-sm btn-sm-ghost" onclick="event.stopPropagation();viewDispute('${d.id}')">Resolve</button>` : '—'}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -8795,10 +9043,10 @@ function viewDispute(id) {
     <div class="form-label" style="margin-bottom:10px;">Timeline</div>
     <div style="font-size:12.5px;color:var(--slate);line-height:2;">
       ⚠️ Dispute opened${openedDate ? ` — ${openedDate}` : ''}<br/>
-      ${d.status === 'resolved' ? '✅ Resolved — escrow released' : '⏳ Awaiting admin review'}
+      ${d.status === 'resolved' ? (d.resolution === 'refund_customer' ? '✅ Resolved — customer refunded' : '✅ Resolved — escrow released to provider') : '⏳ Awaiting admin review'}
     </div>`;
   document.getElementById('dispute-modal-footer').innerHTML = d.status !== 'resolved'
-    ? `<button class="confirm-btn" onclick="resolveDispute('${d.id}');closeDisputeModal();">Mark Resolved & Release Escrow</button>`
+    ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="confirm-btn" onclick="resolveDispute('${d.id}','release_to_provider');closeDisputeModal();">Release Escrow to Provider</button><button class="btn-sm btn-sm-outline" onclick="resolveDispute('${d.id}','refund_customer');closeDisputeModal();">Refund Customer Instead</button></div>`
     : `<button class="pricing-cta" style="width:100%;" onclick="closeDisputeModal()">Close</button>`;
   document.getElementById('dispute-modal').classList.add('open');
 }
@@ -8810,6 +9058,8 @@ function selectAdminSection(key) {
   if (!ADMIN_SECTIONS[key]) key = 'overview';
   renderDashNav('admin-nav', getAdminNavItems(), key, 'selectAdminSection');
   renderSectionSafely('admin-main', key, () => ADMIN_SECTIONS[key]());
+  if (key === 'providerscores') loadProviderScoresPanel();
+  if (key === 'promotions') loadAdminPromotionsPanel();
 }
 
 function updateAdminSidebar() {
@@ -8888,6 +9138,18 @@ function filterCat(cat) {
 }
 
 let MY_REAL_LOCATION = null; // { lat, lng } once genuinely shared — never guessed, never assumed
+
+async function saveServiceRadius() {
+  const raw = document.getElementById('set-prov-service-radius').value.trim();
+  const serviceRadiusMiles = raw ? parseFloat(raw) : null;
+  if (raw && (!(serviceRadiusMiles > 0) || serviceRadiusMiles > 500)) return showToast('Enter a positive number of miles (500 max), or leave it blank');
+  if (!BACKEND_AVAILABLE) return showToast('Service radius saved (demo mode)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { serviceRadiusMiles });
+    AUTH.user = user;
+    showToast(serviceRadiusMiles ? `Service radius set to ${serviceRadiusMiles} miles` : 'Service radius cleared — you\'ll be shown regardless of distance');
+  } catch (e) { showToast(e.message || 'Could not save service radius'); }
+}
 
 async function shareProviderLocation() {
   if (!navigator.geolocation) return showToast('Your browser doesn\'t support sharing location');

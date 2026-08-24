@@ -176,6 +176,13 @@ seedIfEmpty()
     const { sweepExpiringDocuments } = require('./src/document-expiry-scheduler');
     setTimeout(() => { sweepExpiringDocuments().catch(e => console.error('[document-expiry-scheduler] Unexpected error during scheduled sweep:', e)); }, 11000);
     setInterval(() => { sweepExpiringDocuments().catch(e => console.error('[document-expiry-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+
+    // Provider trust score sweep (see src/provider-score-scheduler.js).
+    // Same daily cadence — a score built from job history and account
+    // data has no reason to be recomputed more often than that.
+    const { sweepProviderScores } = require('./src/provider-score-scheduler');
+    setTimeout(() => { sweepProviderScores().catch(e => console.error('[provider-score-scheduler] Unexpected error during scheduled sweep:', e)); }, 14000);
+    setInterval(() => { sweepProviderScores().catch(e => console.error('[provider-score-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
   })
   .catch(err => {
     console.error('Failed to start server:', err);
