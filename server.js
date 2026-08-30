@@ -139,6 +139,20 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// Last line of defense, outside any single request — express-async-errors
+// above already forwards a route handler's thrown/rejected errors to the
+// error handler right above, and every scheduled sweep (see the
+// setInterval calls below) already catches its own errors individually.
+// This exists for anything genuinely unexpected that falls outside both
+// of those: it gets logged instead of silently crashing the whole
+// server for every user over one unrelated bug.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+
 // Seed demo data only if the datastore is empty (fresh disk/database, first
 // boot). Never overwrites data that already exists, so redeploys are safe.
 // This is awaited before the server starts accepting requests — with a real

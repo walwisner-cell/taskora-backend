@@ -1579,8 +1579,15 @@ router.patch('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
   const target = await db.find('users', u => u.id === req.params.id && u.role === 'admin' && !u.isSuperAdmin);
   if (!target) return res.status(404).json({ error: 'Sub-admin not found' });
   const patch = {};
-  if ('active' in (req.body || {})) patch.active = req.body.active;
-  if ('city' in (req.body || {})) { patch.city = req.body.city; patch.region = req.body.city; }
+  if ('active' in (req.body || {})) {
+    if (typeof req.body.active !== 'boolean') return res.status(400).json({ error: 'active must be true or false' });
+    patch.active = req.body.active;
+  }
+  if ('city' in (req.body || {})) {
+    if (!isNonEmptyString(req.body.city, { min: 2, max: 100 })) return res.status(400).json({ error: 'Enter a valid city' });
+    patch.city = req.body.city.trim();
+    patch.region = patch.city;
+  }
   if (!Object.keys(patch).length && req.body && req.body.toggleActive) patch.active = !target.active;
   const updated = await db.update('users', target.id, patch);
   res.json({ admin: publicAdmin(updated) });
@@ -2238,13 +2245,19 @@ router.post('/organizations/:id/invites', requireSuperAdminOrDepartment('sales')
   const org = await db.find('organizations', o => o.id === req.params.id);
   if (!org) return res.status(404).json({ error: 'Organization not found' });
   const { maxUses, expiresInDays } = req.body || {};
+  if (maxUses != null && (typeof maxUses !== 'number' || !Number.isInteger(maxUses) || maxUses < 1)) {
+    return res.status(400).json({ error: 'maxUses must be a positive whole number, or omitted for unlimited' });
+  }
+  if (expiresInDays != null && (typeof expiresInDays !== 'number' || expiresInDays <= 0 || expiresInDays > 365)) {
+    return res.status(400).json({ error: 'expiresInDays must be a positive number of days (365 max), or omitted for no expiry' });
+  }
   const me_ = await me(req);
   const invite = {
     id: `oi_${nanoid(8)}`,
     organizationId: org.id,
     code: nanoid(10).replace(/[_-]/g, '').toUpperCase().slice(0, 8),
     createdBy: me_.id,
-    maxUses: maxUses != null ? parseInt(maxUses, 10) : null,
+    maxUses: maxUses != null ? maxUses : null,
     usesCount: 0,
     expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString() : null,
     status: 'active',

@@ -8604,7 +8604,7 @@ function organizationsListHTML(orgs) {
   if (!orgs.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No organizations yet — convert an agreed Sales Inquiry into one to get started.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Organization</th><th>Seats</th><th>Agreed Price</th><th>Commission Rate</th><th>Account Manager</th><th>Created</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${orgs.map(o => `<tr>
-    <td style="font-weight:600;">${o.name}</td>
+    <td style="font-weight:600;">${escapeHtml(o.name)}</td>
     <td>${o.seatCount}${o.seatLimit ? ` / ${o.seatLimit}` : ''}</td>
     <td>${o.agreedPrice != null ? `$${o.agreedPrice} ${o.agreedCurrency || 'USD'}/mo` : '—'}</td>
     <td>${o.commissionRate != null ? `${(o.commissionRate * 100).toFixed(1)}%` : '<span style="color:var(--slate);">Plan default</span>'}</td>
@@ -8651,8 +8651,8 @@ function renderOrgDetailModal(detail) {
       <div class="modal" style="max-width:720px;">
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('org-detail-modal-overlay').remove()">✕</button>
-          <h3>${o.name}</h3>
-          <p>${o.status === 'active' ? 'Active' : 'Suspended'} · Account manager: ${o.accountManagerName || '—'} · Agreed at $${o.agreedPrice} ${o.agreedCurrency}/mo · Created ${(o.createdAt || '').slice(0, 10)}</p>
+          <h3>${escapeHtml(o.name)}</h3>
+          <p>${o.status === 'active' ? 'Active' : 'Suspended'} · Account manager: ${escapeHtml(o.accountManagerName || '—')} · Agreed at $${o.agreedPrice} ${escapeHtml(o.agreedCurrency)}/mo · Created ${(o.createdAt || '').slice(0, 10)}</p>
         </div>
         <div class="modal-body" style="max-height:60vh;overflow-y:auto;">
 
@@ -8672,7 +8672,7 @@ function renderOrgDetailModal(detail) {
 
           <div style="font-weight:700;margin-bottom:8px;">Seats (${seats.length})</div>
           ${seats.length ? `<div class="data-table-wrap" style="margin-bottom:18px;"><table class="data-table"><thead><tr><th>Name</th><th>Category</th><th>City</th><th>Verified</th><th>Action</th></tr></thead><tbody>
-            ${seats.map(s => `<tr><td>${s.name}</td><td>${s.category || '—'}</td><td>${s.city || '—'}</td><td>${s.verified ? '✅' : '⏳'}</td>
+            ${seats.map(s => `<tr><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.category || '—')}</td><td>${escapeHtml(s.city || '—')}</td><td>${s.verified ? '✅' : '⏳'}</td>
             <td><button class="btn-sm btn-sm-outline" onclick="removeOrgSeat('${o.id}', '${s.id}')">Remove</button></td></tr>`).join('')}
             </tbody></table></div>` : `<div style="color:var(--slate);font-size:13px;margin-bottom:18px;">No providers have joined yet — share an invite link below, or add one directly.</div>`}
 
@@ -9222,6 +9222,17 @@ async function revealPersonContact(userId) {
   }
 }
 
+async function toggleCustomerVip(customerId, grant) {
+  if (!confirm(grant ? 'Grant this customer VIP membership? This is a real invitation, not a purchase — VIP can\'t be self-bought.' : 'Revoke VIP membership from this customer? They\'ll drop back to the Free tier.')) return;
+  try {
+    await apiFetch('POST', `/admin/customers/${customerId}/vip`, { grant });
+    showToast(grant ? 'VIP granted — they\'ve been notified' : 'VIP revoked');
+    document.getElementById('person-detail-overlay')?.remove();
+    await loadAdminData();
+    selectAdminSection('people');
+  } catch (e) { showToast(e.message || 'Could not update VIP status'); }
+}
+
 function openPersonDetail(userId) {
   const u = adminData.people.find(p => p.id === userId);
   if (!u) return showToast('Could not find that person — try refreshing the page');
@@ -9246,6 +9257,16 @@ function openPersonDetail(userId) {
             <span style="font-size:11px;color:var(--muted);margin-left:6px;">Logged when revealed — see Access Logs</span>
           </div>
           ${row('City / Country', [u.city, u.country].filter(Boolean).join(', '))}
+          ${!isProvider && AUTH.user && AUTH.user.isSuperAdmin ? `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
+            <span style="color:var(--slate);">Membership</span>
+            <span style="display:flex;align-items:center;gap:8px;">
+              <span style="font-weight:600;">${u.membershipTier === 'vip' ? '💎 VIP' : (u.membershipTier && u.membershipTier !== 'free' ? u.membershipTier[0].toUpperCase() + u.membershipTier.slice(1) : 'Free')}</span>
+              ${u.membershipTier === 'vip'
+                ? `<button class="btn-sm btn-sm-outline" onclick="toggleCustomerVip('${u.id}', false)">Revoke VIP</button>`
+                : `<button class="btn-sm btn-sm-outline" onclick="toggleCustomerVip('${u.id}', true)">Grant VIP</button>`}
+            </span>
+          </div>` : ''}
           ${isProvider ? row('Category', u.category) : ''}
           ${isProvider ? row('Rating', u.rating ? `★ ${u.rating} (${u.jobs || 0} jobs completed)` : 'No ratings yet') : ''}
           ${isProvider ? row('Hourly Rate', u.price != null ? `$${u.price}/hr` : '—') : ''}
@@ -9296,7 +9317,7 @@ function usersTable(list, sectionKey) {
 function verificationQueueTable() {
   if (!adminData.verificationQueue.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">Verification queue is empty.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Document</th><th>City</th><th>Country</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${adminData.verificationQueue.map(v => `<tr><td>${v.name}</td><td>${v.doc}</td><td>${v.city || '—'}</td><td>${v.country}</td><td>${statusBadge(v.status)}</td>
+  ${adminData.verificationQueue.map(v => `<tr><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.doc)}</td><td>${escapeHtml(v.city || '—')}</td><td>${escapeHtml(v.country)}</td><td>${statusBadge(v.status)}</td>
   <td class="row-actions">${v.status==='in review' ? `<button class="btn-sm btn-sm-primary" onclick="adminDecide('verification','${v.id}','approve','verification')">Approve</button><button class="btn-sm btn-sm-outline" onclick="adminDecide('verification','${v.id}','reject','verification')">Reject</button>` : '—'}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
