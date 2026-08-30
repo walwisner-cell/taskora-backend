@@ -263,7 +263,56 @@ router.get('/users/all', async (req, res) => {
   let users = await db.filter('users', u => u.role === 'customer' || u.role === 'provider');
   if (region) users = users.filter(u => u.city === region);
   if (role && ['customer', 'provider'].includes(role)) users = users.filter(u => u.role === role);
-  res.json({ users: users.map(publicAdmin) });
+  // Phone, email, and full address are masked by default here — even for
+  // a super admin. This was a real, flagged gap: the full list previously
+  // showed every customer and provider's real contact info to anyone
+  // with People access, all the time, for no specific reason. Seeing
+  // the real value now requires an explicit action
+  // (GET /admin/users/:id/contact below), which is logged — so contact
+  // info is still reachable when there's an actual reason to need it
+  // (a dispute, a verification question), just not casually browsable.
+  res.json({ users: users.map(u => {
+    const p = publicAdmin(u);
+    return {
+      ...p,
+      email: maskEmail(p.email),
+      phone: maskPhone(p.phone),
+      address: p.address ? '••••• (hidden — use Reveal Contact Info)' : p.address,
+    };
+  }) });
+});
+
+// Masks all but the first character of the local part and keeps the
+// domain visible (e.g. "jordan@example.com" -> "j*****@example.com") —
+// enough to visually distinguish rows in a list without exposing the
+// real address.
+function maskEmail(email) {
+  if (!email || !email.includes('@')) return email;
+  const [local, domain] = email.split('@');
+  return `${local[0]}${'*'.repeat(Math.max(local.length - 1, 3))}@${domain}`;
+}
+// Keeps only the last 2 digits visible.
+function maskPhone(phone) {
+  if (!phone || phone.length < 4) return phone;
+  const digitsOnly = phone.replace(/\D/g, '');
+  const last2 = digitsOnly.slice(-2);
+  return `•••-•••-••${last2}`;
+}
+
+// GET /api/admin/users/:id/contact — the real, unmasked email and phone
+// for one specific person, on demand. Every call is logged (see
+// src/access-log.js) with who looked and when — this is the
+// accountability half of masking-by-default: contact info stays
+// reachable for a real reason, but browsing it casually no longer
+// happens silently.
+router.get('/users/:id/contact', async (req, res) => {
+  const region = await myRegion(req);
+  const target = await db.find('users', u => u.id === req.params.id && (u.role === 'customer' || u.role === 'provider'));
+  if (!target) return res.status(404).json({ error: 'Person not found' });
+  if (region && target.city !== region) return res.status(403).json({ error: 'That person is outside your assigned city' });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'contact_info_reveal', target.id);
+  res.json({ email: target.email, phone: target.phone, address: [target.address, target.zipCode].filter(Boolean).join(', ') || null });
 });
 
 // GET /api/admin/providers/:id/score — a live, freshly-computed trust

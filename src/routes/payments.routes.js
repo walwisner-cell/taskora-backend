@@ -292,8 +292,16 @@ async function handlePayoutRequest(req, res, payoutCurrency) {
   const grossAmount = payableEscrow.reduce((sum, e) => sum + (e.amount - (e.materialsAdvanceAmount || 0)), 0)
     + payableAdvances.reduce((sum, e) => sum + e.materialsAdvanceAmount, 0);
 
-  if (grossAmount <= 0) {
-    return res.status(400).json({ error: 'Nothing to pay out yet — this only includes jobs the customer has marked complete, or agreed materials advances, that haven\'t already been paid out.' });
+  // Unpaid tips — gathered from completed contracts directly (not the
+  // escrow ledger), and added to what's paid out AFTER commission is
+  // computed on grossAmount above, so a tip is never commission-taxed.
+  // Genuinely optional on the customer's side (see handleContractComplete),
+  // so this is simply $0 for a provider with none.
+  const unpaidTipContracts = (await db.filter('contracts', c => c.providerId === req.user.sub && c.tipAmount > 0 && !c.tipPaid));
+  const totalTips = unpaidTipContracts.reduce((sum, c) => sum + c.tipAmount, 0);
+
+  if (grossAmount <= 0 && totalTips <= 0) {
+    return res.status(400).json({ error: 'Nothing to pay out yet — this only includes jobs the customer has marked complete, tips, or agreed materials advances, that haven\'t already been paid out.' });
   }
 
   // A provider should be able to see exactly which jobs and which
@@ -354,7 +362,7 @@ async function handlePayoutRequest(req, res, payoutCurrency) {
   const organization = provider.organizationId ? await db.find('organizations', o => o.id === provider.organizationId) : null;
   const commissionRate = effectiveCommissionRate(provider, organization);
   const commissionAmount = Math.round(grossAmount * commissionRate * 100) / 100;
-  const netAmount = Math.round((grossAmount - commissionAmount) * 100) / 100;
+  const netAmount = Math.round((grossAmount - commissionAmount + totalTips) * 100) / 100;
 
   // The contract/escrow ledger is always denominated in USD — that stays
   // the canonical accounting currency regardless of payout choice, so
@@ -367,6 +375,25 @@ async function handlePayoutRequest(req, res, payoutCurrency) {
   const wantsLocal = payoutCurrency === 'local' && currency.code !== 'USD';
   const rate = wantsLocal ? resolveRate(currency.code, await db.all('exchangeRates')) : null;
   const payoutAmountLocal = wantsLocal ? convertFromUSD(netAmount, currency.code, rate) : null;
+
+  for (const c of unpaidTipContracts) {
+    const customer = await db.find('users', u => u.id === c.customerId);
+    lineItems.push({
+      contractId: c.id,
+      bookingNumber: c.bookingNumber || c.id,
+      customerName: customer ? customer.name : 'Unknown customer',
+      customerEmail: customer ? customer.email : null,
+      customerPhone: customer ? customer.phone : null,
+      service: `${c.service} (tip — no commission)`,
+      jobDate: c.date || null,
+      jobTime: c.time || null,
+      address: c.address || null,
+      contractStatus: c.status,
+      signedAt: c.signedAt || (c.createdAt || '').slice(0, 10),
+      review: null,
+      amount: c.tipAmount,
+    });
+  }
 
   const payout = {
     id: `po_${nanoid(10)}`,
@@ -396,9 +423,13 @@ async function handlePayoutRequest(req, res, payoutCurrency) {
   for (const e of payableAdvances) {
     await db.update('escrowTransactions', e.id, { materialsAdvancePayoutId: payout.id });
   }
+  for (const c of unpaidTipContracts) {
+    await db.update('contracts', c.id, { tipPaid: true });
+  }
 
   const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
-  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned) — processing.`, 'payoutAlerts', { section: 'earnings' });
+  const tipNote = totalTips > 0 ? ` (includes $${totalTips} in tips — no commission taken on those)` : '';
+  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned)${tipNote} — processing.`, 'payoutAlerts', { section: 'earnings' });
   res.status(201).json({ payout });
 }
 
@@ -459,6 +490,98 @@ router.post('/contracts/:id/arrived', requireAuth, requireRole('provider'), asyn
   res.json({ contract: updated });
 });
 
+// POST /api/contracts/:id/scope-change-request — a provider's way to
+// handle a job that turns out bigger than what was actually posted or
+// booked: request a specific additional amount through the platform,
+// with a real reason, rather than negotiating extra money off-platform
+// (which the app explicitly warns against everywhere else — see the
+// Trust & Safety section of the handbook). This only ever proposes —
+// nothing about the contract or the held escrow changes until the
+// customer explicitly approves it below. Restricted to active contracts
+// only: a scope discovery makes sense mid-job, not after it's already
+// been marked complete and paid out.
+router.post('/contracts/:id/scope-change-request', requireAuth, requireRole('provider'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status} — additional requests only apply to active jobs` });
+
+  const { amount, reason } = req.body || {};
+  if (typeof amount !== 'number' || amount <= 0 || amount > contract.amount * 5) {
+    return res.status(400).json({ error: 'Enter a positive additional amount (and a realistic one — under 5x the original job price)' });
+  }
+  if (!isNonEmptyString(reason, { min: 10, max: 500 })) {
+    return res.status(400).json({ error: 'Explain what changed about the job (at least 10 characters) — the customer needs a real reason to approve this' });
+  }
+
+  const existing = await db.find('scopeChangeRequests', r => r.contractId === contract.id && r.status === 'pending');
+  if (existing) return res.status(400).json({ error: 'There\'s already a pending additional request for this job — wait for the customer to respond to it first' });
+
+  const requestingProvider = await db.find('users', u => u.id === req.user.sub);
+  const request = {
+    id: `scr_${nanoid(10)}`,
+    contractId: contract.id,
+    providerId: contract.providerId,
+    customerId: contract.customerId,
+    amount: Math.round(amount * 100) / 100,
+    reason: reason.trim(),
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('scopeChangeRequests', request);
+  await notify(contract.customerId, '📋', `${requestingProvider ? requestingProvider.name : 'Your provider'} is requesting an additional $${request.amount} for "${contract.service}": "${request.reason.slice(0, 80)}${request.reason.length > 80 ? '…' : ''}" — review and approve or decline.`, null, { section: 'bookings' });
+  res.status(201).json({ request });
+});
+
+// GET /api/contracts/:id/scope-change-requests — either party to the
+// contract can see the real history of requests on it, not just
+// whatever's currently pending.
+router.get('/contracts/:id/scope-change-requests', requireAuth, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const requests = (await db.filter('scopeChangeRequests', r => r.contractId === contract.id)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ requests });
+});
+
+// POST /api/scope-change-requests/:id/decide — the customer's real
+// approve/decline. Approving is what actually adjusts the contract: the
+// agreed amount goes up by the requested addition, and — critically —
+// the SAME escrow record gets its held amount increased too (this app's
+// escrow model is one record per contract everywhere else, so a second
+// escrow record for the addition would silently break payout,
+// completion, and PDF logic that all look up escrow by contract with a
+// single find(), not a list). Declining changes nothing.
+router.post('/scope-change-requests/:id/decide', requireAuth, requireRole('customer'), async (req, res) => {
+  const request = await db.find('scopeChangeRequests', r => r.id === req.params.id && r.customerId === req.user.sub);
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.status !== 'pending') return res.status(400).json({ error: 'This request has already been decided' });
+
+  const { decision } = req.body || {};
+  if (!['approve', 'decline'].includes(decision)) return res.status(400).json({ error: 'decision must be approve or decline' });
+
+  const contract = await db.find('contracts', c => c.id === request.contractId);
+  if (!contract) return res.status(404).json({ error: 'The original contract no longer exists' });
+
+  if (decision === 'decline') {
+    await db.update('scopeChangeRequests', request.id, { status: 'declined', decidedAt: new Date().toISOString() });
+    await notify(request.providerId, '❌', `Your additional request for $${request.amount} on "${contract.service}" was declined.`, null, { section: 'contracts' });
+    return res.json({ request: { ...request, status: 'declined' } });
+  }
+
+  if (contract.status !== 'active') {
+    return res.status(400).json({ error: `This booking is now ${contract.status} — it can no longer be adjusted` });
+  }
+
+  const updatedContract = await db.update('contracts', contract.id, { amount: Math.round((contract.amount + request.amount) * 100) / 100 });
+  const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+  if (escrow) {
+    await db.update('escrowTransactions', escrow.id, { amount: Math.round((escrow.amount + request.amount) * 100) / 100 });
+  }
+  await db.update('scopeChangeRequests', request.id, { status: 'approved', decidedAt: new Date().toISOString() });
+
+  await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved — the contract and held escrow have been updated. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
+  res.json({ request: { ...request, status: 'approved' }, contract: updatedContract });
+});
+
 router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), async (req, res) => {
   if (contractStatusLocks.has(req.params.id)) {
     return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
@@ -477,9 +600,24 @@ async function handleContractComplete(req, res) {
   if (contract.status !== 'active') {
     return res.status(400).json({ error: `This booking is already ${contract.status} and can't be marked complete` });
   }
+
+  // Tipping — genuinely optional (default $0, never required to complete
+  // a job), and deliberately kept separate from the escrow/commission
+  // flow entirely: a tip is 100% the provider's, taken out of the
+  // commission calculation at payout time below rather than folded into
+  // the same gross-earnings number the commission rate applies to.
+  const { tipAmount } = req.body || {};
+  let tip = 0;
+  if (tipAmount !== undefined && tipAmount !== null && tipAmount !== '') {
+    if (typeof tipAmount !== 'number' || tipAmount < 0 || tipAmount > contract.amount * 3) {
+      return res.status(400).json({ error: 'Tip must be a positive number (and a realistic one — under 3x the job price)' });
+    }
+    tip = Math.round(tipAmount * 100) / 100;
+  }
+
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
-  const updated = await db.update('contracts', contract.id, { status: 'completed' });
+  const updated = await db.update('contracts', contract.id, { status: 'completed', tipAmount: tip, tipPaid: false });
 
   // Real completed-jobs tracking — this used to be a static number set once
   // at signup and never touched again (every provider profile showed the
@@ -508,6 +646,9 @@ async function handleContractComplete(req, res) {
   const totalAvailable = releasedUnpaid.reduce((s, e) => s + e.amount, 0);
 
   await notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts', { section: 'earnings' });
+  if (tip > 0) {
+    await notify(contract.providerId, '🌟', `${(await db.find('users', u => u.id === req.user.sub))?.name || 'The customer'} left you a $${tip} tip on "${contract.service}" — 100% yours, no commission, added to your next payout.`, 'payoutAlerts', { section: 'earnings' });
+  }
   res.json({ contract: updated, escrow: { ...escrow, status: 'released' } });
 }
 

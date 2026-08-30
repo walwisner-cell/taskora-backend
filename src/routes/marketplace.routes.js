@@ -172,6 +172,7 @@ function publicProvider(u) {
     businessName: u.businessName || null,
     acceptingBookings: u.acceptingBookings !== false,
     serviceRadiusMiles: u.serviceRadiusMiles != null ? u.serviceRadiusMiles : null,
+    trustScore: u.trustScore != null ? u.trustScore : null,
   };
 }
 
@@ -537,6 +538,7 @@ router.get('/providers', async (req, res) => {
   if (q) {
     const needle = q.toLowerCase();
     providers = providers.filter(p =>
+      p.name.toLowerCase().includes(needle) ||
       p.category.toLowerCase().includes(needle) ||
       (p.providerRole || '').toLowerCase().includes(needle) ||
       (p.tags || []).some(t => t.toLowerCase().includes(needle))
@@ -736,7 +738,18 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
     const jitter = (parseInt(job.id.slice(-4), 36) % 7);
     const sameCommunity = customer && p.zipCode && customer.zipCode && p.zipCode === customer.zipCode;
     const communityBoost = sameCommunity ? 8 : 0;
-    const score = Math.min(99, Math.round(70 + p.rating * 4 + Math.min(p.jobs, 300) / 30 + communityBoost + jitter));
+    // The Trust Score (see src/provider-score.js) already measures
+    // exactly what "intelligent matching" needs beyond raw rating —
+    // reliability, cancellation behavior, response rate, job history —
+    // so this reuses it directly instead of inventing a second, competing
+    // definition of the same idea. Blended at a modest weight (up to +6)
+    // rather than dominating the score: a provider's average customer
+    // rating is still the primary signal, this just tips close calls
+    // toward the more reliable provider. A provider with no trust score
+    // computed yet (brand new account, before the first daily sweep runs)
+    // is unaffected — this term is simply zero, not treated as a penalty.
+    const trustBoost = p.trustScore != null ? Math.round((p.trustScore / 99) * 6) : 0;
+    const score = Math.min(99, Math.round(70 + p.rating * 4 + Math.min(p.jobs, 300) / 30 + communityBoost + trustBoost + jitter));
     return { provider: p, score, sameCommunity };
   }).sort((a, b) => b.score - a.score);
 
@@ -1560,3 +1573,4 @@ module.exports = router;
 // license-validity rule instead of a second, possibly-drifting copy of it.
 module.exports.LICENSED_TRADE_CATEGORIES = LICENSED_TRADE_CATEGORIES;
 module.exports.hasValidLicense = hasValidLicense;
+module.exports.publicProvider = publicProvider;

@@ -1686,6 +1686,13 @@
     <div class="browse-sub" id="directory-sub">Every verified provider on Trothen</div>
     <div class="directory-controls">
       <input class="form-input" type="text" id="directory-search" placeholder="Search by name, skill, or specialty..." oninput="renderDirectory()"/>
+      <select class="form-input form-select" id="directory-sort" onchange="renderDirectory()" style="max-width:200px;">
+        <option value="best">Best Match</option>
+        <option value="score">Highest Trothen Score</option>
+        <option value="rating">Highest Rated</option>
+        <option value="jobs">Most Jobs Completed</option>
+        <option value="distance">Nearest to Me</option>
+      </select>
       <div class="directory-chips" id="directory-chips"></div>
     </div>
     <div class="providers-grid" id="directory-grid" style="margin-top:20px;"></div>
@@ -1897,6 +1904,7 @@ async function loadProviders() {
         pricingModel: p.pricingModel || 'hourly',
         profilePhotoUrl: p.profilePhotoUrl || null,
         acceptingBookings: p.acceptingBookings !== false,
+        trustScore: p.trustScore != null ? p.trustScore : null,
       }));
     }
   } catch (e) { console.warn('Could not load providers from API, using demo data.', e); }
@@ -2554,6 +2562,7 @@ function setDirectoryCategory(category) {
 
 function renderDirectory() {
   const q = document.getElementById('directory-search').value.trim().toLowerCase();
+  const sortBy = document.getElementById('directory-sort') ? document.getElementById('directory-sort').value : 'best';
   let list = PROVIDERS.slice();
   if (directoryCategoryFilter && directoryCategoryFilter !== 'All') list = list.filter(p => p.cat === directoryCategoryFilter);
   if (q) {
@@ -2563,6 +2572,14 @@ function renderDirectory() {
       (p.tags || []).some(t => t.toLowerCase().includes(q))
     );
   }
+  // "Best Match" leaves the server's own ordering alone (already
+  // real, distance/relevance-aware — see GET /providers). The other
+  // options are a genuine, real sort a person actually asked for and
+  // that didn't exist before this.
+  if (sortBy === 'score') list.sort((a, b) => (b.trustScore ?? -1) - (a.trustScore ?? -1));
+  else if (sortBy === 'rating') list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  else if (sortBy === 'jobs') list.sort((a, b) => (b.jobs || 0) - (a.jobs || 0));
+  else if (sortBy === 'distance') list.sort((a, b) => (a.distanceMiles ?? Infinity) - (b.distanceMiles ?? Infinity));
   document.getElementById('directory-sub').textContent = `${list.length} verified provider${list.length === 1 ? '' : 's'}${directoryCategoryFilter !== 'All' ? ' in ' + directoryCategoryFilter : ''}`;
   document.getElementById('directory-grid').innerHTML = providerCardsHTML(list);
 }
@@ -4257,6 +4274,7 @@ function topProvidersTableHTML(rows) {
 const CUSTOMER_NAV_ITEMS = [
   { key: 'overview', label: 'Overview', icon: '📊' },
   { key: 'bookings', label: 'My Bookings', icon: '📋' },
+  { key: 'favorites', label: 'Favorite Pros', icon: '❤️' },
   { key: 'messages', label: 'Messages', icon: '💬' },
   { key: 'payments', label: 'Payments', icon: '💳' },
   { key: 'verification', label: 'Verification', icon: '🪪' },
@@ -4518,7 +4536,7 @@ function bookingActionHTML(b) {
     return `<span style="font-size:12px;color:var(--slate);">Waiting on the provider</span> <button class="btn-sm btn-sm-ghost" onclick="selectCustomerSection('messages');setTimeout(()=>selectMessageContact('${b.providerId}'),50)">💬 Message</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button>`;
   }
   if (b.status === 'active' || b.status === 'confirmed') {
-    return `<button class="btn-sm btn-sm-primary" onclick="completeBooking('${b.id}')">Mark Complete</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${b.id}')">Report a Problem</button> ${downloadBtn}`;
+    return `<button class="btn-sm btn-sm-primary" onclick="completeBooking('${b.id}')">Mark Complete</button> <button class="btn-sm btn-sm-outline" onclick="viewScopeChangeRequests('${b.id}')">📋 Additional Requests</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${b.id}')">Report a Problem</button> ${downloadBtn}`;
   }
   if (b.status === 'completed') {
     return `${b.reviewed
@@ -4823,12 +4841,42 @@ async function cancelBooking(contractId) {
   } catch (e) { showToast(e.message || 'Could not cancel this booking'); }
 }
 
-async function completeBooking(contractId) {
-  if (!BACKEND_AVAILABLE) return showToast('Marked complete (demo mode — no backend detected)');
-  if (!confirm('Confirm this job is done? This releases the escrowed funds to your pro.')) return;
+function completeBooking(contractId) {
+  const modalHtml = `
+    <div class="modal-overlay open" id="complete-booking-overlay" onclick="if(event.target===this)document.getElementById('complete-booking-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('complete-booking-overlay').remove()">✕</button>
+          <h3>Confirm Job Complete</h3>
+          <p>This releases the escrowed funds to your pro</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Add a tip? <span style="color:var(--slate);font-weight:400;">(optional — 100% goes to your pro, no commission taken)</span></label>
+            <input class="form-input" type="number" min="0" step="0.01" id="complete-booking-tip" placeholder="$0.00"/>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="confirmCompleteBooking('${contractId}')">Confirm Complete</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function confirmCompleteBooking(contractId) {
+  const raw = document.getElementById('complete-booking-tip').value.trim();
+  const tipAmount = raw ? parseFloat(raw) : undefined;
+  if (raw && !(tipAmount >= 0)) return showToast('Enter a valid tip amount, or leave it blank');
+  const overlay = document.getElementById('complete-booking-overlay');
+  if (!BACKEND_AVAILABLE) {
+    if (overlay) overlay.remove();
+    return showToast('Marked complete (demo mode — no backend detected)');
+  }
   try {
-    await apiFetch('POST', `/contracts/${contractId}/complete`);
-    showToast('Job marked complete — escrow released to your pro');
+    await apiFetch('POST', `/contracts/${contractId}/complete`, tipAmount !== undefined ? { tipAmount } : {});
+    if (overlay) overlay.remove();
+    showToast(tipAmount ? `Job marked complete — escrow released, plus a $${tipAmount} tip` : 'Job marked complete — escrow released to your pro');
     await loadCustomerData();
     selectCustomerSection('bookings');
   } catch (e) { showToast(e.message || 'Could not complete this booking'); }
@@ -4909,6 +4957,9 @@ const CUSTOMER_SECTIONS = {
       </div>
     </div>` : ''}
     <div class="panel">${bookingsTable(customerData.bookings)}</div>`,
+  favorites: () => `
+    <div class="dash-header"><div><div class="dash-title">Favorite Pros</div><div class="dash-sub">Providers you've saved to rebook quickly</div></div></div>
+    <div class="panel" id="favorites-panel"><div style="color:var(--slate);font-size:12.5px;padding:12px 0;">Loading…</div></div>`,
   messages: () => messagingHTML('customer'),
   payments: () => `
     <div class="dash-header"><div><div class="dash-title">Payments</div><div class="dash-sub">Payment methods & escrow history</div></div><button class="btn-sm btn-sm-primary" onclick="openAddPaymentMethodForm()">+ Add Payment Method</button></div>
@@ -4980,6 +5031,12 @@ const CUSTOMER_SECTIONS = {
     ${changePasswordPanelHTML('cust')}
     ${twoFactorPanelHTML()}
     ${referralPanelHTML()}
+    <div class="panel">
+      <div class="panel-title">Trothen Membership</div>
+      ${AUTH.user && AUTH.user.membershipActive
+        ? `<div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">You're a Trothen Member — $${AUTH.user.membershipPrice || 9.99}/month.</div><button class="btn-sm btn-sm-outline" onclick="cancelMembership()">Cancel Membership</button>`
+        : `<div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">Optional — $9.99/month, cancel anytime.</div><button class="btn-sm btn-sm-primary" onclick="subscribeMembership()">Become a Member</button>`}
+    </div>
     <div class="panel"><div class="panel-title">Notifications</div>
       ${notifToggleHTML('bookingUpdates', 'Booking updates', 'Status changes on your active bookings', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from pros', true)}
@@ -5122,6 +5179,69 @@ function dismissPromotionBanner(promoId, containerId) {
   loadPromotionsBanner(containerId);
 }
 
+async function subscribeMembership() {
+  if (!BACKEND_AVAILABLE) return showToast('Membership started (demo mode)');
+  try {
+    const { user } = await apiFetch('POST', '/membership/subscribe', {});
+    AUTH.user = user;
+    showToast('Welcome to Trothen Membership!');
+    selectCustomerSection('settings');
+  } catch (e) { showToast(e.message || 'Could not start membership'); }
+}
+
+async function cancelMembership() {
+  if (!confirm('Cancel your Trothen Membership? This takes effect immediately.')) return;
+  if (!BACKEND_AVAILABLE) return showToast('Membership cancelled (demo mode)');
+  try {
+    const { user } = await apiFetch('POST', '/membership/cancel', {});
+    AUTH.user = user;
+    showToast('Membership cancelled');
+    selectCustomerSection('settings');
+  } catch (e) { showToast(e.message || 'Could not cancel membership'); }
+}
+
+async function loadFavoritesPanel() {
+  if (!BACKEND_AVAILABLE) return;
+  const panel = document.getElementById('favorites-panel');
+  if (!panel) return;
+  try {
+    const { providers } = await apiFetch('GET', '/favorites/mine');
+    const target = document.getElementById('favorites-panel');
+    if (!target) return;
+    if (!providers.length) {
+      target.innerHTML = `<div style="color:var(--slate);font-size:12.5px;padding:12px 0;">No favorites yet — tap the ❤️ on any provider's profile to save them here for next time.</div>`;
+      return;
+    }
+    target.innerHTML = `<div class="providers-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));">${providerCardsHTML(providers)}</div>`;
+  } catch (e) {
+    const target = document.getElementById('favorites-panel');
+    if (target) target.textContent = 'Could not load your favorites right now.';
+  }
+}
+
+async function toggleFavoriteProvider(providerId, isCurrentlyFavorite) {
+  if (!AUTH.user || AUTH.user.role !== 'customer') return showToast('Sign in as a customer to save favorites');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    if (isCurrentlyFavorite) {
+      await apiFetch('DELETE', `/favorites/${providerId}`);
+      showToast('Removed from favorites');
+    } else {
+      await apiFetch('POST', '/favorites', { providerId });
+      showToast('Saved to favorites');
+    }
+    const btn = document.getElementById('profile-favorite-btn');
+    if (btn) renderFavoriteButton(providerId, !isCurrentlyFavorite);
+  } catch (e) { showToast(e.message || 'Could not update favorites'); }
+}
+
+function renderFavoriteButton(providerId, isFavorite) {
+  const btn = document.getElementById('profile-favorite-btn');
+  if (!btn) return;
+  btn.textContent = isFavorite ? '❤️ Saved' : '🤍 Save';
+  btn.setAttribute('onclick', `toggleFavoriteProvider('${providerId}', ${isFavorite})`);
+}
+
 async function loadProviderScorePanel() {
   if (!BACKEND_AVAILABLE) return;
   try {
@@ -5254,6 +5374,7 @@ function selectCustomerSection(key) {
   if (key === 'settings') { populateSettingsCountry('cust'); loadReferralPanel(); }
   if (key === 'verification') loadVerificationOptions();
   if (key === 'overview') loadPromotionsBanner('customer-promotions-banner');
+  if (key === 'favorites') loadFavoritesPanel();
 }
 
 function updateCustomerSidebar() {
@@ -5288,9 +5409,17 @@ async function viewProviderProfile(id) {
       <div class="profile-meta-row">
         <div class="profile-meta-item">★ ${p.rating ? Number(p.rating).toFixed(1) : 'No'} rating</div>
         <div class="profile-meta-item">📋 ${escapeHtml(p.jobs)} jobs completed</div>
-        <div class="profile-meta-item">⚡ Responds in ~1 hr</div>
+        ${p.trustScore != null ? `<div class="profile-meta-item" title="Trothen Score — a real, computed measure of this provider's reliability and track record">🛡️ ${p.trustScore}/99 Trothen Score</div>` : ''}
+        ${AUTH.user && AUTH.user.role === 'customer' ? `<button class="btn-sm btn-sm-outline" id="profile-favorite-btn" onclick="toggleFavoriteProvider('${p.id}', false)">🤍 Save</button>` : ''}
       </div>
     </div>`;
+
+  if (AUTH.user && AUTH.user.role === 'customer' && BACKEND_AVAILABLE) {
+    try {
+      const { isFavorite } = await apiFetch('GET', `/favorites/check/${p.id}`);
+      renderFavoriteButton(p.id, isFavorite);
+    } catch (e) { /* favorite status is a nice-to-have, never worth blocking the profile over */ }
+  }
 
   // Real reviews AND real portfolio photos for THIS specific provider,
   // fetched fresh — previously reviews showed the same hardcoded review bank
@@ -6647,7 +6776,7 @@ function contractsTable(list) {
         : !c.arrivedAt
           ? `<button class="btn-sm btn-sm-outline" onclick="markContractArrived('${c.id}')">📍 Arrived</button> `
           : `<span style="font-size:11px;color:var(--slate);margin-right:6px;">🚗 On the way · 📍 Arrived</span>`;
-      actions = `${gpsButtons}<button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>`;
+      actions = `${gpsButtons}<button class="btn-sm btn-sm-outline" onclick="openScopeChangeRequestForm('${c.id}')">➕ Request Additional Payment</button> <button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>`;
     } else if (c.status === 'expired') {
       actions = `<span style="font-size:12px;color:var(--slate);">You didn't respond in time — automatically cancelled</span>`;
     }
@@ -6752,6 +6881,92 @@ function getOneTimeLocation() {
       { enableHighAccuracy: true, timeout: 8000 }
     );
   });
+}
+
+async function viewScopeChangeRequests(contractId) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  const modalHtml = `
+    <div class="modal-overlay open" id="scope-requests-overlay" onclick="if(event.target===this)document.getElementById('scope-requests-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('scope-requests-overlay').remove()">✕</button>
+          <h3>Additional Requests</h3>
+          <p>Extra amounts your provider has requested for this job — nothing changes unless you approve.</p>
+        </div>
+        <div class="modal-body" id="scope-requests-body">Loading…</div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  try {
+    const { requests } = await apiFetch('GET', `/contracts/${contractId}/scope-change-requests`);
+    const body = document.getElementById('scope-requests-body');
+    if (!body) return;
+    if (!requests.length) {
+      body.innerHTML = `<div style="color:var(--slate);font-size:12.5px;padding:12px 0;">No additional requests on this job.</div>`;
+      return;
+    }
+    const STATUS_BADGE = { pending: '<span class="badge badge-warn">Awaiting your decision</span>', approved: '<span class="badge badge-success">Approved</span>', declined: '<span class="badge badge-neutral">Declined</span>' };
+    body.innerHTML = requests.map(r => `
+      <div class="panel" style="margin:0 0 12px 0;padding:14px 16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <strong style="color:var(--navy);">$${r.amount}</strong>
+          ${STATUS_BADGE[r.status] || r.status}
+        </div>
+        <div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">${escapeHtml(r.reason)}</div>
+        ${r.status === 'pending' ? `<div style="display:flex;gap:8px;">
+          <button class="btn-sm btn-sm-primary" onclick="decideScopeChangeRequest('${r.id}','approve','${contractId}')">Approve</button>
+          <button class="btn-sm btn-sm-outline" onclick="decideScopeChangeRequest('${r.id}','decline','${contractId}')">Decline</button>
+        </div>` : ''}
+      </div>`).join('');
+  } catch (e) {
+    const body = document.getElementById('scope-requests-body');
+    if (body) body.textContent = e.message || 'Could not load requests';
+  }
+}
+
+async function decideScopeChangeRequest(requestId, decision, contractId) {
+  if (decision === 'approve' && !confirm('Approve this additional amount? This will update the contract total and the held escrow immediately.')) return;
+  try {
+    await apiFetch('POST', `/scope-change-requests/${requestId}/decide`, { decision });
+    showToast(decision === 'approve' ? 'Approved — contract updated' : 'Declined');
+    document.getElementById('scope-requests-overlay')?.remove();
+    await loadCustomerData();
+    selectCustomerSection('bookings');
+  } catch (e) { showToast(e.message || 'Could not process this decision'); }
+}
+
+function openScopeChangeRequestForm(contractId) {
+  const modalHtml = `
+    <div class="modal-overlay open" id="scope-change-overlay" onclick="if(event.target===this)document.getElementById('scope-change-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('scope-change-overlay').remove()">✕</button>
+          <h3>Request Additional Payment</h3>
+          <p>For when the job turns out bigger than what was originally posted or booked — the customer has to approve this before anything changes.</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Additional Amount</label><input class="form-input" type="number" min="1" step="0.01" id="scope-change-amount" placeholder="$40.00"/></div>
+          <div class="form-group"><label class="form-label">What changed?</label><textarea class="form-input" id="scope-change-reason" rows="3" style="resize:vertical;" placeholder="Explain what's different from what was originally agreed"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="submitScopeChangeRequest('${contractId}')">Send Request to Customer</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitScopeChangeRequest(contractId) {
+  const amount = parseFloat(document.getElementById('scope-change-amount').value);
+  const reason = document.getElementById('scope-change-reason').value.trim();
+  if (!(amount > 0)) return showToast('Enter a valid additional amount');
+  if (reason.length < 10) return showToast('Explain what changed (at least 10 characters)');
+  if (!BACKEND_AVAILABLE) { showToast('Request sent (demo mode)'); document.getElementById('scope-change-overlay')?.remove(); return; }
+  try {
+    await apiFetch('POST', `/contracts/${contractId}/scope-change-request`, { amount, reason });
+    showToast('Additional request sent — the customer needs to approve it');
+    document.getElementById('scope-change-overlay')?.remove();
+  } catch (e) { showToast(e.message || 'Could not send this request'); }
 }
 
 async function markContractOnMyWay(contractId) {
@@ -7554,6 +7769,7 @@ const ADMIN_SECTIONS = {
       disputes_list: 'Viewed disputes list',
       financial_by_region: 'Viewed financial-by-region data',
       people_list: 'Viewed customer/provider list',
+      contact_info_reveal: 'Revealed a person\'s real contact info',
     };
     return `
     <div class="dash-header"><div><div class="dash-title">Access Logs</div><div class="dash-sub">A real record of who on the admin team has viewed sensitive data, and when</div></div></div>
@@ -8918,6 +9134,24 @@ function formatAdminExpiryStatus(dateStr) {
   return `✓ Valid until ${expiry.toLocaleDateString()}`;
 }
 
+async function revealPersonContact(userId) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  const btn = document.getElementById('reveal-contact-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  try {
+    const data = await apiFetch('GET', `/admin/users/${userId}/contact`);
+    const rowsContainer = document.getElementById('person-contact-rows');
+    if (rowsContainer) {
+      const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;"><span style="color:var(--slate);">${escapeHtml(label)}</span><span style="font-weight:600;text-align:right;">${value === null || value === undefined ? '—' : escapeHtml(value)}</span></div>`;
+      rowsContainer.innerHTML = row('Email', data.email) + row('Phone', data.phone) + row('Address', data.address);
+    }
+    if (btn) btn.style.display = 'none';
+  } catch (e) {
+    showToast(e.message || 'Could not load contact info');
+    if (btn) { btn.disabled = false; btn.textContent = '🔓 Reveal Contact Info'; }
+  }
+}
+
 function openPersonDetail(userId) {
   const u = adminData.people.find(p => p.id === userId);
   if (!u) return showToast('Could not find that person — try refreshing the page');
@@ -8931,10 +9165,16 @@ function openPersonDetail(userId) {
           <h3>${escapeHtml(u.name)}</h3>
           <p>${escapeHtml(u.role)}${isProvider && u.providerRole ? ` — ${escapeHtml(u.providerRole)}` : ''}</p>
         </div>
-        <div class="modal-body">
-          ${row('Email', u.email)}
-          ${row('Phone', u.phone)}
-          ${row('Address', [u.address, u.zipCode].filter(Boolean).join(', '))}
+        <div class="modal-body" id="person-detail-body">
+          <div id="person-contact-rows">
+            ${row('Email', u.email)}
+            ${row('Phone', u.phone)}
+            ${row('Address', u.address)}
+          </div>
+          <div style="margin:-4px 0 12px 0;">
+            <button class="btn-sm btn-sm-outline" onclick="revealPersonContact('${u.id}')" id="reveal-contact-btn">🔓 Reveal Contact Info</button>
+            <span style="font-size:11px;color:var(--muted);margin-left:6px;">Logged when revealed — see Access Logs</span>
+          </div>
           ${row('City / Country', [u.city, u.country].filter(Boolean).join(', '))}
           ${isProvider ? row('Category', u.category) : ''}
           ${isProvider ? row('Rating', u.rating ? `★ ${u.rating} (${u.jobs || 0} jobs completed)` : 'No ratings yet') : ''}
@@ -9112,6 +9352,7 @@ function providerCardsHTML(list) {
           <div class="meta-chip"><span class="stars">★</span> ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           <div class="meta-chip">📋 ${escapeHtml(p.jobs)} jobs</div>
           <div class="meta-chip">📍 ${p.distanceMiles != null ? `${p.distanceMiles} mi away` : ([escapeHtml(p.city), escapeHtml(p.country)].filter(Boolean).join(', ') || 'Location not set')}</div>
+          ${p.trustScore != null ? `<div class="meta-chip" title="Trothen Score — a real, computed measure of this provider's reliability and track record">🛡️ ${p.trustScore}/99</div>` : ''}
         </div>
         <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
         <div class="provider-footer">

@@ -568,6 +568,33 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score_breakdown JSONB;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score_updated_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS hold_until TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS service_radius_miles NUMERIC;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_active BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_started_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_cancelled_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_price NUMERIC;
+
+-- Optional customer tips — 100% to the provider, tracked separately from
+-- the commission-bearing escrow ledger (see POST /payouts/request in
+-- payments.routes.js for exactly how these get paid out untaxed).
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS tip_amount NUMERIC;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS tip_paid BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- A provider's requests for additional payment when a job's real scope
+-- turns out bigger than what was originally posted or booked — see
+-- POST /contracts/:id/scope-change-request in payments.routes.js. Only
+-- ever takes effect on the actual contract once a customer approves it.
+CREATE TABLE IF NOT EXISTS scope_change_requests (
+  id           TEXT PRIMARY KEY,
+  contract_id  TEXT NOT NULL REFERENCES contracts(id),
+  provider_id  TEXT NOT NULL REFERENCES users(id),
+  customer_id  TEXT NOT NULL REFERENCES users(id),
+  amount       NUMERIC NOT NULL,
+  reason       TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'pending',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  decided_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_scope_change_contract ON scope_change_requests(contract_id);
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS negotiation_transcript JSONB;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS on_my_way_at TIMESTAMPTZ;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS on_my_way_location JSONB;
@@ -644,6 +671,17 @@ CREATE TABLE IF NOT EXISTS promotions (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_promotions_region ON promotions(region);
+
+-- A customer's saved favorite providers, so they can rebook someone they
+-- trusted before without searching again. One row per (customer,
+-- provider) pair — the same pair can't be favorited twice.
+CREATE TABLE IF NOT EXISTS favorite_providers (
+  id           TEXT PRIMARY KEY,
+  customer_id  TEXT NOT NULL REFERENCES users(id),
+  provider_id  TEXT NOT NULL REFERENCES users(id),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(customer_id, provider_id)
+);
 
 -- General-purpose key/value settings, first used for the provider
 -- booking-confirmation window (see src/platform-settings.js). Absence of

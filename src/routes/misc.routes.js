@@ -576,6 +576,83 @@ router.get('/provider-score/mine', requireAuth, requireRole('provider'), async (
   res.json(result);
 });
 
+// GET /api/favorites/mine — a customer's saved favorite providers, with
+// real, current profile data (not a stale snapshot from when they
+// favorited) so a rating or trust score change shows up correctly.
+const CUSTOMER_MEMBERSHIP_PRICE = 9.99;
+
+// POST /api/membership/subscribe — starts (or resumes) Trothen
+// Membership for a customer. Simulated the same way every other payment
+// in this app is right now (no real Stripe integration yet — see the
+// legal readiness breakdown) — this is a real, working flow, just not
+// wired to real money movement yet. Deliberately its own endpoint,
+// not a plain field a customer could self-set through /auth/me — the
+// exact same reasoning that made provider plan changes admin-only
+// earlier this session applies here: a subscription status should come
+// from an actual subscribe action, not a raw patch anyone could send.
+router.post('/membership/subscribe', requireAuth, requireRole('customer'), async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (me.membershipActive) return res.status(400).json({ error: 'You already have an active Trothen Membership' });
+  const updated = await db.update('users', me.id, {
+    membershipActive: true,
+    membershipStartedAt: new Date().toISOString(),
+    membershipPrice: CUSTOMER_MEMBERSHIP_PRICE,
+  });
+  await notify(me.id, '⭐', `Welcome to Trothen Membership! $${CUSTOMER_MEMBERSHIP_PRICE}/month, cancel anytime.`, null, { section: 'settings' });
+  res.json({ user: updated });
+});
+
+// POST /api/membership/cancel — real cancellation, no dark patterns:
+// takes effect immediately, one call, no retention flow in the way.
+router.post('/membership/cancel', requireAuth, requireRole('customer'), async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me.membershipActive) return res.status(400).json({ error: 'You don\'t have an active membership to cancel' });
+  const updated = await db.update('users', me.id, { membershipActive: false, membershipCancelledAt: new Date().toISOString() });
+  await notify(me.id, '👋', 'Your Trothen Membership has been cancelled — no further charges.', null, { section: 'settings' });
+  res.json({ user: updated });
+});
+
+router.get('/favorites/mine', requireAuth, requireRole('customer'), async (req, res) => {
+  const favorites = (await db.filter('favoriteProviders', f => f.customerId === req.user.sub))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const providers = (await Promise.all(favorites.map(async f => {
+    const provider = await db.find('users', u => u.id === f.providerId && u.role === 'provider');
+    if (!provider) return null;
+    const { publicProvider } = require('./marketplace.routes');
+    return { favoriteId: f.id, ...publicProvider(provider) };
+  }))).filter(Boolean);
+  res.json({ providers });
+});
+
+// GET /api/favorites/check/:providerId — whether this specific provider
+// is already in the customer's favorites, for showing the right
+// state (filled vs outline heart) on a profile or card.
+router.get('/favorites/check/:providerId', requireAuth, requireRole('customer'), async (req, res) => {
+  const favorite = await db.find('favoriteProviders', f => f.customerId === req.user.sub && f.providerId === req.params.providerId);
+  res.json({ isFavorite: !!favorite, favoriteId: favorite ? favorite.id : null });
+});
+
+// POST /api/favorites — save a provider as a favorite.
+router.post('/favorites', requireAuth, requireRole('customer'), async (req, res) => {
+  const { providerId } = req.body || {};
+  if (!isNonEmptyString(providerId)) return res.status(400).json({ error: 'providerId is required' });
+  const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
+  if (!provider) return res.status(404).json({ error: 'Provider not found' });
+  const existing = await db.find('favoriteProviders', f => f.customerId === req.user.sub && f.providerId === providerId);
+  if (existing) return res.json({ favorite: existing }); // already favorited — not an error, just a no-op
+  const favorite = { id: `fav_${nanoid(10)}`, customerId: req.user.sub, providerId, createdAt: new Date().toISOString() };
+  await db.insert('favoriteProviders', favorite);
+  res.status(201).json({ favorite });
+});
+
+// DELETE /api/favorites/:providerId — remove a provider from favorites.
+router.delete('/favorites/:providerId', requireAuth, requireRole('customer'), async (req, res) => {
+  const existing = await db.find('favoriteProviders', f => f.customerId === req.user.sub && f.providerId === req.params.providerId);
+  if (!existing) return res.status(404).json({ error: 'Not in your favorites' });
+  await db.remove('favoriteProviders', existing.id);
+  res.json({ ok: true });
+});
+
 router.get('/referrals/mine', requireAuth, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   if (!me) return res.status(404).json({ error: 'Account not found' });
