@@ -651,12 +651,15 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   if (customer.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to post a job again shortly. Contact support if you need this resolved sooner.' });
   }
-  const { category, description, budget, payCurrency, photoUrls } = req.body || {};
+  const { category, description, materialsOnHand, budget, payCurrency, photoUrls } = req.body || {};
   const errors = validate([
     ['category', isNonEmptyString(category, { min: 2, max: 60 }), 'Category is required'],
     ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
     ['description', typeof description !== 'string' || looksLikeRealText(description), 'Please describe the job in real words so we can match you correctly'],
   ]);
+  if (materialsOnHand && !isNonEmptyString(materialsOnHand, { max: 300 })) {
+    return res.status(400).json({ error: 'What you already have must be under 300 characters' });
+  }
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
   const prohibitedHit = findProhibitedContent(category, category) || findProhibitedContent(description, category);
   if (prohibitedHit) {
@@ -680,7 +683,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   const job = {
     id: `job_${nanoid(10)}`,
     customerId: req.user.sub,
-    category, description: description.trim(), budget: budget ? budget.trim() : null,
+    category, description: description.trim(), materialsOnHand: materialsOnHand ? materialsOnHand.trim() : null, budget: budget ? budget.trim() : null,
     // Captured now, used later — escrow isn't actually funded until a
     // provider accepts the match, but the customer's currency preference is
     // set at the moment they post, not re-asked for later.
@@ -1009,7 +1012,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   if (customer.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to book again shortly. Contact support if you need this resolved sooner.' });
   }
-  const { providerId, service, date, time, address, amount, payCurrency, materialsAdvance, photoUrls } = req.body || {};
+  const { providerId, service, date, time, address, amount, payCurrency, materialsAdvance, photoUrls, isOffer, useLoyaltyPoints } = req.body || {};
   const errors = validate([
     ['providerId', isNonEmptyString(providerId), 'A provider must be selected'],
     ['service', isNonEmptyString(service, { min: 3, max: 200 }), 'Describe the service in at least 3 characters'],
@@ -1046,7 +1049,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     return res.status(400).json({ error: `${provider.name} isn't currently accepting new bookings. Try another provider, or check back later.` });
   }
 
-  const isNegotiable = provider.pricingModel === 'negotiable';
+  const isNegotiable = provider.pricingModel === 'negotiable' || (provider.pricingModel === 'both' && !!isOffer);
   if (isNegotiable && (amount === undefined || amount <= 0)) {
     return res.status(400).json({ error: 'Enter your offer amount for this provider' });
   }
@@ -1081,6 +1084,19 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   });
   const responseDeadline = new Date(Date.now() + windowHours * 60 * 60 * 1000).toISOString();
 
+  // Loyalty points redemption — waives the platform's own service fee,
+  // never the provider's payment (the provider is always paid the full
+  // agreed amount regardless). Re-checks the customer's real point
+  // balance server-side rather than trusting the client's flag — a
+  // request claiming a discount it hasn't actually earned is silently
+  // ignored rather than honored.
+  const { awardLoyaltyPoint, POINTS_FOR_FREE_BOOKING } = require('../loyalty');
+  const customerForPoints = await db.find('users', u => u.id === req.user.sub);
+  const canRedeemPoints = !!useLoyaltyPoints && customerForPoints && (customerForPoints.loyaltyPoints || 0) >= POINTS_FOR_FREE_BOOKING;
+  const finalContractAmount = amount || provider.price * 2;
+  const { feeDiscountForTier } = require('../membership');
+  const realServiceFee = Math.round(computeServiceFee(finalContractAmount) * (1 - feeDiscountForTier(customerForPoints && customerForPoints.membershipTier)) * 100) / 100;
+
   const contract = {
     id: `ct_${nanoid(10)}`,
     bookingNumber: await generateBookingNumber(),
@@ -1088,8 +1104,9 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     providerId,
     service: service.trim(),
     date, time, address: address.trim(),
-    amount: amount || provider.price * 2,
-    serviceFee: computeServiceFee(amount || provider.price * 2),
+    amount: finalContractAmount,
+    serviceFee: canRedeemPoints ? 0 : realServiceFee,
+    loyaltyPointsRedeemed: canRedeemPoints ? POINTS_FOR_FREE_BOOKING : 0,
     materialsAdvance: materialsAdvance || 0,
     photoUrls: validPhotoUrls,
     status: isNegotiable ? 'pending_agreement' : 'pending_provider_confirmation',
@@ -1099,6 +1116,12 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     createdAt: new Date().toISOString(),
   };
   await db.insert('contracts', contract);
+
+  if (canRedeemPoints) {
+    await db.update('users', customerForPoints.id, { loyaltyPoints: (customerForPoints.loyaltyPoints || 0) - POINTS_FOR_FREE_BOOKING });
+    await notify(req.user.sub, '🎁', `Free booking credit applied — $${realServiceFee.toFixed(2)} service fee waived on "${contract.service}".`, null, { section: 'bookings' });
+  }
+  await awardLoyaltyPoint(req.user.sub, 'booking');
 
   // Real fraud/safety screening on every booking — this is what actually
   // backs the "every job screened automatically" claim. Never blocks the
@@ -1510,6 +1533,8 @@ router.post('/reviews', requireAuth, requireRole('customer'), async (req, res) =
   await db.update('users', contract.providerId, { rating: Math.round(avg * 10) / 10 });
 
   await notify(contract.providerId, '⭐', `New ${stars}-star review: "${text.trim().slice(0, 60)}${text.length > 60 ? '…' : ''}"`, null, { section: 'bookings' });
+  const { awardLoyaltyPoint } = require('../loyalty');
+  await awardLoyaltyPoint(req.user.sub, 'review');
 
   res.status(201).json({ review });
 });

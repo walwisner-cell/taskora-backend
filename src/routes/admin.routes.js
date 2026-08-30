@@ -108,8 +108,24 @@ async function disputeCity(dispute) {
   return customer ? customer.city : null;
 }
 
-function publicAdmin(u) {
+function publicAdmin(u, options = {}) {
   const { passwordHash, ...rest } = u;
+  // Masked by default for any customer or provider record — this is the
+  // one function nearly every admin endpoint in this file routes a user
+  // record through, so fixing it here closes the gap everywhere at
+  // once, not just in the one list view it was first caught in. Admin
+  // accounts themselves aren't masked (their own contact info isn't the
+  // "customer/provider sensitive data" concern here), and the explicit
+  // `unmasked: true` passed only by GET /users/:id/contact below is the
+  // one deliberate, logged exception.
+  if (!options.unmasked && (rest.role === 'customer' || rest.role === 'provider')) {
+    return {
+      ...rest,
+      email: maskEmail(rest.email),
+      phone: maskPhone(rest.phone),
+      address: rest.address ? '••••• (hidden — use Reveal Contact Info)' : rest.address,
+    };
+  }
   return rest;
 }
 
@@ -263,23 +279,12 @@ router.get('/users/all', async (req, res) => {
   let users = await db.filter('users', u => u.role === 'customer' || u.role === 'provider');
   if (region) users = users.filter(u => u.city === region);
   if (role && ['customer', 'provider'].includes(role)) users = users.filter(u => u.role === role);
-  // Phone, email, and full address are masked by default here — even for
-  // a super admin. This was a real, flagged gap: the full list previously
-  // showed every customer and provider's real contact info to anyone
-  // with People access, all the time, for no specific reason. Seeing
-  // the real value now requires an explicit action
-  // (GET /admin/users/:id/contact below), which is logged — so contact
-  // info is still reachable when there's an actual reason to need it
-  // (a dispute, a verification question), just not casually browsable.
-  res.json({ users: users.map(u => {
-    const p = publicAdmin(u);
-    return {
-      ...p,
-      email: maskEmail(p.email),
-      phone: maskPhone(p.phone),
-      address: p.address ? '••••• (hidden — use Reveal Contact Info)' : p.address,
-    };
-  }) });
+  // publicAdmin() masks contact info by default for any customer/provider
+  // record — see its definition above for the full reasoning. This was
+  // the endpoint the original gap was caught in; the masking itself now
+  // lives at the source so every other endpoint that returns a person's
+  // record is covered too, not just this one.
+  res.json({ users: users.map(u => publicAdmin(u)) });
 });
 
 // Masks all but the first character of the local part and keeps the
@@ -306,6 +311,18 @@ function maskPhone(phone) {
 // reachable for a real reason, but browsing it casually no longer
 // happens silently.
 router.get('/users/:id/contact', async (req, res) => {
+  const m = await me(req);
+  // Customer service specifically should never need this — everything
+  // they do (responding to a message, helping with a booking) already
+  // works through the app's own messaging and booking systems without
+  // knowing someone's personal phone or email. Sales and HR deal with
+  // entirely different people (org leads, job applicants) and have no
+  // legitimate reason to be looking up a marketplace customer or
+  // provider's contact info at all.
+  const blockedDepartments = ['customer_service', 'sales', 'hr'];
+  if (m.adminDepartment && blockedDepartments.includes(m.adminDepartment)) {
+    return res.status(403).json({ error: `The ${m.adminDepartment.replace('_', ' ')} team doesn't have access to personal contact info.` });
+  }
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.id && (u.role === 'customer' || u.role === 'provider'));
   if (!target) return res.status(404).json({ error: 'Person not found' });
@@ -313,6 +330,24 @@ router.get('/users/:id/contact', async (req, res) => {
   const { logAccess } = require('../access-log');
   await logAccess(req, 'contact_info_reveal', target.id);
   res.json({ email: target.email, phone: target.phone, address: [target.address, target.zipCode].filter(Boolean).join(', ') || null });
+});
+
+// POST /api/admin/customers/:id/vip — grant or revoke VIP membership.
+// Super admin only, and deliberately the only way VIP is ever assigned —
+// see src/membership.js for why it's not something a customer can buy
+// at any price ("Invitation/eligibility" was explicit about this).
+router.post('/customers/:id/vip', requireSuperAdmin, async (req, res) => {
+  const target = await db.find('users', u => u.id === req.params.id && u.role === 'customer');
+  if (!target) return res.status(404).json({ error: 'Customer not found' });
+  const { grant } = req.body || {};
+  if (typeof grant !== 'boolean') return res.status(400).json({ error: 'grant must be true or false' });
+  const updated = await db.update('users', target.id, grant
+    ? { membershipTier: 'vip', membershipStartedAt: new Date().toISOString(), membershipPrice: null }
+    : { membershipTier: 'free', membershipCancelledAt: new Date().toISOString(), membershipPrice: null });
+  await notify(target.id, grant ? '💎' : '👋', grant
+    ? 'You\'ve been invited to Trothen VIP — our top membership tier, including concierge support.'
+    : 'Your Trothen VIP membership has ended. You\'re now on the Free tier.', null, { section: 'settings' });
+  res.json({ user: publicAdmin(updated) });
 });
 
 // GET /api/admin/providers/:id/score — a live, freshly-computed trust
@@ -549,7 +584,7 @@ router.post('/users/:id/decide', requireDepartment(['verification', 'customer_se
 });
 
 // GET /api/admin/verification-queue
-router.get('/verification-queue', requireDepartment(['verification', 'customer_service']), async (req, res) => {
+router.get('/verification-queue', requireDepartment(['verification']), async (req, res) => {
   const region = await myRegion(req);
   const inReview = await db.filter('verifications', v => v.status === 'in review');
   const queue = [];
@@ -562,7 +597,7 @@ router.get('/verification-queue', requireDepartment(['verification', 'customer_s
 });
 
 // POST /api/admin/verification/:id/decide  { decision: 'approve' | 'reject' }
-router.post('/verification/:id/decide', requireDepartment(['verification', 'customer_service']), async (req, res) => {
+router.post('/verification/:id/decide', requireDepartment(['verification']), async (req, res) => {
   const { decision } = req.body || {};
   const record = await db.find('verifications', v => v.id === req.params.id);
   if (!record) return res.status(404).json({ error: 'Verification record not found' });
@@ -1523,6 +1558,7 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
     // /auth/change-password, the same enforcement point already used for
     // suspended accounts and stale tokens.
     mustChangePassword: true,
+    twoFactorEnabled: true,
     createdAt: new Date().toISOString(),
   };
   await db.insert('users', admin);

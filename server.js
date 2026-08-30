@@ -183,6 +183,13 @@ seedIfEmpty()
     const { sweepProviderScores } = require('./src/provider-score-scheduler');
     setTimeout(() => { sweepProviderScores().catch(e => console.error('[provider-score-scheduler] Unexpected error during scheduled sweep:', e)); }, 14000);
     setInterval(() => { sweepProviderScores().catch(e => console.error('[provider-score-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+
+    // Payout settlement sweep (see src/payout-settlement-scheduler.js).
+    // Same daily cadence — settlement is simulated as "a couple of days,"
+    // not something that needs to be precise to the hour.
+    const { sweepPayoutSettlement } = require('./src/payout-settlement-scheduler');
+    setTimeout(() => { sweepPayoutSettlement().catch(e => console.error('[payout-settlement-scheduler] Unexpected error during scheduled sweep:', e)); }, 17000);
+    setInterval(() => { sweepPayoutSettlement().catch(e => console.error('[payout-settlement-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
   })
   .catch(err => {
     console.error('Failed to start server:', err);

@@ -272,6 +272,8 @@ async function completeSignupVerify(req, res, pending) {
     const firstName = trimmedName.split(' ')[0];
     const lastInitial = trimmedName.split(' ')[1] ? ` ${trimmedName.split(' ')[1][0]}.` : '';
     await notify(payload.referredByUserId, '🎉', `${firstName}${lastInitial} just joined Trothen as a ${user.role} using your referral link!`, null, { section: 'referrals' });
+    const { awardLoyaltyPoint } = require('../loyalty');
+    await awardLoyaltyPoint(payload.referredByUserId, 'referral');
   }
 
   // Consume the org invite (if any) now that the account genuinely exists
@@ -379,8 +381,18 @@ router.post('/login', loginLimiter, async (req, res) => {
     return res.status(403).json({ error: 'This account application was not approved. Contact support if you believe this was a mistake.' });
   }
 
-  // Two-factor is opt-in (Settings), not forced on every account — when a
-  // person has turned it on, a correct password is only the first factor.
+  // Two-factor is opt-in for customers and providers (Settings) — but
+  // required, not optional, for any admin account. Rather than needing a
+  // separate one-time migration to flip this on for every admin account
+  // that existed before this rule did, it's enforced right here: any
+  // admin account that reaches login without it already set gets it
+  // backfilled silently the moment they sign in, so "required" in admin
+  // Settings is always actually true, never just a UI claim.
+  if (user.role === 'admin' && !user.twoFactorEnabled) {
+    await db.update('users', user.id, { twoFactorEnabled: true });
+    user.twoFactorEnabled = true;
+  }
+
   // A second, time-limited code (same honest test-mode pattern as
   // everywhere else: no real SMS/email provider connected yet, so the code
   // is returned directly rather than silently not being sent) is required
@@ -537,6 +549,9 @@ router.patch('/me', requireAuth, async (req, res) => {
   }
   if ('twoFactorEnabled' in patch && typeof patch.twoFactorEnabled !== 'boolean') {
     return res.status(400).json({ error: 'twoFactorEnabled must be true or false' });
+  }
+  if ('twoFactorEnabled' in patch && patch.twoFactorEnabled === false && req.user.role === 'admin') {
+    return res.status(400).json({ error: 'Two-factor authentication is required for admin accounts and can\'t be turned off.' });
   }
   if ('businessName' in patch) {
     if (patch.businessName && !isNonEmptyString(patch.businessName, { max: 150 })) {

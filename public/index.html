@@ -1189,6 +1189,7 @@
     </div>
     <div class="modal-body">
       <div class="booking-summary" id="booking-summary"></div>
+      <div id="booking-loyalty-row" style="display:none;margin-top:10px;"></div>
       <div class="form-group">
         <label class="form-label">Service Needed</label>
         <input class="form-input" type="text" placeholder="Describe the job briefly..." id="job-desc"/>
@@ -3956,6 +3957,7 @@ function statusBadge(status) {
     cancelled: ['badge-neutral', 'Cancelled'], suspended: ['badge-danger', 'Suspended'],
     verified: ['badge-success', 'Verified'], unverified: ['badge-warn', 'Unverified'],
     reviewed: ['badge-success', 'Reviewed'], dismissed: ['badge-neutral', 'Dismissed'],
+    processing: ['badge-warn', 'Processing'], paid: ['badge-success', 'Paid'],
   };
   const m = map[status] || ['badge-neutral', status];
   return `<span class="badge ${m[0]}">${m[1]}</span>`;
@@ -4271,6 +4273,17 @@ function topProvidersTableHTML(rows) {
 }
 
 /* ══════════════════════ CUSTOMER DASHBOARD ══════════════════════ */
+// Display info for the membership panel — mirrors src/membership.js on
+// the backend, which is the real source of truth for what price and fee
+// discount actually apply. Pro and Elite prices here are the same
+// suggested starting points as the backend (easy to change in both
+// places if adjusted).
+const MEMBERSHIP_TIER_INFO = {
+  plus: { label: 'Plus', price: 9.99, description: 'Lower fees + priority features' },
+  pro: { label: 'Pro', price: 19.99, description: 'More savings + premium support' },
+  elite: { label: 'Elite', price: 39.99, description: 'Maximum customer benefits' },
+};
+
 const CUSTOMER_NAV_ITEMS = [
   { key: 'overview', label: 'Overview', icon: '📊' },
   { key: 'bookings', label: 'My Bookings', icon: '📋' },
@@ -5033,10 +5046,24 @@ const CUSTOMER_SECTIONS = {
     ${referralPanelHTML()}
     <div class="panel">
       <div class="panel-title">Trothen Membership</div>
-      ${AUTH.user && AUTH.user.membershipActive
-        ? `<div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">You're a Trothen Member — $${AUTH.user.membershipPrice || 9.99}/month.</div><button class="btn-sm btn-sm-outline" onclick="cancelMembership()">Cancel Membership</button>`
-        : `<div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">Optional — $9.99/month, cancel anytime.</div><button class="btn-sm btn-sm-primary" onclick="subscribeMembership()">Become a Member</button>`}
+      ${AUTH.user && AUTH.user.membershipTier === 'vip'
+        ? `<div style="font-size:12.5px;color:var(--gold);font-weight:600;margin-bottom:10px;">💎 You're a Trothen VIP member — invited by Trothen, includes concierge support.</div>`
+        : `<div style="font-size:12px;color:var(--slate);margin-bottom:12px;">${AUTH.user && AUTH.user.membershipTier && AUTH.user.membershipTier !== 'free' ? `You're on ${AUTH.user.membershipTier[0].toUpperCase() + AUTH.user.membershipTier.slice(1)} — $${AUTH.user.membershipPrice}/month.` : 'Currently on the Free tier.'}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
+          ${['plus', 'pro', 'elite'].map(tier => {
+            const cfg = MEMBERSHIP_TIER_INFO[tier];
+            const isCurrent = AUTH.user && AUTH.user.membershipTier === tier;
+            return `<div style="border:1px solid ${isCurrent ? 'var(--navy)' : 'var(--border)'};border-radius:10px;padding:12px;text-align:center;">
+              <div style="font-weight:700;color:var(--navy);">${cfg.label}</div>
+              <div style="font-size:18px;font-weight:800;margin:4px 0;">$${cfg.price}<span style="font-size:11px;font-weight:400;color:var(--slate);">/mo</span></div>
+              <div style="font-size:11px;color:var(--slate);margin-bottom:8px;">${cfg.description}</div>
+              <button class="btn-sm ${isCurrent ? 'btn-sm-outline' : 'btn-sm-primary'}" style="width:100%;" ${isCurrent ? 'disabled' : ''} onclick="subscribeMembership('${tier}')">${isCurrent ? 'Current Plan' : 'Subscribe'}</button>
+            </div>`;
+          }).join('')}
+        </div>
+        ${AUTH.user && AUTH.user.membershipTier && AUTH.user.membershipTier !== 'free' ? `<button class="btn-sm btn-sm-ghost" onclick="cancelMembership()">Cancel — back to Free</button>` : ''}`}
     </div>
+    <div class="panel" id="loyalty-points-panel"><div class="panel-title">Loyalty Points</div><div id="loyalty-points-body" style="color:var(--slate);font-size:12.5px;">Loading…</div></div>
     <div class="panel"><div class="panel-title">Notifications</div>
       ${notifToggleHTML('bookingUpdates', 'Booking updates', 'Status changes on your active bookings', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from pros', true)}
@@ -5107,8 +5134,13 @@ async function verifyPhoneOtp() {
   } catch (e) { showToast(e.message || 'Could not verify code'); }
 }
 
-function twoFactorPanelHTML() {
+function twoFactorPanelHTML(required = false) {
   const isOn = !!(AUTH.user && AUTH.user.twoFactorEnabled);
+  if (required) {
+    return `<div class="panel"><div class="panel-title">Two-Factor Authentication</div>
+      <div class="switch-row"><div><div class="switch-label">Required for admin accounts</div><div class="switch-sub">A 6-digit code is required every time you sign in, in addition to your password. This can't be turned off for an admin account.</div></div><label class="switch"><input type="checkbox" checked disabled><span class="switch-track"></span></label></div>
+    </div>`;
+  }
   return `<div class="panel"><div class="panel-title">Two-Factor Authentication</div>
     <div class="switch-row"><div><div class="switch-label">Require a code at sign-in</div><div class="switch-sub">${isOn ? 'On — a 6-digit code is required every time you sign in, in addition to your password.' : 'Off — signing in only requires your password.'}</div></div><label class="switch"><input type="checkbox" ${isOn ? 'checked' : ''} onchange="toggleTwoFactor(this.checked)"><span class="switch-track"></span></label></div>
   </div>`;
@@ -5179,25 +5211,50 @@ function dismissPromotionBanner(promoId, containerId) {
   loadPromotionsBanner(containerId);
 }
 
-async function subscribeMembership() {
-  if (!BACKEND_AVAILABLE) return showToast('Membership started (demo mode)');
+async function subscribeMembership(tier) {
+  const label = MEMBERSHIP_TIER_INFO[tier] ? MEMBERSHIP_TIER_INFO[tier].label : tier;
+  if (!BACKEND_AVAILABLE) return showToast(`${label} started (demo mode)`);
   try {
-    const { user } = await apiFetch('POST', '/membership/subscribe', {});
+    const { user } = await apiFetch('POST', '/membership/subscribe', { tier });
     AUTH.user = user;
-    showToast('Welcome to Trothen Membership!');
+    showToast(`Welcome to Trothen ${label}!`);
     selectCustomerSection('settings');
   } catch (e) { showToast(e.message || 'Could not start membership'); }
 }
 
 async function cancelMembership() {
-  if (!confirm('Cancel your Trothen Membership? This takes effect immediately.')) return;
+  if (!confirm('Cancel your membership and go back to Free? This takes effect immediately.')) return;
   if (!BACKEND_AVAILABLE) return showToast('Membership cancelled (demo mode)');
   try {
     const { user } = await apiFetch('POST', '/membership/cancel', {});
     AUTH.user = user;
-    showToast('Membership cancelled');
+    showToast('Membership cancelled — you\'re back on the Free tier');
     selectCustomerSection('settings');
   } catch (e) { showToast(e.message || 'Could not cancel membership'); }
+}
+
+async function loadLoyaltyPointsPanel() {
+  if (!BACKEND_AVAILABLE) return;
+  const body = document.getElementById('loyalty-points-body');
+  if (!body) return;
+  try {
+    const data = await apiFetch('GET', '/loyalty/mine');
+    const target = document.getElementById('loyalty-points-body');
+    if (!target) return;
+    target.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;">
+        <div style="font-size:24px;font-weight:800;color:var(--navy);">${data.points}</div>
+        <div style="color:var(--slate);">points</div>
+      </div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:6px;">1 point per booking, rebooking, referral, or review. ${data.pointsForFreeBooking} points = a free booking (waives our service fee — your provider is always paid in full).</div>
+      ${data.freeBookingsAvailable > 0
+        ? `<div style="font-size:12.5px;color:var(--navy);font-weight:600;">🎁 You have ${data.freeBookingsAvailable} free booking credit${data.freeBookingsAvailable === 1 ? '' : 's'} ready — you'll see the option to use one when you book.</div>`
+        : `<div style="font-size:12px;color:var(--muted);">${data.pointsUntilNext} more point${data.pointsUntilNext === 1 ? '' : 's'} until your next free booking.</div>`}
+    `;
+  } catch (e) {
+    const target = document.getElementById('loyalty-points-body');
+    if (target) target.textContent = 'Could not load your points right now.';
+  }
 }
 
 async function loadFavoritesPanel() {
@@ -5371,7 +5428,7 @@ function selectCustomerSection(key) {
   renderDashNav('customer-nav', CUSTOMER_NAV_ITEMS, key, 'selectCustomerSection');
   renderSectionSafely('customer-main', key, () => CUSTOMER_SECTIONS[key]());
   if (key === 'messages') loadMessageThread();
-  if (key === 'settings') { populateSettingsCountry('cust'); loadReferralPanel(); }
+  if (key === 'settings') { populateSettingsCountry('cust'); loadReferralPanel(); loadLoyaltyPointsPanel(); }
   if (key === 'verification') loadVerificationOptions();
   if (key === 'overview') loadPromotionsBanner('customer-promotions-banner');
   if (key === 'favorites') loadFavoritesPanel();
@@ -5497,6 +5554,11 @@ function postJobFormHTML() {
   <div class="form-group">
     <label class="form-label">What do you need done?</label>
     <input class="form-input" type="text" placeholder="e.g. Fix a leaking kitchen pipe" id="pj-desc"/>
+  </div>
+  <div class="form-group">
+    <label class="form-label">What do you already have? <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
+    <input class="form-input" type="text" placeholder="e.g. I already bought the replacement faucet" id="pj-materials-on-hand"/>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Helps your pro quote accurately — they won't need to bring or charge for anything you've already got.</div>
   </div>
   <div class="form-group">
     <label class="form-label">Budget Range</label>
@@ -5632,6 +5694,7 @@ async function runAIMatch() {
   const isCustom = catSelect === '__other__';
   const cat = isCustom ? document.getElementById('pj-custom-category').value.trim() : catSelect;
   const desc = document.getElementById('pj-desc').value.trim();
+  const materialsOnHand = document.getElementById('pj-materials-on-hand').value.trim();
   const budget = document.getElementById('pj-budget').value.trim();
 
   if (isCustom && cat.length < 2) return showToast('Tell us what kind of service you need');
@@ -5660,7 +5723,7 @@ async function runAIMatch() {
   let matchScope = 'city';
   if (BACKEND_AVAILABLE && AUTH.token && AUTH.user && AUTH.user.role === 'customer') {
     try {
-      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, budget, payCurrency: 'local', photoUrls });
+      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, materialsOnHand, budget, payCurrency: 'local', photoUrls });
       realCallSucceeded = true;
       isKnownCategory = result.isKnownCategory !== false;
       matchScope = result.matchScope || 'city';
@@ -5767,6 +5830,7 @@ async function loadProviderData() {
       customer: m.customerName || 'Customer', service: m.job ? m.job.description : 'Service request',
       budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: (Math.round(Math.random() * 40) / 10) + ' mi',
       photoUrls: (m.job && m.job.photoUrls) || [],
+      materialsOnHand: (m.job && m.job.materialsOnHand) || null,
     }));
     providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, address: c.address, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt }));
     providerData.payouts = payouts;
@@ -6019,16 +6083,17 @@ const PROVIDER_SECTIONS = {
       </div>
     </div>
     <div class="panel"><div class="panel-title">Pricing Model</div>
-      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Choose how customers pay you — either a set hourly rate, or work it out per job.</div>
-      <div class="auth-role-grid" style="grid-template-columns:1fr 1fr;margin-bottom:14px;">
-        <div class="auth-role-opt ${(!AUTH.user || AUTH.user.pricingModel !== 'negotiable') ? 'active' : ''}" id="pricing-opt-hourly" onclick="setPricingModelUI('hourly')"><span class="r-icon">⏱️</span>Hourly Rate</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Choose how customers pay you.</div>
+      <div class="auth-role-grid" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:14px;">
+        <div class="auth-role-opt ${(!AUTH.user || AUTH.user.pricingModel === 'hourly' || !AUTH.user.pricingModel) ? 'active' : ''}" id="pricing-opt-hourly" onclick="setPricingModelUI('hourly')"><span class="r-icon">⏱️</span>Hourly Rate</div>
         <div class="auth-role-opt ${(AUTH.user && AUTH.user.pricingModel === 'negotiable') ? 'active' : ''}" id="pricing-opt-negotiable" onclick="setPricingModelUI('negotiable')"><span class="r-icon">🤝</span>Mutual Agreement</div>
+        <div class="auth-role-opt ${(AUTH.user && AUTH.user.pricingModel === 'both') ? 'active' : ''}" id="pricing-opt-both" onclick="setPricingModelUI('both')"><span class="r-icon">⚖️</span>Both</div>
       </div>
-      <div class="form-group" id="pricing-hourly-rate-group" style="display:${(!AUTH.user || AUTH.user.pricingModel !== 'negotiable') ? 'block' : 'none'};">
+      <div class="form-group" id="pricing-hourly-rate-group" style="display:${(!AUTH.user || AUTH.user.pricingModel === 'hourly' || !AUTH.user.pricingModel || AUTH.user.pricingModel === 'both') ? 'block' : 'none'};">
         <label class="form-label">Hourly Rate ($)</label>
         <input class="form-input" type="number" min="1" id="set-prov-price" value="${(AUTH.user && AUTH.user.price) || 50}"/>
       </div>
-      <div id="pricing-negotiable-note" style="display:${(AUTH.user && AUTH.user.pricingModel === 'negotiable') ? 'block' : 'none'};font-size:12px;color:var(--slate);margin-bottom:10px;">Customers will propose an offer when booking you, instead of a fixed hourly total.</div>
+      <div id="pricing-negotiable-note" style="display:${(AUTH.user && (AUTH.user.pricingModel === 'negotiable' || AUTH.user.pricingModel === 'both')) ? 'block' : 'none'};font-size:12px;color:var(--slate);margin-bottom:10px;">${AUTH.user && AUTH.user.pricingModel === 'both' ? 'A customer can either book you at your hourly rate, or propose their own offer — your choice which to accept.' : 'Customers will propose an offer when booking you, instead of a fixed hourly total.'}</div>
       <button class="btn-sm btn-sm-primary" onclick="savePricingModel()">Save Pricing</button>
     </div>
     <div class="panel"><div class="panel-title">Availability</div>
@@ -6078,8 +6143,12 @@ function setPricingModelUI(model) {
   pricingModelUIState = model;
   document.getElementById('pricing-opt-hourly').classList.toggle('active', model === 'hourly');
   document.getElementById('pricing-opt-negotiable').classList.toggle('active', model === 'negotiable');
-  document.getElementById('pricing-hourly-rate-group').style.display = model === 'hourly' ? 'block' : 'none';
-  document.getElementById('pricing-negotiable-note').style.display = model === 'negotiable' ? 'block' : 'none';
+  document.getElementById('pricing-opt-both').classList.toggle('active', model === 'both');
+  document.getElementById('pricing-hourly-rate-group').style.display = (model === 'hourly' || model === 'both') ? 'block' : 'none';
+  document.getElementById('pricing-negotiable-note').style.display = (model === 'negotiable' || model === 'both') ? 'block' : 'none';
+  document.getElementById('pricing-negotiable-note').textContent = model === 'both'
+    ? 'A customer can either book you at your hourly rate, or propose their own offer — your choice which to accept.'
+    : 'Customers will propose an offer when booking you, instead of a fixed hourly total.';
 }
 
 async function savePayoutMethod(method) {
@@ -6704,7 +6773,7 @@ function openJobPhotoViewer(photoUrls) {
 function matchesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No pending matches right now.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Budget</th><th>Match Score</th><th>Distance</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
+  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}${m.materialsOnHand ? `<div style="font-size:11px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(m.materialsOnHand)}</div>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
   <td class="row-actions">${m.status === 'interested'
     ? `<button class="btn-sm btn-sm-outline" onclick="messageCustomerAboutJob('${m.customerId}','${m.jobId}')">💬 Message</button>`
     : `<button class="btn-sm btn-sm-primary" onclick="respondToMatch('${m.id}','accept')">I'm Interested</button><button class="btn-sm btn-sm-outline" onclick="respondToMatch('${m.id}','decline')">Decline</button>`
@@ -7874,6 +7943,7 @@ const ADMIN_SECTIONS = {
       <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-admin-email" value="${(AUTH.user && AUTH.user.email) || ''}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveAdminSettings()">Save Changes</button>
     </div>
+    ${twoFactorPanelHTML(true)}
     ${AUTH.user && AUTH.user.role === 'admin' && !AUTH.user.isSuperAdmin && !AUTH.user.adminDepartment ? `
     <div class="panel"><div class="panel-title">Support Chat Contact Info — ${escapeHtml(AUTH.user.region || 'Your City')}</div>
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Your own city's real WhatsApp and phone number for the support chat's "Chat with us" / "Call" links — customers and providers in ${escapeHtml(AUTH.user.region || 'your city')} see this number instead of the platform-wide one. ${adminData.supportContact && adminData.supportContact.usingPlatformFallback ? "You haven't set your own yet, so visitors here currently reach the platform-wide number below." : (adminData.supportContact && adminData.supportContact.isPlaceholder ? '<strong style="color:var(--danger,#B23A3A);">That platform-wide number is still the placeholder demo number — set your own real one below.</strong>' : 'This is your real, live number.')}</div>
@@ -9637,6 +9707,40 @@ async function completeAuthAndResumeIntent(role) {
   await goDashboard(role);
 }
 
+let bookingPricingChoice = null; // 'hourly' | 'offer' — only meaningful when the provider's pricingModel is 'both'
+
+function setBookingPricingChoice(choice) {
+  bookingPricingChoice = choice;
+  document.getElementById('booking-pricing-opt-hourly').classList.toggle('active', choice === 'hourly');
+  document.getElementById('booking-pricing-opt-offer').classList.toggle('active', choice === 'offer');
+  renderBookingPricingBody();
+}
+
+function renderBookingPricingBody() {
+  const target = document.getElementById('booking-pricing-body');
+  if (!target) return;
+  if (bookingPricingChoice === 'offer') {
+    target.innerHTML = `
+      <div class="summary-row"><span>Pricing</span><span>Your Offer</span></div>
+      <div class="form-group" style="margin-top:10px;"><label class="form-label">Your Offer ($)</label><input class="form-input" type="number" min="1" placeholder="e.g. 120" id="job-offer-amount" oninput="updateCurrencyPreview()"/></div>
+      <div class="summary-row"><span>Service fee</span><span id="offer-service-fee">Calculated from your offer</span></div>
+      <div class="summary-row total"><span>Total charged</span><span id="offer-total-charged">Set once your offer is entered</span></div>
+      ${currencyToggleHTML()}
+    `;
+  } else {
+    const jobAmount = currentPro.price * 2;
+    const fee = Math.round(Math.min(Math.max(jobAmount * 0.09, 2.99), 25) * 100) / 100;
+    target.innerHTML = `
+      <div class="summary-row"><span>Service rate</span><span>$${currentPro.price}/hr</span></div>
+      <div class="summary-row"><span>Job amount (2hr)</span><span>$${jobAmount}</span></div>
+      <div class="summary-row"><span>Service fee <small style="color:var(--muted);">(9%, $2.99–$25)</small></span><span>$${fee.toFixed(2)}</span></div>
+      <div class="summary-row"><span>Smart Contract</span><span style="color:#2E8C6F">Included ✓</span></div>
+      <div class="summary-row total"><span>Total charged</span><span>$${(jobAmount + fee).toFixed(2)}</span></div>
+      ${currencyToggleHTML()}
+    `;
+  }
+}
+
 async function openBooking(id) {
   currentPro = PROVIDERS.find(p => p.id === id);
 
@@ -9700,7 +9804,18 @@ async function openBooking(id) {
     } catch (e) { console.warn('Could not load currency info', e); }
   }
 
-  if (isNegotiable) {
+  const isBothPricing = currentPro.pricingModel === 'both';
+  bookingPricingChoice = isBothPricing ? 'hourly' : null; // customer's choice when the provider allows either
+  if (isBothPricing) {
+    document.getElementById('booking-summary').innerHTML = `
+      <div class="auth-role-grid" style="grid-template-columns:1fr 1fr;margin-bottom:12px;">
+        <div class="auth-role-opt active" id="booking-pricing-opt-hourly" onclick="setBookingPricingChoice('hourly')"><span class="r-icon">⏱️</span>Hourly Rate</div>
+        <div class="auth-role-opt" id="booking-pricing-opt-offer" onclick="setBookingPricingChoice('offer')"><span class="r-icon">🤝</span>Make an Offer</div>
+      </div>
+      <div id="booking-pricing-body"></div>
+    `;
+    renderBookingPricingBody();
+  } else if (isNegotiable) {
     document.getElementById('booking-summary').innerHTML = `
       <div class="summary-row"><span>Pricing</span><span>Mutual Agreement</span></div>
       <div class="form-group" style="margin-top:10px;"><label class="form-label">Your Offer ($)</label><input class="form-input" type="number" min="1" placeholder="e.g. 120" id="job-offer-amount" oninput="updateCurrencyPreview()"/></div>
@@ -9723,6 +9838,19 @@ async function openBooking(id) {
   // Default date to tomorrow
   const d = new Date(); d.setDate(d.getDate()+1);
   document.getElementById('job-date').value = d.toISOString().split('T')[0];
+
+  // Only shown when the customer actually has enough points — never a
+  // checkbox offering a discount they haven't earned.
+  const loyaltyRow = document.getElementById('booking-loyalty-row');
+  if (loyaltyRow) {
+    if (AUTH.user && (AUTH.user.loyaltyPoints || 0) >= 25) {
+      loyaltyRow.style.display = 'block';
+      loyaltyRow.innerHTML = `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;"><input type="checkbox" id="booking-use-loyalty-points"/> 🎁 Use 25 loyalty points for a free booking (waives the service fee — you have ${AUTH.user.loyaltyPoints})</label>`;
+    } else {
+      loyaltyRow.style.display = 'none';
+      loyaltyRow.innerHTML = '';
+    }
+  }
   document.getElementById('booking-modal').classList.add('open');
 }
 
@@ -9815,7 +9943,8 @@ async function confirmBooking() {
   }
 
   let total;
-  if (currentPro.pricingModel === 'negotiable') {
+  const wantsOffer = currentPro.pricingModel === 'negotiable' || (currentPro.pricingModel === 'both' && bookingPricingChoice === 'offer');
+  if (wantsOffer) {
     const offer = parseFloat(document.getElementById('job-offer-amount').value);
     if (!offer || offer <= 0) return showToast('Enter your offer amount');
     total = Math.round(offer * 1.08); // offer + 8% platform fee, matching the hourly-plan math
@@ -9833,7 +9962,7 @@ async function confirmBooking() {
   if (BACKEND_AVAILABLE) {
     try {
       const { contract } = await apiFetch('POST', '/contracts', {
-        providerId: currentPro.id, service: desc, date, time, address: addr, amount: total, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls,
+        providerId: currentPro.id, service: desc, date, time, address: addr, amount: total, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked,
       });
       contractId = contract.bookingNumber || contract.id;
       isPendingOffer = contract.status === 'pending_agreement';

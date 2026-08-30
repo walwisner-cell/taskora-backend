@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   customer_id  TEXT NOT NULL REFERENCES users(id),
   category     TEXT NOT NULL,
   description  TEXT NOT NULL,
+  materials_on_hand TEXT,
   budget       TEXT,
   pay_currency TEXT DEFAULT 'usd',
   photo_urls   JSONB,
@@ -160,7 +161,9 @@ CREATE TABLE IF NOT EXISTS payouts (
   method             TEXT,
   status             TEXT NOT NULL DEFAULT 'processing',
   line_items         JSONB,
-  date               TEXT
+  date               TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  paid_at            TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS disputes (
@@ -568,10 +571,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score_breakdown JSONB;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score_updated_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS hold_until TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS service_radius_miles NUMERIC;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_active BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_tier TEXT NOT NULL DEFAULT 'free';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_started_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_cancelled_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_price NUMERIC;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS loyalty_points NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS loyalty_points_redeemed NUMERIC NOT NULL DEFAULT 0;
 
 -- Optional customer tips — 100% to the provider, tracked separately from
 -- the commission-bearing escrow ledger (see POST /payouts/request in

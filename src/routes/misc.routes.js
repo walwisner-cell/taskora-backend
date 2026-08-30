@@ -579,37 +579,52 @@ router.get('/provider-score/mine', requireAuth, requireRole('provider'), async (
 // GET /api/favorites/mine — a customer's saved favorite providers, with
 // real, current profile data (not a stale snapshot from when they
 // favorited) so a rating or trust score change shows up correctly.
-const CUSTOMER_MEMBERSHIP_PRICE = 9.99;
-
-// POST /api/membership/subscribe — starts (or resumes) Trothen
-// Membership for a customer. Simulated the same way every other payment
-// in this app is right now (no real Stripe integration yet — see the
-// legal readiness breakdown) — this is a real, working flow, just not
-// wired to real money movement yet. Deliberately its own endpoint,
-// not a plain field a customer could self-set through /auth/me — the
-// exact same reasoning that made provider plan changes admin-only
-// earlier this session applies here: a subscription status should come
-// from an actual subscribe action, not a raw patch anyone could send.
+// POST /api/membership/subscribe — starts (or changes) a customer's paid
+// membership tier. Simulated the same way every other payment in this
+// app is right now (no real Stripe integration yet). VIP is deliberately
+// rejected here even if requested — see src/membership.js for why it's
+// never self-purchasable at any price.
 router.post('/membership/subscribe', requireAuth, requireRole('customer'), async (req, res) => {
+  const { MEMBERSHIP_TIERS } = require('../membership');
+  const { tier } = req.body || {};
+  const config = MEMBERSHIP_TIERS[tier];
+  if (!config || !config.selfServe) {
+    return res.status(400).json({ error: 'tier must be plus, pro, or elite' });
+  }
   const me = await db.find('users', u => u.id === req.user.sub);
-  if (me.membershipActive) return res.status(400).json({ error: 'You already have an active Trothen Membership' });
+  if (me.membershipTier === tier) return res.status(400).json({ error: `You're already on the ${config.label} tier` });
   const updated = await db.update('users', me.id, {
-    membershipActive: true,
+    membershipTier: tier,
     membershipStartedAt: new Date().toISOString(),
-    membershipPrice: CUSTOMER_MEMBERSHIP_PRICE,
+    membershipPrice: config.price,
   });
-  await notify(me.id, '⭐', `Welcome to Trothen Membership! $${CUSTOMER_MEMBERSHIP_PRICE}/month, cancel anytime.`, null, { section: 'settings' });
+  await notify(me.id, '⭐', `Welcome to Trothen ${config.label}! $${config.price}/month, cancel or change anytime.`, null, { section: 'settings' });
   res.json({ user: updated });
 });
 
-// POST /api/membership/cancel — real cancellation, no dark patterns:
+// POST /api/membership/cancel — drops back to Free, no dark patterns:
 // takes effect immediately, one call, no retention flow in the way.
 router.post('/membership/cancel', requireAuth, requireRole('customer'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
-  if (!me.membershipActive) return res.status(400).json({ error: 'You don\'t have an active membership to cancel' });
-  const updated = await db.update('users', me.id, { membershipActive: false, membershipCancelledAt: new Date().toISOString() });
-  await notify(me.id, '👋', 'Your Trothen Membership has been cancelled — no further charges.', null, { section: 'settings' });
+  if (!me.membershipTier || me.membershipTier === 'free') return res.status(400).json({ error: 'You\'re already on the Free tier' });
+  const updated = await db.update('users', me.id, { membershipTier: 'free', membershipCancelledAt: new Date().toISOString(), membershipPrice: null });
+  await notify(me.id, '👋', 'Your Trothen membership has been cancelled — no further charges. You\'re back on the Free tier.', null, { section: 'settings' });
   res.json({ user: updated });
+});
+
+// GET /api/loyalty/mine — a customer's real points balance, and how
+// close they are to a free-booking credit (see src/loyalty.js for
+// exactly how points are earned and redeemed).
+router.get('/loyalty/mine', requireAuth, requireRole('customer'), async (req, res) => {
+  const { POINTS_FOR_FREE_BOOKING } = require('../loyalty');
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const points = (me && me.loyaltyPoints) || 0;
+  res.json({
+    points,
+    pointsForFreeBooking: POINTS_FOR_FREE_BOOKING,
+    freeBookingsAvailable: Math.floor(points / POINTS_FOR_FREE_BOOKING),
+    pointsUntilNext: POINTS_FOR_FREE_BOOKING - (points % POINTS_FOR_FREE_BOOKING),
+  });
 });
 
 router.get('/favorites/mine', requireAuth, requireRole('customer'), async (req, res) => {
