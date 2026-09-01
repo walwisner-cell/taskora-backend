@@ -3986,10 +3986,62 @@ function verificationHTML(role, status) {
   </div>
   ${role === 'provider' ? `<div class="panel"><div class="panel-title">Additional Trust Checks</div>
     <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Check</th><th>Status</th></tr></thead><tbody>
-    <tr><td>Background Check</td><td>${statusBadge('completed')}</td></tr>
+    <tr><td>Background Check</td><td>${guarantorBackgroundCheckStatusHTML()}</td></tr>
     <tr><td>Two-Factor Authentication</td><td>${statusBadge('completed')}</td></tr>
     <tr><td>Automated Fraud Screening</td><td>${statusBadge('completed')}</td></tr>
-    </tbody></table></div></div>` : ''}`;
+    </tbody></table></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Guarantors <span style="font-weight:400;color:var(--slate);font-size:12px;">(optional)</span></div>
+    <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Some regions don't have real background-check infrastructure available yet. Adding up to 3 guarantors — real people who can vouch for you, like a property owner or long-time client — gives our verification team a real way to check on you in the meantime. Our team will call each guarantor directly. Always optional, never required to work on Trothen.</div>
+    <div id="guarantors-form-area">${guarantorFormHTML()}</div>
+  </div>` : ''}`;
+}
+
+function guarantorBackgroundCheckStatusHTML() {
+  const guarantors = (AUTH.user && AUTH.user.guarantors) || [];
+  const verifiedCount = guarantors.filter(g => g.status === 'verified').length;
+  if (verifiedCount > 0) return `<span class="badge badge-success">✓ Guarantor-Verified (${verifiedCount})</span>`;
+  if (guarantors.length > 0) return `<span class="badge badge-warn">⏳ Guarantors Submitted — Awaiting Contact</span>`;
+  return `<span class="badge badge-neutral">Not Yet Completed</span>`;
+}
+
+function guarantorFormHTML() {
+  const guarantors = (AUTH.user && AUTH.user.guarantors) || [];
+  const rows = [0, 1, 2].map(i => {
+    const g = guarantors[i] || {};
+    const statusNote = g.status === 'verified' ? ' <span class="badge badge-success" style="margin-left:6px;">Verified</span>'
+      : g.status === 'contacted' ? ' <span class="badge badge-warn" style="margin-left:6px;">Contacted</span>'
+      : (g.name ? ' <span class="badge badge-neutral" style="margin-left:6px;">Submitted</span>' : '');
+    return `
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;">
+      <div style="font-weight:600;color:var(--navy);margin-bottom:8px;">Guarantor ${i + 1}${statusNote}</div>
+      <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="guarantor-${i}-name" value="${escapeHtml(g.name || '')}" placeholder="Full name"/></div>
+      <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" id="guarantor-${i}-phone" value="${escapeHtml(g.phone || '')}" placeholder="A real number our team can call"/></div>
+      <div class="form-group"><label class="form-label">Relationship</label><input class="form-input" id="guarantor-${i}-relationship" value="${escapeHtml(g.relationship || '')}" placeholder="e.g. Property owner, long-time client"/></div>
+    </div>`;
+  }).join('');
+  return `${rows}<button class="btn-sm btn-sm-primary" onclick="saveGuarantors()">Save Guarantors</button>`;
+}
+
+async function saveGuarantors() {
+  const guarantors = [];
+  for (let i = 0; i < 3; i++) {
+    const name = document.getElementById(`guarantor-${i}-name`).value.trim();
+    const phone = document.getElementById(`guarantor-${i}-phone`).value.trim();
+    const relationship = document.getElementById(`guarantor-${i}-relationship`).value.trim();
+    if (name || phone || relationship) {
+      if (!name || !phone) { showToast(`Guarantor ${i + 1}: enter at least a name and phone number, or leave all three fields blank`); return; }
+      guarantors.push({ name, phone, relationship: relationship || null });
+    }
+  }
+  if (!BACKEND_AVAILABLE) return showToast('Guarantors saved (demo mode)');
+  try {
+    const { user } = await apiFetch('POST', '/provider/guarantors', { guarantors });
+    AUTH.user = user;
+    showToast('Guarantors saved');
+    selectProviderSection('verification');
+  } catch (e) { showToast(e.message || 'Could not save guarantors'); }
 }
 
 async function submitVerification(role) {
@@ -5938,10 +5990,19 @@ const PROVIDER_SECTIONS = {
     const availableForPayout = providerData.contracts
       .filter(c => c.escrow && c.escrow.status === 'released' && !c.escrow.payoutId)
       .reduce((s, c) => s + c.escrow.amount, 0);
-    const commissionRate = { starter: 0.12, pro: 0.08, superpro: 0.05 }[(AUTH.user && AUTH.user.plan) || 'starter'];
+    const hasFreeCommission = AUTH.user && AUTH.user.freeCommissionUntil && new Date(AUTH.user.freeCommissionUntil) > new Date();
+    // Matches the real rates in src/commission.js (COMMISSION_RATES) — this
+    // was previously a separate, outdated table (12/8/5%) that had drifted
+    // from the actual rates used at payout time (13/12/10%), so this
+    // estimate was already wrong before today. This still can't account for
+    // an individual override or an org rate (those need real backend data
+    // this view doesn't have), but it's no longer using numbers that don't
+    // match reality even in the common case.
+    const commissionRate = hasFreeCommission ? 0 : ({ starter: 0.13, pro: 0.12, superpro: 0.10 }[(AUTH.user && AUTH.user.plan) || 'starter']);
     const weeklyChart = weeklyEarningsChartData(providerData.payouts);
     return `
     <div class="dash-header"><div><div class="dash-title">Earnings & Payouts</div><div class="dash-sub">Paid hourly or per job — your choice, set per contract</div></div><button class="btn-sm btn-sm-primary" onclick="openPayoutCurrencyChoice()">Request Payout</button></div>
+    ${hasFreeCommission ? `<div class="panel" style="background:var(--offwhite);border:1px solid var(--gold);"><strong style="color:var(--navy);">🏆 You had the highest Trust Score in your region this week!</strong> 0% commission until ${new Date(AUTH.user.freeCommissionUntil).toLocaleDateString()}.</div>` : ''}
     <div class="panel" id="payout-currency-panel" style="display:none;">
       <div class="panel-title">Choose Payout Currency</div>
       <div id="payout-currency-body"></div>
@@ -6104,7 +6165,8 @@ const PROVIDER_SECTIONS = {
         <button class="btn-sm btn-sm-primary" onclick="addAvailabilitySlot()">+ Add</button>
       </div>
     </div>
-    <div class="panel"><div class="panel-title">Payout Method</div>
+    <div class="panel"><div class="panel-title">Local Payout Method</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">For payments from customers in your own country. If you also work with customers booking you from abroad, add an International Payout Method below too — you'll choose which account to use each time you request a payout.</div>
       <div class="form-group"><label class="form-label">Payout Method</label>
         <select class="form-input form-select" id="set-prov-payout-method" onchange="savePayoutMethod(this.value)">
           <option value="Bank Transfer" ${(!AUTH.user || !AUTH.user.payoutMethod || AUTH.user.payoutMethod === 'Bank Transfer') ? 'selected' : ''}>Bank Transfer — Chase •••• 1123</option>
@@ -6119,6 +6181,22 @@ const PROVIDER_SECTIONS = {
       <div class="panel-title">PayPal for Payouts</div>
       <div class="form-group"><label class="form-label">PayPal Email</label><input class="form-input" id="prov-payout-paypal-email" placeholder="you@example.com" value="${escapeHtml((AUTH.user && AUTH.user.payoutPaypalEmail) || '')}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="savePayoutPaypalEmail()">Save</button>
+    </div>
+    <div class="panel">
+      <div class="panel-title">International Payout Method <span style="font-weight:400;color:var(--slate);font-size:12px;">(optional)</span></div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">For payments from customers booking you from abroad — most people use PayPal here since it works internationally, unlike most local bank/mobile transfers.</div>
+      <div class="form-group"><label class="form-label">International Payout Method</label>
+        <select class="form-input form-select" id="set-prov-payout-method-intl" onchange="savePayoutMethodIntl(this.value)">
+          <option value="" ${(!AUTH.user || !AUTH.user.payoutMethodIntl) ? 'selected' : ''}>Not set up</option>
+          <option value="PayPal" ${(AUTH.user && AUTH.user.payoutMethodIntl === 'PayPal') ? 'selected' : ''}>PayPal</option>
+          <option value="Bank Transfer" ${(AUTH.user && AUTH.user.payoutMethodIntl === 'Bank Transfer') ? 'selected' : ''}>International Bank Transfer</option>
+        </select>
+      </div>
+      <div class="form-group" id="prov-payout-paypal-intl-group" style="display:${(AUTH.user && AUTH.user.payoutMethodIntl === 'PayPal') ? 'block' : 'none'};">
+        <label class="form-label">PayPal Email (International)</label>
+        <input class="form-input" id="prov-payout-paypal-email-intl" placeholder="you@example.com" value="${escapeHtml((AUTH.user && AUTH.user.payoutPaypalEmailIntl) || '')}"/>
+        <button class="btn-sm btn-sm-primary" style="margin-top:8px;" onclick="savePayoutPaypalEmailIntl()">Save</button>
+      </div>
     </div>
     <div class="panel" id="prov-billing-card-panel" style="display:${(AUTH.user && AUTH.user.payoutMethod === 'Debit Card') ? 'block' : 'none'};">
       <div class="panel-title">Debit Card for Payouts</div>
@@ -6173,6 +6251,28 @@ async function savePayoutPaypalEmail() {
     AUTH.user = user;
     showToast('PayPal email saved — future payouts will go here');
   } catch (e) { showToast(e.message || 'Could not save PayPal email'); }
+}
+
+async function savePayoutMethodIntl(method) {
+  const paypalGroup = document.getElementById('prov-payout-paypal-intl-group');
+  if (paypalGroup) paypalGroup.style.display = method === 'PayPal' ? 'block' : 'none';
+  if (!BACKEND_AVAILABLE) return showToast('International payout method updated (demo mode)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { payoutMethodIntl: method || null });
+    AUTH.user = user;
+    showToast(method ? 'International payout method updated' : 'International payout method removed');
+  } catch (e) { showToast(e.message || 'Could not update international payout method'); }
+}
+
+async function savePayoutPaypalEmailIntl() {
+  const email = document.getElementById('prov-payout-paypal-email-intl').value.trim();
+  if (!isValidEmailClient(email)) return showToast('Enter a valid PayPal email address');
+  if (!BACKEND_AVAILABLE) return showToast('International PayPal email saved (demo mode)');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { payoutPaypalEmailIntl: email });
+    AUTH.user = user;
+    showToast('International PayPal email saved');
+  } catch (e) { showToast(e.message || 'Could not save international PayPal email'); }
 }
 
 async function savePayoutCard() {
@@ -6455,30 +6555,38 @@ async function openPayoutCurrencyChoice() {
   if (!BACKEND_AVAILABLE) return requestPayout('usd');
   try {
     const info = await apiFetch('GET', '/currency/mine');
-    if (info.isUSD) return requestPayout('usd'); // nothing to choose between
+    const hasIntlMethod = AUTH.user && AUTH.user.payoutMethodIntl;
+    if (info.isUSD && !hasIntlMethod) return requestPayout('usd'); // nothing to choose between
     const panel = document.getElementById('payout-currency-panel');
     const c = info.currency;
-    document.getElementById('payout-currency-body').innerHTML = `
+    const currencyChoiceHTML = info.isUSD ? '' : `
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">Your account is based in a ${c.name} (${c.code}) region — choose how you'd like to receive this payout.</div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn-sm btn-sm-primary" onclick="requestPayout('local')" style="flex:1;">${c.symbol} Receive in ${c.code}</button>
-        <button class="btn-sm btn-sm-outline" onclick="requestPayout('usd')" style="flex:1;">$ Receive in USD</button>
+      <div style="display:flex;gap:8px;margin-bottom:${hasIntlMethod ? '16px' : '0'};">
+        <button class="btn-sm btn-sm-primary" onclick="requestPayout('local', document.getElementById('payout-method-choice')?.value === 'intl')" style="flex:1;">${c.symbol} Receive in ${c.code}</button>
+        <button class="btn-sm btn-sm-outline" onclick="requestPayout('usd', document.getElementById('payout-method-choice')?.value === 'intl')" style="flex:1;">$ Receive in USD</button>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:8px;">Uses an approximate test-mode exchange rate — not a live market rate.</div>
-    `;
+      <div style="font-size:11px;color:var(--muted);margin-bottom:${hasIntlMethod ? '16px' : '0'};">Uses an approximate test-mode exchange rate — not a live market rate.</div>`;
+    const methodChoiceHTML = !hasIntlMethod ? '' : `
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:8px;">Which account should this payout go to?</div>
+      <select class="form-input form-select" id="payout-method-choice" style="margin-bottom:12px;">
+        <option value="local">Local — ${escapeHtml(AUTH.user.payoutMethod || 'Bank Transfer')}</option>
+        <option value="intl">International — ${escapeHtml(AUTH.user.payoutMethodIntl)}</option>
+      </select>
+      ${info.isUSD ? `<button class="btn-sm btn-sm-primary" style="width:100%;" onclick="requestPayout('usd', document.getElementById('payout-method-choice').value === 'intl')">Request Payout</button>` : ''}`;
+    document.getElementById('payout-currency-body').innerHTML = currencyChoiceHTML + methodChoiceHTML;
     panel.style.display = 'block';
   } catch (e) { showToast(e.message || 'Could not load currency info'); }
 }
 
-async function requestPayout(payoutCurrency) {
+async function requestPayout(payoutCurrency, useIntlMethod) {
   if (!BACKEND_AVAILABLE) return showToast('Payout requested (demo mode — no backend detected)');
   try {
-    const { payout } = await apiFetch('POST', '/payouts/request', { payoutCurrency });
+    const { payout } = await apiFetch('POST', '/payouts/request', { payoutCurrency, useIntlMethod: !!useIntlMethod });
     const panel = document.getElementById('payout-currency-panel');
     if (panel) panel.style.display = 'none';
     const msg = payout.payoutAmountLocal
-      ? `Payout of ${payout.payoutCurrency} ${payout.payoutAmountLocal} (≈ $${payout.amount} USD) requested`
-      : `Payout of $${payout.amount} requested`;
+      ? `Payout of ${payout.payoutCurrency} ${payout.payoutAmountLocal} (≈ $${payout.amount} USD) requested — via ${payout.method}`
+      : `Payout of $${payout.amount} requested — via ${payout.method}`;
     showToast(msg);
     await loadProviderData();
     selectProviderSection('earnings');
@@ -7284,7 +7392,7 @@ function getAdminNavItems() {
       { key: 'settings', label: 'Settings', icon: '⚙️' },
     ];
   }
-  if (dept === 'financial') {
+  if (dept === 'financial' || dept === 'accountant' || dept === 'controller') {
     return [
       { key: 'payments', label: 'Payments', icon: '💳' },
       { key: 'settings', label: 'Settings', icon: '⚙️' },
@@ -7573,6 +7681,13 @@ const ADMIN_SECTIONS = {
       <div class="panel-title">New Promotion</div>
       <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="promo-title" placeholder="e.g. Refer a friend this month"/></div>
       <div class="form-group"><label class="form-label">Message</label><textarea class="form-input" id="promo-message" rows="3" style="resize:vertical;" placeholder="What's the promotion?"></textarea></div>
+      <div class="form-group">
+        <label class="form-label">Image <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
+        <input type="file" id="promo-image-input" accept="image/jpeg,image/png,image/webp" style="display:none;" onchange="handlePromoImageSelect(event)"/>
+        <button class="btn-sm btn-sm-outline" type="button" onclick="document.getElementById('promo-image-input').click()">Choose Image</button>
+        <span id="promo-image-name" style="font-size:12px;color:var(--slate);margin-left:8px;">No image chosen</span>
+        <input type="hidden" id="promo-image-url"/>
+      </div>
       <div class="form-group"><label class="form-label">Show to</label>
         <select class="form-input form-select" id="promo-audience">
           <option value="both">Customers & Providers</option>
@@ -7782,6 +7897,8 @@ const ADMIN_SECTIONS = {
           <option value="verification">Verification Team — global access to identity verification only</option>
           <option value="disputes">Disputes Team — global access to disputes only</option>
           <option value="financial">Financial Team — global access to escrow & payouts only</option>
+          <option value="accountant">Accountant — same access as Financial for now</option>
+          <option value="controller">Controller — same access as Financial for now</option>
           <option value="customer_service">Customer Service — approvals, verification & disputes, to help users directly</option>
           <option value="legal">Legal — read-only access to disputes & transactions, for compliance review</option>
           <option value="sales">Sales Team — Custom-plan leads and multi-seat organization accounts only</option>
@@ -8038,7 +8155,7 @@ function citiesTable(list) {
   </tbody></table></div>`;
 }
 
-const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disputes Team', financial: 'Financial Team', customer_service: 'Customer Service', legal: 'Legal', sales: 'Sales Team' };
+const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disputes Team', financial: 'Financial Team', accountant: 'Accountant', controller: 'Controller', customer_service: 'Customer Service', legal: 'Legal', sales: 'Sales Team', hr: 'HR Team' };
 
 function functionalAdminsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No functional team members yet — create one above with a Role other than "Regional Admin".</div>`;
@@ -8383,20 +8500,51 @@ function openNewPromotionForm() {
   if (panel) panel.style.display = 'block';
 }
 
+async function handlePromoImageSelect(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) return showToast('Image must be under 5MB');
+  document.getElementById('promo-image-name').textContent = 'Uploading…';
+  if (!BACKEND_AVAILABLE) {
+    document.getElementById('promo-image-name').textContent = file.name + ' (demo mode)';
+    return;
+  }
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+    const res = await fetch(API_BASE + '/admin/promotions/image', {
+      method: 'POST',
+      headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    document.getElementById('promo-image-url').value = data.url;
+    document.getElementById('promo-image-name').textContent = file.name;
+  } catch (e) {
+    showToast(e.message || 'Could not upload image');
+    document.getElementById('promo-image-name').textContent = 'No image chosen';
+  }
+}
+
 async function submitPromotion() {
   const title = document.getElementById('promo-title').value.trim();
   const message = document.getElementById('promo-message').value.trim();
   const audience = document.getElementById('promo-audience').value;
+  const imageUrl = document.getElementById('promo-image-url').value.trim();
   const regionInput = document.getElementById('promo-region');
   const region = regionInput ? regionInput.value.trim() : '';
   if (!title || title.length < 2) return showToast('Enter a short title');
   if (!message || message.length < 5) return showToast('Enter the promotion message');
   if (!BACKEND_AVAILABLE) return showToast('Promotion posted (demo mode)');
   try {
-    await apiFetch('POST', '/admin/promotions', { title, message, audience, region: region || undefined });
+    await apiFetch('POST', '/admin/promotions', { title, message, audience, imageUrl: imageUrl || undefined, region: region || undefined });
     showToast('Promotion posted');
     document.getElementById('promo-title').value = '';
     document.getElementById('promo-message').value = '';
+    document.getElementById('promo-image-url').value = '';
+    document.getElementById('promo-image-name').textContent = 'No image chosen';
     if (regionInput) regionInput.value = '';
     document.getElementById('new-promotion-panel').style.display = 'none';
     await loadAdminPromotionsPanel();

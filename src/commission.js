@@ -15,19 +15,27 @@ function commissionRateForPlan(plan) {
 
 // The real rate a specific provider pays right now. Priority order,
 // highest first:
-//   1. An individually approved commission rate override (see
+//   1. An active Sunday top-scorer free-commission promotion (see
+//      src/top-scorer-promotion-scheduler.js) — a real, time-limited
+//      reward for hitting the highest Trust Score in your region that
+//      Sunday. Checked first because 0% is always the best possible
+//      rate, so there's no real precedence question once it's active.
+//   2. An individually approved commission rate override (see
 //      POST /admin/providers/:id/propose-commission-rate below) — a
 //      specific reward for one provider's own excellent performance,
 //      proposed by their regional admin and approved by a super admin.
 //      This is deliberately the highest priority: it's the most specific,
 //      most deliberately-decided rate of the three, so it should win even
 //      over an org's blanket rate.
-//   2. An organization's negotiated volume-discount rate (see
+//   3. An organization's negotiated volume-discount rate (see
 //      src/schema.sql organizations table) — the entire point of the
 //      Custom plan's "volume commission discount" promise.
-//   3. The provider's normal plan-based rate — the fallback for anyone
-//      with neither of the above.
+//   4. The provider's normal plan-based rate — the fallback for anyone
+//      with none of the above.
 function effectiveCommissionRate(provider, organization) {
+  if (provider && provider.freeCommissionUntil && new Date(provider.freeCommissionUntil) > new Date()) {
+    return 0;
+  }
   if (provider && provider.commissionRateOverrideStatus === 'approved' && provider.commissionRateOverride != null) {
     return provider.commissionRateOverride;
   }

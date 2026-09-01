@@ -496,7 +496,7 @@ router.post('/accept-terms', requireAuth, async (req, res) => {
 });
 
 router.patch('/me', requireAuth, async (req, res) => {
-  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'payoutPaypalEmail', 'notifPrefs', 'availability', 'pricingModel', 'price', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category', 'acceptingBookings', 'licenseExpiryDate', 'insuranceExpiryDate', 'latitude', 'longitude', 'serviceRadiusMiles'];
+  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'payoutPaypalEmail', 'payoutMethodIntl', 'payoutPaypalEmailIntl', 'notifPrefs', 'availability', 'pricingModel', 'price', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category', 'acceptingBookings', 'licenseExpiryDate', 'insuranceExpiryDate', 'latitude', 'longitude', 'serviceRadiusMiles'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
   if ('acceptingBookings' in patch && typeof patch.acceptingBookings !== 'boolean') {
@@ -522,6 +522,9 @@ router.patch('/me', requireAuth, async (req, res) => {
     if (typeof patch.serviceRadiusMiles !== 'number' || patch.serviceRadiusMiles <= 0 || patch.serviceRadiusMiles > 500) {
       return res.status(400).json({ error: 'Service radius must be a positive number of miles (500 max), or left blank to travel anywhere' });
     }
+  }
+  if ('payoutMethodIntl' in patch && patch.payoutMethodIntl !== null && !['PayPal', 'Bank Transfer'].includes(patch.payoutMethodIntl)) {
+    return res.status(400).json({ error: 'payoutMethodIntl must be PayPal, Bank Transfer, or left blank' });
   }
   if ('name' in patch && !isValidName(patch.name)) {
     return res.status(400).json({ error: 'Enter a real name — letters, spaces, hyphens, and apostrophes only' });

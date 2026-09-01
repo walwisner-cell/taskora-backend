@@ -576,6 +576,15 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_started_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_cancelled_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_price NUMERIC;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS loyalty_points NUMERIC NOT NULL DEFAULT 0;
+
+-- Up to 3 guarantors a provider can optionally submit — a real
+-- alternative to a background check in regions without that
+-- infrastructure available yet (see the Guarantors panel on the
+-- Verification screen in the app for the full context).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS guarantors JSONB;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS free_commission_until TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_method_intl TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_paypal_email_intl TEXT;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS loyalty_points_redeemed NUMERIC NOT NULL DEFAULT 0;
 
 -- Optional customer tips — 100% to the provider, tracked separately from

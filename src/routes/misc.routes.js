@@ -627,6 +627,48 @@ router.get('/loyalty/mine', requireAuth, requireRole('customer'), async (req, re
   });
 });
 
+// POST /api/provider/guarantors — a provider submits up to 3 real
+// guarantors (see the Guarantors panel on the Verification screen for
+// the full context: this exists for regions without real background-
+// check infrastructure available yet). Always optional — this endpoint
+// is never required to complete verification, and an empty array is a
+// valid, accepted request (clearing previously-saved guarantors).
+router.post('/provider/guarantors', requireAuth, requireRole('provider'), async (req, res) => {
+  const { guarantors } = req.body || {};
+  if (!Array.isArray(guarantors) || guarantors.length > 3) {
+    return res.status(400).json({ error: 'guarantors must be a list of up to 3' });
+  }
+  for (const g of guarantors) {
+    if (!isNonEmptyString(g.name, { min: 2, max: 100 }) || !isNonEmptyString(g.phone, { min: 7, max: 30 })) {
+      return res.status(400).json({ error: 'Each guarantor needs at least a real name and phone number' });
+    }
+  }
+  const existing = (await db.find('users', u => u.id === req.user.sub)).guarantors || [];
+  // Preserve any existing verification status when a provider re-saves
+  // (e.g. edits guarantor #2's phone number) — matching by phone number,
+  // since that's the one field the verification team actually uses to
+  // reach them and the most stable identifier across an edit.
+  const merged = guarantors.map(g => {
+    const prior = existing.find(e => e.phone === g.phone);
+    return {
+      name: g.name.trim(),
+      phone: g.phone.trim(),
+      relationship: g.relationship ? g.relationship.trim() : null,
+      status: prior ? prior.status : 'submitted',
+      contactedAt: prior ? prior.contactedAt : null,
+    };
+  });
+  const updated = await db.update('users', req.user.sub, { guarantors: merged });
+  if (merged.length > 0) {
+    const verificationAdmins = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'verification');
+    const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
+    for (const admin of (verificationAdmins.length ? verificationAdmins : superAdmins)) {
+      await notify(admin.id, '📋', `${updated.name} submitted ${merged.length} guarantor${merged.length === 1 ? '' : 's'} for review — a real person to call for background-check purposes.`, null, { section: 'approvals' });
+    }
+  }
+  res.json({ user: updated });
+});
+
 router.get('/favorites/mine', requireAuth, requireRole('customer'), async (req, res) => {
   const favorites = (await db.filter('favoriteProviders', f => f.customerId === req.user.sub))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));

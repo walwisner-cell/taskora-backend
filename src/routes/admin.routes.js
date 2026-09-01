@@ -584,6 +584,41 @@ router.post('/users/:id/decide', requireDepartment(['verification', 'customer_se
 });
 
 // GET /api/admin/verification-queue
+// GET /api/admin/providers-with-guarantors — every provider who's
+// actually submitted guarantors, for the verification team to work
+// through and call. Verification-department only, matching the same
+// access as the rest of the identity-verification workflow.
+router.get('/providers-with-guarantors', requireDepartment(['verification']), async (req, res) => {
+  const region = await myRegion(req);
+  let providers = await db.filter('users', u => u.role === 'provider' && u.guarantors && u.guarantors.length > 0);
+  if (region) providers = providers.filter(p => p.city === region);
+  res.json({ providers: providers.map(p => ({ id: p.id, name: p.name, city: p.city, category: p.category, guarantors: p.guarantors })) });
+});
+
+// PATCH /api/admin/providers/:id/guarantors/:index — mark one specific
+// guarantor as contacted or verified, after the verification team has
+// actually called them. :index refers to the guarantor's position in
+// the provider's own guarantors list (0, 1, or 2).
+router.patch('/providers/:id/guarantors/:index', requireDepartment(['verification']), async (req, res) => {
+  const region = await myRegion(req);
+  const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
+  if (!provider) return res.status(404).json({ error: 'Provider not found' });
+  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  const idx = parseInt(req.params.index, 10);
+  const guarantors = provider.guarantors || [];
+  if (!Number.isInteger(idx) || idx < 0 || idx >= guarantors.length) {
+    return res.status(404).json({ error: 'That guarantor was not found on this provider\'s account' });
+  }
+  const { status } = req.body || {};
+  if (!['contacted', 'verified'].includes(status)) return res.status(400).json({ error: 'status must be contacted or verified' });
+  guarantors[idx] = { ...guarantors[idx], status, contactedAt: new Date().toISOString() };
+  const updated = await db.update('users', provider.id, { guarantors });
+  if (status === 'verified') {
+    await notify(provider.id, '✅', `Your guarantor "${guarantors[idx].name}" has been contacted and verified — thank you for helping us keep Trothen trustworthy.`, null, { section: 'verification' });
+  }
+  res.json({ user: publicAdmin(updated) });
+});
+
 router.get('/verification-queue', requireDepartment(['verification']), async (req, res) => {
   const region = await myRegion(req);
   const inReview = await db.filter('verifications', v => v.status === 'in review');
@@ -709,7 +744,7 @@ router.get('/disputes/pdf', requireDepartment(['disputes', 'customer_service', '
 // within an admin's assigned city), with escrow and payout status. This is
 // what the admin Payments page actually needs — previously it was showing
 // unrelated demo data, not real platform transactions.
-router.get('/transactions', requireDepartment(['financial', 'legal']), async (req, res) => {
+router.get('/transactions', requireDepartment(['financial', 'accountant', 'controller', 'legal']), async (req, res) => {
   const { logAccess } = require('../access-log');
   await logAccess(req, 'transactions_list');
   const region = await myRegion(req);
@@ -763,7 +798,7 @@ router.get('/transactions', requireDepartment(['financial', 'legal']), async (re
 
 // GET /api/admin/transactions/pdf — a real, downloadable platform
 // transactions report, same scoping and date range as the JSON endpoint.
-router.get('/transactions/pdf', requireDepartment(['financial', 'legal']), async (req, res) => {
+router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'controller', 'legal']), async (req, res) => {
   const { logAccess } = require('../access-log');
   await logAccess(req, 'transactions_pdf_download');
   const region = await myRegion(req);
@@ -1534,8 +1569,8 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
     ['country', isNonEmptyString(country), 'Country is required'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
-  if (department && !['verification', 'disputes', 'financial', 'customer_service', 'legal', 'sales', 'hr'].includes(department)) {
-    return res.status(400).json({ error: 'department must be verification, disputes, financial, customer_service, legal, sales, or hr' });
+  if (department && !['verification', 'disputes', 'financial', 'accountant', 'controller', 'customer_service', 'legal', 'sales', 'hr'].includes(department)) {
+    return res.status(400).json({ error: 'department must be verification, disputes, financial, accountant, controller, customer_service, legal, sales, or hr' });
   }
 
   const existing = await db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
@@ -1744,6 +1779,46 @@ router.get('/promotions', async (req, res) => {
 // same "own city, not the whole platform" boundary already used for ad
 // pricing and regional support contacts). A super admin can post
 // platform-wide (leave region blank) or target a specific city.
+const promoImageStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `promo_${req.user.sub}_${nanoid(10)}${ext}`);
+  },
+});
+function promoImageFileFilter(req, file, cb) {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowed.includes(file.mimetype)) return cb(new Error('Only JPEG, PNG, or WEBP images are allowed'));
+  cb(null, true);
+}
+const uploadPromoImage = multer({ storage: promoImageStorage, fileFilter: promoImageFileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// POST /api/admin/promotions/image — upload a real image for a promotion
+// banner. Open to any admin who can post a promotion at all (super admin
+// or a plain regional admin — matches the same access as POST
+// /promotions below, not restricted to super admin the way homepage
+// images are). Returns just the URL; the actual promotion is created or
+// updated separately with that URL as imageUrl.
+router.post('/promotions/image', async (req, res) => {
+  const m = await me(req);
+  if (!m.isSuperAdmin && m.adminDepartment) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
+  uploadPromoImage.single('image')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (!req.file) return res.status(400).json({ error: 'No image file was provided' });
+    if (!fs.existsSync(req.file.path)) {
+      console.error(`Promotion image upload reported success but file is missing at ${req.file.path} — check UPLOADS_DIR points to a writable, persistent location.`);
+      return res.status(500).json({ error: 'The image could not be saved to disk. Please try again.' });
+    }
+    if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
+    }
+    res.status(201).json({ url: `/uploads/${req.file.filename}` });
+  });
+});
+
 router.post('/promotions', async (req, res) => {
   const m = await me(req);
   if (!m.isSuperAdmin && m.adminDepartment) {

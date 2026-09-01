@@ -243,7 +243,7 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
   if (requestingProvider && requestingProvider.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — payouts will resume once this clears, usually within a couple hours. Contact support if you need this resolved sooner.' });
   }
-  const { payoutCurrency } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
+  const { payoutCurrency, useIntlMethod } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
 
   // Reject immediately if this provider already has a payout request in
   // flight — this is what actually closes the race, not just a courtesy
@@ -255,13 +255,13 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), async (req
   payoutLocks.add(req.user.sub);
 
   try {
-    return await handlePayoutRequest(req, res, payoutCurrency);
+    return await handlePayoutRequest(req, res, payoutCurrency, useIntlMethod);
   } finally {
     payoutLocks.delete(req.user.sub);
   }
 });
 
-async function handlePayoutRequest(req, res, payoutCurrency) {
+async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   const provider = await db.find('users', u => u.id === req.user.sub);
 
   // What's actually payable is escrow that's been RELEASED (the customer
@@ -406,7 +406,7 @@ async function handlePayoutRequest(req, res, payoutCurrency) {
     payoutCurrency: wantsLocal ? currency.code : 'USD',
     payoutAmountLocal,
     exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
-    method: (provider && provider.payoutMethod) || 'Bank Transfer',
+    method: (useIntlMethod && provider && provider.payoutMethodIntl) ? provider.payoutMethodIntl : ((provider && provider.payoutMethod) || 'Bank Transfer'),
     status: 'processing',
     lineItems,
     createdAt: new Date().toISOString(),

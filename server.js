@@ -204,6 +204,14 @@ seedIfEmpty()
     const { sweepPayoutSettlement } = require('./src/payout-settlement-scheduler');
     setTimeout(() => { sweepPayoutSettlement().catch(e => console.error('[payout-settlement-scheduler] Unexpected error during scheduled sweep:', e)); }, 17000);
     setInterval(() => { sweepPayoutSettlement().catch(e => console.error('[payout-settlement-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+
+    // Sunday top-scorer free-commission promotion (see
+    // src/top-scorer-promotion-scheduler.js). Runs daily but only
+    // actually does anything on a Sunday — the function checks the day
+    // itself, so a daily cadence naturally lands on Sunday once a week.
+    const { sweepTopScorerPromotion } = require('./src/top-scorer-promotion-scheduler');
+    setTimeout(() => { sweepTopScorerPromotion().catch(e => console.error('[top-scorer-promotion-scheduler] Unexpected error during scheduled sweep:', e)); }, 20000);
+    setInterval(() => { sweepTopScorerPromotion().catch(e => console.error('[top-scorer-promotion-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
   })
   .catch(err => {
     console.error('Failed to start server:', err);
