@@ -1,23 +1,29 @@
 const db = require('./db');
 const { LICENSED_TRADE_CATEGORIES, hasValidLicense } = require('./routes/marketplace.routes');
 
-// The 8 components and their point weights, exactly as specified:
-// identity verification (10), document verification (10, if applicable),
-// job completed (15), arrived-on-time rate (10), repeated customers (15),
-// response time (15), background check (10), cancellation rate (20).
-// Those add up to 105, not 100 — the total below is capped at 99 (never
-// a perfect 100), matching "the score shall run from 0/100 – 99/100"
-// literally: 99 is the ceiling, not 100.
+// The 9 components and their point weights. The first 8 are exactly as
+// originally specified: identity verification (10), document
+// verification (10, if applicable), job completed (15), arrived-on-time
+// rate (10), repeated customers (15), response time (15), background
+// check (10), cancellation rate (20). The 9th, customer trust rating
+// (15), was added afterward: a real yes/no "do you trust this provider"
+// question customers can optionally answer alongside their star review
+// (see POST /reviews in marketplace.routes.js) — a different signal from
+// star rating, since someone can leave 4 stars for competent work while
+// still genuinely not trusting the person, or vice versa. Those add up
+// to 120, not 100 — the total below is capped at 99 (never a perfect
+// 100), matching "the score shall run from 0/100 – 99/100" literally:
+// 99 is the ceiling, not 100.
 //
 // Honesty note, worth reading before trusting this number for anything
-// serious: three of these eight components don't have a fully precise
+// serious: three of these nine components don't have a fully precise
 // data source to compute from yet, so they use a defensible proxy
 // instead — each one says exactly what it's actually measuring in its
 // own comment below. And a provider with little or no job history yet
 // gets full credit on volume-based components (job count, repeat
-// customers, response rate, cancellation rate) rather than a harsh
-// default of zero — a brand new account hasn't done anything wrong,
-// so it shouldn't score as if it had.
+// customers, response rate, cancellation rate, trust rating) rather
+// than a harsh default of zero — a brand new account hasn't done
+// anything wrong, so it shouldn't score as if it had.
 const WEIGHTS = {
   identityVerification: 10,
   documentVerification: 10,
@@ -27,6 +33,7 @@ const WEIGHTS = {
   responseTime: 15,
   backgroundCheck: 10,
   cancellationRate: 20,
+  customerTrustRating: 15,
 };
 
 // Same volume benchmark already established elsewhere in this app
@@ -122,7 +129,18 @@ async function computeProviderScore(providerId) {
     cancellationRate = Math.max(0, WEIGHTS.cancellationRate * (1 - rate / 20)); // 20%+ cancellation rate = zero credit here
   }
 
-  const rawTotal = identityVerification + documentVerification + jobsCompleted + arrivedOnTime + repeatedCustomers + responseTime + backgroundCheck + cancellationRate;
+  // 9. Customer trust rating — direct: the real share of customers who
+  // answered "do you trust this provider?" and said yes (see POST
+  // /reviews in marketplace.routes.js, where trustRatePercent is
+  // actually computed and stored). Deliberately optional on the
+  // customer's side, so a provider nobody has answered this for yet
+  // gets full credit rather than being penalized for a question simply
+  // not being answered.
+  const customerTrustRating = provider.trustRatePercent != null
+    ? (provider.trustRatePercent / 100) * WEIGHTS.customerTrustRating
+    : WEIGHTS.customerTrustRating;
+
+  const rawTotal = identityVerification + documentVerification + jobsCompleted + arrivedOnTime + repeatedCustomers + responseTime + backgroundCheck + cancellationRate + customerTrustRating;
   const total = Math.max(0, Math.min(99, Math.round(rawTotal)));
 
   return {
@@ -136,6 +154,7 @@ async function computeProviderScore(providerId) {
       responseTime: Math.round(responseTime * 10) / 10,
       backgroundCheck: Math.round(backgroundCheck * 10) / 10,
       cancellationRate: Math.round(cancellationRate * 10) / 10,
+      customerTrustRating: Math.round(customerTrustRating * 10) / 10,
     },
     weights: WEIGHTS,
   };
@@ -150,15 +169,24 @@ async function computeProviderScore(providerId) {
 // button, not a script doing it unattended. "Give the verification team
 // the ability to pause" is exactly that — a tool they can use, not a
 // script that acts on its own.
+// What used to be an escalating series of pause durations (1 month, up
+// to 12 for the lowest scores) is gone — see NEW_MATCH_TRUST_SCORE_FLOOR
+// in marketplace.routes.js for why: pausing someone's whole account
+// blocked the very things (completing jobs, responding, avoiding
+// cancellations) that would let their score recover. The real
+// consequence is now automatic and continuous — a provider at or below
+// the floor simply stops receiving new job matches, and starts again
+// the moment their score crosses back over, with no admin action
+// required either way.
+//
+// What's left for a human to actually decide is whether real outreach
+// would help: a low score can mean something fixable (a run of bad luck,
+// a misunderstanding about how the platform works) that a phone call
+// could genuinely help with, not just a number to react to.
 function recommendedActionForScore(score) {
   if (score > 60) return null; // fine standing, nothing recommended
-  if (score > 50) return { months: 1, callRequired: true, label: 'Pause 1 month + call provider to discuss their score' };
-  if (score > 40) return { months: 2, callRequired: false, label: 'Pause 2 months' };
-  if (score > 30) return { months: 3, callRequired: false, label: 'Pause 3 months' };
-  if (score > 20) return { months: 4, callRequired: false, label: 'Pause 4 months' };
-  if (score > 10) return { months: 5, callRequired: false, label: 'Pause 5 months' };
-  if (score > 5) return { months: 6, callRequired: false, label: 'Pause 6 months' };
-  return { months: 12, callRequired: false, label: 'Pause 12 months' };
+  if (score > 40) return { callRequired: false, label: 'Approaching the new-match floor — worth keeping an eye on, no action needed yet' };
+  return { callRequired: true, label: 'At or below the new-match floor — new job matches are already paused automatically; call to understand why and see if there\'s a real way to help them recover' };
 }
 
 module.exports = { computeProviderScore, recommendedActionForScore, MEANINGFUL_JOB_COUNT };

@@ -386,36 +386,40 @@ router.get('/providers/leaderboard', async (req, res) => {
   });
 });
 
-// POST /api/admin/providers/:id/apply-score-pause — the real, human
-// action behind a score-based pause recommendation. Pre-fills from
-// recommendedActionForScore if no duration is given, but always requires
-// a real click from a real admin — nothing pauses a provider's account
-// on its own. Reuses the existing onHold mechanism (same one manual
-// holds already use) with a new holdUntil so it auto-expires — see
-// src/document-expiry-scheduler.js-style daily sweep pattern; the
-// hold-expiry sweep itself is in provider-score-scheduler's neighbor,
-// wired in server.js.
-router.post('/providers/:id/apply-score-pause', async (req, res) => {
+// POST /api/admin/providers/:id/hold — a genuine manual account hold, for
+// a real reason an admin actually types (fraud, a policy violation,
+// anything serious enough to need one) — not an automatic consequence of
+// a low trust score anymore. That consequence is now handled entirely by
+// NEW_MATCH_TRUST_SCORE_FLOOR in marketplace.routes.js: a provider at or
+// below the floor simply stops getting new job matches, automatically,
+// with no admin action needed, and it lifts itself the moment their
+// score recovers. This endpoint is for something a score number alone
+// can't capture — always requires a real reason and a real duration
+// from the admin, never pre-filled from a score bracket.
+router.post('/providers/:id/hold', async (req, res) => {
   const region = await myRegion(req);
   const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
   if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
 
-  const { recommendedActionForScore } = require('../provider-score');
-  const recommended = recommendedActionForScore(provider.trustScore);
-  const months = typeof req.body.months === 'number' && req.body.months > 0 ? req.body.months : (recommended ? recommended.months : null);
-  if (!months) return res.status(400).json({ error: 'No recommended pause for this provider\'s current score, and no custom duration was given' });
+  const { months, reason } = req.body || {};
+  if (typeof months !== 'number' || months <= 0 || months > 24) {
+    return res.status(400).json({ error: 'months must be a positive number (24 max)' });
+  }
+  if (!isNonEmptyString(reason, { min: 10, max: 300 })) {
+    return res.status(400).json({ error: 'Enter a real reason for this hold (at least 10 characters) — it\'s shown to the provider' });
+  }
 
   const holdUntil = new Date();
   holdUntil.setMonth(holdUntil.getMonth() + months);
 
   const updated = await db.update('users', provider.id, {
     onHold: true,
-    holdReason: `Trust score-based pause (score: ${provider.trustScore}/99) — ${months} month${months === 1 ? '' : 's'}`,
+    holdReason: reason.trim(),
     holdSince: new Date().toISOString(),
     holdUntil: holdUntil.toISOString(),
   });
-  await notify(provider.id, '⏸️', `Your account has been paused for ${months} month${months === 1 ? '' : 's'} based on your current trust score (${provider.trustScore}/99). It will automatically reactivate on ${holdUntil.toLocaleDateString()}. Contact support if you have questions.`, null, { section: 'settings' });
+  await notify(provider.id, '⏸️', `Your account has been placed on hold for ${months} month${months === 1 ? '' : 's'}: ${reason.trim()} It will automatically reactivate on ${holdUntil.toLocaleDateString()}. Contact support if you have questions.`, null, { section: 'settings' });
   res.json({ user: publicAdmin(updated) });
 });
 
@@ -1856,7 +1860,7 @@ router.post('/promotions', async (req, res) => {
   if (!m.isSuperAdmin && m.adminDepartment) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
-  const { title, message, imageUrl, audience, region, expiresAt } = req.body || {};
+  const { title, message, imageUrl, audience, region, expiresAt, sendEmail: shouldEmail } = req.body || {};
   const errors = validate([
     ['title', isNonEmptyString(title, { min: 2, max: 120 }), 'Enter a short title'],
     ['message', isNonEmptyString(message, { min: 5, max: 500 }), 'Enter the promotion message'],
@@ -1876,10 +1880,37 @@ router.post('/promotions', async (req, res) => {
     audience: audience || 'both',
     active: true,
     expiresAt: expiresAt || null,
+    emailSentCount: 0,
     createdAt: new Date().toISOString(),
   };
   await db.insert('promotions', promo);
-  res.status(201).json({ promotion: promo });
+
+  // Real email delivery — this is what actually answers "how do we send
+  // a general message or email as administrator" for something like a
+  // policy change or a technical issue, not just an in-app banner
+  // someone might not open today. Genuinely optional per-announcement
+  // (not every promo needs an email blast), and a real no-op in test
+  // mode — same honest pattern as every other email in this app — so
+  // this never silently claims to have emailed people when nothing's
+  // actually configured to send it.
+  if (shouldEmail) {
+    const { isEmailConfigured, sendEmail } = require('../delivery');
+    if (isEmailConfigured()) {
+      const roleFilter = promo.audience === 'both' ? (u => u.role === 'customer' || u.role === 'provider') : (u => u.role === promo.audience.slice(0, -1));
+      let recipients = await db.filter('users', roleFilter);
+      if (promo.region) recipients = recipients.filter(u => u.city === promo.region);
+      let sent = 0;
+      for (const recipient of recipients) {
+        if (!recipient.email) continue;
+        const result = await sendEmail(recipient.email, promo.title, `${promo.message}\n\n— The Trothen Team`);
+        if (result.sent) sent += 1;
+      }
+      await db.update('promotions', promo.id, { emailSentCount: sent });
+      promo.emailSentCount = sent;
+    }
+  }
+
+  res.status(201).json({ promotion: promo, emailConfigured: shouldEmail ? require('../delivery').isEmailConfigured() : null });
 });
 
 // PATCH /api/admin/promotions/:id — toggle active/inactive, or edit.

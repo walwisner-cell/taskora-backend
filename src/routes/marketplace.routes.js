@@ -652,6 +652,29 @@ router.get('/providers/:id', async (req, res) => {
 
 // ---- Jobs & AI matching -----------------------------------------------------
 
+// A trust score at or below this floor excludes a provider from NEW job
+// matches — replacing the earlier design of a full account pause as the
+// consequence of a low score. A real concern was raised about that
+// earlier design: pausing someone's whole account blocks the very
+// actions (completing jobs, avoiding cancellations, responding
+// promptly) that would let their score recover, turning a pause into a
+// trap rather than a path back. This is meant to only restrict what's
+// genuinely optional — new opportunities — while leaving every existing
+// contract, every ability to be found and booked directly by a
+// returning customer, and every real way to improve the score
+// completely untouched. The moment their score crosses back above this
+// floor (through the same daily recompute everyone else goes through),
+// they're included in new matches again automatically — there's no
+// separate "lift the restriction" step for an admin to remember, the
+// restriction and the score are the same live number.
+//
+// 40 is chosen to roughly track where the old escalating-pause bands
+// used to start getting genuinely serious (3+ months) — a real,
+// meaningful floor, not a token one, but one a provider actively working
+// on their standing (completing jobs, responding, avoiding
+// cancellations) can climb back over.
+const NEW_MATCH_TRUST_SCORE_FLOOR = 40;
+
 // POST /api/jobs — customer posts a job, triggers AI matching immediately
 router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   const customer = await db.find('users', u => u.id === req.user.sub);
@@ -661,7 +684,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   if (customer.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to post a job again shortly. Contact support if you need this resolved sooner.' });
   }
-  const { category, description, materialsOnHand, budget, payCurrency, photoUrls } = req.body || {};
+  const { category, description, materialsOnHand, materialsCost, budget, payCurrency, photoUrls } = req.body || {};
   const errors = validate([
     ['category', isNonEmptyString(category, { min: 2, max: 60 }), 'Category is required'],
     ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
@@ -669,6 +692,9 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   ]);
   if (materialsOnHand && !isNonEmptyString(materialsOnHand, { max: 300 })) {
     return res.status(400).json({ error: 'What you already have must be under 300 characters' });
+  }
+  if (materialsCost !== undefined && materialsCost !== null && (typeof materialsCost !== 'number' || materialsCost < 0 || materialsCost > 100000)) {
+    return res.status(400).json({ error: 'Materials cost must be a positive number, or left blank' });
   }
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
   const prohibitedHit = findProhibitedContent(category, category) || findProhibitedContent(description, category);
@@ -693,7 +719,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   const job = {
     id: `job_${nanoid(10)}`,
     customerId: req.user.sub,
-    category, description: description.trim(), materialsOnHand: materialsOnHand ? materialsOnHand.trim() : null, budget: budget ? budget.trim() : null,
+    category, description: description.trim(), materialsOnHand: materialsOnHand ? materialsOnHand.trim() : null, materialsCost: materialsCost != null ? materialsCost : null, budget: budget ? budget.trim() : null,
     // Captured now, used later — escrow isn't actually funded until a
     // provider accepts the match, but the customer's currency preference is
     // set at the moment they post, not re-asked for later.
@@ -728,7 +754,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   // state/region; only if THAT comes up empty does it widen to the whole
   // country. A customer in Lagos is never matched to a provider in Abuja
   // over one in a different country, no matter how good that provider is.
-  const allInCategory = await db.filter('users', u => u.role === 'provider' && u.category === category && u.verified);
+  const allInCategory = await db.filter('users', u => u.role === 'provider' && u.category === category && u.verified && (u.trustScore == null || u.trustScore > NEW_MATCH_TRUST_SCORE_FLOOR));
 
   let candidates = [];
   let matchScope = 'city';
@@ -1022,7 +1048,10 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
   if (customer.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to book again shortly. Contact support if you need this resolved sooner.' });
   }
-  const { providerId, service, date, time, address, amount, payCurrency, materialsAdvance, photoUrls, isOffer, useLoyaltyPoints } = req.body || {};
+  const { providerId, service, date, time, address, amount, payCurrency, materialsAdvance, photoUrls, isOffer, useLoyaltyPoints, materialsOnHand } = req.body || {};
+  if (materialsOnHand && !isNonEmptyString(materialsOnHand, { max: 300 })) {
+    return res.status(400).json({ error: 'What you already have must be under 300 characters' });
+  }
   const errors = validate([
     ['providerId', isNonEmptyString(providerId), 'A provider must be selected'],
     ['service', isNonEmptyString(service, { min: 3, max: 200 }), 'Describe the service in at least 3 characters'],
@@ -1118,6 +1147,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
     serviceFee: canRedeemPoints ? 0 : realServiceFee,
     loyaltyPointsRedeemed: canRedeemPoints ? POINTS_FOR_FREE_BOOKING : 0,
     materialsAdvance: materialsAdvance || 0,
+    materialsOnHand: materialsOnHand ? materialsOnHand.trim() : null,
     photoUrls: validPhotoUrls,
     status: isNegotiable ? 'pending_agreement' : 'pending_provider_confirmation',
     payCurrency: payCurrency === 'local' ? 'local' : 'usd',
@@ -1510,12 +1540,15 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
 // real review on file, so the rating shown across the app becomes genuine
 // customer feedback instead of a static seeded number.
 router.post('/reviews', requireAuth, requireRole('customer'), async (req, res) => {
-  const { contractId, stars, text } = req.body || {};
+  const { contractId, stars, text, trusted } = req.body || {};
   const errors = validate([
     ['stars', Number.isInteger(stars) && stars >= 1 && stars <= 5, 'Rating must be between 1 and 5 stars'],
     ['text', isNonEmptyString(text, { min: 5, max: 500 }), 'Review must be between 5 and 500 characters'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  if (trusted !== undefined && trusted !== null && typeof trusted !== 'boolean') {
+    return res.status(400).json({ error: 'trusted must be true, false, or omitted' });
+  }
 
   const contract = await db.find('contracts', c => c.id === contractId && c.customerId === req.user.sub);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
@@ -1533,6 +1566,7 @@ router.post('/reviews', requireAuth, requireRole('customer'), async (req, res) =
     authorName: customer ? customer.name : 'Customer',
     stars,
     text: text.trim(),
+    trusted: trusted === undefined ? null : trusted,
     createdAt: new Date().toISOString(),
   };
   await db.insert('reviews', review);
@@ -1540,9 +1574,20 @@ router.post('/reviews', requireAuth, requireRole('customer'), async (req, res) =
   // Recompute the provider's average rating from every review on file.
   const allReviews = await db.filter('reviews', r => r.providerId === contract.providerId);
   const avg = allReviews.reduce((s, r) => s + r.stars, 0) / allReviews.length;
-  await db.update('users', contract.providerId, { rating: Math.round(avg * 10) / 10 });
+  // Trust rate: the real % of customers who answered the trust question
+  // and said yes — only counted among reviews that actually answered it
+  // (trusted !== null), since this is deliberately optional and an
+  // unanswered question shouldn't silently count against (or for)
+  // anyone. Feeds into the Trust Score as its own component — see
+  // src/provider-score.js.
+  const answeredTrust = allReviews.filter(r => r.trusted !== null && r.trusted !== undefined);
+  const trustRatePercent = answeredTrust.length ? Math.round((answeredTrust.filter(r => r.trusted).length / answeredTrust.length) * 100) : null;
+  await db.update('users', contract.providerId, { rating: Math.round(avg * 10) / 10, trustRatePercent });
 
   await notify(contract.providerId, '⭐', `New ${stars}-star review: "${text.trim().slice(0, 60)}${text.length > 60 ? '…' : ''}"`, null, { section: 'bookings' });
+  if (trusted === false) {
+    await notify(contract.providerId, '⚠️', `A customer indicated they didn't fully trust you on a recent job. Your trust rate is now ${trustRatePercent}%.`, null, { section: 'verification' });
+  }
   const { awardLoyaltyPoint } = require('../loyalty');
   await awardLoyaltyPoint(req.user.sub, 'review');
 

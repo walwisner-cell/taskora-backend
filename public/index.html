@@ -1194,6 +1194,11 @@
         <label class="form-label">Service Needed</label>
         <input class="form-input" type="text" placeholder="Describe the job briefly..." id="job-desc"/>
       </div>
+      <div class="form-group">
+        <label class="form-label">What do you already have? <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
+        <input class="form-input" type="text" placeholder="e.g. I already bought the replacement faucet" id="job-materials-on-hand"/>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Helps your pro quote accurately — they won't need to bring or charge for anything you've already got.</div>
+      </div>
       <div class="dates-row">
         <div class="form-group">
           <label class="form-label">Date</label>
@@ -3303,7 +3308,7 @@ async function startMessagePolling() {
       seenNotificationIds = new Set(notifications.map(n => n.id));
       if (!newOnes.length) return; // nothing changed — don't touch the DOM for no reason
       CURRENT_NOTIFICATIONS = notifications;
-      if (soundOn && newOnes.some(n => n.text && n.text.toLowerCase().includes('message'))) {
+      if (soundOn && newOnes.some(n => n.linkTo && n.linkTo.section === 'messages')) {
         playMessageSound();
       }
       // Show the unread dot on whichever bell is actually in the DOM right
@@ -4376,8 +4381,8 @@ async function loadCustomerData() {
     customerData.bookings = contracts.map(c => ({
       id: c.id, bookingNumber: c.bookingNumber, pro: c.providerName, providerId: c.providerId, service: c.service, address: c.address, date: c.signedAt || (c.createdAt || '').slice(0, 10),
       escrow: c.escrow && c.escrow.status === 'held' ? c.escrow.amount : 0, status: c.status, amount: c.amount, serviceFee: c.serviceFee || 0, reviewed: c.reviewed, providerResponseDeadline: c.providerResponseDeadline,
-      onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt,
-    }));
+      onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt, createdAt: c.createdAt,
+    })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     const { notifications } = await apiFetch('GET', '/notifications/mine');
     customerData.notifications = notifications;
     const { methods } = await apiFetch('GET', '/payment-methods/mine');
@@ -4397,8 +4402,8 @@ async function loadCustomerData() {
 function paymentMethodsTableHTML() {
   const list = customerData.paymentMethods || [];
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No payment methods yet — add one to test the booking flow.</div>`;
-  const methodIcon = m => m.type === 'apple_pay' ? '🍎' : m.type === 'paypal' ? '🅿️' : '💳';
-  const methodDetail = m => m.type === 'apple_pay' ? 'Linked device' : m.type === 'paypal' ? escapeHtml(m.paypalEmail || '') : `•••• ${m.last4} · exp ${m.expiry}`;
+  const methodIcon = m => m.type === 'apple_pay' ? '🍎' : m.type === 'paypal' ? '🅿️' : m.type === 'mobile_money' ? '📱' : '💳';
+  const methodDetail = m => m.type === 'apple_pay' ? 'Linked device' : m.type === 'paypal' ? escapeHtml(m.paypalEmail || '') : m.type === 'mobile_money' ? escapeHtml(m.mobileMoneyNumber || '') : `•••• ${m.last4} · exp ${m.expiry}`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Method</th><th>Details</th><th>Default</th><th>Action</th></tr></thead><tbody>
   ${list.map(m => `<tr><td>${methodIcon(m)} ${m.brand}${m.mode === 'test' ? ' <span class="badge badge-warn" style="margin-left:4px;">test</span>' : ''}</td><td>${methodDetail(m)}</td><td>${m.isDefault ? '<span class="badge badge-success">Default</span>' : `<button class="btn-sm btn-sm-outline" onclick="setDefaultPaymentMethod('${m.id}')">Set Default</button>`}</td><td><button class="btn-sm btn-sm-outline" onclick="removePaymentMethod('${m.id}')">Remove</button></td></tr>`).join('')}
   </tbody></table></div>`;
@@ -4480,7 +4485,7 @@ let selectedPaymentMethodType = 'card';
 
 function selectPaymentMethodType(type) {
   selectedPaymentMethodType = type;
-  ['card', 'apple_pay', 'paypal'].forEach(t => {
+  ['card', 'apple_pay', 'paypal', 'mobile_money'].forEach(t => {
     const tab = document.getElementById(`pm-tab-${t}`);
     const form = document.getElementById(`pm-form-${t}`);
     if (tab) tab.className = t === type ? 'btn-sm btn-sm-primary' : 'btn-sm btn-sm-outline';
@@ -4522,6 +4527,12 @@ async function submitPaymentMethod() {
     const paypalEmail = document.getElementById('pm-paypal-email').value.trim();
     if (!isValidEmailClient(paypalEmail)) return showToast('Enter a valid PayPal email address');
     body = { type: 'paypal', paypalEmail };
+  } else if (selectedPaymentMethodType === 'mobile_money') {
+    const mobileMoneyProvider = document.getElementById('pm-mobile-money-provider').value.trim();
+    const mobileMoneyNumber = document.getElementById('pm-mobile-money-number').value.trim();
+    if (!mobileMoneyProvider || mobileMoneyProvider.length < 2) return showToast('Enter your mobile money provider');
+    if (!mobileMoneyNumber || mobileMoneyNumber.length < 7) return showToast('Enter the phone number linked to your mobile money account');
+    body = { type: 'mobile_money', mobileMoneyProvider, mobileMoneyNumber };
   } else {
     body = { type: 'apple_pay' };
   }
@@ -4969,6 +4980,13 @@ function openReviewForm(contractId, proName) {
           <div class="form-group"><label class="form-label">Your Review</label>
             <input class="form-input" id="review-text" placeholder="How did it go?"/>
           </div>
+          <div class="form-group">
+            <label class="form-label">Do you trust this provider? <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="btn-sm btn-sm-outline" id="review-trust-yes" onclick="setReviewTrust(true)">👍 Trusted</button>
+              <button type="button" class="btn-sm btn-sm-outline" id="review-trust-no" onclick="setReviewTrust(false)">👎 Not Trusted</button>
+            </div>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="confirm-btn" onclick="submitReview('${contractId}')">Submit Review</button>
@@ -4978,15 +4996,25 @@ function openReviewForm(contractId, proName) {
   document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
+let reviewTrustValue = null;
+function setReviewTrust(value) {
+  reviewTrustValue = value;
+  document.getElementById('review-trust-yes').classList.toggle('btn-sm-primary', value === true);
+  document.getElementById('review-trust-yes').classList.toggle('btn-sm-outline', value !== true);
+  document.getElementById('review-trust-no').classList.toggle('btn-sm-primary', value === false);
+  document.getElementById('review-trust-no').classList.toggle('btn-sm-outline', value !== false);
+}
+
 async function submitReview(contractId) {
   const stars = parseInt(document.getElementById('review-stars').value, 10);
   const text = document.getElementById('review-text').value.trim();
   if (!text || text.length < 5) return showToast('Write at least 5 characters');
-  if (!BACKEND_AVAILABLE) { showToast('Review submitted (demo mode)'); document.getElementById('review-modal-overlay').remove(); return; }
+  if (!BACKEND_AVAILABLE) { showToast('Review submitted (demo mode)'); document.getElementById('review-modal-overlay').remove(); reviewTrustValue = null; return; }
   try {
-    await apiFetch('POST', '/reviews', { contractId, stars, text });
+    await apiFetch('POST', '/reviews', { contractId, stars, text, trusted: reviewTrustValue });
     showToast('Thanks for your review!');
     document.getElementById('review-modal-overlay').remove();
+    reviewTrustValue = null;
     await loadCustomerData();
     selectCustomerSection('bookings');
   } catch (e) { showToast(e.message || 'Could not submit review'); }
@@ -5031,10 +5059,11 @@ const CUSTOMER_SECTIONS = {
     <div class="panel" id="add-payment-panel" style="display:none;">
       <div class="panel-title">Add Payment Method <span class="badge badge-warn" style="margin-left:8px;">TEST MODE — no real charges</span></div>
       <div style="font-size:12px;color:var(--slate);margin-bottom:14px;">This is a sandbox for testing the booking flow — nothing is ever really charged. A real payment processor gets wired in before this goes live.</div>
-      <div style="display:flex;gap:8px;margin-bottom:16px;" id="pm-type-tabs">
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;" id="pm-type-tabs">
         <button class="btn-sm btn-sm-primary" id="pm-tab-card" onclick="selectPaymentMethodType('card')">💳 Card</button>
         <button class="btn-sm btn-sm-outline" id="pm-tab-apple_pay" onclick="selectPaymentMethodType('apple_pay')">🍎 Apple Pay</button>
         <button class="btn-sm btn-sm-outline" id="pm-tab-paypal" onclick="selectPaymentMethodType('paypal')">🅿️ PayPal</button>
+        <button class="btn-sm btn-sm-outline" id="pm-tab-mobile_money" onclick="selectPaymentMethodType('mobile_money')">📱 Mobile Money</button>
       </div>
       <div id="pm-form-card">
         <div class="form-group"><label class="form-label">Card Number</label><input class="form-input" id="pm-card-number" placeholder="4242 4242 4242 4242"/></div>
@@ -5051,6 +5080,10 @@ const CUSTOMER_SECTIONS = {
       </div>
       <div id="pm-form-paypal" style="display:none;">
         <div class="form-group"><label class="form-label">PayPal Email</label><input class="form-input" id="pm-paypal-email" placeholder="you@example.com"/></div>
+      </div>
+      <div id="pm-form-mobile_money" style="display:none;">
+        <div class="form-group"><label class="form-label">Provider</label><input class="form-input" id="pm-mobile-money-provider" placeholder="e.g. Orange Money, MTN Mobile Money, Lonestar Cell MTN"/></div>
+        <div class="form-group"><label class="form-label">Mobile Money Number</label><input class="form-input" id="pm-mobile-money-number" placeholder="The phone number linked to your account"/></div>
       </div>
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitPaymentMethod()">Save Payment Method</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('add-payment-panel').style.display='none'">Cancel</button></div>
     </div>
@@ -5654,6 +5687,11 @@ function postJobFormHTML() {
     <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">Helps your pro quote accurately — they won't need to bring or charge for anything you've already got.</div>
   </div>
   <div class="form-group">
+    <label class="form-label">Materials Cost <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
+    <input class="form-input" type="number" min="0" step="0.01" placeholder="e.g. 45.00" id="pj-materials-cost"/>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:5px;">A rough estimate of what materials your pro will need to bring, separate from their labor.</div>
+  </div>
+  <div class="form-group">
     <label class="form-label">Budget Range</label>
     <input class="form-input" type="text" placeholder="e.g. $80–150" id="pj-budget"/>
   </div>
@@ -5788,11 +5826,14 @@ async function runAIMatch() {
   const cat = isCustom ? document.getElementById('pj-custom-category').value.trim() : catSelect;
   const desc = document.getElementById('pj-desc').value.trim();
   const materialsOnHand = document.getElementById('pj-materials-on-hand').value.trim();
+  const materialsCostRaw = document.getElementById('pj-materials-cost').value;
+  const materialsCost = materialsCostRaw ? parseFloat(materialsCostRaw) : undefined;
   const budget = document.getElementById('pj-budget').value.trim();
 
   if (isCustom && cat.length < 2) return showToast('Tell us what kind of service you need');
   if (!desc || desc.length < 5) return showToast('Describe the job in at least 5 characters');
   if (budget && budget.length > 40) return showToast('Budget must be under 40 characters');
+  if (materialsCostRaw && (isNaN(materialsCost) || materialsCost < 0)) return showToast('Enter a valid materials cost, or leave it blank');
   const photoUrls = getUploadedJobPhotoUrls('pj');
 
   const body = document.getElementById('postjob-body');
@@ -5816,7 +5857,7 @@ async function runAIMatch() {
   let matchScope = 'city';
   if (BACKEND_AVAILABLE && AUTH.token && AUTH.user && AUTH.user.role === 'customer') {
     try {
-      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, materialsOnHand, budget, payCurrency: 'local', photoUrls });
+      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, materialsOnHand, materialsCost, budget, payCurrency: 'local', photoUrls });
       realCallSucceeded = true;
       isKnownCategory = result.isKnownCategory !== false;
       matchScope = result.matchScope || 'city';
@@ -5924,8 +5965,9 @@ async function loadProviderData() {
       budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: (Math.round(Math.random() * 40) / 10) + ' mi',
       photoUrls: (m.job && m.job.photoUrls) || [],
       materialsOnHand: (m.job && m.job.materialsOnHand) || null,
+      materialsCost: (m.job && m.job.materialsCost) != null ? m.job.materialsCost : null,
     }));
-    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, address: c.address, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt }));
+    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, address: c.address, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt, materialsOnHand: c.materialsOnHand, createdAt: c.createdAt })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     providerData.payouts = payouts;
     providerData.portfolioPhotos = photos;
   } catch (e) { console.warn('Falling back to demo provider data', e); }
@@ -6031,7 +6073,7 @@ const PROVIDER_SECTIONS = {
     const availableForPayout = providerData.contracts
       .filter(c => c.escrow && c.escrow.status === 'released' && !c.escrow.payoutId)
       .reduce((s, c) => s + c.escrow.amount, 0);
-    const hasFreeCommission = AUTH.user && AUTH.user.freeCommissionUntil && new Date(AUTH.user.freeCommissionUntil) > new Date();
+    const freeCommissionCredits = (AUTH.user && AUTH.user.freeCommissionCredits) || 0;
     // Matches the real rates in src/commission.js (COMMISSION_RATES) — this
     // was previously a separate, outdated table (12/8/5%) that had drifted
     // from the actual rates used at payout time (13/12/10%), so this
@@ -6039,11 +6081,11 @@ const PROVIDER_SECTIONS = {
     // an individual override or an org rate (those need real backend data
     // this view doesn't have), but it's no longer using numbers that don't
     // match reality even in the common case.
-    const commissionRate = hasFreeCommission ? 0 : ({ starter: 0.13, pro: 0.12, superpro: 0.10 }[(AUTH.user && AUTH.user.plan) || 'starter']);
+    const commissionRate = freeCommissionCredits > 0 ? 0 : ({ starter: 0.13, pro: 0.12, superpro: 0.10 }[(AUTH.user && AUTH.user.plan) || 'starter']);
     const weeklyChart = weeklyEarningsChartData(providerData.payouts);
     return `
     <div class="dash-header"><div><div class="dash-title">Earnings & Payouts</div><div class="dash-sub">Paid hourly or per job — your choice, set per contract</div></div><button class="btn-sm btn-sm-primary" onclick="openPayoutCurrencyChoice()">Request Payout</button></div>
-    ${hasFreeCommission ? `<div class="panel" style="background:var(--offwhite);border:1px solid var(--gold);"><strong style="color:var(--navy);">🏆 You had the highest Trust Score in your region this week!</strong> 0% commission until ${new Date(AUTH.user.freeCommissionUntil).toLocaleDateString()}.</div>` : ''}
+    ${freeCommissionCredits > 0 ? `<div class="panel" style="background:var(--offwhite);border:1px solid var(--gold);"><strong style="color:var(--navy);">🏆 You had the highest Trust Score in your region!</strong> You have ${freeCommissionCredits} free-commission credit${freeCommissionCredits === 1 ? '' : 's'} — your next payout${freeCommissionCredits === 1 ? '' : 's'} will have 0% commission.</div>` : ''}
     <div class="panel" id="payout-currency-panel" style="display:none;">
       <div class="panel-title">Choose Payout Currency</div>
       <div id="payout-currency-body"></div>
@@ -6923,7 +6965,7 @@ function openJobPhotoViewer(photoUrls) {
 function matchesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No pending matches right now.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Budget</th><th>Match Score</th><th>Distance</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}${m.materialsOnHand ? `<div style="font-size:11px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(m.materialsOnHand)}</div>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
+  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}${m.materialsOnHand ? `<div style="font-size:11px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(m.materialsOnHand)}</div>` : ''}${m.materialsCost != null ? `<div style="font-size:11px;color:var(--slate);margin-top:3px;">💵 Materials budget: $${m.materialsCost}</div>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
   <td class="row-actions">${m.status === 'interested'
     ? `<button class="btn-sm btn-sm-outline" onclick="messageCustomerAboutJob('${m.customerId}','${m.jobId}')">💬 Message</button>`
     : `<button class="btn-sm btn-sm-primary" onclick="respondToMatch('${m.id}','accept')">I'm Interested</button><button class="btn-sm btn-sm-outline" onclick="respondToMatch('${m.id}','decline')">Decline</button>`
@@ -6999,7 +7041,7 @@ function contractsTable(list) {
     } else if (c.status === 'expired') {
       actions = `<span style="font-size:12px;color:var(--slate);">You didn't respond in time — automatically cancelled</span>`;
     }
-    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${addressLinkHTML(c.address)}${c.photoUrls && c.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(c.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📎 ${c.photoUrls.length} file${c.photoUrls.length===1?'':'s'}</a>` : ''}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
+    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${addressLinkHTML(c.address)}${c.photoUrls && c.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(c.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:12px;white-space:nowrap;">📎 ${c.photoUrls.length} file${c.photoUrls.length===1?'':'s'}</a>` : ''}${c.materialsOnHand ? `<div style="font-size:11px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(c.materialsOnHand)}</div>` : ''}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
   }).join('')}
   </tbody></table></div>`;
 }
@@ -7729,6 +7771,9 @@ const ADMIN_SECTIONS = {
         <button class="btn-sm btn-sm-outline" type="button" onclick="document.getElementById('promo-image-input').click()">Choose Image</button>
         <span id="promo-image-name" style="font-size:12px;color:var(--slate);margin-left:8px;">No image chosen</span>
         <input type="hidden" id="promo-image-url"/>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;"><input type="checkbox" id="promo-send-email"/> Also send this as a real email to everyone it's shown to <span style="color:var(--slate);font-weight:400;">(good for policy changes or technical issues, not just promos)</span></label>
       </div>
       <div class="form-group"><label class="form-label">Show to</label>
         <select class="form-input form-select" id="promo-audience">
@@ -8524,8 +8569,14 @@ async function loadProviderScoresPanel() {
         <td>${escapeHtml(p.city || '—')}</td>
         <td>${escapeHtml(p.category || '—')}</td>
         <td><strong style="color:${p.trustScore >= 70 ? 'var(--success,#2E8C6F)' : p.trustScore >= 40 ? 'var(--gold,#B08A3E)' : '#C1554D'};">${p.trustScore}/99</strong></td>
-        <td>${p.onHold ? `<span class="badge badge-warn">Paused${p.holdUntil ? ' until ' + new Date(p.holdUntil).toLocaleDateString() : ''}</span>` : (p.recommendedAction ? `<span class="badge" style="background:#FDECEA;color:#C1554D;">${escapeHtml(p.recommendedAction.label)}</span>` : '<span class="badge badge-success">Good standing</span>')}</td>
-        <td>${(p.recommendedAction && !p.onHold) ? `<button class="btn-sm btn-sm-outline" onclick="applyProviderScorePause('${p.id}', ${p.recommendedAction.months})">Apply Pause</button>` : '—'}</td>
+        <td>${p.onHold
+          ? `<span class="badge badge-warn">On hold${p.holdUntil ? ' until ' + new Date(p.holdUntil).toLocaleDateString() : ''}</span>`
+          : p.trustScore <= 40
+            ? `<span class="badge" style="background:#FDECEA;color:#C1554D;">New matches paused (automatic)</span>`
+            : p.recommendedAction
+              ? `<span class="badge" style="background:#FBF3E3;color:#8A6A2A;">${escapeHtml(p.recommendedAction.label)}</span>`
+              : '<span class="badge badge-success">Good standing</span>'}</td>
+        <td>${p.onHold ? '—' : `<button class="btn-sm btn-sm-outline" onclick="openProviderHoldForm('${p.id}', '${escapeHtml(p.name)}')">Place on Hold</button>`}</td>
       </tr>`).join('')}
       </tbody></table></div>`;
   } catch (e) {
@@ -8534,13 +8585,43 @@ async function loadProviderScoresPanel() {
   }
 }
 
-async function applyProviderScorePause(providerId, recommendedMonths) {
-  if (!confirm(`Pause this provider for ${recommendedMonths} month${recommendedMonths === 1 ? '' : 's'} based on their trust score? They'll be notified and automatically reactivated when the pause ends.`)) return;
+// Deliberately a real form, not a one-click auto-fill from a score
+// bracket — a hold now needs an admin to actually type a real reason
+// (fraud, a policy violation) since it's no longer the automatic
+// consequence of a low score. Scores below the new-match floor are
+// already restricted from new matches with no admin action at all.
+function openProviderHoldForm(providerId, providerName) {
+  const modalHtml = `
+    <div class="modal-overlay open" id="provider-hold-overlay" onclick="if(event.target===this)document.getElementById('provider-hold-overlay').remove()">
+      <div class="modal">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('provider-hold-overlay').remove()">✕</button>
+          <h3>Place ${escapeHtml(providerName)} on Hold</h3>
+          <p>A real reason is required — this is shown to the provider directly.</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Duration (months)</label><input class="form-input" type="number" min="1" max="24" id="provider-hold-months" placeholder="e.g. 3"/></div>
+          <div class="form-group"><label class="form-label">Reason</label><textarea class="form-input" id="provider-hold-reason" rows="3" style="resize:vertical;" placeholder="Explain why — this is shown to the provider"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-btn" onclick="submitProviderHold('${providerId}')">Place on Hold</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function submitProviderHold(providerId) {
+  const months = parseInt(document.getElementById('provider-hold-months').value, 10);
+  const reason = document.getElementById('provider-hold-reason').value.trim();
+  if (!months || months <= 0) return showToast('Enter a valid number of months');
+  if (!reason || reason.length < 10) return showToast('Explain why (at least 10 characters) — the provider will see this');
   try {
-    await apiFetch('POST', `/admin/providers/${providerId}/apply-score-pause`, {});
-    showToast('Provider paused — they\'ve been notified');
+    await apiFetch('POST', `/admin/providers/${providerId}/hold`, { months, reason });
+    showToast('Provider placed on hold — they\'ve been notified');
+    document.getElementById('provider-hold-overlay')?.remove();
     await loadProviderScoresPanel();
-  } catch (e) { showToast(e.message || 'Could not apply pause'); }
+  } catch (e) { showToast(e.message || 'Could not place this hold'); }
 }
 
 function openNewPromotionForm() {
@@ -8581,18 +8662,26 @@ async function submitPromotion() {
   const message = document.getElementById('promo-message').value.trim();
   const audience = document.getElementById('promo-audience').value;
   const imageUrl = document.getElementById('promo-image-url').value.trim();
+  const sendEmailChecked = document.getElementById('promo-send-email').checked;
   const regionInput = document.getElementById('promo-region');
   const region = regionInput ? regionInput.value.trim() : '';
   if (!title || title.length < 2) return showToast('Enter a short title');
   if (!message || message.length < 5) return showToast('Enter the promotion message');
   if (!BACKEND_AVAILABLE) return showToast('Promotion posted (demo mode)');
   try {
-    await apiFetch('POST', '/admin/promotions', { title, message, audience, imageUrl: imageUrl || undefined, region: region || undefined });
-    showToast('Promotion posted');
+    const result = await apiFetch('POST', '/admin/promotions', { title, message, audience, imageUrl: imageUrl || undefined, region: region || undefined, sendEmail: sendEmailChecked });
+    if (sendEmailChecked && result.emailConfigured === false) {
+      showToast('Promotion posted — email not sent (no email provider connected yet)');
+    } else if (sendEmailChecked) {
+      showToast(`Promotion posted — emailed to ${result.promotion.emailSentCount} people`);
+    } else {
+      showToast('Promotion posted');
+    }
     document.getElementById('promo-title').value = '';
     document.getElementById('promo-message').value = '';
     document.getElementById('promo-image-url').value = '';
     document.getElementById('promo-image-name').textContent = 'No image chosen';
+    document.getElementById('promo-send-email').checked = false;
     if (regionInput) regionInput.value = '';
     document.getElementById('new-promotion-panel').style.display = 'none';
     await loadAdminPromotionsPanel();
@@ -10179,7 +10268,7 @@ async function confirmBooking() {
   if (BACKEND_AVAILABLE) {
     try {
       const { contract } = await apiFetch('POST', '/contracts', {
-        providerId: currentPro.id, service: desc, date, time, address: addr, amount: total, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked,
+        providerId: currentPro.id, service: desc, date, time, address: addr, amount: total, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked, materialsOnHand: document.getElementById('job-materials-on-hand')?.value.trim() || undefined,
       });
       contractId = contract.bookingNumber || contract.id;
       isPendingOffer = contract.status === 'pending_agreement';

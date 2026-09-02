@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   category     TEXT NOT NULL,
   description  TEXT NOT NULL,
   materials_on_hand TEXT,
+  materials_cost NUMERIC,
   budget       TEXT,
   pay_currency TEXT DEFAULT 'usd',
   photo_urls   JSONB,
@@ -184,6 +185,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   author_name  TEXT NOT NULL,
   stars        SMALLINT NOT NULL CHECK (stars BETWEEN 1 AND 5),
   text         TEXT NOT NULL,
+  trusted      BOOLEAN,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -582,11 +584,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS loyalty_points NUMERIC NOT NULL DEFAU
 -- infrastructure available yet (see the Guarantors panel on the
 -- Verification screen in the app for the full context).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS guarantors JSONB;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS free_commission_until TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_rate_percent NUMERIC;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS free_commission_credits NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS top_scorer_awarded_for_date TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_method_intl TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_paypal_email_intl TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS document_reminder_sent_at TIMESTAMPTZ;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS loyalty_points_redeemed NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS materials_on_hand TEXT;
 
 -- Optional customer tips — 100% to the provider, tracked separately from
 -- the commission-bearing escrow ledger (see POST /payouts/request in

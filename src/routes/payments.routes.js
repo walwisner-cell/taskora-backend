@@ -77,9 +77,9 @@ router.get('/payment-methods/mine', requireAuth, async (req, res) => {
 //   instead of storing the email directly, but the method record shape
 //   (type + a display label) doesn't change.
 router.post('/payment-methods', requireAuth, async (req, res) => {
-  const { type, cardNumber, expiry, nameOnCard, billingAddress, billingZip, paypalEmail } = req.body || {};
+  const { type, cardNumber, expiry, nameOnCard, billingAddress, billingZip, paypalEmail, mobileMoneyProvider, mobileMoneyNumber } = req.body || {};
   const accountHolder = await db.find('users', u => u.id === req.user.sub);
-  const methodType = ['card', 'apple_pay', 'paypal'].includes(type) ? type : 'card';
+  const methodType = ['card', 'apple_pay', 'paypal', 'mobile_money'].includes(type) ? type : 'card';
 
   if (methodType === 'card') {
     const errors = validate([
@@ -123,6 +123,27 @@ router.post('/payment-methods', requireAuth, async (req, res) => {
       type: 'paypal',
       brand: 'PayPal',
       paypalEmail: paypalEmail.trim(),
+      isDefault: existing.length === 0,
+      mode: 'test',
+      createdAt: new Date().toISOString(),
+    };
+    await db.insert('paymentMethods', method);
+    return res.status(201).json({ method });
+  }
+
+  if (methodType === 'mobile_money') {
+    const errors = validate([
+      ['mobileMoneyProvider', isNonEmptyString(mobileMoneyProvider, { min: 2, max: 60 }), 'Enter your mobile money provider (e.g. Orange Money, MTN Mobile Money, Lonestar Cell MTN)'],
+      ['mobileMoneyNumber', isNonEmptyString(mobileMoneyNumber, { min: 7, max: 20 }), 'Enter the phone number linked to your mobile money account'],
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors[0], errors });
+    const existing = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+    const method = {
+      id: `pm_${nanoid(10)}`,
+      userId: req.user.sub,
+      type: 'mobile_money',
+      brand: mobileMoneyProvider.trim(),
+      mobileMoneyNumber: mobileMoneyNumber.trim(),
       isDefault: existing.length === 0,
       mode: 'test',
       createdAt: new Date().toISOString(),
@@ -354,13 +375,21 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   }
 
   // Commission is based on the provider's plan at the time they cash out —
-  // matches the rates genuinely advertised on the Pricing page (Starter
-  // 12%, Pro 8%, Super Pro 5%), actually deducted here rather than just
+  // matches the rates in COMMISSION_RATES (src/commission.js): Starter
+  // 13%, Pro 12%, Super Pro 10%, actually deducted here rather than just
   // being marketing copy. A provider attached to a Custom-plan
   // organization uses that org's negotiated rate instead — the "volume
   // commission discount" promised on the Custom pricing card.
   const organization = provider.organizationId ? await db.find('organizations', o => o.id === provider.organizationId) : null;
-  const commissionRate = effectiveCommissionRate(provider, organization);
+  let commissionRate = effectiveCommissionRate(provider, organization);
+  // A top-scorer free-commission credit (see
+  // src/top-scorer-promotion-scheduler.js) is consumed here, on an actual
+  // payout — not just checked and left alone, the way a read-only rate
+  // lookup would. This is deliberately the only place this credit is
+  // spent: requesting a payout is the one real, stateful action that
+  // should use it up.
+  const usedFreeCommissionCredit = (provider.freeCommissionCredits || 0) > 0;
+  if (usedFreeCommissionCredit) commissionRate = 0;
   const commissionAmount = Math.round(grossAmount * commissionRate * 100) / 100;
   const netAmount = Math.round((grossAmount - commissionAmount + totalTips) * 100) / 100;
 
@@ -426,10 +455,14 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   for (const c of unpaidTipContracts) {
     await db.update('contracts', c.id, { tipPaid: true });
   }
+  if (usedFreeCommissionCredit) {
+    await db.update('users', provider.id, { freeCommissionCredits: (provider.freeCommissionCredits || 0) - 1 });
+  }
 
   const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
   const tipNote = totalTips > 0 ? ` (includes $${totalTips} in tips — no commission taken on those)` : '';
-  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned)${tipNote} — processing.`, 'payoutAlerts', { section: 'earnings' });
+  const creditNote = usedFreeCommissionCredit ? ' 🏆 Used your top-scorer free-commission credit — 0% commission on this payout!' : '';
+  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned)${tipNote}${creditNote} — processing.`, 'payoutAlerts', { section: 'earnings' });
   res.status(201).json({ payout });
 }
 
