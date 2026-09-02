@@ -585,6 +585,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS guarantors JSONB;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS free_commission_until TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_method_intl TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_paypal_email_intl TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS document_reminder_sent_at TIMESTAMPTZ;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS loyalty_points_redeemed NUMERIC NOT NULL DEFAULT 0;
 
 -- Optional customer tips — 100% to the provider, tracked separately from

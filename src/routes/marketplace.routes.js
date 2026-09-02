@@ -339,6 +339,16 @@ router.get('/about-us-content', async (req, res) => {
   res.json({ content: await getSetting('aboutUsContent') });
 });
 
+// GET /api/platform-handbook — the real getting-started guide PDF, if
+// one's actually been uploaded (see POST /admin/platform-handbook).
+// Returns url: null rather than a 404 when nothing's been uploaded yet,
+// so the frontend can simply not show the download link instead of
+// treating it as an error.
+router.get('/platform-handbook', async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ url: (await getSetting('platformHandbookUrl')) || null });
+});
+
 router.get('/terms-of-service-customer-content', async (req, res) => {
   const { getSetting } = require('../platform-settings');
   res.json({ content: await getSetting('termsOfServiceCustomerContent') });

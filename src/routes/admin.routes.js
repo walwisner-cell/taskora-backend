@@ -10,7 +10,7 @@ const { notify } = require('../notify');
 const { effectiveCommissionRate } = require('../commission');
 const { effectivePlanPricing, PLAN_KEYS, DEFAULT_USD_PRICES } = require('../plan-pricing');
 const { currencyForCountry, APPROX_USD_RATE, CURRENCY_BY_COUNTRY } = require('../currency-data');
-const { UPLOADS_DIR, verifyImageMagicBytes } = require('../uploads');
+const { UPLOADS_DIR, verifyImageMagicBytes, verifyPdfMagicBytes } = require('../uploads');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -1799,6 +1799,38 @@ const uploadPromoImage = multer({ storage: promoImageStorage, fileFilter: promoI
 // /promotions below, not restricted to super admin the way homepage
 // images are). Returns just the URL; the actual promotion is created or
 // updated separately with that URL as imageUrl.
+const handbookStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => cb(null, `handbook_${nanoid(10)}.pdf`),
+});
+function handbookFileFilter(req, file, cb) {
+  if (file.mimetype !== 'application/pdf') return cb(new Error('The platform handbook must be a PDF file'));
+  cb(null, true);
+}
+const uploadHandbook = multer({ storage: handbookStorage, fileFilter: handbookFileFilter, limits: { fileSize: 20 * 1024 * 1024 } });
+
+// POST /api/admin/platform-handbook — super admin uploads (or replaces)
+// the real getting-started guide PDF offered to every new customer and
+// provider right after they sign up (see GET /platform-handbook below,
+// which is what actually serves it publicly).
+router.post('/platform-handbook', requireSuperAdmin, (req, res) => {
+  uploadHandbook.single('file')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (!req.file) return res.status(400).json({ error: 'No file was provided' });
+    if (!fs.existsSync(req.file.path)) {
+      console.error(`Platform handbook upload reported success but file is missing at ${req.file.path} — check UPLOADS_DIR points to a writable, persistent location.`);
+      return res.status(500).json({ error: 'The file could not be saved to disk. Please try again.' });
+    }
+    if (!verifyPdfMagicBytes(req.file.path)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'That file doesn\'t look like a real PDF — please upload an actual PDF.' });
+    }
+    const { setSetting } = require('../platform-settings');
+    await setSetting('platformHandbookUrl', `/uploads/${req.file.filename}`);
+    res.status(201).json({ url: `/uploads/${req.file.filename}` });
+  });
+});
+
 router.post('/promotions/image', async (req, res) => {
   const m = await me(req);
   if (!m.isSuperAdmin && m.adminDepartment) {

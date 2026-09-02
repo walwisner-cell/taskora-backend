@@ -5116,6 +5116,7 @@ const CUSTOMER_SECTIONS = {
         ${AUTH.user && AUTH.user.membershipTier && AUTH.user.membershipTier !== 'free' ? `<button class="btn-sm btn-sm-ghost" onclick="cancelMembership()">Cancel — back to Free</button>` : ''}`}
     </div>
     <div class="panel" id="loyalty-points-panel"><div class="panel-title">Loyalty Points</div><div id="loyalty-points-body" style="color:var(--slate);font-size:12.5px;">Loading…</div></div>
+    <div class="panel" id="handbook-panel" style="display:none;"><div class="panel-title">Getting Started Guide</div><div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">A quick walkthrough of how Trothen works.</div><a class="btn-sm btn-sm-outline" id="handbook-download-link" href="#" target="_blank" rel="noopener noreferrer">📄 Download Guide</a></div>
     <div class="panel"><div class="panel-title">Notifications</div>
       ${notifToggleHTML('bookingUpdates', 'Booking updates', 'Status changes on your active bookings', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from pros', true)}
@@ -5283,6 +5284,46 @@ async function cancelMembership() {
     showToast('Membership cancelled — you\'re back on the Free tier');
     selectCustomerSection('settings');
   } catch (e) { showToast(e.message || 'Could not cancel membership'); }
+}
+
+async function handleHandbookUpload(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  if (file.type !== 'application/pdf') return showToast('Must be a PDF file');
+  if (file.size > 20 * 1024 * 1024) return showToast('File must be under 20MB');
+  const status = document.getElementById('handbook-upload-status');
+  if (status) status.textContent = 'Uploading…';
+  if (!BACKEND_AVAILABLE) { if (status) status.textContent = file.name + ' (demo mode)'; return; }
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(API_BASE + '/admin/platform-handbook', {
+      method: 'POST',
+      headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    if (status) status.textContent = '✓ Uploaded — now live for every new signup';
+    showToast('Platform handbook updated');
+  } catch (e) {
+    showToast(e.message || 'Could not upload handbook');
+    if (status) status.textContent = '';
+  }
+}
+
+async function loadHandbookLink() {
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const data = await apiFetch('GET', '/platform-handbook');
+    if (!data.url) return;
+    for (const suffix of ['', '-prov']) {
+      const panel = document.getElementById(`handbook-panel${suffix}`);
+      const link = document.getElementById(`handbook-download-link${suffix}`);
+      if (panel && link) { link.href = data.url; panel.style.display = 'block'; }
+    }
+  } catch (e) { /* no handbook uploaded yet, or a fetch hiccup — never worth surfacing to the user */ }
 }
 
 async function loadLoyaltyPointsPanel() {
@@ -5480,7 +5521,7 @@ function selectCustomerSection(key) {
   renderDashNav('customer-nav', CUSTOMER_NAV_ITEMS, key, 'selectCustomerSection');
   renderSectionSafely('customer-main', key, () => CUSTOMER_SECTIONS[key]());
   if (key === 'messages') loadMessageThread();
-  if (key === 'settings') { populateSettingsCountry('cust'); loadReferralPanel(); loadLoyaltyPointsPanel(); }
+  if (key === 'settings') { populateSettingsCountry('cust'); loadReferralPanel(); loadLoyaltyPointsPanel(); loadHandbookLink(); }
   if (key === 'verification') loadVerificationOptions();
   if (key === 'overview') loadPromotionsBanner('customer-promotions-banner');
   if (key === 'favorites') loadFavoritesPanel();
@@ -6126,6 +6167,7 @@ const PROVIDER_SECTIONS = {
     ${changePasswordPanelHTML('prov')}
     ${twoFactorPanelHTML()}
     ${referralPanelHTML()}
+    <div class="panel" id="handbook-panel-prov" style="display:none;"><div class="panel-title">Getting Started Guide</div><div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">A quick walkthrough of how Trothen works.</div><a class="btn-sm btn-sm-outline" id="handbook-download-link-prov" href="#" target="_blank" rel="noopener noreferrer">📄 Download Guide</a></div>
     <div class="panel"><div class="panel-title">Current Plan</div>
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">${(() => {
         const plan = (AUTH.user && AUTH.user.plan) || 'starter';
@@ -7223,7 +7265,7 @@ function selectProviderSection(key) {
   renderDashNav('provider-nav', navItems, key, 'selectProviderSection');
   renderSectionSafely('provider-main', key, () => PROVIDER_SECTIONS[key]());
   if (key === 'messages') loadMessageThread();
-  if (key === 'settings') { populateSettingsCountry('prov'); populateSettingsCategory(); loadReferralPanel(); }
+  if (key === 'settings') { populateSettingsCountry('prov'); populateSettingsCategory(); loadReferralPanel(); loadHandbookLink(); }
   if (key === 'verification') loadVerificationOptions();
   if (key === 'overview') { loadProviderScorePanel(); loadPromotionsBanner('provider-promotions-banner'); }
 }
@@ -8061,6 +8103,12 @@ const ADMIN_SECTIONS = {
       <button class="btn-sm btn-sm-primary" onclick="saveAdminSettings()">Save Changes</button>
     </div>
     ${twoFactorPanelHTML(true)}
+    ${AUTH.user && AUTH.user.isSuperAdmin ? `<div class="panel"><div class="panel-title">Platform Handbook</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">The getting-started guide offered to every new customer and provider once they've signed up. Upload a PDF to make it available — replacing it here replaces it everywhere immediately.</div>
+      <input type="file" id="handbook-upload-input" accept="application/pdf" style="display:none;" onchange="handleHandbookUpload(event)"/>
+      <button class="btn-sm btn-sm-outline" onclick="document.getElementById('handbook-upload-input').click()">Upload PDF</button>
+      <span id="handbook-upload-status" style="font-size:12px;color:var(--slate);margin-left:8px;"></span>
+    </div>` : ''}
     ${AUTH.user && AUTH.user.role === 'admin' && !AUTH.user.isSuperAdmin && !AUTH.user.adminDepartment ? `
     <div class="panel"><div class="panel-title">Support Chat Contact Info — ${escapeHtml(AUTH.user.region || 'Your City')}</div>
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Your own city's real WhatsApp and phone number for the support chat's "Chat with us" / "Call" links — customers and providers in ${escapeHtml(AUTH.user.region || 'your city')} see this number instead of the platform-wide one. ${adminData.supportContact && adminData.supportContact.usingPlatformFallback ? "You haven't set your own yet, so visitors here currently reach the platform-wide number below." : (adminData.supportContact && adminData.supportContact.isPlaceholder ? '<strong style="color:var(--danger,#B23A3A);">That platform-wide number is still the placeholder demo number — set your own real one below.</strong>' : 'This is your real, live number.')}</div>

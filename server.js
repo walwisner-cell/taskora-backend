@@ -212,6 +212,12 @@ seedIfEmpty()
     const { sweepTopScorerPromotion } = require('./src/top-scorer-promotion-scheduler');
     setTimeout(() => { sweepTopScorerPromotion().catch(e => console.error('[top-scorer-promotion-scheduler] Unexpected error during scheduled sweep:', e)); }, 20000);
     setInterval(() => { sweepTopScorerPromotion().catch(e => console.error('[top-scorer-promotion-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+
+    // Post-signup document upload reminder (see
+    // src/document-upload-reminder-scheduler.js).
+    const { sweepDocumentUploadReminders } = require('./src/document-upload-reminder-scheduler');
+    setTimeout(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, 23000);
+    setInterval(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
   })
   .catch(err => {
     console.error('Failed to start server:', err);
