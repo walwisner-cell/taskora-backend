@@ -8,6 +8,7 @@ const { isNonEmptyString, validate, postalCodeIsOptionalFor, looksLikeRealText }
 const { notify } = require('../notify');
 const { currencyForCountry, convertFromUSD } = require('../currency-data');
 const { effectivePlanPricing, resolveRate } = require('../plan-pricing');
+const { contractStatusLocks } = require('../contract-locks');
 
 const router = express.Router();
 
@@ -1212,6 +1213,18 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
 // a human on the provider's side actually agreed to do the job; declining
 // refunds it, same as a cancellation.
 router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider'), async (req, res) => {
+  if (contractStatusLocks.has(req.params.id)) {
+    return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
+  }
+  contractStatusLocks.add(req.params.id);
+  try {
+    return await handleRespondOffer(req, res);
+  } finally {
+    contractStatusLocks.delete(req.params.id);
+  }
+});
+
+async function handleRespondOffer(req, res) {
   const { decision } = req.body || {};
   if (!['accept', 'decline'].includes(decision)) return res.status(400).json({ error: 'decision must be accept or decline' });
   const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
@@ -1272,7 +1285,7 @@ router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider')
     : `Your offer of $${contract.amount} for "${contract.service}" was accepted — escrow funded, booking confirmed.`;
   await notify(contract.customerId, '🤝', confirmMessage, null, { section: 'bookings' });
   res.json({ contract: updated, escrow });
-});
+}
 
 // GET /api/contracts/mine — works for both customers and providers
 router.get('/contracts/mine', requireAuth, async (req, res) => {
@@ -1582,7 +1595,7 @@ router.post('/reviews', requireAuth, requireRole('customer'), async (req, res) =
   // src/provider-score.js.
   const answeredTrust = allReviews.filter(r => r.trusted !== null && r.trusted !== undefined);
   const trustRatePercent = answeredTrust.length ? Math.round((answeredTrust.filter(r => r.trusted).length / answeredTrust.length) * 100) : null;
-  await db.update('users', contract.providerId, { rating: Math.round(avg * 10) / 10, trustRatePercent });
+  await db.update('users', contract.providerId, { rating: Math.round(avg * 10) / 10, trustRatePercent, trustRatingSampleSize: answeredTrust.length });
 
   await notify(contract.providerId, '⭐', `New ${stars}-star review: "${text.trim().slice(0, 60)}${text.length > 60 ? '…' : ''}"`, null, { section: 'bookings' });
   if (trusted === false) {

@@ -585,6 +585,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS loyalty_points NUMERIC NOT NULL DEFAU
 -- Verification screen in the app for the full context).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS guarantors JSONB;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_rate_percent NUMERIC;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_rating_sample_size NUMERIC;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS free_commission_credits NUMERIC NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS top_scorer_awarded_for_date TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_method_intl TEXT;

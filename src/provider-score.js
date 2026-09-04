@@ -42,6 +42,24 @@ const WEIGHTS = {
 // inventing a second number that could drift from it.
 const MEANINGFUL_JOB_COUNT = 50;
 
+// Blends an observed rate toward full credit as real sample size grows,
+// instead of switching abruptly from "full credit" to "fully judged" the
+// instant there's a single data point. Found by a real audit: a provider
+// with 2 completed jobs and one missed arrival stamp was getting a hard
+// 0/10 on-time-arrival score — full statistical weight on a sample of 2
+// — while their own "Path to Pro" panel says 50 jobs is the real bar for
+// being judged that way. This makes the score actually match that
+// promise: confidence in the observed rate grows linearly from 0 (no
+// data at all) to 1 (MEANINGFUL_JOB_COUNT or more), so a thin sample
+// mostly falls back to the benefit of the doubt, and a real, meaningful
+// sample increasingly reflects genuine behavior — the same shape of
+// reasoning a batting average or a seller rating uses to avoid one early
+// data point swinging the whole number.
+function blendedCredit(observedFraction, sampleSize, weight) {
+  const confidence = Math.min(sampleSize / MEANINGFUL_JOB_COUNT, 1);
+  return ((confidence * observedFraction) + (1 - confidence)) * weight;
+}
+
 async function computeProviderScore(providerId) {
   const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
   if (!provider) return null;
@@ -82,7 +100,7 @@ async function computeProviderScore(providerId) {
   let arrivedOnTime = WEIGHTS.arrivedOnTime;
   if (completed.length > 0) {
     const withArrivalLogged = completed.filter(c => c.arrivedAt).length;
-    arrivedOnTime = (withArrivalLogged / completed.length) * WEIGHTS.arrivedOnTime;
+    arrivedOnTime = blendedCredit(withArrivalLogged / completed.length, completed.length, WEIGHTS.arrivedOnTime);
   }
 
   // 5. Repeated customers — direct: the real share of this provider's
@@ -93,7 +111,7 @@ async function computeProviderScore(providerId) {
     const countByCustomer = new Map();
     for (const c of completed) countByCustomer.set(c.customerId, (countByCustomer.get(c.customerId) || 0) + 1);
     const fromRepeatCustomers = completed.filter(c => countByCustomer.get(c.customerId) > 1).length;
-    repeatedCustomers = (fromRepeatCustomers / completed.length) * WEIGHTS.repeatedCustomers;
+    repeatedCustomers = blendedCredit(fromRepeatCustomers / completed.length, completed.length, WEIGHTS.repeatedCustomers);
   }
 
   // 6. Response time — PROXY. There's no per-match "time to respond"
@@ -106,7 +124,7 @@ async function computeProviderScore(providerId) {
   let responseTime = WEIGHTS.responseTime;
   if (matches.length > 0) {
     const responded = matches.filter(m => m.status !== 'pending').length;
-    responseTime = (responded / matches.length) * WEIGHTS.responseTime;
+    responseTime = blendedCredit(responded / matches.length, matches.length, WEIGHTS.responseTime);
   }
 
   // 7. Background check — PROXY, and the most honest admission in this
@@ -126,7 +144,8 @@ async function computeProviderScore(providerId) {
   let cancellationRate = WEIGHTS.cancellationRate;
   if (cancellationDenominator > 0) {
     const rate = (countedCancellations / cancellationDenominator) * 100; // as a percentage
-    cancellationRate = Math.max(0, WEIGHTS.cancellationRate * (1 - rate / 20)); // 20%+ cancellation rate = zero credit here
+    const goodness = Math.max(0, 1 - rate / 20); // 20%+ cancellation rate = zero goodness
+    cancellationRate = blendedCredit(goodness, cancellationDenominator, WEIGHTS.cancellationRate);
   }
 
   // 9. Customer trust rating — direct: the real share of customers who
@@ -135,9 +154,12 @@ async function computeProviderScore(providerId) {
   // actually computed and stored). Deliberately optional on the
   // customer's side, so a provider nobody has answered this for yet
   // gets full credit rather than being penalized for a question simply
-  // not being answered.
+  // not being answered. Blended the same way as the other rate-based
+  // components once at least one answer exists — a single early "not
+  // trusted" answer on a thin sample shouldn't swing this whole category
+  // straight to zero any more than one missed arrival stamp should.
   const customerTrustRating = provider.trustRatePercent != null
-    ? (provider.trustRatePercent / 100) * WEIGHTS.customerTrustRating
+    ? blendedCredit(provider.trustRatePercent / 100, provider.trustRatingSampleSize || 1, WEIGHTS.customerTrustRating)
     : WEIGHTS.customerTrustRating;
 
   const rawTotal = identityVerification + documentVerification + jobsCompleted + arrivedOnTime + repeatedCustomers + responseTime + backgroundCheck + cancellationRate + customerTrustRating;

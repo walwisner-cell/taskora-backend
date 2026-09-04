@@ -36,7 +36,7 @@ const payoutLocks = new Set();
 // never actually came back because the job got marked complete a moment
 // later). A shared lock keyed by contract id means only one of these two
 // endpoints can ever be mid-flight for a given contract at once.
-const contractStatusLocks = new Set();
+const { contractStatusLocks } = require('../contract-locks');
 
 // ── TEST-MODE PAYMENT METHODS ────────────────────────────────────────────────
 // This is a sandbox stand-in, not a real payment integration. It exists so
@@ -586,7 +586,27 @@ router.get('/contracts/:id/scope-change-requests', requireAuth, async (req, res)
 router.post('/scope-change-requests/:id/decide', requireAuth, requireRole('customer'), async (req, res) => {
   const request = await db.find('scopeChangeRequests', r => r.id === req.params.id && r.customerId === req.user.sub);
   if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (request.status !== 'pending') return res.status(400).json({ error: 'This request has already been decided' });
+  // Locked on the real contract id (not the scope-change request id from
+  // the URL) — this is the same shared lock /complete and /cancel use,
+  // so an approval here can never interleave with the customer
+  // completing or cancelling the very contract it's about to modify.
+  if (contractStatusLocks.has(request.contractId)) {
+    return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
+  }
+  contractStatusLocks.add(request.contractId);
+  try {
+    return await handleScopeChangeDecide(req, res, request);
+  } finally {
+    contractStatusLocks.delete(request.contractId);
+  }
+});
+
+async function handleScopeChangeDecide(req, res, request) {
+  // Re-read fresh under the lock — the request looked up before
+  // acquiring it could theoretically be stale if another request for
+  // the same contract was mid-flight.
+  request = await db.find('scopeChangeRequests', r => r.id === request.id);
+  if (!request || request.status !== 'pending') return res.status(400).json({ error: 'This request has already been decided' });
 
   const { decision } = req.body || {};
   if (!['approve', 'decline'].includes(decision)) return res.status(400).json({ error: 'decision must be approve or decline' });
@@ -613,7 +633,7 @@ router.post('/scope-change-requests/:id/decide', requireAuth, requireRole('custo
 
   await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved — the contract and held escrow have been updated. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
   res.json({ request: { ...request, status: 'approved' }, contract: updatedContract });
-});
+}
 
 router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), async (req, res) => {
   if (contractStatusLocks.has(req.params.id)) {
@@ -859,9 +879,11 @@ router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res
   let payouts = await db.all('payouts');
   if (region) {
     const contracts = await db.all('contracts');
+    const allCustomers = await db.filter('users', u => u.role === 'customer');
+    const customerById = new Map(allCustomers.map(c => [c.id, c]));
     const regionalContractIds = new Set();
     for (const c of contracts) {
-      const customer = await db.find('users', u => u.id === c.customerId);
+      const customer = customerById.get(c.customerId);
       if (customer && customer.city === region) regionalContractIds.add(c.id);
     }
     all = all.filter(e => regionalContractIds.has(e.contractId));

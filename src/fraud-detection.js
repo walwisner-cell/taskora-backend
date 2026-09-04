@@ -84,11 +84,17 @@ async function checkPriceAnomaly(category, amount, contractId, customerId, provi
   // category isn't stored directly on contracts, so this compares against
   // all OTHER contracts whose provider is in the same service category —
   // a real comparison against real historical data, not a guessed range.
+  // Providers are fetched once into a lookup map rather than looked up
+  // individually per contract — the same result, but one query instead
+  // of one per contract, which matters once this runs against real
+  // Postgres instead of the small JSON-file store it started on.
   const allContracts = await db.all('contracts');
+  const allProviders = await db.filter('users', u => u.role === 'provider');
+  const providerById = new Map(allProviders.map(p => [p.id, p]));
   const sameCategoryAmounts = [];
   for (const c of allContracts) {
     if (c.id === contractId) continue;
-    const provider = await db.find('users', u => u.id === c.providerId);
+    const provider = providerById.get(c.providerId);
     if (provider && provider.category === category) sameCategoryAmounts.push(c.amount);
   }
   if (sameCategoryAmounts.length < 3) return null; // not enough real data to judge an anomaly yet

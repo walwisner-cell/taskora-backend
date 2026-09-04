@@ -101,10 +101,19 @@ function requireDepartment(deptOrDepts) {
 }
 
 // Resolve which city a dispute "belongs to" via its contract's customer.
-async function disputeCity(dispute) {
-  const contract = await db.find('contracts', c => c.id === dispute.contractId);
+// Resolves which city a dispute "belongs to" via its contract's customer.
+// Accepts optional pre-built lookup maps (contractById, customerById) for
+// callers checking many disputes at once — without them, falls back to
+// individual queries exactly as before, so the single-dispute call site
+// (POST /disputes/:id/resolve) needs no changes at all. With them, a
+// caller looping over every dispute on the platform does one batch fetch
+// up front instead of two individual database round-trips per dispute —
+// harmless today on the small JSON-file store, but a real, meaningful
+// difference once this runs against actual Postgres at scale.
+async function disputeCity(dispute, contractById, customerById) {
+  const contract = contractById ? contractById.get(dispute.contractId) : await db.find('contracts', c => c.id === dispute.contractId);
   if (!contract) return null;
-  const customer = await db.find('users', u => u.id === contract.customerId);
+  const customer = customerById ? customerById.get(contract.customerId) : await db.find('users', u => u.id === contract.customerId);
   return customer ? customer.city : null;
 }
 
@@ -133,16 +142,19 @@ function publicAdmin(u, options = {}) {
 router.get('/stats', async (req, res) => {
   const region = await myRegion(req);
   const users = (await db.all('users')).filter(u => !region || u.city === region);
+  const allContracts = await db.all('contracts');
+  const allCustomersForStats = await db.filter('users', u => u.role === 'customer');
+  const customerByIdForStats = new Map(allCustomersForStats.map(c => [c.id, c]));
+  const contractByIdForStats = new Map(allContracts.map(c => [c.id, c]));
   const allDisputes = await db.all('disputes');
   const disputes = [];
   for (const d of allDisputes) {
-    if (!region || (await disputeCity(d)) === region) disputes.push(d);
+    if (!region || (await disputeCity(d, contractByIdForStats, customerByIdForStats)) === region) disputes.push(d);
   }
-  const allContracts = await db.all('contracts');
   const contracts = [];
   for (const c of allContracts) {
     if (!region) { contracts.push(c); continue; }
-    const customer = await db.find('users', u => u.id === c.customerId);
+    const customer = customerByIdForStats.get(c.customerId);
     if (customer && customer.city === region) contracts.push(c);
   }
   const pendingUsers = users.filter(u => u.role !== 'admin' && u.verified === false).length;
@@ -657,11 +669,15 @@ router.get('/disputes', requireDepartment(['disputes', 'customer_service', 'lega
   const region = await myRegion(req);
   const { from, to } = req.query;
   const all = await db.all('disputes');
+  const allContractsForDisputes = await db.all('contracts');
+  const allCustomersForDisputes = await db.filter('users', u => u.role === 'customer');
+  const contractByIdForDisputes = new Map(allContractsForDisputes.map(c => [c.id, c]));
+  const customerByIdForDisputes = new Map(allCustomersForDisputes.map(c => [c.id, c]));
   const disputes = [];
   for (const d of all) {
     if (from && (d.createdAt || '').slice(0, 10) < from) continue;
     if (to && (d.createdAt || '').slice(0, 10) > to) continue;
-    if (!region || (await disputeCity(d)) === region) disputes.push(d);
+    if (!region || (await disputeCity(d, contractByIdForDisputes, customerByIdForDisputes)) === region) disputes.push(d);
   }
   res.json({ disputes });
 });
@@ -705,11 +721,15 @@ router.get('/disputes/pdf', requireDepartment(['disputes', 'customer_service', '
   const region = await myRegion(req);
   const { from, to } = req.query;
   const all = await db.all('disputes');
+  const allContractsForDisputesPdf = await db.all('contracts');
+  const allCustomersForDisputesPdf = await db.filter('users', u => u.role === 'customer');
+  const contractByIdForDisputesPdf = new Map(allContractsForDisputesPdf.map(c => [c.id, c]));
+  const customerByIdForDisputesPdf = new Map(allCustomersForDisputesPdf.map(c => [c.id, c]));
   const disputes = [];
   for (const d of all) {
     if (from && (d.createdAt || '').slice(0, 10) < from) continue;
     if (to && (d.createdAt || '').slice(0, 10) > to) continue;
-    if (!region || (await disputeCity(d)) === region) disputes.push(d);
+    if (!region || (await disputeCity(d, contractByIdForDisputesPdf, customerByIdForDisputesPdf)) === region) disputes.push(d);
   }
   disputes.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
