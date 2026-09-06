@@ -71,7 +71,23 @@ const PORT = process.env.PORT || 3000;
 // break the entire page. The real defense against injected content is
 // the output-escaping fix already in place; this is additional
 // defense-in-depth for the rest, not a replacement for that.
-app.use(helmet({ contentSecurityPolicy: false }));
+//
+// crossOriginOpenerPolicy is explicitly relaxed from Helmet's default
+// ('same-origin') to 'same-origin-allow-popups'. The strict default
+// completely breaks Google Sign-In's popup flow: Google's own script
+// inside the popup calls window.opener.postMessage(...) to hand the
+// credential back to this page, and 'same-origin' severs that
+// window.opener link entirely (the browser isolates the popup into a
+// different browsing context group), so the call throws
+// "window.opener is null" and the popup never completes — exactly what
+// was happening before this fix. 'same-origin-allow-popups' keeps the
+// same cross-origin isolation protection for windows THIS page doesn't
+// control, while still allowing a popup this page deliberately opened
+// (Google's sign-in window) to talk back to it.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+}));
 // CORS was wide open (any origin, unconditionally) with no way to
 // restrict it. Given this app authenticates with a Bearer token rather
 // than cookies, the classic CSRF risk CORS restriction primarily guards
