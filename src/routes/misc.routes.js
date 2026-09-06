@@ -10,7 +10,8 @@ const { isNonEmptyString, validate } = require('../validators');
 const { notify } = require('../notify');
 const { currencyForCountry } = require('../currency-data');
 const { generateUniqueReferralCode } = require('../referral-code');
-const { UPLOADS_DIR, verifyPdfMagicBytes } = require('../uploads');
+const { UPLOADS_DIR, PRIVATE_UPLOADS_DIR, verifyPdfMagicBytes, verifyImageMagicBytes } = require('../uploads');
+const { idDocumentTypesForCountry } = require('../geo-data');
 
 const router = express.Router();
 
@@ -380,18 +381,86 @@ router.get('/verification/mine', requireAuth, async (req, res) => {
   res.json({ verifications: records });
 });
 
-// POST /api/verification/submit — submit documents for review
-router.post('/verification/submit', requireAuth, async (req, res) => {
+// Identity documents submitted for manual verification review — unlike
+// every other upload in this app, these are never meant to be publicly
+// viewable, so they're saved to PRIVATE_UPLOADS_DIR (never mounted as a
+// static folder anywhere) with a random filename, and can only ever be
+// retrieved through the two protected routes below (the document's own
+// owner, or a verification-team admin) — never a plain public URL. Same
+// real-file-bytes verification technique as every other upload in this
+// app (see verifyImageMagicBytes/verifyPdfMagicBytes) — a renamed file
+// with a fake extension is rejected regardless of what it claims to be.
+const verificationDocStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, PRIVATE_UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ext = file.mimetype === 'application/pdf' ? 'pdf' : (file.mimetype.split('/')[1] || 'bin');
+    cb(null, `verdoc_${nanoid(16)}.${ext}`);
+  },
+});
+const verificationDocFileFilter = (req, file, cb) => {
+  if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.mimetype)) {
+    return cb(new Error('Upload a JPG, PNG, WEBP, or PDF file'));
+  }
+  cb(null, true);
+};
+const uploadVerificationDoc = multer({ storage: verificationDocStorage, fileFilter: verificationDocFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+
+// POST /api/verification/submit — submit a real document for manual review.
+// This used to accept only a docType label with no actual file attached —
+// meaning an admin "reviewing" a submission had nothing to look at.
+// Now a real file is required, verified by its actual bytes (not the
+// claimed type), and stored privately — see verificationDocStorage above.
+router.post('/verification/submit', requireAuth, (req, res, next) => {
+  uploadVerificationDoc.single('document')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Document upload failed' });
+    next();
+  });
+}, async (req, res) => {
   const { docType } = req.body || {};
+  if (!req.file) return res.status(400).json({ error: 'Upload a photo of your document to submit for review' });
+
+  // Which document types actually make sense here depends on the
+  // person's own country — a "Ghana Card" isn't a real option for
+  // someone in the U.S., and vice versa. Validated server-side against
+  // the same list the frontend's dropdown is built from (see GET /geo),
+  // rather than trusting any free-text label the client happens to send.
+  const submitter = await db.find('users', u => u.id === req.user.sub);
+  const acceptedTypes = idDocumentTypesForCountry(submitter ? submitter.country : null);
+  if (!isNonEmptyString(docType) || !acceptedTypes.includes(docType.trim())) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: `Choose a valid document type for your country: ${acceptedTypes.join(', ')}` });
+  }
+
+  const isPdf = req.file.mimetype === 'application/pdf';
+  const validBytes = isPdf ? verifyPdfMagicBytes(req.file.path) : verifyImageMagicBytes(req.file.path, req.file.mimetype);
+  if (!validBytes) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: 'That file doesn\'t look like a real image or PDF — please upload an actual photo or scan of your document' });
+  }
+
   const record = {
     id: `ver_${nanoid(10)}`,
     userId: req.user.sub,
-    docType: isNonEmptyString(docType) ? docType.trim() : 'Government ID',
+    docType: docType.trim(),
+    documentFilename: req.file.filename,
     status: 'in review',
     createdAt: new Date().toISOString(),
   };
   await db.insert('verifications', record);
   res.status(201).json({ verification: record });
+});
+
+// GET /api/verification/:id/document — lets someone view the exact file
+// they themselves submitted, to confirm it's the right one. Deliberately
+// does NOT allow viewing anyone else's document here — an admin views a
+// submission through the separate, verification-department-only route in
+// admin.routes.js, not this one.
+router.get('/verification/:id/document', requireAuth, async (req, res) => {
+  const record = await db.find('verifications', v => v.id === req.params.id && v.userId === req.user.sub);
+  if (!record || !record.documentFilename) return res.status(404).json({ error: 'Document not found' });
+  const filePath = path.join(PRIVATE_UPLOADS_DIR, record.documentFilename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Document not found' });
+  res.sendFile(filePath);
 });
 
 // GET /api/verification/start — whether real, live ID verification

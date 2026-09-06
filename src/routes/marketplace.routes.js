@@ -1,5 +1,5 @@
 const express = require('express');
-const { COUNTRIES, statesForCountry, dialCodeForCountry } = require('../geo-data');
+const { COUNTRIES, statesForCountry, dialCodeForCountry, idDocumentTypesForCountry } = require('../geo-data');
 const { nanoid } = require('nanoid');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
@@ -457,12 +457,14 @@ router.get('/geo', async (req, res) => {
   const countries = COUNTRIES.filter(c => liveCountries.includes(c));
   const statesByCountry = {};
   const dialCodeByCountry = {};
+  const idDocumentTypesByCountry = {};
   for (const c of countries) {
     statesByCountry[c] = statesForCountry(c);
     dialCodeByCountry[c] = dialCodeForCountry(c);
+    idDocumentTypesByCountry[c] = idDocumentTypesForCountry(c);
   }
   const noPostalCodeCountries = countries.filter(c => postalCodeIsOptionalFor(c));
-  res.json({ countries, statesByCountry, noPostalCodeCountries, dialCodeByCountry });
+  res.json({ countries, statesByCountry, noPostalCodeCountries, dialCodeByCountry, idDocumentTypesByCountry });
 });
 
 // GET /api/currency/mine — the signed-in user's real local currency, plus a

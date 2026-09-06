@@ -2353,6 +2353,12 @@ const FALLBACK_GEO = {
   },
   noPostalCodeCountries: ['Ghana'],
   dialCodeByCountry: { 'United States': '+1', 'Nigeria': '+234', 'Ghana': '+233', 'Liberia': '+231' },
+  idDocumentTypesByCountry: {
+    'United States': ["Driver's License", 'State ID Card', 'U.S. Passport', 'Passport Card'],
+    'Nigeria': ['National ID (NIN) Slip', 'International Passport', "Driver's License", "Permanent Voter's Card (PVC)"],
+    'Ghana': ['Ghana Card (National ID)', 'Passport', "Driver's License", 'Voter ID'],
+    'Liberia': ['National ID Card', 'Passport', "Driver's License"],
+  },
 };
 let GEO_DATA = FALLBACK_GEO;
 
@@ -4101,7 +4107,16 @@ function verificationHTML(role, status) {
       ? `<div class="badge badge-success" style="font-size:13px;padding:8px 16px;">✓ Identity Verified — government ID confirmed</div>`
       : inReview
         ? `<div class="badge badge-warn" style="font-size:13px;padding:8px 16px;">⏳ Submitted — awaiting review</div>`
-        : `<div id="verification-action-area"><div class="upload-box">📄 Upload Government-Issued ID</div><div class="upload-box">🤳 Take a Selfie for Face Match</div><button class="btn-sm btn-sm-primary" onclick="submitVerification('${role}')">Submit for Review</button></div>`}
+        : `<div id="verification-action-area">
+            <div class="form-group" style="margin-bottom:14px;">
+              <label class="form-label">Document Type</label>
+              <select class="form-input form-select" id="verification-doctype-select">${idDocTypeOptionsHTML()}</select>
+            </div>
+            <input type="file" id="verification-doc-input" accept="image/jpeg,image/png,image/webp,application/pdf" style="display:none;" onchange="handleVerificationFileChosen(this)"/>
+            <div class="upload-box" style="cursor:pointer;" onclick="document.getElementById('verification-doc-input').click()" id="verification-upload-box">📄 Upload your document (photo or PDF)</div>
+            <div style="font-size:12px;color:var(--slate);margin:6px 0 14px;">A clear photo or scan of the document you selected above — a real person on our team reviews this before you're verified.</div>
+            <button class="btn-sm btn-sm-primary" id="verification-submit-btn" disabled onclick="submitVerification('${role}')">Submit for Review</button>
+          </div>`}
   </div>
   ${role === 'provider' ? `<div class="panel"><div class="panel-title">Additional Trust Checks</div>
     <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Check</th><th>Status</th></tr></thead><tbody>
@@ -4163,13 +4178,55 @@ async function saveGuarantors() {
   } catch (e) { showToast(e.message || 'Could not save guarantors'); }
 }
 
+const GENERIC_ID_DOCUMENT_TYPES_CLIENT = ['Passport', 'National ID Card', "Driver's License"];
+function idDocTypeOptionsHTML() {
+  const country = AUTH.user && AUTH.user.country;
+  const types = (GEO_DATA.idDocumentTypesByCountry && country && GEO_DATA.idDocumentTypesByCountry[country])
+    || GENERIC_ID_DOCUMENT_TYPES_CLIENT;
+  return types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+}
+
+let chosenVerificationDoc = null;
+
+function handleVerificationFileChosen(input) {
+  const file = input.files && input.files[0];
+  const box = document.getElementById('verification-upload-box');
+  const btn = document.getElementById('verification-submit-btn');
+  if (!file) { chosenVerificationDoc = null; if (btn) btn.disabled = true; return; }
+  if (file.size > 10 * 1024 * 1024) {
+    showToast('That file is too large — 10MB max');
+    input.value = '';
+    chosenVerificationDoc = null;
+    if (btn) btn.disabled = true;
+    return;
+  }
+  chosenVerificationDoc = file;
+  if (box) box.textContent = `📄 ${file.name}`;
+  if (btn) btn.disabled = false;
+}
+
 async function submitVerification(role) {
   if (!BACKEND_AVAILABLE) {
     showToast('Submitted for review (demo mode — no backend detected)');
     return;
   }
+  if (!chosenVerificationDoc) {
+    showToast('Choose a photo or PDF of your document first');
+    return;
+  }
+  const formData = new FormData();
+  formData.append('document', chosenVerificationDoc);
+  const docTypeSelect = document.getElementById('verification-doctype-select');
+  formData.append('docType', docTypeSelect ? docTypeSelect.value : 'Passport');
   try {
-    await apiFetch('POST', '/verification/submit', { docType: role === 'provider' ? 'Government ID + Background Check' : 'Government ID' });
+    const res = await fetch(API_BASE + '/verification/submit', {
+      method: 'POST',
+      headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
+      body: formData, // deliberately no Content-Type header — the browser sets the correct multipart boundary itself
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not submit for review');
+    chosenVerificationDoc = null;
     showToast('Submitted — an admin will review it shortly');
     if (role === 'customer') { await loadCustomerData(); selectCustomerSection('verification'); }
     else { await loadProviderData(); selectProviderSection('verification'); }
@@ -7735,7 +7792,7 @@ async function loadAdminData() {
   if (stats) adminData.stats = stats;
   if (pending) adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
   if (allPeople) adminData.people = allPeople.users.map(u => ({ ...u, role: u.role[0].toUpperCase() + u.role.slice(1), active: u.active !== false }));
-  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status }));
+  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status, hasDocument: !!v.documentFilename }));
   if (disputes) adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
   if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active, responseWindowOverrideHours: c.responseWindowOverrideHours }));
   if (countries) adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
@@ -9718,7 +9775,7 @@ function verificationQueueTable() {
   if (!adminData.verificationQueue.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">Verification queue is empty.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Document</th><th>City</th><th>Country</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${adminData.verificationQueue.map(v => `<tr><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.doc)}</td><td>${escapeHtml(v.city || '—')}</td><td>${escapeHtml(v.country)}</td><td>${statusBadge(v.status)}</td>
-  <td class="row-actions">${v.status==='in review' ? `<button class="btn-sm btn-sm-primary" onclick="adminDecide('verification','${v.id}','approve','verification')">Approve</button><button class="btn-sm btn-sm-outline" onclick="adminDecide('verification','${v.id}','reject','verification')">Reject</button>` : '—'}</td></tr>`).join('')}
+  <td class="row-actions">${v.hasDocument ? `<button class="btn-sm btn-sm-outline" onclick="downloadFileWithAuth('${API_BASE}/admin/verification/${v.id}/document', 'Verification-${v.id}')">View doc</button>` : '<span style="color:var(--slate);font-size:11.5px;">No document</span>'} ${v.status==='in review' ? `<button class="btn-sm btn-sm-primary" onclick="adminDecide('verification','${v.id}','approve','verification')">Approve</button><button class="btn-sm btn-sm-outline" onclick="adminDecide('verification','${v.id}','reject','verification')">Reject</button>` : ''}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 

@@ -18,7 +18,7 @@ const paymentsRoutes = require('./src/routes/payments.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const miscRoutes = require('./src/routes/misc.routes');
 const portfolioRoutes = require('./src/routes/portfolio.routes');
-const { UPLOADS_DIR } = require('./src/uploads');
+const { UPLOADS_DIR, PRIVATE_UPLOADS_DIR } = require('./src/uploads');
 
 // Actually try writing to UPLOADS_DIR at boot, rather than assuming it's
 // writable just because the path exists. This is what turns a silent
@@ -34,6 +34,26 @@ const { UPLOADS_DIR } = require('./src/uploads');
     console.log(`✅ Uploads directory is writable: ${UPLOADS_DIR}`);
   } catch (e) {
     console.error(`❌ Uploads directory is NOT writable: ${UPLOADS_DIR} — portfolio photo uploads will fail. Error: ${e.message}`);
+  }
+})();
+
+// Same check for PRIVATE_UPLOADS_DIR (identity documents) — deliberately
+// a separate directory from UPLOADS_DIR above, and NEVER passed to
+// express.static anywhere in this file. Documents in here are only ever
+// served through the two authenticated routes that check the requester
+// is either the document's own owner or an admin on the verification
+// team (see /verification/:id/document in misc.routes.js and
+// admin.routes.js) — never as a plain public file URL.
+(function checkPrivateUploadsDirWritable() {
+  const fs = require('fs');
+  const path = require('path');
+  const testFile = path.join(PRIVATE_UPLOADS_DIR, `.write-check-${Date.now()}`);
+  try {
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    console.log(`✅ Private uploads directory is writable: ${PRIVATE_UPLOADS_DIR}`);
+  } catch (e) {
+    console.error(`❌ Private uploads directory is NOT writable: ${PRIVATE_UPLOADS_DIR} — identity document submissions will fail. Error: ${e.message}`);
   }
 })();
 
