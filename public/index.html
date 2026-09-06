@@ -286,9 +286,10 @@
   .form-input {
     width:100%; border:1.5px solid var(--border); border-radius:7px;
     padding:11px 14px; font-family:'Inter',sans-serif; font-size:14px;
-    color:var(--text); outline:none; transition:border-color .2s;
+    color:var(--text); outline:none; transition:border-color .15s, box-shadow .15s;
   }
-  .form-input:focus { border-color:var(--teal); }
+  .form-input:focus { border-color:var(--teal); box-shadow:0 0 0 4px rgba(29,95,168,.12); }
+  .form-input:hover:not(:focus) { border-color:#C7C2B5; }
   /* Real keyboard-navigation focus indicators — genuinely missing before
      this across almost every interactive element in the app (buttons,
      links, checkboxes). :focus-visible specifically (not plain :focus)
@@ -529,24 +530,30 @@
     .auth-brand-panel { display:none; }
     .auth-split { max-width:460px; border-radius:16px; }
   }
-  .auth-card { background:var(--white); border-radius:14px; max-width:420px; width:100%; padding:34px 32px; box-shadow:0 24px 80px rgba(0,0,0,.3); }
+  .auth-card { background:var(--white); border-radius:16px; max-width:420px; width:100%; padding:34px 32px; box-shadow:0 24px 80px rgba(0,0,0,.3); }
   .auth-card-title { font-family:'Fraunces',serif; font-weight:800; font-size:22px; color:var(--navy); margin-bottom:4px; text-align:center; }
   .auth-card-sub { text-align:center; color:var(--slate); font-size:13px; margin-bottom:22px; }
   .auth-tabs { display:flex; gap:6px; background:var(--offwhite); border-radius:8px; padding:4px; margin-bottom:20px; }
-  .auth-tab { flex:1; text-align:center; padding:9px; border-radius:6px; font-size:13px; font-weight:600; color:var(--slate); cursor:pointer; }
+  .auth-tab { flex:1; text-align:center; padding:9px; border-radius:6px; font-size:13px; font-weight:600; color:var(--slate); cursor:pointer; transition:color .15s; }
   .auth-tab.active { background:var(--white); color:var(--navy); box-shadow:0 2px 6px rgba(0,0,0,.08); }
   .auth-role-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:18px; }
-  .auth-role-opt { border:1.5px solid var(--border); border-radius:7px; text-align:center; padding:10px 6px; font-size:11px; font-weight:600; color:var(--slate); cursor:pointer; }
+  .auth-role-opt { border:1.5px solid var(--border); border-radius:7px; text-align:center; padding:10px 6px; font-size:11px; font-weight:600; color:var(--slate); cursor:pointer; transition:border-color .15s, background .15s, transform .1s; }
+  .auth-role-opt:hover { border-color:var(--mint); }
+  .auth-role-opt:active { transform:scale(.97); }
   .auth-role-opt.active { border-color:var(--teal); background:rgba(29,95,168,.08); color:var(--navy); }
   .auth-role-opt .r-icon { font-size:18px; display:block; margin-bottom:4px; }
   .auth-divider { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px; margin:18px 0; }
   .auth-divider::before, .auth-divider::after { content:''; flex:1; height:1px; background:var(--border); }
-  .oauth-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; border:1.5px solid var(--border); border-radius:7px; padding:11px; font-size:13px; font-weight:600; color:var(--text); background:#fff; cursor:pointer; margin-bottom:10px; font-family:'Inter',sans-serif; }
-  .oauth-btn:hover { border-color:var(--teal); }
-  .auth-submit { width:100%; background:var(--navy); color:#fff; border:none; border-radius:8px; padding:14px; font-family:'Fraunces',serif; font-weight:700; font-size:15px; cursor:pointer; margin-top:4px; transition:background .15s, transform .1s; }
-  .auth-submit:hover:not(:disabled) { background:#0F3A66; }
+  .oauth-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; border:1.5px solid var(--border); border-radius:7px; padding:11px; font-size:13px; font-weight:600; color:var(--text); background:#fff; cursor:pointer; margin-bottom:10px; font-family:'Inter',sans-serif; transition:border-color .15s, box-shadow .15s, transform .1s; }
+  .oauth-btn:hover { border-color:var(--teal); box-shadow:0 4px 14px rgba(0,0,0,.08); transform:translateY(-1px); }
+  .oauth-btn:active { transform:translateY(0); }
+  #google-signin-container { min-height:44px; display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
+  #google-signin-container .oauth-btn { margin-bottom:0; }
+  .auth-submit { width:100%; background:var(--navy); color:#fff; border:none; border-radius:8px; padding:14px; font-family:'Fraunces',serif; font-weight:700; font-size:15px; cursor:pointer; margin-top:4px; transition:background .15s, transform .1s, box-shadow .15s; }
+  .auth-submit:hover:not(:disabled) { background:#0F3A66; box-shadow:0 8px 20px rgba(18,22,31,.28); }
   .auth-submit:active:not(:disabled) { transform:scale(.99); }
   .auth-submit:disabled { opacity:.75; cursor:default; }
+  .auth-trust-microcopy { display:flex; align-items:center; justify-content:center; gap:6px; font-size:11.5px; color:var(--muted); margin-top:14px; }
   .btn-spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%; vertical-align:-2px; margin-right:8px; animation:btnSpin .7s linear infinite; }
   @keyframes btnSpin { to { transform:rotate(360deg); } }
 
@@ -566,7 +573,6 @@
   .password-strength-bar-track { display:flex; gap:4px; margin-bottom:6px; }
   .password-strength-bar-seg { height:4px; flex:1; border-radius:2px; background:var(--border); transition:background .2s ease; }
   .password-strength-label { font-size:11.5px; color:var(--slate); }
-  .auth-submit:hover { background:var(--teal); color:var(--navy); }
   .auth-foot { text-align:center; font-size:12px; color:var(--slate); margin-top:16px; }
   .auth-foot a { color:var(--teal); font-weight:600; cursor:pointer; }
 
@@ -877,6 +883,7 @@
     .support-chat-bubble { right:16px; bottom:16px; }
   }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -1333,7 +1340,7 @@
         </div>
       </div>
       <div style="display:flex;gap:10px;">
-        <button class="oauth-btn" style="flex:1;" onclick="showToast('Google sign-in isn\'t connected yet in this test environment — please use email/password below.')">🔵 Google</button>
+        <div id="google-signin-container" style="flex:1;min-height:40px;"><button class="oauth-btn" style="width:100%;" onclick="showToast('Checking Google sign-in availability…'); initGoogleSignIn();">🔵 Google</button></div>
         <button class="oauth-btn" style="flex:1;" onclick="showToast('Facebook sign-in isn\'t connected yet in this test environment — please use email/password below.')">📘 Facebook</button>
       </div>
       <div class="auth-divider">or</div>
@@ -1401,11 +1408,11 @@
           <div id="auth-invite-status" style="font-size:11.5px;margin-top:5px;"></div>
         </div>
       </div>
-      <div class="form-group">
+      <div class="form-group" id="auth-email-group">
         <label class="form-label" data-i18n="auth_email">Email</label>
         <input class="form-input" type="email" id="auth-email" autocomplete="username" onkeydown="if(event.key==='Enter')handleAuthSubmit()"/>
       </div>
-      <div class="form-group">
+      <div class="form-group" id="auth-password-group">
         <label class="form-label" data-i18n="auth_password">Password</label>
         <div class="password-field-wrap">
           <input class="form-input" type="password" id="auth-password" style="padding-right:40px;" autocomplete="current-password" oninput="updatePasswordStrength(this.value)" onkeydown="if(event.key==='Enter')handleAuthSubmit()"/>
@@ -1423,6 +1430,7 @@
       </div>
       <div class="auth-foot" id="auth-forgot-link" style="text-align:right;margin-top:-10px;margin-bottom:14px;"><a onclick="showForgotPassword()" data-i18n="auth_forgot">Forgot password?</a></div>
       <button class="auth-submit" onclick="handleAuthSubmit()" id="auth-submit-btn">Sign In</button>
+      <div class="auth-trust-microcopy">🔒 Encrypted connection · Your details are never sold</div>
       <div class="auth-foot" id="auth-foot">New to Trothen? <a onclick="setAuthMode('signup')">Create an account</a></div>
       </div>
       <!-- New two-code verification step: shown after signup/start succeeds,
@@ -1433,13 +1441,13 @@
         <div class="auth-card-sub">We need to confirm both your phone number and your email before your account is created.</div>
         <div id="signup-verify-test-banner" style="display:none;margin:16px 0;padding:12px 14px;background:var(--offwhite);border:1px dashed var(--gold);border-radius:10px;font-size:12.5px;">
           <span class="badge badge-warn" style="margin-right:6px;">TEST MODE</span>No SMS/email provider is connected yet — your codes:<br/>
-          Phone code: <strong id="signup-verify-phone-code-display"></strong> · Email code: <strong id="signup-verify-email-code-display"></strong>
+          Phone code: <strong id="signup-verify-phone-code-display"></strong><span id="signup-verify-email-code-banner-part"> · Email code: <strong id="signup-verify-email-code-display"></strong></span>
         </div>
         <div class="form-group">
           <label class="form-label">Code sent to your phone</label>
           <input class="form-input" type="text" inputmode="numeric" maxlength="6" id="signup-verify-phone-code" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')submitSignupVerification()"/>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="signup-verify-email-code-group">
           <label class="form-label">Code sent to your email</label>
           <input class="form-input" type="text" inputmode="numeric" maxlength="6" id="signup-verify-email-code" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')submitSignupVerification()"/>
         </div>
@@ -1842,6 +1850,78 @@ async function loginAs(email, password) {
   AUTH.user = data.user;
   saveAuthSession(data.token);
   return data.user;
+}
+
+/* ══════════════════════ GOOGLE SIGN-IN ══════════════════════
+   Real "Sign in with Google" — not a demo toast. On load (once the
+   backend is confirmed live) we ask the server whether GOOGLE_CLIENT_ID
+   is actually configured; if it is, Google's own button is rendered into
+   the container (required by Google's terms — a custom-styled button
+   can't trigger their popup). If a new person signs in with an email
+   Trothen has never seen, the server can't create a full account from
+   just a name/email (no phone, address, role, etc.), so it hands back a
+   short-lived signup ticket instead and we drop the person into the
+   normal Sign Up form with name/email pre-filled and locked, password
+   hidden (no password needed — Google is that account's the only way
+   in unless they set one later via Forgot Password). */
+let googleSignInInitialized = false;
+let pendingGoogleSignupToken = null;
+let pendingGoogleEmail = null;
+
+async function initGoogleSignIn() {
+  if (googleSignInInitialized) return;
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const data = await apiFetch('GET', '/auth/google/config');
+    if (!data.enabled || !data.clientId) return; // not configured yet — fallback button stays as-is
+    if (!window.google || !window.google.accounts || !window.google.accounts.id) {
+      // Google's script may not have finished loading yet (async/defer) — try again shortly.
+      setTimeout(initGoogleSignIn, 400);
+      return;
+    }
+    google.accounts.id.initialize({ client_id: data.clientId, callback: handleGoogleCredentialResponse });
+    const container = document.getElementById('google-signin-container');
+    if (container) {
+      container.innerHTML = '';
+      google.accounts.id.renderButton(container, { theme: 'outline', size: 'large', width: 280, text: 'continue_with' });
+    }
+    googleSignInInitialized = true;
+  } catch (e) {
+    console.warn('Google sign-in not available:', e);
+  }
+}
+
+function setGoogleSignupUIState(active, name, email) {
+  pendingGoogleSignupToken && !active ? null : null; // no-op guard for readability
+  document.getElementById('auth-password-group').style.display = active ? 'none' : 'block';
+  const emailInput = document.getElementById('auth-email');
+  emailInput.disabled = !!active;
+  if (active) {
+    document.getElementById('auth-name').value = name || '';
+    emailInput.value = email || '';
+  }
+}
+
+async function handleGoogleCredentialResponse(response) {
+  try {
+    const data = await apiFetch('POST', '/auth/google', { credential: response.credential });
+    if (data.needsSignup) {
+      pendingGoogleSignupToken = data.googleSignupToken;
+      pendingGoogleEmail = data.email;
+      setAuthMode('signup');
+      setGoogleSignupUIState(true, data.name, data.email);
+      showToast('Almost there — just fill in the rest to finish your Trothen profile.');
+      return;
+    }
+    AUTH.token = data.token;
+    AUTH.user = data.user;
+    saveAuthSession(data.token);
+    showToast(`Welcome back, ${data.user.name.split(' ')[0]}!`);
+    rememberLastLoginEmail(data.user.email, data.user.role);
+    await completeAuthAndResumeIntent(data.user.role);
+  } catch (e) {
+    showToast(e.message || 'Google sign-in failed. Please try again or use email/password.');
+  }
 }
 
 const FALLBACK_PROVIDERS = [
@@ -3538,6 +3618,13 @@ function setAuthMode(mode) {
     : `Already have an account? <a onclick="setAuthMode('login')">Sign in</a>`;
   document.getElementById('auth-password').setAttribute('autocomplete', mode === 'login' ? 'current-password' : 'new-password');
   updatePasswordStrength(document.getElementById('auth-password').value);
+  if (mode === 'login' && pendingGoogleSignupToken) {
+    // Abandoning the Google-prefilled signup — unlock the normal form again.
+    pendingGoogleSignupToken = null;
+    pendingGoogleEmail = null;
+    setGoogleSignupUIState(false);
+    document.getElementById('auth-email').value = '';
+  }
 }
 
 function setAuthRole(role) {
@@ -3578,11 +3665,12 @@ async function mockAuth() {
     showToast(authState.mode === 'login' ? 'Signed in (demo mode — no backend detected)' : 'Account created (demo mode — no backend detected)');
     return goDashboard(authState.role);
   }
+  const usingGoogleSignup = authState.mode === 'signup' && !!pendingGoogleSignupToken;
   if (authState.mode === 'login') {
     if (!email || !password) return showToast('Please fill in all fields');
   } else {
     const zipRequired = !(GEO_DATA.noPostalCodeCountries || []).includes(country);
-    if (!email || !password || !name || !phone || !address || !city || !state || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
+    if (!email || (!usingGoogleSignup && !password) || !name || !phone || !address || !city || !state || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
     if (authState.role === 'provider' && !skills) return showToast('List at least one skill or specialty');
     if (authState.role === 'provider' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
   }
@@ -3591,7 +3679,7 @@ async function mockAuth() {
   }
   if (authState.mode === 'signup') {
     if (name.length < 2) return showToast('Full name must be at least 2 characters');
-    if (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
+    if (!usingGoogleSignup && (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1))) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
     const phoneDigits = phone.replace(/[^0-9]/g, '');
     if (phoneDigits.length < 7) return showToast('Enter a valid phone number');
     if (zipCode && zipCode.length < 3 && !(GEO_DATA.noPostalCodeCountries || []).includes(country)) return showToast('Enter a valid zip/postal code');
@@ -3614,6 +3702,25 @@ async function mockAuth() {
       showToast(`Welcome back, ${user.name.split(' ')[0]}!`);
       rememberLastLoginEmail(email, user.role);
       await completeAuthAndResumeIntent(user.role);
+    } else if (usingGoogleSignup) {
+      const data = await apiFetch('POST', '/auth/google/signup', {
+        googleSignupToken: pendingGoogleSignupToken,
+        role: authState.role, city, country, state, phone, address, zipCode,
+        ...(pendingReferralCode ? { referralCode: pendingReferralCode } : {}),
+        ...(authState.role === 'provider' ? { category, skills, inviteCode: document.getElementById('auth-invite-code').value.trim() } : {}),
+      });
+      pendingSignupId = data.pendingId;
+      pendingGoogleSignupToken = null; // consumed — the pendingRegistration now holds everything needed
+      document.getElementById('auth-main-form').style.display = 'none';
+      document.getElementById('signup-verify-view').style.display = 'block';
+      document.getElementById('signup-verify-email-code-group').style.display = 'none';
+      document.getElementById('signup-verify-email-code-banner-part').style.display = 'none';
+      document.querySelector('#signup-verify-view .auth-card-sub').textContent = 'Google already confirmed your email — we just need to confirm your phone number.';
+      if (data.testMode) {
+        document.getElementById('signup-verify-test-banner').style.display = 'block';
+        document.getElementById('signup-verify-phone-code-display').textContent = data.phoneCode !== undefined ? data.phoneCode : 'Sent to your phone';
+      }
+      showToast('Enter the code sent to your phone to finish creating your account');
     } else {
       const data = await apiFetch('POST', '/auth/signup/start', {
         name, email, password, role: authState.role, city, country, state, phone, address, zipCode,
@@ -3623,6 +3730,9 @@ async function mockAuth() {
       pendingSignupId = data.pendingId;
       document.getElementById('auth-main-form').style.display = 'none';
       document.getElementById('signup-verify-view').style.display = 'block';
+      document.getElementById('signup-verify-email-code-group').style.display = 'block';
+      document.getElementById('signup-verify-email-code-banner-part').style.display = 'inline';
+      document.querySelector('#signup-verify-view .auth-card-sub').textContent = 'We need to confirm both your phone number and your email before your account is created.';
       if (data.testMode) {
         document.getElementById('signup-verify-test-banner').style.display = 'block';
         document.getElementById('signup-verify-phone-code-display').textContent = data.phoneCode !== undefined ? data.phoneCode : 'Sent to your phone';
@@ -3641,8 +3751,9 @@ let pendingReferralCode = null;
 
 async function submitSignupVerification() {
   const phoneCode = document.getElementById('signup-verify-phone-code').value.trim();
+  const emailCodeVisible = document.getElementById('signup-verify-email-code-group').style.display !== 'none';
   const emailCode = document.getElementById('signup-verify-email-code').value.trim();
-  if (!phoneCode || !emailCode) return showToast('Enter both codes');
+  if (!phoneCode || (emailCodeVisible && !emailCode)) return showToast(emailCodeVisible ? 'Enter both codes' : 'Enter the phone code');
   if (!pendingSignupId) return showToast('Something went wrong — please start signing up again');
   try {
     const data = await apiFetch('POST', '/auth/signup/verify', { pendingId: pendingSignupId, phoneCode, emailCode });
@@ -3690,6 +3801,10 @@ async function resendSignupCodes() {
 
 function cancelSignupVerification() {
   pendingSignupId = null;
+  pendingGoogleSignupToken = null;
+  pendingGoogleEmail = null;
+  setGoogleSignupUIState(false);
+  document.getElementById('auth-email').value = '';
   document.getElementById('signup-verify-view').style.display = 'none';
   document.getElementById('auth-main-form').style.display = 'block';
   document.getElementById('signup-verify-phone-code').value = '';
@@ -10743,6 +10858,7 @@ async function askRealSupportChat(message) {
     await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats(), loadSupportContact(), loadHomepageContent(), loadHomepageImages(), loadPopularProjects()]);
     renderProviders(PROVIDERS);
     renderHomeCategories();
+    initGoogleSignIn(); // no-op if GOOGLE_CLIENT_ID isn't set on the server yet
     console.log('%cTrothen API connected — live data enabled.', 'color:#1D5FA8;font-weight:bold;');
   } else {
     console.log('%cTrothen API not detected — running on demo data. Start the backend (npm start in /trothen-backend) for live data.', 'color:#B08A3E;');

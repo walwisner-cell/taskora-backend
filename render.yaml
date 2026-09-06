@@ -41,6 +41,15 @@ services:
       #   fromDatabase:
       #     name: trothen-db
       #     property: connectionString
+      #
+      # The following are real, live secrets/keys — set directly in the
+      # Render dashboard (Environment tab) rather than committed here:
+      # SENDGRID_API_KEY, SENDGRID_FROM_EMAIL (email delivery),
+      # TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER (SMS
+      # delivery — see .env.example for why TWILIO_VERIFY_SERVICE_SID
+      # isn't listed here), GOOGLE_CLIENT_ID (Google Sign-In — not
+      # actually secret, but still simplest to manage the same way),
+      # ANTHROPIC_API_KEY (AI support chat).
     disk:
       # Deliberately left as "taskora-data", not renamed to match the new
       # brand — this is the actual identifier of your real, already-created

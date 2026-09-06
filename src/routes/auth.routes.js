@@ -1,11 +1,14 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { nanoid } = require('nanoid');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
-const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken, hashResetToken } = require('../auth');
+const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken, hashResetToken, JWT_SECRET } = require('../auth');
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, isValidName, validate, postalCodeErrorMessage } = require('../validators');
 const { notify } = require('../notify');
 const { generateUniqueReferralCode } = require('../referral-code');
+const { verifyGoogleIdToken, isGoogleConfigured } = require('../google-auth');
 
 const router = express.Router();
 
@@ -60,6 +63,160 @@ const REGISTRATION_TTL_MS = 15 * 60 * 1000; // 15 minutes to complete both codes
 function generateSixDigitCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
+
+// ── GOOGLE SIGN-IN ───────────────────────────────────────────────────────────
+// GET /api/auth/google/config — tells the frontend whether Google sign-in is
+// actually wired up on this server, and hands back the Client ID (not a
+// secret — it's meant to be public, it's embedded in every "Sign in with
+// Google" button on the web) so the real button only renders when it will
+// actually work, instead of a dead placeholder.
+router.get('/google/config', (req, res) => {
+  res.json({ enabled: isGoogleConfigured(), clientId: isGoogleConfigured() ? process.env.GOOGLE_CLIENT_ID : null });
+});
+
+// POST /api/auth/google — `credential` is the ID token Google's own button
+// hands back after the person picks their Google account. It's verified
+// server-side (signature + audience, see ../google-auth) before anything
+// here trusts it — the frontend can't forge who signed in. Two outcomes:
+// an email Trothen already has signs straight in (Google already proved
+// identity, so no password or 2FA step here — the same trust decision most
+// consumer apps make for OAuth sign-in). A brand-new email gets a
+// short-lived signup ticket instead, since Google only hands over a name
+// and email, and a Trothen account also needs a phone number, address, and
+// role that Google has no way to supply.
+router.post('/google', loginLimiter, async (req, res) => {
+  const { credential } = req.body || {};
+  let g;
+  try {
+    g = await verifyGoogleIdToken(credential);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  const existing = await db.find('users', u => u.email.toLowerCase() === g.email.toLowerCase());
+  if (existing) {
+    if (existing.active === false) {
+      return res.status(403).json({ error: 'This account has been suspended. Contact a super admin for access.' });
+    }
+    if (existing.status === 'rejected') {
+      return res.status(403).json({ error: 'This account application was not approved. Contact support if you believe this was a mistake.' });
+    }
+    if (!existing.googleId) {
+      await db.update('users', existing.id, { googleId: g.sub });
+      existing.googleId = g.sub;
+    }
+    const token = signToken(existing);
+    return res.json({ token, user: publicUser(existing) });
+  }
+
+  const googleSignupToken = jwt.sign(
+    { purpose: 'google_signup', email: g.email, name: g.name, sub: g.sub },
+    JWT_SECRET,
+    { expiresIn: '15m' }
+  );
+  res.json({ needsSignup: true, googleSignupToken, name: g.name, email: g.email });
+});
+
+// POST /api/auth/google/signup — completes account creation for a brand-new
+// Google sign-in. The googleSignupToken (issued by POST /google above) is
+// the only proof of identity here — it stands in for the
+// password + two-code verification a normal signup requires, since Google
+// already verified this email a few minutes ago. Everything else Trothen
+// needs (phone, address, role, etc.) still has to be collected, same as
+// any signup, and the phone number still goes through the same real OTP
+// check — Google vouches for the email, not the phone.
+router.post('/google/signup', signupLimiter, async (req, res) => {
+  const { googleSignupToken, role, country, state, city, phone, address, zipCode, category, skills, inviteCode, referralCode } = req.body || {};
+  let ticket;
+  try {
+    ticket = jwt.verify(googleSignupToken, JWT_SECRET);
+  } catch (e) {
+    return res.status(400).json({ error: 'This Google sign-in has expired — please sign in with Google again.' });
+  }
+  if (ticket.purpose !== 'google_signup' || !ticket.email) {
+    return res.status(400).json({ error: 'Invalid Google sign-in ticket.' });
+  }
+  const email = ticket.email;
+  const name = ticket.name || email.split('@')[0];
+
+  const errors = validate([
+    ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
+    ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
+    ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
+    ['address', isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address'],
+    ['country', isNonEmptyString(country, { min: 2, max: 100 }), 'Select your country'],
+    ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
+    ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
+  ]);
+  if (role === 'provider') {
+    errors.push(...validate([
+      ['category', isNonEmptyString(category), 'Select your primary service category'],
+      ['skills', isNonEmptyString(skills, { min: 2, max: 300 }), 'List at least one skill or specialty'],
+    ]));
+  }
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const existing = await db.find('users', u => u.email.toLowerCase() === email.toLowerCase());
+  if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
+
+  // Same org-invite and referral handling as /signup/start.
+  let inviteOrgId = null;
+  const trimmedInviteCode = (inviteCode || '').trim().toUpperCase();
+  if (trimmedInviteCode) {
+    if (role !== 'provider') return res.status(400).json({ error: 'Organization invite links are for provider accounts' });
+    const invite = await db.find('organizationInvites', i => i.code === trimmedInviteCode);
+    if (!invite) return res.status(400).json({ error: 'This invite link is invalid' });
+    if (invite.status !== 'active') return res.status(400).json({ error: 'This invite link has been revoked' });
+    if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) return res.status(400).json({ error: 'This invite link has expired' });
+    if (invite.maxUses != null && invite.usesCount >= invite.maxUses) return res.status(400).json({ error: 'This invite link has reached its usage limit' });
+    inviteOrgId = invite.organizationId;
+  }
+  let referrer = null;
+  const trimmedReferralCode = (referralCode || '').trim().toUpperCase();
+  if (trimmedReferralCode) {
+    referrer = await db.find('users', u => u.referralCode === trimmedReferralCode);
+    if (!referrer) return res.status(400).json({ error: 'This referral link isn\'t valid' });
+  }
+
+  const phoneCode = generateSixDigitCode();
+  const pending = {
+    id: `preg_${nanoid(12)}`,
+    payload: {
+      name, email, password: null, googleSub: ticket.sub,
+      role, country: country.trim(), state: state.trim(), city: city.trim(),
+      phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(),
+      category, skills, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null,
+    },
+    phoneCodeHash: hashResetToken(phoneCode),
+    emailCodeHash: null, // already verified by Google — nothing to check at /signup/verify
+    phoneVerified: false,
+    emailVerified: true,
+    expiresAt: new Date(Date.now() + REGISTRATION_TTL_MS).toISOString(),
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('pendingRegistrations', pending);
+
+  const { isSmsConfigured, sendSms } = require('../delivery');
+  const phoneDelivered = isSmsConfigured()
+    ? (await sendSms(phone.trim(), `Your Trothen phone verification code is ${phoneCode}.`)).sent
+    : false;
+
+  if (phoneDelivered) {
+    return res.status(201).json({
+      pendingId: pending.id,
+      message: `Enter the code sent to ${phone.trim()} to finish creating your account.`,
+      testMode: false,
+      joiningOrganization: inviteOrgId ? true : false,
+    });
+  }
+  console.log(`[TEST MODE] Google-signup phone code for ${email} — phone: ${phoneCode}`);
+  res.status(201).json({
+    pendingId: pending.id,
+    testMode: true,
+    testModeNote: 'No real SMS provider is configured yet — the code is returned directly instead of being sent. Do not do this in production.',
+    phoneCode,
+    joiningOrganization: inviteOrgId ? true : false,
+  });
+});
 
 // POST /api/auth/signup/start — validates everything and issues both codes,
 // but does NOT create the account yet.
@@ -173,11 +330,16 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
 // is actually created.
 router.post('/signup/verify', otpLimiter, async (req, res) => {
   const { pendingId, phoneCode, emailCode } = req.body || {};
-  if (!isNonEmptyString(pendingId) || !isNonEmptyString(phoneCode) || !isNonEmptyString(emailCode)) {
-    return res.status(400).json({ error: 'pendingId, phoneCode, and emailCode are all required' });
+  if (!isNonEmptyString(pendingId) || !isNonEmptyString(phoneCode)) {
+    return res.status(400).json({ error: 'pendingId and phoneCode are required' });
   }
   const pending = await db.find('pendingRegistrations', p => p.id === pendingId);
   if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found — please start again' });
+  // A Google signup already has its email verified (see pending.emailCodeHash
+  // below) — only a normal email/password signup still needs this code.
+  if (pending.emailCodeHash && !isNonEmptyString(emailCode)) {
+    return res.status(400).json({ error: 'pendingId, phoneCode, and emailCode are all required' });
+  }
   if (new Date(pending.expiresAt) < new Date()) {
     await db.remove('pendingRegistrations', pending.id);
     return res.status(400).json({ error: 'This registration has expired — please start again' });
@@ -204,8 +366,10 @@ async function completeSignupVerify(req, res, pending) {
   if (hashResetToken(phoneCode.trim()) !== pending.phoneCodeHash) {
     return res.status(400).json({ error: 'That phone code is incorrect' });
   }
-  if (hashResetToken(emailCode.trim()) !== pending.emailCodeHash) {
-    return res.status(400).json({ error: 'That email code is incorrect' });
+  if (pending.emailCodeHash) {
+    if (!isNonEmptyString(emailCode) || hashResetToken(emailCode.trim()) !== pending.emailCodeHash) {
+      return res.status(400).json({ error: 'That email code is incorrect' });
+    }
   }
 
   // Re-check email uniqueness — someone else could have registered the same
@@ -245,7 +409,14 @@ async function completeSignupVerify(req, res, pending) {
     phoneVerified: true, // genuinely true this time — they just proved it as part of registering
     initials: trimmedName.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
     verified: false,
-    passwordHash: hashPassword(payload.password),
+    // A Google signup never collects a password (payload.password is
+    // null) — a long random hash is generated instead so passwordHash's
+    // NOT NULL constraint is satisfied and this account simply can't be
+    // logged into with a password. They can still set a real one later
+    // through the existing Forgot Password flow whenever they want a
+    // second way in besides Google.
+    passwordHash: payload.password ? hashPassword(payload.password) : hashPassword(crypto.randomBytes(32).toString('hex')),
+    ...(payload.googleSub ? { googleId: payload.googleSub } : {}),
     referralCode: await generateUniqueReferralCode(),
     referredByUserId: payload.referredByUserId || null,
     createdAt: new Date().toISOString(),
@@ -341,11 +512,16 @@ router.post('/signup/resend', async (req, res) => {
   const pending = await db.find('pendingRegistrations', p => p.id === pendingId);
   if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found — please start again' });
 
+  // A Google signup never had its own email code — pending.emailCodeHash is
+  // null (Google already verified that email). Resending must not
+  // reintroduce an email-code requirement here, since the frontend for
+  // that flow has no field to enter one.
+  const needsEmailCode = !!pending.emailCodeHash;
   const phoneCode = generateSixDigitCode();
-  const emailCode = generateSixDigitCode();
+  const emailCode = needsEmailCode ? generateSixDigitCode() : null;
   await db.update('pendingRegistrations', pending.id, {
     phoneCodeHash: hashResetToken(phoneCode),
-    emailCodeHash: hashResetToken(emailCode),
+    ...(needsEmailCode ? { emailCodeHash: hashResetToken(emailCode) } : {}),
     expiresAt: new Date(Date.now() + REGISTRATION_TTL_MS).toISOString(),
   });
 
@@ -353,17 +529,17 @@ router.post('/signup/resend', async (req, res) => {
   const phoneDelivered = isSmsConfigured()
     ? (await sendSms(pending.payload.phone, `Your Trothen phone verification code is ${phoneCode}.`)).sent
     : false;
-  const emailDelivered = isEmailConfigured()
+  const emailDelivered = needsEmailCode && isEmailConfigured()
     ? (await sendEmail(pending.payload.email, 'Verify your Trothen email', `Your Trothen email verification code is ${emailCode}.`)).sent
     : false;
 
-  if (phoneDelivered && emailDelivered) {
+  if (phoneDelivered && (!needsEmailCode || emailDelivered)) {
     return res.json({ testMode: false });
   }
 
-  console.log(`[TEST MODE] Resent registration codes for ${pending.payload.email} — phone: ${phoneDelivered ? 'sent for real' : phoneCode}, email: ${emailDelivered ? 'sent for real' : emailCode}`);
+  console.log(`[TEST MODE] Resent registration codes for ${pending.payload.email} — phone: ${phoneDelivered ? 'sent for real' : phoneCode}${needsEmailCode ? `, email: ${emailDelivered ? 'sent for real' : emailCode}` : ''}`);
 
-  res.json({ testMode: true, phoneCode: phoneDelivered ? undefined : phoneCode, emailCode: emailDelivered ? undefined : emailCode });
+  res.json({ testMode: true, phoneCode: phoneDelivered ? undefined : phoneCode, emailCode: (needsEmailCode && !emailDelivered) ? emailCode : undefined });
 });
 
 // POST /api/auth/login
