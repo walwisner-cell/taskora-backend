@@ -134,7 +134,17 @@ app.use('/api', (req, res) => {
 });
 
 // ---- Error handler ----
+// A blocked CORS request (an origin not in ALLOWED_ORIGINS) surfaces here
+// as a thrown Error from the cors() middleware above — without this check
+// it fell through to the generic 500 branch below, which is wrong twice
+// over: it told a legitimate caller "Internal server error" instead of
+// the real reason, and it logged every routine blocked cross-origin
+// request as if it were an actual application crash, burying real errors
+// in the noise. This is expected, working-as-designed traffic, not a bug.
 app.use((err, req, res, next) => {
+  if (err && err.message === 'Not allowed by CORS') {
+    return res.status(403).json({ error: 'This origin is not allowed to access this API.' });
+  }
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });
