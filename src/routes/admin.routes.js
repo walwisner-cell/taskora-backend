@@ -1607,7 +1607,7 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
-    ['password', isValidPassword(password), 'Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol'],
+    ['password', isValidPassword(password), 'Password must be at least 8 characters'],
     ['city', isNonEmptyString(city), 'City is required'],
     ['country', isNonEmptyString(country), 'Country is required'],
   ]);

@@ -56,15 +56,21 @@ const COMMON_WEAK_PASSWORDS = new Set([
   'abc123456', '11111111', '00000000', 'trothen123', // yes, even our own demo password shouldn't be reused for a real account
 ]);
 
+// Standard, modern password policy — this used to require a minimum
+// count of digits/letters/symbols (e.g. "at least 6 numbers"), which
+// isn't how real, well-regarded apps do this anymore. Forced composition
+// rules like that don't meaningfully improve security (NIST's own
+// digital identity guidelines, SP 800-63B, explicitly recommend against
+// them) and mostly just push people toward predictable patterns like
+// tacking "123!" onto a word. What actually matters is length and not
+// reusing a known-weak password — both still enforced here. The 72-byte
+// upper bound isn't arbitrary either: bcrypt (see hashPassword in
+// auth.js) silently ignores anything past 72 bytes, so allowing a longer
+// password than that would let someone set one where the extra
+// characters quietly don't count.
 function isValidPassword(password) {
   if (typeof password !== 'string') return false;
-  if (password.length < 9 || password.length > 200) return false;
-  const digitCount = (password.match(/[0-9]/g) || []).length;
-  const letterCount = (password.match(/[a-zA-Z]/g) || []).length;
-  const symbolCount = (password.match(/[^a-zA-Z0-9]/g) || []).length;
-  if (digitCount < 6) return false;
-  if (letterCount < 2) return false;
-  if (symbolCount < 1) return false;
+  if (password.length < 8 || password.length > 72) return false;
   if (COMMON_WEAK_PASSWORDS.has(password.toLowerCase())) return false;
   return true;
 }

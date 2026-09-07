@@ -264,7 +264,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
-    ['password', isValidPassword(password), 'Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol'],
+    ['password', isValidPassword(password), 'Password must be at least 8 characters'],
     ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
     ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
@@ -925,7 +925,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'currentPassword and newPassword are required' });
   }
   if (!isValidPassword(newPassword)) {
-    return res.status(400).json({ error: 'New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol' });
+    return res.status(400).json({ error: 'New password must be at least 8 characters' });
   }
   const user = await db.find('users', u => u.id === req.user.sub);
   if (!user || !verifyPassword(currentPassword, user.passwordHash)) {
@@ -1058,7 +1058,7 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
 router.post('/reset-password', otpLimiter, async (req, res) => {
   const { token, newPassword } = req.body || {};
   if (!isNonEmptyString(token)) return res.status(400).json({ error: 'Reset token is required' });
-  if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol' });
+  if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 8 characters' });
 
   const tokenHash = hashResetToken(token);
   const record = await db.find('passwordResets', r => r.tokenHash === tokenHash);
