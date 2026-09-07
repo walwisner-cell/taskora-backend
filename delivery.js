@@ -120,6 +120,16 @@ async function sendSms(to, body) {
 async function sendEmail(to, subject, text) {
   if (!isEmailConfigured()) return { sent: false, error: 'not_configured' };
   try {
+    // A plain-text-only email is more likely to get caught by some spam
+    // filters than one that also includes a proper HTML part — this is a
+    // real deliverability factor, not just cosmetics. text is always
+    // Trothen's own generated copy (a code, a link), never anything a
+    // user typed, but it's still escaped here rather than assumed safe.
+    const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html = `<div style="font-family:Arial,sans-serif;font-size:15px;color:#1B1E27;line-height:1.5;">
+      <p style="font-weight:700;font-size:18px;margin-bottom:16px;">Trothen</p>
+      <p>${escapeHtml(text).replace(/\n/g, '<br>')}</p>
+    </div>`;
     const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`, 'Content-Type': 'application/json' },
@@ -127,7 +137,10 @@ async function sendEmail(to, subject, text) {
         personalizations: [{ to: [{ email: to }] }],
         from: { email: process.env.SENDGRID_FROM_EMAIL, name: 'Trothen' },
         subject,
-        content: [{ type: 'text/plain', value: text }],
+        content: [
+          { type: 'text/plain', value: text },
+          { type: 'text/html', value: html },
+        ],
       }),
     });
     if (!res.ok) {
@@ -135,6 +148,14 @@ async function sendEmail(to, subject, text) {
       console.error(`[delivery] SendGrid email send failed (${res.status}): ${detail}`);
       return { sent: false, error: `sendgrid_${res.status}` };
     }
+    // SendGrid accepting the request (this 202) only means it queued the
+    // email — NOT that it was actually delivered. Real bounces, spam
+    // folder placement, or a mailbox rejecting it all happen afterward,
+    // invisible here. Logging the message ID is what makes that email
+    // findable in SendGrid's own Activity feed later, since this
+    // response can never tell the whole story on its own.
+    const messageId = res.headers.get('x-message-id');
+    console.log(`[delivery] SendGrid accepted email to ${to} (message id: ${messageId || 'unknown'}) — check SendGrid Activity for real delivery status`);
     return { sent: true };
   } catch (e) {
     console.error('[delivery] SendGrid email send threw:', e.message);
