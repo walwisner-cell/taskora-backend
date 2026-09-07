@@ -672,6 +672,42 @@ router.post('/login', loginLimiter, async (req, res) => {
 // POST /api/auth/login/verify-2fa — the second factor. Completes the
 // session only if the code matches and hasn't expired; the pending login
 // record is single-use either way, so a code can't be replayed.
+// POST /api/auth/login/verify-2fa/resend-email — switches this specific
+// pending login attempt over to email delivery. Exists for exactly the
+// situation where SMS was attempted but never actually arrived (a Twilio
+// account still on Trial can accept a Verify request without truly
+// delivering it to an unverified number) — gives the person a real way
+// forward instead of being stuck on a code that will never come.
+router.post('/login/verify-2fa/resend-email', otpLimiter, async (req, res) => {
+  const { pendingLoginId } = req.body || {};
+  if (!isNonEmptyString(pendingLoginId)) return res.status(400).json({ error: 'pendingLoginId is required' });
+  const pending = await db.find('pendingLogins', p => p.id === pendingLoginId);
+  if (!pending) return res.status(400).json({ error: 'This login attempt has expired. Please sign in again.' });
+  if (new Date(pending.expiresAt) < new Date()) {
+    await db.remove('pendingLogins', pending.id);
+    return res.status(400).json({ error: 'This login attempt has expired. Please sign in again.' });
+  }
+  const user = await db.find('users', u => u.id === pending.userId);
+  if (!user) return res.status(404).json({ error: 'Account not found' });
+
+  const { isEmailConfigured, sendEmail } = require('../delivery');
+  const code = generateSixDigitCode();
+  const emailDelivered = isEmailConfigured() && user.email
+    ? (await sendEmail(user.email, 'Your Trothen sign-in code', `Your sign-in code is ${code}. It expires in 10 minutes.`)).sent
+    : false;
+
+  await db.update('pendingLogins', pending.id, { codeMethod: 'local', codeHash: hashResetToken(code) });
+
+  if (emailDelivered) return res.json({ testMode: false });
+
+  console.log(`[TEST MODE] Resent 2FA code by email for ${user.email}: ${code}`);
+  res.json({
+    testMode: true,
+    testModeNote: 'No real email provider is configured yet — the code is returned directly instead of being sent. Do not do this in production.',
+    code,
+  });
+});
+
 router.post('/login/verify-2fa', otpLimiter, async (req, res) => {
   const { pendingLoginId, code } = req.body || {};
   if (!pendingLoginId || !code) return res.status(400).json({ error: 'pendingLoginId and code are required' });
