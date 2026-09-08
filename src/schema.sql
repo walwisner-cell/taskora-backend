@@ -746,9 +746,3 @@ CREATE TABLE IF NOT EXISTS category_images (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ
 );
-
--- Google Sign-In: links a user to their Google account (the 'sub' claim
--- from their verified ID token). NULL for anyone who signed up with
--- email/password and never connected Google. Unique so the same Google
--- account can't end up attached to two different Trothen accounts.
-ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT UNIQUE;

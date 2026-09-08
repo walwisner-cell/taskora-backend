@@ -647,25 +647,6 @@ router.get('/verification-queue', requireDepartment(['verification']), async (re
   res.json({ queue });
 });
 
-// GET /api/admin/verification/:id/document — the actual document a
-// verification-department admin needs to look at before approving or
-// rejecting. Same regional scoping as the decide endpoint below (a
-// regional admin can't reach into another city's submissions), and reads
-// from PRIVATE_UPLOADS_DIR, never the public /uploads static folder.
-router.get('/verification/:id/document', requireDepartment(['verification']), async (req, res) => {
-  const record = await db.find('verifications', v => v.id === req.params.id);
-  if (!record || !record.documentFilename) return res.status(404).json({ error: 'Document not found' });
-  const region = await myRegion(req);
-  const user = await db.find('users', u => u.id === record.userId);
-  if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
-  const { PRIVATE_UPLOADS_DIR } = require('../uploads');
-  const path = require('path');
-  const fs = require('fs');
-  const filePath = path.join(PRIVATE_UPLOADS_DIR, record.documentFilename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Document not found' });
-  res.sendFile(filePath);
-});
-
 // POST /api/admin/verification/:id/decide  { decision: 'approve' | 'reject' }
 router.post('/verification/:id/decide', requireDepartment(['verification']), async (req, res) => {
   const { decision } = req.body || {};
@@ -1607,7 +1588,7 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
-    ['password', isValidPassword(password), 'Password must be at least 8 characters'],
+    ['password', isValidPassword(password), 'Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol'],
     ['city', isNonEmptyString(city), 'City is required'],
     ['country', isNonEmptyString(country), 'Country is required'],
   ]);

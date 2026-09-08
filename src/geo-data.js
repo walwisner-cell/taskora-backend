@@ -110,25 +110,4 @@ function dialCodeForCountry(country) {
   return DIAL_CODE_BY_COUNTRY[country] || '';
 }
 
-// Real, country-specific accepted ID document types — the same "show
-// what's actually issued in this country" pattern used by real identity
-// platforms (Persona, Onfido, Jumio, Stripe Identity) rather than one
-// generic "Government ID" dropdown for the whole world. Covers Trothen's
-// current live countries with their actual, correctly-named documents;
-// GENERIC_ID_DOCUMENT_TYPES is the sensible fallback for every other
-// country in COUNTRIES above, so this never blocks anyone — it only ever
-// adds more specific, locally-correct options where they're known.
-const GENERIC_ID_DOCUMENT_TYPES = ['Passport', 'National ID Card', "Driver's License"];
-
-const ID_DOCUMENT_TYPES_BY_COUNTRY = {
-  'United States': ['Driver\'s License', 'State ID Card', 'U.S. Passport', 'Passport Card'],
-  'Nigeria': ['National ID (NIN) Slip', 'International Passport', 'Driver\'s License', 'Permanent Voter\'s Card (PVC)'],
-  'Ghana': ['Ghana Card (National ID)', 'Passport', 'Driver\'s License', 'Voter ID'],
-  'Liberia': ['National ID Card', 'Passport', 'Driver\'s License'],
-};
-
-function idDocumentTypesForCountry(country) {
-  return ID_DOCUMENT_TYPES_BY_COUNTRY[country] || GENERIC_ID_DOCUMENT_TYPES;
-}
-
-module.exports = { COUNTRIES, STATES_BY_COUNTRY, statesForCountry, DIAL_CODE_BY_COUNTRY, dialCodeForCountry, idDocumentTypesForCountry };
+module.exports = { COUNTRIES, STATES_BY_COUNTRY, statesForCountry, DIAL_CODE_BY_COUNTRY, dialCodeForCountry };

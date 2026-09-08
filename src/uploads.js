@@ -20,30 +20,6 @@ const UPLOADS_DIR = usingConfiguredDir
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-// Identity documents (government ID photos, etc. submitted for manual
-// verification review) are fundamentally different from everything else
-// in UPLOADS_DIR above: portfolio photos, resumes, and promo images are
-// all meant to be viewable by anyone with the link, which is exactly why
-// UPLOADS_DIR is mounted at /uploads as a public static folder in
-// server.js. A government ID must never sit in that same publicly-served
-// tree — this is a genuinely separate directory, never passed to
-// express.static anywhere, and only ever read by the two protected
-// routes that stream a specific document to its owner or an authorized
-// verification-team admin (see /verification/:id/document in
-// misc.routes.js and admin.routes.js).
-const usingConfiguredPrivateDir = !!process.env.PRIVATE_UPLOADS_DIR;
-const PRIVATE_UPLOADS_DIR = usingConfiguredPrivateDir
-  ? process.env.PRIVATE_UPLOADS_DIR
-  : path.join(__dirname, '..', 'private-uploads');
-
-if (!fs.existsSync(PRIVATE_UPLOADS_DIR)) fs.mkdirSync(PRIVATE_UPLOADS_DIR, { recursive: true });
-
-if (usingConfiguredPrivateDir) {
-  console.log(`✅ Identity verification documents will be saved to: ${PRIVATE_UPLOADS_DIR} (PRIVATE_UPLOADS_DIR is set)`);
-} else {
-  console.log(`⚠️  PRIVATE_UPLOADS_DIR is not set — identity documents will be saved to ${PRIVATE_UPLOADS_DIR}, which will NOT survive a redeploy or restart on most hosting platforms. Set PRIVATE_UPLOADS_DIR to a path on your persistent disk (e.g. /var/data/private-uploads on Render, a DIFFERENT subfolder than UPLOADS_DIR) for uploads to actually stick around.`);
-}
-
 // Loud, unmissable startup log — this is exactly the kind of misconfiguration
 // (uploads silently landing somewhere that doesn't persist) that's otherwise
 // invisible until someone notices a photo vanished. If UPLOADS_DIR isn't set,
@@ -81,7 +57,7 @@ function verifyVideoMagicBytes(filePath, declaredMimetype) {
   }
 }
 
-module.exports = { UPLOADS_DIR, PRIVATE_UPLOADS_DIR, verifyImageMagicBytes, verifyPdfMagicBytes, verifyVideoMagicBytes };
+module.exports = { UPLOADS_DIR, verifyImageMagicBytes, verifyPdfMagicBytes, verifyVideoMagicBytes };
 
 // Every upload endpoint in this app validates a file by its CLIENT-DECLARED
 // mimetype (from the multipart form field) — which is exactly what an

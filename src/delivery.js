@@ -19,52 +19,59 @@ function isSmsConfigured() {
   return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER);
 }
 
-// Twilio Verify is a DIFFERENT product from plain Twilio SMS above — it's
-// purpose-built for exactly one thing (send a code, check a code) and
-// deliberately doesn't need a sending phone number or A2P 10DLC
-// registration the way sendSms()'s raw Messages API does. Twilio
-// generates and tracks the code itself; this app never sees or stores
-// it — startPhoneVerification() and checkPhoneVerification() below are
-// the only two calls involved. If both this AND plain SMS end up
-// configured, callers should prefer Verify for anything that's actually
-// a verification code, and reserve sendSms() for free-text messages
-// Verify has no way to send (e.g. the document-upload reminder nudge).
-function isPhoneVerifyConfigured() {
+// Twilio Verify — a separate Twilio product built specifically for
+// one-time verification codes, distinct from plain SMS sending above.
+// The real, meaningful difference: sending a code via plain SMS (via
+// TWILIO_FROM_NUMBER) legally requires registering as a business under
+// A2P 10DLC — a real brand/campaign registration with a 10-15 day
+// carrier approval wait, and a paid Twilio account (trial accounts
+// can't register at all). Verify is exempt from that whole process:
+// no phone number to buy, no business registration, works the moment
+// it's configured. The tradeoff is real too — Twilio generates and
+// owns the actual code, so this can't be used anywhere the app needs
+// to know the code itself (e.g. to use the same one as an email
+// fallback) — see the 2FA login flow in this file for exactly that
+// case, which deliberately stays on plain SMS for that reason.
+function isVerifyConfigured() {
   return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_VERIFY_SERVICE_SID);
 }
 
-async function startPhoneVerification(phone) {
-  if (!isPhoneVerifyConfigured()) return { started: false, error: 'not_configured' };
+// Starts a real Verify check — Twilio generates its own code and texts
+// it directly, so there's no code for this app to see or store. Returns
+// { started: true } on success; callers fall back to the existing
+// test-mode/plain-SMS behavior on failure or when not configured.
+async function startPhoneVerification(to) {
+  if (!isVerifyConfigured()) return { started: false, error: 'not_configured' };
   try {
     const sid = process.env.TWILIO_ACCOUNT_SID;
     const auth = Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
-    const params = new URLSearchParams({ To: phone, Channel: 'sms' });
+    const params = new URLSearchParams({ To: to, Channel: 'sms' });
     const res = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SERVICE_SID}/Verifications`, {
       method: 'POST',
       headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
     });
-    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      console.error(`[delivery] Twilio Verify start failed (${res.status}): ${data.message || ''}`);
-      return { started: false, error: `twilio_verify_${res.status}` };
+      const detail = await res.text().catch(() => '');
+      console.error(`[delivery] Twilio Verify start failed (${res.status}): ${detail}`);
+      return { started: false, error: `verify_${res.status}` };
     }
-    return { started: data.status === 'pending' };
+    return { started: true };
   } catch (e) {
     console.error('[delivery] Twilio Verify start threw:', e.message);
     return { started: false, error: 'network' };
   }
 }
 
-// Returns { approved: true } only when Twilio itself confirms the code
-// matches what it sent — this app never has its own copy of the code to
-// compare against, which is the whole point of using Verify.
-async function checkPhoneVerification(phone, code) {
-  if (!isPhoneVerifyConfigured()) return { approved: false, error: 'not_configured' };
+// Checks a code the person actually typed in against what Twilio Verify
+// sent — this is the only way to know if it's correct, since this app
+// never sees the real code Twilio generated.
+async function checkPhoneVerification(to, code) {
+  if (!isVerifyConfigured()) return { approved: false, error: 'not_configured' };
   try {
     const sid = process.env.TWILIO_ACCOUNT_SID;
     const auth = Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
-    const params = new URLSearchParams({ To: phone, Code: code });
+    const params = new URLSearchParams({ To: to, Code: code });
     const res = await fetch(`https://verify.twilio.com/v2/Services/${process.env.TWILIO_VERIFY_SERVICE_SID}/VerificationCheck`, {
       method: 'POST',
       headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -72,11 +79,8 @@ async function checkPhoneVerification(phone, code) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      // A 404 here just means "no pending verification for this number"
-      // (expired, already used, or never started) — a normal outcome,
-      // not a real error worth logging loudly.
-      if (res.status !== 404) console.error(`[delivery] Twilio Verify check failed (${res.status}): ${data.message || ''}`);
-      return { approved: false };
+      console.error(`[delivery] Twilio Verify check failed (${res.status}):`, JSON.stringify(data));
+      return { approved: false, error: `verify_${res.status}` };
     }
     return { approved: data.status === 'approved' };
   } catch (e) {
@@ -120,16 +124,6 @@ async function sendSms(to, body) {
 async function sendEmail(to, subject, text) {
   if (!isEmailConfigured()) return { sent: false, error: 'not_configured' };
   try {
-    // A plain-text-only email is more likely to get caught by some spam
-    // filters than one that also includes a proper HTML part — this is a
-    // real deliverability factor, not just cosmetics. text is always
-    // Trothen's own generated copy (a code, a link), never anything a
-    // user typed, but it's still escaped here rather than assumed safe.
-    const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const html = `<div style="font-family:Arial,sans-serif;font-size:15px;color:#1B1E27;line-height:1.5;">
-      <p style="font-weight:700;font-size:18px;margin-bottom:16px;">Trothen</p>
-      <p>${escapeHtml(text).replace(/\n/g, '<br>')}</p>
-    </div>`;
     const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`, 'Content-Type': 'application/json' },
@@ -137,10 +131,7 @@ async function sendEmail(to, subject, text) {
         personalizations: [{ to: [{ email: to }] }],
         from: { email: process.env.SENDGRID_FROM_EMAIL, name: 'Trothen' },
         subject,
-        content: [
-          { type: 'text/plain', value: text },
-          { type: 'text/html', value: html },
-        ],
+        content: [{ type: 'text/plain', value: text }],
       }),
     });
     if (!res.ok) {
@@ -148,14 +139,6 @@ async function sendEmail(to, subject, text) {
       console.error(`[delivery] SendGrid email send failed (${res.status}): ${detail}`);
       return { sent: false, error: `sendgrid_${res.status}` };
     }
-    // SendGrid accepting the request (this 202) only means it queued the
-    // email — NOT that it was actually delivered. Real bounces, spam
-    // folder placement, or a mailbox rejecting it all happen afterward,
-    // invisible here. Logging the message ID is what makes that email
-    // findable in SendGrid's own Activity feed later, since this
-    // response can never tell the whole story on its own.
-    const messageId = res.headers.get('x-message-id');
-    console.log(`[delivery] SendGrid accepted email to ${to} (message id: ${messageId || 'unknown'}) — check SendGrid Activity for real delivery status`);
     return { sent: true };
   } catch (e) {
     console.error('[delivery] SendGrid email send threw:', e.message);
@@ -163,4 +146,4 @@ async function sendEmail(to, subject, text) {
   }
 }
 
-module.exports = { isSmsConfigured, isEmailConfigured, sendSms, sendEmail, isPhoneVerifyConfigured, startPhoneVerification, checkPhoneVerification };
+module.exports = { isSmsConfigured, isVerifyConfigured, sendSms, isEmailConfigured, sendEmail, startPhoneVerification, checkPhoneVerification };

@@ -1,14 +1,11 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const { nanoid } = require('nanoid');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
-const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken, hashResetToken, JWT_SECRET } = require('../auth');
+const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken, hashResetToken } = require('../auth');
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, isValidName, validate, postalCodeErrorMessage } = require('../validators');
 const { notify } = require('../notify');
 const { generateUniqueReferralCode } = require('../referral-code');
-const { verifyGoogleIdToken, isGoogleConfigured } = require('../google-auth');
 
 const router = express.Router();
 
@@ -64,199 +61,6 @@ function generateSixDigitCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-// Centralizes the "how do we actually get a phone code to this person"
-// decision so every phone-verification code path in this file (there are
-// several: signup, Google signup, resend, admin 2FA, standalone phone
-// re-verification) makes the same choice the same way: prefer real
-// Twilio Verify if it's configured (Twilio generates and tracks the code
-// itself — this app never sees or stores it), fall back to generating our
-// own code and texting it via plain Twilio SMS if only that's set up,
-// and fall back further to on-screen test mode if neither is configured.
-// The chosen method is always returned so the caller can store it
-// alongside whatever record needs to remember it later, and
-// confirmPhoneVerification() below reads that same stored method back —
-// never re-checks env vars at verify time, so a mid-flight config change
-// can't create a mismatch between how a code was sent and how it's checked.
-async function beginPhoneVerification(phone) {
-  const { isPhoneVerifyConfigured, startPhoneVerification, isSmsConfigured, sendSms } = require('../delivery');
-  if (isPhoneVerifyConfigured()) {
-    const { started } = await startPhoneVerification(phone);
-    if (started) return { method: 'twilio_verify', testMode: false };
-    // Configured but the actual send failed (bad number, Twilio outage,
-    // etc.) — fall through to test mode rather than leaving the person
-    // stuck with no way to finish.
-  }
-  const phoneCode = generateSixDigitCode();
-  if (isSmsConfigured()) {
-    const delivered = (await sendSms(phone, `Your Trothen phone verification code is ${phoneCode}.`)).sent;
-    if (delivered) return { method: 'plain_sms', phoneCode, phoneCodeHash: hashResetToken(phoneCode), testMode: false };
-  }
-  return { method: 'test_mode', phoneCode, phoneCodeHash: hashResetToken(phoneCode), testMode: true };
-}
-
-// storedMethod/storedHash come from whatever beginPhoneVerification()
-// returned when the code was originally sent (a pendingRegistration, a
-// pending login, or the user record itself for standalone re-verification).
-async function confirmPhoneVerification(phone, submittedCode, storedMethod, storedHash) {
-  if (storedMethod === 'twilio_verify') {
-    const { checkPhoneVerification } = require('../delivery');
-    const { approved } = await checkPhoneVerification(phone, submittedCode.trim());
-    return approved;
-  }
-  return hashResetToken(submittedCode.trim()) === storedHash;
-}
-
-// ── GOOGLE SIGN-IN ───────────────────────────────────────────────────────────
-// GET /api/auth/google/config — tells the frontend whether Google sign-in is
-// actually wired up on this server, and hands back the Client ID (not a
-// secret — it's meant to be public, it's embedded in every "Sign in with
-// Google" button on the web) so the real button only renders when it will
-// actually work, instead of a dead placeholder.
-router.get('/google/config', (req, res) => {
-  res.json({ enabled: isGoogleConfigured(), clientId: isGoogleConfigured() ? process.env.GOOGLE_CLIENT_ID : null });
-});
-
-// POST /api/auth/google — `credential` is the ID token Google's own button
-// hands back after the person picks their Google account. It's verified
-// server-side (signature + audience, see ../google-auth) before anything
-// here trusts it — the frontend can't forge who signed in. Two outcomes:
-// an email Trothen already has signs straight in (Google already proved
-// identity, so no password or 2FA step here — the same trust decision most
-// consumer apps make for OAuth sign-in). A brand-new email gets a
-// short-lived signup ticket instead, since Google only hands over a name
-// and email, and a Trothen account also needs a phone number, address, and
-// role that Google has no way to supply.
-router.post('/google', loginLimiter, async (req, res) => {
-  const { credential } = req.body || {};
-  let g;
-  try {
-    g = await verifyGoogleIdToken(credential);
-  } catch (e) {
-    return res.status(400).json({ error: e.message });
-  }
-  const existing = await db.find('users', u => u.email.toLowerCase() === g.email.toLowerCase());
-  if (existing) {
-    if (existing.active === false) {
-      return res.status(403).json({ error: 'This account has been suspended. Contact a super admin for access.' });
-    }
-    if (existing.status === 'rejected') {
-      return res.status(403).json({ error: 'This account application was not approved. Contact support if you believe this was a mistake.' });
-    }
-    if (!existing.googleId) {
-      await db.update('users', existing.id, { googleId: g.sub });
-      existing.googleId = g.sub;
-    }
-    const token = signToken(existing);
-    return res.json({ token, user: publicUser(existing) });
-  }
-
-  const googleSignupToken = jwt.sign(
-    { purpose: 'google_signup', email: g.email, name: g.name, sub: g.sub },
-    JWT_SECRET,
-    { expiresIn: '15m' }
-  );
-  res.json({ needsSignup: true, googleSignupToken, name: g.name, email: g.email });
-});
-
-// POST /api/auth/google/signup — completes account creation for a brand-new
-// Google sign-in. The googleSignupToken (issued by POST /google above) is
-// the only proof of identity here — it stands in for the
-// password + two-code verification a normal signup requires, since Google
-// already verified this email a few minutes ago. Everything else Trothen
-// needs (phone, address, role, etc.) still has to be collected, same as
-// any signup, and the phone number still goes through the same real OTP
-// check — Google vouches for the email, not the phone.
-router.post('/google/signup', signupLimiter, async (req, res) => {
-  const { googleSignupToken, role, country, state, city, phone, address, zipCode, category, skills, inviteCode, referralCode } = req.body || {};
-  let ticket;
-  try {
-    ticket = jwt.verify(googleSignupToken, JWT_SECRET);
-  } catch (e) {
-    return res.status(400).json({ error: 'This Google sign-in has expired — please sign in with Google again.' });
-  }
-  if (ticket.purpose !== 'google_signup' || !ticket.email) {
-    return res.status(400).json({ error: 'Invalid Google sign-in ticket.' });
-  }
-  const email = ticket.email;
-  const name = ticket.name || email.split('@')[0];
-
-  const errors = validate([
-    ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
-    ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
-    ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
-    ['address', isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address'],
-    ['country', isNonEmptyString(country, { min: 2, max: 100 }), 'Select your country'],
-    ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
-    ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
-  ]);
-  if (role === 'provider') {
-    errors.push(...validate([
-      ['category', isNonEmptyString(category), 'Select your primary service category'],
-      ['skills', isNonEmptyString(skills, { min: 2, max: 300 }), 'List at least one skill or specialty'],
-    ]));
-  }
-  if (errors.length) return res.status(400).json({ error: errors[0], errors });
-
-  const existing = await db.find('users', u => u.email.toLowerCase() === email.toLowerCase());
-  if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
-
-  // Same org-invite and referral handling as /signup/start.
-  let inviteOrgId = null;
-  const trimmedInviteCode = (inviteCode || '').trim().toUpperCase();
-  if (trimmedInviteCode) {
-    if (role !== 'provider') return res.status(400).json({ error: 'Organization invite links are for provider accounts' });
-    const invite = await db.find('organizationInvites', i => i.code === trimmedInviteCode);
-    if (!invite) return res.status(400).json({ error: 'This invite link is invalid' });
-    if (invite.status !== 'active') return res.status(400).json({ error: 'This invite link has been revoked' });
-    if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) return res.status(400).json({ error: 'This invite link has expired' });
-    if (invite.maxUses != null && invite.usesCount >= invite.maxUses) return res.status(400).json({ error: 'This invite link has reached its usage limit' });
-    inviteOrgId = invite.organizationId;
-  }
-  let referrer = null;
-  const trimmedReferralCode = (referralCode || '').trim().toUpperCase();
-  if (trimmedReferralCode) {
-    referrer = await db.find('users', u => u.referralCode === trimmedReferralCode);
-    if (!referrer) return res.status(400).json({ error: 'This referral link isn\'t valid' });
-  }
-
-  const trimmedPhone = phone.trim();
-  const phoneResult = await beginPhoneVerification(trimmedPhone);
-  const pending = {
-    id: `preg_${nanoid(12)}`,
-    payload: {
-      name, email, password: null, googleSub: ticket.sub,
-      role, country: country.trim(), state: state.trim(), city: city.trim(),
-      phone: trimmedPhone, address: address.trim(), zipCode: (zipCode || '').trim(),
-      category, skills, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null,
-    },
-    phoneVerifyMethod: phoneResult.method,
-    phoneCodeHash: phoneResult.phoneCodeHash || null, // null when using real Twilio Verify — nothing local to check
-    emailCodeHash: null, // already verified by Google — nothing to check at /signup/verify
-    phoneVerified: false,
-    emailVerified: true,
-    expiresAt: new Date(Date.now() + REGISTRATION_TTL_MS).toISOString(),
-    createdAt: new Date().toISOString(),
-  };
-  await db.insert('pendingRegistrations', pending);
-
-  if (!phoneResult.testMode) {
-    return res.status(201).json({
-      pendingId: pending.id,
-      message: `Enter the code sent to ${trimmedPhone} to finish creating your account.`,
-      testMode: false,
-      joiningOrganization: inviteOrgId ? true : false,
-    });
-  }
-  console.log(`[TEST MODE] Google-signup phone code for ${email} — phone: ${phoneResult.phoneCode}`);
-  res.status(201).json({
-    pendingId: pending.id,
-    testMode: true,
-    testModeNote: 'No real SMS provider is configured yet — the code is returned directly instead of being sent. Do not do this in production.',
-    phoneCode: phoneResult.phoneCode,
-    joiningOrganization: inviteOrgId ? true : false,
-  });
-});
-
 // POST /api/auth/signup/start — validates everything and issues both codes,
 // but does NOT create the account yet.
 router.post('/signup/start', signupLimiter, async (req, res) => {
@@ -264,7 +68,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
-    ['password', isValidPassword(password), 'Password must be at least 8 characters'],
+    ['password', isValidPassword(password), 'Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol'],
     ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
     ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
@@ -317,16 +121,12 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
     if (!referrer) return res.status(400).json({ error: 'This referral link isn\'t valid' });
   }
 
-  const trimmedPhone = phone.trim();
-  const trimmedEmail = email.trim();
-  const phoneResult = await beginPhoneVerification(trimmedPhone);
+  const { isEmailConfigured, sendEmail } = require('../delivery');
   const emailCode = generateSixDigitCode();
 
   const pending = {
     id: `preg_${nanoid(12)}`,
-    payload: { name: name.trim(), email: trimmedEmail, password, role, country: country.trim(), state: state.trim(), city: city.trim(), phone: trimmedPhone, address: address.trim(), zipCode: (zipCode || '').trim(), category, skills, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null },
-    phoneVerifyMethod: phoneResult.method,
-    phoneCodeHash: phoneResult.phoneCodeHash || null,
+    payload: { name: name.trim(), email: email.trim(), password, role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category, skills, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null },
     emailCodeHash: hashResetToken(emailCode),
     phoneVerified: false,
     emailVerified: false,
@@ -335,50 +135,44 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
   };
   await db.insert('pendingRegistrations', pending);
 
-  const { isEmailConfigured, sendEmail } = require('../delivery');
   const emailDelivered = isEmailConfigured()
-    ? (await sendEmail(trimmedEmail, 'Verify your Trothen email', `Your Trothen email verification code is ${emailCode}.`)).sent
+    ? (await sendEmail(email.trim(), 'Verify your Trothen email', `Your Trothen email verification code is ${emailCode}.`)).sent
     : false;
 
-  if (!phoneResult.testMode && emailDelivered) {
+  if (emailDelivered) {
     return res.status(201).json({
       pendingId: pending.id,
-      message: `Enter the code sent to ${trimmedPhone} and the code sent to ${trimmedEmail} to finish creating your account.`,
+      message: `Enter the code sent to ${email.trim()} to finish creating your account.`,
       testMode: false,
       joiningOrganization: inviteOrgId ? true : false,
     });
   }
 
-  // At least one channel isn't delivering for real yet (not configured, or
-  // a send just failed) — same test-mode fallback as before for whichever
-  // code(s) didn't go out, so signup is never blocked by a delivery gap.
-  console.log(`[TEST MODE] Registration codes for ${trimmedEmail} — phone: ${phoneResult.testMode ? phoneResult.phoneCode : 'sent for real'}, email: ${emailDelivered ? 'sent for real' : emailCode}`);
+  // Email isn't delivering for real yet (not configured, or the send just
+  // failed) — same test-mode fallback as before, so signup is never
+  // blocked by a delivery gap.
+  console.log(`[TEST MODE] Registration code for ${email.trim()}: ${emailCode}`);
 
   res.status(201).json({
     pendingId: pending.id,
-    message: `Enter the code sent to ${trimmedPhone} and the code sent to ${trimmedEmail} to finish creating your account.`,
+    message: `Enter the code sent to ${email.trim()} to finish creating your account.`,
     testMode: true,
-    testModeNote: 'No real SMS or email provider is configured yet — both codes are returned directly instead of being sent. Do not do this in production.',
-    phoneCode: phoneResult.testMode ? phoneResult.phoneCode : undefined,
-    emailCode: emailDelivered ? undefined : emailCode,
+    testModeNote: 'No real email provider is configured yet — the code is returned directly instead of being sent. Do not do this in production.',
+    emailCode,
     joiningOrganization: inviteOrgId ? true : false,
   });
 });
 
-// POST /api/auth/signup/verify — both codes must match before the account
-// is actually created.
+// POST /api/auth/signup/verify — the email code must match before the
+// account is actually created. Phone verification is not required to
+// complete signup — see completeSignupVerify below for why.
 router.post('/signup/verify', otpLimiter, async (req, res) => {
-  const { pendingId, phoneCode, emailCode } = req.body || {};
-  if (!isNonEmptyString(pendingId) || !isNonEmptyString(phoneCode)) {
-    return res.status(400).json({ error: 'pendingId and phoneCode are required' });
+  const { pendingId, emailCode } = req.body || {};
+  if (!isNonEmptyString(pendingId) || !isNonEmptyString(emailCode)) {
+    return res.status(400).json({ error: 'pendingId and emailCode are required' });
   }
   const pending = await db.find('pendingRegistrations', p => p.id === pendingId);
   if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found — please start again' });
-  // A Google signup already has its email verified (see pending.emailCodeHash
-  // below) — only a normal email/password signup still needs this code.
-  if (pending.emailCodeHash && !isNonEmptyString(emailCode)) {
-    return res.status(400).json({ error: 'pendingId, phoneCode, and emailCode are all required' });
-  }
   if (new Date(pending.expiresAt) < new Date()) {
     await db.remove('pendingRegistrations', pending.id);
     return res.status(400).json({ error: 'This registration has expired — please start again' });
@@ -401,15 +195,14 @@ router.post('/signup/verify', otpLimiter, async (req, res) => {
 });
 
 async function completeSignupVerify(req, res, pending) {
-  const { phoneCode, emailCode } = req.body || {};
-  const phoneOk = await confirmPhoneVerification(pending.payload.phone, phoneCode, pending.phoneVerifyMethod, pending.phoneCodeHash);
-  if (!phoneOk) {
-    return res.status(400).json({ error: 'That phone code is incorrect' });
-  }
-  if (pending.emailCodeHash) {
-    if (!isNonEmptyString(emailCode) || hashResetToken(emailCode.trim()) !== pending.emailCodeHash) {
-      return res.status(400).json({ error: 'That email code is incorrect' });
-    }
+  const { emailCode } = req.body || {};
+  // Phone verification is no longer required to complete signup — email is
+  // the one channel that has to be confirmed here. A provider or customer
+  // can still verify their phone later from Settings (see
+  // /send-phone-otp and /verify-phone-otp below) once that's useful to
+  // them, e.g. for 2FA.
+  if (hashResetToken(emailCode.trim()) !== pending.emailCodeHash) {
+    return res.status(400).json({ error: 'That email code is incorrect' });
   }
 
   // Re-check email uniqueness — someone else could have registered the same
@@ -446,17 +239,10 @@ async function completeSignupVerify(req, res, pending) {
     phone: payload.phone,
     address: payload.address,
     zipCode: payload.zipCode,
-    phoneVerified: true, // genuinely true this time — they just proved it as part of registering
+    phoneVerified: false, // phone is no longer verified as part of signup — see /send-phone-otp and /verify-phone-otp for how someone can verify it later, e.g. for 2FA
     initials: trimmedName.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
     verified: false,
-    // A Google signup never collects a password (payload.password is
-    // null) — a long random hash is generated instead so passwordHash's
-    // NOT NULL constraint is satisfied and this account simply can't be
-    // logged into with a password. They can still set a real one later
-    // through the existing Forgot Password flow whenever they want a
-    // second way in besides Google.
-    passwordHash: payload.password ? hashPassword(payload.password) : hashPassword(crypto.randomBytes(32).toString('hex')),
-    ...(payload.googleSub ? { googleId: payload.googleSub } : {}),
+    passwordHash: hashPassword(payload.password),
     referralCode: await generateUniqueReferralCode(),
     referredByUserId: payload.referredByUserId || null,
     createdAt: new Date().toISOString(),
@@ -552,32 +338,25 @@ router.post('/signup/resend', async (req, res) => {
   const pending = await db.find('pendingRegistrations', p => p.id === pendingId);
   if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found — please start again' });
 
-  // A Google signup never had its own email code — pending.emailCodeHash is
-  // null (Google already verified that email). Resending must not
-  // reintroduce an email-code requirement here, since the frontend for
-  // that flow has no field to enter one.
-  const needsEmailCode = !!pending.emailCodeHash;
-  const phoneResult = await beginPhoneVerification(pending.payload.phone);
-  const emailCode = needsEmailCode ? generateSixDigitCode() : null;
+  const { isEmailConfigured, sendEmail } = require('../delivery');
+  const emailCode = generateSixDigitCode();
+
   await db.update('pendingRegistrations', pending.id, {
-    phoneVerifyMethod: phoneResult.method,
-    phoneCodeHash: phoneResult.phoneCodeHash || null,
-    ...(needsEmailCode ? { emailCodeHash: hashResetToken(emailCode) } : {}),
+    emailCodeHash: hashResetToken(emailCode),
     expiresAt: new Date(Date.now() + REGISTRATION_TTL_MS).toISOString(),
   });
 
-  const { isEmailConfigured, sendEmail } = require('../delivery');
-  const emailDelivered = needsEmailCode && isEmailConfigured()
+  const emailDelivered = isEmailConfigured()
     ? (await sendEmail(pending.payload.email, 'Verify your Trothen email', `Your Trothen email verification code is ${emailCode}.`)).sent
     : false;
 
-  if (!phoneResult.testMode && (!needsEmailCode || emailDelivered)) {
+  if (emailDelivered) {
     return res.json({ testMode: false });
   }
 
-  console.log(`[TEST MODE] Resent registration codes for ${pending.payload.email} — phone: ${phoneResult.testMode ? phoneResult.phoneCode : 'sent for real'}${needsEmailCode ? `, email: ${emailDelivered ? 'sent for real' : emailCode}` : ''}`);
+  console.log(`[TEST MODE] Resent registration code for ${pending.payload.email}: ${emailCode}`);
 
-  res.json({ testMode: true, phoneCode: phoneResult.testMode ? phoneResult.phoneCode : undefined, emailCode: (needsEmailCode && !emailDelivered) ? emailCode : undefined });
+  res.json({ testMode: true, emailCode });
 });
 
 // POST /api/auth/login
@@ -612,50 +391,31 @@ router.post('/login', loginLimiter, async (req, res) => {
   // is returned directly rather than silently not being sent) is required
   // before a real session token is issued.
   if (user.twoFactorEnabled) {
+    const code = generateSixDigitCode();
     const pendingLogin = {
       id: `plogin_${nanoid(10)}`,
       userId: user.id,
+      codeHash: hashResetToken(code),
       expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes
       createdAt: new Date().toISOString(),
     };
-
-    // Try phone first (via the same Twilio-Verify-aware helper every other
-    // phone code in this file uses), then fall back to email as a second
-    // real channel if phone doesn't actually deliver — same priority order
-    // as before, just phone's leg now prefers real Twilio Verify over a
-    // locally-generated code when it's configured.
-    let phoneResult = null;
-    if (user.phone) phoneResult = await beginPhoneVerification(user.phone);
-
-    if (phoneResult && !phoneResult.testMode) {
-      pendingLogin.codeMethod = phoneResult.method;
-      pendingLogin.codeHash = phoneResult.phoneCodeHash || null;
-      await db.insert('pendingLogins', pendingLogin);
-      return res.json({ requires2FA: true, pendingLoginId: pendingLogin.id, testMode: false });
-    }
-
-    const { isEmailConfigured, sendEmail } = require('../delivery');
-    const emailCode = generateSixDigitCode();
-    const emailDelivered = isEmailConfigured() && user.email
-      ? (await sendEmail(user.email, 'Your Trothen sign-in code', `Your sign-in code is ${emailCode}. It expires in 10 minutes.`)).sent
-      : false;
-
-    if (emailDelivered) {
-      pendingLogin.codeMethod = 'local';
-      pendingLogin.codeHash = hashResetToken(emailCode);
-      await db.insert('pendingLogins', pendingLogin);
-      return res.json({ requires2FA: true, pendingLoginId: pendingLogin.id, testMode: false });
-    }
-
-    // Neither channel delivered for real — same test-mode fallback as
-    // before, so a delivery hiccup never locks someone out of their own
-    // account. Prefer showing the phone code if one was generated (it's
-    // what a real deployment would actually be sending), otherwise the
-    // email one.
-    const code = (phoneResult && phoneResult.phoneCode) || emailCode;
-    pendingLogin.codeMethod = (phoneResult && phoneResult.phoneCode) ? phoneResult.method : 'local';
-    pendingLogin.codeHash = (phoneResult && phoneResult.phoneCodeHash) || hashResetToken(emailCode);
     await db.insert('pendingLogins', pendingLogin);
+
+    const { isSmsConfigured, isEmailConfigured, sendSms, sendEmail } = require('../delivery');
+    let delivered = false;
+    if (isSmsConfigured() && user.phone) {
+      delivered = (await sendSms(user.phone, `Your Trothen sign-in code is ${code}. It expires in 10 minutes.`)).sent;
+    }
+    if (!delivered && isEmailConfigured()) {
+      delivered = (await sendEmail(user.email, 'Your Trothen sign-in code', `Your sign-in code is ${code}. It expires in 10 minutes.`)).sent;
+    }
+    if (delivered) {
+      return res.json({ requires2FA: true, pendingLoginId: pendingLogin.id, testMode: false });
+    }
+
+    // Not configured, or a real send just failed — same test-mode
+    // fallback as before, so a delivery hiccup never locks someone out
+    // of their own account.
     return res.json({
       requires2FA: true,
       pendingLoginId: pendingLogin.id,
@@ -672,42 +432,6 @@ router.post('/login', loginLimiter, async (req, res) => {
 // POST /api/auth/login/verify-2fa — the second factor. Completes the
 // session only if the code matches and hasn't expired; the pending login
 // record is single-use either way, so a code can't be replayed.
-// POST /api/auth/login/verify-2fa/resend-email — switches this specific
-// pending login attempt over to email delivery. Exists for exactly the
-// situation where SMS was attempted but never actually arrived (a Twilio
-// account still on Trial can accept a Verify request without truly
-// delivering it to an unverified number) — gives the person a real way
-// forward instead of being stuck on a code that will never come.
-router.post('/login/verify-2fa/resend-email', otpLimiter, async (req, res) => {
-  const { pendingLoginId } = req.body || {};
-  if (!isNonEmptyString(pendingLoginId)) return res.status(400).json({ error: 'pendingLoginId is required' });
-  const pending = await db.find('pendingLogins', p => p.id === pendingLoginId);
-  if (!pending) return res.status(400).json({ error: 'This login attempt has expired. Please sign in again.' });
-  if (new Date(pending.expiresAt) < new Date()) {
-    await db.remove('pendingLogins', pending.id);
-    return res.status(400).json({ error: 'This login attempt has expired. Please sign in again.' });
-  }
-  const user = await db.find('users', u => u.id === pending.userId);
-  if (!user) return res.status(404).json({ error: 'Account not found' });
-
-  const { isEmailConfigured, sendEmail } = require('../delivery');
-  const code = generateSixDigitCode();
-  const emailDelivered = isEmailConfigured() && user.email
-    ? (await sendEmail(user.email, 'Your Trothen sign-in code', `Your sign-in code is ${code}. It expires in 10 minutes.`)).sent
-    : false;
-
-  await db.update('pendingLogins', pending.id, { codeMethod: 'local', codeHash: hashResetToken(code) });
-
-  if (emailDelivered) return res.json({ testMode: false });
-
-  console.log(`[TEST MODE] Resent 2FA code by email for ${user.email}: ${code}`);
-  res.json({
-    testMode: true,
-    testModeNote: 'No real email provider is configured yet — the code is returned directly instead of being sent. Do not do this in production.',
-    code,
-  });
-});
-
 router.post('/login/verify-2fa', otpLimiter, async (req, res) => {
   const { pendingLoginId, code } = req.body || {};
   if (!pendingLoginId || !code) return res.status(400).json({ error: 'pendingLoginId and code are required' });
@@ -717,13 +441,12 @@ router.post('/login/verify-2fa', otpLimiter, async (req, res) => {
     await db.remove('pendingLogins', pending.id);
     return res.status(400).json({ error: 'This code has expired. Please sign in again.' });
   }
-  const user = await db.find('users', u => u.id === pending.userId);
-  if (!user) return res.status(404).json({ error: 'Account not found' });
-  const codeOk = await confirmPhoneVerification(user.phone, code, pending.codeMethod, pending.codeHash);
-  if (!codeOk) {
+  if (hashResetToken(code.trim()) !== pending.codeHash) {
     return res.status(400).json({ error: 'Incorrect code' });
   }
   await db.remove('pendingLogins', pending.id);
+  const user = await db.find('users', u => u.id === pending.userId);
+  if (!user) return res.status(404).json({ error: 'Account not found' });
   const token = signToken(user);
   res.json({ token, user: publicUser(user) });
 });
@@ -925,7 +648,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'currentPassword and newPassword are required' });
   }
   if (!isValidPassword(newPassword)) {
-    return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    return res.status(400).json({ error: 'New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol' });
   }
   const user = await db.find('users', u => u.id === req.user.sub);
   if (!user || !verifyPassword(currentPassword, user.passwordHash)) {
@@ -1058,7 +781,7 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
 router.post('/reset-password', otpLimiter, async (req, res) => {
   const { token, newPassword } = req.body || {};
   if (!isNonEmptyString(token)) return res.status(400).json({ error: 'Reset token is required' });
-  if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol' });
 
   const tokenHash = hashResetToken(token);
   const record = await db.find('passwordResets', r => r.tokenHash === tokenHash);
@@ -1101,28 +824,41 @@ router.post('/send-phone-otp', requireAuth, async (req, res) => {
     await db.update('phoneVerifications', v.id, { used: true });
   }
 
-  const phoneResult = await beginPhoneVerification(user.phone);
+  const { isSmsConfigured, isVerifyConfigured, sendSms, startPhoneVerification } = require('../delivery');
+  const usingVerify = isVerifyConfigured();
+  let code = null;
+  let codeHash = null;
+  let verifyStarted = false;
+  if (usingVerify) {
+    verifyStarted = (await startPhoneVerification(user.phone)).started;
+  }
+  if (!usingVerify || !verifyStarted) {
+    code = generateOtp();
+    codeHash = hashResetToken(code); // same fast-hash helper as reset tokens — a short-lived numeric code, not a password
+  }
+
   await db.insert('phoneVerifications', {
     id: `pv_${nanoid(10)}`,
     userId: user.id,
-    codeMethod: phoneResult.method,
-    codeHash: phoneResult.phoneCodeHash || null, // null when using real Twilio Verify — nothing local to check
+    codeHash,
+    viaTwilioVerify: usingVerify && verifyStarted,
     expiresAt: new Date(Date.now() + OTP_TTL_MS).toISOString(),
     used: false,
     createdAt: new Date().toISOString(),
   });
 
-  if (!phoneResult.testMode) {
+  const delivered = usingVerify ? verifyStarted : (isSmsConfigured() ? (await sendSms(user.phone, `Your Trothen phone verification code is ${code}.`)).sent : false);
+  if (delivered) {
     return res.json({ message: `A verification code was sent to ${user.phone}.`, testMode: false });
   }
 
-  console.log(`[TEST MODE] Phone verification code for ${user.phone}: ${phoneResult.phoneCode} (expires in 10 min)`);
+  console.log(`[TEST MODE] Phone verification code for ${user.phone}: ${code || 'sent via Twilio Verify'} (expires in 10 min)`);
 
   res.json({
     message: `A verification code would be sent to ${user.phone}.`,
     testMode: true,
     testModeNote: 'No real SMS provider is configured yet — this code is returned directly instead of being texted. Do not do this in production.',
-    code: phoneResult.phoneCode,
+    code: code || undefined,
   });
 });
 
@@ -1131,20 +867,20 @@ router.post('/verify-phone-otp', requireAuth, async (req, res) => {
   const { code } = req.body || {};
   if (!isNonEmptyString(code)) return res.status(400).json({ error: 'Enter the code you received' });
 
-  const user = await db.find('users', u => u.id === req.user.sub);
-  if (!user) return res.status(404).json({ error: 'Account not found' });
+  const outstanding = await db.filter('phoneVerifications', v => v.userId === req.user.sub && !v.used && new Date(v.expiresAt) > new Date());
+  if (!outstanding.length) return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
+  // Most recent outstanding request — matches how send-phone-otp already
+  // invalidates anything older the moment a new one is requested.
+  const record = outstanding.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
 
-  // Real Twilio Verify has no local code hash to look a record up by —
-  // this finds the person's own most recent still-valid attempt instead,
-  // then checks it the right way for however it was actually sent.
-  const candidates = await db.filter('phoneVerifications', v => v.userId === req.user.sub && !v.used && new Date(v.expiresAt) >= new Date());
-  const record = candidates.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-  if (!record) {
-    return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
-  }
-  const codeOk = await confirmPhoneVerification(user.phone, code, record.codeMethod, record.codeHash);
-  if (!codeOk) {
-    return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
+  if (record.viaTwilioVerify) {
+    const user = await db.find('users', u => u.id === req.user.sub);
+    const { checkPhoneVerification } = require('../delivery');
+    const result = await checkPhoneVerification(user.phone, code.trim());
+    if (!result.approved) return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
+  } else {
+    const codeHash = hashResetToken(code.trim());
+    if (record.codeHash !== codeHash) return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
   }
   await db.update('phoneVerifications', record.id, { used: true });
   await db.update('users', req.user.sub, { phoneVerified: true });

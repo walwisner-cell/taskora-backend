@@ -18,7 +18,7 @@ const paymentsRoutes = require('./src/routes/payments.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const miscRoutes = require('./src/routes/misc.routes');
 const portfolioRoutes = require('./src/routes/portfolio.routes');
-const { UPLOADS_DIR, PRIVATE_UPLOADS_DIR } = require('./src/uploads');
+const { UPLOADS_DIR } = require('./src/uploads');
 
 // Actually try writing to UPLOADS_DIR at boot, rather than assuming it's
 // writable just because the path exists. This is what turns a silent
@@ -37,26 +37,6 @@ const { UPLOADS_DIR, PRIVATE_UPLOADS_DIR } = require('./src/uploads');
   }
 })();
 
-// Same check for PRIVATE_UPLOADS_DIR (identity documents) — deliberately
-// a separate directory from UPLOADS_DIR above, and NEVER passed to
-// express.static anywhere in this file. Documents in here are only ever
-// served through the two authenticated routes that check the requester
-// is either the document's own owner or an admin on the verification
-// team (see /verification/:id/document in misc.routes.js and
-// admin.routes.js) — never as a plain public file URL.
-(function checkPrivateUploadsDirWritable() {
-  const fs = require('fs');
-  const path = require('path');
-  const testFile = path.join(PRIVATE_UPLOADS_DIR, `.write-check-${Date.now()}`);
-  try {
-    fs.writeFileSync(testFile, 'ok');
-    fs.unlinkSync(testFile);
-    console.log(`✅ Private uploads directory is writable: ${PRIVATE_UPLOADS_DIR}`);
-  } catch (e) {
-    console.error(`❌ Private uploads directory is NOT writable: ${PRIVATE_UPLOADS_DIR} — identity document submissions will fail. Error: ${e.message}`);
-  }
-})();
-
 const helmet = require('helmet');
 
 const app = express();
@@ -71,23 +51,7 @@ const PORT = process.env.PORT || 3000;
 // break the entire page. The real defense against injected content is
 // the output-escaping fix already in place; this is additional
 // defense-in-depth for the rest, not a replacement for that.
-//
-// crossOriginOpenerPolicy is explicitly relaxed from Helmet's default
-// ('same-origin') to 'same-origin-allow-popups'. The strict default
-// completely breaks Google Sign-In's popup flow: Google's own script
-// inside the popup calls window.opener.postMessage(...) to hand the
-// credential back to this page, and 'same-origin' severs that
-// window.opener link entirely (the browser isolates the popup into a
-// different browsing context group), so the call throws
-// "window.opener is null" and the popup never completes — exactly what
-// was happening before this fix. 'same-origin-allow-popups' keeps the
-// same cross-origin isolation protection for windows THIS page doesn't
-// control, while still allowing a popup this page deliberately opened
-// (Google's sign-in window) to talk back to it.
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
-}));
+app.use(helmet({ contentSecurityPolicy: false }));
 // CORS was wide open (any origin, unconditionally) with no way to
 // restrict it. Given this app authenticates with a Bearer token rather
 // than cookies, the classic CSRF risk CORS restriction primarily guards
@@ -170,17 +134,7 @@ app.use('/api', (req, res) => {
 });
 
 // ---- Error handler ----
-// A blocked CORS request (an origin not in ALLOWED_ORIGINS) surfaces here
-// as a thrown Error from the cors() middleware above — without this check
-// it fell through to the generic 500 branch below, which is wrong twice
-// over: it told a legitimate caller "Internal server error" instead of
-// the real reason, and it logged every routine blocked cross-origin
-// request as if it were an actual application crash, burying real errors
-// in the noise. This is expected, working-as-designed traffic, not a bug.
 app.use((err, req, res, next) => {
-  if (err && err.message === 'Not allowed by CORS') {
-    return res.status(403).json({ error: 'This origin is not allowed to access this API.' });
-  }
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });

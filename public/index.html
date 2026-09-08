@@ -286,10 +286,9 @@
   .form-input {
     width:100%; border:1.5px solid var(--border); border-radius:7px;
     padding:11px 14px; font-family:'Inter',sans-serif; font-size:14px;
-    color:var(--text); outline:none; transition:border-color .15s, box-shadow .15s;
+    color:var(--text); outline:none; transition:border-color .2s;
   }
-  .form-input:focus { border-color:var(--teal); box-shadow:0 0 0 4px rgba(29,95,168,.12); }
-  .form-input:hover:not(:focus) { border-color:#C7C2B5; }
+  .form-input:focus { border-color:var(--teal); }
   /* Real keyboard-navigation focus indicators — genuinely missing before
      this across almost every interactive element in the app (buttons,
      links, checkboxes). :focus-visible specifically (not plain :focus)
@@ -530,30 +529,24 @@
     .auth-brand-panel { display:none; }
     .auth-split { max-width:460px; border-radius:16px; }
   }
-  .auth-card { background:var(--white); border-radius:16px; max-width:420px; width:100%; padding:34px 32px; box-shadow:0 24px 80px rgba(0,0,0,.3); }
+  .auth-card { background:var(--white); border-radius:14px; max-width:420px; width:100%; padding:34px 32px; box-shadow:0 24px 80px rgba(0,0,0,.3); }
   .auth-card-title { font-family:'Fraunces',serif; font-weight:800; font-size:22px; color:var(--navy); margin-bottom:4px; text-align:center; }
   .auth-card-sub { text-align:center; color:var(--slate); font-size:13px; margin-bottom:22px; }
   .auth-tabs { display:flex; gap:6px; background:var(--offwhite); border-radius:8px; padding:4px; margin-bottom:20px; }
-  .auth-tab { flex:1; text-align:center; padding:9px; border-radius:6px; font-size:13px; font-weight:600; color:var(--slate); cursor:pointer; transition:color .15s; }
+  .auth-tab { flex:1; text-align:center; padding:9px; border-radius:6px; font-size:13px; font-weight:600; color:var(--slate); cursor:pointer; }
   .auth-tab.active { background:var(--white); color:var(--navy); box-shadow:0 2px 6px rgba(0,0,0,.08); }
   .auth-role-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:18px; }
-  .auth-role-opt { border:1.5px solid var(--border); border-radius:7px; text-align:center; padding:10px 6px; font-size:11px; font-weight:600; color:var(--slate); cursor:pointer; transition:border-color .15s, background .15s, transform .1s; }
-  .auth-role-opt:hover { border-color:var(--mint); }
-  .auth-role-opt:active { transform:scale(.97); }
+  .auth-role-opt { border:1.5px solid var(--border); border-radius:7px; text-align:center; padding:10px 6px; font-size:11px; font-weight:600; color:var(--slate); cursor:pointer; }
   .auth-role-opt.active { border-color:var(--teal); background:rgba(29,95,168,.08); color:var(--navy); }
   .auth-role-opt .r-icon { font-size:18px; display:block; margin-bottom:4px; }
   .auth-divider { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px; margin:18px 0; }
   .auth-divider::before, .auth-divider::after { content:''; flex:1; height:1px; background:var(--border); }
-  .oauth-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; border:1.5px solid var(--border); border-radius:7px; padding:11px; font-size:13px; font-weight:600; color:var(--text); background:#fff; cursor:pointer; margin-bottom:10px; font-family:'Inter',sans-serif; transition:border-color .15s, box-shadow .15s, transform .1s; }
-  .oauth-btn:hover { border-color:var(--teal); box-shadow:0 4px 14px rgba(0,0,0,.08); transform:translateY(-1px); }
-  .oauth-btn:active { transform:translateY(0); }
-  #google-signin-container { min-height:44px; display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
-  #google-signin-container .oauth-btn { margin-bottom:0; }
-  .auth-submit { width:100%; background:var(--navy); color:#fff; border:none; border-radius:8px; padding:14px; font-family:'Fraunces',serif; font-weight:700; font-size:15px; cursor:pointer; margin-top:4px; transition:background .15s, transform .1s, box-shadow .15s; }
-  .auth-submit:hover:not(:disabled) { background:#0F3A66; box-shadow:0 8px 20px rgba(18,22,31,.28); }
+  .oauth-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; border:1.5px solid var(--border); border-radius:7px; padding:11px; font-size:13px; font-weight:600; color:var(--text); background:#fff; cursor:pointer; margin-bottom:10px; font-family:'Inter',sans-serif; }
+  .oauth-btn:hover { border-color:var(--teal); }
+  .auth-submit { width:100%; background:var(--navy); color:#fff; border:none; border-radius:8px; padding:14px; font-family:'Fraunces',serif; font-weight:700; font-size:15px; cursor:pointer; margin-top:4px; transition:background .15s, transform .1s; }
+  .auth-submit:hover:not(:disabled) { background:#0F3A66; }
   .auth-submit:active:not(:disabled) { transform:scale(.99); }
   .auth-submit:disabled { opacity:.75; cursor:default; }
-  .auth-trust-microcopy { display:flex; align-items:center; justify-content:center; gap:6px; font-size:11.5px; color:var(--muted); margin-top:14px; }
   .btn-spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%; vertical-align:-2px; margin-right:8px; animation:btnSpin .7s linear infinite; }
   @keyframes btnSpin { to { transform:rotate(360deg); } }
 
@@ -573,6 +566,7 @@
   .password-strength-bar-track { display:flex; gap:4px; margin-bottom:6px; }
   .password-strength-bar-seg { height:4px; flex:1; border-radius:2px; background:var(--border); transition:background .2s ease; }
   .password-strength-label { font-size:11.5px; color:var(--slate); }
+  .auth-submit:hover { background:var(--teal); color:var(--navy); }
   .auth-foot { text-align:center; font-size:12px; color:var(--slate); margin-top:16px; }
   .auth-foot a { color:var(--teal); font-weight:600; cursor:pointer; }
 
@@ -883,12 +877,11 @@
     .support-chat-bubble { right:16px; bottom:16px; }
   }
 </style>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
 <div id="test-mode-banner" style="background:#B08A3E;color:#12161F;text-align:center;font-size:12.5px;font-weight:600;padding:8px 16px;position:relative;z-index:500;line-height:1.5;">
-  ⚠️ This is a <strong>test environment</strong> for Trothen — the live platform is launching soon. Nothing here is real yet: <strong>emails and phone codes are shown on-screen instead of sent</strong>, and <strong>all payments, payouts, and card details are test-mode only — no real money moves</strong>. Please don't enter real personal information, real passwords, or real payment/card details.
+  ⚠️ This is a <strong>test environment</strong> for Trothen — the live platform is launching soon. Nothing here is real yet: <strong>email codes are shown on-screen instead of sent</strong>, and <strong>all payments, payouts, and card details are test-mode only — no real money moves</strong>. Please don't enter real personal information, real passwords, or real payment/card details.
   <span onclick="document.getElementById('test-mode-banner').style.display='none'" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-weight:800;padding:0 4px;">✕</span>
 </div>
 
@@ -1340,7 +1333,8 @@
         </div>
       </div>
       <div style="display:flex;gap:10px;">
-        <div id="google-signin-container" style="flex:1;min-height:40px;width:100%;"><button class="oauth-btn" style="width:100%;" onclick="showToast('Checking Google sign-in availability…'); initGoogleSignIn();">🔵 Google</button></div>
+        <button class="oauth-btn" style="flex:1;" onclick="showToast('Google sign-in isn\'t connected yet in this test environment — please use email/password below.')">🔵 Google</button>
+        <button class="oauth-btn" style="flex:1;" onclick="showToast('Facebook sign-in isn\'t connected yet in this test environment — please use email/password below.')">📘 Facebook</button>
       </div>
       <div class="auth-divider">or</div>
       <div class="form-group" id="auth-name-group" style="display:none">
@@ -1407,11 +1401,11 @@
           <div id="auth-invite-status" style="font-size:11.5px;margin-top:5px;"></div>
         </div>
       </div>
-      <div class="form-group" id="auth-email-group">
+      <div class="form-group">
         <label class="form-label" data-i18n="auth_email">Email</label>
         <input class="form-input" type="email" id="auth-email" autocomplete="username" onkeydown="if(event.key==='Enter')handleAuthSubmit()"/>
       </div>
-      <div class="form-group" id="auth-password-group">
+      <div class="form-group">
         <label class="form-label" data-i18n="auth_password">Password</label>
         <div class="password-field-wrap">
           <input class="form-input" type="password" id="auth-password" style="padding-right:40px;" autocomplete="current-password" oninput="updatePasswordStrength(this.value)" onkeydown="if(event.key==='Enter')handleAuthSubmit()"/>
@@ -1429,29 +1423,24 @@
       </div>
       <div class="auth-foot" id="auth-forgot-link" style="text-align:right;margin-top:-10px;margin-bottom:14px;"><a onclick="showForgotPassword()" data-i18n="auth_forgot">Forgot password?</a></div>
       <button class="auth-submit" onclick="handleAuthSubmit()" id="auth-submit-btn">Sign In</button>
-      <div class="auth-trust-microcopy">🔒 Encrypted connection · Your details are never sold</div>
       <div class="auth-foot" id="auth-foot">New to Trothen? <a onclick="setAuthMode('signup')">Create an account</a></div>
       </div>
-      <!-- New two-code verification step: shown after signup/start succeeds,
-           before the account actually exists. Registration only completes
-           once both codes check out. -->
+      <!-- Verification step: shown after signup/start succeeds, before the
+           account actually exists. Registration only completes once the
+           email code checks out — phone is no longer required here. -->
       <div id="signup-verify-view" style="display:none">
-        <div class="auth-card-title">Verify to finish creating your account</div>
-        <div class="auth-card-sub">We need to confirm both your phone number and your email before your account is created.</div>
+        <div class="auth-card-title">Verify your email to finish creating your account</div>
+        <div class="auth-card-sub">We need to confirm your email before your account is created.</div>
         <div id="signup-verify-test-banner" style="display:none;margin:16px 0;padding:12px 14px;background:var(--offwhite);border:1px dashed var(--gold);border-radius:10px;font-size:12.5px;">
-          <span class="badge badge-warn" style="margin-right:6px;">TEST MODE</span>No SMS/email provider is connected yet — your codes:<br/>
-          Phone code: <strong id="signup-verify-phone-code-display"></strong><span id="signup-verify-email-code-banner-part"> · Email code: <strong id="signup-verify-email-code-display"></strong></span>
+          <span class="badge badge-warn" style="margin-right:6px;">TEST MODE</span>No email provider is connected yet — your code:<br/>
+          Email code: <strong id="signup-verify-email-code-display"></strong>
         </div>
         <div class="form-group">
-          <label class="form-label">Code sent to your phone</label>
-          <input class="form-input" type="text" inputmode="numeric" maxlength="6" id="signup-verify-phone-code" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')submitSignupVerification()"/>
-        </div>
-        <div class="form-group" id="signup-verify-email-code-group">
           <label class="form-label">Code sent to your email</label>
           <input class="form-input" type="text" inputmode="numeric" maxlength="6" id="signup-verify-email-code" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')submitSignupVerification()"/>
         </div>
         <button class="auth-submit" onclick="submitSignupVerification()">Verify & Create Account</button>
-        <div class="auth-foot"><a onclick="resendSignupCodes()">Resend codes</a> · <a onclick="cancelSignupVerification()">Start over</a></div>
+        <div class="auth-foot"><a onclick="resendSignupCodes()">Resend code</a> · <a onclick="cancelSignupVerification()">Start over</a></div>
       </div>
       <div id="login-2fa-view" style="display:none">
         <div class="auth-card-title">Enter your two-factor code</div>
@@ -1464,7 +1453,6 @@
           <input class="form-input" type="text" inputmode="numeric" maxlength="6" id="login-2fa-code" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')submitLogin2FA()"/>
         </div>
         <button class="auth-submit" onclick="submitLogin2FA()">Verify & Sign In</button>
-        <div class="auth-foot"><a onclick="resendLogin2FAByEmail()">Not getting a text? Send the code by email instead</a></div>
         <div class="auth-foot"><a onclick="cancelLogin2FA()">Back to sign in</a></div>
       </div>
     </div>
@@ -1535,7 +1523,7 @@
         </div>
         <div class="form-group">
           <label class="form-label">New Password</label>
-          <input class="form-input" type="password" id="force-pw-new" autocomplete="new-password" placeholder="At least 8 characters"/>
+          <input class="form-input" type="password" id="force-pw-new" autocomplete="new-password" placeholder="At least 9 characters, 6+ numbers, 2+ letters, 1+ symbol"/>
         </div>
         <div class="form-group">
           <label class="form-label">Confirm New Password</label>
@@ -1714,34 +1702,7 @@
 </div>
 
 <!-- TOAST -->
-<div class="toast" id="toast" role="status" aria-live="polite"><span class="toast-icon">✦</span><span id="toast-msg"></span></div>
-
-<!-- Replaces the native browser confirm() dialog everywhere in this app.
-     Native confirm() has real problems for anything this consequential
-     (hiring a provider and funding escrow, deleting an account, rejecting
-     an application): it can't be styled or branded, it freezes the whole
-     page while open, and — worse — after a browser sees a few of them in
-     a row it can silently start suppressing further ones with a "prevent
-     this page from creating additional dialogs" checkbox, which would
-     mean a critical confirmation just never appears again for that
-     session. confirmDialog() below is a real in-app modal instead,
-     matching the rest of the app's design system, that returns a
-     Promise<boolean> so every call site just becomes `await
-     confirmDialog(...)`. -->
-<div class="modal-overlay" id="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-body">
-  <div class="modal" style="max-width:420px;">
-    <div class="modal-header">
-      <h3 id="confirm-modal-title">Please confirm</h3>
-    </div>
-    <div class="modal-body">
-      <p id="confirm-modal-body" style="color:var(--text);font-size:14.5px;line-height:1.5;"></p>
-    </div>
-    <div class="modal-footer" style="display:flex;gap:10px;">
-      <button class="btn-sm btn-sm-outline" style="flex:1;padding:12px;" id="confirm-modal-cancel">Cancel</button>
-      <button class="confirm-btn" style="flex:1;" id="confirm-modal-ok">Confirm</button>
-    </div>
-  </div>
-</div>
+<div class="toast" id="toast"><span class="toast-icon">✦</span><span id="toast-msg"></span></div>
 
 <!-- AI SUPPORT CHAT WIDGET -->
 <div id="support-chat-bubble" class="support-chat-bubble" onclick="handleChatBubbleClick(event)">
@@ -1877,78 +1838,6 @@ async function loginAs(email, password) {
   AUTH.user = data.user;
   saveAuthSession(data.token);
   return data.user;
-}
-
-/* ══════════════════════ GOOGLE SIGN-IN ══════════════════════
-   Real "Sign in with Google" — not a demo toast. On load (once the
-   backend is confirmed live) we ask the server whether GOOGLE_CLIENT_ID
-   is actually configured; if it is, Google's own button is rendered into
-   the container (required by Google's terms — a custom-styled button
-   can't trigger their popup). If a new person signs in with an email
-   Trothen has never seen, the server can't create a full account from
-   just a name/email (no phone, address, role, etc.), so it hands back a
-   short-lived signup ticket instead and we drop the person into the
-   normal Sign Up form with name/email pre-filled and locked, password
-   hidden (no password needed — Google is that account's the only way
-   in unless they set one later via Forgot Password). */
-let googleSignInInitialized = false;
-let pendingGoogleSignupToken = null;
-let pendingGoogleEmail = null;
-
-async function initGoogleSignIn() {
-  if (googleSignInInitialized) return;
-  if (!BACKEND_AVAILABLE) return;
-  try {
-    const data = await apiFetch('GET', '/auth/google/config');
-    if (!data.enabled || !data.clientId) return; // not configured yet — fallback button stays as-is
-    if (!window.google || !window.google.accounts || !window.google.accounts.id) {
-      // Google's script may not have finished loading yet (async/defer) — try again shortly.
-      setTimeout(initGoogleSignIn, 400);
-      return;
-    }
-    google.accounts.id.initialize({ client_id: data.clientId, callback: handleGoogleCredentialResponse });
-    const container = document.getElementById('google-signin-container');
-    if (container) {
-      container.innerHTML = '';
-      google.accounts.id.renderButton(container, { theme: 'outline', size: 'large', width: 280, text: 'continue_with' });
-    }
-    googleSignInInitialized = true;
-  } catch (e) {
-    console.warn('Google sign-in not available:', e);
-  }
-}
-
-function setGoogleSignupUIState(active, name, email) {
-  pendingGoogleSignupToken && !active ? null : null; // no-op guard for readability
-  document.getElementById('auth-password-group').style.display = active ? 'none' : 'block';
-  const emailInput = document.getElementById('auth-email');
-  emailInput.disabled = !!active;
-  if (active) {
-    document.getElementById('auth-name').value = name || '';
-    emailInput.value = email || '';
-  }
-}
-
-async function handleGoogleCredentialResponse(response) {
-  try {
-    const data = await apiFetch('POST', '/auth/google', { credential: response.credential });
-    if (data.needsSignup) {
-      pendingGoogleSignupToken = data.googleSignupToken;
-      pendingGoogleEmail = data.email;
-      setAuthMode('signup');
-      setGoogleSignupUIState(true, data.name, data.email);
-      showToast('Almost there — just fill in the rest to finish your Trothen profile.');
-      return;
-    }
-    AUTH.token = data.token;
-    AUTH.user = data.user;
-    saveAuthSession(data.token);
-    showToast(`Welcome back, ${data.user.name.split(' ')[0]}!`);
-    rememberLastLoginEmail(data.user.email, data.user.role);
-    await completeAuthAndResumeIntent(data.user.role);
-  } catch (e) {
-    showToast(e.message || 'Google sign-in failed. Please try again or use email/password.');
-  }
 }
 
 const FALLBACK_PROVIDERS = [
@@ -2341,7 +2230,7 @@ async function hireProviderForJob(providerId) {
     if (!(amount > 0)) return showToast('Enter a valid amount, or leave it blank to use the job\'s listed budget');
     body.amount = amount;
   }
-  if (!(await confirmDialog(`Hire this provider${body.amount ? ` at $${body.amount}` : ''}? This funds escrow immediately and closes the job to everyone else who responded.`, { title: 'Hire this provider?', confirmLabel: 'Hire & fund escrow' }))) return;
+  if (!confirm(`Hire this provider${body.amount ? ` at $${body.amount}` : ''}? This funds escrow immediately and closes the job to everyone else who responded.`)) return;
   try {
     const { contract } = await apiFetch('POST', `/jobs/${jobId}/select-provider`, body);
     showToast(`Hired — contract ${contract.bookingNumber || contract.id} created and escrow funded`);
@@ -2381,12 +2270,6 @@ const FALLBACK_GEO = {
   },
   noPostalCodeCountries: ['Ghana'],
   dialCodeByCountry: { 'United States': '+1', 'Nigeria': '+234', 'Ghana': '+233', 'Liberia': '+231' },
-  idDocumentTypesByCountry: {
-    'United States': ["Driver's License", 'State ID Card', 'U.S. Passport', 'Passport Card'],
-    'Nigeria': ['National ID (NIN) Slip', 'International Passport', "Driver's License", "Permanent Voter's Card (PVC)"],
-    'Ghana': ['Ghana Card (National ID)', 'Passport', "Driver's License", 'Voter ID'],
-    'Liberia': ['National ID Card', 'Passport', "Driver's License"],
-  },
 };
 let GEO_DATA = FALLBACK_GEO;
 
@@ -3398,14 +3281,10 @@ function playMessageSound() {
 
 // Lightweight polling — the app has no real-time push channel, so this is
 // what actually makes "play a sound for a new message" true rather than a
-// setting that does nothing. Checks notifications every 5s while signed
-// in — was 20s, which meant a message could genuinely sit for up to 20
-// seconds before the sound played at all, reading as "not automatic."
-// 5s keeps the same lightweight polling approach (no WebSocket/real-time
-// infra needed) while making the delay small enough to feel immediate in
-// practice. Only sounds the alert for a message notification whose id
-// genuinely wasn't seen on the previous check (never replays on first
-// load or on a page the person just opened themselves).
+// setting that does nothing. Checks notifications every 20s while signed
+// in, and only sounds the alert for a message notification whose id genuinely
+// wasn't seen on the previous check (never replays on first load or on a
+// page the person just opened themselves).
 let messagePollInterval = null;
 let seenNotificationIds = null;
 async function startMessagePolling() {
@@ -3442,7 +3321,7 @@ async function startMessagePolling() {
       const panel = document.getElementById('notif-panel');
       if (panel && panel.classList.contains('open')) panel.innerHTML = notifPanelInnerHTML();
     } catch (e) { /* a failed poll just tries again next interval */ }
-  }, 5000);
+  }, 20000);
 }
 function stopMessagePolling() {
   if (messagePollInterval) clearInterval(messagePollInterval);
@@ -3501,30 +3380,21 @@ function updatePasswordStrength(value) {
   if (authState.mode !== 'signup' || !value) { meter.style.display = 'none'; return; }
   meter.style.display = 'block';
 
-  // Standard, length-first scoring — length is what actually matters most
-  // for password strength (each extra character multiplies the guessing
-  // space far more than forcing a specific symbol count does). Mixing
-  // upper/lowercase and adding a number or symbol still nudges the score
-  // up as a bonus, but it's no longer a hard requirement to sign up —
-  // see isValidPassword in validators.js for the actual (much simpler)
-  // gate this meter is just giving a visual preview of.
-  const hasCaseVariety = /[a-z]/.test(value) && /[A-Z]/.test(value);
-  const hasNumberOrSymbol = /[0-9]/.test(value) || /[^a-zA-Z0-9]/.test(value);
-  let metCount;
-  if (value.length < 8) metCount = 0;
-  else if (value.length < 10) metCount = 1;
-  else if (value.length < 14) metCount = (hasCaseVariety || hasNumberOrSymbol) ? 3 : 2;
-  else metCount = (hasCaseVariety && hasNumberOrSymbol) ? 4 : 3;
+  const hasLength = value.length >= 9;
+  const numbers = (value.match(/[0-9]/g) || []).length >= 6;
+  const letters = (value.match(/[a-zA-Z]/g) || []).length >= 2;
+  const symbols = (value.match(/[^a-zA-Z0-9]/g) || []).length >= 1;
+  const metCount = [hasLength, numbers, letters, symbols].filter(Boolean).length;
 
-  const colors = ['#C0392B', '#C0392B', '#B08A3E', '#2E8C6F']; // 1-2: red, 3: gold, 4: green
+  const colors = ['#C0392B', '#C0392B', '#B08A3E', '#2E8C6F']; // 1-2 met: red, 3 met: gold, 4 met: green
   const color = metCount === 0 ? 'var(--border)' : colors[metCount - 1];
   for (let i = 0; i < 4; i++) {
     document.getElementById(`strength-seg-${i}`).style.background = i < metCount ? color : 'var(--border)';
   }
   const label = document.getElementById('password-strength-label');
   label.textContent = metCount === 4
-    ? '✓ Strong password'
-    : value.length < 8 ? 'At least 8 characters' : 'Longer passwords are stronger';
+    ? '✓ Meets every requirement'
+    : '9+ characters, 6+ numbers, 2+ letters, 1+ symbol';
   label.style.color = metCount === 4 ? '#2E8C6F' : 'var(--slate)';
 }
 
@@ -3625,7 +3495,7 @@ async function submitResetPassword() {
   const newPassword = document.getElementById('reset-new-password').value;
   const confirm = document.getElementById('reset-confirm-password').value;
   if (!pendingResetToken) return showToast('Missing reset token — request a new link');
-  if (newPassword.length < 8 || newPassword.length > 72) return showToast('New password must be at least 8 characters');
+  if (newPassword.length < 9 || ((newPassword.match(/[0-9]/g) || []).length < 6) || ((newPassword.match(/[a-zA-Z]/g) || []).length < 2) || ((newPassword.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
   if (newPassword !== confirm) return showToast("Passwords don't match");
 
   if (!BACKEND_AVAILABLE) {
@@ -3664,13 +3534,6 @@ function setAuthMode(mode) {
     : `Already have an account? <a onclick="setAuthMode('login')">Sign in</a>`;
   document.getElementById('auth-password').setAttribute('autocomplete', mode === 'login' ? 'current-password' : 'new-password');
   updatePasswordStrength(document.getElementById('auth-password').value);
-  if (mode === 'login' && pendingGoogleSignupToken) {
-    // Abandoning the Google-prefilled signup — unlock the normal form again.
-    pendingGoogleSignupToken = null;
-    pendingGoogleEmail = null;
-    setGoogleSignupUIState(false);
-    document.getElementById('auth-email').value = '';
-  }
 }
 
 function setAuthRole(role) {
@@ -3711,12 +3574,11 @@ async function mockAuth() {
     showToast(authState.mode === 'login' ? 'Signed in (demo mode — no backend detected)' : 'Account created (demo mode — no backend detected)');
     return goDashboard(authState.role);
   }
-  const usingGoogleSignup = authState.mode === 'signup' && !!pendingGoogleSignupToken;
   if (authState.mode === 'login') {
     if (!email || !password) return showToast('Please fill in all fields');
   } else {
     const zipRequired = !(GEO_DATA.noPostalCodeCountries || []).includes(country);
-    if (!email || (!usingGoogleSignup && !password) || !name || !phone || !address || !city || !state || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
+    if (!email || !password || !name || !phone || !address || !city || !state || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
     if (authState.role === 'provider' && !skills) return showToast('List at least one skill or specialty');
     if (authState.role === 'provider' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
   }
@@ -3725,7 +3587,7 @@ async function mockAuth() {
   }
   if (authState.mode === 'signup') {
     if (name.length < 2) return showToast('Full name must be at least 2 characters');
-    if (!usingGoogleSignup && (password.length < 8 || password.length > 72)) return showToast('Password must be at least 8 characters');
+    if (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
     const phoneDigits = phone.replace(/[^0-9]/g, '');
     if (phoneDigits.length < 7) return showToast('Enter a valid phone number');
     if (zipCode && zipCode.length < 3 && !(GEO_DATA.noPostalCodeCountries || []).includes(country)) return showToast('Enter a valid zip/postal code');
@@ -3748,25 +3610,6 @@ async function mockAuth() {
       showToast(`Welcome back, ${user.name.split(' ')[0]}!`);
       rememberLastLoginEmail(email, user.role);
       await completeAuthAndResumeIntent(user.role);
-    } else if (usingGoogleSignup) {
-      const data = await apiFetch('POST', '/auth/google/signup', {
-        googleSignupToken: pendingGoogleSignupToken,
-        role: authState.role, city, country, state, phone, address, zipCode,
-        ...(pendingReferralCode ? { referralCode: pendingReferralCode } : {}),
-        ...(authState.role === 'provider' ? { category, skills, inviteCode: document.getElementById('auth-invite-code').value.trim() } : {}),
-      });
-      pendingSignupId = data.pendingId;
-      pendingGoogleSignupToken = null; // consumed — the pendingRegistration now holds everything needed
-      document.getElementById('auth-main-form').style.display = 'none';
-      document.getElementById('signup-verify-view').style.display = 'block';
-      document.getElementById('signup-verify-email-code-group').style.display = 'none';
-      document.getElementById('signup-verify-email-code-banner-part').style.display = 'none';
-      document.querySelector('#signup-verify-view .auth-card-sub').textContent = 'Google already confirmed your email — we just need to confirm your phone number.';
-      if (data.testMode) {
-        document.getElementById('signup-verify-test-banner').style.display = 'block';
-        document.getElementById('signup-verify-phone-code-display').textContent = data.phoneCode !== undefined ? data.phoneCode : 'Sent to your phone';
-      }
-      showToast('Enter the code sent to your phone to finish creating your account');
     } else {
       const data = await apiFetch('POST', '/auth/signup/start', {
         name, email, password, role: authState.role, city, country, state, phone, address, zipCode,
@@ -3776,15 +3619,11 @@ async function mockAuth() {
       pendingSignupId = data.pendingId;
       document.getElementById('auth-main-form').style.display = 'none';
       document.getElementById('signup-verify-view').style.display = 'block';
-      document.getElementById('signup-verify-email-code-group').style.display = 'block';
-      document.getElementById('signup-verify-email-code-banner-part').style.display = 'inline';
-      document.querySelector('#signup-verify-view .auth-card-sub').textContent = 'We need to confirm both your phone number and your email before your account is created.';
       if (data.testMode) {
         document.getElementById('signup-verify-test-banner').style.display = 'block';
-        document.getElementById('signup-verify-phone-code-display').textContent = data.phoneCode !== undefined ? data.phoneCode : 'Sent to your phone';
         document.getElementById('signup-verify-email-code-display').textContent = data.emailCode !== undefined ? data.emailCode : 'Sent to your email';
       }
-      showToast('Enter both codes to finish creating your account');
+      showToast('Enter the code sent to your email to finish creating your account');
     }
   } catch (e) {
     showToast(e.message || 'Something went wrong');
@@ -3796,13 +3635,11 @@ let pendingLoginId = null;
 let pendingReferralCode = null;
 
 async function submitSignupVerification() {
-  const phoneCode = document.getElementById('signup-verify-phone-code').value.trim();
-  const emailCodeVisible = document.getElementById('signup-verify-email-code-group').style.display !== 'none';
   const emailCode = document.getElementById('signup-verify-email-code').value.trim();
-  if (!phoneCode || (emailCodeVisible && !emailCode)) return showToast(emailCodeVisible ? 'Enter both codes' : 'Enter the phone code');
+  if (!emailCode) return showToast('Enter the code sent to your email');
   if (!pendingSignupId) return showToast('Something went wrong — please start signing up again');
   try {
-    const data = await apiFetch('POST', '/auth/signup/verify', { pendingId: pendingSignupId, phoneCode, emailCode });
+    const data = await apiFetch('POST', '/auth/signup/verify', { pendingId: pendingSignupId, emailCode });
     AUTH.token = data.token; AUTH.user = data.user;
     saveAuthSession(data.token);
     pendingSignupId = null;
@@ -3828,7 +3665,7 @@ async function submitSignupVerification() {
     rememberLastLoginEmail(data.user.email, data.user.role);
     await completeAuthAndResumeIntent(data.user.role);
   } catch (e) {
-    showToast(e.message || 'Could not verify — check both codes and try again');
+    showToast(e.message || 'Could not verify — check the code and try again');
   }
 }
 
@@ -3838,22 +3675,16 @@ async function resendSignupCodes() {
     const data = await apiFetch('POST', '/auth/signup/resend', { pendingId: pendingSignupId });
     if (data.testMode) {
       document.getElementById('signup-verify-test-banner').style.display = 'block';
-      document.getElementById('signup-verify-phone-code-display').textContent = data.phoneCode !== undefined ? data.phoneCode : 'Sent to your phone';
       document.getElementById('signup-verify-email-code-display').textContent = data.emailCode !== undefined ? data.emailCode : 'Sent to your email';
     }
-    showToast('New codes sent');
-  } catch (e) { showToast(e.message || 'Could not resend codes'); }
+    showToast('New code sent');
+  } catch (e) { showToast(e.message || 'Could not resend code'); }
 }
 
 function cancelSignupVerification() {
   pendingSignupId = null;
-  pendingGoogleSignupToken = null;
-  pendingGoogleEmail = null;
-  setGoogleSignupUIState(false);
-  document.getElementById('auth-email').value = '';
   document.getElementById('signup-verify-view').style.display = 'none';
   document.getElementById('auth-main-form').style.display = 'block';
-  document.getElementById('signup-verify-phone-code').value = '';
   document.getElementById('signup-verify-email-code').value = '';
 }
 
@@ -3877,20 +3708,6 @@ function cancelLogin2FA() {
   document.getElementById('login-2fa-view').style.display = 'none';
   document.getElementById('auth-main-form').style.display = 'block';
   document.getElementById('login-2fa-code').value = '';
-}
-
-async function resendLogin2FAByEmail() {
-  if (!pendingLoginId) return showToast('Please sign in again');
-  try {
-    const data = await apiFetch('POST', '/auth/login/verify-2fa/resend-email', { pendingLoginId });
-    if (data.testMode) {
-      document.getElementById('login-2fa-test-banner').style.display = 'block';
-      document.getElementById('login-2fa-code-display').textContent = data.code;
-      showToast('No email provider connected — code shown above (test mode)');
-    } else {
-      showToast('Sent — check your email for the new code');
-    }
-  } catch (e) { showToast(e.message || 'Could not resend by email'); }
 }
 
 // Shows the dashboard matching the CURRENT signed-in account — it never
@@ -4162,16 +3979,7 @@ function verificationHTML(role, status) {
       ? `<div class="badge badge-success" style="font-size:13px;padding:8px 16px;">✓ Identity Verified — government ID confirmed</div>`
       : inReview
         ? `<div class="badge badge-warn" style="font-size:13px;padding:8px 16px;">⏳ Submitted — awaiting review</div>`
-        : `<div id="verification-action-area">
-            <div class="form-group" style="margin-bottom:14px;">
-              <label class="form-label">Document Type</label>
-              <select class="form-input form-select" id="verification-doctype-select">${idDocTypeOptionsHTML()}</select>
-            </div>
-            <input type="file" id="verification-doc-input" accept="image/jpeg,image/png,image/webp,application/pdf" style="display:none;" onchange="handleVerificationFileChosen(this)"/>
-            <div class="upload-box" style="cursor:pointer;" onclick="document.getElementById('verification-doc-input').click()" id="verification-upload-box">📄 Upload your document (photo or PDF)</div>
-            <div style="font-size:12px;color:var(--slate);margin:6px 0 14px;">A clear photo or scan of the document you selected above — a real person on our team reviews this before you're verified.</div>
-            <button class="btn-sm btn-sm-primary" id="verification-submit-btn" disabled onclick="submitVerification('${role}')">Submit for Review</button>
-          </div>`}
+        : `<div id="verification-action-area"><div class="upload-box">📄 Upload Government-Issued ID</div><div class="upload-box">🤳 Take a Selfie for Face Match</div><button class="btn-sm btn-sm-primary" onclick="submitVerification('${role}')">Submit for Review</button></div>`}
   </div>
   ${role === 'provider' ? `<div class="panel"><div class="panel-title">Additional Trust Checks</div>
     <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Check</th><th>Status</th></tr></thead><tbody>
@@ -4233,55 +4041,13 @@ async function saveGuarantors() {
   } catch (e) { showToast(e.message || 'Could not save guarantors'); }
 }
 
-const GENERIC_ID_DOCUMENT_TYPES_CLIENT = ['Passport', 'National ID Card', "Driver's License"];
-function idDocTypeOptionsHTML() {
-  const country = AUTH.user && AUTH.user.country;
-  const types = (GEO_DATA.idDocumentTypesByCountry && country && GEO_DATA.idDocumentTypesByCountry[country])
-    || GENERIC_ID_DOCUMENT_TYPES_CLIENT;
-  return types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
-}
-
-let chosenVerificationDoc = null;
-
-function handleVerificationFileChosen(input) {
-  const file = input.files && input.files[0];
-  const box = document.getElementById('verification-upload-box');
-  const btn = document.getElementById('verification-submit-btn');
-  if (!file) { chosenVerificationDoc = null; if (btn) btn.disabled = true; return; }
-  if (file.size > 10 * 1024 * 1024) {
-    showToast('That file is too large — 10MB max');
-    input.value = '';
-    chosenVerificationDoc = null;
-    if (btn) btn.disabled = true;
-    return;
-  }
-  chosenVerificationDoc = file;
-  if (box) box.textContent = `📄 ${file.name}`;
-  if (btn) btn.disabled = false;
-}
-
 async function submitVerification(role) {
   if (!BACKEND_AVAILABLE) {
     showToast('Submitted for review (demo mode — no backend detected)');
     return;
   }
-  if (!chosenVerificationDoc) {
-    showToast('Choose a photo or PDF of your document first');
-    return;
-  }
-  const formData = new FormData();
-  formData.append('document', chosenVerificationDoc);
-  const docTypeSelect = document.getElementById('verification-doctype-select');
-  formData.append('docType', docTypeSelect ? docTypeSelect.value : 'Passport');
   try {
-    const res = await fetch(API_BASE + '/verification/submit', {
-      method: 'POST',
-      headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
-      body: formData, // deliberately no Content-Type header — the browser sets the correct multipart boundary itself
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Could not submit for review');
-    chosenVerificationDoc = null;
+    await apiFetch('POST', '/verification/submit', { docType: role === 'provider' ? 'Government ID + Background Check' : 'Government ID' });
     showToast('Submitted — an admin will review it shortly');
     if (role === 'customer') { await loadCustomerData(); selectCustomerSection('verification'); }
     else { await loadProviderData(); selectProviderSection('verification'); }
@@ -5134,7 +4900,7 @@ async function submitSalesInquiry() {
 
 async function cancelBooking(contractId) {
   if (!BACKEND_AVAILABLE) return showToast('Booking cancelled (demo mode — no backend detected)');
-  if (!(await confirmDialog('Cancel this booking? Any held escrow will be refunded, not paid to the pro.', { title: 'Cancel booking?', confirmLabel: 'Cancel booking', danger: true }))) return;
+  if (!confirm('Cancel this booking? Any held escrow will be refunded, not paid to the pro.')) return;
   try {
     await apiFetch('POST', `/contracts/${contractId}/cancel`);
     showToast('Booking cancelled — escrow refunded');
@@ -5535,7 +5301,7 @@ async function subscribeMembership(tier) {
 }
 
 async function cancelMembership() {
-  if (!(await confirmDialog('Cancel your membership and go back to Free? This takes effect immediately.', { title: 'Cancel membership?', confirmLabel: 'Cancel membership', danger: true }))) return;
+  if (!confirm('Cancel your membership and go back to Free? This takes effect immediately.')) return;
   if (!BACKEND_AVAILABLE) return showToast('Membership cancelled (demo mode)');
   try {
     const { user } = await apiFetch('POST', '/membership/cancel', {});
@@ -5745,7 +5511,7 @@ async function changePassword(prefix) {
   const newPassword = document.getElementById(`${prefix}-pw-new`).value;
   const confirm = document.getElementById(`${prefix}-pw-confirm`).value;
   if (!currentPassword || !newPassword || !confirm) return showToast('Fill in all three password fields');
-  if (newPassword.length < 8 || newPassword.length > 72) return showToast('New password must be at least 8 characters');
+  if (newPassword.length < 9 || ((newPassword.match(/[0-9]/g) || []).length < 6) || ((newPassword.match(/[a-zA-Z]/g) || []).length < 2) || ((newPassword.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
   if (newPassword !== confirm) return showToast("New password and confirmation don't match");
   if (!BACKEND_AVAILABLE) return showToast('Password updated (demo mode — no backend detected)');
   try {
@@ -7347,7 +7113,7 @@ function contractsTableWithEscrow(list) {
 
 async function respondToOffer(contractId, decision) {
   if (!BACKEND_AVAILABLE) return showToast(decision === 'accept' ? 'Booking confirmed (demo mode)' : 'Booking declined (demo mode)');
-  if (decision === 'decline' && !(await confirmDialog('Decline this booking? The customer will be notified and refunded.', { title: 'Decline booking?', confirmLabel: 'Decline booking', danger: true }))) return;
+  if (decision === 'decline' && !confirm("Decline this booking? The customer will be notified and refunded.")) return;
   try {
     const { contract } = await apiFetch('POST', `/contracts/${contractId}/respond-offer`, { decision });
     showToast(decision === 'accept' ? `Booking confirmed — $${contract.amount} held in escrow` : 'Booking declined — customer refunded');
@@ -7413,7 +7179,7 @@ async function viewScopeChangeRequests(contractId) {
 }
 
 async function decideScopeChangeRequest(requestId, decision, contractId) {
-  if (decision === 'approve' && !(await confirmDialog('Approve this additional amount? This will update the contract total and the held escrow immediately.', { title: 'Approve additional amount?', confirmLabel: 'Approve' }))) return;
+  if (decision === 'approve' && !confirm('Approve this additional amount? This will update the contract total and the held escrow immediately.')) return;
   try {
     await apiFetch('POST', `/scope-change-requests/${requestId}/decide`, { decision });
     showToast(decision === 'approve' ? 'Approved — contract updated' : 'Declined');
@@ -7632,7 +7398,7 @@ async function uploadPortfolioPhoto(file) {
 
 async function deletePortfolioPhoto(id) {
   if (!BACKEND_AVAILABLE) return showToast('Photo removed (demo mode)');
-  if (!(await confirmDialog('Remove this portfolio photo?', { title: 'Remove photo?', confirmLabel: 'Remove', danger: true }))) return;
+  if (!confirm('Remove this portfolio photo?')) return;
   try {
     await apiFetch('DELETE', `/portfolio/${id}`);
     providerData.portfolioPhotos = (providerData.portfolioPhotos || []).filter(p => p.id !== id);
@@ -7669,7 +7435,7 @@ async function uploadProfilePhoto(file) {
 
 async function removeProfilePhoto() {
   if (!BACKEND_AVAILABLE) { AUTH.user.profilePhotoUrl = null; showToast('Profile photo removed (demo mode)'); return; }
-  if (!(await confirmDialog('Remove your profile photo? This reverts to your initials.', { title: 'Remove profile photo?', confirmLabel: 'Remove', danger: true }))) return;
+  if (!confirm('Remove your profile photo? This reverts to your initials.')) return;
   try {
     await apiFetch('DELETE', '/profile-photo');
     AUTH.user.profilePhotoUrl = null;
@@ -7847,7 +7613,7 @@ async function loadAdminData() {
   if (stats) adminData.stats = stats;
   if (pending) adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
   if (allPeople) adminData.people = allPeople.users.map(u => ({ ...u, role: u.role[0].toUpperCase() + u.role.slice(1), active: u.active !== false }));
-  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status, hasDocument: !!v.documentFilename }));
+  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status }));
   if (disputes) adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
   if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active, responseWindowOverrideHours: c.responseWindowOverrideHours }));
   if (countries) adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
@@ -7908,7 +7674,7 @@ async function loadAdminData() {
 
 async function adminDecide(listName, id, decision, sectionKey) {
   if (listName === 'users' && decision === 'reject') {
-    if (!(await confirmDialog('Reject this account application? This will permanently block them from logging in — this is not the same as leaving them pending, and is harder to casually undo. Continue?', { title: 'Reject application?', confirmLabel: 'Reject', danger: true }))) return;
+    if (!confirm('Reject this account application? This will permanently block them from logging in — this is not the same as leaving them pending, and is harder to casually undo. Continue?')) return;
   }
   if (!BACKEND_AVAILABLE) {
     const list = listName === 'users' ? adminData.pendingUsers : adminData.verificationQueue;
@@ -8200,7 +7966,7 @@ const ADMIN_SECTIONS = {
       <div class="panel-title">New Admin</div>
       <div class="form-group"><label class="form-label">Admin Name</label><input class="form-input" id="loc-admin-name" placeholder="e.g. Fatima B."/></div>
       <div class="form-group"><label class="form-label">Admin Email</label><input class="form-input" id="loc-admin-email" placeholder="fatima@example.com"/></div>
-      <div class="form-group"><label class="form-label">Temporary Password</label><input class="form-input" id="loc-admin-password" placeholder="Set a starting password" type="text" value="Welcome123456!"/><div style="font-size:11px;color:var(--muted);margin-top:5px;">Must be at least 8 characters — they can change it after signing in</div></div>
+      <div class="form-group"><label class="form-label">Temporary Password</label><input class="form-input" id="loc-admin-password" placeholder="Set a starting password" type="text" value="Welcome123456!"/><div style="font-size:11px;color:var(--muted);margin-top:5px;">Must be at least 9 characters with 6 numbers, 2 letters, and 1 symbol — they can change it after signing in</div></div>
       <div class="form-group"><label class="form-label">Country</label>
         <select class="form-input form-select" id="loc-country"></select>
       </div>
@@ -8956,7 +8722,7 @@ async function togglePromotionActive(id, active) {
 }
 
 async function deletePromotion(id) {
-  if (!(await confirmDialog('Remove this promotion? This can\'t be undone.', { title: 'Remove promotion?', confirmLabel: 'Remove', danger: true }))) return;
+  if (!confirm('Remove this promotion? This can\'t be undone.')) return;
   try {
     await apiFetch('DELETE', `/admin/promotions/${id}`);
     showToast('Promotion removed');
@@ -9352,7 +9118,7 @@ async function createLocationAdmin() {
   if (!name || !email || !password || !city || !country) return showToast('Please fill in every field');
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
-  if (password.length < 8 || password.length > 72) return showToast('Password must be at least 8 characters');
+  if (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
   // A real, cheap safeguard against exactly the mistake that likely
   // caused a real regional-scoping bug elsewhere: typing a country name
   // into the City field. A "Regional Admin" scoped to "Liberia" (the
@@ -9385,7 +9151,7 @@ async function toggleSubAdminActive(adminId) {
 
 async function deleteSubAdmin(adminId, adminName, cityName) {
   if (!adminId) return;
-  if (!(await confirmDialog(`Delete ${adminName}'s account? This can't be undone.`, { title: 'Delete admin account?', confirmLabel: 'Delete', danger: true }))) return;
+  if (!confirm(`Delete ${adminName}'s account? This can't be undone.`)) return;
   if (!BACKEND_AVAILABLE) return showToast(`${adminName} deleted (demo mode)`);
   try {
     await apiFetch('DELETE', `/admin/sub-admins/${adminId}`);
@@ -9523,7 +9289,7 @@ async function toggleCountry(cId) {
 }
 
 async function deleteCategory(catId, name) {
-  if (!(await confirmDialog(`Delete "${name}"? This can't be undone. Providers currently listed under it will block this.`, { title: 'Delete category?', confirmLabel: 'Delete', danger: true }))) return;
+  if (!confirm(`Delete "${name}"? This can't be undone. Providers currently listed under it will block this.`)) return;
   if (!BACKEND_AVAILABLE) return showToast(`${name} deleted (demo mode)`);
   try {
     await apiFetch('DELETE', `/admin/categories/${catId}`);
@@ -9603,7 +9369,7 @@ async function syncReferenceData() {
 }
 
 async function deleteCountry(cId, name) {
-  if (!(await confirmDialog(`Delete "${name}"? This can't be undone. Accounts registered under it will block this.`, { title: 'Delete country?', confirmLabel: 'Delete', danger: true }))) return;
+  if (!confirm(`Delete "${name}"? This can't be undone. Accounts registered under it will block this.`)) return;
   if (!BACKEND_AVAILABLE) return showToast(`${name} deleted (demo mode)`);
   try {
     await apiFetch('DELETE', `/admin/countries/${cId}`);
@@ -9735,7 +9501,7 @@ async function revealPersonContact(userId) {
 }
 
 async function toggleCustomerVip(customerId, grant) {
-  if (!(await confirmDialog(grant ? 'Grant this customer VIP membership? This is a real invitation, not a purchase — VIP can\'t be self-bought.' : 'Revoke VIP membership from this customer? They\'ll drop back to the Free tier.', { title: grant ? 'Grant VIP?' : 'Revoke VIP?', confirmLabel: grant ? 'Grant VIP' : 'Revoke VIP', danger: !grant }))) return;
+  if (!confirm(grant ? 'Grant this customer VIP membership? This is a real invitation, not a purchase — VIP can\'t be self-bought.' : 'Revoke VIP membership from this customer? They\'ll drop back to the Free tier.')) return;
   try {
     await apiFetch('POST', `/admin/customers/${customerId}/vip`, { grant });
     showToast(grant ? 'VIP granted — they\'ve been notified' : 'VIP revoked');
@@ -9830,7 +9596,7 @@ function verificationQueueTable() {
   if (!adminData.verificationQueue.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">Verification queue is empty.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Document</th><th>City</th><th>Country</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${adminData.verificationQueue.map(v => `<tr><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.doc)}</td><td>${escapeHtml(v.city || '—')}</td><td>${escapeHtml(v.country)}</td><td>${statusBadge(v.status)}</td>
-  <td class="row-actions">${v.hasDocument ? `<button class="btn-sm btn-sm-outline" onclick="downloadFileWithAuth('${API_BASE}/admin/verification/${v.id}/document', 'Verification-${v.id}')">View doc</button>` : '<span style="color:var(--slate);font-size:11.5px;">No document</span>'} ${v.status==='in review' ? `<button class="btn-sm btn-sm-primary" onclick="adminDecide('verification','${v.id}','approve','verification')">Approve</button><button class="btn-sm btn-sm-outline" onclick="adminDecide('verification','${v.id}','reject','verification')">Reject</button>` : ''}</td></tr>`).join('')}
+  <td class="row-actions">${v.status==='in review' ? `<button class="btn-sm btn-sm-primary" onclick="adminDecide('verification','${v.id}','approve','verification')">Approve</button><button class="btn-sm btn-sm-outline" onclick="adminDecide('verification','${v.id}','reject','verification')">Reject</button>` : '—'}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -10208,7 +9974,7 @@ async function submitForcePasswordChange() {
   const newPassword = document.getElementById('force-pw-new').value;
   const confirm = document.getElementById('force-pw-confirm').value;
   if (!currentPassword || !newPassword || !confirm) return showToast('Fill in all three password fields');
-  if (newPassword.length < 8 || newPassword.length > 72) return showToast('New password must be at least 8 characters');
+  if (newPassword.length < 9 || ((newPassword.match(/[0-9]/g) || []).length < 6) || ((newPassword.match(/[a-zA-Z]/g) || []).length < 2) || ((newPassword.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
   if (newPassword !== confirm) return showToast("New passwords don't match");
   try {
     const data = await apiFetch('POST', '/auth/change-password', { currentPassword, newPassword });
@@ -10550,42 +10316,6 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 3000);
 }
 
-// See the HTML comment above #confirm-modal for why this replaces
-// native confirm() everywhere in this app. danger:true colors the
-// confirm button red for destructive/irreversible actions (delete,
-// reject, revoke) instead of the default navy.
-function confirmDialog(message, { title = 'Please confirm', confirmLabel = 'Confirm', danger = false } = {}) {
-  return new Promise((resolve) => {
-    const overlay = document.getElementById('confirm-modal');
-    document.getElementById('confirm-modal-title').textContent = title;
-    document.getElementById('confirm-modal-body').textContent = message;
-    const okBtn = document.getElementById('confirm-modal-ok');
-    const cancelBtn = document.getElementById('confirm-modal-cancel');
-    okBtn.textContent = confirmLabel;
-    okBtn.style.background = danger ? '#C0392B' : 'var(--navy)';
-
-    const cleanup = (result) => {
-      overlay.classList.remove('open');
-      okBtn.removeEventListener('click', onOk);
-      cancelBtn.removeEventListener('click', onCancel);
-      overlay.removeEventListener('click', onOverlayClick);
-      document.removeEventListener('keydown', onKeydown);
-      resolve(result);
-    };
-    const onOk = () => cleanup(true);
-    const onCancel = () => cleanup(false);
-    const onOverlayClick = (e) => { if (e.target === overlay) cleanup(false); };
-    const onKeydown = (e) => { if (e.key === 'Escape') cleanup(false); };
-
-    okBtn.addEventListener('click', onOk);
-    cancelBtn.addEventListener('click', onCancel);
-    overlay.addEventListener('click', onOverlayClick);
-    document.addEventListener('keydown', onKeydown);
-    overlay.classList.add('open');
-    okBtn.focus();
-  });
-}
-
 // Close modal on overlay click
 document.getElementById('booking-modal').addEventListener('click', function(e) {
   if (e.target === this) closeModal();
@@ -10751,7 +10481,7 @@ const SUPPORT_FAQ = [
   { keywords: ['categor', 'service', 'what can i book', 'what do you offer'], answer: "Trothen covers Plumbing, Cleaning, Tutoring, Electrical, Moving, Painting, Landscaping, Fitness, Pick & Drop, and more — browse them all from \"See all categories\" on the homepage." },
   { keywords: ['match', 'ai match', 'how does matching work', 'algorithm'], answer: "When you post a job, our matching engine ranks verified pros in your category and community by rating, experience, and proximity (we prioritize pros in your exact zip code first). You'll see the top matches with a fit score." },
   { keywords: ['community', 'zip', 'postal', 'location match'], answer: "We use your zip/postal code to find pros right in your community first, before widening to your broader city — this tends to mean faster response times and pros who already know the area." },
-  { keywords: ['phone verif', 'otp', 'verify my phone', 'text code'], answer: "Phone verification now happens as part of signing up — you'll get a code on screen (test mode, since live SMS isn't connected yet) alongside an email code, and both are required before your account is created." },
+  { keywords: ['phone verif', 'otp', 'verify my phone', 'text code'], answer: "You don't need to verify your phone to create an account — just your email. If you'd like to verify your phone later (useful for two-factor login), you can do that any time from Settings." },
   { keywords: ['human', 'agent', 'real person', 'support team', 'talk to someone', 'whatsapp', 'call'], answer: "Of course — reach a real person any time:" + supportContactHTML() + "<br/><br/>Or email support@trothen.io." },
   { keywords: ['hi', 'hello', 'hey'], answer: "Hi! I'm Trothen's AI assistant, not a person. Ask me about escrow, verification, disputes, payments, pricing, or how matching works — or ask for a real person any time." },
 ];
@@ -11005,7 +10735,6 @@ async function askRealSupportChat(message) {
     await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats(), loadSupportContact(), loadHomepageContent(), loadHomepageImages(), loadPopularProjects()]);
     renderProviders(PROVIDERS);
     renderHomeCategories();
-    initGoogleSignIn(); // no-op if GOOGLE_CLIENT_ID isn't set on the server yet
     console.log('%cTrothen API connected — live data enabled.', 'color:#1D5FA8;font-weight:bold;');
   } else {
     console.log('%cTrothen API not detected — running on demo data. Start the backend (npm start in /trothen-backend) for live data.', 'color:#B08A3E;');
