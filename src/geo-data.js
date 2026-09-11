@@ -110,4 +110,42 @@ function dialCodeForCountry(country) {
   return DIAL_CODE_BY_COUNTRY[country] || '';
 }
 
-module.exports = { COUNTRIES, STATES_BY_COUNTRY, statesForCountry, DIAL_CODE_BY_COUNTRY, dialCodeForCountry };
+// Item 15 / Country → Region validation — the real, enforceable slice of
+// it. City stays deliberately free-text (see the top of this file for
+// why: no real worldwide city database backs this app), so "Philadelphia
+// can't be listed under Liberia" can't be caught by validating the city
+// string itself. What CAN be validated with real data is state/province:
+// STATES_BY_COUNTRY is a real, structured list. If a country has a listed
+// set of states, the submitted state must actually be one of them — a
+// state field of "Pennsylvania" under country "Liberia" fails this (US
+// states aren't in Liberia's county list), which is exactly the actual
+// bug in the example. A country with no listed states (STATES_BY_COUNTRY
+// has no entry for it) falls back to permissive — same "not every country
+// has structured data yet" fallback already used elsewhere in this file.
+function isValidStateForCountry(country, state) {
+  if (!country || !state) return false;
+  const list = STATES_BY_COUNTRY[country];
+  if (!list) return true; // no structured data for this country yet — can't validate, don't block
+  return list.includes(state);
+}
+
+// Item 7's country-aware document types — matches how real identity
+// platforms (Persona, Onfido, Stripe Identity) present ID choices: the
+// options offered depend on the person's own country, not one generic
+// worldwide list. Countries not listed here fall back to
+// DEFAULT_ID_DOC_TYPES. The server validates a submission's docType
+// against the submitter's own country's list (see POST
+// /verification/submit in misc.routes.js) rather than trusting free text.
+const ID_DOC_TYPES_BY_COUNTRY = {
+  'United States': ["Driver's License", 'State ID', 'Passport', 'Passport Card'],
+  'Nigeria': ['NIN Slip', 'International Passport', "Driver's License", 'PVC'],
+  'Ghana': ['Ghana Card', 'Passport', "Driver's License", 'Voter ID'],
+  'Liberia': ['National ID', 'Passport', "Driver's License"],
+};
+const DEFAULT_ID_DOC_TYPES = ['Passport', 'National ID', "Driver's License"];
+
+function idDocTypesForCountry(country) {
+  return ID_DOC_TYPES_BY_COUNTRY[country] || DEFAULT_ID_DOC_TYPES;
+}
+
+module.exports = { COUNTRIES, STATES_BY_COUNTRY, statesForCountry, DIAL_CODE_BY_COUNTRY, dialCodeForCountry, isValidStateForCountry, ID_DOC_TYPES_BY_COUNTRY, DEFAULT_ID_DOC_TYPES, idDocTypesForCountry };

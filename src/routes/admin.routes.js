@@ -402,9 +402,10 @@ router.get('/providers/leaderboard', async (req, res) => {
 // a real reason an admin actually types (fraud, a policy violation,
 // anything serious enough to need one) — not an automatic consequence of
 // a low trust score anymore. That consequence is now handled entirely by
-// NEW_MATCH_TRUST_SCORE_FLOOR in marketplace.routes.js: a provider at or
-// below the floor simply stops getting new job matches, automatically,
-// with no admin action needed, and it lifts itself the moment their
+// the weekly job-access tiers in src/provider-score.js
+// (weeklyJobAccessCapForScore): a provider's new-match exposure scales
+// down automatically as their score drops, down to fully suspended at
+// 0-19, with no admin action needed, and it lifts itself the moment their
 // score recovers. This endpoint is for something a score number alone
 // can't capture — always requires a real reason and a real duration
 // from the admin, never pre-filled from a score bracket.
@@ -595,7 +596,10 @@ router.post('/users/:id/decide', requireDepartment(['verification', 'customer_se
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
   const updated = await db.update('users', req.params.id, { verified: decision === 'approve', status: decision === 'approve' ? 'approved' : 'rejected' });
-  await notify(target.id, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? 'Your account has been approved.' : 'Your account application was not approved. Contact support for details.', null, { section: 'overview' });
+  const approveMessage = target.role === 'provider' && !target.profilePhotoUrl
+    ? 'Your account has been approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
+    : 'Your account has been approved.';
+  await notify(target.id, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? approveMessage : 'Your account application was not approved. Contact support for details.', null, { section: 'overview' });
   res.json({ user: publicAdmin(updated) });
 });
 
@@ -637,29 +641,61 @@ router.patch('/providers/:id/guarantors/:index', requireDepartment(['verificatio
 
 router.get('/verification-queue', requireDepartment(['verification']), async (req, res) => {
   const region = await myRegion(req);
-  const inReview = await db.filter('verifications', v => v.status === 'in review');
+  // item 12: queue now covers both real open states — a plain "pending"
+  // submission and one flagged for review_required (e.g. a name mismatch,
+  // see POST /verification/submit) — not one vague "in review" bucket.
+  const open = await db.filter('verifications', v => ['pending', 'review_required'].includes(v.status));
   const queue = [];
-  for (const v of inReview) {
+  for (const v of open) {
     const user = await db.find('users', u => u.id === v.userId);
-    const entry = { ...v, userName: user ? user.name : 'Unknown', country: user ? user.country : '', city: user ? user.city : null };
+    const entry = { ...v, userName: user ? user.name : 'Unknown', accountName: user ? user.name : null, country: user ? user.country : '', city: user ? user.city : null };
     if (!region || entry.city === region) queue.push(entry);
   }
   res.json({ queue });
 });
 
-// POST /api/admin/verification/:id/decide  { decision: 'approve' | 'reject' }
+// GET /api/admin/verification/:id/document — the actual document file
+// behind a verification record. Private by design (see PRIVATE_UPLOADS_DIR
+// in src/uploads.js) — this is the ONLY way to see it, gated the exact
+// same way as the decide action above: a super admin, a verification-
+// department admin (any region), or the submitter's own plain regional
+// admin. This is also the real fix for the "only superadmin can see
+// verification documents/guarantors" report — requireDepartment already
+// lets a plain regional admin (no department set) through; what was
+// actually missing was this route existing at all.
+router.get('/verification/:id/document', requireDepartment(['verification']), async (req, res) => {
+  const record = await db.find('verifications', v => v.id === req.params.id);
+  if (!record || !record.documentFilename) return res.status(404).json({ error: 'Document not found' });
+  const region = await myRegion(req);
+  const user = await db.find('users', u => u.id === record.userId);
+  if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  const { PRIVATE_UPLOADS_DIR } = require('../uploads');
+  const filePath = require('path').join(PRIVATE_UPLOADS_DIR, record.documentFilename);
+  if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'Document file is missing on disk' });
+  res.sendFile(filePath);
+});
+
+// POST /api/admin/verification/:id/decide  { decision: 'approve' | 'reject', rejectionReason? }
 router.post('/verification/:id/decide', requireDepartment(['verification']), async (req, res) => {
-  const { decision } = req.body || {};
+  const { decision, rejectionReason } = req.body || {};
+  if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ error: 'decision must be approve or reject' });
+  if (decision === 'reject' && !isNonEmptyString(rejectionReason, { min: 3, max: 500 })) {
+    return res.status(400).json({ error: 'A rejection reason is required so the applicant knows what to fix and resubmit' });
+  }
   const record = await db.find('verifications', v => v.id === req.params.id);
   if (!record) return res.status(404).json({ error: 'Verification record not found' });
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
   if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
   const status = decision === 'approve' ? 'approved' : 'rejected';
-  await db.update('verifications', record.id, { status });
+  const finalRejectionReason = decision === 'reject' ? rejectionReason.trim() : null;
+  await db.update('verifications', record.id, { status, rejectionReason: finalRejectionReason });
   if (decision === 'approve') await db.update('users', record.userId, { verified: true });
-  await notify(record.userId, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? 'Your identity verification was approved.' : 'Your identity verification was rejected — please resubmit your documents.', null, { section: 'verification' });
-  res.json({ verification: { ...record, status } });
+  const approveMessage = user && user.role === 'provider' && !user.profilePhotoUrl
+    ? 'Your identity verification was approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
+    : 'Your identity verification was approved.';
+  await notify(record.userId, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? approveMessage : `Your identity verification was rejected: ${rejectionReason.trim()} — please resubmit your documents.`, null, { section: 'verification' });
+  res.json({ verification: { ...record, status, rejectionReason: finalRejectionReason } });
 });
 
 // GET /api/admin/disputes
@@ -1588,7 +1624,7 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
-    ['password', isValidPassword(password), 'Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol'],
+    ['password', isValidPassword(password), 'Password must be 8-72 characters'],
     ['city', isNonEmptyString(city), 'City is required'],
     ['country', isNonEmptyString(country), 'Country is required'],
   ]);

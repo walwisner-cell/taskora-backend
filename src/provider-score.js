@@ -192,12 +192,11 @@ async function computeProviderScore(providerId) {
 // the ability to pause" is exactly that — a tool they can use, not a
 // script that acts on its own.
 // What used to be an escalating series of pause durations (1 month, up
-// to 12 for the lowest scores) is gone — see NEW_MATCH_TRUST_SCORE_FLOOR
-// in marketplace.routes.js for why: pausing someone's whole account
-// blocked the very things (completing jobs, responding, avoiding
+// to 12 for the lowest scores) is gone — see weeklyJobAccessCapForScore
+// below for why: pausing someone's whole account blocked the very things (completing jobs, responding, avoiding
 // cancellations) that would let their score recover. The real
-// consequence is now automatic and continuous — a provider at or below
-// the floor simply stops receiving new job matches, and starts again
+// consequence is now automatic and continuous — a provider's new-match
+// exposure scales down as their score drops (fully suspended at 0-19), and starts again
 // the moment their score crosses back over, with no admin action
 // required either way.
 //
@@ -211,4 +210,48 @@ function recommendedActionForScore(score) {
   return { callRequired: true, label: 'At or below the new-match floor — new job matches are already paused automatically; call to understand why and see if there\'s a real way to help them recover' };
 }
 
-module.exports = { computeProviderScore, recommendedActionForScore, MEANINGFUL_JOB_COUNT };
+// Weekly job-access tiers, replacing the old flat pass/fail floor at 40
+// (see NEW_MATCH_TRUST_SCORE_FLOOR's old comment in marketplace.routes.js
+// for the prior approach). A binary cutoff meant a provider at 39 got
+// zero new matches and a provider at 41 got unlimited — no real
+// difference between those two providers justifies that cliff. A
+// graduated cap means a lower-scoring provider isn't shut out entirely
+// (which would make it impossible for them to complete the jobs that
+// would raise their score back up — the previous system's actual flaw),
+// but still gets meaningfully less exposure than a proven provider, in
+// direct proportion to how much trust they've actually earned.
+// Ordered highest score first; the first matching entry wins.
+const WEEKLY_JOB_ACCESS_TIERS = [
+  { min: 90, cap: null },  // 90-99 (99 is this app's real ceiling — see the 99-not-100 note above): unlimited
+  { min: 85, cap: 30 },
+  { min: 80, cap: 20 },
+  { min: 75, cap: 15 },
+  { min: 70, cap: 10 },
+  { min: 65, cap: 7 },
+  { min: 60, cap: 5 },
+  { min: 50, cap: 4 },
+  { min: 40, cap: 3 },
+  { min: 30, cap: 2 },
+  { min: 20, cap: 1 },
+  { min: 0, cap: 0 },  // 0-19: suspended from new matches pending review — see recommendedActionForScore
+];
+
+// A provider with no computed score yet (brand new, hasn't been through
+// the first daily sweep) gets a real starting allowance rather than
+// either extreme: not unlimited (a wave of fresh signups shouldn't be
+// able to flood matching before anyone's vouched for them), and not
+// zero/suspended (that would make it impossible to ever complete the
+// jobs needed to earn a real score in the first place — exactly the trap
+// a graduated system exists to avoid). 15/week matches the 75-79 tier: a
+// reasonable, generous-but-real benefit of the doubt, consistent with
+// how every new-provider component elsewhere in this file already
+// defaults to full credit rather than a harsh zero.
+const NEW_PROVIDER_WEEKLY_CAP = 15;
+
+function weeklyJobAccessCapForScore(score) {
+  if (score == null) return NEW_PROVIDER_WEEKLY_CAP;
+  const tier = WEEKLY_JOB_ACCESS_TIERS.find(t => score >= t.min);
+  return tier ? tier.cap : 0;
+}
+
+module.exports = { computeProviderScore, recommendedActionForScore, MEANINGFUL_JOB_COUNT, WEEKLY_JOB_ACCESS_TIERS, NEW_PROVIDER_WEEKLY_CAP, weeklyJobAccessCapForScore };

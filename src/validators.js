@@ -56,15 +56,15 @@ const COMMON_WEAK_PASSWORDS = new Set([
   'abc123456', '11111111', '00000000', 'trothen123', // yes, even our own demo password shouldn't be reused for a real account
 ]);
 
+// NIST 800-63B-aligned: length is the real signal, not forced composition
+// (a long passphrase like "correct horse battery staple" is stronger than
+// "Aa1!aaaaa" but would fail an old digit/letter/symbol quota). The only
+// thing this still actively rejects, besides length, is a known-weak
+// password — never an arbitrary character-mix rule that mostly just
+// locks legitimate accounts out of the very passwords they're used to.
 function isValidPassword(password) {
   if (typeof password !== 'string') return false;
-  if (password.length < 9 || password.length > 200) return false;
-  const digitCount = (password.match(/[0-9]/g) || []).length;
-  const letterCount = (password.match(/[a-zA-Z]/g) || []).length;
-  const symbolCount = (password.match(/[^a-zA-Z0-9]/g) || []).length;
-  if (digitCount < 6) return false;
-  if (letterCount < 2) return false;
-  if (symbolCount < 1) return false;
+  if (password.length < 8 || password.length > 72) return false;
   if (COMMON_WEAK_PASSWORDS.has(password.toLowerCase())) return false;
   return true;
 }
@@ -366,8 +366,38 @@ function validate(rules) {
   return errors;
 }
 
+// Item 7 / ID Name Matching — a real, honest comparison, not exact-string
+// equality (which would falsely flag "Jon Smith Jr." vs "Jon Smith" or a
+// stray extra space as a mismatch). Normalizes case, punctuation, and
+// whitespace, then checks whether one name's words are a subset of the
+// other's — genuine legal-name variations (middle name present on one but
+// not the other, a suffix, a hyphenated surname split differently) pass;
+// a name that's actually a different person doesn't share enough words to
+// pass. This is deliberately permissive toward false negatives over false
+// positives — flagging a legitimate difference for a human's controlled
+// manual review (see the country-aware docType flow in misc.routes.js) is
+// the right failure mode, not silently auto-rejecting a real applicant.
+function normalizeNameForMatch(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 0 && !['jr', 'sr', 'ii', 'iii', 'iv'].includes(w));
+}
+
+function namesLikelyMatch(accountName, idLegalName) {
+  const a = new Set(normalizeNameForMatch(accountName));
+  const b = normalizeNameForMatch(idLegalName);
+  if (a.size === 0 || b.length === 0) return false;
+  const overlap = b.filter(w => a.has(w)).length;
+  // At least half of the ID name's words need to show up in the account
+  // name (or vice versa isn't required — a full legal name on an ID
+  // reasonably has more words than a casual account display name).
+  return overlap / b.length >= 0.5;
+}
+
 module.exports = {
   isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode,
   isValidName, isValidCardExpiry, isValidLabel, validate, EMAIL_RE, postalCodeErrorMessage,
-  postalCodeIsOptionalFor, looksLikeRealText,
+  postalCodeIsOptionalFor, looksLikeRealText, namesLikelyMatch,
 };

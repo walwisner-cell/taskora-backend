@@ -12,10 +12,10 @@ const { computeProviderScore, recommendedActionForScore } = require('./provider-
 // flagged" principle the document-expiry sweep already uses.
 //
 // The real consequence of a low score is fully automatic and needs no
-// admin action at all — see NEW_MATCH_TRUST_SCORE_FLOOR in
-// marketplace.routes.js, which simply stops sending new job matches to
-// a provider at or below the floor, and resumes the moment their score
-// recovers. What this sweep surfaces is different: a recommendation for
+// admin action at all — see weeklyJobAccessCapForScore in
+// ./provider-score, which scales a provider's new-match exposure down as
+// their score drops (fully suspended at 0-19), and recovers the moment
+// their score does. What this sweep surfaces is different: a recommendation for
 // whether a human should actually reach out and help, via a real,
 // separate manual action (POST /admin/providers/:id/hold) — which is
 // for account holds over real issues like fraud, not a score-triggered
@@ -48,6 +48,21 @@ async function sweepProviderScores() {
       trustScoreBreakdown: result.breakdown,
       trustScoreUpdatedAt: new Date().toISOString(),
     });
+
+    // Item 5 / High-Score Reward: crossing UP into the 90+ band earns 2
+    // real, consumable free-commission credits — a genuine reward for
+    // reaching that milestone, on top of (not instead of) the existing
+    // daily per-city top-scorer credit (src/top-scorer-promotion-
+    // scheduler.js), which reuses this exact same freeCommissionCredits
+    // field. "Newly crosses" is the same one-time-per-occurrence pattern
+    // already used below for the score-drop notification — a provider
+    // sitting at 92 every day doesn't get re-rewarded daily, but a real
+    // rise from below 90 up to 90+ does count again even if it's happened
+    // before, since it's a genuine re-earned milestone each time.
+    if (result.total >= 90 && (previousScore == null || previousScore < 90)) {
+      await db.update('users', provider.id, { freeCommissionCredits: (provider.freeCommissionCredits || 0) + 2 });
+      await notify(provider.id, '🏆', `Your Trust Score reached ${result.total}/99 — you've earned 2 commission-free jobs, applied automatically to your next payouts.`, null, { section: 'earnings' });
+    }
 
     const action = recommendedActionForScore(result.total);
     const previousAction = previousScore != null ? recommendedActionForScore(previousScore) : null;

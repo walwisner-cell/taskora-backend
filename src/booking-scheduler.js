@@ -15,12 +15,29 @@ async function expireOneBooking(contract) {
   const updated = await db.update('contracts', contract.id, { status: 'expired' });
 
   const provider = await db.find('users', u => u.id === contract.providerId);
-  const isDirectBooking = contract.status === 'pending_provider_confirmation';
+  // NOTE: contract.status here is still the pre-update value passed in by
+  // the caller ('pending_provider_confirmation' or 'pending_agreement') —
+  // read before the update above, not after.
+  const isDirectBooking = contract.status === 'pending_provider_confirmation' && !contract.jobId;
+  const isJobSelection = contract.status === 'pending_provider_confirmation' && !!contract.jobId;
+
+  await notify(contract.providerId, '⏰', `You didn't respond to the booking request for "${contract.service}" in time, so it expired automatically and the customer was refunded.`, null, { section: 'bookings' });
+
+  if (isJobSelection) {
+    // Item 10: try the next real candidate automatically instead of just
+    // cancelling the customer's job — attemptJobReassignment handles its
+    // own customer notification either way (reassigned, or reopened with
+    // nobody left).
+    const { attemptJobReassignment } = require('./routes/marketplace.routes');
+    const job = await db.find('jobs', j => j.id === contract.jobId);
+    if (job) await attemptJobReassignment(job, contract.providerId, contract.amount);
+    return updated;
+  }
+
   const customerMessage = isDirectBooking
     ? `${provider ? provider.name : 'The provider'} didn't confirm "${contract.service}" in time, so the booking was automatically cancelled and any held funds refunded. Try another provider, or book them again for a later time.`
     : `${provider ? provider.name : 'The provider'} didn't respond to your offer for "${contract.service}" in time, so it expired automatically and any held funds were refunded.`;
   await notify(contract.customerId, '⏰', customerMessage, null, { section: 'bookings' });
-  await notify(contract.providerId, '⏰', `You didn't respond to the booking request for "${contract.service}" in time, so it expired automatically and the customer was refunded.`, null, { section: 'bookings' });
 
   return updated;
 }

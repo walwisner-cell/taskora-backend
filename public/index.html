@@ -880,9 +880,9 @@
 </head>
 <body>
 
-<div id="test-mode-banner" style="background:#B08A3E;color:#12161F;text-align:center;font-size:12.5px;font-weight:600;padding:8px 16px;position:relative;z-index:500;line-height:1.5;">
-  ⚠️ This is a <strong>test environment</strong> for Trothen — the live platform is launching soon. Nothing here is real yet: <strong>email codes are shown on-screen instead of sent</strong>, and <strong>all payments, payouts, and card details are test-mode only — no real money moves</strong>. Please don't enter real personal information, real passwords, or real payment/card details.
-  <span onclick="document.getElementById('test-mode-banner').style.display='none'" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-weight:800;padding:0 4px;">✕</span>
+<div id="test-mode-banner" style="background:#FBF3E4;color:var(--navy);text-align:center;font-size:12.5px;font-weight:500;padding:9px 40px;position:relative;z-index:500;line-height:1.5;border-bottom:1px solid #E9D6A8;">
+  <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--gold);color:#fff;font-size:10px;font-weight:800;vertical-align:-3px;margin-right:6px;">!</span><strong>Test environment</strong> — nothing here is real yet. Verification codes appear on-screen instead of being sent, and every payment is simulated. <strong>Don't enter real passwords or card details.</strong>
+  <span onclick="document.getElementById('test-mode-banner').style.display='none'" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-weight:700;padding:3px 7px;border-radius:5px;color:var(--slate);opacity:.7;transition:opacity .15s ease,background .15s ease;" onmouseover="this.style.opacity=1;this.style.background='rgba(18,22,31,.06)'" onmouseout="this.style.opacity=.7;this.style.background='transparent'">✕</span>
 </div>
 
 <!-- ════════════════════════════ SCREEN: HOME ════════════════════════════ -->
@@ -2190,6 +2190,7 @@ function candidateRowHTML(c, job) {
         </div>
         <span class="badge ${c.status === 'interested' ? 'badge-success' : c.status === 'accepted' ? 'badge-success' : c.status === 'declined' || c.status === 'not_selected' ? 'badge-neutral' : 'badge-warn'}">${MATCH_STATUS_LABEL[c.status] || c.status}</span>
       </div>
+      ${c.coverLetter ? `<div style="margin-top:10px;padding:10px 12px;background:var(--cream, #FAF8F4);border-radius:8px;font-size:12.5px;color:var(--navy);"><strong>Cover letter:</strong> ${escapeHtml(c.coverLetter)}</div>` : ''}
       ${c.messages.length ? `<div style="margin-top:10px;max-height:160px;overflow-y:auto;border-top:1px solid var(--border);padding-top:10px;">
         ${c.messages.map(m => `<div style="margin-bottom:8px;font-size:12.5px;"><strong style="color:var(--navy);">${m.fromId === p.id ? escapeHtml(p.name) : 'You'}:</strong> ${escapeHtml(m.text)}</div>`).join('')}
       </div>` : ''}
@@ -2230,10 +2231,10 @@ async function hireProviderForJob(providerId) {
     if (!(amount > 0)) return showToast('Enter a valid amount, or leave it blank to use the job\'s listed budget');
     body.amount = amount;
   }
-  if (!confirm(`Hire this provider${body.amount ? ` at $${body.amount}` : ''}? This funds escrow immediately and closes the job to everyone else who responded.`)) return;
+  if (!confirm(`Select this provider${body.amount ? ` at $${body.amount}` : ''}? This funds escrow immediately. The job stays open to other candidates until this provider actually confirms — if they decline or don't respond in time, it's automatically offered to the next one.`)) return;
   try {
     const { contract } = await apiFetch('POST', `/jobs/${jobId}/select-provider`, body);
-    showToast(`Hired — contract ${contract.bookingNumber || contract.id} created and escrow funded`);
+    showToast(`Selected — contract ${contract.bookingNumber || contract.id} created, escrow funded, awaiting provider confirmation`);
     closeJobCandidatesModal();
     await loadCustomerData();
     selectCustomerSection('bookings');
@@ -3281,12 +3282,22 @@ function playMessageSound() {
 
 // Lightweight polling — the app has no real-time push channel, so this is
 // what actually makes "play a sound for a new message" true rather than a
-// setting that does nothing. Checks notifications every 20s while signed
-// in, and only sounds the alert for a message notification whose id genuinely
+// setting that does nothing. Checks notifications every 5s while signed
+// in, and only sounds the alert for a notification whose id genuinely
 // wasn't seen on the previous check (never replays on first load or on a
 // page the person just opened themselves).
 let messagePollInterval = null;
 let seenNotificationIds = null;
+// Items 1 & 2 / the "provider not receiving texts with tone" report: sound
+// used to only fire for chat messages — a customer's "provider arrived"
+// alert and a provider's "new job match"/"you were selected" alert never
+// made a sound at all, which is exactly backwards for the two most
+// time-sensitive notifications this app has. Both already use these two
+// real linkTo.section values (see on-my-way/arrived and job-match/select-
+// provider in the backend), so this is the real, minimal fix rather than
+// adding new plumbing: sound (and vibration, where supported) now fires
+// for messages, bookings, and matches alike.
+const SOUND_WORTHY_SECTIONS = ['messages', 'bookings', 'matches'];
 async function startMessagePolling() {
   stopMessagePolling();
   if (!BACKEND_AVAILABLE || !AUTH.token) return;
@@ -3304,8 +3315,12 @@ async function startMessagePolling() {
       seenNotificationIds = new Set(notifications.map(n => n.id));
       if (!newOnes.length) return; // nothing changed — don't touch the DOM for no reason
       CURRENT_NOTIFICATIONS = notifications;
-      if (soundOn && newOnes.some(n => n.linkTo && n.linkTo.section === 'messages')) {
+      if (soundOn && newOnes.some(n => n.linkTo && SOUND_WORTHY_SECTIONS.includes(n.linkTo.section))) {
         playMessageSound();
+        // Vibration where the device/browser actually supports it (mostly
+        // mobile Chrome/Android) — silently does nothing everywhere else,
+        // including iOS Safari, which has no vibrate() API at all.
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
       }
       // Show the unread dot on whichever bell is actually in the DOM right
       // now, without re-rendering the whole navbar (which would be
@@ -3321,7 +3336,7 @@ async function startMessagePolling() {
       const panel = document.getElementById('notif-panel');
       if (panel && panel.classList.contains('open')) panel.innerHTML = notifPanelInnerHTML();
     } catch (e) { /* a failed poll just tries again next interval */ }
-  }, 20000);
+  }, 5000);
 }
 function stopMessagePolling() {
   if (messagePollInterval) clearInterval(messagePollInterval);
@@ -3370,21 +3385,26 @@ function togglePasswordVisibility() {
   icon.textContent = showing ? '👁️' : '🙈';
 }
 
-// Reflects the EXACT rule the server actually enforces (9+ characters,
-// 6+ numbers, 2+ letters, 1+ symbol) — not a generic "weak/medium/strong"
-// guess disconnected from what will actually be accepted at submit time.
-// Only shown during signup; login doesn't need or want this.
+// Reflects the EXACT rule the server actually enforces (8-72 characters,
+// no forced digit/letter/symbol composition — NIST 800-63B-aligned) —
+// scored by length, not a generic "weak/medium/strong" guess disconnected
+// from what will actually be accepted at submit time. Only shown during
+// signup; login doesn't need or want this.
 function updatePasswordStrength(value) {
   const meter = document.getElementById('password-strength-meter');
   if (!meter) return;
   if (authState.mode !== 'signup' || !value) { meter.style.display = 'none'; return; }
   meter.style.display = 'block';
 
-  const hasLength = value.length >= 9;
-  const numbers = (value.match(/[0-9]/g) || []).length >= 6;
-  const letters = (value.match(/[a-zA-Z]/g) || []).length >= 2;
-  const symbols = (value.match(/[^a-zA-Z0-9]/g) || []).length >= 1;
-  const metCount = [hasLength, numbers, letters, symbols].filter(Boolean).length;
+  const len = value.length;
+  // 4 segments, scaled by length past the 8-char floor: <8 not valid yet,
+  // 8-11 weak, 12-15 fair, 16-19 good, 20+ strong.
+  let metCount;
+  if (len < 8) metCount = 0;
+  else if (len < 12) metCount = 1;
+  else if (len < 16) metCount = 2;
+  else if (len < 20) metCount = 3;
+  else metCount = 4;
 
   const colors = ['#C0392B', '#C0392B', '#B08A3E', '#2E8C6F']; // 1-2 met: red, 3 met: gold, 4 met: green
   const color = metCount === 0 ? 'var(--border)' : colors[metCount - 1];
@@ -3392,9 +3412,9 @@ function updatePasswordStrength(value) {
     document.getElementById(`strength-seg-${i}`).style.background = i < metCount ? color : 'var(--border)';
   }
   const label = document.getElementById('password-strength-label');
-  label.textContent = metCount === 4
-    ? '✓ Meets every requirement'
-    : '9+ characters, 6+ numbers, 2+ letters, 1+ symbol';
+  label.textContent = len < 8
+    ? '8-72 characters — longer is stronger'
+    : (metCount === 4 ? '✓ Strong — great length' : `${len} characters — a longer passphrase is stronger than a short, complex one`);
   label.style.color = metCount === 4 ? '#2E8C6F' : 'var(--slate)';
 }
 
@@ -3495,7 +3515,7 @@ async function submitResetPassword() {
   const newPassword = document.getElementById('reset-new-password').value;
   const confirm = document.getElementById('reset-confirm-password').value;
   if (!pendingResetToken) return showToast('Missing reset token — request a new link');
-  if (newPassword.length < 9 || ((newPassword.match(/[0-9]/g) || []).length < 6) || ((newPassword.match(/[a-zA-Z]/g) || []).length < 2) || ((newPassword.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
+  if (newPassword.length < 8 || newPassword.length > 72) return showToast('New password must be 8-72 characters');
   if (newPassword !== confirm) return showToast("Passwords don't match");
 
   if (!BACKEND_AVAILABLE) {
@@ -3587,7 +3607,7 @@ async function mockAuth() {
   }
   if (authState.mode === 'signup') {
     if (name.length < 2) return showToast('Full name must be at least 2 characters');
-    if (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
+    if (password.length < 8 || password.length > 72) return showToast('Password must be 8-72 characters');
     const phoneDigits = phone.replace(/[^0-9]/g, '');
     if (phoneDigits.length < 7) return showToast('Enter a valid phone number');
     if (zipCode && zipCode.length < 3 && !(GEO_DATA.noPostalCodeCountries || []).includes(country)) return showToast('Enter a valid zip/postal code');
@@ -5511,7 +5531,7 @@ async function changePassword(prefix) {
   const newPassword = document.getElementById(`${prefix}-pw-new`).value;
   const confirm = document.getElementById(`${prefix}-pw-confirm`).value;
   if (!currentPassword || !newPassword || !confirm) return showToast('Fill in all three password fields');
-  if (newPassword.length < 9 || ((newPassword.match(/[0-9]/g) || []).length < 6) || ((newPassword.match(/[a-zA-Z]/g) || []).length < 2) || ((newPassword.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
+  if (newPassword.length < 8 || newPassword.length > 72) return showToast('New password must be 8-72 characters');
   if (newPassword !== confirm) return showToast("New password and confirmation don't match");
   if (!BACKEND_AVAILABLE) return showToast('Password updated (demo mode — no backend detected)');
   try {
@@ -5970,6 +5990,9 @@ async function loadProviderData() {
 // the backend (see marketplace.routes.js GET /matches/mine).
 
 async function respondToMatch(id, decision) {
+  const coverLetter = decision === 'accept'
+    ? (prompt('Optional: add a short note to the customer about why you\'re a good fit (cover letter) — leave blank to skip.') || '').trim()
+    : '';
   if (!BACKEND_AVAILABLE) {
     const m = providerData.matches.find(j => j.id === id);
     if (!m) return;
@@ -5978,7 +6001,7 @@ async function respondToMatch(id, decision) {
     return selectProviderSection('matches');
   }
   try {
-    await apiFetch('POST', `/matches/${id}/respond`, { decision });
+    await apiFetch('POST', `/matches/${id}/respond`, { decision, coverLetter: coverLetter || undefined });
     showToast(decision === 'accept' ? `You're marked as interested — message the customer to negotiate, or wait for them to reach out` : 'Match declined');
     await loadProviderData();
     selectProviderSection('matches');
@@ -6002,6 +6025,17 @@ const PROVIDER_SECTIONS = {
       ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--gold);"><div style="font-size:12.5px;color:var(--navy);">⏳ Your category "<strong>${AUTH.user.category}</strong>" is pending a quick admin review (usually within 24 hours). You can use your account normally in the meantime — we'll notify you the moment it's reviewed.</div></div>`
       : catStatus === 'rejected'
       ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--danger, #C1554D);"><div style="font-size:12.5px;color:var(--navy);">Your category "<strong>${AUTH.user.category}</strong>" wasn't approved as a new listed category. <a onclick="selectProviderSection('settings')" style="color:var(--gold);cursor:pointer;">Update your category in Settings</a> to one of our current categories to be fully bookable.</div></div>`
+      : '';
+    // Item 9 / Provider Score & Job Access: only worth showing when it's
+    // actually informative — a top-tier provider with unlimited access
+    // doesn't need a banner telling them so every time they load the
+    // page. Only renders when there's a real cap or an actual suspension
+    // to be transparent about.
+    const jobAccess = AUTH.user && AUTH.user.weeklyJobAccess;
+    const jobAccessBanner = jobAccess && jobAccess.cap === 0
+      ? `<div class="panel" style="background:#FBEAEA;border:1px solid #D98C8C;"><div style="font-size:12.5px;color:var(--navy);">New job matches are paused while your Trust Score is under review. Completing your existing contracts well is the fastest way back — <a onclick="selectProviderSection('overview')" style="color:var(--gold);cursor:pointer;">see your Trust Score breakdown</a>.</div></div>`
+      : jobAccess && jobAccess.cap != null
+      ? `<div class="panel" style="background:var(--offwhite);"><div style="font-size:12.5px;color:var(--navy);">New job matches this week: <strong>${jobAccess.used} of ${jobAccess.cap}</strong> — this scales up automatically as your Trust Score improves.</div></div>`
       : '';
     // A real, computed number — not decorative — so this only ever shows
     // when there's genuinely money sitting unclaimed, and disappears the
@@ -6037,6 +6071,7 @@ const PROVIDER_SECTIONS = {
     <div id="provider-promotions-banner"></div>
     ${payoutBanner}
     ${catBanner}
+    ${jobAccessBanner}
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">This Month's Earnings</div><div class="stat-card-val">$${thisMonthEarnings.toLocaleString()}</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">$${allTimeEarnings.toLocaleString()} all-time</div></div>
       <div class="stat-card"><div class="stat-card-label">Active Contracts</div><div class="stat-card-val">${activeContracts}</div></div>
@@ -9118,7 +9153,7 @@ async function createLocationAdmin() {
   if (!name || !email || !password || !city || !country) return showToast('Please fill in every field');
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
-  if (password.length < 9 || ((password.match(/[0-9]/g) || []).length < 6) || ((password.match(/[a-zA-Z]/g) || []).length < 2) || ((password.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
+  if (password.length < 8 || password.length > 72) return showToast('Password must be 8-72 characters');
   // A real, cheap safeguard against exactly the mistake that likely
   // caused a real regional-scoping bug elsewhere: typing a country name
   // into the City field. A "Regional Admin" scoped to "Liberia" (the
@@ -9974,7 +10009,7 @@ async function submitForcePasswordChange() {
   const newPassword = document.getElementById('force-pw-new').value;
   const confirm = document.getElementById('force-pw-confirm').value;
   if (!currentPassword || !newPassword || !confirm) return showToast('Fill in all three password fields');
-  if (newPassword.length < 9 || ((newPassword.match(/[0-9]/g) || []).length < 6) || ((newPassword.match(/[a-zA-Z]/g) || []).length < 2) || ((newPassword.match(/[^a-zA-Z0-9]/g) || []).length < 1)) return showToast('New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol');
+  if (newPassword.length < 8 || newPassword.length > 72) return showToast('New password must be 8-72 characters');
   if (newPassword !== confirm) return showToast("New passwords don't match");
   try {
     const data = await apiFetch('POST', '/auth/change-password', { currentPassword, newPassword });

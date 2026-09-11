@@ -543,8 +543,11 @@ router.get('/providers', async (req, res) => {
   // Only verified providers appear in the public directory — showing an
   // unverified provider here (even briefly, while their documents are in
   // review) would contradict the "Fully Verified" promise shown on the
-  // marketing page and profile badges.
-  let providers = await db.filter('users', u => u.role === 'provider' && u.verified);
+  // marketing page and profile badges. Also requires a real profile
+  // picture (item 6 / Mandatory Profile Picture) — a verified provider
+  // with no photo yet isn't "fully active" for discovery purposes; they
+  // still have a working account and can add one in Settings any time.
+  let providers = await db.filter('users', u => u.role === 'provider' && u.verified && u.profilePhotoUrl);
   if (category) providers = providers.filter(p => p.category === category);
   if (q) {
     const needle = q.toLowerCase();
@@ -653,28 +656,23 @@ router.get('/providers/:id', async (req, res) => {
 
 // ---- Jobs & AI matching -----------------------------------------------------
 
-// A trust score at or below this floor excludes a provider from NEW job
-// matches — replacing the earlier design of a full account pause as the
-// consequence of a low score. A real concern was raised about that
-// earlier design: pausing someone's whole account blocks the very
-// actions (completing jobs, avoiding cancellations, responding
-// promptly) that would let their score recover, turning a pause into a
-// trap rather than a path back. This is meant to only restrict what's
-// genuinely optional — new opportunities — while leaving every existing
-// contract, every ability to be found and booked directly by a
-// returning customer, and every real way to improve the score
-// completely untouched. The moment their score crosses back above this
-// floor (through the same daily recompute everyone else goes through),
-// they're included in new matches again automatically — there's no
-// separate "lift the restriction" step for an admin to remember, the
-// restriction and the score are the same live number.
-//
-// 40 is chosen to roughly track where the old escalating-pause bands
-// used to start getting genuinely serious (3+ months) — a real,
-// meaningful floor, not a token one, but one a provider actively working
-// on their standing (completing jobs, responding, avoiding
-// cancellations) can climb back over.
-const NEW_MATCH_TRUST_SCORE_FLOOR = 40;
+// Item 9 / Provider Score & Job Access: replaced the old binary
+// NEW_MATCH_TRUST_SCORE_FLOOR (a flat cutoff at 40 — either unlimited new
+// matches or none at all) with a graduated weekly cap by score band (see
+// weeklyJobAccessCapForScore in src/provider-score.js for the actual
+// tiers and the reasoning behind them). isEligibleForNewMatch below is
+// the real enforcement point — checked once per candidate when a job is
+// posted, using each provider's real match count over the trailing 7
+// days, not a calendar-week reset (a rolling window can't be gamed by
+// timing a request around a fixed reset moment the way a fixed weekly
+// boundary could).
+async function weeklyMatchCountsForProviders(providerIds) {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const recentMatches = await db.filter('matches', m => providerIds.includes(m.providerId) && m.createdAt >= sevenDaysAgo);
+  const counts = new Map();
+  for (const m of recentMatches) counts.set(m.providerId, (counts.get(m.providerId) || 0) + 1);
+  return counts;
+}
 
 // POST /api/jobs — customer posts a job, triggers AI matching immediately
 router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
@@ -755,7 +753,19 @@ router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   // state/region; only if THAT comes up empty does it widen to the whole
   // country. A customer in Lagos is never matched to a provider in Abuja
   // over one in a different country, no matter how good that provider is.
-  const allInCategory = await db.filter('users', u => u.role === 'provider' && u.category === category && u.verified && (u.trustScore == null || u.trustScore > NEW_MATCH_TRUST_SCORE_FLOOR));
+  const inCategoryUnfiltered = await db.filter('users', u => u.role === 'provider' && u.category === category && u.verified && u.profilePhotoUrl);
+  const weeklyCounts = await weeklyMatchCountsForProviders(inCategoryUnfiltered.map(u => u.id));
+  // Lazy require — provider-score.js requires this file back (for
+  // LICENSED_TRADE_CATEGORIES/hasValidLicense), so a top-level require
+  // here would be circular; every other cross-reference in this route
+  // handler already follows the same lazy-require pattern.
+  const { weeklyJobAccessCapForScore } = require('../provider-score');
+  const allInCategory = inCategoryUnfiltered.filter(u => {
+    const cap = weeklyJobAccessCapForScore(u.trustScore);
+    if (cap === 0) return false; // suspended — 0-19 band
+    if (cap === null) return true; // unlimited — 90+ band
+    return (weeklyCounts.get(u.id) || 0) < cap;
+  });
 
   let candidates = [];
   let matchScope = 'city';
@@ -916,10 +926,18 @@ function hasValidLicense(provider) {
 // responses, but the job isn't filled until the customer actually hires
 // someone via POST /jobs/:id/select-provider below.
 router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async (req, res) => {
-  const { decision } = req.body || {};
+  const { decision, coverLetter } = req.body || {};
   const match = await db.find('matches', m => m.id === req.params.id && m.providerId === req.user.sub);
   if (!match) return res.status(404).json({ error: 'Match not found' });
   if (!['accept', 'decline'].includes(decision)) return res.status(400).json({ error: 'decision must be accept or decline' });
+  // Item 3 / Cover Letter: an optional short note a provider can attach
+  // when expressing interest — genuinely optional (a provider who just
+  // clicks "Interested" isn't blocked), but real and visible to the
+  // customer in GET /jobs/:id/candidates below, not just accepted and
+  // discarded.
+  if (coverLetter !== undefined && coverLetter !== null && !isNonEmptyString(coverLetter, { max: 1000 })) {
+    return res.status(400).json({ error: 'Cover letter must be under 1000 characters' });
+  }
 
   if (decision === 'accept') {
     const provider = await db.find('users', u => u.id === req.user.sub);
@@ -931,7 +949,9 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async 
     }
   }
 
-  const updated = await db.update('matches', match.id, { status: decision === 'accept' ? 'interested' : 'declined' });
+  const matchPatch = { status: decision === 'accept' ? 'interested' : 'declined' };
+  if (decision === 'accept' && isNonEmptyString(coverLetter, { max: 1000 })) matchPatch.coverLetter = coverLetter.trim();
+  const updated = await db.update('matches', match.id, matchPatch);
 
   if (decision === 'accept') {
     const provider = await db.find('users', u => u.id === req.user.sub);
@@ -956,7 +976,7 @@ router.get('/jobs/:id/candidates', requireAuth, requireRole('customer'), async (
     if (!provider) return null;
     const messages = (await db.filter('messages', msg => msg.jobId === job.id && (msg.fromId === m.providerId || msg.toId === m.providerId)))
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-    return { matchId: m.id, status: m.status, score: m.score, sameCommunity: m.sameCommunity, provider: publicProvider(provider), messages };
+    return { matchId: m.id, status: m.status, score: m.score, sameCommunity: m.sameCommunity, coverLetter: m.coverLetter || null, provider: publicProvider(provider), messages };
   }));
   res.json({ job, candidates: candidates.filter(Boolean) });
 });
@@ -1002,6 +1022,28 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
     at: m.createdAt,
   }));
 
+  // This used to go straight to 'active' with escrow already funded and
+  // the job marked filled — meaning a job could sit "confirmed" on a
+  // provider's calendar (and every other candidate turned away) before
+  // that provider had actually agreed to the final price and terms a
+  // customer picked. Selecting/expressing interest earlier isn't the same
+  // as accepting a specific hire. Brought in line with the direct-booking
+  // flow below (POST /contracts): funds are held immediately (the
+  // customer is committing real money the moment they hire), but the
+  // contract itself is real only once a human on the provider's side
+  // actually confirms — same real deadline, same automatic-expiry
+  // handling (src/booking-scheduler.js), and now also automatic
+  // reassignment to the next candidate instead of leaving the customer's
+  // job dead if this pick doesn't confirm (see attemptJobReassignment
+  // below, used here and from the decline/expiry paths).
+  const { getSetting, computeResponseWindowHours } = require('../platform-settings');
+  const tiers = await getSetting('bookingResponseTiers');
+  // Posted jobs have no fixed date/time (unlike a direct booking), so
+  // jobDateTime is null — computeResponseWindowHours already handles that
+  // by falling back to the middle tier rather than guessing wrong.
+  const windowHours = computeResponseWindowHours({ now: new Date(), jobDateTime: null, tiers, categoryOverrideHours: null });
+  const responseDeadline = new Date(Date.now() + windowHours * 60 * 60 * 1000).toISOString();
+
   const contract = {
     id: `ct_${nanoid(10)}`,
     bookingNumber: await generateBookingNumber(),
@@ -1011,8 +1053,9 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
     service: job.description,
     amount: finalAmount,
     serviceFee: computeServiceFee(finalAmount),
-    status: 'active',
-    signedAt: new Date().toISOString().slice(0, 10),
+    status: 'pending_provider_confirmation',
+    signedAt: null,
+    providerResponseDeadline: responseDeadline,
     negotiationTranscript,
     createdAt: new Date().toISOString(),
   };
@@ -1025,18 +1068,86 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
   await checkPriceAnomaly(provider.category, contract.amount, contract.id, req.user.sub, providerId);
   await checkNewAccountHighValue(req.user.sub, contract.amount);
 
-  await notify(providerId, '🎉', `You've been hired for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" at $${finalAmount} — contract signed and escrow funded.`, null, { section: 'bookings' });
+  const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
+  await notify(providerId, '🎉', `You were selected for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" at $${finalAmount} — confirm by ${deadlineLabel} or it's automatically offered to the next candidate.`, null, { section: 'bookings' });
+  await notify(req.user.sub, '⏳', `Your booking for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" is awaiting the provider's confirmation.`, null, { section: 'bookings' });
 
-  // Every other provider who responded needs to know the job's filled —
-  // not left wondering why a job they were interested in just vanished.
-  const otherMatches = await db.filter('matches', m => m.jobId === job.id && m.id !== match.id && ['pending', 'interested'].includes(m.status));
+  // NOTE: other candidates are deliberately NOT dismissed here — see
+  // finalizeJobSelection below. They only get marked not_selected once
+  // this specific hire is actually confirmed, so they're still available
+  // as real fallback candidates if this one declines or times out.
+
+  res.status(201).json({ contract, escrow });
+});
+
+// Called once a job-originated hire is actually confirmed (see
+// handleRespondOffer): this is the real "job's filled" moment, so this is
+// when other candidates who responded actually get dismissed and told.
+async function finalizeJobSelection(job, confirmedMatchId) {
+  const otherMatches = await db.filter('matches', m => m.jobId === job.id && m.id !== confirmedMatchId && ['pending', 'interested'].includes(m.status));
   for (const other of otherMatches) {
     await db.update('matches', other.id, { status: 'not_selected' });
     await notify(other.providerId, '📋', `The customer hired another provider for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" — this job is no longer available.`, null, { section: 'matches' });
   }
+}
 
-  res.status(201).json({ contract, escrow });
-});
+// The real implementation behind item 10: when a job-originated hire
+// declines or times out unconfirmed, this looks for the next real
+// candidate — another provider who actually expressed interest in this
+// same job and hasn't already been tried and failed — and automatically
+// re-offers the job to them at the same amount, instead of just refunding
+// and leaving the customer to start over. Only if nobody's left does it
+// fall back to reopening the job for the customer to pick again.
+// contractOrNull may be null (nothing to refund yet, e.g. called from a
+// context that already handled that) — reassignment logic is identical
+// either way.
+async function attemptJobReassignment(job, failedProviderId, failedAmount) {
+  const alreadyTried = (await db.filter('contracts', c => c.jobId === job.id)).map(c => c.providerId);
+  const candidates = await db.filter('matches', m =>
+    m.jobId === job.id && m.status === 'interested' && !alreadyTried.includes(m.providerId)
+  );
+  candidates.sort((a, b) => b.score - a.score);
+  const next = candidates[0];
+
+  if (!next) {
+    // Nobody left to offer it to — reopen the job so the customer can
+    // pick again (or wait for new responses) rather than it dying silently.
+    await db.update('jobs', job.id, { status: 'open' });
+    await notify(job.customerId, '🔁', `Your provider for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" didn't confirm in time and no other candidates are available — the job is reopened so you can choose again.`, null, { section: 'bookings' });
+    return null;
+  }
+
+  const provider = await db.find('users', u => u.id === next.providerId);
+  const { getSetting, computeResponseWindowHours } = require('../platform-settings');
+  const tiers = await getSetting('bookingResponseTiers');
+  const windowHours = computeResponseWindowHours({ now: new Date(), jobDateTime: null, tiers, categoryOverrideHours: null });
+  const responseDeadline = new Date(Date.now() + windowHours * 60 * 60 * 1000).toISOString();
+
+  const contract = {
+    id: `ct_${nanoid(10)}`,
+    bookingNumber: await generateBookingNumber(),
+    customerId: job.customerId,
+    providerId: next.providerId,
+    jobId: job.id,
+    service: job.description,
+    amount: failedAmount,
+    serviceFee: computeServiceFee(failedAmount),
+    status: 'pending_provider_confirmation',
+    signedAt: null,
+    providerResponseDeadline: responseDeadline,
+    negotiationTranscript: [],
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('contracts', contract);
+  const escrow = await fundEscrowForContract(contract, job.customerId, job.payCurrency);
+  await db.update('matches', next.id, { status: 'accepted' });
+
+  const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
+  await notify(next.providerId, '🎉', `You were selected for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" at $${failedAmount} — confirm by ${deadlineLabel} or it's automatically offered to the next candidate.`, null, { section: 'bookings' });
+  await notify(job.customerId, '🔁', `${provider ? provider.name : 'The next available provider'} wasn't able to confirm your original pick, so your job for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" was automatically offered to the next available candidate at the same price.`, null, { section: 'bookings' });
+
+  return contract;
+}
 
 // ---- Contracts / bookings ----------------------------------------------------
 
@@ -1243,16 +1354,31 @@ async function handleRespondOffer(req, res) {
     return res.status(400).json({ error: 'The response window for this booking has already passed — it was automatically cancelled and refunded.' });
   }
 
-  const isDirectBooking = contract.status === 'pending_provider_confirmation';
+  // Three real shapes share this endpoint: a negotiable Mutual Agreement
+  // offer (pending_agreement, escrow funded on accept), a direct booking
+  // (pending_provider_confirmation with no jobId, escrow already funded at
+  // booking time), and a job-board hire (pending_provider_confirmation
+  // WITH a jobId, escrow also already funded at selection time — see
+  // POST /jobs/:id/select-provider). The job-board case is the only one
+  // with real fallback candidates to reassign to if it falls through.
+  const isJobSelection = contract.status === 'pending_provider_confirmation' && !!contract.jobId;
+  const isDirectBooking = contract.status === 'pending_provider_confirmation' && !contract.jobId;
 
   if (decision === 'decline') {
-    if (isDirectBooking) {
-      // Escrow was already funded at booking time for a direct booking —
-      // declining refunds it, same treatment as a cancellation.
+    if (isDirectBooking || isJobSelection) {
+      // Escrow was already funded at booking/selection time — declining
+      // refunds it, same treatment as a cancellation.
       const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
       if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
     }
     const updated = await db.update('contracts', contract.id, { status: 'declined' });
+
+    if (isJobSelection) {
+      const job = await db.find('jobs', j => j.id === contract.jobId);
+      if (job) await attemptJobReassignment(job, contract.providerId, contract.amount);
+      return res.json({ contract: updated, escrow: null });
+    }
+
     const provider = await db.find('users', u => u.id === req.user.sub);
     await notify(contract.customerId, '❌', `${provider ? provider.name : 'The provider'} can't take "${contract.service}" and declined the booking. Any held funds have been refunded — try another provider.`, null, { section: 'bookings' });
     return res.json({ contract: updated, escrow: null });
@@ -1277,10 +1403,18 @@ async function handleRespondOffer(req, res) {
       await db.update('escrowTransactions', escrow.id, { materialsAdvanceReleased: true });
       escrow = { ...escrow, materialsAdvanceReleased: true };
     }
+  } else if (isJobSelection) {
+    // Already funded at selection time — this is the actual confirmation
+    // moment. This is also the real "job's filled" moment: only now do
+    // the other candidates who responded actually get dismissed.
+    escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+    const match = await db.find('matches', m => m.jobId === contract.jobId && m.providerId === contract.providerId);
+    const job = await db.find('jobs', j => j.id === contract.jobId);
+    if (job) await finalizeJobSelection(job, match ? match.id : null);
   } else {
     escrow = await fundEscrowForContract(updated, contract.customerId, contract.payCurrency); // negotiable offer funds now, at the agreed number — pass the freshly-updated contract (status: 'active'), not the stale pre-update object
   }
-  const confirmMessage = isDirectBooking
+  const confirmMessage = (isDirectBooking || isJobSelection)
     ? `Your booking for "${contract.service}" was confirmed by the provider.`
     : `Your offer of $${contract.amount} for "${contract.service}" was accepted — escrow funded, booking confirmed.`;
   await notify(contract.customerId, '🤝', confirmMessage, null, { section: 'bookings' });
@@ -1667,3 +1801,8 @@ module.exports = router;
 module.exports.LICENSED_TRADE_CATEGORIES = LICENSED_TRADE_CATEGORIES;
 module.exports.hasValidLicense = hasValidLicense;
 module.exports.publicProvider = publicProvider;
+// Lets src/booking-scheduler.js trigger the same automatic-reassignment
+// logic when a job-originated hire expires unconfirmed, not just when it's
+// actively declined — one real implementation, not two copies that could
+// drift apart.
+module.exports.attemptJobReassignment = attemptJobReassignment;

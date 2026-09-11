@@ -340,9 +340,13 @@ router.post('/sales-inquiry', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-// GET /api/notifications/mine
+// GET /api/notifications/mine — newest first, so a time-sensitive alert
+// (e.g. "your provider has arrived" — item 1) always surfaces at the top
+// of the list rather than wherever raw insertion order happened to leave
+// it.
 router.get('/notifications/mine', requireAuth, async (req, res) => {
-  const notifications = await db.filter('notifications', n => n.userId === req.user.sub);
+  const notifications = (await db.filter('notifications', n => n.userId === req.user.sub))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json({ notifications });
 });
 
@@ -380,17 +384,105 @@ router.get('/verification/mine', requireAuth, async (req, res) => {
   res.json({ verifications: records });
 });
 
-// POST /api/verification/submit — submit documents for review
-router.post('/verification/submit', requireAuth, async (req, res) => {
-  const { docType } = req.body || {};
+// GET /api/verification/doc-types — the real, country-aware list of
+// accepted ID types for the signed-in user's own country (item 7), so the
+// frontend never has to hardcode or guess which IDs are valid where.
+router.get('/verification/doc-types', requireAuth, async (req, res) => {
+  const { idDocTypesForCountry } = require('../geo-data');
+  const user = await db.find('users', u => u.id === req.user.sub);
+  res.json({ docTypes: idDocTypesForCountry(user ? user.country : null) });
+});
+
+const verificationDocStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, require('../uploads').PRIVATE_UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ext = file.mimetype === 'application/pdf' ? '.pdf' : (path.extname(file.originalname).toLowerCase() || '.jpg');
+    cb(null, `verdoc_${req.user.sub}_${nanoid(16)}${ext}`);
+  },
+});
+const verificationDocFileFilter = (req, file, cb) => {
+  const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (!allowed.includes(file.mimetype)) return cb(new Error('Document must be a JPEG, PNG, or PDF file'));
+  cb(null, true);
+};
+const uploadVerificationDoc = multer({ storage: verificationDocStorage, fileFilter: verificationDocFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+
+// POST /api/verification/submit — real document upload for manual review.
+// Previously this only accepted a text label like "Government ID" with no
+// actual file attached — admins had nothing to review when approving or
+// rejecting. Now takes the real file (verified by its actual bytes, not
+// the claimed content-type — see verifyImageMagicBytes/verifyPdfMagicBytes),
+// the docType (validated against the submitter's own country's real
+// accepted-ID list — item 7/8's country-aware requirement), and the legal
+// name as printed on the ID for name matching (item 7).
+router.post('/verification/submit', requireAuth, (req, res, next) => {
+  uploadVerificationDoc.single('document')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Document upload failed' });
+    next();
+  });
+}, async (req, res) => {
+  const { docType, idLegalName } = req.body || {};
+  const { verifyImageMagicBytes, verifyPdfMagicBytes, PRIVATE_UPLOADS_DIR } = require('../uploads');
+  const { idDocTypesForCountry } = require('../geo-data');
+  const { namesLikelyMatch } = require('../validators');
+
+  if (!req.file) return res.status(400).json({ error: 'A document file is required' });
+  const cleanup = () => { try { fs.unlinkSync(path.join(PRIVATE_UPLOADS_DIR, req.file.filename)); } catch (e) {} };
+
+  if (!isNonEmptyString(idLegalName, { min: 2, max: 150 })) {
+    cleanup();
+    return res.status(400).json({ error: 'Enter the full legal name exactly as printed on the document' });
+  }
+
+  const user = await db.find('users', u => u.id === req.user.sub);
+  const allowedTypes = idDocTypesForCountry(user ? user.country : null);
+  if (!isNonEmptyString(docType) || !allowedTypes.includes(docType.trim())) {
+    cleanup();
+    return res.status(400).json({ error: `docType must be one of: ${allowedTypes.join(', ')}` });
+  }
+
+  const filePath = path.join(PRIVATE_UPLOADS_DIR, req.file.filename);
+  const bytesValid = req.file.mimetype === 'application/pdf'
+    ? verifyPdfMagicBytes(filePath)
+    : verifyImageMagicBytes(filePath, req.file.mimetype);
+  if (!bytesValid) {
+    cleanup();
+    return res.status(400).json({ error: 'That file doesn\'t look like a genuine document of the type it claims to be — please re-upload' });
+  }
+
+  // A previous rejected/review-required submission gets superseded, not
+  // stacked — this IS the resubmission (item 12's "resubmission where
+  // appropriate"), so the old record's file reference is cleared from
+  // active review rather than leaving duplicate open records.
+  const previousOpen = await db.filter('verifications', v => v.userId === req.user.sub && ['pending', 'review_required'].includes(v.status));
+  for (const old of previousOpen) await db.update('verifications', old.id, { status: 'superseded' });
+
+  const nameMatch = namesLikelyMatch(user ? user.name : '', idLegalName);
   const record = {
     id: `ver_${nanoid(10)}`,
     userId: req.user.sub,
-    docType: isNonEmptyString(docType) ? docType.trim() : 'Government ID',
-    status: 'in review',
+    docType: docType.trim(),
+    idLegalName: idLegalName.trim(),
+    nameMatch,
+    documentFilename: req.file.filename,
+    // item 12: a real Pending → Approved/Rejected/Review Required
+    // pipeline, not a single vague "in review" bucket. A name that
+    // doesn't clearly match gets routed to review_required automatically
+    // rather than silently passing or silently blocking — a human makes
+    // the actual call on legitimate differences (item 7).
+    status: nameMatch ? 'pending' : 'review_required',
+    rejectionReason: null,
     createdAt: new Date().toISOString(),
   };
   await db.insert('verifications', record);
+
+  if (!nameMatch) {
+    const admins = await db.filter('users', u => u.role === 'admin' && (u.isSuperAdmin || u.adminDepartment === 'verification' || (!u.adminDepartment && u.city === user.city)));
+    for (const admin of admins) {
+      await notify(admin.id, '⚠️', `${user.name}'s submitted ID name ("${idLegalName.trim()}") doesn't clearly match their account name — needs manual review.`, null, { section: 'verification' });
+    }
+  }
+
   res.status(201).json({ verification: record });
 });
 

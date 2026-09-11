@@ -6,6 +6,7 @@ const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, isValidName, validate, postalCodeErrorMessage } = require('../validators');
 const { notify } = require('../notify');
 const { generateUniqueReferralCode } = require('../referral-code');
+const { isValidStateForCountry } = require('../geo-data');
 
 const router = express.Router();
 
@@ -68,7 +69,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
-    ['password', isValidPassword(password), 'Password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol'],
+    ['password', isValidPassword(password), 'Password must be 8-72 characters'],
     ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
     ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
@@ -76,6 +77,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
     ['country', isNonEmptyString(country, { min: 2, max: 100 }), 'Select your country'],
     ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
     ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
+    ['state', typeof country !== 'string' || typeof state !== 'string' || isValidStateForCountry(country.trim(), state.trim()), 'That state/region doesn\'t belong to the selected country — please re-select both'],
   ]);
   if (role === 'provider') {
     errors.push(...validate([
@@ -455,7 +457,19 @@ router.post('/login/verify-2fa', otpLimiter, async (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   const user = await db.find('users', u => u.id === req.user.sub);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  res.json({ user: publicUser(user) });
+  const result = publicUser(user);
+  // Item 9: lets a provider actually see where they stand against their
+  // own weekly job-access cap, rather than just quietly seeing fewer
+  // matches with no visible explanation. Computed live rather than
+  // stored, so it's never stale — cheap enough for one provider's own
+  // profile load (unlike, say, an admin list of hundreds of providers).
+  if (user.role === 'provider') {
+    const { weeklyJobAccessCapForScore } = require('../provider-score');
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const usedThisWeek = (await db.filter('matches', m => m.providerId === user.id && m.createdAt >= sevenDaysAgo)).length;
+    result.weeklyJobAccess = { used: usedThisWeek, cap: weeklyJobAccessCapForScore(user.trustScore) };
+  }
+  res.json({ user: result });
 });
 
 // PATCH /api/auth/me — update own profile / settings
@@ -494,6 +508,19 @@ router.patch('/me', requireAuth, async (req, res) => {
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
   if ('acceptingBookings' in patch && typeof patch.acceptingBookings !== 'boolean') {
     return res.status(400).json({ error: 'acceptingBookings must be true or false' });
+  }
+  // Item 15 / Country → Region validation, applied here too, not just at
+  // signup — someone could otherwise change their country afterward and
+  // leave a now-mismatched state on file. Only checks when BOTH end up
+  // set together on this update: whichever one isn't being changed right
+  // now is read from the account's existing value.
+  if ('country' in patch || 'state' in patch) {
+    const existingUser = await db.find('users', u => u.id === req.user.sub);
+    const effectiveCountry = 'country' in patch ? patch.country : (existingUser && existingUser.country);
+    const effectiveState = 'state' in patch ? patch.state : (existingUser && existingUser.state);
+    if (effectiveCountry && effectiveState && !isValidStateForCountry(effectiveCountry, effectiveState)) {
+      return res.status(400).json({ error: 'That state/region doesn\'t belong to the selected country — please re-select both' });
+    }
   }
   for (const dateField of ['licenseExpiryDate', 'insuranceExpiryDate']) {
     if (dateField in patch && patch[dateField] !== null) {
@@ -648,7 +675,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'currentPassword and newPassword are required' });
   }
   if (!isValidPassword(newPassword)) {
-    return res.status(400).json({ error: 'New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol' });
+    return res.status(400).json({ error: 'New password must be 8-72 characters' });
   }
   const user = await db.find('users', u => u.id === req.user.sub);
   if (!user || !verifyPassword(currentPassword, user.passwordHash)) {
@@ -781,7 +808,7 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
 router.post('/reset-password', otpLimiter, async (req, res) => {
   const { token, newPassword } = req.body || {};
   if (!isNonEmptyString(token)) return res.status(400).json({ error: 'Reset token is required' });
-  if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 9 characters with at least 6 numbers, 2 letters, and 1 symbol' });
+  if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be 8-72 characters' });
 
   const tokenHash = hashResetToken(token);
   const record = await db.find('passwordResets', r => r.tokenHash === tokenHash);
