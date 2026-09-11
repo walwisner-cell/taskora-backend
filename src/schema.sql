@@ -107,6 +107,9 @@ CREATE TABLE IF NOT EXISTS matches (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_matches_provider_status ON matches(provider_id, status);
+-- Item 3 / Cover Letter — an optional note a provider attaches when
+-- expressing interest, visible to the customer alongside the match.
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS cover_letter TEXT;
 
 CREATE TABLE IF NOT EXISTS contracts (
   id             TEXT PRIMARY KEY,
@@ -452,6 +455,11 @@ ALTER TABLE categories ADD COLUMN IF NOT EXISTS icon TEXT DEFAULT '🛠️';
 ALTER TABLE categories ADD COLUMN IF NOT EXISTS response_window_override_hours NUMERIC;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
+-- Google Sign-In: the account's stable Google subject ID. NULL for every
+-- account that signed up with email/password and never linked Google.
+-- UNIQUE (not NOT NULL) so at most one account can ever be tied to a
+-- given Google identity, while every existing account is unaffected.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS organization_id TEXT;
 ALTER TABLE sales_inquiries ADD COLUMN IF NOT EXISTS converted_to_org_id TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS pay_currency TEXT DEFAULT 'usd';
@@ -746,3 +754,63 @@ CREATE TABLE IF NOT EXISTS category_images (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ
 );
+
+-- Item 7/12 — the real identity-document fields the original verifications
+-- table never had: which legal name was on the document (for name
+-- matching), whether that name was judged a likely match, the actual
+-- uploaded file's name on disk (see PRIVATE_UPLOADS_DIR in src/uploads.js),
+-- and a real rejection reason so a rejected applicant knows what to fix.
+ALTER TABLE verifications ADD COLUMN IF NOT EXISTS id_legal_name TEXT;
+ALTER TABLE verifications ADD COLUMN IF NOT EXISTS name_match BOOLEAN;
+ALTER TABLE verifications ADD COLUMN IF NOT EXISTS document_filename TEXT;
+ALTER TABLE verifications ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+ALTER TABLE verifications ALTER COLUMN status SET DEFAULT 'pending';
+
+-- Item 14 / Super Admin Dispute Actions — the permanent audit trail
+-- behind every dispute action (request info, escalate, reject, close,
+-- reopen, and the original release/refund resolution). Insert-only by
+-- design: nothing in this app ever updates a row here.
+CREATE TABLE IF NOT EXISTS dispute_audit_log (
+  id          TEXT PRIMARY KEY,
+  dispute_id  TEXT NOT NULL REFERENCES disputes(id),
+  action      TEXT NOT NULL,
+  note        TEXT NOT NULL,
+  actor_id    TEXT REFERENCES users(id),
+  actor_name  TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Item 16 / Administration Announcement Center. target_regions is a JSONB
+-- array of city names, or ['all']. read_by is a JSONB array of
+-- {adminId, name, readAt} — real, individually-timestamped
+-- acknowledgments, not just a raw counter.
+CREATE TABLE IF NOT EXISTS announcements (
+  id               TEXT PRIMARY KEY,
+  title            TEXT NOT NULL,
+  body             TEXT NOT NULL,
+  priority         TEXT NOT NULL DEFAULT 'normal',
+  target_regions   JSONB NOT NULL DEFAULT '["all"]',
+  author_id        TEXT REFERENCES users(id),
+  author_name      TEXT,
+  scheduled_for    TIMESTAMPTZ,
+  sent_at          TIMESTAMPTZ,
+  recipient_count  INTEGER NOT NULL DEFAULT 0,
+  read_by          JSONB NOT NULL DEFAULT '[]',
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Item 13 / Data Management & Cleanup — the permanent record of every
+-- cleanup run: exactly which accounts were removed, by whom, and when.
+-- This table itself is never a cleanup target (see the hard rule in
+-- POST /admin/data-cleanup/execute in admin.routes.js) — a record of who
+-- deleted test data is itself a compliance record.
+CREATE TABLE IF NOT EXISTS data_cleanup_audit_log (
+  id                TEXT PRIMARY KEY,
+  country           TEXT NOT NULL,
+  actor_id          TEXT REFERENCES users(id),
+  actor_name        TEXT NOT NULL,
+  accounts_deleted  JSONB NOT NULL DEFAULT '[]',
+  counts            JSONB NOT NULL DEFAULT '{}',
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+

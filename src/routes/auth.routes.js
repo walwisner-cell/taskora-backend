@@ -362,43 +362,30 @@ router.post('/signup/resend', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', loginLimiter, async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
-  const user = await db.find('users', u => u.email.toLowerCase() === (email || '').toLowerCase());
-  if (!user || !verifyPassword(password, user.passwordHash)) {
-    return res.status(401).json({ error: 'Invalid email or password' });
-  }
+// Shared by POST /login and POST /google (Google Sign-In login) — the
+// exact same suspension/rejection checks, the exact same "admin accounts
+// require 2FA, backfilled silently the first time they reach this point"
+// rule, and the exact same test-mode-aware 2FA delivery. Extracted here
+// so Google Sign-In doesn't get a second, easier-to-drift-from copy of
+// security-relevant logic — one real implementation, two entry points.
+async function issueSessionOrRequire2FA(user, res) {
   if (user.active === false) {
     return res.status(403).json({ error: 'This account has been suspended. Contact a super admin for access.' });
   }
   if (user.status === 'rejected') {
     return res.status(403).json({ error: 'This account application was not approved. Contact support if you believe this was a mistake.' });
   }
-
-  // Two-factor is opt-in for customers and providers (Settings) — but
-  // required, not optional, for any admin account. Rather than needing a
-  // separate one-time migration to flip this on for every admin account
-  // that existed before this rule did, it's enforced right here: any
-  // admin account that reaches login without it already set gets it
-  // backfilled silently the moment they sign in, so "required" in admin
-  // Settings is always actually true, never just a UI claim.
   if (user.role === 'admin' && !user.twoFactorEnabled) {
     await db.update('users', user.id, { twoFactorEnabled: true });
     user.twoFactorEnabled = true;
   }
-
-  // A second, time-limited code (same honest test-mode pattern as
-  // everywhere else: no real SMS/email provider connected yet, so the code
-  // is returned directly rather than silently not being sent) is required
-  // before a real session token is issued.
   if (user.twoFactorEnabled) {
     const code = generateSixDigitCode();
     const pendingLogin = {
       id: `plogin_${nanoid(10)}`,
       userId: user.id,
       codeHash: hashResetToken(code),
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       createdAt: new Date().toISOString(),
     };
     await db.insert('pendingLogins', pendingLogin);
@@ -414,10 +401,6 @@ router.post('/login', loginLimiter, async (req, res) => {
     if (delivered) {
       return res.json({ requires2FA: true, pendingLoginId: pendingLogin.id, testMode: false });
     }
-
-    // Not configured, or a real send just failed — same test-mode
-    // fallback as before, so a delivery hiccup never locks someone out
-    // of their own account.
     return res.json({
       requires2FA: true,
       pendingLoginId: pendingLogin.id,
@@ -428,7 +411,204 @@ router.post('/login', loginLimiter, async (req, res) => {
   }
 
   const token = signToken(user);
-  res.json({ token, user: publicUser(user) });
+  return res.json({ token, user: publicUser(user) });
+}
+
+router.post('/login', loginLimiter, async (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
+  const user = await db.find('users', u => u.email.toLowerCase() === (email || '').toLowerCase());
+  if (!user || !verifyPassword(password, user.passwordHash)) {
+    return res.status(401).json({ error: 'Invalid email or password' });
+  }
+  return issueSessionOrRequire2FA(user, res);
+});
+
+// ── Google Sign-In ──────────────────────────────────────────────────────────
+// GET /api/auth/google/config — tells the frontend whether Google Sign-In
+// is actually usable right now (GOOGLE_CLIENT_ID set) and what client ID
+// to render the button with. The frontend never hardcodes the client ID
+// itself, and simply doesn't show the Google button at all when this
+// comes back unconfigured, rather than showing a button that's guaranteed
+// to fail.
+router.get('/google/config', (req, res) => {
+  const { isGoogleSignInConfigured } = require('../google-auth');
+  res.json({
+    configured: isGoogleSignInConfigured(),
+    clientId: isGoogleSignInConfigured() ? process.env.GOOGLE_CLIENT_ID : null,
+  });
+});
+
+// POST /api/auth/google — Google Sign-In LOGIN for an account that
+// already exists. Two ways an existing account can match: it was already
+// linked to this exact Google identity before (googleId matches), or it
+// has the same email Google just verified and simply hasn't been linked
+// yet (an account originally created with email/password, now signing in
+// with Google for the first time) — that case gets linked automatically
+// here, since Google has already done real work to confirm that email
+// address belongs to whoever is signing in right now. If neither match
+// is found, this deliberately does NOT create an account — it tells the
+// frontend so, and the frontend routes to POST /google/signup instead,
+// the same "check first, then a separate real signup step" shape as
+// email/password already uses.
+router.post('/google', async (req, res) => {
+  const { idToken } = req.body || {};
+  const { verifyGoogleIdToken } = require('../google-auth');
+  const google = await verifyGoogleIdToken(idToken);
+  if (!google) return res.status(401).json({ error: 'Could not verify that Google sign-in — please try again' });
+  if (!google.emailVerified) return res.status(401).json({ error: 'That Google account\'s email isn\'t verified — please verify it with Google first' });
+
+  let user = await db.find('users', u => u.googleId === google.googleId);
+  if (!user) {
+    const byEmail = await db.find('users', u => u.email.toLowerCase() === google.email.toLowerCase());
+    if (byEmail) {
+      await db.update('users', byEmail.id, { googleId: google.googleId });
+      user = { ...byEmail, googleId: google.googleId };
+    }
+  }
+  if (!user) {
+    return res.status(404).json({ error: 'No Trothen account found for that Google account', needsSignup: true, googleName: google.name, googleEmail: google.email });
+  }
+  return issueSessionOrRequire2FA(user, res);
+});
+
+// POST /api/auth/google/signup — creates a brand-new account from a
+// verified Google identity. No password (a random, never-shown hash is
+// stored just to satisfy the column's NOT NULL constraint — this account
+// can only ever sign in via Google unless a password is set later from
+// Settings), and no email verification step (Google's email_verified
+// claim, already checked above, is what email verification exists to
+// establish in the first place — asking for a second proof of the same
+// email would be pure friction with no real security benefit). Otherwise
+// this mirrors completeSignupVerify below as closely as it reasonably
+// can: same required fields, same category-approval-pending handling,
+// same org invite / referral handling — a Google signup is a full,
+// first-class account, not a lesser one.
+router.post('/google/signup', signupLimiter, async (req, res) => {
+  const { idToken, role, country, state, city, phone, address, zipCode, category, skills, inviteCode, referralCode } = req.body || {};
+  const { verifyGoogleIdToken } = require('../google-auth');
+  const google = await verifyGoogleIdToken(idToken);
+  if (!google) return res.status(401).json({ error: 'Could not verify that Google sign-in — please try again' });
+  if (!google.emailVerified) return res.status(401).json({ error: 'That Google account\'s email isn\'t verified — please verify it with Google first' });
+
+  const errors = validate([
+    ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
+    ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
+    ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
+    ['address', isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address'],
+    ['country', isNonEmptyString(country, { min: 2, max: 100 }), 'Select your country'],
+    ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
+    ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
+    ['state', typeof country !== 'string' || typeof state !== 'string' || isValidStateForCountry(country.trim(), state.trim()), 'That state/region doesn\'t belong to the selected country — please re-select both'],
+  ]);
+  if (role === 'provider') {
+    errors.push(...validate([
+      ['category', isNonEmptyString(category), 'Select your primary service category'],
+      ['skills', isNonEmptyString(skills, { min: 2, max: 300 }), 'List at least one skill or specialty'],
+    ]));
+  }
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const existingByEmail = await db.find('users', u => u.email.toLowerCase() === google.email.toLowerCase());
+  if (existingByEmail) return res.status(409).json({ error: 'An account with that email already exists — try signing in with Google instead' });
+  const existingByGoogleId = await db.find('users', u => u.googleId === google.googleId);
+  if (existingByGoogleId) return res.status(409).json({ error: 'That Google account is already linked to a Trothen account — try signing in instead' });
+
+  let inviteOrgId = null;
+  const trimmedInviteCode = (inviteCode || '').trim().toUpperCase();
+  if (trimmedInviteCode) {
+    if (role !== 'provider') return res.status(400).json({ error: 'Organization invite links are for provider accounts' });
+    const invite = await db.find('organizationInvites', i => i.code === trimmedInviteCode);
+    if (!invite) return res.status(400).json({ error: 'This invite link is invalid' });
+    if (invite.status !== 'active') return res.status(400).json({ error: 'This invite link has been revoked' });
+    if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) return res.status(400).json({ error: 'This invite link has expired' });
+    if (invite.maxUses != null && invite.usesCount >= invite.maxUses) return res.status(400).json({ error: 'This invite link has reached its usage limit' });
+    inviteOrgId = invite.organizationId;
+  }
+
+  let referrer = null;
+  const trimmedReferralCode = (referralCode || '').trim().toUpperCase();
+  if (trimmedReferralCode) {
+    referrer = await db.find('users', u => u.referralCode === trimmedReferralCode);
+    if (!referrer) return res.status(400).json({ error: 'This referral link isn\'t valid' });
+  }
+
+  let categoryApprovalStatus = 'approved';
+  if (role === 'provider') {
+    const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
+    if (!activeCategories.includes(category)) categoryApprovalStatus = 'pending';
+  }
+
+  const trimmedName = google.name.trim();
+  const user = {
+    id: `u_${nanoid(10)}`,
+    name: trimmedName,
+    email: google.email,
+    googleId: google.googleId,
+    role,
+    country: country.trim(),
+    state: state.trim(),
+    city: city.trim(),
+    phone: phone.trim(),
+    address: address.trim(),
+    zipCode: (zipCode || '').trim(),
+    phoneVerified: false,
+    initials: trimmedName.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
+    verified: false,
+    // Never used to sign in (there's no /login path that would accept it
+    // without a real password being set later from Settings) — exists
+    // purely because password_hash is NOT NULL in the schema. A real,
+    // unguessable random value, not a placeholder string, so it's not a
+    // usable credential even in theory.
+    passwordHash: hashPassword(nanoid(32)),
+    referralCode: await generateUniqueReferralCode(),
+    referredByUserId: referrer ? referrer.id : null,
+    createdAt: new Date().toISOString(),
+    ...(role === 'provider' ? {
+      providerRole: 'New Provider',
+      category: category || 'Plumbing',
+      categoryApprovalStatus,
+      skills: skills.trim(),
+      tags: skills.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6),
+      rating: 0, jobs: 0, price: 50, color: '#5A5F6C', since: String(new Date().getFullYear()),
+    } : {}),
+  };
+  await db.insert('users', user);
+
+  if (referrer) {
+    await db.insert('referrals', {
+      id: `ref_${nanoid(10)}`,
+      referrerId: referrer.id,
+      referredUserId: user.id,
+      referredRole: user.role,
+      createdAt: new Date().toISOString(),
+    });
+    const firstName = trimmedName.split(' ')[0];
+    const lastInitial = trimmedName.split(' ')[1] ? ` ${trimmedName.split(' ')[1][0]}.` : '';
+    await notify(referrer.id, '🎉', `${firstName}${lastInitial} just joined Trothen as a ${user.role} using your referral link!`, null, { section: 'referrals' });
+    const { awardLoyaltyPoint } = require('../loyalty');
+    await awardLoyaltyPoint(referrer.id, 'referral');
+  }
+
+  let joinedOrganizationName = null;
+  if (role === 'provider' && trimmedInviteCode) {
+    const invite = await db.find('organizationInvites', i => i.code === trimmedInviteCode);
+    const stillValid = invite
+      && invite.status === 'active'
+      && (!invite.expiresAt || new Date(invite.expiresAt) >= new Date())
+      && (invite.maxUses == null || invite.usesCount < invite.maxUses);
+    if (stillValid) {
+      const org = await db.find('organizations', o => o.id === invite.organizationId && o.status === 'active');
+      if (org) {
+        await db.update('users', user.id, { organizationId: org.id });
+        await db.update('organizationInvites', invite.id, { usesCount: invite.usesCount + 1 });
+        joinedOrganizationName = org.name;
+      }
+    }
+  }
+
+  const token = signToken(user);
+  res.status(201).json({ token, user: publicUser(user), categoryApprovalStatus: role === 'provider' ? categoryApprovalStatus : undefined, joinedOrganizationName });
 });
 
 // POST /api/auth/login/verify-2fa — the second factor. Completes the

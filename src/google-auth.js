@@ -1,47 +1,44 @@
-// Google Sign-In — verifies the ID token Google's own Identity Services
-// button hands back to the browser, and never trusts anything the client
-// sends about who the person is. The ID token itself is a signed JWT from
-// Google; verifyIdToken checks that signature against Google's public
-// keys and confirms it was actually issued for *this* app (the audience
-// check against GOOGLE_CLIENT_ID), so a forged or replayed token from a
-// different site can't be used to log into a Trothen account.
+// Verifies a Google ID token server-side using Google's own library —
+// never trusts a client-supplied payload directly. The library fetches
+// Google's public signing keys itself and checks the token's signature,
+// issuer, audience (must match our own GOOGLE_CLIENT_ID), and expiry.
+// A token that fails any of those checks throws, which callers below
+// turn into a clean rejection rather than a crash.
 const { OAuth2Client } = require('google-auth-library');
 
-function isGoogleConfigured() {
+function isGoogleSignInConfigured() {
   return !!process.env.GOOGLE_CLIENT_ID;
 }
 
-const client = isGoogleConfigured() ? new OAuth2Client(process.env.GOOGLE_CLIENT_ID) : null;
+const client = isGoogleSignInConfigured() ? new OAuth2Client(process.env.GOOGLE_CLIENT_ID) : null;
 
-// Returns { email, name, sub } for a valid, verified token. Throws a
-// plain Error with a message safe to show the person directly if the
-// token is missing, expired, forged, meant for a different app, or
-// belongs to an email Google itself hasn't confirmed.
+// Returns { googleId, email, emailVerified, name } on success, or null on
+// any failure (expired token, wrong audience, tampered signature, Google
+// sign-in not configured at all). Deliberately swallows the underlying
+// error rather than propagating it — the caller only ever needs to know
+// "valid" or "not valid," and logging the raw error is enough for our
+// own debugging without leaking verification internals in an API
+// response.
 async function verifyGoogleIdToken(idToken) {
-  if (!isGoogleConfigured()) {
-    throw new Error('Google sign-in is not configured on this server yet.');
-  }
-  if (!idToken || typeof idToken !== 'string') {
-    throw new Error('Missing Google credential.');
-  }
-  let ticket;
+  if (!client || !idToken) return null;
   try {
-    ticket = await client.verifyIdToken({ idToken, audience: process.env.GOOGLE_CLIENT_ID });
+    const ticket = await client.verifyIdToken({ idToken, audience: process.env.GOOGLE_CLIENT_ID });
+    const payload = ticket.getPayload();
+    if (!payload || !payload.sub || !payload.email) return null;
+    return {
+      googleId: payload.sub,
+      email: payload.email,
+      // Google only issues a token for an address it has already
+      // confirmed belongs to the account signing in — but this flag is
+      // still checked explicitly rather than assumed, since Google's own
+      // docs describe it as something a relying party should verify.
+      emailVerified: payload.email_verified === true,
+      name: payload.name || payload.email.split('@')[0],
+    };
   } catch (e) {
-    throw new Error('Could not verify Google sign-in — please try again.');
+    console.error('[google-auth] ID token verification failed:', e.message);
+    return null;
   }
-  const payload = ticket.getPayload();
-  if (!payload || !payload.email) {
-    throw new Error('Google did not return an email address for this account.');
-  }
-  if (!payload.email_verified) {
-    throw new Error('Google has not verified this email address yet.');
-  }
-  return {
-    email: payload.email,
-    name: payload.name || payload.email.split('@')[0],
-    sub: payload.sub,
-  };
 }
 
-module.exports = { verifyGoogleIdToken, isGoogleConfigured };
+module.exports = { isGoogleSignInConfigured, verifyGoogleIdToken };

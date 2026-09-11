@@ -953,6 +953,16 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   const outcome = decision === 'refund_customer' ? 'refund_customer' : 'release_to_provider';
 
   const updated = await db.update('disputes', dispute.id, { status: 'resolved', resolvedAt: new Date().toISOString(), resolution: outcome });
+  const resolvingAdmin = await me(req);
+  await db.insert('disputeAuditLog', {
+    id: `dal_${nanoid(10)}`,
+    disputeId: dispute.id,
+    action: 'resolve',
+    note: outcome === 'refund_customer' ? 'Resolved: refunded the customer' : 'Resolved: released escrow to the provider',
+    actorId: resolvingAdmin ? resolvingAdmin.id : null,
+    actorName: resolvingAdmin ? resolvingAdmin.name : 'Unknown admin',
+    createdAt: new Date().toISOString(),
+  });
   const escrow = await db.find('escrowTransactions', e => e.contractId === updated.contractId);
   const contract = await db.find('contracts', c => c.id === updated.contractId);
 
@@ -984,7 +994,315 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   res.json({ dispute: updated });
 });
 
-// ---- Global config: categories & countries (super admin only) --------------
+// POST /api/admin/disputes/:id/action — Super Admin Dispute Actions
+// (item 14): the real, single control point for everything a dispute can
+// do beyond the original release/refund resolution above — information
+// requests, escalation, rejection, closure, and reopening — each one
+// writing a real, permanent row to disputeAuditLog rather than just
+// silently changing dispute.status with no record of who did it, when,
+// or why. Deliberately super-admin-only: unlike day-to-day dispute
+// resolution (open to the disputes/customer_service departments above),
+// these are the actions that reverse a financial decision or escalate
+// something beyond a regional team's own authority — exactly the kind
+// of action that should require the top of the chain, not a regional
+// admin's own department scope.
+const DISPUTE_ACTIONS = ['request_info', 'escalate', 'reject', 'close', 'reopen'];
+router.post('/disputes/:id/action', requireSuperAdmin, async (req, res) => {
+  const { action, note } = req.body || {};
+  if (!DISPUTE_ACTIONS.includes(action)) {
+    return res.status(400).json({ error: `action must be one of: ${DISPUTE_ACTIONS.join(', ')}` });
+  }
+  if (!isNonEmptyString(note, { min: 3, max: 1000 })) {
+    return res.status(400).json({ error: 'A note explaining this action is required — it becomes part of the permanent audit trail' });
+  }
+  const dispute = await db.find('disputes', d => d.id === req.params.id);
+  if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
+  const contract = await db.find('contracts', c => c.id === dispute.contractId);
+  const actor = await me(req);
+
+  // reopen is the one action that only makes sense from a settled state;
+  // every other action only makes sense on a dispute that's still open —
+  // trying to escalate an already-closed dispute, for instance, is a
+  // real, reportable error, not something to silently allow.
+  if (action === 'reopen' && dispute.status === 'open') {
+    return res.status(400).json({ error: 'This dispute is already open' });
+  }
+  if (action !== 'reopen' && dispute.status !== 'open') {
+    return res.status(400).json({ error: `This dispute is already ${dispute.status} — reopen it first if it needs further action` });
+  }
+
+  const statusByAction = { request_info: 'open', escalate: 'escalated', reject: 'rejected', close: 'closed', reopen: 'open' };
+  const updated = await db.update('disputes', dispute.id, {
+    status: statusByAction[action],
+    ...(action === 'reopen' ? { resolvedAt: null, resolution: null } : {}),
+  });
+
+  await db.insert('disputeAuditLog', {
+    id: `dal_${nanoid(10)}`,
+    disputeId: dispute.id,
+    action,
+    note: note.trim(),
+    actorId: actor ? actor.id : null,
+    actorName: actor ? actor.name : 'Unknown admin',
+    createdAt: new Date().toISOString(),
+  });
+
+  if (contract) {
+    const actionMessages = {
+      request_info: `More information was requested on your dispute (${dispute.reason}): "${note.trim()}"`,
+      escalate: `Your dispute (${dispute.reason}) has been escalated for further review.`,
+      reject: `Your dispute (${dispute.reason}) was reviewed and not upheld: ${note.trim()}`,
+      close: `Your dispute (${dispute.reason}) has been closed: ${note.trim()}`,
+      reopen: `Your dispute (${dispute.reason}) has been reopened for further review: ${note.trim()}`,
+    };
+    await notify(contract.customerId, '⚖️', actionMessages[action], 'bookingUpdates', { section: 'bookings' });
+    await notify(contract.providerId, '⚖️', actionMessages[action], 'bookingUpdates', { section: 'bookings' });
+  }
+
+  res.json({ dispute: updated });
+});
+
+// GET /api/admin/disputes/:id/audit-log — the complete, real trail behind
+// a dispute: every action taken (including the original resolve, which
+// is also written to this log below), who took it, and why. Same
+// regional scoping as everywhere else disputes are gated.
+router.get('/disputes/:id/audit-log', requireDepartment(['disputes', 'customer_service', 'legal']), async (req, res) => {
+  const region = await myRegion(req);
+  const dispute = await db.find('disputes', d => d.id === req.params.id);
+  if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
+  if (region && (await disputeCity(dispute)) !== region) return res.status(403).json({ error: 'That dispute is outside your assigned city' });
+  const log = (await db.filter('disputeAuditLog', l => l.disputeId === dispute.id)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  res.json({ log });
+});
+
+
+// ---- Data Management & Cleanup (item 13) -------------------------------------
+// Real, scoped, protected deletion — not a blanket "wipe this country"
+// button. This is specifically what's needed to actually delete a
+// country via DELETE /admin/countries/:id above: that endpoint correctly
+// refuses to delete a country with any real accounts on it (to avoid
+// orphaning them) — what was actually missing was a safe way to clear
+// the untouched TEST accounts under it first, so a real deletion can
+// then succeed.
+//
+// The one hard rule everything here follows: a user or record is only
+// ever eligible if they have ZERO financial, contract, or compliance
+// history — no contract (as either party), no escrow transaction, no
+// payout, no dispute. A test account that never actually transacted is
+// safe to remove; a real account, or a test account that was ever
+// actually used for a real-shaped transaction, never is, regardless of
+// what scope is requested. This is checked fresh at execution time, not
+// trusted from an earlier preview — a preview and an execute call could
+// be minutes apart, and something could have genuinely changed.
+async function findUntouchedTestAccounts(country) {
+  const candidates = await db.filter('users', u => u.country === country && (u.role === 'customer' || u.role === 'provider'));
+  const [contracts, escrow, payouts, disputes] = await Promise.all([
+    db.all('contracts'), db.all('escrowTransactions'), db.all('payouts'), db.all('disputes'),
+  ]);
+  const touchedIds = new Set();
+  for (const c of contracts) { touchedIds.add(c.customerId); touchedIds.add(c.providerId); }
+  for (const p of payouts) touchedIds.add(p.providerId);
+  // Escrow and disputes are keyed by contract, not user directly, but
+  // every escrow/dispute already traces back to a contract, whose
+  // parties are already captured above — checked anyway for genuine
+  // belt-and-suspenders safety, since this is deletion.
+  const contractById = new Map(contracts.map(c => [c.id, c]));
+  for (const e of escrow) { const c = contractById.get(e.contractId); if (c) { touchedIds.add(c.customerId); touchedIds.add(c.providerId); } }
+  for (const d of disputes) { const c = contractById.get(d.contractId); if (c) { touchedIds.add(c.customerId); touchedIds.add(c.providerId); } }
+
+  return candidates.filter(u => !touchedIds.has(u.id));
+}
+
+// POST /api/admin/data-cleanup/preview — a real dry run: shows exactly
+// who and what would be removed, with zero side effects, so a super
+// admin can actually look before deleting anything.
+router.post('/data-cleanup/preview', requireSuperAdmin, async (req, res) => {
+  const { country } = req.body || {};
+  if (!isNonEmptyString(country)) return res.status(400).json({ error: 'country is required' });
+  const untouched = await findUntouchedTestAccounts(country);
+  const untouchedIds = new Set(untouched.map(u => u.id));
+  const [matches, notifications, verifications, portfolioPhotos] = await Promise.all([
+    db.all('matches'), db.all('notifications'), db.all('verifications'), db.all('portfolioPhotos'),
+  ]);
+  res.json({
+    country,
+    accountsEligible: untouched.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role, createdAt: u.createdAt })),
+    relatedRecordsToRemove: {
+      matches: matches.filter(m => untouchedIds.has(m.providerId) || untouchedIds.has(m.customerId)).length,
+      notifications: notifications.filter(n => untouchedIds.has(n.userId)).length,
+      verifications: verifications.filter(v => untouchedIds.has(v.userId)).length,
+      portfolioPhotos: portfolioPhotos.filter(p => untouchedIds.has(p.providerId)).length,
+    },
+  });
+});
+
+// POST /api/admin/data-cleanup/execute — the real deletion. Requires
+// typing an exact confirmation phrase (not a checkbox) specific to the
+// country being cleared, so this can't be triggered by a stray click or
+// a copy-pasted request — and everything it actually does is written to
+// a permanent audit log below, since "who cleared what test data, when"
+// is itself exactly the kind of record item 13 says must be protected,
+// not the kind of thing this tool would ever delete about itself.
+router.post('/data-cleanup/execute', requireSuperAdmin, async (req, res) => {
+  const { country, confirmPhrase } = req.body || {};
+  if (!isNonEmptyString(country)) return res.status(400).json({ error: 'country is required' });
+  const expectedPhrase = `DELETE TEST DATA FOR ${country.toUpperCase()}`;
+  if (confirmPhrase !== expectedPhrase) {
+    return res.status(400).json({ error: `Type exactly "${expectedPhrase}" to confirm this action` });
+  }
+
+  const untouched = await findUntouchedTestAccounts(country);
+  const untouchedIds = new Set(untouched.map(u => u.id));
+  if (untouchedIds.size === 0) {
+    return res.json({ deleted: { accounts: 0, matches: 0, notifications: 0, verifications: 0, portfolioPhotos: 0 } });
+  }
+
+  const [matches, notifications, verifications, portfolioPhotos] = await Promise.all([
+    db.all('matches'), db.all('notifications'), db.all('verifications'), db.all('portfolioPhotos'),
+  ]);
+  const matchesToRemove = matches.filter(m => untouchedIds.has(m.providerId) || untouchedIds.has(m.customerId));
+  const notificationsToRemove = notifications.filter(n => untouchedIds.has(n.userId));
+  const verificationsToRemove = verifications.filter(v => untouchedIds.has(v.userId));
+  const photosToRemove = portfolioPhotos.filter(p => untouchedIds.has(p.providerId));
+
+  for (const m of matchesToRemove) await db.remove('matches', m.id);
+  for (const n of notificationsToRemove) await db.remove('notifications', n.id);
+  for (const v of verificationsToRemove) await db.remove('verifications', v.id);
+  for (const p of photosToRemove) await db.remove('portfolioPhotos', p.id);
+  for (const u of untouched) await db.remove('users', u.id);
+
+  const actor = await me(req);
+  await db.insert('dataCleanupAuditLog', {
+    id: `dca_${nanoid(10)}`,
+    country,
+    actorId: actor ? actor.id : null,
+    actorName: actor ? actor.name : 'Unknown admin',
+    accountsDeleted: untouched.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
+    counts: { accounts: untouched.length, matches: matchesToRemove.length, notifications: notificationsToRemove.length, verifications: verificationsToRemove.length, portfolioPhotos: photosToRemove.length },
+    createdAt: new Date().toISOString(),
+  });
+
+  res.json({ deleted: { accounts: untouched.length, matches: matchesToRemove.length, notifications: notificationsToRemove.length, verifications: verificationsToRemove.length, portfolioPhotos: photosToRemove.length } });
+});
+
+// GET /api/admin/data-cleanup/audit-log — the permanent record of every
+// cleanup run — itself a compliance record, so this endpoint only ever
+// reads, never deletes.
+router.get('/data-cleanup/audit-log', requireSuperAdmin, async (req, res) => {
+  const log = (await db.all('dataCleanupAuditLog')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ log });
+});
+
+// ---- Administration Announcement Center (item 16) ---------------------------
+// A real, centralized way for Administration/Super Admin to reach every
+// Regional Manager (or a chosen subset of regions) with something they
+// actually need to know — with priority levels, real read/acknowledgment
+// tracking (not just "sent and hope"), scheduling for a future time, and
+// a permanent history. Deliberately super-admin-only to CREATE (this is
+// an official, company-wide channel, not something any regional admin
+// can broadcast on) — every admin can read and acknowledge what's
+// targeted to them.
+
+// POST /api/admin/announcements — create and (unless scheduled for later)
+// send immediately.
+router.post('/announcements', requireSuperAdmin, async (req, res) => {
+  const { title, body, priority, targetRegions, scheduledFor } = req.body || {};
+  const errors = validate([
+    ['title', isNonEmptyString(title, { min: 3, max: 150 }), 'Title must be between 3 and 150 characters'],
+    ['body', isNonEmptyString(body, { min: 3, max: 2000 }), 'Body must be between 3 and 2000 characters'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  if (priority && !['normal', 'high', 'urgent'].includes(priority)) {
+    return res.status(400).json({ error: 'priority must be normal, high, or urgent' });
+  }
+  if (targetRegions !== undefined && targetRegions !== null && !Array.isArray(targetRegions)) {
+    return res.status(400).json({ error: 'targetRegions must be an array of city names, or omitted for all regions' });
+  }
+  let scheduledForClean = null;
+  if (scheduledFor) {
+    const parsed = new Date(scheduledFor);
+    if (isNaN(parsed.getTime())) return res.status(400).json({ error: 'scheduledFor must be a valid date/time' });
+    scheduledForClean = parsed.toISOString();
+  }
+
+  const actor = await me(req);
+  const announcement = {
+    id: `ann_${nanoid(10)}`,
+    title: title.trim(),
+    body: body.trim(),
+    priority: priority || 'normal',
+    targetRegions: (targetRegions && targetRegions.length) ? targetRegions : ['all'],
+    authorId: actor ? actor.id : null,
+    authorName: actor ? actor.name : 'Trothen HQ',
+    scheduledFor: scheduledForClean,
+    sentAt: null,
+    recipientCount: 0,
+    readBy: [],
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('announcements', announcement);
+
+  // No scheduled time, or a scheduled time already in the past: send it
+  // for real right now rather than waiting for the next sweep — the
+  // person creating this shouldn't have to wait up to 5 minutes (the
+  // scheduler's own interval) to see it actually go out.
+  let result = announcement;
+  if (!scheduledForClean || scheduledForClean <= new Date().toISOString()) {
+    const { sendOneAnnouncement } = require('../announcement-scheduler');
+    result = await sendOneAnnouncement(announcement);
+  }
+  res.status(201).json({ announcement: result });
+});
+
+// GET /api/admin/announcements — a super admin sees everything, including
+// unsent scheduled ones and full read stats. A regional/department admin
+// only sees ones actually targeted to them AND already sent — no reason
+// to show a recipient an announcement that hasn't gone out yet, and no
+// reason to show them one aimed at a region they're not in.
+router.get('/announcements', async (req, res) => {
+  const actor = await me(req);
+  if (!actor) return res.status(403).json({ error: 'Not authorized' });
+  const all = (await db.all('announcements')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  if (actor.isSuperAdmin) {
+    return res.json({ announcements: all.map(a => ({ ...a, readCount: (a.readBy || []).length })) });
+  }
+  const mine = all.filter(a => a.sentAt && (a.targetRegions.includes('all') || (actor.city && a.targetRegions.includes(actor.city))));
+  res.json({ announcements: mine.map(a => ({ ...a, acknowledged: (a.readBy || []).some(r => r.adminId === actor.id) })) });
+});
+
+// POST /api/admin/announcements/:id/acknowledge — any admin it was
+// actually sent to can mark it read. Idempotent — acknowledging twice
+// doesn't create a duplicate entry or reset the original readAt time.
+router.post('/announcements/:id/acknowledge', async (req, res) => {
+  const actor = await me(req);
+  if (!actor) return res.status(403).json({ error: 'Not authorized' });
+  const announcement = await db.find('announcements', a => a.id === req.params.id);
+  if (!announcement) return res.status(404).json({ error: 'Announcement not found' });
+  const alreadyRead = (announcement.readBy || []).some(r => r.adminId === actor.id);
+  if (!alreadyRead) {
+    const readBy = [...(announcement.readBy || []), { adminId: actor.id, name: actor.name, readAt: new Date().toISOString() }];
+    await db.update('announcements', announcement.id, { readBy });
+  }
+  res.json({ ok: true });
+});
+
+// GET /api/admin/announcements/:id/stats — super admin only: exactly who
+// has and hasn't acknowledged, against the real target list (not just a
+// raw count) — the actual point of tracking this at all.
+router.get('/announcements/:id/stats', requireSuperAdmin, async (req, res) => {
+  const announcement = await db.find('announcements', a => a.id === req.params.id);
+  if (!announcement) return res.status(404).json({ error: 'Announcement not found' });
+  const { resolveTargetAdmins } = require('../announcement-scheduler');
+  const targets = await resolveTargetAdmins(announcement);
+  const readIds = new Set((announcement.readBy || []).map(r => r.adminId));
+  res.json({
+    announcement,
+    acknowledged: targets.filter(t => readIds.has(t.id)).map(t => ({ id: t.id, name: t.name, city: t.city })),
+    notAcknowledged: targets.filter(t => !readIds.has(t.id)).map(t => ({ id: t.id, name: t.name, city: t.city })),
+  });
+});
+
+
 router.get('/categories', async (req, res) => {
   const cats = await db.all('categories');
   const categories = await Promise.all(cats.map(async c => ({

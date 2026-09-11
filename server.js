@@ -51,7 +51,20 @@ const PORT = process.env.PORT || 3000;
 // break the entire page. The real defense against injected content is
 // the output-escaping fix already in place; this is additional
 // defense-in-depth for the rest, not a replacement for that.
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  // Helmet's default Cross-Origin-Opener-Policy (same-origin) severs
+  // window.opener between this page and any popup IT opens — which
+  // silently breaks Google Sign-In's popup flow, since Google's own
+  // client script hands the credential back via
+  // window.opener.postMessage(). same-origin-allow-popups keeps the
+  // same real protection against a POPUP reaching back into THIS page
+  // (the actual thing COOP defends against), while still allowing this
+  // page to talk to a popup it opened itself. Confirmed via a live
+  // Google Sign-In test that this was the actual root cause — the
+  // popup opened but stayed blank until this changed.
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+}));
 // CORS was wide open (any origin, unconditionally) with no way to
 // restrict it. Given this app authenticates with a Bearer token rather
 // than cookies, the classic CSRF risk CORS restriction primarily guards
@@ -218,6 +231,15 @@ seedIfEmpty()
     const { sweepDocumentUploadReminders } = require('./src/document-upload-reminder-scheduler');
     setTimeout(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, 23000);
     setInterval(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+
+    // Scheduled announcement sweep (see src/announcement-scheduler.js) —
+    // checked every 5 minutes, same cadence as the booking-response sweep,
+    // since a scheduled announcement is genuinely time-sensitive (an
+    // announcement meant to go out at 9am shouldn't sit unsent until the
+    // next daily sweep).
+    const { sweepScheduledAnnouncements } = require('./src/announcement-scheduler');
+    setTimeout(() => { sweepScheduledAnnouncements().catch(e => console.error('[announcement-scheduler] Unexpected error during scheduled sweep:', e)); }, 26000);
+    setInterval(() => { sweepScheduledAnnouncements().catch(e => console.error('[announcement-scheduler] Unexpected error during scheduled sweep:', e)); }, FIVE_MINUTES_MS);
   })
   .catch(err => {
     console.error('Failed to start server:', err);

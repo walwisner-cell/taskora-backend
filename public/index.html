@@ -877,6 +877,7 @@
     .support-chat-bubble { right:16px; bottom:16px; }
   }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -1323,8 +1324,8 @@
       <div class="auth-card-title" id="auth-title">Welcome to Trothen</div>
       <div class="auth-card-sub" id="auth-sub">Verified pros. Protected payments. Zero guesswork.</div>
       <div class="auth-tabs">
-        <div class="auth-tab active" id="tab-login" onclick="setAuthMode('login')" data-i18n="auth_signin_tab">Sign In</div>
-        <div class="auth-tab" id="tab-signup" onclick="setAuthMode('signup')" data-i18n="auth_signup_tab">Sign Up</div>
+        <div class="auth-tab active" id="tab-login" onclick="exitGoogleFlow();setAuthMode('login')" data-i18n="auth_signin_tab">Sign In</div>
+        <div class="auth-tab" id="tab-signup" onclick="exitGoogleFlow();setAuthMode('signup')" data-i18n="auth_signup_tab">Sign Up</div>
       </div>
       <div id="auth-role-picker" style="display:none">
         <div class="auth-role-grid" style="grid-template-columns:1fr 1fr;">
@@ -1332,11 +1333,10 @@
           <div class="auth-role-opt" data-role="provider" onclick="setAuthRole('provider')"><span class="r-icon">🛠️</span>Provider</div>
         </div>
       </div>
-      <div style="display:flex;gap:10px;">
-        <button class="oauth-btn" style="flex:1;" onclick="showToast('Google sign-in isn\'t connected yet in this test environment — please use email/password below.')">🔵 Google</button>
-        <button class="oauth-btn" style="flex:1;" onclick="showToast('Facebook sign-in isn\'t connected yet in this test environment — please use email/password below.')">📘 Facebook</button>
+      <div id="google-signin-row" style="display:none;margin-bottom:10px;">
+        <div id="google-signin-button"></div>
       </div>
-      <div class="auth-divider">or</div>
+      <div class="auth-divider" id="auth-oauth-divider" style="display:none;">or</div>
       <div class="form-group" id="auth-name-group" style="display:none">
         <label class="form-label">Full Name</label>
         <input class="form-input" type="text" id="auth-name" autocomplete="name"/>
@@ -1838,6 +1838,152 @@ async function loginAs(email, password) {
   AUTH.user = data.user;
   saveAuthSession(data.token);
   return data.user;
+}
+
+/* ══════════════════════ GOOGLE SIGN-IN ══════════════════════
+   Two real entry points on the backend (src/routes/auth.routes.js):
+   POST /auth/google (login — works if an account already exists, either
+   already linked or matched+linked by email) and POST /auth/google/signup
+   (creates a brand-new account). This screen never knows in advance which
+   one applies — it always tries login first via the credential callback
+   below, and only drops into "Google signup mode" (locked name/email,
+   hidden password, the rest of the normal signup fields) if the backend
+   comes back saying no account exists yet. */
+let googleSignInInitialized = false;
+async function initGoogleSignIn() {
+  const row = document.getElementById('google-signin-row');
+  const divider = document.getElementById('auth-oauth-divider');
+  if (!row || !divider) return;
+  if (authState.isGoogleFlow) { row.style.display = 'none'; divider.style.display = 'none'; return; }
+  if (!BACKEND_AVAILABLE) { row.style.display = 'none'; divider.style.display = 'none'; return; }
+  try {
+    const { configured, clientId } = await apiFetch('GET', '/auth/google/config');
+    if (!configured || !clientId || !window.google || !window.google.accounts) {
+      row.style.display = 'none'; divider.style.display = 'none';
+      return;
+    }
+    row.style.display = 'block';
+    divider.style.display = 'block';
+    if (!googleSignInInitialized) {
+      google.accounts.id.initialize({ client_id: clientId, callback: onGoogleCredentialResponse });
+      googleSignInInitialized = true;
+    }
+    // Re-rendered every time the auth screen opens, not just once — the
+    // container it renders into gets wiped whenever the screen re-renders
+    // (e.g. switching between login/signup tabs recreates this DOM), so a
+    // one-time render would leave a blank space after the first tab switch.
+    document.getElementById('google-signin-button').innerHTML = '';
+    google.accounts.id.renderButton(document.getElementById('google-signin-button'), { theme: 'outline', size: 'large', width: 320, text: authState.mode === 'signup' ? 'signup_with' : 'signin_with' });
+  } catch (e) {
+    row.style.display = 'none'; divider.style.display = 'none';
+  }
+}
+
+async function onGoogleCredentialResponse(response) {
+  const idToken = response.credential;
+  try {
+    const data = await apiFetch('POST', '/auth/google', { idToken });
+    AUTH.token = data.token; AUTH.user = data.user;
+    saveAuthSession(data.token);
+    showToast(`Welcome back, ${data.user.name.split(' ')[0]}!`);
+    rememberLastLoginEmail(data.user.email, data.user.role);
+    await completeAuthAndResumeIntent(data.user.role);
+  } catch (e) {
+    if (e.data && e.data.requires2FA) {
+      pendingLoginId = e.data.pendingLoginId;
+      document.getElementById('auth-main-form').style.display = 'none';
+      document.getElementById('login-2fa-view').style.display = 'block';
+      if (e.data.testMode) {
+        document.getElementById('login-2fa-test-banner').style.display = 'block';
+        document.getElementById('login-2fa-code-display').textContent = e.data.code;
+      }
+      return;
+    }
+    if (e.data && e.data.needsSignup) {
+      enterGoogleSignupMode(e.data.googleName, e.data.googleEmail, idToken);
+      return;
+    }
+    showToast(e.message || 'Google sign-in failed — please try again');
+  }
+}
+
+// Switches the existing signup form into "Google mode": name and email
+// come from Google and are locked (not editable — they're not what was
+// verified would be misleading), the password field/strength meter
+// disappear entirely (there's nothing to set), and the Google button
+// itself hides once this mode is active, since the person has already
+// signed in with Google to get here.
+function enterGoogleSignupMode(name, email, idToken) {
+  authState.isGoogleFlow = true;
+  authState.googleIdToken = idToken;
+  setAuthMode('signup');
+  document.getElementById('auth-name').value = name || '';
+  document.getElementById('auth-name').setAttribute('readonly', 'readonly');
+  document.getElementById('auth-email').value = email || '';
+  document.getElementById('auth-email').setAttribute('readonly', 'readonly');
+  document.getElementById('auth-email').closest('.form-group').style.opacity = '0.7';
+  document.getElementById('auth-name').closest('.form-group').style.opacity = '0.7';
+  document.getElementById('auth-password').closest('.form-group').style.display = 'none';
+  document.getElementById('google-signin-row').style.display = 'none';
+  document.getElementById('auth-oauth-divider').style.display = 'none';
+  document.getElementById('auth-sub').textContent = `Continuing as ${name || email} — just a few more details.`;
+  document.getElementById('auth-submit-btn').textContent = 'Create Account';
+}
+
+function exitGoogleFlow() {
+  authState.isGoogleFlow = false;
+  authState.googleIdToken = null;
+  const nameField = document.getElementById('auth-name');
+  const emailField = document.getElementById('auth-email');
+  if (nameField) { nameField.removeAttribute('readonly'); nameField.closest('.form-group').style.opacity = ''; }
+  if (emailField) { emailField.removeAttribute('readonly'); emailField.closest('.form-group').style.opacity = ''; }
+  const pwGroup = document.getElementById('auth-password') && document.getElementById('auth-password').closest('.form-group');
+  if (pwGroup) pwGroup.style.display = '';
+}
+
+async function submitGoogleSignup() {
+  const city = document.getElementById('auth-city').value.trim();
+  const country = document.getElementById('auth-country').value;
+  const state = document.getElementById('auth-state').value;
+  const phoneDialCode = document.getElementById('auth-phone-dialcode') ? document.getElementById('auth-phone-dialcode').textContent : '';
+  const phoneLocal = document.getElementById('auth-phone').value.trim();
+  const phone = phoneLocal ? `${phoneDialCode}${phoneLocal.replace(/^0+/, '')}` : '';
+  const address = document.getElementById('auth-address').value.trim();
+  const zipCode = document.getElementById('auth-zip').value.trim();
+  const categorySelect = document.getElementById('auth-category').value;
+  const customCategoryRaw = document.getElementById('auth-custom-category').value.trim();
+  const category = categorySelect === '__other__'
+    ? customCategoryRaw.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    : categorySelect;
+  const skills = document.getElementById('auth-skills').value.trim();
+
+  const zipRequired = !(GEO_DATA.noPostalCodeCountries || []).includes(country);
+  if (!phone || !address || !city || !state || !country || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
+  if (authState.role === 'provider' && !skills) return showToast('List at least one skill or specialty');
+  if (authState.role === 'provider' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
+  const phoneDigits = phone.replace(/[^0-9]/g, '');
+  if (phoneDigits.length < 7) return showToast('Enter a valid phone number');
+  if (zipCode && zipCode.length < 3 && !(GEO_DATA.noPostalCodeCountries || []).includes(country)) return showToast('Enter a valid zip/postal code');
+
+  try {
+    const data = await apiFetch('POST', '/auth/google/signup', {
+      idToken: authState.googleIdToken, role: authState.role, city, country, state, phone, address, zipCode,
+      ...(pendingReferralCode ? { referralCode: pendingReferralCode } : {}),
+      ...(authState.role === 'provider' ? { category, skills, inviteCode: document.getElementById('auth-invite-code').value.trim() } : {}),
+    });
+    AUTH.token = data.token; AUTH.user = data.user;
+    saveAuthSession(data.token);
+    exitGoogleFlow();
+    if (data.categoryApprovalStatus === 'pending') {
+      showToast(`Account created! Your category "${data.user.category}" is pending a quick admin review (within 24 hours) — you can use your account right away in the meantime.`);
+    } else if (data.joinedOrganizationName) {
+      showToast(`Account created — you've joined ${data.joinedOrganizationName}!`);
+    } else {
+      showToast(`Welcome to Trothen, ${data.user.name.split(' ')[0]}!`);
+    }
+    rememberLastLoginEmail(data.user.email, data.user.role);
+    await completeAuthAndResumeIntent(data.user.role);
+  } catch (e) { showToast(e.message || 'Could not create account'); }
 }
 
 const FALLBACK_PROVIDERS = [
@@ -3345,7 +3491,7 @@ function stopMessagePolling() {
 }
 
 /* ══════════════════════ AUTH ══════════════════════ */
-const authState = { mode: 'login', role: 'customer' };
+const authState = { mode: 'login', role: 'customer', isGoogleFlow: false, googleIdToken: null };
 
 function showAuth(mode) {
   showScreen('screen-auth');
@@ -3550,10 +3696,11 @@ function setAuthMode(mode) {
   document.getElementById('auth-submit-btn').textContent = mode === 'login' ? 'Sign In' : 'Create Account';
   document.getElementById('auth-sub').textContent = mode === 'login' ? 'Verified pros. Protected payments. Zero guesswork.' : 'Join as a customer, provider, or admin to get started.';
   document.getElementById('auth-foot').innerHTML = mode === 'login'
-    ? `New to Trothen? <a onclick="setAuthMode('signup')">Create an account</a>`
-    : `Already have an account? <a onclick="setAuthMode('login')">Sign in</a>`;
+    ? `New to Trothen? <a onclick="exitGoogleFlow();setAuthMode('signup')">Create an account</a>`
+    : `Already have an account? <a onclick="exitGoogleFlow();setAuthMode('login')">Sign in</a>`;
   document.getElementById('auth-password').setAttribute('autocomplete', mode === 'login' ? 'current-password' : 'new-password');
   updatePasswordStrength(document.getElementById('auth-password').value);
+  initGoogleSignIn();
 }
 
 function setAuthRole(role) {
@@ -3572,6 +3719,7 @@ function setAuthRole(role) {
 }
 
 async function mockAuth() {
+  if (authState.isGoogleFlow) return submitGoogleSignup();
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value;
   const name = document.getElementById('auth-name').value.trim();
@@ -7555,6 +7703,7 @@ function getAdminNavItems() {
     { key: 'careers', label: 'Job Applications', icon: '💼' },
     { key: 'reports', label: 'Reports', icon: '📈' },
     { key: 'categories', label: 'Categories & Countries', icon: '🌍' },
+    { key: 'announcements', label: 'Announcements', icon: '📢' },
   ];
   if (AUTH.user && AUTH.user.isSuperAdmin) {
     base.push({ key: 'locations', label: 'Locations & Admins', icon: '🗺️' });
@@ -7562,6 +7711,7 @@ function getAdminNavItems() {
     base.push({ key: 'organizations', label: 'Organizations', icon: '🏢' });
     base.push({ key: 'referrals', label: 'Referrals', icon: '🔗' });
     base.push({ key: 'accesslogs', label: 'Access Logs', icon: '🔍' });
+    base.push({ key: 'datacleanup', label: 'Data Cleanup', icon: '🧹' });
   }
   base.push({ key: 'settings', label: 'Settings', icon: '⚙️' });
   return base;
@@ -8087,6 +8237,32 @@ const ADMIN_SECTIONS = {
       </tbody></table></div>`}
     </div>`;
   },
+  announcements: () => {
+    const isSuper = AUTH.user && AUTH.user.isSuperAdmin;
+    return `
+    <div class="dash-header"><div><div class="dash-title">Announcements</div><div class="dash-sub">${isSuper ? 'Send official announcements to Regional Managers, with priority, scheduling, and read tracking' : 'Official announcements from Administration'}</div></div></div>
+    ${isSuper ? `<div class="panel">
+      <div class="panel-title">Compose announcement</div>
+      <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="ann-title-input" placeholder="e.g. New cancellation policy effective Monday"/></div>
+      <div class="form-group"><label class="form-label">Body</label><textarea class="form-input" id="ann-body-input" rows="3" style="resize:vertical;"></textarea></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div class="form-group" style="flex:1;min-width:140px;"><label class="form-label">Priority</label><select class="form-input" id="ann-priority-input"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+        <div class="form-group" style="flex:1;min-width:140px;"><label class="form-label">Send at (optional)</label><input class="form-input" type="datetime-local" id="ann-schedule-input"/></div>
+      </div>
+      <div class="form-group"><label class="form-label">Regions (leave blank for all)</label><input class="form-input" id="ann-regions-input" placeholder="e.g. Atlanta, Lagos — comma separated city names"/></div>
+      <button class="btn-sm btn-sm-primary" onclick="submitAnnouncement()">Send announcement</button>
+    </div>` : ''}
+    <div class="panel"><div class="panel-title">${isSuper ? 'History' : 'Your announcements'}</div><div id="announcements-list-panel"><div style="color:var(--slate);font-size:12.5px;padding:12px 0;">Loading…</div></div></div>`;
+  },
+  datacleanup: () => `
+    <div class="dash-header"><div><div class="dash-title">Data Cleanup</div><div class="dash-sub">Safely clear untouched test accounts under a country — never touches any account with real contract, payment, or dispute history</div></div></div>
+    <div class="panel">
+      <div class="panel-title">Preview</div>
+      <div class="form-group"><label class="form-label">Country</label><input class="form-input" id="cleanup-country-input" placeholder="e.g. Liberia"/></div>
+      <button class="btn-sm btn-sm-outline" onclick="previewDataCleanup()">Preview what would be removed</button>
+      <div id="data-cleanup-preview-panel" style="margin-top:14px;"></div>
+    </div>
+    <div class="panel"><div class="panel-title">Cleanup history <small style="font-weight:400;color:var(--slate);">Every run, permanently logged</small></div><div id="data-cleanup-log-panel"><div style="color:var(--slate);font-size:12.5px;padding:12px 0;">Loading…</div></div></div>`,
   careers: () => {
     const list = adminData.careersInquiries || [];
     const newCount = list.filter(i => i.status === 'new').length;
@@ -8611,6 +8787,128 @@ async function loadProviderScoresPanel() {
     const target = document.getElementById('provider-scores-panel');
     if (target) target.textContent = 'Could not load provider scores right now.';
   }
+}
+
+// Item 16 / Administration Announcement Center — the frontend half of
+// the backend built in src/routes/admin.routes.js. A super admin sees
+// full history with read counts; anyone else sees only what's actually
+// been sent to their region, with a real Acknowledge action.
+const ANNOUNCEMENT_PRIORITY_BADGE = { normal: 'badge-neutral', high: 'badge-warn', urgent: 'badge-danger' };
+async function loadAnnouncementsPanel() {
+  if (!BACKEND_AVAILABLE) return;
+  const target = document.getElementById('announcements-list-panel');
+  if (!target) return;
+  try {
+    const { announcements } = await apiFetch('GET', '/admin/announcements');
+    if (!announcements.length) {
+      target.innerHTML = `<div style="color:var(--slate);font-size:12.5px;padding:12px 0;">No announcements yet.</div>`;
+      return;
+    }
+    const isSuper = AUTH.user && AUTH.user.isSuperAdmin;
+    target.innerHTML = announcements.map(a => `
+      <div class="panel" style="background:var(--offwhite);margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;flex-wrap:wrap;">
+          <div>
+            <span class="badge ${ANNOUNCEMENT_PRIORITY_BADGE[a.priority] || 'badge-neutral'}">${a.priority}</span>
+            <strong style="margin-left:6px;color:var(--navy);">${escapeHtml(a.title)}</strong>
+          </div>
+          <span style="font-size:11px;color:var(--slate);white-space:nowrap;">${a.sentAt ? new Date(a.sentAt).toLocaleString() : (a.scheduledFor ? `Scheduled for ${new Date(a.scheduledFor).toLocaleString()}` : 'Not yet sent')}</span>
+        </div>
+        <div style="font-size:12.5px;color:var(--text);margin-top:6px;">${escapeHtml(a.body)}</div>
+        <div style="font-size:11px;color:var(--slate);margin-top:8px;">To: ${a.targetRegions.includes('all') ? 'All regions' : a.targetRegions.map(escapeHtml).join(', ')} — from ${escapeHtml(a.authorName)}</div>
+        ${isSuper
+          ? `<div style="font-size:11px;color:var(--slate);margin-top:4px;">${a.readCount || 0} acknowledged<button class="btn-sm btn-sm-ghost" style="margin-left:8px;" onclick="viewAnnouncementStats('${a.id}')">View details</button></div>`
+          : (a.sentAt ? `<button class="btn-sm ${a.acknowledged ? 'btn-sm-ghost' : 'btn-sm-primary'}" style="margin-top:8px;" ${a.acknowledged ? 'disabled' : ''} onclick="acknowledgeAnnouncement('${a.id}')">${a.acknowledged ? '✓ Acknowledged' : 'Acknowledge'}</button>` : '')}
+      </div>`).join('');
+  } catch (e) {
+    target.textContent = 'Could not load announcements right now.';
+  }
+}
+
+async function submitAnnouncement() {
+  const title = document.getElementById('ann-title-input').value.trim();
+  const body = document.getElementById('ann-body-input').value.trim();
+  const priority = document.getElementById('ann-priority-input').value;
+  const scheduleRaw = document.getElementById('ann-schedule-input').value;
+  const regionsRaw = document.getElementById('ann-regions-input').value.trim();
+  if (!title || !body) return showToast('Title and body are required');
+  const targetRegions = regionsRaw ? regionsRaw.split(',').map(s => s.trim()).filter(Boolean) : ['all'];
+  const scheduledFor = scheduleRaw ? new Date(scheduleRaw).toISOString() : undefined;
+  if (!BACKEND_AVAILABLE) return showToast('Announcement sent (demo mode)');
+  try {
+    await apiFetch('POST', '/admin/announcements', { title, body, priority, targetRegions, scheduledFor });
+    showToast(scheduledFor ? 'Announcement scheduled' : 'Announcement sent');
+    selectAdminSection('announcements');
+  } catch (e) { showToast(e.message || 'Could not send announcement'); }
+}
+
+async function acknowledgeAnnouncement(id) {
+  if (!BACKEND_AVAILABLE) return showToast('Acknowledged (demo mode)');
+  try {
+    await apiFetch('POST', `/admin/announcements/${id}/acknowledge`, {});
+    showToast('Acknowledged');
+    loadAnnouncementsPanel();
+  } catch (e) { showToast(e.message || 'Could not acknowledge'); }
+}
+
+async function viewAnnouncementStats(id) {
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const { acknowledged, notAcknowledged } = await apiFetch('GET', `/admin/announcements/${id}/stats`);
+    alert(`Acknowledged (${acknowledged.length}):\n${acknowledged.map(a => `${a.name} — ${a.city || 'no city'}`).join('\n') || 'None yet'}\n\nNot yet acknowledged (${notAcknowledged.length}):\n${notAcknowledged.map(a => `${a.name} — ${a.city || 'no city'}`).join('\n') || 'None'}`);
+  } catch (e) { showToast(e.message || 'Could not load stats'); }
+}
+
+// Item 13 / Data Management & Cleanup — preview-then-execute, with a
+// typed confirmation phrase as the real safety gate (see
+// POST /admin/data-cleanup/execute in admin.routes.js for why: this is
+// permanent deletion, so a checkbox isn't enough friction for it).
+let lastCleanupPreviewCountry = null;
+async function previewDataCleanup() {
+  const country = document.getElementById('cleanup-country-input').value.trim();
+  if (!country) return showToast('Enter a country');
+  const target = document.getElementById('data-cleanup-preview-panel');
+  if (!BACKEND_AVAILABLE) { target.innerHTML = '<div style="color:var(--slate);font-size:12.5px;">Preview unavailable in demo mode.</div>'; return; }
+  try {
+    const result = await apiFetch('POST', '/admin/data-cleanup/preview', { country });
+    lastCleanupPreviewCountry = country;
+    const expectedPhrase = `DELETE TEST DATA FOR ${country.toUpperCase()}`;
+    if (!result.accountsEligible.length) {
+      target.innerHTML = `<div style="color:var(--slate);font-size:12.5px;">No untouched test accounts found under ${escapeHtml(country)} — nothing eligible to clear. Any account there has real contract, payment, or dispute history and won't be touched by this tool.</div>`;
+      return;
+    }
+    target.innerHTML = `
+      <div style="font-size:12.5px;color:var(--navy);margin-bottom:8px;"><strong>${result.accountsEligible.length} account${result.accountsEligible.length === 1 ? '' : 's'}</strong> would be permanently removed, plus ${result.relatedRecordsToRemove.matches} match record${result.relatedRecordsToRemove.matches === 1 ? '' : 's'}, ${result.relatedRecordsToRemove.notifications} notification${result.relatedRecordsToRemove.notifications === 1 ? '' : 's'}, ${result.relatedRecordsToRemove.verifications} verification record${result.relatedRecordsToRemove.verifications === 1 ? '' : 's'}, and ${result.relatedRecordsToRemove.portfolioPhotos} photo${result.relatedRecordsToRemove.portfolioPhotos === 1 ? '' : 's'}. None of these have ever had a real contract, payment, or dispute.</div>
+      <div style="max-height:160px;overflow-y:auto;font-size:11.5px;color:var(--slate);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:10px;">
+        ${result.accountsEligible.map(a => `${escapeHtml(a.name)} (${escapeHtml(a.email)}) — ${a.role}`).join('<br/>')}
+      </div>
+      <div class="form-group"><label class="form-label">Type <code>${expectedPhrase}</code> to confirm</label><input class="form-input" id="cleanup-confirm-input" placeholder="${expectedPhrase}"/></div>
+      <button class="btn-sm" style="background:#C1554D;color:#fff;" onclick="executeDataCleanup()">Permanently delete these ${result.accountsEligible.length} test accounts</button>`;
+  } catch (e) { target.innerHTML = `<div style="color:#C1554D;font-size:12.5px;">${escapeHtml(e.message || 'Could not load preview')}</div>`; }
+}
+
+async function executeDataCleanup() {
+  const confirmPhrase = document.getElementById('cleanup-confirm-input').value.trim();
+  if (!lastCleanupPreviewCountry) return showToast('Preview first');
+  try {
+    const { deleted } = await apiFetch('POST', '/admin/data-cleanup/execute', { country: lastCleanupPreviewCountry, confirmPhrase });
+    showToast(`Removed ${deleted.accounts} test account${deleted.accounts === 1 ? '' : 's'} and related records`);
+    document.getElementById('data-cleanup-preview-panel').innerHTML = '';
+    loadDataCleanupLogPanel();
+  } catch (e) { showToast(e.message || 'Could not complete cleanup'); }
+}
+
+async function loadDataCleanupLogPanel() {
+  if (!BACKEND_AVAILABLE) return;
+  const target = document.getElementById('data-cleanup-log-panel');
+  if (!target) return;
+  try {
+    const { log } = await apiFetch('GET', '/admin/data-cleanup/audit-log');
+    if (!log.length) { target.innerHTML = `<div style="color:var(--slate);font-size:12.5px;padding:12px 0;">No cleanup runs yet.</div>`; return; }
+    target.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Country</th><th>Accounts removed</th><th>By</th><th>When</th></tr></thead><tbody>
+      ${log.map(l => `<tr><td>${escapeHtml(l.country)}</td><td>${l.counts.accounts}</td><td>${escapeHtml(l.actorName)}</td><td>${new Date(l.createdAt).toLocaleString()}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  } catch (e) { target.textContent = 'Could not load cleanup history.'; }
 }
 
 // Deliberately a real form, not a one-click auto-fill from a score
@@ -9639,7 +9937,7 @@ function disputesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No disputes.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Dispute</th><th>Parties</th><th>Reason</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${list.map(d => `<tr style="cursor:pointer" onclick="viewDispute('${d.id}')"><td>${d.id}</td><td>${escapeHtml(d.parties)}</td><td>${escapeHtml(d.reason)}</td><td>$${d.amount}</td><td>${statusBadge(d.status)}</td>
-  <td class="row-actions">${d.status!=='resolved' ? `<button class="btn-sm btn-sm-ghost" onclick="event.stopPropagation();viewDispute('${d.id}')">Resolve</button>` : '—'}</td></tr>`).join('')}
+  <td class="row-actions"><button class="btn-sm btn-sm-ghost" onclick="event.stopPropagation();viewDispute('${d.id}')">${d.status === 'open' ? 'Resolve' : 'View'}</button></td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -9675,12 +9973,26 @@ async function resolveFraudFlag(id, decision) {
   } catch (e) { showToast(e.message || 'Could not update flag'); }
 }
 
-function viewDispute(id) {
+async function viewDispute(id) {
   const d = adminData.disputes.find(x => x.id === id);
   if (!d) return;
   document.getElementById('dispute-modal-title').textContent = 'Dispute ' + d.id;
   document.getElementById('dispute-modal-sub').textContent = d.parties;
   const openedDate = d.createdAt ? new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+
+  let auditLogHTML = '';
+  if (BACKEND_AVAILABLE) {
+    try {
+      const { log } = await apiFetch('GET', `/admin/disputes/${id}/audit-log`);
+      if (log && log.length) {
+        auditLogHTML = `<div class="form-label" style="margin:14px 0 8px;">Audit trail</div>
+          <div style="font-size:12px;color:var(--slate);line-height:1.8;max-height:160px;overflow-y:auto;border-top:1px solid var(--border);padding-top:8px;">
+          ${log.map(l => `<div style="margin-bottom:6px;"><strong style="color:var(--navy);">${DISPUTE_ACTION_LABEL[l.action] || l.action}</strong> by ${escapeHtml(l.actorName)} — ${escapeHtml(l.note)} <span style="opacity:.6;">(${new Date(l.createdAt).toLocaleString()})</span></div>`).join('')}
+          </div>`;
+      }
+    } catch (e) { /* no audit entries yet, or not permitted — leave blank */ }
+  }
+
   document.getElementById('dispute-modal-body').innerHTML = `
     <div class="booking-summary">
       <div class="summary-row"><span>Reason</span><span>${escapeHtml(d.reason)}</span></div>
@@ -9690,12 +10002,47 @@ function viewDispute(id) {
     <div class="form-label" style="margin-bottom:10px;">Timeline</div>
     <div style="font-size:12.5px;color:var(--slate);line-height:2;">
       ⚠️ Dispute opened${openedDate ? ` — ${openedDate}` : ''}<br/>
-      ${d.status === 'resolved' ? (d.resolution === 'refund_customer' ? '✅ Resolved — customer refunded' : '✅ Resolved — escrow released to provider') : '⏳ Awaiting admin review'}
-    </div>`;
-  document.getElementById('dispute-modal-footer').innerHTML = d.status !== 'resolved'
-    ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="confirm-btn" onclick="resolveDispute('${d.id}','release_to_provider');closeDisputeModal();">Release Escrow to Provider</button><button class="btn-sm btn-sm-outline" onclick="resolveDispute('${d.id}','refund_customer');closeDisputeModal();">Refund Customer Instead</button></div>`
+      ${d.status === 'resolved' ? (d.resolution === 'refund_customer' ? '✅ Resolved — customer refunded' : '✅ Resolved — escrow released to provider') : `Current status: ${DISPUTE_ACTION_LABEL[d.status] || d.status}`}
+    </div>
+    ${auditLogHTML}`;
+
+  const isSuperAdmin = AUTH.user && AUTH.user.isSuperAdmin;
+  const isOpen = d.status === 'open';
+  const resolveButtons = isOpen
+    ? `<button class="confirm-btn" onclick="resolveDispute('${d.id}','release_to_provider');closeDisputeModal();">Release Escrow to Provider</button><button class="btn-sm btn-sm-outline" onclick="resolveDispute('${d.id}','refund_customer');closeDisputeModal();">Refund Customer Instead</button>`
+    : '';
+  // Item 14: the super-admin-only action set — request info, escalate,
+  // reject, close, and (only from a settled state) reopen. Every one of
+  // these calls the same POST /admin/disputes/:id/action endpoint and
+  // requires a real note, which is what actually populates the audit
+  // trail shown above.
+  const superAdminButtons = isSuperAdmin
+    ? (isOpen
+        ? `<button class="btn-sm btn-sm-outline" onclick="dispatchDisputeAction('${d.id}','request_info')">Request Info</button><button class="btn-sm btn-sm-outline" onclick="dispatchDisputeAction('${d.id}','escalate')">Escalate</button><button class="btn-sm btn-sm-outline" onclick="dispatchDisputeAction('${d.id}','reject')">Reject</button><button class="btn-sm btn-sm-outline" onclick="dispatchDisputeAction('${d.id}','close')">Close</button>`
+        : `<button class="btn-sm btn-sm-outline" onclick="dispatchDisputeAction('${d.id}','reopen')">Reopen</button>`)
+    : '';
+  document.getElementById('dispute-modal-footer').innerHTML = (resolveButtons || superAdminButtons)
+    ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${resolveButtons}${superAdminButtons}</div>`
     : `<button class="pricing-cta" style="width:100%;" onclick="closeDisputeModal()">Close</button>`;
   document.getElementById('dispute-modal').classList.add('open');
+}
+
+const DISPUTE_ACTION_LABEL = {
+  open: 'Open', escalated: 'Escalated', rejected: 'Rejected', closed: 'Closed', resolved: 'Resolved',
+  request_info: 'Info requested', escalate: 'Escalated', reject: 'Rejected', close: 'Closed', reopen: 'Reopened', resolve: 'Resolved',
+};
+
+async function dispatchDisputeAction(id, action) {
+  const note = (prompt(`Add a note for this action (required, becomes part of the permanent audit trail):`) || '').trim();
+  if (!note) return showToast('A note is required for this action');
+  if (!BACKEND_AVAILABLE) return showToast(`${DISPUTE_ACTION_LABEL[action]} (demo mode)`);
+  try {
+    await apiFetch('POST', `/admin/disputes/${id}/action`, { action, note });
+    showToast(`Dispute ${DISPUTE_ACTION_LABEL[action].toLowerCase()}`);
+    closeDisputeModal();
+    await loadAdminData();
+    selectAdminSection('disputes');
+  } catch (e) { showToast(e.message || 'Could not update dispute'); }
 }
 function closeDisputeModal() {
   document.getElementById('dispute-modal').classList.remove('open');
@@ -9707,6 +10054,8 @@ function selectAdminSection(key) {
   renderSectionSafely('admin-main', key, () => ADMIN_SECTIONS[key]());
   if (key === 'providerscores') loadProviderScoresPanel();
   if (key === 'promotions') loadAdminPromotionsPanel();
+  if (key === 'announcements') loadAnnouncementsPanel();
+  if (key === 'datacleanup') loadDataCleanupLogPanel();
 }
 
 function updateAdminSidebar() {
