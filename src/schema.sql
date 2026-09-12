@@ -250,6 +250,16 @@ CREATE TABLE IF NOT EXISTS phone_verifications (
   used        BOOLEAN NOT NULL DEFAULT FALSE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Real bug caught in this session's full audit: whether this specific
+-- code was sent via Twilio Verify (checked against Twilio's own API) or
+-- the local code_hash (checked here directly) was being read back on
+-- verify but was never actually a real column — silently dropped on
+-- every insert in Postgres mode, which meant this flag was ALWAYS false
+-- in production regardless of how the code was actually sent. Any phone
+-- verification sent via real Twilio Verify would have been checked
+-- against the wrong thing and incorrectly rejected the moment Twilio
+-- Verify was actually configured and used.
+ALTER TABLE phone_verifications ADD COLUMN IF NOT EXISTS via_twilio_verify BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS contact_submissions (
   id          TEXT PRIMARY KEY,
@@ -700,6 +710,12 @@ CREATE TABLE IF NOT EXISTS promotions (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_promotions_region ON promotions(region);
+-- Real, pre-existing gap caught in this session's full audit: set on
+-- every promotion and read back in the admin UI's "emailed to N people"
+-- confirmation, but never an actual column — silently dropped on every
+-- insert/update in Postgres mode, meaning that count was always lost in
+-- production regardless of how many emails actually went out.
+ALTER TABLE promotions ADD COLUMN IF NOT EXISTS email_sent_count INTEGER NOT NULL DEFAULT 0;
 
 -- A customer's saved favorite providers, so they can rebook someone they
 -- trusted before without searching again. One row per (customer,

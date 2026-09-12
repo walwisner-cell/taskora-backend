@@ -51,6 +51,20 @@ You uploaded a second, older zip (`trothen-updates_22_.zip`) and asked me to che
 
 **I could only partially test this one.** Real Google-token verification needs to reach Google's own servers, which this sandbox's network rules don't allow — so I confirmed the code fails cleanly (a proper error, not a crash) when it can't reach Google, and confirmed nothing else broke, but I could not run an actual successful Google sign-in end to end the way I tested everything else this session. You'll want to genuinely click through it once this is live.
 
+## Full system audit — this round
+
+You asked for a full audit rather than just moving to the next feature. Here's what that actually meant and what it found.
+
+**A systematic check, not a guess.** I wrote a script that compares every field the code actually saves against the real column list your production database (Postgres) knows about — because this app runs two different datastores (a simple file-based one for local testing, real Postgres live on Render), and a field can exist perfectly well in the code and in local testing while silently never being saved at all in production, with no error, because the database simply doesn't know that column exists. That gap already caused two near-misses earlier this session that I caught by luck; this pass was about finding the ones I hadn't caught yet.
+
+**It found two real, pre-existing bugs — not caused by this session's changes:**
+1. **Phone verification could break the moment Twilio Verify is actually turned on.** The app remembers, per verification code, whether that code was sent through Twilio's own verification service or handled locally — because it has to check it back the same way it was sent. That memory was never actually being saved in production. The practical effect: any phone verification sent through real Twilio Verify would have been checked against the wrong thing and incorrectly rejected, the moment that feature was ever actually turned on live.
+2. **Promotion emails always showed the wrong count.** When you send a promotional email blast to customers or providers, the app tracks how many people it actually emailed. That count was never being saved in production either — so the "emailed to X people" confirmation would always show blank/zero regardless of how many people actually got it.
+
+Both are now fixed, with the database updates included in this package.
+
+**Also rebuilt: the custom confirmation popups.** Every "are you sure?" moment in the app (canceling a booking, deleting a category, rejecting an application, etc.) had reverted to the browser's own plain gray confirm popup — the kind that can't be styled and that browsers can start silently blocking after a few appear in a row. This was already built properly once before. Rebuilt it across all 13 places it's used, with clear confirm/cancel buttons, click-outside-to-cancel, and destructive actions (deletes) shown in red.
+
 ## Honest gaps — things I did NOT build
 
 - **True background push notifications.** What I built makes sound/vibration work while the app is open. Real notifications that fire when the app is closed need actual push infrastructure (VAPID keys, a subscription flow) that doesn't exist in this codebase at all. I didn't want to half-build this and call it done.
