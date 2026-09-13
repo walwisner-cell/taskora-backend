@@ -369,6 +369,54 @@ router.delete('/notifications', requireAuth, async (req, res) => {
   res.json({ ok: true, cleared: mine.length });
 });
 
+// ── Push notifications (item 2's "background notifications") ───────────────
+// GET /api/push/vapid-public-key — the frontend needs this specific value
+// to actually create a subscription (PushManager.subscribe requires the
+// public key as its applicationServerKey). Deliberately safe to expose
+// publicly — a VAPID public key identifies the sender to the push
+// service, the same way any public key does; it's the PRIVATE key that
+// must never leave the server, and never does.
+router.get('/push/vapid-public-key', (req, res) => {
+  const { isPushConfigured } = require('../push-notifications');
+  res.json({ configured: isPushConfigured(), publicKey: isPushConfigured() ? process.env.VAPID_PUBLIC_KEY : null });
+});
+
+// POST /api/push/subscribe — saves a real browser/device push
+// subscription (created client-side by PushManager.subscribe(), not
+// something the server can fabricate). Keyed by endpoint so the same
+// device re-subscribing (e.g. after clearing site data) updates its own
+// row instead of piling up duplicates.
+router.post('/push/subscribe', requireAuth, async (req, res) => {
+  const { endpoint, keys } = req.body || {};
+  if (!isNonEmptyString(endpoint) || !keys || !isNonEmptyString(keys.p256dh) || !isNonEmptyString(keys.auth)) {
+    return res.status(400).json({ error: 'A valid push subscription (endpoint + keys.p256dh + keys.auth) is required' });
+  }
+  const existing = await db.find('pushSubscriptions', s => s.endpoint === endpoint);
+  if (existing) {
+    await db.update('pushSubscriptions', existing.id, { userId: req.user.sub, p256dh: keys.p256dh, auth: keys.auth });
+  } else {
+    await db.insert('pushSubscriptions', {
+      id: `push_${nanoid(10)}`,
+      userId: req.user.sub,
+      endpoint,
+      p256dh: keys.p256dh,
+      auth: keys.auth,
+      createdAt: new Date().toISOString(),
+    });
+  }
+  res.json({ ok: true });
+});
+
+// POST /api/push/unsubscribe — removes a subscription by endpoint (not
+// by ID — the frontend only ever has the endpoint the browser gave it,
+// the same value used to look it up when the subscription was created).
+router.post('/push/unsubscribe', requireAuth, async (req, res) => {
+  const { endpoint } = req.body || {};
+  const existing = await db.find('pushSubscriptions', s => s.endpoint === endpoint && s.userId === req.user.sub);
+  if (existing) await db.remove('pushSubscriptions', existing.id);
+  res.json({ ok: true });
+});
+
 // POST /api/notifications/:id/read
 router.post('/notifications/:id/read', requireAuth, async (req, res) => {
   const record = await db.find('notifications', n => n.id === req.params.id);

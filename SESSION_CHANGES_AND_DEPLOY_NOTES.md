@@ -65,11 +65,17 @@ Both are now fixed, with the database updates included in this package.
 
 **Also rebuilt: the custom confirmation popups.** Every "are you sure?" moment in the app (canceling a booking, deleting a category, rejecting an application, etc.) had reverted to the browser's own plain gray confirm popup — the kind that can't be styled and that browsers can start silently blocking after a few appear in a row. This was already built properly once before. Rebuilt it across all 13 places it's used, with clear confirm/cancel buttons, click-outside-to-cancel, and destructive actions (deletes) shown in red.
 
-## Honest gaps — things I did NOT build
+## The three "honest gaps" — revisited and fixed
 
-- **True background push notifications.** What I built makes sound/vibration work while the app is open. Real notifications that fire when the app is closed need actual push infrastructure (VAPID keys, a subscription flow) that doesn't exist in this codebase at all. I didn't want to half-build this and call it done.
-- **The Data Cleanup tool will also flag your own seed/demo accounts** (jordan@example.com, marcus@example.com, etc.) as eligible if they have zero transaction history in a given database — because there's no way to tell "a seed demo account" apart from "an abandoned test signup" except by whether it's ever actually been used. This is working exactly as designed (protect anything with real history, nothing else), just worth knowing before you run it on a fresh database.
-- **City-level geo validation** (item 15's literal "Philadelphia can't be listed under Liberia" example) isn't fully possible — only country/state is checked, since city is deliberately free-text with no real database behind it.
+Three of the four gaps flagged after the audit turned out to be genuinely fixable, not fundamental limitations.
+
+**1. Background push notifications — now real, not partial.** Previously, notifications only made sound/vibration while the app was open in a tab. Now there's a complete push notification system: a real cryptographic keypair (VAPID) that identifies this server to browsers' push services, a subscription system that remembers which of someone's devices want push, and a service worker that actually shows the notification and routes a click back into the right part of the app — even with the browser fully closed. There's a new toggle for it in Settings. **Two new environment variables are needed for this to actually turn on** — see the deploy steps below.
+
+**2. City validation — meaningfully improved, not a full fix.** A complete worldwide city database still isn't realistic. What's now real: a curated list of well-known cities for every state/region in the countries this app actually operates in. It's deliberately one-directional — it will catch someone entering a city that's clearly a well-known match for a *different* country (exactly "Philadelphia" under "Liberia," the original example), but it will never reject a real small town just because it isn't on the list. A stricter check would have started incorrectly blocking legitimate signups from smaller towns, which is a worse problem than the one being solved.
+
+**3. Data Cleanup flagging demo accounts — fixed outright.** The app's own seed/demo accounts (jordan@example.com and the rest) now carry a permanent marker that the cleanup tool explicitly excludes, regardless of transaction history. Previewing a cleanup will no longer list them.
+
+**Google Sign-In's live-testing limitation is unchanged** — that one isn't a code gap, it's a genuine limitation of the environment used to build this (no path to Google's servers to test with). Everything else about it is real and ready; it just needs a real click-through once deployed.
 
 ## Deployment (cmd.exe)
 
@@ -122,6 +128,12 @@ Silence = success. A red error means stop and send it to me before pushing.
 
 **7. Set one new environment variable on Render, if it isn't already set:** `PRIVATE_UPLOADS_DIR` — a path on your persistent disk (e.g. `/var/data/private-uploads`), separate from your existing `UPLOADS_DIR`. This is where real identity documents now actually get saved. If you skip this, the server still runs, but uploaded ID documents won't survive a redeploy or restart — the server logs a warning about this on startup if it's missing, so you'll see it.
 
+**7a. Generate and set two more environment variables for real push notifications:** `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`. These only ever need to be generated once, ever — run this locally and copy both values into Render:
+```
+node -e "console.log(require('web-push').generateVAPIDKeys())"
+```
+Optionally also set `VAPID_SUBJECT` to a real contact email (e.g. `mailto:support@trothenpro.com`) — without it, a generic default is used, which is fine but less useful if a push provider ever needs to reach you about a delivery problem. Without any of these set, push notifications are simply disabled (the server logs this clearly on startup) — everything else keeps working normally.
+
 **8. Commit and push:**
 ```
 git add .
@@ -141,5 +153,7 @@ Render picks this up automatically.
 5. Open a dispute as super admin, try Escalate, confirm the audit trail shows it
 6. As a provider with no profile picture, confirm you don't show up in search until you add one
 7. **Click the actual Google button and sign in for real** — this is the one thing I couldn't test myself this round. Try it with an email that already has a Trothen account, and separately with a Google account that doesn't, and confirm both the login and the signup paths actually work
+8. Turn on push notifications in Settings, close the app entirely (or put the tab in the background on mobile), and have someone trigger a notification for that account (a message, a booking update) — confirm it actually shows up as a real OS-level notification
+9. Try signing up with an obviously wrong city/country combination (e.g. a well-known US city under a different country) — confirm it's rejected — and separately with a real but small/less-common town — confirm that one goes through fine
 
 If anything looks wrong, a screenshot plus what you expected instead is always the fastest way for me to trace it.

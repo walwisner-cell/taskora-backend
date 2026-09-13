@@ -65,6 +65,11 @@ const users = [
   ...u,
   passwordHash: hashPassword(DEMO_PASSWORD),
   createdAt: now(),
+  // Item 13's Data Cleanup tool must never mistake these demo accounts
+  // for abandoned test signups just because they've never transacted —
+  // this is the actual, permanent marker that tells it apart. A real
+  // signup, even an untouched one, never has this set.
+  isSeedAccount: true,
   phone: u.phone || `+1 404 555 ${String(1000 + i).slice(-4)}`,
   address: u.address || `${100 + i} Main Street`,
   // A couple of Atlanta providers deliberately share a zip code with Jordan

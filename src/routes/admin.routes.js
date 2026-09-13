@@ -1088,14 +1088,16 @@ router.get('/disputes/:id/audit-log', requireDepartment(['disputes', 'customer_s
 // The one hard rule everything here follows: a user or record is only
 // ever eligible if they have ZERO financial, contract, or compliance
 // history — no contract (as either party), no escrow transaction, no
-// payout, no dispute. A test account that never actually transacted is
-// safe to remove; a real account, or a test account that was ever
+// payout, no dispute — AND isn't one of this app's own seed/demo
+// accounts (see isSeedAccount in src/seed.js). A test account that never
+// actually transacted is safe to remove; a real account, a seed/demo
+// account, or a test account that was ever
 // actually used for a real-shaped transaction, never is, regardless of
 // what scope is requested. This is checked fresh at execution time, not
 // trusted from an earlier preview — a preview and an execute call could
 // be minutes apart, and something could have genuinely changed.
 async function findUntouchedTestAccounts(country) {
-  const candidates = await db.filter('users', u => u.country === country && (u.role === 'customer' || u.role === 'provider'));
+  const candidates = await db.filter('users', u => u.country === country && (u.role === 'customer' || u.role === 'provider') && !u.isSeedAccount);
   const [contracts, escrow, payouts, disputes] = await Promise.all([
     db.all('contracts'), db.all('escrowTransactions'), db.all('payouts'), db.all('disputes'),
   ]);

@@ -32,6 +32,21 @@ async function notify(userId, icon, text, category = null, linkTo = null) {
     linkTo,
     createdAt: new Date().toISOString(),
   });
+
+  // Item 2's real "background notifications": every notification that
+  // makes it this far (i.e. wasn't suppressed by the preference check
+  // above) also goes out as a real push message, so it still reaches the
+  // person even with the app fully closed — not just sound/vibration
+  // while a tab happens to be open (see index.html's polling, which is a
+  // separate, complementary mechanism for while the app IS open).
+  // Deliberately fire-and-forget: notify() is called from dozens of
+  // places mid-request, and a slow or failing push send should never
+  // delay or break the actual action (a payment, a booking, a match)
+  // that triggered this notification in the first place.
+  const { isPushConfigured, sendPushToUser } = require('./push-notifications');
+  if (isPushConfigured()) {
+    sendPushToUser(userId, { icon, text, linkTo }).catch(e => console.error('[notify] push send failed:', e.message));
+  }
 }
 
 module.exports = { notify };

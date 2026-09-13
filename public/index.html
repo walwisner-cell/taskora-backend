@@ -5331,6 +5331,7 @@ const CUSTOMER_SECTIONS = {
       ${notifToggleHTML('bookingUpdates', 'Booking updates', 'Status changes on your active bookings', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from pros', true)}
       ${notifToggleHTML('messageSound', 'Message sound alert', 'Play a sound when a new message arrives, so it doesn\'t come in silently', false)}
+      ${pushToggleHTML()}
       ${notifToggleHTML('promotions', 'Promotions', 'Offers and product news', false)}
     </div>`,
 };
@@ -6489,6 +6490,7 @@ const PROVIDER_SECTIONS = {
       ${notifToggleHTML('payoutAlerts', 'Payout alerts', 'When a payout is released', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from customers', true)}
       ${notifToggleHTML('messageSound', 'Message sound alert', 'Play a sound when a new message arrives, so it doesn\'t come in silently', false)}
+      ${pushToggleHTML()}
     </div>`,
 };
 
@@ -11244,6 +11246,87 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => { /* installability is a bonus, not a requirement — fail silently */ });
   });
+
+  // Item 2's real background notifications: when the OS-level
+  // notification is clicked while the app was closed, the service worker
+  // (see /sw.js) focuses this tab and posts the original linkTo back to
+  // it — this is what actually navigates to the right section, reusing
+  // the exact same function an in-app notification click already uses.
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'notification-click') {
+      navigateFromNotification(event.data.linkTo);
+    }
+  });
+
+  // Reflects the REAL current subscription state (not a stored
+  // preference) the moment the app loads, so the Settings toggle below
+  // never shows "on" when the browser has actually lost or revoked the
+  // subscription behind the scenes.
+  window.__pushSubscribed = false;
+  navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(sub => { window.__pushSubscribed = !!sub; }).catch(() => {});
+}
+
+// A VAPID public key arrives from the server as URL-safe base64; the
+// browser's Push API needs it as a raw byte array instead — this is the
+// standard, unavoidable conversion every Web Push implementation does.
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+// The actual enable/disable action behind the "Push notifications"
+// toggle in Settings. Takes the checkbox element itself (rather than
+// just the boolean) so a failure — permission denied, server not
+// configured, browser doesn't support it — can visibly revert the
+// toggle instead of leaving it showing a state that isn't real.
+async function togglePushNotifications(checkbox) {
+  const enable = checkbox.checked;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    checkbox.checked = false;
+    return showToast('Push notifications aren\'t supported in this browser');
+  }
+  try {
+    if (enable) {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        checkbox.checked = false;
+        return showToast('Notification permission was not granted');
+      }
+      const { configured, publicKey } = await apiFetch('GET', '/push/vapid-public-key');
+      if (!configured) {
+        checkbox.checked = false;
+        return showToast('Push notifications aren\'t set up on the server yet');
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+      await apiFetch('POST', '/push/subscribe', sub.toJSON());
+      window.__pushSubscribed = true;
+      showToast('Push notifications enabled — you\'ll get alerts even when Trothen is closed');
+    } else {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await apiFetch('POST', '/push/unsubscribe', { endpoint: sub.endpoint });
+        await sub.unsubscribe();
+      }
+      window.__pushSubscribed = false;
+      showToast('Push notifications turned off');
+    }
+  } catch (e) {
+    checkbox.checked = !enable;
+    showToast(e.message || 'Could not update push notification settings');
+  }
+}
+
+function pushToggleHTML() {
+  // Doesn't render at all in a browser that can't do this (older Safari,
+  // some in-app browsers) — a toggle for something guaranteed to fail
+  // is worse than no toggle.
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return '';
+  const isOn = window.__pushSubscribed === true;
+  return `<div class="switch-row"><div><div class="switch-label">Push notifications</div><div class="switch-sub">Get alerts even when Trothen isn't open in a tab</div></div><label class="switch"><input type="checkbox" ${isOn ? 'checked' : ''} onchange="togglePushNotifications(this)"><span class="switch-track"></span></label></div>`;
 }
 </script>
 </body>

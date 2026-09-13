@@ -830,3 +830,26 @@ CREATE TABLE IF NOT EXISTS data_cleanup_audit_log (
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Item 2 / true background push notifications. One row per subscribed
+-- device/browser — the same person on their phone and their laptop gets
+-- two rows, and both get notified, which is exactly what real push
+-- expects. endpoint is effectively the subscription's own unique ID
+-- (the browser's push service issues it), so it's the natural key for
+-- "is this the same device re-subscribing."
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id),
+  endpoint    TEXT NOT NULL UNIQUE,
+  p256dh      TEXT NOT NULL,
+  auth        TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+
+-- Item 13's Data Cleanup tool must never treat the app's own seed/demo
+-- accounts as abandoned test signups just because they have no
+-- transaction history. seed.js sets this true on every account it
+-- creates; a real signup never has it set at all.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_seed_account BOOLEAN NOT NULL DEFAULT FALSE;
+
+

@@ -148,4 +148,135 @@ function idDocTypesForCountry(country) {
   return ID_DOC_TYPES_BY_COUNTRY[country] || DEFAULT_ID_DOC_TYPES;
 }
 
-module.exports = { COUNTRIES, STATES_BY_COUNTRY, statesForCountry, DIAL_CODE_BY_COUNTRY, dialCodeForCountry, isValidStateForCountry, ID_DOC_TYPES_BY_COUNTRY, DEFAULT_ID_DOC_TYPES, idDocTypesForCountry };
+// Item 15's real, enforceable improvement on the city side. A full
+// worldwide city database isn't realistic here (tens of thousands of
+// entries, still incomplete, and unusable as a dropdown — see the note
+// at the top of this file on why city stayed free-text in the first
+// place). What IS realistic: a real, curated list of well-known cities
+// for each state/region already covered by STATES_BY_COUNTRY, used the
+// same permissive way STATES_BY_COUNTRY itself is used elsewhere — a
+// state/country pair with a known city list catches an outright wrong
+// match (this is exactly what catches "Philadelphia" typed under a
+// Liberian county, since Philadelphia isn't a real Liberian city and
+// this list would say so); a state with no curated list at all, or a
+// city that's real but simply too small to be worth listing, falls back
+// to permissive rather than blocking a legitimate person who lives
+// somewhere less well-known. This is a real improvement, not a complete
+// solution — a small town not on this list still isn't validated, by
+// design, rather than being wrongly rejected.
+const CITIES_BY_STATE = {
+  'United States': {
+    'Alabama': ['Birmingham', 'Montgomery', 'Mobile', 'Huntsville', 'Tuscaloosa'],
+    'Alaska': ['Anchorage', 'Fairbanks', 'Juneau', 'Sitka'],
+    'Arizona': ['Phoenix', 'Tucson', 'Mesa', 'Scottsdale', 'Chandler', 'Tempe'],
+    'Arkansas': ['Little Rock', 'Fayetteville', 'Fort Smith', 'Springdale'],
+    'California': ['Los Angeles', 'San Diego', 'San Jose', 'San Francisco', 'Fresno', 'Sacramento', 'Oakland', 'Long Beach', 'Anaheim'],
+    'Colorado': ['Denver', 'Colorado Springs', 'Aurora', 'Fort Collins', 'Boulder'],
+    'Connecticut': ['Bridgeport', 'New Haven', 'Hartford', 'Stamford', 'Waterbury'],
+    'Delaware': ['Wilmington', 'Dover', 'Newark'],
+    'District of Columbia': ['Washington'],
+    'Florida': ['Jacksonville', 'Miami', 'Tampa', 'Orlando', 'St. Petersburg', 'Fort Lauderdale', 'Tallahassee'],
+    'Georgia': ['Atlanta', 'Augusta', 'Columbus', 'Savannah', 'Athens'],
+    'Hawaii': ['Honolulu', 'Hilo', 'Kailua'],
+    'Idaho': ['Boise', 'Meridian', 'Idaho Falls'],
+    'Illinois': ['Chicago', 'Aurora', 'Naperville', 'Springfield', 'Rockford'],
+    'Indiana': ['Indianapolis', 'Fort Wayne', 'Evansville', 'South Bend'],
+    'Iowa': ['Des Moines', 'Cedar Rapids', 'Davenport', 'Iowa City'],
+    'Kansas': ['Wichita', 'Overland Park', 'Kansas City', 'Topeka'],
+    'Kentucky': ['Louisville', 'Lexington', 'Bowling Green'],
+    'Louisiana': ['New Orleans', 'Baton Rouge', 'Shreveport', 'Lafayette'],
+    'Maine': ['Portland', 'Lewiston', 'Bangor', 'Augusta'],
+    'Maryland': ['Baltimore', 'Annapolis', 'Rockville', 'Frederick'],
+    'Massachusetts': ['Boston', 'Worcester', 'Springfield', 'Cambridge', 'Lowell'],
+    'Michigan': ['Detroit', 'Grand Rapids', 'Ann Arbor', 'Lansing', 'Flint'],
+    'Minnesota': ['Minneapolis', 'St. Paul', 'Rochester', 'Duluth'],
+    'Mississippi': ['Jackson', 'Gulfport', 'Hattiesburg'],
+    'Missouri': ['Kansas City', 'St. Louis', 'Springfield', 'Columbia'],
+    'Montana': ['Billings', 'Missoula', 'Helena', 'Bozeman'],
+    'Nebraska': ['Omaha', 'Lincoln', 'Bellevue'],
+    'Nevada': ['Las Vegas', 'Reno', 'Henderson', 'Carson City'],
+    'New Hampshire': ['Manchester', 'Nashua', 'Concord'],
+    'New Jersey': ['Newark', 'Jersey City', 'Trenton', 'Paterson', 'Atlantic City'],
+    'New Mexico': ['Albuquerque', 'Santa Fe', 'Las Cruces'],
+    'New York': ['New York City', 'Buffalo', 'Rochester', 'Albany', 'Syracuse', 'Yonkers'],
+    'North Carolina': ['Charlotte', 'Raleigh', 'Greensboro', 'Durham', 'Winston-Salem'],
+    'North Dakota': ['Fargo', 'Bismarck', 'Grand Forks'],
+    'Ohio': ['Columbus', 'Cleveland', 'Cincinnati', 'Toledo', 'Akron'],
+    'Oklahoma': ['Oklahoma City', 'Tulsa', 'Norman'],
+    'Oregon': ['Portland', 'Salem', 'Eugene', 'Bend'],
+    'Pennsylvania': ['Philadelphia', 'Pittsburgh', 'Allentown', 'Erie', 'Reading', 'Harrisburg'],
+    'Rhode Island': ['Providence', 'Warwick', 'Cranston'],
+    'South Carolina': ['Columbia', 'Charleston', 'Greenville'],
+    'South Dakota': ['Sioux Falls', 'Rapid City', 'Aberdeen'],
+    'Tennessee': ['Nashville', 'Memphis', 'Knoxville', 'Chattanooga'],
+    'Texas': ['Houston', 'San Antonio', 'Dallas', 'Austin', 'Fort Worth', 'El Paso'],
+    'Utah': ['Salt Lake City', 'Provo', 'Ogden'],
+    'Vermont': ['Burlington', 'Montpelier'],
+    'Virginia': ['Virginia Beach', 'Norfolk', 'Richmond', 'Arlington', 'Alexandria'],
+    'Washington': ['Seattle', 'Spokane', 'Tacoma', 'Olympia', 'Bellevue'],
+    'West Virginia': ['Charleston', 'Huntington', 'Morgantown'],
+    'Wisconsin': ['Milwaukee', 'Madison', 'Green Bay'],
+    'Wyoming': ['Cheyenne', 'Casper', 'Laramie'],
+  },
+  'Nigeria': {
+    'Abia': ['Umuahia', 'Aba'], 'Adamawa': ['Yola'], 'Akwa Ibom': ['Uyo'], 'Anambra': ['Awka', 'Onitsha'],
+    'Bauchi': ['Bauchi'], 'Bayelsa': ['Yenagoa'], 'Benue': ['Makurdi'], 'Borno': ['Maiduguri'],
+    'Cross River': ['Calabar'], 'Delta': ['Asaba', 'Warri'], 'Ebonyi': ['Abakaliki'], 'Edo': ['Benin City'],
+    'Ekiti': ['Ado Ekiti'], 'Enugu': ['Enugu'], 'Federal Capital Territory': ['Abuja'], 'Gombe': ['Gombe'],
+    'Imo': ['Owerri'], 'Jigawa': ['Dutse'], 'Kaduna': ['Kaduna'], 'Kano': ['Kano'], 'Katsina': ['Katsina'],
+    'Kebbi': ['Birnin Kebbi'], 'Kogi': ['Lokoja'], 'Kwara': ['Ilorin'], 'Lagos': ['Lagos', 'Ikeja', 'Lekki'],
+    'Nasarawa': ['Lafia'], 'Niger': ['Minna'], 'Ogun': ['Abeokuta'], 'Ondo': ['Akure'], 'Osun': ['Osogbo'],
+    'Oyo': ['Ibadan'], 'Plateau': ['Jos'], 'Rivers': ['Port Harcourt'], 'Sokoto': ['Sokoto'],
+    'Taraba': ['Jalingo'], 'Yobe': ['Damaturu'], 'Zamfara': ['Gusau'],
+  },
+  'Ghana': {
+    'Ahafo': ['Goaso'], 'Ashanti': ['Kumasi'], 'Bono': ['Sunyani'], 'Bono East': ['Techiman'],
+    'Central': ['Cape Coast'], 'Eastern': ['Koforidua'], 'Greater Accra': ['Accra', 'Tema'],
+    'North East': ['Nalerigu'], 'Northern': ['Tamale'], 'Oti': ['Dambai'], 'Savannah': ['Damongo'],
+    'Upper East': ['Bolgatanga'], 'Upper West': ['Wa'], 'Volta': ['Ho'], 'Western': ['Sekondi-Takoradi'],
+    'Western North': ['Sefwi Wiawso'],
+  },
+  'Liberia': {
+    'Bomi': ['Tubmanburg'], 'Bong': ['Gbarnga'], 'Gbarpolu': ['Bopolu'], 'Grand Bassa': ['Buchanan'],
+    'Grand Cape Mount': ['Robertsport'], 'Grand Gedeh': ['Zwedru'], 'Grand Kru': ['Barclayville'],
+    'Lofa': ['Voinjama'], 'Margibi': ['Kakata'], 'Maryland': ['Harper'], 'Montserrado': ['Monrovia', 'Paynesville'],
+    'Nimba': ['Sanniquellie', 'Ganta'], 'River Cess': ['Cestos City'], 'River Gee': ['Fish Town'], 'Sinoe': ['Greenville'],
+  },
+};
+
+// Real, honest validation — deliberately asymmetric to avoid the obvious
+// failure mode of a naive "must be on the list" check: a small, real town
+// that just isn't hand-curated here would otherwise get wrongly rejected,
+// which is worse than the problem this exists to catch. So this never
+// rejects a city for being unlisted. It only rejects a city that clearly
+// belongs to a DIFFERENT country's own curated list — which is exactly
+// the reported bug: "Philadelphia" is a real, well-known match in
+// CITIES_BY_STATE['United States']['Pennsylvania'], and country
+// "Liberia" isn't the United States, so that specific combination is
+// caught. A city nobody's curated anywhere always passes through
+// untouched, same as a state with no curated list at all.
+let reverseCityIndexCache = null;
+function reverseCityIndex() {
+  if (reverseCityIndexCache) return reverseCityIndexCache;
+  const index = new Map(); // normalized city name -> country it's curated under
+  for (const [country, states] of Object.entries(CITIES_BY_STATE)) {
+    for (const cities of Object.values(states)) {
+      for (const city of cities) {
+        const key = city.trim().toLowerCase().replace(/[.\-]/g, '');
+        index.set(key, country);
+      }
+    }
+  }
+  reverseCityIndexCache = index;
+  return index;
+}
+
+function isPlausibleCityForCountry(country, city) {
+  if (!country || !city) return true;
+  const key = city.trim().toLowerCase().replace(/[.\-]/g, '');
+  const knownCountry = reverseCityIndex().get(key);
+  if (!knownCountry) return true; // not a city curated anywhere — can't tell, don't block
+  return knownCountry === country;
+}
+
+module.exports = { COUNTRIES, STATES_BY_COUNTRY, statesForCountry, DIAL_CODE_BY_COUNTRY, dialCodeForCountry, isValidStateForCountry, ID_DOC_TYPES_BY_COUNTRY, DEFAULT_ID_DOC_TYPES, idDocTypesForCountry, isPlausibleCityForCountry };

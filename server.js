@@ -19,6 +19,11 @@ const adminRoutes = require('./src/routes/admin.routes');
 const miscRoutes = require('./src/routes/misc.routes');
 const portfolioRoutes = require('./src/routes/portfolio.routes');
 const { UPLOADS_DIR } = require('./src/uploads');
+// Loaded here (not just lazily where it's used) purely so its own
+// configured/not-configured startup message — see src/push-notifications.js
+// — shows up at boot alongside every other integration's status, instead
+// of silently waiting until the first push notification actually fires.
+require('./src/push-notifications');
 
 // Actually try writing to UPLOADS_DIR at boot, rather than assuming it's
 // writable just because the path exists. This is what turns a silent

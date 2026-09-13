@@ -6,7 +6,7 @@ const { hashPassword, verifyPassword, signToken, requireAuth, generateResetToken
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode, isValidName, validate, postalCodeErrorMessage } = require('../validators');
 const { notify } = require('../notify');
 const { generateUniqueReferralCode } = require('../referral-code');
-const { isValidStateForCountry } = require('../geo-data');
+const { isValidStateForCountry, isPlausibleCityForCountry } = require('../geo-data');
 
 const router = express.Router();
 
@@ -78,6 +78,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
     ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
     ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
     ['state', typeof country !== 'string' || typeof state !== 'string' || isValidStateForCountry(country.trim(), state.trim()), 'That state/region doesn\'t belong to the selected country — please re-select both'],
+    ['city', typeof country !== 'string' || typeof city !== 'string' || isPlausibleCityForCountry(country.trim(), city.trim()), 'That city is a known city in a different country — please double check your country and city'],
   ]);
   if (role === 'provider') {
     errors.push(...validate([
@@ -500,6 +501,7 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
     ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
     ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
     ['state', typeof country !== 'string' || typeof state !== 'string' || isValidStateForCountry(country.trim(), state.trim()), 'That state/region doesn\'t belong to the selected country — please re-select both'],
+    ['city', typeof country !== 'string' || typeof city !== 'string' || isPlausibleCityForCountry(country.trim(), city.trim()), 'That city is a known city in a different country — please double check your country and city'],
   ]);
   if (role === 'provider') {
     errors.push(...validate([
@@ -691,15 +693,20 @@ router.patch('/me', requireAuth, async (req, res) => {
   }
   // Item 15 / Country → Region validation, applied here too, not just at
   // signup — someone could otherwise change their country afterward and
-  // leave a now-mismatched state on file. Only checks when BOTH end up
-  // set together on this update: whichever one isn't being changed right
-  // now is read from the account's existing value.
-  if ('country' in patch || 'state' in patch) {
+  // leave a now-mismatched state (or city) on file. Only checks when the
+  // relevant fields end up set together on this update: whichever one
+  // isn't being changed right now is read from the account's existing
+  // value.
+  if ('country' in patch || 'state' in patch || 'city' in patch) {
     const existingUser = await db.find('users', u => u.id === req.user.sub);
     const effectiveCountry = 'country' in patch ? patch.country : (existingUser && existingUser.country);
     const effectiveState = 'state' in patch ? patch.state : (existingUser && existingUser.state);
+    const effectiveCity = 'city' in patch ? patch.city : (existingUser && existingUser.city);
     if (effectiveCountry && effectiveState && !isValidStateForCountry(effectiveCountry, effectiveState)) {
       return res.status(400).json({ error: 'That state/region doesn\'t belong to the selected country — please re-select both' });
+    }
+    if (effectiveCountry && effectiveCity && !isPlausibleCityForCountry(effectiveCountry, effectiveCity)) {
+      return res.status(400).json({ error: 'That city is a known city in a different country — please double check your country and city' });
     }
   }
   for (const dateField of ['licenseExpiryDate', 'insuranceExpiryDate']) {
