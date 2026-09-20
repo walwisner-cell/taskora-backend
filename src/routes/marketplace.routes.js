@@ -551,11 +551,19 @@ router.get('/providers', async (req, res) => {
   if (category) providers = providers.filter(p => p.category === category);
   if (q) {
     const needle = q.toLowerCase();
+    // Item 2 / search strengthening: plain substring matching alone missed
+    // very natural queries like "plumber" against the category "Plumbing"
+    // — see src/search-synonyms.js. A query that maps to a known category
+    // also matches any provider in that category, on top of the existing
+    // name/category/role/tag substring matching (never instead of it).
+    const { categoriesForSearchTerm } = require('../search-synonyms');
+    const synonymCategories = categoriesForSearchTerm(needle);
     providers = providers.filter(p =>
       p.name.toLowerCase().includes(needle) ||
       p.category.toLowerCase().includes(needle) ||
       (p.providerRole || '').toLowerCase().includes(needle) ||
-      (p.tags || []).some(t => t.toLowerCase().includes(needle))
+      (p.tags || []).some(t => t.toLowerCase().includes(needle)) ||
+      synonymCategories.includes(p.category)
     );
   }
 

@@ -56,9 +56,29 @@ function verifyPassword(plain, hash) {
   return bcrypt.compareSync(plain, hash);
 }
 
-function signToken(user) {
+// Item: per-device sign-out. Every signed token corresponds to a real row
+// in the sessions table — deleting that one row (see POST /auth/logout) is
+// what makes signing out actually just end THIS login, not every device
+// the account is signed into. deviceLabel is optional and purely
+// descriptive (truncated User-Agent) — nothing currently checks it, it
+// just makes a future "your active sessions" view possible without
+// another schema change.
+//
+// This is async now (it wasn't before) because it has to write the
+// session row before the token referencing it can be signed — every call
+// site was updated to await it.
+async function signToken(user, deviceLabel) {
+  const db = require('./db');
+  const { nanoid } = require('nanoid');
+  const sessionId = nanoid(21);
+  await db.insert('sessions', {
+    id: sessionId,
+    userId: user.id,
+    deviceLabel: deviceLabel ? deviceLabel.slice(0, 200) : null,
+    createdAt: new Date().toISOString(),
+  });
   return jwt.sign(
-    { sub: user.id, role: user.role, email: user.email, tokenVersion: user.tokenVersion || 0 },
+    { sub: user.id, role: user.role, email: user.email, tokenVersion: user.tokenVersion || 0, sessionId },
     JWT_SECRET,
     { expiresIn: TOKEN_TTL }
   );
@@ -114,6 +134,18 @@ async function requireAuth(req, res, next) {
     // the account.
     if ((payload.tokenVersion || 0) !== (current.tokenVersion || 0)) {
       return res.status(401).json({ error: 'Your session is no longer valid — please sign in again.' });
+    }
+    // Item: per-device sign-out enforcement — see signToken above and
+    // POST /auth/logout. A token that passed the tokenVersion check can
+    // still have been individually signed out. A token signed before this
+    // session system existed has no real sessionId to match, which
+    // correctly (and only once, right after this deploys) signs everyone
+    // out — the same one-time reset a JWT_SECRET rotation would cause.
+    if (payload.sessionId) {
+      const session = await db.find('sessions', s => s.id === payload.sessionId);
+      if (!session) {
+        return res.status(401).json({ error: 'Your session is no longer valid — please sign in again.' });
+      }
     }
     // An account created with a starting temp password (see POST
     // /admin/sub-admins) can't do anything else on the platform until a

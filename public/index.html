@@ -1156,6 +1156,7 @@
         <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" type="text" id="contact-name"/></div>
         <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="contact-email"/></div>
         <div class="form-group"><label class="form-label">Subject</label><input class="form-input" type="text" id="contact-subject"/></div>
+        <div class="form-group"><label class="form-label">City (optional)</label><input class="form-input" type="text" id="contact-city" placeholder="e.g. Atlanta — helps route this to the right team faster"/></div>
         <div class="form-group"><label class="form-label">Message</label><textarea class="form-input" id="contact-message" rows="5" style="resize:vertical;"></textarea></div>
         <button class="pricing-cta" onclick="submitContactForm()">Send Message</button>
       </div>
@@ -2732,10 +2733,12 @@ function renderDirectory() {
   let list = PROVIDERS.slice();
   if (directoryCategoryFilter && directoryCategoryFilter !== 'All') list = list.filter(p => p.cat === directoryCategoryFilter);
   if (q) {
+    const synonymCategories = categoriesForSearchTerm(q);
     list = list.filter(p =>
       p.name.toLowerCase().includes(q) ||
       p.role.toLowerCase().includes(q) ||
-      (p.tags || []).some(t => t.toLowerCase().includes(q))
+      (p.tags || []).some(t => t.toLowerCase().includes(q)) ||
+      synonymCategories.includes(p.cat)
     );
   }
   // "Best Match" leaves the server's own ordering alone (already
@@ -2960,9 +2963,14 @@ function navbarHTML(active) {
         <div class="account-menu-item danger" onclick="closeAccountMenu();logout()">🚪 Sign Out</div>
       </div>
     </div>` : '';
+  // Language switcher: built and tested in an earlier session, held back
+  // from the visible UI at the time per a direct request — re-enabled
+  // now that multi-language selection was explicitly asked for again.
+  // Shown for both anonymous visitors and signed-in users, same as any
+  // real site's language control.
   const rightSide = isDash
-    ? `${bell}${accountMenu}`
-    : `<button class="nav-btn" onclick="showPricing()">${t('nav_become_pro')}</button><button class="nav-btn nav-cta" onclick="showAuth('login')">${t('nav_sign_in')}</button>`;
+    ? `${languageSwitcherHTML()}${bell}${accountMenu}`
+    : `${languageSwitcherHTML()}<button class="nav-btn" onclick="showPricing()">${t('nav_become_pro')}</button><button class="nav-btn nav-cta" onclick="showAuth('login')">${t('nav_sign_in')}</button>`;
   return `
     <div class="navbar-logo" onclick="goHome()"><img src="${LOGO_IMG_FULL}" alt="Trothen" class="navbar-logo-img"/></div>
     <div class="navbar-nav">
@@ -3248,6 +3256,7 @@ async function submitContactForm() {
   const name = document.getElementById('contact-name').value.trim();
   const email = document.getElementById('contact-email').value.trim();
   const subject = document.getElementById('contact-subject').value.trim();
+  const city = document.getElementById('contact-city').value.trim();
   const message = document.getElementById('contact-message').value.trim();
   if (!name || !email || !subject || !message) return showToast('Please fill in every field');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
@@ -3259,7 +3268,7 @@ async function submitContactForm() {
     return;
   }
   try {
-    await apiFetch('POST', '/contact', { name, email, subject, message });
+    await apiFetch('POST', '/contact', { name, email, subject, message, city: city || undefined });
     document.getElementById('contact-form-panel').innerHTML = `<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:10px;">✓</div><div style="font-weight:600;color:var(--navy);">Thanks, ${name.split(' ')[0]} — we've received your message and will be in touch soon.</div></div>`;
   } catch (e) { showToast(e.message || 'Could not send your message — please try again'); }
 }
@@ -3403,8 +3412,15 @@ function goHome() {
 // for ordinary navigation (e.g. clicking the logo while still logged in),
 // so it must NOT clear auth state itself — only an explicit "Sign Out"
 // action should do that.
-function logout() {
+async function logout() {
   stopMessagePolling();
+  // Real server-side sign-out (see POST /auth/logout) — best-effort: if
+  // this fails (offline, server hiccup), the person should still be able
+  // to sign out of THIS device/tab, which the local clearing below always
+  // does regardless.
+  if (BACKEND_AVAILABLE && AUTH.token) {
+    try { await apiFetch('POST', '/auth/logout', {}); } catch (e) { /* local sign-out still proceeds below */ }
+  }
   AUTH.token = null;
   AUTH.user = null;
   clearAuthSession();
@@ -4512,6 +4528,56 @@ function topProvidersTableHTML(rows) {
 // discount actually apply. Pro and Elite prices here are the same
 // suggested starting points as the backend (easy to change in both
 // places if adjusted).
+// Item 2 / search strengthening — the frontend twin of
+// src/search-synonyms.js, used only for the client-side fallback search
+// paths (an anonymous visitor with no location, or the real API call
+// failing) since those run entirely in the browser with no server round
+// trip. Kept in sync by hand with the backend list; both cover the exact
+// same real category names from src/seed.js.
+const SEARCH_SYNONYMS = {
+  plumber: 'Plumbing', plumbers: 'Plumbing', electrician: 'Electrical', electricians: 'Electrical',
+  hvac: 'HVAC & Air Conditioning', 'air conditioning': 'HVAC & Air Conditioning', 'ac repair': 'HVAC & Air Conditioning', furnace: 'HVAC & Air Conditioning',
+  handyman: 'Handyman Services', 'handy man': 'Handyman Services', carpenter: 'Carpentry', carpenters: 'Carpentry',
+  painter: 'Painting', painters: 'Painting', roofer: 'Roofing', roofers: 'Roofing',
+  flooring: 'Flooring Installation', floors: 'Flooring Installation', locksmith: 'Locksmith', locksmiths: 'Locksmith', 'lock repair': 'Locksmith',
+  appliance: 'Appliance Repair', appliances: 'Appliance Repair',
+  exterminator: 'Pest Control', pests: 'Pest Control', roaches: 'Pest Control', mice: 'Pest Control', 'rat removal': 'Pest Control',
+  mason: 'Masonry', masons: 'Masonry', bricklayer: 'Masonry', welder: 'Welding', welders: 'Welding',
+  contractor: 'General Contracting', contractors: 'General Contracting',
+  renovation: 'Home Renovation', remodel: 'Home Renovation', remodeling: 'Home Renovation',
+  cleaner: 'Cleaning', cleaners: 'Cleaning', maid: 'Cleaning', housekeeping: 'Cleaning', housekeeper: 'Cleaning',
+  carpet: 'Carpet Cleaning', pool: 'Pool Cleaning & Maintenance', laundry: 'Laundry & Dry Cleaning', 'dry cleaning': 'Laundry & Dry Cleaning',
+  mover: 'Moving', movers: 'Moving', delivery: 'Pick & Drop', courier: 'Pick & Drop',
+  furniture: 'Furniture Assembly', assembly: 'Furniture Assembly', ikea: 'Furniture Assembly', junk: 'Junk Removal', hauling: 'Junk Removal',
+  landscaper: 'Landscaping', landscapers: 'Landscaping', yard: 'Landscaping', lawn: 'Lawn Care', mowing: 'Lawn Care', mow: 'Lawn Care',
+  gardener: 'Gardening', gardeners: 'Gardening', tree: 'Tree Trimming & Removal', trees: 'Tree Trimming & Removal', arborist: 'Tree Trimming & Removal',
+  fence: 'Fence Installation & Repair', fencing: 'Fence Installation & Repair',
+  trainer: 'Fitness', gym: 'Fitness', workout: 'Fitness', massage: 'Massage Therapy', masseuse: 'Massage Therapy',
+  hair: 'Hair Styling', hairstylist: 'Hair Styling', barber: 'Hair Styling', makeup: 'Makeup Artistry',
+  nails: 'Nail Care', manicure: 'Nail Care', pedicure: 'Nail Care', tutor: 'Tutoring', tutors: 'Tutoring',
+  music: 'Music Lessons', piano: 'Music Lessons', guitar: 'Music Lessons',
+  language: 'Language Lessons', spanish: 'Language Lessons', french: 'Language Lessons', sat: 'Test Prep', act: 'Test Prep', gre: 'Test Prep',
+  wedding: 'Event Planning', party: 'Event Planning', photographer: 'Photography', photos: 'Photography',
+  videographer: 'Videography', dj: 'DJ Services', caterer: 'Catering',
+  mechanic: 'Auto Repair', 'car repair': 'Auto Repair', 'car wash': 'Car Detailing & Wash', detailing: 'Car Detailing & Wash',
+  tow: 'Towing', 'tow truck': 'Towing', petsitting: 'Pet Sitting', 'pet sitter': 'Pet Sitting',
+  'dog walker': 'Dog Walking', walker: 'Dog Walking', groomer: 'Pet Grooming', grooming: 'Pet Grooming',
+  computer: 'IT Support & Computer Repair', laptop: 'IT Support & Computer Repair',
+  designer: 'Web & Graphic Design', website: 'Web & Graphic Design', logo: 'Web & Graphic Design', graphic: 'Web & Graphic Design',
+  accountant: 'Accounting & Bookkeeping', bookkeeper: 'Accounting & Bookkeeping', taxes: 'Accounting & Bookkeeping',
+  lawyer: 'Legal Consulting', attorney: 'Legal Consulting', notary: 'Notary Services', decorator: 'Interior Design',
+};
+function categoriesForSearchTerm(query) {
+  const needle = (query || '').toLowerCase().trim();
+  if (!needle) return [];
+  const matches = new Set();
+  for (const term in SEARCH_SYNONYMS) {
+    if (needle.includes(term)) matches.add(SEARCH_SYNONYMS[term]);
+    else if (needle.length >= 3 && term.includes(needle)) matches.add(SEARCH_SYNONYMS[term]);
+  }
+  return Array.from(matches);
+}
+
 const MEMBERSHIP_TIER_INFO = {
   plus: { label: 'Plus', price: 9.99, description: 'Lower fees + priority features' },
   pro: { label: 'Pro', price: 19.99, description: 'More savings + premium support' },
@@ -4574,6 +4640,15 @@ async function loadCustomerData() {
     customerData.openJobs = jobs.filter(j => j.status === 'open');
   } catch (e) { console.warn('Could not load job postings', e); customerData.openJobs = []; }
   customerData.verificationStatus = await computeVerificationStatus();
+  // Real local-currency equivalents for the membership panel (see GET
+  // /membership/tiers) — shown alongside the USD price, not instead of
+  // it, since USD is still what's actually billed until a real payment
+  // processor is wired up (see src/membership.js). A failure here just
+  // means the panel falls back to USD-only, same as before this existed.
+  try {
+    const { tiers } = await apiFetch('GET', '/membership/tiers');
+    customerData.membershipTiersLocal = tiers;
+  } catch (e) { customerData.membershipTiersLocal = null; }
 }
 
 function paymentMethodsTableHTML() {
@@ -5314,11 +5389,14 @@ const CUSTOMER_SECTIONS = {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
           ${['plus', 'pro', 'elite'].map(tier => {
             const cfg = MEMBERSHIP_TIER_INFO[tier];
+            const local = customerData.membershipTiersLocal && customerData.membershipTiersLocal[tier];
+            const localLine = local && local.currencyCode !== 'USD' ? `<div style="font-size:11px;color:var(--gold);font-weight:600;">≈ ${local.currencySymbol}${local.priceLocal} ${local.currencyCode}/mo</div>` : '';
             const isCurrent = AUTH.user && AUTH.user.membershipTier === tier;
             return `<div style="border:1px solid ${isCurrent ? 'var(--navy)' : 'var(--border)'};border-radius:10px;padding:12px;text-align:center;">
               <div style="font-weight:700;color:var(--navy);">${cfg.label}</div>
               <div style="font-size:18px;font-weight:800;margin:4px 0;">$${cfg.price}<span style="font-size:11px;font-weight:400;color:var(--slate);">/mo</span></div>
-              <div style="font-size:11px;color:var(--slate);margin-bottom:8px;">${cfg.description}</div>
+              ${localLine}
+              <div style="font-size:11px;color:var(--slate);margin:4px 0 8px;">${cfg.description}</div>
               <button class="btn-sm ${isCurrent ? 'btn-sm-outline' : 'btn-sm-primary'}" style="width:100%;" ${isCurrent ? 'disabled' : ''} onclick="subscribeMembership('${tier}')">${isCurrent ? 'Current Plan' : 'Subscribe'}</button>
             </div>`;
           }).join('')}
@@ -5689,7 +5767,25 @@ function changePasswordPanelHTML(prefix) {
     <div class="form-group"><label class="form-label">New Password</label><input class="form-input" type="password" id="${prefix}-pw-new"/></div>
     <div class="form-group"><label class="form-label">Confirm New Password</label><input class="form-input" type="password" id="${prefix}-pw-confirm" placeholder="Re-enter new password"/></div>
     <button class="btn-sm btn-sm-primary" onclick="changePassword('${prefix}')">Update Password</button>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Sessions</div>
+    <div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;">Signing out normally only signs out this device. If a phone or another computer is still signed in somewhere you don't recognize, this signs out everywhere at once.</div>
+    <button class="btn-sm btn-sm-outline" onclick="logoutAllDevices()">Sign out of all devices</button>
   </div>`;
+}
+
+async function logoutAllDevices() {
+  if (!(await confirmDialog('Sign out of every device this account is currently logged into, including this one? You\'ll need to sign in again here too.', { danger: true, confirmLabel: 'Sign out everywhere' }))) return;
+  try {
+    const { signedOutDevices } = await apiFetch('POST', '/auth/logout-all', {});
+    stopMessagePolling();
+    AUTH.token = null;
+    AUTH.user = null;
+    clearAuthSession();
+    showToast(`Signed out of ${signedOutDevices} device${signedOutDevices === 1 ? '' : 's'}`);
+    goHome();
+  } catch (e) { showToast(e.message || 'Could not sign out of all devices'); }
 }
 
 async function changePassword(prefix) {
@@ -7720,6 +7816,7 @@ function getAdminNavItems() {
     { key: 'advertising', label: 'Advertising', icon: '📣' },
     { key: 'promotions', label: 'Promotions', icon: '🎉' },
     { key: 'careers', label: 'Job Applications', icon: '💼' },
+    { key: 'contact-submissions', label: 'Contact Us Messages', icon: '✉️' },
     { key: 'reports', label: 'Reports', icon: '📈' },
     { key: 'categories', label: 'Categories & Countries', icon: '🌍' },
     { key: 'announcements', label: 'Announcements', icon: '📢' },
@@ -7791,7 +7888,7 @@ async function loadAdminData() {
     catch (e) { return null; }
   }
 
-  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries, reportsAnalytics, salesInquiries, organizations, careersInquiries, accessLogs, referralsOverview] = await Promise.all([
+  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries, reportsAnalytics, salesInquiries, organizations, careersInquiries, accessLogs, referralsOverview, contactSubmissions] = await Promise.all([
     tryFetch('/admin/stats'),
     tryFetch('/admin/users/pending'),
     tryFetch('/admin/users/all'),
@@ -7812,6 +7909,7 @@ async function loadAdminData() {
     tryFetch('/admin/careers-inquiries'),
     tryFetch('/admin/access-logs'),
     tryFetch('/admin/referrals-overview'),
+    tryFetch('/admin/contact-submissions'),
   ]);
 
   if (stats) adminData.stats = stats;
@@ -7832,6 +7930,7 @@ async function loadAdminData() {
   if (salesInquiries) adminData.salesInquiries = salesInquiries.inquiries;
   if (organizations) adminData.organizations = organizations.organizations;
   if (careersInquiries) adminData.careersInquiries = careersInquiries.inquiries;
+  if (contactSubmissions) adminData.contactSubmissions = contactSubmissions.submissions;
   if (accessLogs) adminData.accessLogs = accessLogs.logs;
   if (referralsOverview) adminData.referralsOverview = referralsOverview;
 
@@ -8282,6 +8381,33 @@ const ADMIN_SECTIONS = {
       <div id="data-cleanup-preview-panel" style="margin-top:14px;"></div>
     </div>
     <div class="panel"><div class="panel-title">Cleanup history <small style="font-weight:400;color:var(--slate);">Every run, permanently logged</small></div><div id="data-cleanup-log-panel"><div style="color:var(--slate);font-size:12.5px;padding:12px 0;">Loading…</div></div></div>`,
+  'contact-submissions': () => {
+    const list = adminData.contactSubmissions || [];
+    const newCount = list.filter(i => i.status === 'new').length;
+    const isRegionallyScoped = AUTH.user && !AUTH.user.isSuperAdmin;
+    return `
+    <div class="dash-header"><div><div class="dash-title">Contact Us Messages</div><div class="dash-sub">Real submissions from the public Contact Us form${isRegionallyScoped ? ` — ${escapeHtml(AUTH.user.city || 'your city')} and unrouted messages` : ''}</div></div></div>
+    <div class="stat-cards">
+      <div class="stat-card"><div class="stat-card-label">Total Messages</div><div class="stat-card-val">${list.length}</div></div>
+      <div class="stat-card"><div class="stat-card-label">New</div><div class="stat-card-val">${newCount}</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">All Messages <small style="font-weight:400;color:var(--slate);">${list.length} total</small></div>
+      ${!list.length ? `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No messages yet.</div>` : `
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>From</th><th>City</th><th>Subject</th><th>Message</th><th>Status</th><th>Sent</th></tr></thead><tbody>
+      ${list.map(i => `<tr>
+        <td>${escapeHtml(i.name)}<br/><span style="color:var(--slate);font-size:11.5px;">${escapeHtml(i.email)}</span></td>
+        <td>${escapeHtml(i.city || '—')}</td>
+        <td>${escapeHtml(i.subject)}</td>
+        <td style="max-width:280px;white-space:normal;font-size:12px;color:var(--slate);">${escapeHtml((i.message || '').slice(0, 200))}${(i.message || '').length > 200 ? '…' : ''}</td>
+        <td><select class="form-input" style="padding:4px 8px;font-size:12px;" onchange="updateContactSubmissionStatus('${i.id}', this.value)">
+          ${['new', 'read', 'resolved'].map(s => `<option value="${s}" ${i.status === s ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}
+        </select></td>
+        <td style="white-space:nowrap;font-size:11.5px;color:var(--slate);">${timeAgo(i.createdAt)}</td>
+      </tr>`).join('')}
+      </tbody></table></div>`}
+    </div>`;
+  },
   careers: () => {
     const list = adminData.careersInquiries || [];
     const newCount = list.filter(i => i.status === 'new').length;
@@ -9089,6 +9215,16 @@ async function updateCareersInquiryStatus(id, status) {
     showToast(`Marked as ${status}`);
     await loadAdminData();
     selectAdminSection('careers');
+  } catch (e) { showToast(e.message || 'Could not update status'); }
+}
+
+async function updateContactSubmissionStatus(id, status) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', `/admin/contact-submissions/${id}/status`, { status });
+    showToast(`Marked as ${status}`);
+    await loadAdminData();
+    selectAdminSection('contact-submissions');
   } catch (e) { showToast(e.message || 'Could not update status'); }
 }
 
@@ -10305,7 +10441,8 @@ async function handleSearchClick() {
   // failed — filter whatever's already loaded client-side instead of
   // showing nothing.
   const needle = q.toLowerCase();
-  let match = q ? PROVIDERS.filter(p => p.cat.toLowerCase().includes(needle) || p.role.toLowerCase().includes(needle) || p.tags.some(t => t.toLowerCase().includes(needle))) : PROVIDERS.slice();
+  const synonymCategories = categoriesForSearchTerm(needle);
+  let match = q ? PROVIDERS.filter(p => p.cat.toLowerCase().includes(needle) || p.role.toLowerCase().includes(needle) || p.tags.some(t => t.toLowerCase().includes(needle)) || synonymCategories.includes(p.cat)) : PROVIDERS.slice();
   if (cityPart) match = match.filter(p => (p.city || '').toLowerCase().includes(cityPart.toLowerCase()));
   document.getElementById('providers-sub').textContent = `${match.length} pros found`;
   renderProviders(match.length ? match : PROVIDERS);

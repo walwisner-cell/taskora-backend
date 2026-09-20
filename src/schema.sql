@@ -270,6 +270,10 @@ CREATE TABLE IF NOT EXISTS contact_submissions (
   status      TEXT NOT NULL DEFAULT 'new',
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Item: lets a contact-form submission be routed to the right regional
+-- admin, not just super admins. NULL for anyone who didn't say where
+-- they're writing in about.
+ALTER TABLE contact_submissions ADD COLUMN IF NOT EXISTS city TEXT;
 
 CREATE TABLE IF NOT EXISTS careers_inquiries (
   id          TEXT PRIMARY KEY,
@@ -852,4 +856,19 @@ CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(use
 -- creates; a real signup never has it set at all.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_seed_account BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Per-device sign-out. One row per active login — deleting a single row
+-- here is what makes signing out of one device leave every other
+-- device's session untouched, instead of one shared counter per account
+-- where any sign-out (or password change) invalidated every device at
+-- once. A password change still deletes every row for that user (see the
+-- tokenVersion bump in src/routes/auth.routes.js) — that one genuinely
+-- should end every session, since the password itself may have been
+-- compromised.
+CREATE TABLE IF NOT EXISTS sessions (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id),
+  device_label  TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 

@@ -77,6 +77,27 @@ Three of the four gaps flagged after the audit turned out to be genuinely fixabl
 
 **Google Sign-In's live-testing limitation is unchanged** — that one isn't a code gap, it's a genuine limitation of the environment used to build this (no path to Google's servers to test with). Everything else about it is real and ready; it just needs a real click-through once deployed.
 
+## This round: Joseph's newest reports, worked through one at a time
+
+**Real bugs found and fixed, all tested live:**
+
+- **Membership pricing looked US-only.** The backend never actually blocked other countries — the real problem was the price always showing as a bare "$9.99" with no context. Now it shows the real local-currency equivalent alongside it (e.g. "$9.99 ≈ L$1,898 LRD" for a Liberian customer), using the same currency system already used for job payments.
+- **"Contact us doesn't reach administrator."** This was worse than it sounded — messages only ever notified super admins, and there was no admin screen anywhere to actually go review them, just a passing notification. Built the missing review screen, and added an optional city field so a message can route to the right regional team too, not just super admins.
+- **Multi-language selection.** Found something worth knowing: a real, already-tested language switcher existed in the code but had been deliberately hidden from view in an earlier round. Since it's being asked for again, it's switched back on — 7 languages, including right-to-left Arabic.
+- **Search missed very natural queries.** Searching "plumber" found nothing, because the category is named "Plumbing" and plain text matching doesn't know those are the same word. Added a real, hand-checked list connecting ~90 common everyday search terms (plumber, electrician, cleaner, mover, painter, and so on) to their actual category — tested live and confirmed "plumber" now correctly finds Plumbing-category providers.
+- **A real gap found while working on this: the sign-out fix from an earlier round wasn't in this copy of the code.** The upload this round predates that fix, so it was ported back in and re-verified here from scratch — signing out one device now correctly leaves other devices signed in, tested live in this exact codebase.
+
+**Checked carefully and found already working — nothing changed:**
+- Rejecting a provider application, cover letters (both the marketplace and job-application kind), and the provider's downloadable payout/tax PDF report all already exist and work.
+- Push notifications defaulting to "off" until permission is granted is the correct, expected behavior, not a bug.
+- The Data Cleanup tool was tested live and worked correctly — "no eligible accounts" is very likely the honest answer for whatever country was tried, not a malfunction.
+
+**Concluded not worth building:**
+- The cookie-consent banner Joseph saw isn't from this app at all — a full search of the codebase found zero references to cookies anywhere. It's almost certainly the browser's own translate feature doing something unrelated.
+- "Government services" as a request was too ambiguous to safely guess at, and doesn't need code anyway — any admin can already add a new category directly through the existing Categories panel.
+
+**One housekeeping note:** this round's upload had some things mixed in that don't belong in a source delivery — real uploaded files, local runtime data, and an unrelated project folder that got swept up in the zip. The final package here was rebuilt from just the real source tree.
+
 ## Deployment (cmd.exe)
 
 This is a complete repo package — everything in `src/`, `public/`, `server.js`, plus a new `schema.sql` migration and one new file (`src/announcement-scheduler.js`).
@@ -155,5 +176,8 @@ Render picks this up automatically.
 7. **Click the actual Google button and sign in for real** — this is the one thing I couldn't test myself this round. Try it with an email that already has a Trothen account, and separately with a Google account that doesn't, and confirm both the login and the signup paths actually work
 8. Turn on push notifications in Settings, close the app entirely (or put the tab in the background on mobile), and have someone trigger a notification for that account (a message, a booking update) — confirm it actually shows up as a real OS-level notification
 9. Try signing up with an obviously wrong city/country combination (e.g. a well-known US city under a different country) — confirm it's rejected — and separately with a real but small/less-common town — confirm that one goes through fine
+10. Search "plumber" on the homepage and confirm a Plumbing-category provider shows up
+11. Sign in on two different browsers, sign out of one, confirm the other stays signed in — then use "Sign out of all devices" in Settings and confirm both end at once
+12. Send a Contact Us message with a city filled in, then check that a regional admin for that city can see it in the new Contact Us Messages panel
 
 If anything looks wrong, a screenshot plus what you expected instead is always the fastest way for me to trace it.

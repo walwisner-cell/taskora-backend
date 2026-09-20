@@ -59,7 +59,7 @@ const TABLES = {
   categoryRequests: { table: 'category_requests', columns: ['id','provider_id','requested_category','status','created_at','resolved_at'] },
   pendingLogins: { table: 'pending_logins', columns: ['id','user_id','code_hash','expires_at','created_at'] },
   fraudFlags: { table: 'fraud_flags', columns: ['id','type','severity','user_id','related_user_id','contract_id','details','status','review_deadline','reviewed_at','created_at'] },
-  contactSubmissions: { table: 'contact_submissions', columns: ['id','name','email','subject','message','status','created_at'] },
+  contactSubmissions: { table: 'contact_submissions', columns: ['id','name','email','subject','message','city','status','created_at'] },
   careersInquiries: { table: 'careers_inquiries', columns: ['id','name','email','phone','city','role','cover_letter','resume_url','status','created_at'] },
   advertisingInquiries: { table: 'advertising_inquiries', columns: ['id','provider_id','company_name','contact_name','email','phone','message','status','target_city','is_live','price','currency_code','display_headline','display_subtext','display_link','approved_by','approved_at','created_at'] },
   salesInquiries: { table: 'sales_inquiries', columns: ['id','company_name','contact_name','email','team_size','message','status','agreed_price','agreed_currency','internal_notes','converted_to_org_id','updated_at','created_at'] },
@@ -81,6 +81,8 @@ const TABLES = {
   dataCleanupAuditLog: { table: 'data_cleanup_audit_log', columns: ['id','country','actor_id','actor_name','accounts_deleted','counts','created_at'] },
   // Item 2 — true background push notification subscriptions.
   pushSubscriptions: { table: 'push_subscriptions', columns: ['id','user_id','endpoint','p256dh','auth','created_at'] },
+  // Per-device sign-out — one row per active login.
+  sessions: { table: 'sessions', columns: ['id','user_id','device_label','created_at'] },
 };
 
 // Columns stored as JSONB. `pg` serializes JS arrays using Postgres's native

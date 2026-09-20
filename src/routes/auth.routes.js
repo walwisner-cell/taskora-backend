@@ -328,7 +328,7 @@ async function completeSignupVerify(req, res, pending) {
   const { checkDuplicateIdentity } = require('../fraud-detection');
   await checkDuplicateIdentity(user.phone, user.email, user.id);
 
-  const token = signToken(user);
+  const token = await signToken(user, req.headers['user-agent']);
   res.status(201).json({ token, user: publicUser(user), categoryApprovalStatus, joinedOrganizationName });
 }
 
@@ -369,7 +369,7 @@ router.post('/signup/resend', async (req, res) => {
 // rule, and the exact same test-mode-aware 2FA delivery. Extracted here
 // so Google Sign-In doesn't get a second, easier-to-drift-from copy of
 // security-relevant logic — one real implementation, two entry points.
-async function issueSessionOrRequire2FA(user, res) {
+async function issueSessionOrRequire2FA(user, req, res) {
   if (user.active === false) {
     return res.status(403).json({ error: 'This account has been suspended. Contact a super admin for access.' });
   }
@@ -411,7 +411,7 @@ async function issueSessionOrRequire2FA(user, res) {
     });
   }
 
-  const token = signToken(user);
+  const token = await signToken(user, req.headers['user-agent']);
   return res.json({ token, user: publicUser(user) });
 }
 
@@ -422,7 +422,31 @@ router.post('/login', loginLimiter, async (req, res) => {
   if (!user || !verifyPassword(password, user.passwordHash)) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
-  return issueSessionOrRequire2FA(user, res);
+  return issueSessionOrRequire2FA(user, req, res);
+});
+
+// POST /api/auth/logout — the real, server-side half of signing out.
+// Deletes exactly one row from the sessions table — the one this specific
+// token was issued with (see signToken in src/auth.js) — which makes this
+// a real, immediate sign-out for THIS device, without touching any other
+// device the same account is currently signed into. For "sign out of
+// everywhere at once instead," see POST /auth/logout-all below.
+router.post('/logout', requireAuth, async (req, res) => {
+  if (req.user.sessionId) await db.remove('sessions', req.user.sessionId);
+  res.json({ ok: true });
+});
+
+// POST /api/auth/logout-all — the explicit "sign out of every device"
+// action. Deletes every session row for this account and also bumps
+// tokenVersion as a second, independent guarantee — even a token from
+// before the per-device session system existed still gets caught by the
+// tokenVersion check in requireAuth.
+router.post('/logout-all', requireAuth, async (req, res) => {
+  const mySessions = await db.filter('sessions', s => s.userId === req.user.sub);
+  for (const s of mySessions) await db.remove('sessions', s.id);
+  const user = await db.find('users', u => u.id === req.user.sub);
+  if (user) await db.update('users', user.id, { tokenVersion: (user.tokenVersion || 0) + 1 });
+  res.json({ ok: true, signedOutDevices: mySessions.length });
 });
 
 // ── Google Sign-In ──────────────────────────────────────────────────────────
@@ -470,7 +494,7 @@ router.post('/google', async (req, res) => {
   if (!user) {
     return res.status(404).json({ error: 'No Trothen account found for that Google account', needsSignup: true, googleName: google.name, googleEmail: google.email });
   }
-  return issueSessionOrRequire2FA(user, res);
+  return issueSessionOrRequire2FA(user, req, res);
 });
 
 // POST /api/auth/google/signup — creates a brand-new account from a
@@ -609,7 +633,7 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
     }
   }
 
-  const token = signToken(user);
+  const token = await signToken(user, req.headers['user-agent']);
   res.status(201).json({ token, user: publicUser(user), categoryApprovalStatus: role === 'provider' ? categoryApprovalStatus : undefined, joinedOrganizationName });
 });
 
@@ -631,7 +655,7 @@ router.post('/login/verify-2fa', otpLimiter, async (req, res) => {
   await db.remove('pendingLogins', pending.id);
   const user = await db.find('users', u => u.id === pending.userId);
   if (!user) return res.status(404).json({ error: 'Account not found' });
-  const token = signToken(user);
+  const token = await signToken(user, req.headers['user-agent']);
   res.json({ token, user: publicUser(user) });
 });
 
@@ -873,7 +897,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
   }
   const newTokenVersion = (user.tokenVersion || 0) + 1;
   await db.update('users', user.id, { passwordHash: hashPassword(newPassword), tokenVersion: newTokenVersion, mustChangePassword: false });
-  const freshToken = signToken({ ...user, tokenVersion: newTokenVersion });
+  const freshToken = await signToken({ ...user, tokenVersion: newTokenVersion }, req.headers['user-agent']);
   res.json({ ok: true, token: freshToken });
 });
 

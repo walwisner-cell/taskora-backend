@@ -38,7 +38,7 @@ const supportChatLimiter = rateLimit({
 // genuinely alerts the team — not just a toast that pretends to send
 // something.
 router.post('/contact', async (req, res) => {
-  const { name, email, subject, message } = req.body || {};
+  const { name, email, subject, message, city } = req.body || {};
   const errors = validate([
     ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Enter your name'],
     ['email', isNonEmptyString(email, { min: 5, max: 254 }), 'Enter a valid email address'],
@@ -50,14 +50,27 @@ router.post('/contact', async (req, res) => {
   const submission = {
     id: `contact_${nanoid(10)}`,
     name: name.trim(), email: email.trim(), subject: subject.trim(), message: message.trim(),
+    city: isNonEmptyString(city) ? city.trim() : null,
     status: 'new',
     createdAt: new Date().toISOString(),
   };
   await db.insert('contactSubmissions', submission);
 
+  // Real fix for "contact us doesn't reach administrator / make sure
+  // it's regional": this used to notify super admins only — a plain
+  // regional admin never learned a contact message existed at all, even
+  // one clearly about their own city. Now a regional admin whose city
+  // matches what the visitor entered gets notified too, the same way
+  // careers inquiries and disputes already reach the right regional
+  // team — plus every super admin, always, as the guaranteed fallback
+  // for anything unrouted or urgent.
   const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
-  for (const admin of superAdmins) {
-    await notify(admin.id, '✉️', `New contact form message from ${submission.name}: "${submission.subject}"`);
+  const regionalAdmins = submission.city
+    ? await db.filter('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === submission.city)
+    : [];
+  const recipients = [...superAdmins, ...regionalAdmins];
+  for (const admin of recipients) {
+    await notify(admin.id, '✉️', `New contact form message from ${submission.name}${submission.city ? ` (${submission.city})` : ''}: "${submission.subject}"`, null, { section: 'contact-submissions' });
   }
   console.log(`[TEST MODE — no email provider connected] Would email support@trothen.io: new contact form submission from ${submission.email}`);
 
@@ -719,6 +732,36 @@ router.get('/provider-score/mine', requireAuth, requireRole('provider'), async (
 // GET /api/favorites/mine — a customer's saved favorite providers, with
 // real, current profile data (not a stale snapshot from when they
 // favorited) so a rating or trust score change shows up correctly.
+// GET /api/membership/tiers — Joseph's report: "membership subscription
+// must be universal instead of USA only." The backend itself never
+// restricted this to the US (any customer, any country, could already
+// call /membership/subscribe) — what was actually missing is that the
+// price shown was always a raw "$9.99", with no conversion, regardless
+// of where the customer actually is. To someone outside the US that
+// reasonably reads as "this is a US-only feature," even though it
+// wasn't. This reuses the exact same currencyForCountry / convertFromUSD
+// / resolveRate path every contract amount already goes through (see
+// fundEscrowForContract in marketplace.routes.js) — one real conversion
+// system, not a second one invented just for membership.
+router.get('/membership/tiers', requireAuth, async (req, res) => {
+  const { MEMBERSHIP_TIERS } = require('../membership');
+  const { currencyForCountry, convertFromUSD } = require('../currency-data');
+  const { resolveRate } = require('../plan-pricing');
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const currency = currencyForCountry(me ? me.country : 'United States');
+  const rate = currency.code !== 'USD' ? resolveRate(currency.code, await db.all('exchangeRates')) : null;
+  const tiers = {};
+  for (const [key, cfg] of Object.entries(MEMBERSHIP_TIERS)) {
+    tiers[key] = {
+      ...cfg,
+      priceLocal: cfg.price != null && currency.code !== 'USD' ? convertFromUSD(cfg.price, currency.code, rate) : cfg.price,
+      currencyCode: currency.code,
+      currencySymbol: currency.symbol,
+    };
+  }
+  res.json({ tiers, currency });
+});
+
 // POST /api/membership/subscribe — starts (or changes) a customer's paid
 // membership tier. Simulated the same way every other payment in this
 // app is right now (no real Stripe integration yet). VIP is deliberately

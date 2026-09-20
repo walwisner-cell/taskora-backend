@@ -2046,6 +2046,42 @@ router.delete('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/admin/contact-submissions — the actual review screen that was
+// missing entirely: submissions were being saved and a notification
+// fired, but there was nowhere for any admin to go actually see the
+// list, so anything the initial notification didn't catch was
+// effectively lost. A plain regional admin sees submissions naming their
+// own city (plus every unrouted one, since those still need someone to
+// pick them up); a super admin sees everything.
+router.get('/contact-submissions', async (req, res) => {
+  const m = await me(req);
+  if (!m) return res.status(403).json({ error: 'Not authorized' });
+  let submissions = (await db.all('contactSubmissions')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  if (!m.isSuperAdmin) {
+    submissions = submissions.filter(s => !s.city || s.city === m.city);
+  }
+  res.json({ submissions });
+});
+
+// PATCH /api/admin/contact-submissions/:id/status — new -> read ->
+// resolved, the same lightweight tracking every other admin queue here
+// already uses.
+router.patch('/contact-submissions/:id/status', async (req, res) => {
+  const m = await me(req);
+  if (!m) return res.status(403).json({ error: 'Not authorized' });
+  const { status } = req.body || {};
+  if (!['new', 'read', 'resolved'].includes(status)) {
+    return res.status(400).json({ error: 'status must be new, read, or resolved' });
+  }
+  const target = await db.find('contactSubmissions', s => s.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'Submission not found' });
+  if (!m.isSuperAdmin && target.city && target.city !== m.city) {
+    return res.status(403).json({ error: 'That submission is outside your assigned city' });
+  }
+  const updated = await db.update('contactSubmissions', target.id, { status });
+  res.json({ submission: updated });
+});
+
 // GET /api/admin/careers-inquiries — every job application on file.
 // Scoped to HR-department admins and super admins only — this is company
 // hiring, not a per-city customer/provider concern, so it doesn't follow
