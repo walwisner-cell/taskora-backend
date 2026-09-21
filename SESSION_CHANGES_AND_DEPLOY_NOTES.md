@@ -77,6 +77,28 @@ Three of the four gaps flagged after the audit turned out to be genuinely fixabl
 
 **Google Sign-In's live-testing limitation is unchanged** — that one isn't a code gap, it's a genuine limitation of the environment used to build this (no path to Google's servers to test with). Everything else about it is real and ready; it just needs a real click-through once deployed.
 
+## New: pick individual accounts in Data Cleanup instead of all-or-nothing
+
+You asked for the ability to select individual things to clean, instead of the tool always clearing everything eligible in a country at once. That's now real: the preview list shows a checkbox next to every eligible account (all checked by default, so nothing changes if you don't touch anything), plus a "Select all / Select none" shortcut. The delete button updates live to say exactly how many are actually selected, and disables itself at zero. The safety rule underneath is unchanged and still runs fresh at the moment of deletion — an account is only ever actually eligible if it has zero real contract, payment, or dispute history, whatever you've selected.
+
+Proved this does what it says with a real test, not just by reading the code: created two untouched test accounts in the same country, selected only one of them, ran the delete, and confirmed the other one was still there afterward, untouched.
+
+## Real bug found from your report: language selection broken, invisible on mobile
+
+You reported the language switcher wasn't working right and wasn't visible on your phone. Both were real, and both are fixed — verified in an actual mobile-width browser, not just by reading the code.
+
+**Why it wasn't working:** the site's navbar gets rendered separately into over a dozen different containers — one per screen (home, about, your dashboard, and so on). Every one of those screens stays in the page even while hidden, only one is ever shown at a time. The language dropdown was built with a single fixed ID, so with more than one of those navbar copies alive in the page at once, the browser could only ever find the *first* one — meaning clicking the switcher almost anywhere except the very first navbar toggled a different, invisible dropdown instead of its own. Fixed by having each button control its own dropdown directly, so it works correctly no matter how many navbar copies exist in the page.
+
+**Why it wasn't visible on mobile:** a rule meant to hide only the "Become a Pro" button on very small phones was written broadly enough that it accidentally caught the language switcher too, since both happened to share the same base style class. Narrowed that rule so it only ever touches the button it was meant for.
+
+Also checked while in there: a general audit of every place the app saves data against what the live database actually expects (the same kind of check that's caught real bugs earlier this build) came back clean this time — nothing new found. Also checked the homepage, login, and both the customer, provider, and admin dashboards at real phone width for anything else cut off or overflowing — none found, though this wasn't an exhaustive click-through of every single screen.
+
+## Real bug found from your report: the footer text was wrong and unfixable without a code change
+
+You flagged the footer ("© 2026 Trothen Tech Group · Atlanta, GA · support@trothen.io") as wrong, and asked for a way to change it yourself. This was hardcoded in five separate places in the site with no way to correct it without me editing code and redeploying — genuinely not something you should have needed me for.
+
+Fixed properly: it's now a real, editable setting. Go to **Admin → Settings → Site Footer** (super admin only) to set the real company name, location, support email, and copyright year — company name, location, and email can be anything you want; changes go live immediately, no deploy needed. Tested live: updated it, confirmed the public homepage picked up the real value in a real browser, and confirmed a regional (non-super) admin is correctly blocked from changing it.
+
 ## This round: Joseph's newest reports, worked through one at a time
 
 **Real bugs found and fixed, all tested live:**
@@ -179,5 +201,8 @@ Render picks this up automatically.
 10. Search "plumber" on the homepage and confirm a Plumbing-category provider shows up
 11. Sign in on two different browsers, sign out of one, confirm the other stays signed in — then use "Sign out of all devices" in Settings and confirm both end at once
 12. Send a Contact Us message with a city filled in, then check that a regional admin for that city can see it in the new Contact Us Messages panel
+13. Go to Admin → Settings → Site Footer, set the real company name/location/email, save, then check the homepage footer actually shows it
+14. On an actual phone (not just a resized desktop browser), check that the 🌐 language button is visible in the navbar, tap it, pick a different language, and confirm it actually switches and stays open/closed correctly on a couple of different pages (home, then your dashboard)
+15. In Data Cleanup, preview a country with more than one eligible account, uncheck one, and confirm only the accounts you left checked actually get deleted
 
 If anything looks wrong, a screenshot plus what you expected instead is always the fastest way for me to trace it.

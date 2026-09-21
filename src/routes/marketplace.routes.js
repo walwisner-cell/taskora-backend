@@ -319,6 +319,14 @@ router.get('/support-contact', async (req, res) => {
   res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null });
 });
 
+// GET /api/footer — public, no auth: every visitor, signed in or not,
+// needs this for the page footer. Read-only here on purpose; changing it
+// is admin.routes.js's PATCH /admin/settings/footer (super admin only).
+router.get('/footer', async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ footer: await getSetting('footerInfo') });
+});
+
 // GET /api/homepage-content — public, no auth: the real, current homepage
 // copy (hero headline pieces, rotating word list, subheadline, mission
 // section). Editable in Settings → Platform Settings (super admin).

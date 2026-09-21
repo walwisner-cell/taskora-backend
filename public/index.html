@@ -815,7 +815,7 @@
   }
 
   @media (max-width: 420px) {
-    .nav-btn:not(.nav-cta) { display: none; } /* "Become a Pro" hidden on very small phones; Sign In stays */
+    .nav-btn:not(.nav-cta):not(.lang-switcher-btn) { display: none; } /* "Become a Pro" hidden on very small phones; Sign In and the language switcher stay */
     .hero h1 { font-size: 30px; }
     .stat-cards { grid-template-columns: 1fr 1fr; }
     .trust-inner { justify-content: center; text-align: center; }
@@ -2893,8 +2893,18 @@ function setLanguage(lang) {
   document.documentElement.dir = I18N[lang].rtl ? 'rtl' : 'ltr';
   document.documentElement.lang = lang;
   applyTranslations();
-  const dropdown = document.getElementById('lang-dropdown');
-  if (dropdown) dropdown.classList.remove('open');
+  // Closes every open language dropdown, not just one — see
+  // languageSwitcherHTML above for why more than one can legitimately
+  // exist in the DOM at once (one per navbar instance across screens).
+  document.querySelectorAll('.lang-dropdown.open').forEach(d => d.classList.remove('open'));
+  // Every navbar currently rendered shows the OLD language name on its
+  // button until the whole page is next re-rendered — re-render every
+  // live navbar slot right now instead of leaving stale button text
+  // (and a stale set of translated elements under hidden screens) until
+  // whatever navigation happens next coincidentally refreshes it.
+  document.querySelectorAll('[id^="navbar-"]').forEach(slot => {
+    if (slot.dataset.navActive) renderNavbar(slot.id, slot.dataset.navActive);
+  });
 }
 
 // Walks every element carrying a data-i18n attribute and updates its
@@ -2912,10 +2922,21 @@ function applyTranslations() {
 
 function languageSwitcherHTML() {
   const options = Object.keys(I18N).map(code => `<div class="lang-option ${code === CURRENT_LANG ? 'active' : ''}" onclick="setLanguage('${code}')">${I18N[code].lang_name}</div>`).join('');
+  // Real bug fix: renderNavbar() is called once per screen (navbar-home,
+  // navbar-about, navbar-customer, and a dozen more), and every one of
+  // those screens stays in the DOM even while hidden — only one is ever
+  // shown via display, not removed. Giving the dropdown a shared
+  // id="lang-dropdown" meant every one of those navbar copies had an
+  // element with that same id, and getElementById always resolves to the
+  // FIRST one in document order — so clicking the switcher on almost any
+  // page but the very first navbar toggled a DIFFERENT, often invisible
+  // dropdown instead of its own. Using the clicked button's own next
+  // sibling instead of a shared id makes this correct regardless of how
+  // many navbar instances exist in the page at once.
   return `
     <div class="lang-switcher">
-      <button class="nav-btn lang-switcher-btn" onclick="document.getElementById('lang-dropdown').classList.toggle('open')">🌐 ${I18N[CURRENT_LANG].lang_name}</button>
-      <div class="lang-dropdown" id="lang-dropdown">${options}</div>
+      <button class="nav-btn lang-switcher-btn" onclick="this.nextElementSibling.classList.toggle('open')">🌐 ${I18N[CURRENT_LANG].lang_name}</button>
+      <div class="lang-dropdown">${options}</div>
     </div>`;
 }
 
@@ -3339,7 +3360,18 @@ let pendingPlanSelection = null;
 
 function renderNavbar(slotId, active) {
   const el = document.getElementById(slotId);
-  if (el) el.innerHTML = navbarHTML(active);
+  if (el) {
+    el.innerHTML = navbarHTML(active);
+    // Recorded so setLanguage() can find and correctly re-render every
+    // navbar instance currently in the page — each screen's navbar is
+    // rendered into its own separate slot and only ever updated when
+    // that specific screen is (re)entered, so without this, switching
+    // languages would leave every OTHER already-rendered navbar (behind
+    // whichever screen is currently hidden) still showing the old
+    // language's button text until something else happened to
+    // re-render it.
+    el.dataset.navActive = active;
+  }
 }
 
 function showScreen(id) {
@@ -7869,7 +7901,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, homepageImages: null, categoryImages: null, aboutUsContent: null, termsOfServiceCustomerContent: null, termsOfServiceProviderContent: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, homepageImages: null, categoryImages: null, aboutUsContent: null, termsOfServiceCustomerContent: null, termsOfServiceProviderContent: null, footerInfo: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -7945,7 +7977,7 @@ async function loadAdminData() {
   }
 
   if (AUTH.user && AUTH.user.isSuperAdmin) {
-    const [cities, subAdmins, exchangeRates, bookingWindow, supportContact, homepageContent, homepageImages, categoryImages, aboutUsContent, termsCustomerContent, termsProviderContent] = await Promise.all([
+    const [cities, subAdmins, exchangeRates, bookingWindow, supportContact, homepageContent, homepageImages, categoryImages, aboutUsContent, termsCustomerContent, termsProviderContent, footerInfo] = await Promise.all([
       tryFetch('/admin/cities'),
       tryFetch('/admin/sub-admins'),
       tryFetch('/admin/exchange-rates'),
@@ -7957,6 +7989,7 @@ async function loadAdminData() {
       tryFetch('/admin/settings/about-us'),
       tryFetch('/admin/settings/terms-of-service-customer'),
       tryFetch('/admin/settings/terms-of-service-provider'),
+      tryFetch('/admin/settings/footer'),
     ]);
     if (cities) adminData.cities = cities.cities;
     if (subAdmins) adminData.subAdmins = subAdmins.admins;
@@ -7967,6 +8000,7 @@ async function loadAdminData() {
     if (homepageImages) adminData.homepageImages = homepageImages;
     if (categoryImages) adminData.categoryImages = categoryImages;
     if (aboutUsContent) adminData.aboutUsContent = aboutUsContent.content;
+  if (footerInfo) adminData.footerInfo = footerInfo.footer;
     if (termsCustomerContent) adminData.termsOfServiceCustomerContent = termsCustomerContent.content;
     if (termsProviderContent) adminData.termsOfServiceProviderContent = termsProviderContent.content;
   } else if (AUTH.user && AUTH.user.role === 'admin' && !AUTH.user.isSuperAdmin && !AUTH.user.adminDepartment) {
@@ -8581,6 +8615,15 @@ const ADMIN_SECTIONS = {
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveTermsContent('provider')">Save Provider Terms</button>
     </div>
+    <div class="panel"><div class="panel-title">Site Footer</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">The "© [year] [company] · [location] · [email]" line shown at the bottom of every page.</div>
+      <div class="form-group"><label class="form-label">Company Name</label><input class="form-input" type="text" id="footer-company-name" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.companyName) || '')}"/></div>
+      <div class="form-group"><label class="form-label">Location</label><input class="form-input" type="text" id="footer-location" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.location) || '')}" placeholder="e.g. Philadelphia, PA"/></div>
+      <div class="form-group"><label class="form-label">Support Email</label><input class="form-input" type="email" id="footer-support-email" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.supportEmail) || '')}"/></div>
+      <div class="form-group"><label class="form-label">Copyright Year</label><input class="form-input" type="number" id="footer-copyright-year" value="${(adminData.footerInfo && adminData.footerInfo.copyrightYear) || new Date().getFullYear()}" style="max-width:120px;"/></div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:10px;">Preview: © ${(adminData.footerInfo && adminData.footerInfo.copyrightYear) || ''} ${escapeHtml((adminData.footerInfo && adminData.footerInfo.companyName) || '')} · ${escapeHtml((adminData.footerInfo && adminData.footerInfo.location) || '')} · ${escapeHtml((adminData.footerInfo && adminData.footerInfo.supportEmail) || '')}</div>
+      <button class="btn-sm btn-sm-primary" onclick="saveFooterInfo()">Save Footer</button>
+    </div>
     <div class="panel"><div class="panel-title">Maintenance Tools</div>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Fix Old Notification Links</div>
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Category-request, sales-inquiry, and advertising-inquiry notifications only started linking to their real admin section recently — any notification created before that fix has no destination, and new code doesn't rewrite already-saved data on its own. This looks at existing notifications and adds the correct link based on their own text, so old ones become clickable too, not just new ones going forward. Safe to run any time — it only ever fills in a missing link, never changes one that's already set.</div>
@@ -9023,20 +9066,47 @@ async function previewDataCleanup() {
       return;
     }
     target.innerHTML = `
-      <div style="font-size:12.5px;color:var(--navy);margin-bottom:8px;"><strong>${result.accountsEligible.length} account${result.accountsEligible.length === 1 ? '' : 's'}</strong> would be permanently removed, plus ${result.relatedRecordsToRemove.matches} match record${result.relatedRecordsToRemove.matches === 1 ? '' : 's'}, ${result.relatedRecordsToRemove.notifications} notification${result.relatedRecordsToRemove.notifications === 1 ? '' : 's'}, ${result.relatedRecordsToRemove.verifications} verification record${result.relatedRecordsToRemove.verifications === 1 ? '' : 's'}, and ${result.relatedRecordsToRemove.portfolioPhotos} photo${result.relatedRecordsToRemove.portfolioPhotos === 1 ? '' : 's'}. None of these have ever had a real contract, payment, or dispute.</div>
-      <div style="max-height:160px;overflow-y:auto;font-size:11.5px;color:var(--slate);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:10px;">
-        ${result.accountsEligible.map(a => `${escapeHtml(a.name)} (${escapeHtml(a.email)}) — ${a.role}`).join('<br/>')}
+      <div style="font-size:12.5px;color:var(--navy);margin-bottom:8px;"><strong>${result.accountsEligible.length} account${result.accountsEligible.length === 1 ? '' : 's'}</strong> eligible for removal, plus related match/notification/verification/photo records for whichever ones you select below. None of these have ever had a real contract, payment, or dispute.</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-size:11.5px;color:var(--slate);">Select which accounts to remove — all selected by default</span>
+        <span><a onclick="toggleAllCleanupSelections(true)" style="font-size:11.5px;cursor:pointer;color:var(--navy);font-weight:600;">Select all</a> · <a onclick="toggleAllCleanupSelections(false)" style="font-size:11.5px;cursor:pointer;color:var(--navy);font-weight:600;">Select none</a></span>
+      </div>
+      <div style="max-height:220px;overflow-y:auto;font-size:11.5px;color:var(--slate);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:10px;">
+        ${result.accountsEligible.map(a => `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;">
+          <input type="checkbox" class="cleanup-account-checkbox" data-account-id="${a.id}" checked onchange="updateCleanupSelectionCount()"/>
+          <span>${escapeHtml(a.name)} (${escapeHtml(a.email)}) — ${a.role}</span>
+        </label>`).join('')}
       </div>
       <div class="form-group"><label class="form-label">Type <code>${expectedPhrase}</code> to confirm</label><input class="form-input" id="cleanup-confirm-input" placeholder="${expectedPhrase}"/></div>
-      <button class="btn-sm" style="background:#C1554D;color:#fff;" onclick="executeDataCleanup()">Permanently delete these ${result.accountsEligible.length} test accounts</button>`;
+      <button class="btn-sm" style="background:#C1554D;color:#fff;" id="cleanup-execute-btn" onclick="executeDataCleanup()">Permanently delete these ${result.accountsEligible.length} test accounts</button>`;
   } catch (e) { target.innerHTML = `<div style="color:#C1554D;font-size:12.5px;">${escapeHtml(e.message || 'Could not load preview')}</div>`; }
+}
+
+// Keeps the delete button's label honest about exactly how many accounts
+// are actually currently selected, not the original preview total — so
+// it's never possible to misread "delete 12" and get 3, or vice versa.
+function updateCleanupSelectionCount() {
+  const checked = document.querySelectorAll('.cleanup-account-checkbox:checked').length;
+  const btn = document.getElementById('cleanup-execute-btn');
+  if (!btn) return;
+  btn.textContent = checked === 0 ? 'Select at least one account to delete' : `Permanently delete ${checked} selected test account${checked === 1 ? '' : 's'}`;
+  btn.disabled = checked === 0;
+  btn.style.opacity = checked === 0 ? '0.5' : '1';
+  btn.style.cursor = checked === 0 ? 'not-allowed' : 'pointer';
+}
+
+function toggleAllCleanupSelections(checked) {
+  document.querySelectorAll('.cleanup-account-checkbox').forEach(cb => { cb.checked = checked; });
+  updateCleanupSelectionCount();
 }
 
 async function executeDataCleanup() {
   const confirmPhrase = document.getElementById('cleanup-confirm-input').value.trim();
   if (!lastCleanupPreviewCountry) return showToast('Preview first');
+  const accountIds = Array.from(document.querySelectorAll('.cleanup-account-checkbox:checked')).map(cb => cb.dataset.accountId);
+  if (!accountIds.length) return showToast('Select at least one account first');
   try {
-    const { deleted } = await apiFetch('POST', '/admin/data-cleanup/execute', { country: lastCleanupPreviewCountry, confirmPhrase });
+    const { deleted } = await apiFetch('POST', '/admin/data-cleanup/execute', { country: lastCleanupPreviewCountry, confirmPhrase, accountIds });
     showToast(`Removed ${deleted.accounts} test account${deleted.accounts === 1 ? '' : 's'} and related records`);
     document.getElementById('data-cleanup-preview-panel').innerHTML = '';
     loadDataCleanupLogPanel();
@@ -9805,6 +9875,22 @@ async function saveAboutUsContent() {
     await apiFetch('PATCH', '/admin/settings/about-us', { content });
     showToast('About Us updated — live now');
     adminData.aboutUsContent = content;
+  } catch (e) { showToast(e.message || 'Could not save this'); }
+}
+
+async function saveFooterInfo() {
+  const companyName = document.getElementById('footer-company-name').value.trim();
+  const location = document.getElementById('footer-location').value.trim();
+  const supportEmail = document.getElementById('footer-support-email').value.trim();
+  const copyrightYear = document.getElementById('footer-copyright-year').value.trim();
+  if (!companyName || !location || !supportEmail) return showToast('Fill in every field');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    const { footer } = await apiFetch('PATCH', '/admin/settings/footer', { companyName, location, supportEmail, copyrightYear });
+    showToast('Footer updated — live now');
+    adminData.footerInfo = footer;
+    FOOTER_INFO = footer;
+    document.querySelectorAll('.footer-text').forEach(el => { el.textContent = footerLine(); });
   } catch (e) { showToast(e.message || 'Could not save this'); }
 }
 
@@ -10943,6 +11029,28 @@ async function loadSupportContact() {
   } catch (e) { console.warn('Could not load support contact info, using placeholder.', e); }
 }
 
+// The site footer — previously hardcoded text repeated in five places in
+// this file, with no way to correct it without a code deploy. Now a real,
+// admin-editable setting (Settings → Platform Settings → Site Footer);
+// this fetches the current version and updates every footer on the page
+// to match, the same "paint the static fallback immediately, then upgrade
+// once the real backend value loads" approach already used for support
+// contact info and homepage copy.
+let FOOTER_INFO = null;
+function footerLine() {
+  if (!FOOTER_INFO) return null;
+  return `© ${FOOTER_INFO.copyrightYear} ${FOOTER_INFO.companyName} · ${FOOTER_INFO.location} · ${FOOTER_INFO.supportEmail}`;
+}
+async function loadFooterInfo() {
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const { footer } = await apiFetch('GET', '/footer');
+    FOOTER_INFO = footer;
+    const line = footerLine();
+    if (line) document.querySelectorAll('.footer-text').forEach(el => { el.textContent = line; });
+  } catch (e) { console.warn('Could not load footer info, using placeholder.', e); }
+}
+
 // Homepage copy — hero prefix/rotating word/suffix/subheadline and the
 // mission section — is real, admin-editable content (Settings → Platform
 // Settings), not hardcoded. This fetches the current version and starts
@@ -11318,7 +11426,7 @@ async function askRealSupportChat(message) {
   initChatBubbleDrag();
   await checkBackend();
   if (BACKEND_AVAILABLE) {
-    await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats(), loadSupportContact(), loadHomepageContent(), loadHomepageImages(), loadPopularProjects()]);
+    await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats(), loadSupportContact(), loadFooterInfo(), loadHomepageContent(), loadHomepageImages(), loadPopularProjects()]);
     renderProviders(PROVIDERS);
     renderHomeCategories();
     console.log('%cTrothen API connected — live data enabled.', 'color:#1D5FA8;font-weight:bold;');

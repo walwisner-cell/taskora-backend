@@ -17,6 +17,20 @@ const DEFAULTS = {
     whatsapp: '15551234567',
     phoneDisplay: '+1 (555) 123-4567',
   },
+  // The site-wide footer line ("© 2026 [company] · [location] · [email]"),
+  // hardcoded in five places in public/index.html until now. This was
+  // flagged as wrong (a placeholder company name/city that was never the
+  // real one) with no way to fix it without a code change — this makes it
+  // a real, admin-editable setting instead, the same "DB overrides code
+  // default" pattern as everything else here. copyrightYear is a plain
+  // number, not auto-computed, so it doesn't silently drift wrong at a
+  // year boundary without a super admin actually choosing to update it.
+  footerInfo: {
+    companyName: 'Trothen Tech Group',
+    location: 'Atlanta, GA',
+    supportEmail: 'support@trothen.io',
+    copyrightYear: 2026,
+  },
   // How long a provider has to accept or decline a new booking (direct or
   // a Mutual Agreement offer) before it auto-expires and the customer is
   // refunded — tiered by how soon the job actually is, not a flat number.

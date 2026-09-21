@@ -1145,15 +1145,29 @@ router.post('/data-cleanup/preview', requireSuperAdmin, async (req, res) => {
 // a permanent audit log below, since "who cleared what test data, when"
 // is itself exactly the kind of record item 13 says must be protected,
 // not the kind of thing this tool would ever delete about itself.
+//
+// accountIds (optional): lets a super admin select individual accounts
+// from the preview instead of an all-or-nothing sweep of the whole
+// country. Deliberately re-validated here, not trusted from what the
+// preview showed a moment ago — every id is checked against a FRESH
+// findUntouchedTestAccounts() result, so an id for an account that
+// picked up real history in the meantime (or was never actually
+// eligible) is silently dropped rather than deleted anyway. Omitting
+// accountIds entirely keeps the original "clear everything eligible"
+// behavior, unchanged.
 router.post('/data-cleanup/execute', requireSuperAdmin, async (req, res) => {
-  const { country, confirmPhrase } = req.body || {};
+  const { country, confirmPhrase, accountIds } = req.body || {};
   if (!isNonEmptyString(country)) return res.status(400).json({ error: 'country is required' });
   const expectedPhrase = `DELETE TEST DATA FOR ${country.toUpperCase()}`;
   if (confirmPhrase !== expectedPhrase) {
     return res.status(400).json({ error: `Type exactly "${expectedPhrase}" to confirm this action` });
   }
 
-  const untouched = await findUntouchedTestAccounts(country);
+  let untouched = await findUntouchedTestAccounts(country);
+  if (Array.isArray(accountIds)) {
+    const selected = new Set(accountIds);
+    untouched = untouched.filter(u => selected.has(u.id));
+  }
   const untouchedIds = new Set(untouched.map(u => u.id));
   if (untouchedIds.size === 0) {
     return res.json({ deleted: { accounts: 0, matches: 0, notifications: 0, verifications: 0, portfolioPhotos: 0 } });
@@ -1472,6 +1486,36 @@ router.patch('/settings/about-us', requireSuperAdmin, async (req, res) => {
   const { setSetting } = require('../platform-settings');
   await setSetting('aboutUsContent', content.trim());
   res.json({ ok: true, content: content.trim() });
+});
+
+// ── SITE FOOTER ───────────────────────────────────────────────────────────
+// The "© [year] [company] · [location] · [email]" line shown at the
+// bottom of every page — previously hardcoded in five separate places in
+// public/index.html with no way to correct it without a code deploy.
+router.get('/settings/footer', requireSuperAdmin, async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ footer: await getSetting('footerInfo') });
+});
+
+router.patch('/settings/footer', requireSuperAdmin, async (req, res) => {
+  const { companyName, location, supportEmail, copyrightYear } = req.body || {};
+  if (!isNonEmptyString(companyName, { min: 1, max: 120 })) {
+    return res.status(400).json({ error: 'Enter a company name' });
+  }
+  if (!isNonEmptyString(location, { min: 1, max: 120 })) {
+    return res.status(400).json({ error: 'Enter a location' });
+  }
+  if (!isNonEmptyString(supportEmail, { min: 5, max: 254 }) || !supportEmail.includes('@')) {
+    return res.status(400).json({ error: 'Enter a valid support email address' });
+  }
+  const year = parseInt(copyrightYear, 10);
+  if (!Number.isInteger(year) || year < 2020 || year > 2100) {
+    return res.status(400).json({ error: 'Enter a valid copyright year' });
+  }
+  const footer = { companyName: companyName.trim(), location: location.trim(), supportEmail: supportEmail.trim(), copyrightYear: year };
+  const { setSetting } = require('../platform-settings');
+  await setSetting('footerInfo', footer);
+  res.json({ ok: true, footer });
 });
 
 router.get('/settings/terms-of-service-customer', requireSuperAdmin, async (req, res) => {
