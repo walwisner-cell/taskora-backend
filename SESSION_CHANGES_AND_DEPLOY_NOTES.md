@@ -77,6 +77,20 @@ Three of the four gaps flagged after the audit turned out to be genuinely fixabl
 
 **Google Sign-In's live-testing limitation is unchanged** — that one isn't a code gap, it's a genuine limitation of the environment used to build this (no path to Google's servers to test with). Everything else about it is real and ready; it just needs a real click-through once deployed.
 
+## Finishing the language feature properly — most of the site actually translates now
+
+Your own screenshot made the gap obvious: "Hazte Profesional" and "Iniciar Sesión" switched, but the headline, search box, and category names didn't. Here's what changed:
+
+- **All 60 real service categories** (Plumbing, Cleaning, Tutoring, everything in the system today) now have real translations in all 6 languages — the pills on the homepage, the full categories page, and the filter chips on the "browse providers" page all switch correctly. A category you add later that has no translation yet just shows its English name rather than breaking anything.
+- **The homepage headline, subheadline, and mission section** now translate too — but only when they're still the untouched default copy. The moment you customize any of that text yourself in Admin → Platform Settings → Homepage Content, your exact words stay exactly as you wrote them in every language, since there's no way to auto-translate text you wrote yourself. Tested both directions live: default text switches with the language, a real custom headline I set stayed in English even after switching to Spanish.
+- **The search box placeholders** ("What do you need done today?", "Your city") now translate too.
+
+**Being straight about what this is and isn't:** these are AI-produced translations for all six languages, not reviewed by a native speaker of each one yet. They should be solid for common, everyday service terms, but a real review pass — especially for Arabic and Chinese, where I have less confidence catching subtle phrasing issues — is worth doing before fully trusting this for real customers in those markets.
+
+**Update — narrowed to English and Spanish for now.** After talking it through: none of Trothen's current markets (US, Nigeria, Ghana, Liberia) actually need French, Portuguese, Arabic, or Chinese — they're all English-official countries — so there was no real reason to carry the risk of unreviewed translations live on the site. The switcher now only shows English and Spanish (Spanish being genuinely useful given the US Hispanic population, and lower-risk to get right). Nothing was deleted — all 6 languages' worth of translation work (categories, headline, search box, everything from above) is still fully in the code. Re-enabling a language once it's been reviewed is one line: add its code to the `LIVE_LANGUAGES` array near `languageSwitcherHTML()` in public/index.html. Also added a safety check so anyone with an old language preference saved from before this change falls back to English cleanly instead of getting stuck.
+
+**What's still genuinely untranslated**, and would be a separate, later piece of work if you want it: admin panels, dashboards, messaging, and most of the deeper parts of the app — this pass focused on what an anonymous visitor actually sees on the homepage, since that's what your screenshot was about.
+
 ## New: pick individual accounts in Data Cleanup instead of all-or-nothing
 
 You asked for the ability to select individual things to clean, instead of the tool always clearing everything eligible in a country at once. That's now real: the preview list shows a checkbox next to every eligible account (all checked by default, so nothing changes if you don't touch anything), plus a "Select all / Select none" shortcut. The delete button updates live to say exactly how many are actually selected, and disables itself at zero. The safety rule underneath is unchanged and still runs fresh at the moment of deletion — an account is only ever actually eligible if it has zero real contract, payment, or dispute history, whatever you've selected.
@@ -204,5 +218,7 @@ Render picks this up automatically.
 13. Go to Admin → Settings → Site Footer, set the real company name/location/email, save, then check the homepage footer actually shows it
 14. On an actual phone (not just a resized desktop browser), check that the 🌐 language button is visible in the navbar, tap it, pick a different language, and confirm it actually switches and stays open/closed correctly on a couple of different pages (home, then your dashboard)
 15. In Data Cleanup, preview a country with more than one eligible account, uncheck one, and confirm only the accounts you left checked actually get deleted
+16. Switch to Spanish (or any other language) on the homepage and confirm the headline, category names, and search box all actually change — then set a custom headline in Homepage Content and confirm that one stays in English no matter what language is selected
+17. Have a native speaker glance over a couple of the translated screens, especially Arabic and Chinese, before leaning on this heavily with real customers in those markets
 
 If anything looks wrong, a screenshot plus what you expected instead is always the fastest way for me to trace it.

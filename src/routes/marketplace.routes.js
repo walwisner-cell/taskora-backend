@@ -331,9 +331,18 @@ router.get('/footer', async (req, res) => {
 // copy (hero headline pieces, rotating word list, subheadline, mission
 // section). Editable in Settings → Platform Settings (super admin).
 router.get('/homepage-content', async (req, res) => {
-  const { getSetting } = require('../platform-settings');
+  const { getSetting, DEFAULTS } = require('../platform-settings');
   const content = await getSetting('homepageContent');
-  res.json(content);
+  // isCustomized tells the frontend whether this is genuinely admin-
+  // written text (which has no translation, so stays exactly as typed
+  // in every language) or still the untouched default copy (which DOES
+  // have real per-language translations — see CATEGORY_TRANSLATIONS'
+  // sibling, the hero_prefix/hero_suffix/etc. keys in I18N). A simple
+  // deep-equality check against the built-in default is enough here —
+  // there's no real case where someone deliberately re-saves the exact
+  // default text and expects it to stop translating.
+  const isCustomized = JSON.stringify(content) !== JSON.stringify(DEFAULTS.homepageContent);
+  res.json({ ...content, isCustomized });
 });
 
 // GET /api/about-us-content, /api/terms-of-service-customer-content,

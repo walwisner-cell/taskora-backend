@@ -911,11 +911,11 @@
     <p id="hero-subheadline">Every pro is ID-verified. Every job runs on an auto-generated contract with funds held in escrow until you're satisfied. Book in under 2 minutes.</p>
     <div class="search-bar">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#8A8D96" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      <input type="text" placeholder="What do you need done today?" id="search-input" onkeypress="handleSearch(event)"/>
+      <input type="text" placeholder="What do you need done today?" id="search-input" data-i18n-placeholder="search_placeholder" onkeypress="handleSearch(event)"/>
       <div class="search-divider"></div>
       <div class="location-tag">
         <svg width="14" height="14" fill="#1D5FA8" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-        <input type="text" id="search-location-input" placeholder="Your city" style="border:none;background:transparent;outline:none;font-size:14px;color:var(--navy);width:120px;font-family:inherit;" onkeypress="handleSearch(event)"/>
+        <input type="text" id="search-location-input" placeholder="Your city" data-i18n-placeholder="search_city_placeholder" style="border:none;background:transparent;outline:none;font-size:14px;color:var(--navy);width:120px;font-family:inherit;" onkeypress="handleSearch(event)"/>
         <button type="button" onclick="useMyLocation()" title="Use my real location" style="border:none;background:none;cursor:pointer;font-size:15px;padding:0 2px;" id="use-location-btn">📍</button>
       </div>
       <button class="search-btn" onclick="handleSearchClick()">Search</button>
@@ -2657,7 +2657,7 @@ async function saveProviderCategory() {
 }
 
 function categoryCardsHTML(list) {
-  return list.map(c => `<div class="cat-card" data-catname="${c.name.replace(/"/g, '&quot;')}" onclick="goDirectory(this.dataset.catname)"><span class="cat-emoji">${categoryIcon(c.name)}</span><div class="cat-label">${c.name}</div><div class="cat-count">${c.proCount} pros</div></div>`).join('');
+  return list.map(c => `<div class="cat-card" data-catname="${c.name.replace(/"/g, '&quot;')}" onclick="goDirectory(this.dataset.catname)"><span class="cat-emoji">${categoryIcon(c.name)}</span><div class="cat-label">${escapeHtml(translateCategoryName(c.name))}</div><div class="cat-count">${c.proCount} pros</div></div>`).join('');
 }
 
 // A curated homepage FAQ — the answers are pulled live from the exact
@@ -2715,7 +2715,7 @@ function goDirectory(category) {
   document.getElementById('directory-search').value = '';
   const chips = ['All', ...CATEGORIES.map(c => c.name)];
   document.getElementById('directory-chips').innerHTML = chips.map(c =>
-    `<button class="directory-chip ${c === directoryCategoryFilter ? 'active' : ''}" onclick="setDirectoryCategory('${c}')">${c}</button>`
+    `<button class="directory-chip ${c === directoryCategoryFilter ? 'active' : ''}" onclick="setDirectoryCategory('${c.replace(/'/g, "\\'")}')">${escapeHtml(c === 'All' ? t('directory_all') : translateCategoryName(c))}</button>`
   ).join('');
   renderDirectory();
   window.scrollTo(0, 0);
@@ -2767,12 +2767,171 @@ const LOGO_IMG_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAY
 // obviously artificial; every string below is a real, deliberate
 // translation. Arabic gets real RTL support (document direction flips),
 // not just translated text sitting in a left-to-right layout.
+// Real category-name translations — previously category names (Plumbing,
+// Cleaning, etc.) never translated at all, regardless of language
+// selected, since they're admin-managed content pulled live from the
+// database, not static page text. This is a curated, hand-checked map
+// covering every category this app ships with today (src/seed.js) — an
+// admin adding a genuinely NEW category later falls back to showing its
+// English name until a translation is added here, rather than showing
+// nothing or breaking. These are AI-produced translations, not reviewed
+// by a native speaker of each language yet — worth a real review pass
+// before fully relying on them, especially for Arabic and Chinese.
+// The underlying English name is still what's actually sent to the
+// backend for filtering/search — only the on-screen label changes.
+const CATEGORY_TRANSLATIONS = {
+  es: {
+    'Plumbing': 'Plomería', 'Electrical': 'Electricidad', 'HVAC & Air Conditioning': 'Climatización y Aire Acondicionado',
+    'Handyman Services': 'Servicios de Mantenimiento', 'Carpentry': 'Carpintería', 'Painting': 'Pintura', 'Roofing': 'Techado',
+    'Flooring Installation': 'Instalación de Pisos', 'Locksmith': 'Cerrajería', 'Appliance Repair': 'Reparación de Electrodomésticos',
+    'Pest Control': 'Control de Plagas', 'Window Installation & Repair': 'Instalación y Reparación de Ventanas', 'Masonry': 'Albañilería',
+    'Welding': 'Soldadura', 'General Contracting': 'Contratista General', 'Home Renovation': 'Renovación de Hogar',
+    'Cleaning': 'Limpieza', 'Deep Cleaning': 'Limpieza Profunda', 'Carpet Cleaning': 'Limpieza de Alfombras',
+    'Window Cleaning': 'Limpieza de Ventanas', 'Pool Cleaning & Maintenance': 'Limpieza y Mantenimiento de Piscinas',
+    'Laundry & Dry Cleaning': 'Lavandería y Tintorería', 'Moving': 'Mudanzas', 'Pick & Drop': 'Recogida y Entrega',
+    'Furniture Assembly': 'Ensamblaje de Muebles', 'Junk Removal': 'Retiro de Basura', 'Landscaping': 'Paisajismo',
+    'Lawn Care': 'Cuidado del Césped', 'Gardening': 'Jardinería', 'Tree Trimming & Removal': 'Poda y Retiro de Árboles',
+    'Fence Installation & Repair': 'Instalación y Reparación de Cercas', 'Fitness': 'Entrenamiento Físico', 'Massage Therapy': 'Terapia de Masajes',
+    'Hair Styling': 'Peluquería', 'Makeup Artistry': 'Maquillaje', 'Nail Care': 'Cuidado de Uñas', 'Tutoring': 'Tutorías',
+    'Music Lessons': 'Clases de Música', 'Language Lessons': 'Clases de Idiomas', 'Test Prep': 'Preparación de Exámenes',
+    'Event Planning': 'Planificación de Eventos', 'Photography': 'Fotografía', 'Videography': 'Videografía', 'DJ Services': 'Servicios de DJ',
+    'Catering': 'Catering', 'Auto Repair': 'Reparación de Autos', 'Car Detailing & Wash': 'Detallado y Lavado de Autos', 'Towing': 'Grúa',
+    'Pet Sitting': 'Cuidado de Mascotas', 'Dog Walking': 'Paseo de Perros', 'Pet Grooming': 'Peluquería para Mascotas',
+    'IT Support & Computer Repair': 'Soporte Técnico y Reparación de Computadoras', 'Web & Graphic Design': 'Diseño Web y Gráfico',
+    'Accounting & Bookkeeping': 'Contabilidad', 'Legal Consulting': 'Consultoría Legal', 'Notary Services': 'Servicios Notariales',
+    'Interior Design': 'Diseño de Interiores', 'Babysitting & Nanny Services': 'Niñeras', 'Elder Care': 'Cuidado de Ancianos',
+    'Security Services': 'Servicios de Seguridad',
+  },
+  fr: {
+    'Plumbing': 'Plomberie', 'Electrical': 'Électricité', 'HVAC & Air Conditioning': 'CVC et Climatisation',
+    'Handyman Services': 'Services de Bricolage', 'Carpentry': 'Menuiserie', 'Painting': 'Peinture', 'Roofing': 'Toiture',
+    'Flooring Installation': 'Installation de Revêtements de Sol', 'Locksmith': 'Serrurerie', 'Appliance Repair': "Réparation d'Électroménager",
+    'Pest Control': 'Contrôle des Nuisibles', 'Window Installation & Repair': 'Installation et Réparation de Fenêtres', 'Masonry': 'Maçonnerie',
+    'Welding': 'Soudure', 'General Contracting': 'Entrepreneur Général', 'Home Renovation': 'Rénovation Domiciliaire',
+    'Cleaning': 'Nettoyage', 'Deep Cleaning': 'Nettoyage en Profondeur', 'Carpet Cleaning': 'Nettoyage de Tapis',
+    'Window Cleaning': 'Nettoyage de Vitres', 'Pool Cleaning & Maintenance': 'Nettoyage et Entretien de Piscines',
+    'Laundry & Dry Cleaning': 'Blanchisserie et Nettoyage à Sec', 'Moving': 'Déménagement', 'Pick & Drop': 'Ramassage et Livraison',
+    'Furniture Assembly': 'Montage de Meubles', 'Junk Removal': "Enlèvement d'Encombrants", 'Landscaping': 'Aménagement Paysager',
+    'Lawn Care': 'Entretien de Pelouse', 'Gardening': 'Jardinage', 'Tree Trimming & Removal': "Élagage et Abattage d'Arbres",
+    'Fence Installation & Repair': 'Installation et Réparation de Clôtures', 'Fitness': 'Fitness', 'Massage Therapy': 'Massothérapie',
+    'Hair Styling': 'Coiffure', 'Makeup Artistry': 'Maquillage', 'Nail Care': 'Soins des Ongles', 'Tutoring': 'Cours Particuliers',
+    'Music Lessons': 'Cours de Musique', 'Language Lessons': 'Cours de Langues', 'Test Prep': 'Préparation aux Examens',
+    'Event Planning': "Organisation d'Événements", 'Photography': 'Photographie', 'Videography': 'Vidéographie', 'DJ Services': 'Services de DJ',
+    'Catering': 'Traiteur', 'Auto Repair': 'Réparation Automobile', 'Car Detailing & Wash': 'Lavage et Detailing Auto', 'Towing': 'Remorquage',
+    'Pet Sitting': "Garde d'Animaux", 'Dog Walking': 'Promenade de Chiens', 'Pet Grooming': 'Toilettage Animalier',
+    'IT Support & Computer Repair': 'Support Informatique et Réparation', 'Web & Graphic Design': 'Design Web et Graphique',
+    'Accounting & Bookkeeping': 'Comptabilité', 'Legal Consulting': 'Conseil Juridique', 'Notary Services': 'Services de Notaire',
+    'Interior Design': "Design d'Intérieur", 'Babysitting & Nanny Services': "Garde d'Enfants", 'Elder Care': 'Soins aux Aînés',
+    'Security Services': 'Services de Sécurité',
+  },
+  pt: {
+    'Plumbing': 'Encanamento', 'Electrical': 'Elétrica', 'HVAC & Air Conditioning': 'Climatização e Ar Condicionado',
+    'Handyman Services': 'Serviços de Reparos', 'Carpentry': 'Carpintaria', 'Painting': 'Pintura', 'Roofing': 'Telhados',
+    'Flooring Installation': 'Instalação de Pisos', 'Locksmith': 'Chaveiro', 'Appliance Repair': 'Reparo de Eletrodomésticos',
+    'Pest Control': 'Controle de Pragas', 'Window Installation & Repair': 'Instalação e Reparo de Janelas', 'Masonry': 'Alvenaria',
+    'Welding': 'Soldagem', 'General Contracting': 'Empreiteiro Geral', 'Home Renovation': 'Reforma Residencial',
+    'Cleaning': 'Limpeza', 'Deep Cleaning': 'Limpeza Profunda', 'Carpet Cleaning': 'Limpeza de Carpetes',
+    'Window Cleaning': 'Limpeza de Janelas', 'Pool Cleaning & Maintenance': 'Limpeza e Manutenção de Piscinas',
+    'Laundry & Dry Cleaning': 'Lavanderia e Lavagem a Seco', 'Moving': 'Mudanças', 'Pick & Drop': 'Coleta e Entrega',
+    'Furniture Assembly': 'Montagem de Móveis', 'Junk Removal': 'Remoção de Entulho', 'Landscaping': 'Paisagismo',
+    'Lawn Care': 'Cuidado do Gramado', 'Gardening': 'Jardinagem', 'Tree Trimming & Removal': 'Poda e Remoção de Árvores',
+    'Fence Installation & Repair': 'Instalação e Reparo de Cercas', 'Fitness': 'Fitness', 'Massage Therapy': 'Massoterapia',
+    'Hair Styling': 'Cabeleireiro', 'Makeup Artistry': 'Maquiagem', 'Nail Care': 'Cuidado das Unhas', 'Tutoring': 'Aulas Particulares',
+    'Music Lessons': 'Aulas de Música', 'Language Lessons': 'Aulas de Idiomas', 'Test Prep': 'Preparação para Provas',
+    'Event Planning': 'Planejamento de Eventos', 'Photography': 'Fotografia', 'Videography': 'Videografia', 'DJ Services': 'Serviços de DJ',
+    'Catering': 'Buffet', 'Auto Repair': 'Reparo Automotivo', 'Car Detailing & Wash': 'Lavagem e Estética Automotiva', 'Towing': 'Reboque',
+    'Pet Sitting': 'Cuidado de Pets', 'Dog Walking': 'Passeio com Cães', 'Pet Grooming': 'Banho e Tosa',
+    'IT Support & Computer Repair': 'Suporte de TI e Reparo de Computadores', 'Web & Graphic Design': 'Design Web e Gráfico',
+    'Accounting & Bookkeeping': 'Contabilidade', 'Legal Consulting': 'Consultoria Jurídica', 'Notary Services': 'Serviços de Cartório',
+    'Interior Design': 'Design de Interiores', 'Babysitting & Nanny Services': 'Babás', 'Elder Care': 'Cuidado de Idosos',
+    'Security Services': 'Serviços de Segurança',
+  },
+  ar: {
+    'Plumbing': 'السباكة', 'Electrical': 'الكهرباء', 'HVAC & Air Conditioning': 'التكييف والتدفئة',
+    'Handyman Services': 'خدمات الصيانة العامة', 'Carpentry': 'النجارة', 'Painting': 'الطلاء والدهان', 'Roofing': 'أعمال الأسقف',
+    'Flooring Installation': 'تركيب الأرضيات', 'Locksmith': 'أعمال الأقفال', 'Appliance Repair': 'إصلاح الأجهزة المنزلية',
+    'Pest Control': 'مكافحة الآفات', 'Window Installation & Repair': 'تركيب وإصلاح النوافذ', 'Masonry': 'أعمال البناء',
+    'Welding': 'اللحام', 'General Contracting': 'المقاولات العامة', 'Home Renovation': 'تجديد المنزل',
+    'Cleaning': 'التنظيف', 'Deep Cleaning': 'التنظيف العميق', 'Carpet Cleaning': 'تنظيف السجاد',
+    'Window Cleaning': 'تنظيف النوافذ', 'Pool Cleaning & Maintenance': 'تنظيف وصيانة المسابح',
+    'Laundry & Dry Cleaning': 'غسيل الملابس والتنظيف الجاف', 'Moving': 'خدمات النقل', 'Pick & Drop': 'خدمة التوصيل',
+    'Furniture Assembly': 'تجميع الأثاث', 'Junk Removal': 'إزالة النفايات', 'Landscaping': 'تنسيق الحدائق',
+    'Lawn Care': 'العناية بالعشب', 'Gardening': 'البستنة', 'Tree Trimming & Removal': 'تقليم وإزالة الأشجار',
+    'Fence Installation & Repair': 'تركيب وإصلاح الأسوار', 'Fitness': 'اللياقة البدنية', 'Massage Therapy': 'العلاج بالتدليك',
+    'Hair Styling': 'تصفيف الشعر', 'Makeup Artistry': 'فن المكياج', 'Nail Care': 'العناية بالأظافر', 'Tutoring': 'الدروس الخصوصية',
+    'Music Lessons': 'دروس الموسيقى', 'Language Lessons': 'دروس اللغات', 'Test Prep': 'التحضير للاختبارات',
+    'Event Planning': 'تخطيط الفعاليات', 'Photography': 'التصوير الفوتوغرافي', 'Videography': 'تصوير الفيديو', 'DJ Services': 'خدمات دي جي',
+    'Catering': 'خدمات الطعام', 'Auto Repair': 'إصلاح السيارات', 'Car Detailing & Wash': 'غسيل وتنظيف السيارات', 'Towing': 'خدمة السحب',
+    'Pet Sitting': 'رعاية الحيوانات الأليفة', 'Dog Walking': 'تمشية الكلاب', 'Pet Grooming': 'تجميل الحيوانات الأليفة',
+    'IT Support & Computer Repair': 'الدعم الفني وإصلاح الكمبيوتر', 'Web & Graphic Design': 'تصميم المواقع والجرافيك',
+    'Accounting & Bookkeeping': 'المحاسبة ومسك الدفاتر', 'Legal Consulting': 'الاستشارات القانونية', 'Notary Services': 'الخدمات التوثيقية',
+    'Interior Design': 'التصميم الداخلي', 'Babysitting & Nanny Services': 'خدمات الجليسات ورعاية الأطفال', 'Elder Care': 'رعاية المسنين',
+    'Security Services': 'خدمات الأمن',
+  },
+  zh: {
+    'Plumbing': '管道维修', 'Electrical': '电工', 'HVAC & Air Conditioning': '暖通空调',
+    'Handyman Services': '家庭维修服务', 'Carpentry': '木工', 'Painting': '油漆', 'Roofing': '屋顶维修',
+    'Flooring Installation': '地板安装', 'Locksmith': '锁匠服务', 'Appliance Repair': '家电维修',
+    'Pest Control': '害虫防治', 'Window Installation & Repair': '窗户安装维修', 'Masonry': '砌筑工程',
+    'Welding': '焊接', 'General Contracting': '一般承包', 'Home Renovation': '房屋翻新',
+    'Cleaning': '清洁', 'Deep Cleaning': '深度清洁', 'Carpet Cleaning': '地毯清洁',
+    'Window Cleaning': '窗户清洁', 'Pool Cleaning & Maintenance': '泳池清洁保养',
+    'Laundry & Dry Cleaning': '洗衣干洗', 'Moving': '搬家服务', 'Pick & Drop': '接送服务',
+    'Furniture Assembly': '家具组装', 'Junk Removal': '垃圾清运', 'Landscaping': '园林绿化',
+    'Lawn Care': '草坪护理', 'Gardening': '园艺', 'Tree Trimming & Removal': '树木修剪和移除',
+    'Fence Installation & Repair': '围栏安装维修', 'Fitness': '健身', 'Massage Therapy': '按摩理疗',
+    'Hair Styling': '美发造型', 'Makeup Artistry': '化妆', 'Nail Care': '美甲护理', 'Tutoring': '家教辅导',
+    'Music Lessons': '音乐课程', 'Language Lessons': '语言课程', 'Test Prep': '考试备考',
+    'Event Planning': '活动策划', 'Photography': '摄影', 'Videography': '摄像', 'DJ Services': 'DJ服务',
+    'Catering': '餐饮服务', 'Auto Repair': '汽车维修', 'Car Detailing & Wash': '汽车美容洗车', 'Towing': '拖车服务',
+    'Pet Sitting': '宠物看护', 'Dog Walking': '遛狗服务', 'Pet Grooming': '宠物美容',
+    'IT Support & Computer Repair': 'IT支持与电脑维修', 'Web & Graphic Design': '网页与平面设计',
+    'Accounting & Bookkeeping': '会计与簿记', 'Legal Consulting': '法律咨询', 'Notary Services': '公证服务',
+    'Interior Design': '室内设计', 'Babysitting & Nanny Services': '保姆服务', 'Elder Care': '老年人照护',
+    'Security Services': '安保服务',
+  },
+  hi: {
+    'Plumbing': 'प्लंबिंग', 'Electrical': 'बिजली का काम', 'HVAC & Air Conditioning': 'एचवीएसी और एयर कंडीशनिंग',
+    'Handyman Services': 'हैंडीमैन सेवाएं', 'Carpentry': 'बढ़ईगीरी', 'Painting': 'पेंटिंग', 'Roofing': 'छत का काम',
+    'Flooring Installation': 'फ़्लोरिंग इंस्टॉलेशन', 'Locksmith': 'ताला मरम्मत', 'Appliance Repair': 'उपकरण मरम्मत',
+    'Pest Control': 'कीट नियंत्रण', 'Window Installation & Repair': 'खिड़की स्थापना और मरम्मत', 'Masonry': 'राजगीरी',
+    'Welding': 'वेल्डिंग', 'General Contracting': 'सामान्य ठेकेदारी', 'Home Renovation': 'घर का नवीनीकरण',
+    'Cleaning': 'सफाई', 'Deep Cleaning': 'गहरी सफाई', 'Carpet Cleaning': 'कालीन की सफाई',
+    'Window Cleaning': 'खिड़की की सफाई', 'Pool Cleaning & Maintenance': 'पूल की सफाई और रखरखाव',
+    'Laundry & Dry Cleaning': 'लॉन्ड्री और ड्राई क्लीनिंग', 'Moving': 'शिफ्टिंग सेवाएं', 'Pick & Drop': 'पिक एंड ड्रॉप',
+    'Furniture Assembly': 'फर्नीचर असेंबली', 'Junk Removal': 'कबाड़ हटाना', 'Landscaping': 'भूदृश्य सेवाएं',
+    'Lawn Care': 'लॉन की देखभाल', 'Gardening': 'बागवानी', 'Tree Trimming & Removal': 'पेड़ों की छंटाई और हटाना',
+    'Fence Installation & Repair': 'बाड़ स्थापना और मरम्मत', 'Fitness': 'फिटनेस', 'Massage Therapy': 'मालिश चिकित्सा',
+    'Hair Styling': 'हेयर स्टाइलिंग', 'Makeup Artistry': 'मेकअप कला', 'Nail Care': 'नाखूनों की देखभाल', 'Tutoring': 'ट्यूशन',
+    'Music Lessons': 'संगीत की शिक्षा', 'Language Lessons': 'भाषा की शिक्षा', 'Test Prep': 'परीक्षा की तैयारी',
+    'Event Planning': 'इवेंट प्लानिंग', 'Photography': 'फोटोग्राफी', 'Videography': 'वीडियोग्राफी', 'DJ Services': 'डीजे सेवाएं',
+    'Catering': 'केटरिंग', 'Auto Repair': 'कार मरम्मत', 'Car Detailing & Wash': 'कार डिटेलिंग और धुलाई', 'Towing': 'टोइंग सेवा',
+    'Pet Sitting': 'पालतू जानवरों की देखभाल', 'Dog Walking': 'कुत्ते को टहलाना', 'Pet Grooming': 'पालतू जानवरों की ग्रूमिंग',
+    'IT Support & Computer Repair': 'आईटी सपोर्ट और कंप्यूटर मरम्मत', 'Web & Graphic Design': 'वेब और ग्राफिक डिज़ाइन',
+    'Accounting & Bookkeeping': 'लेखांकन और बहीखाता', 'Legal Consulting': 'कानूनी परामर्श', 'Notary Services': 'नोटरी सेवाएं',
+    'Interior Design': 'इंटीरियर डिज़ाइन', 'Babysitting & Nanny Services': 'बेबीसिटिंग और नैनी सेवाएं', 'Elder Care': 'वृद्ध देखभाल',
+    'Security Services': 'सुरक्षा सेवाएं',
+  },
+};
+// Looks up the real category's display name in the current language,
+// falling back to its actual (English) name when no translation exists
+// yet — a category an admin adds later, for instance. The real English
+// name is always what's still sent to the backend for filtering/search;
+// this only ever changes what's shown on screen.
+function translateCategoryName(name) {
+  const table = CATEGORY_TRANSLATIONS[CURRENT_LANG];
+  return (table && table[name]) || name;
+}
+
 const I18N = {
   en: {
     lang_name: 'English',
-    nav_become_pro: 'Become a Pro', nav_sign_in: 'Sign In', nav_sign_out: 'Sign Out', nav_explore: 'Explore',
+    nav_become_pro: 'Become a Pro', nav_sign_in: 'Sign In', nav_sign_out: 'Sign Out', nav_explore: 'Explore', directory_all: 'All',
     hero_prefix: 'Find Trusted Local', hero_suffix: 'Instantly',
     hero_sub: "Every pro is ID-verified. Every job runs on an auto-generated contract with funds held in escrow until you're satisfied. Book in under 2 minutes.",
+    mission_headline: "Local services shouldn't require a leap of faith.",
+    mission_body: "From Atlanta to Lagos to Accra, hiring a plumber or a tutor has always meant crossing your fingers — no way to know who's really showing up, and no recourse if it goes wrong. Trothen closes that gap: every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is done right. Trust shouldn't be a gamble. On Trothen, it's the default.",
+    search_placeholder: 'What do you need done today?', search_city_placeholder: 'Your city',
     mission_title: "Local services shouldn't require a leap of faith.",
     how_title: 'How Trothen Works', how_sub: 'From request to completion in 3 simple steps',
     step1_title: 'Post Your Job', step1_desc: 'Describe what you need — we match it against verified pros nearby, ranked by rating, distance, and fit.',
@@ -2785,9 +2944,12 @@ const I18N = {
   },
   es: {
     lang_name: 'Español',
-    nav_become_pro: 'Hazte Profesional', nav_sign_in: 'Iniciar Sesión', nav_sign_out: 'Cerrar Sesión', nav_explore: 'Explorar',
+    nav_become_pro: 'Hazte Profesional', nav_sign_in: 'Iniciar Sesión', nav_sign_out: 'Cerrar Sesión', nav_explore: 'Explorar', directory_all: 'Todos',
     hero_prefix: 'Encuentra Servicios Locales de Confianza', hero_suffix: 'al Instante',
     hero_sub: 'Cada profesional está verificado. Cada trabajo tiene un contrato generado automáticamente con fondos en depósito de garantía hasta que estés satisfecho. Reserva en menos de 2 minutos.',
+    mission_headline: 'Los servicios locales no deberían ser un acto de fe.',
+    mission_body: 'Desde Atlanta hasta Lagos y Accra, contratar a un plomero o un tutor siempre ha significado cruzar los dedos, sin saber quién realmente aparecerá y sin recurso si algo sale mal. Trothen cierra esa brecha: cada profesional verifica su identidad antes de poder aceptar un solo trabajo, cada reserva funciona con un contrato generado automáticamente, y tu pago permanece seguro en depósito de garantía hasta que el trabajo esté bien hecho. La confianza no debería ser una apuesta. En Trothen, es la norma.',
+    search_placeholder: '¿Qué necesitas hacer hoy?', search_city_placeholder: 'Tu ciudad',
     mission_title: 'Los servicios locales no deberían requerir un acto de fe.',
     how_title: 'Cómo Funciona Trothen', how_sub: 'De la solicitud a la finalización en 3 simples pasos',
     step1_title: 'Publica tu Trabajo', step1_desc: 'Describe lo que necesitas: lo comparamos con profesionales verificados cercanos, clasificados por calificación, distancia y afinidad.',
@@ -2800,9 +2962,12 @@ const I18N = {
   },
   fr: {
     lang_name: 'Français',
-    nav_become_pro: 'Devenir Professionnel', nav_sign_in: 'Se Connecter', nav_sign_out: 'Se Déconnecter', nav_explore: 'Explorer',
+    nav_become_pro: 'Devenir Professionnel', nav_sign_in: 'Se Connecter', nav_sign_out: 'Se Déconnecter', nav_explore: 'Explorer', directory_all: 'Tous',
     hero_prefix: 'Trouvez des Services Locaux de Confiance', hero_suffix: 'Instantanément',
     hero_sub: "Chaque professionnel est vérifié. Chaque mission repose sur un contrat généré automatiquement, avec les fonds sous séquestre jusqu'à votre satisfaction. Réservez en moins de 2 minutes.",
+    mission_headline: "Les services locaux ne devraient pas être un acte de foi.",
+    mission_body: "D'Atlanta à Lagos en passant par Accra, engager un plombier ou un tuteur a toujours signifié croiser les doigts, sans savoir qui allait vraiment se présenter, et sans recours en cas de problème. Trothen comble cet écart : chaque professionnel voit son identité vérifiée avant de pouvoir accepter la moindre mission, chaque réservation repose sur un contrat généré automatiquement, et votre paiement reste en toute sécurité sous séquestre jusqu'à ce que le travail soit bien fait. La confiance ne devrait pas être un pari. Chez Trothen, c'est la norme.",
+    search_placeholder: "De quoi avez-vous besoin aujourd'hui ?", search_city_placeholder: 'Votre ville',
     mission_title: "Les services locaux ne devraient pas être un acte de foi.",
     how_title: 'Comment Fonctionne Trothen', how_sub: 'De la demande à la réalisation en 3 étapes simples',
     step1_title: 'Publiez votre Mission', step1_desc: 'Décrivez ce dont vous avez besoin — nous vous mettons en relation avec des professionnels vérifiés à proximité, classés par note, distance et pertinence.',
@@ -2815,9 +2980,12 @@ const I18N = {
   },
   pt: {
     lang_name: 'Português',
-    nav_become_pro: 'Torne-se um Profissional', nav_sign_in: 'Entrar', nav_sign_out: 'Sair', nav_explore: 'Explorar',
+    nav_become_pro: 'Torne-se um Profissional', nav_sign_in: 'Entrar', nav_sign_out: 'Sair', nav_explore: 'Explorar', directory_all: 'Todos',
     hero_prefix: 'Encontre Serviços Locais de Confiança', hero_suffix: 'Instantaneamente',
     hero_sub: 'Todo profissional é verificado. Todo trabalho tem um contrato gerado automaticamente, com fundos em garantia até sua satisfação. Reserve em menos de 2 minutos.',
+    mission_headline: 'Serviços locais não deveriam exigir um ato de fé.',
+    mission_body: 'De Atlanta a Lagos e Acra, contratar um encanador ou um professor particular sempre significou torcer os dedos — sem saber quem realmente apareceria, e sem recurso se algo desse errado. A Trothen fecha essa lacuna: todo profissional tem a identidade verificada antes de poder aceitar um único trabalho, toda reserva funciona com um contrato gerado automaticamente, e seu pagamento fica seguro em garantia até que o trabalho seja bem feito. Confiança não deveria ser uma aposta. Na Trothen, é o padrão.',
+    search_placeholder: 'O que você precisa hoje?', search_city_placeholder: 'Sua cidade',
     mission_title: 'Serviços locais não deveriam exigir um ato de fé.',
     how_title: 'Como Funciona a Trothen', how_sub: 'Da solicitação à conclusão em 3 passos simples',
     step1_title: 'Publique seu Trabalho', step1_desc: 'Descreva o que você precisa — nós comparamos com profissionais verificados próximos, classificados por avaliação, distância e afinidade.',
@@ -2830,9 +2998,12 @@ const I18N = {
   },
   ar: {
     lang_name: 'العربية', rtl: true,
-    nav_become_pro: 'كن محترفًا', nav_sign_in: 'تسجيل الدخول', nav_sign_out: 'تسجيل الخروج', nav_explore: 'استكشف',
+    nav_become_pro: 'كن محترفًا', nav_sign_in: 'تسجيل الدخول', nav_sign_out: 'تسجيل الخروج', nav_explore: 'استكشف', directory_all: 'الكل',
     hero_prefix: 'اعثر على خدمات محلية موثوقة', hero_suffix: 'فورًا',
     hero_sub: 'كل محترف موثّق الهوية. كل عمل يتم بموجب عقد يُنشأ تلقائيًا مع الاحتفاظ بالأموال في ضمان حتى رضاك. احجز في أقل من دقيقتين.',
+    mission_headline: 'الخدمات المحلية لا ينبغي أن تكون قفزة في المجهول.',
+    mission_body: 'من أتلانتا إلى لاغوس وأكرا، كان توظيف سباك أو معلم خاص يعني دائمًا التمني بحسن الحظ — دون معرفة من سيحضر فعلاً، ودون أي وسيلة للتعويض إن ساءت الأمور. تسد Trothen هذه الفجوة: يتم التحقق من هوية كل محترف قبل أن يتمكن من قبول أي عمل، وتعتمد كل عملية حجز على عقد يُنشأ تلقائيًا، وتبقى أموالك آمنة في الضمان حتى يتم إنجاز العمل بشكل صحيح. لا ينبغي أن تكون الثقة مقامرة. في Trothen، هي المعيار.',
+    search_placeholder: 'ما الذي تحتاج إنجازه اليوم؟', search_city_placeholder: 'مدينتك',
     mission_title: 'الخدمات المحلية لا يجب أن تكون مجرد مغامرة.',
     how_title: 'كيف تعمل تروثن', how_sub: 'من الطلب إلى الإنجاز في 3 خطوات بسيطة',
     step1_title: 'انشر مهمتك', step1_desc: 'صف ما تحتاجه — نطابقه مع محترفين موثّقين بالقرب منك، مرتبين حسب التقييم والمسافة والملاءمة.',
@@ -2845,9 +3016,12 @@ const I18N = {
   },
   zh: {
     lang_name: '中文',
-    nav_become_pro: '成为专业人士', nav_sign_in: '登录', nav_sign_out: '退出登录', nav_explore: '浏览',
+    nav_become_pro: '成为专业人士', nav_sign_in: '登录', nav_sign_out: '退出登录', nav_explore: '浏览', directory_all: '全部',
     hero_prefix: '立即找到值得信赖的本地服务', hero_suffix: '',
     hero_sub: '每位专业人士均经过身份验证。每笔订单都基于自动生成的合同，资金将存入托管账户，直到您满意为止。2分钟内即可完成预订。',
+    mission_headline: '本地服务不应该是一场盲目的信任。',
+    mission_body: '从亚特兰大到拉各斯再到阿克拉，雇佣水管工或家教一直意味着碰运气——不知道真正上门的人是谁，出了问题也没有追索渠道。Trothen弥补了这一空白：每位专业人士在接单前都要完成身份验证，每笔预订都基于自动生成的合同，您的付款会安全地存放在托管账户中，直到工作圆满完成。信任不应该是一场赌博。在Trothen，这是标配。',
+    search_placeholder: '您今天需要什么服务？', search_city_placeholder: '您的城市',
     mission_title: '本地服务不应该是一场赌博。',
     how_title: 'Trothen 使用流程', how_sub: '从发布需求到完成，只需3个简单步骤',
     step1_title: '发布您的需求', step1_desc: '描述您需要的服务——我们会根据评分、距离和匹配度，为您匹配附近经过验证的专业人士。',
@@ -2860,9 +3034,12 @@ const I18N = {
   },
   hi: {
     lang_name: 'हिन्दी',
-    nav_become_pro: 'प्रो बनें', nav_sign_in: 'साइन इन करें', nav_sign_out: 'साइन आउट करें', nav_explore: 'एक्सप्लोर करें',
+    nav_become_pro: 'प्रो बनें', nav_sign_in: 'साइन इन करें', nav_sign_out: 'साइन आउट करें', nav_explore: 'एक्सप्लोर करें', directory_all: 'सभी',
     hero_prefix: 'तुरंत भरोसेमंद स्थानीय सेवाएं खोजें', hero_suffix: '',
     hero_sub: 'हर पेशेवर की पहचान सत्यापित होती है। हर काम एक ऑटो-जनरेटेड अनुबंध पर चलता है, जिसमें आपकी संतुष्टि तक धनराशि एस्क्रो में सुरक्षित रहती है। 2 मिनट से कम में बुक करें।',
+    mission_headline: 'स्थानीय सेवाओं के लिए अंधविश्वास की जरूरत नहीं होनी चाहिए।',
+    mission_body: 'अटलांटा से लेकर लागोस और अकरा तक, प्लंबर या ट्यूटर को काम पर रखना हमेशा उंगलियां क्रॉस करने जैसा रहा है — यह जाने बिना कि वास्तव में कौन आएगा, और कुछ गलत होने पर कोई सहारा नहीं। Trothen इस कमी को दूर करता है: हर पेशेवर किसी भी काम को स्वीकार करने से पहले अपनी पहचान सत्यापित करवाता है, हर बुकिंग एक ऑटो-जनरेटेड अनुबंध पर चलती है, और आपका भुगतान तब तक एस्क्रो में सुरक्षित रहता है जब तक काम सही तरीके से पूरा नहीं हो जाता। भरोसा जुआ नहीं होना चाहिए। Trothen पर, यही मानक है।',
+    search_placeholder: 'आज आपको क्या करवाना है?', search_city_placeholder: 'आपका शहर',
     mission_title: 'स्थानीय सेवाओं के लिए भरोसे की छलांग नहीं लगानी चाहिए।',
     how_title: 'Trothen कैसे काम करता है', how_sub: 'अनुरोध से पूर्णता तक, 3 आसान चरणों में',
     step1_title: 'अपना काम पोस्ट करें', step1_desc: 'बताएं आपको क्या चाहिए — हम इसे रेटिंग, दूरी और उपयुक्तता के आधार पर आस-पास के सत्यापित पेशेवरों से मिलाते हैं।',
@@ -2877,6 +3054,12 @@ const I18N = {
 
 let CURRENT_LANG = localStorage.getItem('trothen_lang') || 'en';
 if (!I18N[CURRENT_LANG]) CURRENT_LANG = 'en';
+// Falls back to English for anyone whose browser has a language saved
+// from before some languages were pulled from the live switcher (see
+// LIVE_LANGUAGES near languageSwitcherHTML) — otherwise they'd be stuck
+// seeing an unreviewed language with no way to get back to it from the
+// dropdown, since it no longer lists as an option there.
+if (!['en', 'es'].includes(CURRENT_LANG)) CURRENT_LANG = 'en';
 
 // Safe lookup: current language -> English -> the raw key itself. A
 // missing translation should never show blank or throw — worst case, it
@@ -2905,6 +3088,16 @@ function setLanguage(lang) {
   document.querySelectorAll('[id^="navbar-"]').forEach(slot => {
     if (slot.dataset.navActive) renderNavbar(slot.id, slot.dataset.navActive);
   });
+  // Real fix: the hero headline/subheadline/mission copy and every
+  // category name are built from JS template strings, not static markup
+  // with data-i18n — applyTranslations() alone never touches them.
+  // Re-running their own loaders/renderers is what actually makes a
+  // language switch visibly change the homepage instead of only the
+  // handful of static labels applyTranslations() covers.
+  loadHomepageContent();
+  if (document.getElementById('categories-grid')) renderHomeCategories();
+  if (document.getElementById('categories-page-grid')) goCategoriesPage();
+  if (document.getElementById('directory-chips')) goDirectory(directoryCategoryFilter);
 }
 
 // Walks every element carrying a data-i18n attribute and updates its
@@ -2920,8 +3113,21 @@ function applyTranslations() {
   });
 }
 
+// Which languages are actually shown to real visitors right now.
+// Translations exist in I18N for all 7 (see setLanguage/I18N above) —
+// but only English and Spanish have been confirmed reliable for a real,
+// public-facing site. The rest (French, Portuguese, Arabic, Chinese,
+// Hindi) were AI-produced and haven't had a native-speaker review pass,
+// and none of Trothen's current markets (US, Nigeria, Ghana, Liberia —
+// all English-official) actually need them yet, so there's no reason to
+// carry that risk until they're reviewed. Re-enabling a language once
+// it's been checked is exactly one line: add its code back to this
+// array. Nothing else needs to change — the translation data, the
+// category names, all of it stays intact and ready.
+const LIVE_LANGUAGES = ['en', 'es'];
+
 function languageSwitcherHTML() {
-  const options = Object.keys(I18N).map(code => `<div class="lang-option ${code === CURRENT_LANG ? 'active' : ''}" onclick="setLanguage('${code}')">${I18N[code].lang_name}</div>`).join('');
+  const options = LIVE_LANGUAGES.map(code => `<div class="lang-option ${code === CURRENT_LANG ? 'active' : ''}" onclick="setLanguage('${code}')">${I18N[code].lang_name}</div>`).join('');
   // Real bug fix: renderNavbar() is called once per screen (navbar-home,
   // navbar-about, navbar-customer, and a dozen more), and every one of
   // those screens stays in the DOM even while hidden — only one is ever
@@ -11067,11 +11273,27 @@ async function loadHomepageContent() {
     const subheadEl = document.getElementById('hero-subheadline');
     const missionHeadEl = document.getElementById('mission-headline');
     const missionBodyEl = document.getElementById('mission-body');
-    if (prefixEl) prefixEl.textContent = content.heroPrefix;
-    if (suffixEl) suffixEl.textContent = content.heroSuffix;
-    if (subheadEl) subheadEl.textContent = content.heroSubheadline;
-    if (missionHeadEl) missionHeadEl.textContent = content.missionHeadline;
-    if (missionBodyEl) missionBodyEl.textContent = content.missionBody;
+    // isCustomized (from the backend — see GET /homepage-content) tells
+    // us whether this is genuine admin-written text, which has no
+    // translation and stays exactly as typed regardless of language, or
+    // still the untouched default copy, which DOES have real
+    // translations (hero_prefix/hero_suffix/hero_sub/mission_headline/
+    // mission_body in I18N). Real fix for the hero never translating:
+    // it previously always showed this raw content verbatim, in every
+    // language, with no distinction between the two cases.
+    if (!content.isCustomized) {
+      if (prefixEl) prefixEl.textContent = t('hero_prefix');
+      if (suffixEl) suffixEl.textContent = t('hero_suffix');
+      if (subheadEl) subheadEl.textContent = t('hero_sub');
+      if (missionHeadEl) missionHeadEl.textContent = t('mission_headline');
+      if (missionBodyEl) missionBodyEl.textContent = t('mission_body');
+    } else {
+      if (prefixEl) prefixEl.textContent = content.heroPrefix;
+      if (suffixEl) suffixEl.textContent = content.heroSuffix;
+      if (subheadEl) subheadEl.textContent = content.heroSubheadline;
+      if (missionHeadEl) missionHeadEl.textContent = content.missionHeadline;
+      if (missionBodyEl) missionBodyEl.textContent = content.missionBody;
+    }
     if (Array.isArray(content.heroRotatingWords) && content.heroRotatingWords.length) {
       HERO_ROTATING_WORDS = content.heroRotatingWords;
       startHeroWordRotation(); // restart with the real word list
