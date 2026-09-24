@@ -261,6 +261,23 @@ async function completeSignupVerify(req, res, pending) {
   await db.insert('users', user);
   await db.remove('pendingRegistrations', pending.id);
 
+  // Item: Joseph asked for a real welcome message when someone signs up,
+  // introducing what Trothen is and how it works — there was nothing at
+  // all here before. Two parts: a real welcome email (works the same
+  // "test mode" way every other email in this app does — see sendEmail
+  // in src/delivery.js — logged to the console until a real email
+  // provider is connected, not silently skipped), and a real in-app
+  // notification waiting the first time they open their dashboard. Kept
+  // deliberately short and role-aware rather than a wall of text.
+  const firstNameForWelcome = trimmedName.split(' ')[0];
+  const welcomeSubject = `Welcome to Trothen, ${firstNameForWelcome}!`;
+  const welcomeBody = user.role === 'provider'
+    ? `Hi ${firstNameForWelcome},\n\nWelcome to Trothen — you're now set up as a ${user.category} provider.\n\nHere's how it works: customers post jobs or search for pros like you, you get matched based on your category and location, and every job runs on an auto-generated contract with the payment held safely in escrow until the work is confirmed done. You'll need a verified profile photo and ID before you start showing up in customer searches — you can take care of both from your dashboard.\n\nGlad to have you on board.\n\n— The Trothen Team`
+    : `Hi ${firstNameForWelcome},\n\nWelcome to Trothen — real local pros, verified before they ever show up.\n\nHere's how it works: tell us what you need done, we match you with verified, ID-checked professionals nearby, and every booking runs on an auto-generated contract with your payment held safely in escrow until you're satisfied with the work. No guessing who's really coming to your door.\n\nReady when you are — just search for what you need on your dashboard.\n\n— The Trothen Team`;
+  const { sendEmail } = require('../delivery');
+  await sendEmail(user.email, welcomeSubject, welcomeBody);
+  await notify(user.id, '👋', `Welcome to Trothen, ${firstNameForWelcome}! Here's how it works: ${user.role === 'provider' ? 'get matched to jobs in your category, and every payment is held safely in escrow until the work is confirmed done.' : 'tell us what you need, we match you with a verified local pro, and your payment stays safely in escrow until you\'re satisfied.'}`);
+
   if (payload.referredByUserId) {
     await db.insert('referrals', {
       id: `ref_${nanoid(10)}`,
@@ -600,6 +617,20 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
     } : {}),
   };
   await db.insert('users', user);
+
+  // Same real welcome email + in-app notification as the standard signup
+  // path (see completeSignupVerify above) — a Google sign-up deserves the
+  // same introduction, not a silently different (worse) experience.
+  {
+    const firstNameForWelcome = trimmedName.split(' ')[0];
+    const welcomeSubject = `Welcome to Trothen, ${firstNameForWelcome}!`;
+    const welcomeBody = user.role === 'provider'
+      ? `Hi ${firstNameForWelcome},\n\nWelcome to Trothen — you're now set up as a ${user.category} provider.\n\nHere's how it works: customers post jobs or search for pros like you, you get matched based on your category and location, and every job runs on an auto-generated contract with the payment held safely in escrow until the work is confirmed done. You'll need a verified profile photo and ID before you start showing up in customer searches — you can take care of both from your dashboard.\n\nGlad to have you on board.\n\n— The Trothen Team`
+      : `Hi ${firstNameForWelcome},\n\nWelcome to Trothen — real local pros, verified before they ever show up.\n\nHere's how it works: tell us what you need done, we match you with verified, ID-checked professionals nearby, and every booking runs on an auto-generated contract with your payment held safely in escrow until you're satisfied with the work. No guessing who's really coming to your door.\n\nReady when you are — just search for what you need on your dashboard.\n\n— The Trothen Team`;
+    const { sendEmail } = require('../delivery');
+    await sendEmail(user.email, welcomeSubject, welcomeBody);
+    await notify(user.id, '👋', `Welcome to Trothen, ${firstNameForWelcome}! Here's how it works: ${user.role === 'provider' ? 'get matched to jobs in your category, and every payment is held safely in escrow until the work is confirmed done.' : 'tell us what you need, we match you with a verified local pro, and your payment stays safely in escrow until you\'re satisfied.'}`);
+  }
 
   if (referrer) {
     await db.insert('referrals', {

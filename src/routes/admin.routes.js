@@ -100,6 +100,23 @@ function requireDepartment(deptOrDepts) {
   };
 }
 
+// Item: Joseph asked for the customer service team to be able to access
+// and edit legal/policy content (Terms of Service, About Us) — currently
+// super-admin-only. Deliberately its own middleware rather than reusing
+// requireDepartment() above: that helper also lets a plain regional admin
+// (no department at all) through, which would open policy editing to
+// every city's regional admin, not just customer service — a real,
+// unintended widening for content this sensitive. This allows exactly
+// two callers: a super admin, or specifically the customer_service
+// department.
+function requireSuperAdminOrCustomerService(req, res, next) {
+  me(req).then(m => {
+    if (!m) return res.status(403).json({ error: 'Not authorized' });
+    if (m.isSuperAdmin || m.adminDepartment === 'customer_service') return next();
+    return res.status(403).json({ error: 'Only a super admin or the customer service team can access this.' });
+  });
+}
+
 // Resolve which city a dispute "belongs to" via its contract's customer.
 // Resolves which city a dispute "belongs to" via its contract's customer.
 // Accepts optional pre-built lookup maps (contractById, customerById) for
@@ -589,17 +606,27 @@ router.patch('/users/:id/plan', requireSuperAdmin, async (req, res) => {
 
 // POST /api/admin/users/:id/decide  { decision: 'approve' | 'reject' }
 router.post('/users/:id/decide', requireDepartment(['verification', 'customer_service']), async (req, res) => {
-  const { decision } = req.body || {};
+  const { decision, rejectionReason } = req.body || {};
   if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ error: 'decision must be approve or reject' });
+  // Item: matches the same real-reason pattern verification decisions
+  // already use (see POST /verification/:id/decide below) — this route
+  // used to send a generic "contact support for details" on rejection,
+  // with no way to actually tell the person why. Required, not optional,
+  // for the same reason it's required there: a rejection with no reason
+  // just leaves someone stuck with nothing to fix.
+  if (decision === 'reject' && !isNonEmptyString(rejectionReason, { min: 3, max: 500 })) {
+    return res.status(400).json({ error: 'A rejection reason is required so the applicant knows what to fix' });
+  }
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
-  const updated = await db.update('users', req.params.id, { verified: decision === 'approve', status: decision === 'approve' ? 'approved' : 'rejected' });
+  const finalRejectionReason = decision === 'reject' ? rejectionReason.trim() : null;
+  const updated = await db.update('users', req.params.id, { verified: decision === 'approve', status: decision === 'approve' ? 'approved' : 'rejected', rejectionReason: finalRejectionReason });
   const approveMessage = target.role === 'provider' && !target.profilePhotoUrl
     ? 'Your account has been approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
     : 'Your account has been approved.';
-  await notify(target.id, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? approveMessage : 'Your account application was not approved. Contact support for details.', null, { section: 'overview' });
+  await notify(target.id, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? approveMessage : `Your account application was not approved: ${finalRejectionReason}`, null, { section: 'overview' });
   res.json({ user: publicAdmin(updated) });
 });
 
@@ -949,8 +976,17 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   // this when no decision is given, so nothing about existing behavior
   // silently changes for a request that doesn't specify one) or refund
   // the customer.
-  const { decision } = req.body || {};
+  const { decision, note } = req.body || {};
   const outcome = decision === 'refund_customer' ? 'refund_customer' : 'release_to_provider';
+  // Item: Joseph asked for a real way for the dispute team to explain a
+  // decision to the people it actually affects — both parties previously
+  // only ever got a fixed, generic line regardless of what the dispute
+  // was actually about. Required, matching the same real-reason pattern
+  // already used for verification/account rejections.
+  if (!isNonEmptyString(note, { min: 3, max: 500 })) {
+    return res.status(400).json({ error: 'A note explaining the resolution is required — both parties will see it' });
+  }
+  const trimmedNote = note.trim();
 
   const updated = await db.update('disputes', dispute.id, { status: 'resolved', resolvedAt: new Date().toISOString(), resolution: outcome });
   const resolvingAdmin = await me(req);
@@ -958,7 +994,7 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
     id: `dal_${nanoid(10)}`,
     disputeId: dispute.id,
     action: 'resolve',
-    note: outcome === 'refund_customer' ? 'Resolved: refunded the customer' : 'Resolved: released escrow to the provider',
+    note: `${outcome === 'refund_customer' ? 'Resolved: refunded the customer' : 'Resolved: released escrow to the provider'} — ${trimmedNote}`,
     actorId: resolvingAdmin ? resolvingAdmin.id : null,
     actorName: resolvingAdmin ? resolvingAdmin.name : 'Unknown admin',
     createdAt: new Date().toISOString(),
@@ -970,8 +1006,8 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
     const wasRefunded = escrow && escrow.status === 'refunded';
     if (escrow && !wasRefunded) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
     if (contract) {
-      await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved in your favor — ${wasRefunded ? 'your payment was already refunded.' : 'your payment has been refunded.'}`, 'bookingUpdates', { section: 'bookings' });
-      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — the customer was refunded, so this booking's escrow will not be released to you.`, 'bookingUpdates', { section: 'bookings' });
+      await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved in your favor — ${wasRefunded ? 'your payment was already refunded.' : 'your payment has been refunded.'} ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — the customer was refunded, so this booking's escrow will not be released to you. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
     }
     return res.json({ dispute: updated });
   }
@@ -979,16 +1015,16 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   const wasReleased = escrow && escrow.status !== 'released';
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
   if (contract) {
-    await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved.`, 'bookingUpdates', { section: 'bookings' });
+    await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
     if (wasReleased) {
       const providerContracts = await db.filter('contracts', c => c.providerId === contract.providerId);
       const providerContractIds = new Set(providerContracts.map(c => c.id));
       const releasedUnpaid = (await db.filter('escrowTransactions', e => e.status === 'released' && !e.payoutId))
         .filter(e => providerContractIds.has(e.contractId));
       const totalAvailable = releasedUnpaid.reduce((s, e) => s + e.amount, 0);
-      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — escrow released. You now have $${totalAvailable} available to request as a payout.`, 'bookingUpdates', { section: 'earnings' });
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — escrow released. You now have $${totalAvailable} available to request as a payout. ${trimmedNote}`, 'bookingUpdates', { section: 'earnings' });
     } else {
-      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved.`, 'bookingUpdates', { section: 'bookings' });
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
     }
   }
   res.json({ dispute: updated });
@@ -1473,12 +1509,12 @@ router.patch('/settings/homepage-content', requireSuperAdmin, async (req, res) =
 // Deliberately generous length limit: this is meant for genuinely
 // substantial content (a real About page, a real Terms of Service), not a
 // short marketing blurb like the homepage copy above.
-router.get('/settings/about-us', requireSuperAdmin, async (req, res) => {
+router.get('/settings/about-us', requireSuperAdminOrCustomerService, async (req, res) => {
   const { getSetting } = require('../platform-settings');
   res.json({ content: await getSetting('aboutUsContent') });
 });
 
-router.patch('/settings/about-us', requireSuperAdmin, async (req, res) => {
+router.patch('/settings/about-us', requireSuperAdminOrCustomerService, async (req, res) => {
   const { content } = req.body || {};
   if (!isNonEmptyString(content, { min: 10, max: 50000 })) {
     return res.status(400).json({ error: 'Enter some content (up to 50,000 characters)' });
@@ -1518,12 +1554,12 @@ router.patch('/settings/footer', requireSuperAdmin, async (req, res) => {
   res.json({ ok: true, footer });
 });
 
-router.get('/settings/terms-of-service-customer', requireSuperAdmin, async (req, res) => {
+router.get('/settings/terms-of-service-customer', requireSuperAdminOrCustomerService, async (req, res) => {
   const { getSetting } = require('../platform-settings');
   res.json({ content: await getSetting('termsOfServiceCustomerContent') });
 });
 
-router.patch('/settings/terms-of-service-customer', requireSuperAdmin, async (req, res) => {
+router.patch('/settings/terms-of-service-customer', requireSuperAdminOrCustomerService, async (req, res) => {
   const { content } = req.body || {};
   if (!isNonEmptyString(content, { min: 10, max: 50000 })) {
     return res.status(400).json({ error: 'Enter some content (up to 50,000 characters)' });
@@ -1533,12 +1569,12 @@ router.patch('/settings/terms-of-service-customer', requireSuperAdmin, async (re
   res.json({ ok: true, content: content.trim() });
 });
 
-router.get('/settings/terms-of-service-provider', requireSuperAdmin, async (req, res) => {
+router.get('/settings/terms-of-service-provider', requireSuperAdminOrCustomerService, async (req, res) => {
   const { getSetting } = require('../platform-settings');
   res.json({ content: await getSetting('termsOfServiceProviderContent') });
 });
 
-router.patch('/settings/terms-of-service-provider', requireSuperAdmin, async (req, res) => {
+router.patch('/settings/terms-of-service-provider', requireSuperAdminOrCustomerService, async (req, res) => {
   const { content } = req.body || {};
   if (!isNonEmptyString(content, { min: 10, max: 50000 })) {
     return res.status(400).json({ error: 'Enter some content (up to 50,000 characters)' });
@@ -1983,7 +2019,28 @@ router.get('/sub-admins', requireSuperAdmin, async (req, res) => {
 });
 
 // POST /api/admin/sub-admins — create a new location admin for a city
-router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
+// Item: Joseph asked for the Customer Service team to be able to add new
+// employees themselves, to grow their own team without needing a super
+// admin for every hire. Opened to the customer_service department too —
+// but NOT unrestricted: this endpoint can create an admin in any
+// department (financial, legal, controller, and so on), and a customer
+// service rep granting themselves or a colleague access to one of those
+// would be a real privilege-escalation hole, not a convenience. So a
+// customer_service caller is only ever allowed to create MORE
+// customer_service accounts — never anything else, never a super admin
+// (this route never sets that flag for anyone, super admin or not). A
+// super admin caller keeps full, unrestricted access, unchanged.
+router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) => {
+  const m = await me(req);
+  if (!m) return res.status(403).json({ error: 'Not authorized' });
+  // Deliberately NOT requireDepartment() here — that helper also lets a
+  // plain regional admin (no department at all) through, which would
+  // open employee-creation to every regional admin, not just customer
+  // service. This route needs exactly two allowed callers: a super
+  // admin, or specifically the customer_service department.
+  if (!m.isSuperAdmin && m.adminDepartment !== 'customer_service') {
+    return res.status(403).json({ error: 'Only a super admin or the customer service team can add new employees.' });
+  }
   const { name, email, password, city, country, department, regionScoped } = req.body || {};
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
@@ -1995,6 +2052,9 @@ router.post('/sub-admins', requireSuperAdmin, async (req, res) => {
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
   if (department && !['verification', 'disputes', 'financial', 'accountant', 'controller', 'customer_service', 'legal', 'sales', 'hr'].includes(department)) {
     return res.status(400).json({ error: 'department must be verification, disputes, financial, accountant, controller, customer_service, legal, sales, or hr' });
+  }
+  if (!m.isSuperAdmin && m.adminDepartment === 'customer_service' && department !== 'customer_service') {
+    return res.status(403).json({ error: 'The customer service team can only add new customer service employees, not other departments.' });
   }
 
   const existing = await db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
@@ -2046,6 +2106,24 @@ router.patch('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
     if (!isNonEmptyString(req.body.city, { min: 2, max: 100 })) return res.status(400).json({ error: 'Enter a valid city' });
     patch.city = req.body.city.trim();
     patch.region = patch.city;
+  }
+  // Item: "Monrovia should not see Philadelphia" — the actual bug wasn't
+  // in the visibility logic itself (myRegion() above already scopes a
+  // regionScoped department admin correctly). It's that there was no way
+  // to FIX an admin who'd been created global by mistake (regionScoped
+  // left unchecked) short of deleting and recreating the account. Now
+  // editable after the fact, same super-admin-only gate as everything
+  // else here.
+  if ('department' in (req.body || {})) {
+    const dept = req.body.department;
+    if (dept !== null && !['verification', 'disputes', 'financial', 'accountant', 'controller', 'customer_service', 'legal', 'sales', 'hr'].includes(dept)) {
+      return res.status(400).json({ error: 'department must be verification, disputes, financial, accountant, controller, customer_service, legal, sales, hr, or null for a plain regional admin' });
+    }
+    patch.adminDepartment = dept;
+  }
+  if ('regionScoped' in (req.body || {})) {
+    if (typeof req.body.regionScoped !== 'boolean') return res.status(400).json({ error: 'regionScoped must be true or false' });
+    patch.regionScoped = req.body.regionScoped;
   }
   if (!Object.keys(patch).length && req.body && req.body.toggleActive) patch.active = !target.active;
   const updated = await db.update('users', target.id, patch);

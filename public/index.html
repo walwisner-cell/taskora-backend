@@ -1239,6 +1239,8 @@
   <div class="modal" style="max-width:400px;">
     <div class="modal-body" style="padding-top:28px;">
       <div id="confirm-dialog-message" style="font-size:14.5px;color:var(--navy);line-height:1.6;"></div>
+      <textarea id="confirm-dialog-textinput" class="form-input" rows="3" style="display:none;margin-top:14px;resize:vertical;" placeholder="Type the reason here..."></textarea>
+      <div id="confirm-dialog-textinput-error" style="display:none;color:#C1554D;font-size:12px;margin-top:6px;">A reason is required.</div>
     </div>
     <div class="modal-footer" style="display:flex;gap:10px;padding:0 24px 24px;">
       <button class="btn-sm btn-sm-outline" style="flex:1;" id="confirm-dialog-cancel-btn">Cancel</button>
@@ -8216,8 +8218,19 @@ async function loadAdminData() {
 }
 
 async function adminDecide(listName, id, decision, sectionKey) {
-  if (listName === 'users' && decision === 'reject') {
-    if (!(await confirmDialog('Reject this account application? This will permanently block them from logging in — this is not the same as leaving them pending, and is harder to casually undo. Continue?', {danger: true, confirmLabel: 'Reject'}))) return;
+  let rejectionReason = null;
+  if (decision === 'reject') {
+    // Real fix for a live bug: the backend for both flows requires a
+    // typed reason on rejection (so the person actually knows what to
+    // fix), but nothing here ever collected or sent one — every reject
+    // click was failing. Now actually asks for it.
+    rejectionReason = await confirmDialog(
+      listName === 'users'
+        ? 'Reject this account application? This will permanently block them from logging in — this is not the same as leaving them pending, and is harder to casually undo. Type the reason they\'re being rejected — they\'ll see this.'
+        : 'Reject this verification submission? Type the reason — the applicant will see this and can resubmit.',
+      { danger: true, confirmLabel: 'Reject', requireTextInput: true }
+    );
+    if (rejectionReason === null) return; // cancelled
   }
   if (!BACKEND_AVAILABLE) {
     const list = listName === 'users' ? adminData.pendingUsers : adminData.verificationQueue;
@@ -8228,8 +8241,9 @@ async function adminDecide(listName, id, decision, sectionKey) {
     return selectAdminSection(sectionKey);
   }
   try {
-    if (listName === 'users') await apiFetch('POST', `/admin/users/${id}/decide`, { decision });
-    else await apiFetch('POST', `/admin/verification/${id}/decide`, { decision });
+    const payload = decision === 'reject' ? { decision, rejectionReason } : { decision };
+    if (listName === 'users') await apiFetch('POST', `/admin/users/${id}/decide`, payload);
+    else await apiFetch('POST', `/admin/verification/${id}/decide`, payload);
     showToast(`${decision === 'approve' ? 'Approved' : 'Rejected'} successfully`);
     await loadAdminData();
     selectAdminSection(sectionKey);
@@ -8237,6 +8251,13 @@ async function adminDecide(listName, id, decision, sectionKey) {
 }
 
 async function resolveDispute(id, decision) {
+  const note = await confirmDialog(
+    decision === 'refund_customer'
+      ? 'Refund the customer for this dispute? Type a short note explaining the decision — both the customer and provider will see it.'
+      : 'Release escrow to the provider for this dispute? Type a short note explaining the decision — both parties will see it.',
+    { confirmLabel: decision === 'refund_customer' ? 'Refund Customer' : 'Release to Provider', requireTextInput: true }
+  );
+  if (note === null) return; // cancelled
   if (!BACKEND_AVAILABLE) {
     const d = adminData.disputes.find(x => x.id === id);
     if (!d) return;
@@ -8245,7 +8266,7 @@ async function resolveDispute(id, decision) {
     return selectAdminSection('disputes');
   }
   try {
-    await apiFetch('POST', `/admin/disputes/${id}/resolve`, { decision });
+    await apiFetch('POST', `/admin/disputes/${id}/resolve`, { decision, note });
     showToast(decision === 'refund_customer' ? `Dispute ${id} marked resolved — customer refunded` : `Dispute ${id} marked resolved — escrow released`);
     await loadAdminData();
     selectAdminSection('disputes');
@@ -8509,7 +8530,7 @@ const ADMIN_SECTIONS = {
       <div class="panel-title">New Admin</div>
       <div class="form-group"><label class="form-label">Admin Name</label><input class="form-input" id="loc-admin-name" placeholder="e.g. Fatima B."/></div>
       <div class="form-group"><label class="form-label">Admin Email</label><input class="form-input" id="loc-admin-email" placeholder="fatima@example.com"/></div>
-      <div class="form-group"><label class="form-label">Temporary Password</label><input class="form-input" id="loc-admin-password" placeholder="Set a starting password" type="text" value="Welcome123456!"/><div style="font-size:11px;color:var(--muted);margin-top:5px;">Must be at least 9 characters with 6 numbers, 2 letters, and 1 symbol — they can change it after signing in</div></div>
+      <div class="form-group"><label class="form-label">Temporary Password</label><input class="form-input" id="loc-admin-password" placeholder="Set a starting password" type="text" value="Welcome123456!"/><div style="font-size:11px;color:var(--muted);margin-top:5px;">8-72 characters — no forced mix of numbers/symbols required. They can change it after signing in.</div></div>
       <div class="form-group"><label class="form-label">Country</label>
         <select class="form-input form-select" id="loc-country"></select>
       </div>
@@ -8798,6 +8819,21 @@ const ADMIN_SECTIONS = {
         ${(adminData.categories || []).map(c => categoryImageUploadRowHTML(c, (adminData.categoryImages || {})[c.id])).join('')}
       </div>
     </div>
+    <div class="panel"><div class="panel-title">Site Footer</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">The "© [year] [company] · [location] · [email]" line shown at the bottom of every page.</div>
+      <div class="form-group"><label class="form-label">Company Name</label><input class="form-input" type="text" id="footer-company-name" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.companyName) || '')}"/></div>
+      <div class="form-group"><label class="form-label">Location</label><input class="form-input" type="text" id="footer-location" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.location) || '')}" placeholder="e.g. Philadelphia, PA"/></div>
+      <div class="form-group"><label class="form-label">Support Email</label><input class="form-input" type="email" id="footer-support-email" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.supportEmail) || '')}"/></div>
+      <div class="form-group"><label class="form-label">Copyright Year</label><input class="form-input" type="number" id="footer-copyright-year" value="${(adminData.footerInfo && adminData.footerInfo.copyrightYear) || new Date().getFullYear()}" style="max-width:120px;"/></div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:10px;">Preview: © ${(adminData.footerInfo && adminData.footerInfo.copyrightYear) || ''} ${escapeHtml((adminData.footerInfo && adminData.footerInfo.companyName) || '')} · ${escapeHtml((adminData.footerInfo && adminData.footerInfo.location) || '')} · ${escapeHtml((adminData.footerInfo && adminData.footerInfo.supportEmail) || '')}</div>
+      <button class="btn-sm btn-sm-primary" onclick="saveFooterInfo()">Save Footer</button>
+    </div>
+    <div class="panel"><div class="panel-title">Maintenance Tools</div>
+      <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Fix Old Notification Links</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Category-request, sales-inquiry, and advertising-inquiry notifications only started linking to their real admin section recently — any notification created before that fix has no destination, and new code doesn't rewrite already-saved data on its own. This looks at existing notifications and adds the correct link based on their own text, so old ones become clickable too, not just new ones going forward. Safe to run any time — it only ever fills in a missing link, never changes one that's already set.</div>
+      <button class="btn-sm btn-sm-primary" onclick="backfillNotificationLinks()">Fix Old Notifications</button>
+    </div>` : ''}
+    ${AUTH.user && (AUTH.user.isSuperAdmin || AUTH.user.adminDepartment === 'customer_service') ? `
     <div class="panel"><div class="panel-title">Site Content — About Us & Terms of Service</div>
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:16px;line-height:1.6;">
         Write as much as you need — there's no meaningful length limit. A simple format is supported: a line starting with <code>#&nbsp;</code> becomes a heading, a line starting with <code>-&nbsp;</code> becomes a bullet point, <code>**text**</code> becomes <strong>bold</strong>, and a blank line starts a new paragraph.
@@ -8820,20 +8856,6 @@ const ADMIN_SECTIONS = {
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;">Customer and Provider Terms are genuinely separate documents — a Customer only ever sees the Customer version, a Provider only ever sees the Provider version. This is real legal content shown before either can use the platform. Consider having a lawyer review both before you rely on them — these starting drafts reflect the policies you've already written, structured the way real marketplace Terms of Service are, but they aren't a substitute for legal review.</div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveTermsContent('provider')">Save Provider Terms</button>
-    </div>
-    <div class="panel"><div class="panel-title">Site Footer</div>
-      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">The "© [year] [company] · [location] · [email]" line shown at the bottom of every page.</div>
-      <div class="form-group"><label class="form-label">Company Name</label><input class="form-input" type="text" id="footer-company-name" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.companyName) || '')}"/></div>
-      <div class="form-group"><label class="form-label">Location</label><input class="form-input" type="text" id="footer-location" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.location) || '')}" placeholder="e.g. Philadelphia, PA"/></div>
-      <div class="form-group"><label class="form-label">Support Email</label><input class="form-input" type="email" id="footer-support-email" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.supportEmail) || '')}"/></div>
-      <div class="form-group"><label class="form-label">Copyright Year</label><input class="form-input" type="number" id="footer-copyright-year" value="${(adminData.footerInfo && adminData.footerInfo.copyrightYear) || new Date().getFullYear()}" style="max-width:120px;"/></div>
-      <div style="font-size:12px;color:var(--slate);margin-bottom:10px;">Preview: © ${(adminData.footerInfo && adminData.footerInfo.copyrightYear) || ''} ${escapeHtml((adminData.footerInfo && adminData.footerInfo.companyName) || '')} · ${escapeHtml((adminData.footerInfo && adminData.footerInfo.location) || '')} · ${escapeHtml((adminData.footerInfo && adminData.footerInfo.supportEmail) || '')}</div>
-      <button class="btn-sm btn-sm-primary" onclick="saveFooterInfo()">Save Footer</button>
-    </div>
-    <div class="panel"><div class="panel-title">Maintenance Tools</div>
-      <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Fix Old Notification Links</div>
-      <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Category-request, sales-inquiry, and advertising-inquiry notifications only started linking to their real admin section recently — any notification created before that fix has no destination, and new code doesn't rewrite already-saved data on its own. This looks at existing notifications and adds the correct link based on their own text, so old ones become clickable too, not just new ones going forward. Safe to run any time — it only ever fills in a missing link, never changes one that's already set.</div>
-      <button class="btn-sm btn-sm-primary" onclick="backfillNotificationLinks()">Fix Old Notifications</button>
     </div>` : ''}
     ${changePasswordPanelHTML('admin')}`,
 };
@@ -8850,9 +8872,15 @@ const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disput
 
 function functionalAdminsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No functional team members yet — create one above with a Role other than "Regional Admin".</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Team</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
-  ${list.map(a => `<tr><td>${a.name}</td><td>${a.email}</td><td>${DEPARTMENT_LABELS[a.adminDepartment] || a.adminDepartment}</td><td>${statusBadge(a.active === false ? 'suspended' : 'active')}</td>
-  ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${a.id}')">${a.active === false ? 'Reactivate' : 'Suspend'}</button> <button class="btn-sm btn-sm-outline" data-admin-id="${a.id}" data-admin-name="${a.name.replace(/"/g, '&quot;')}" data-city-name="${(a.city || '').replace(/"/g, '&quot;')}" onclick="deleteSubAdmin(this.dataset.adminId, this.dataset.adminName, this.dataset.cityName)">Delete</button></td>` : ''}</tr>`).join('')}
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Team</th><th>Scope</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
+  ${list.map(a => `<tr><td>${a.name}</td><td>${a.email}</td><td>${DEPARTMENT_LABELS[a.adminDepartment] || a.adminDepartment}</td>
+  <td>${a.regionScoped ? `Just ${escapeHtml(a.city || 'their city')}` : `<span style="color:#8a5a00;">Global — every city</span>`}</td>
+  <td>${statusBadge(a.active === false ? 'suspended' : 'active')}</td>
+  ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions">
+    <button class="btn-sm btn-sm-outline" onclick="toggleSubAdminRegionScope('${a.id}', ${!a.regionScoped})">${a.regionScoped ? 'Make Global' : `Scope to ${escapeHtml(a.city || 'their city')}`}</button>
+    <button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${a.id}')">${a.active === false ? 'Reactivate' : 'Suspend'}</button>
+    <button class="btn-sm btn-sm-outline" data-admin-id="${a.id}" data-admin-name="${a.name.replace(/"/g, '&quot;')}" data-city-name="${(a.city || '').replace(/"/g, '&quot;')}" onclick="deleteSubAdmin(this.dataset.adminId, this.dataset.adminName, this.dataset.cityName)">Delete</button>
+  </td>` : ''}</tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -9913,6 +9941,23 @@ async function toggleSubAdminActive(adminId) {
   } catch (e) { showToast(e.message || 'Could not update admin status'); }
 }
 
+// Item: "Monrovia should not see Philadelphia" — fixes an admin who was
+// created global by mistake (regionScoped left unchecked at creation)
+// without needing to delete and recreate the account.
+async function toggleSubAdminRegionScope(adminId, makeScoped) {
+  if (!adminId) return;
+  const confirmed = await confirmDialog(makeScoped
+    ? 'Scope this admin to just their own city? They will stop seeing data from every other city.'
+    : 'Make this admin global? They will start seeing data from every city, not just their own.', { danger: !makeScoped });
+  if (!confirmed) return;
+  try {
+    const { admin } = await apiFetch('PATCH', `/admin/sub-admins/${adminId}`, { regionScoped: makeScoped });
+    showToast(`${admin.name} is now ${makeScoped ? `scoped to ${admin.city}` : 'global — every city'}`);
+    await loadAdminData();
+    selectAdminSection('locations');
+  } catch (e) { showToast(e.message || 'Could not update admin scope'); }
+}
+
 async function deleteSubAdmin(adminId, adminName, cityName) {
   if (!adminId) return;
   if (!(await confirmDialog(`Delete ${adminName}'s account? This can't be undone.`, {danger: true, confirmLabel: 'Delete'}))) return;
@@ -10337,8 +10382,16 @@ function openPersonDetail(userId) {
           ${row('Terms Accepted', u.termsAcceptedAt ? `✅ ${u.termsAcceptedAt.slice(0, 10)} (v${u.termsVersion || '?'})` : '⏳ Not yet agreed')}
           ${isProvider && u.licenseExpiryDate ? row('License Expiry', formatAdminExpiryStatus(u.licenseExpiryDate)) : ''}
           ${isProvider && u.insuranceExpiryDate ? row('Insurance Expiry', formatAdminExpiryStatus(u.insuranceExpiryDate)) : ''}
+          ${isProvider && u.commissionRateOverrideStatus === 'approved' ? row('Custom Commission Rate', `${(u.commissionRateOverride * 100).toFixed(1)}% (overrides the normal plan rate)`) : ''}
+          ${isProvider && u.commissionRateOverrideStatus === 'pending' ? row('Custom Commission Rate', `⏳ ${(u.commissionRateOverride * 100).toFixed(1)}% proposed — awaiting super admin approval. Reason: ${escapeHtml(u.commissionRateOverrideReason || '')}`) : ''}
         </div>
         <div class="modal-footer">
+          ${isProvider && u.commissionRateOverrideStatus === 'pending' && AUTH.user && AUTH.user.isSuperAdmin
+            ? `<div style="display:flex;gap:8px;margin-bottom:8px;"><button class="confirm-btn" style="flex:1;" onclick="decideCommissionRate('${u.id}','approve')">✅ Approve Custom Rate</button><button class="btn-sm btn-sm-outline" style="flex:1;" onclick="decideCommissionRate('${u.id}','reject')">Reject</button></div>`
+            : ''}
+          ${isProvider && u.commissionRateOverrideStatus !== 'pending' && AUTH.user && (AUTH.user.isSuperAdmin || !AUTH.user.adminDepartment)
+            ? `<button class="btn-sm btn-sm-outline" style="margin-bottom:8px;" onclick="proposeCommissionRate('${u.id}')">💲 Propose Custom Commission Rate</button>`
+            : ''}
           ${u.onHold
             ? `<button class="confirm-btn" style="margin-bottom:8px;" onclick="releaseUserHold('${u.id}')">▶️ Release Hold</button>`
             : `<button class="btn-sm btn-sm-outline" style="margin-bottom:8px;" onclick="placeUserHold('${u.id}')">⏸️ Place on Hold</button>`}
@@ -10362,6 +10415,39 @@ async function toggleUserActive(userId, active) {
     await loadAdminData();
     selectAdminSection('people');
   } catch (e) { showToast(e.message || 'Could not update user status'); }
+}
+
+// Item: a real, complete backend feature (propose → super-admin-approve
+// a custom commission rate for a standout provider) existed with zero
+// way to actually reach it from the UI — found during a full audit, not
+// reported by name. Two sequential prompts rather than a bigger custom
+// modal, reusing the existing confirmDialog text-input mode: rate first
+// (validated as a real percentage before the reason is even asked for,
+// so nobody types a paragraph only to get rejected on the number after),
+// then the reason the backend actually requires.
+async function proposeCommissionRate(providerId) {
+  const rateText = await confirmDialog('What commission rate should this provider get? Enter a percentage, e.g. 8 for 8%.', { requireTextInput: true, confirmLabel: 'Next' });
+  if (rateText === null) return;
+  const ratePercent = parseFloat(rateText);
+  if (isNaN(ratePercent) || ratePercent < 0 || ratePercent > 50) return showToast('Enter a number between 0 and 50');
+  const reason = await confirmDialog(`Why does this provider deserve a custom ${ratePercent}% rate? A super admin will see this to decide.`, { requireTextInput: true, confirmLabel: 'Submit for Approval' });
+  if (reason === null) return;
+  try {
+    await apiFetch('POST', `/admin/providers/${providerId}/propose-commission-rate`, { rate: ratePercent / 100, reason });
+    showToast('Proposal sent — a super admin will review it');
+    document.getElementById('person-detail-overlay') && document.getElementById('person-detail-overlay').remove();
+    await loadAdminData();
+  } catch (e) { showToast(e.message || 'Could not submit the proposal'); }
+}
+
+async function decideCommissionRate(providerId, decision) {
+  if (!(await confirmDialog(decision === 'approve' ? 'Approve this custom commission rate? It takes effect immediately.' : 'Reject this proposal? The provider stays on their normal plan rate.', { danger: decision === 'reject', confirmLabel: decision === 'approve' ? 'Approve' : 'Reject' }))) return;
+  try {
+    await apiFetch('POST', `/admin/providers/${providerId}/commission-rate/${decision}`, {});
+    showToast(decision === 'approve' ? 'Custom rate approved' : 'Proposal rejected');
+    document.getElementById('person-detail-overlay') && document.getElementById('person-detail-overlay').remove();
+    await loadAdminData();
+  } catch (e) { showToast(e.message || 'Could not record this decision'); }
 }
 
 function usersTable(list, sectionKey) {
@@ -11159,16 +11245,31 @@ function showToast(msg) {
 // options.danger switches the confirm button to a red/destructive style
 // for irreversible actions (deletes), leaving it as the normal primary
 // style otherwise.
+// Item: a real, live bug found while fixing this — the backend for
+// verification rejections has required a typed reason since it was
+// built (see POST /admin/verification/:id/decide), but the frontend
+// never actually collected or sent one, so every reject click there was
+// silently failing with a 400. requireTextInput adds a real textarea to
+// this same modal instead of building a second one: resolves with the
+// trimmed text on Confirm (validated non-empty first — Confirm just
+// shakes the field and refuses to close if it's blank), or null on
+// Cancel/Escape/overlay-click, in place of the usual true/false.
 function confirmDialog(message, options = {}) {
   return new Promise((resolve) => {
     const overlay = document.getElementById('confirm-dialog-modal');
     const confirmBtn = document.getElementById('confirm-dialog-confirm-btn');
     const cancelBtn = document.getElementById('confirm-dialog-cancel-btn');
+    const textInput = document.getElementById('confirm-dialog-textinput');
+    const textError = document.getElementById('confirm-dialog-textinput-error');
     document.getElementById('confirm-dialog-message').textContent = message;
     confirmBtn.textContent = options.confirmLabel || 'Confirm';
     confirmBtn.style.background = options.danger ? '#C1554D' : '';
     confirmBtn.style.color = options.danger ? '#fff' : '';
     confirmBtn.className = options.danger ? 'btn-sm' : 'btn-sm btn-sm-primary';
+    textInput.style.display = options.requireTextInput ? 'block' : 'none';
+    textInput.value = '';
+    textError.style.display = 'none';
+    if (options.requireTextInput) setTimeout(() => textInput.focus(), 50);
 
     let settled = false;
     const cleanup = (result) => {
@@ -11181,10 +11282,18 @@ function confirmDialog(message, options = {}) {
       document.removeEventListener('keydown', onKeydown);
       resolve(result);
     };
-    const onConfirm = () => cleanup(true);
-    const onCancel = () => cleanup(false);
-    const onOverlayClick = (e) => { if (e.target === overlay) cleanup(false); };
-    const onKeydown = (e) => { if (e.key === 'Escape') cleanup(false); };
+    const onConfirm = () => {
+      if (options.requireTextInput) {
+        const text = textInput.value.trim();
+        if (text.length < 3) { textError.style.display = 'block'; textInput.focus(); return; }
+        cleanup(text);
+      } else {
+        cleanup(true);
+      }
+    };
+    const onCancel = () => cleanup(options.requireTextInput ? null : false);
+    const onOverlayClick = (e) => { if (e.target === overlay) cleanup(options.requireTextInput ? null : false); };
+    const onKeydown = (e) => { if (e.key === 'Escape') cleanup(options.requireTextInput ? null : false); };
 
     confirmBtn.addEventListener('click', onConfirm);
     cancelBtn.addEventListener('click', onCancel);

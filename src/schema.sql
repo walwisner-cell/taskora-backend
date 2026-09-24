@@ -872,3 +872,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+-- Item: lets the account-approval reject flow tell the person the real
+-- reason, the same way verification rejections already do (see
+-- verifications.rejection_reason).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+

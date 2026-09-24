@@ -97,6 +97,34 @@ You asked for the ability to select individual things to clean, instead of the t
 
 Proved this does what it says with a real test, not just by reading the code: created two untouched test accounts in the same country, selected only one of them, ran the delete, and confirmed the other one was still there afterward, untouched.
 
+## Full system audit
+
+A broader sweep of the whole codebase, not just reacting to specific reports:
+
+- **Full syntax check across every file** — clean.
+- **Database column-registry check** (the same one that's caught real bugs earlier in this build) — clean, nothing new.
+- **A systematic check for the exact class of bug the rejection-reason fix uncovered** (backend requires a field, frontend never sends it) — this surfaced one genuine, real gap:
+- **Found and fixed: a complete "propose a custom commission rate" feature existed entirely on the backend — a real two-step approval workflow (a regional admin proposes a better rate for a standout provider, a super admin approves or rejects it, both sides get notified) — with zero way to actually reach it anywhere in the interface.** Built the missing UI: a "Propose Custom Commission Rate" button on a provider's detail view, and Approve/Reject buttons for a super admin when one's pending. Tested the entire loop live, including in a real browser: proposed a rate, approved it, and confirmed the detail view correctly shows the new 8% rate as active.
+- **A real security pass**: checked every admin route for a genuine permission check, not just an apparent one. Confirmed the whole admin API sits behind a blanket "must be an active, logged-in admin" check, and every more sensitive action (suspending someone, approving verification, resolving a dispute) has its own additional, more specific restriction on top of that. Checked the public-facing routes too — the handful that don't require login (the contact form, job applications, the Persona identity-verification webhook) are all correctly meant to be public, and the webhook specifically has real cryptographic signature verification protecting it, not just an open door.
+
+**Not exhaustive** — a codebase this size has more surface area than one pass fully covers (every screen's visual behavior, every edge case in every form). What's above is real, verified findings, not a guess that everything is fine.
+
+## This round: Joseph's newest batch, worked through one at a time
+
+**Real, fixed, and tested:**
+
+- **Customer Service can now edit legal/policy content** (About Us, Terms of Service) — was super-admin-only before. Also gave them the ability to add new Customer Service employees themselves, so the team can grow without needing a super admin for every hire. The important part: a Customer Service rep can only ever create *more* Customer Service employees — tested live that an attempt to sneak in a "financial" department hire is correctly blocked. Also confirmed a plain regional admin and other departments are still correctly locked out of policy editing, and that a super admin still has full, unrestricted access to everything.
+- **A real welcome message now exists.** Every new signup — both the regular and the Google sign-in path — gets a real welcome email and an in-app notification introducing Trothen and explaining how it works, worded differently for customers and providers. There was nothing here before at all.
+- **Found and fixed the actual cause of "Monrovia should not see Philadelphia."** This wasn't a data-leak in the visibility logic itself — that logic was already correct. The real problem: once an admin account was created as "global" by mistake (a checkbox left unticked), there was no way to fix it afterward short of deleting and recreating the account. Proved this two ways: reproduced the exact bug live (a Monrovia-based verification admin could see pending users from Lagos and Accra), then applied the fix and confirmed the same admin instantly dropped to seeing zero users outside Monrovia. There's now a real "Scope to [city]" / "Make Global" control next to each team member in Locations & Admins.
+
+**Investigated, not a real bug:** "Rejecting a client is still not possible" — tested this directly with a real customer account start to finish, and rejection worked correctly. I couldn't reproduce a failure, so I didn't invent a fix for one — if this is still happening, the exact steps that trigger it (which page, what the account had done right before) would help me find the real cause.
+
+**Not yet addressed — needs another round:**
+- A way for the verification/dispute team to message a specific person the actual reason they were rejected or accepted (right now it's a generic message)
+- Verification seeing what's actually driving a specific provider's score, to justify a hold
+- Letting disputes carry submitted evidence/documents, visible to the dispute team
+- "Allow regional administrator to set Us rate" and "password requirements" — both too unclear for me to safely guess at without checking with you first
+
 ## Real bug found from your report: language selection broken, invisible on mobile
 
 You reported the language switcher wasn't working right and wasn't visible on your phone. Both were real, and both are fixed — verified in an actual mobile-width browser, not just by reading the code.
@@ -220,5 +248,10 @@ Render picks this up automatically.
 15. In Data Cleanup, preview a country with more than one eligible account, uncheck one, and confirm only the accounts you left checked actually get deleted
 16. Switch to Spanish (or any other language) on the homepage and confirm the headline, category names, and search box all actually change — then set a custom headline in Homepage Content and confirm that one stays in English no matter what language is selected
 17. Have a native speaker glance over a couple of the translated screens, especially Arabic and Chinese, before leaning on this heavily with real customers in those markets
+18. Sign in as a Customer Service employee and confirm they can now open and save About Us / Terms of Service, and can add a new Customer Service teammate — then confirm they still can't create a Financial or Legal hire
+19. In Locations & Admins, check whether any existing team member shows "Global — every city" who should actually be scoped to just their own city, and fix it with the new "Scope to [city]" button
+20. Sign up a brand-new test account and confirm a welcome notification shows up for it
+21. Open a provider's detail view as a regional admin and try "Propose Custom Commission Rate" — then confirm a super admin sees it and can approve it, and that the rate shows correctly afterward
+22. Reject a pending account application and confirm the reason you type actually reaches the applicant
 
 If anything looks wrong, a screenshot plus what you expected instead is always the fastest way for me to trace it.
