@@ -877,3 +877,20 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 -- verifications.rejection_reason).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 
+-- Item: real evidence attachments for disputes — a photo, a receipt, a
+-- screenshot — previously a dispute only ever had a typed reason with
+-- nothing to back it up. Files themselves live in private storage (the
+-- same protected location as identity documents), never in the database
+-- itself; this table is just the record of what was uploaded and by whom.
+CREATE TABLE IF NOT EXISTS dispute_evidence (
+  id                TEXT PRIMARY KEY,
+  dispute_id        TEXT NOT NULL REFERENCES disputes(id),
+  uploaded_by       TEXT NOT NULL REFERENCES users(id),
+  uploaded_by_name  TEXT NOT NULL,
+  filename          TEXT NOT NULL,
+  original_name     TEXT NOT NULL,
+  mime_type         TEXT NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_dispute_evidence_dispute ON dispute_evidence(dispute_id);
+

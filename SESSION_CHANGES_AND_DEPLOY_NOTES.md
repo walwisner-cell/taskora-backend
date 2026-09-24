@@ -51,6 +51,22 @@ You uploaded a second, older zip (`trothen-updates_22_.zip`) and asked me to che
 
 **I could only partially test this one.** Real Google-token verification needs to reach Google's own servers, which this sandbox's network rules don't allow — so I confirmed the code fails cleanly (a proper error, not a crash) when it can't reach Google, and confirmed nothing else broke, but I could not run an actual successful Google sign-in end to end the way I tested everything else this session. You'll want to genuinely click through it once this is live.
 
+## Real idle-timeout sign-out — a security best practice you asked about
+
+Anyone signed in now gets automatically signed out after 20 minutes of real inactivity — no mouse movement, no clicks, no typing. This is standard practice for anything handling money or personal documents, which this app does.
+
+It's not a silent logout, which would just look like the app randomly broke. 60 seconds before it happens, a real warning appears with a live countdown and a "Stay Signed In" button — and any real activity (not just that button) makes the warning go away and resets the clock, so someone genuinely still working isn't interrupted.
+
+Tested for real, not just written and assumed: confirmed the warning appears at exactly the right moment with the correct countdown, confirmed the "Stay Signed In" button works, confirmed real mouse movement alone dismisses the warning without needing the button, confirmed the actual sign-out happens at the full 20 minutes and lands cleanly on the home screen, and confirmed an anonymous visitor who isn't signed in isn't affected by any of this at all.
+
+## Disputes can now carry real evidence
+
+The last remaining "still open" item: someone filing a dispute can now attach a real photo, screenshot, or PDF receipt to back it up, right when they file it — and can add more afterward. The dispute team (and the other person involved) can see and download whatever's been uploaded.
+
+Built with the same real protection identity documents already get — files live in the same private, protected storage, never in the open, and every upload is checked by its actual file bytes, not just the filename someone typed. Tested the entire loop for real: filed a real dispute, uploaded a real file, confirmed the actual provider on that job could see it, confirmed a completely unrelated customer trying to view it got correctly blocked, and confirmed what a super admin downloads is byte-for-byte identical to what was uploaded — not just "looks right."
+
+Also corrected something in the last plain-English summary: it listed "a way for staff to explain a decision to one specific person" as still open, but that one was actually already done in an earlier round (real required reasons on rejections and dispute resolutions). Fixed the document to reflect that.
+
 ## A real security hardening pass — best-practices review, not just bug reports
 
 **Dependency vulnerabilities — fixed.** `npm audit` found 4 moderate-severity known vulnerabilities in dependencies. Two fixed with a standard, safe update (`express`'s vulnerable `qs` dependency). The other two (`uuid`, pulled in by Google Sign-In's `gaxios` library) needed an explicit override since the upstream package hasn't updated yet — added one, then actually verified Google Sign-In's library still loads and works correctly with the newer version before keeping it. Zero known vulnerabilities now.
@@ -284,5 +300,7 @@ Render picks this up automatically.
 22. Reject a pending account application and confirm the reason you type actually reaches the applicant
 23. Try Google Sign-In for real — this is the actual test of everything above. If it still doesn't work, check your browser's console (F12) during the attempt and tell me the exact error message shown
 24. Post a job or a booking with unusual characters in the description (quotes, angle brackets) and confirm it displays back correctly, not broken
+25. File a real dispute and attach a photo — confirm the other person on that booking, and your dispute team, can both see and open it
+26. Sign in and just leave the tab open, untouched, for 19-20 minutes — confirm the warning appears with a countdown, and that you get signed out automatically if you never touch anything
 
 If anything looks wrong, a screenshot plus what you expected instead is always the fastest way for me to trace it.

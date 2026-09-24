@@ -74,6 +74,8 @@ const TABLES = {
   // by design — an audit log that could be edited after the fact isn't
   // one.
   disputeAuditLog: { table: 'dispute_audit_log', columns: ['id','dispute_id','action','note','actor_id','actor_name','created_at'] },
+  // Item: real evidence attachments for disputes (photos, receipts, PDFs).
+  disputeEvidence: { table: 'dispute_evidence', columns: ['id','dispute_id','uploaded_by','uploaded_by_name','filename','original_name','mime_type','created_at'] },
   // Item 16 — Administration Announcement Center.
   announcements: { table: 'announcements', columns: ['id','title','body','priority','target_regions','author_id','author_name','scheduled_for','sent_at','recipient_count','read_by','created_at'] },
   // Item 13 — the permanent record of every data-cleanup run. Also

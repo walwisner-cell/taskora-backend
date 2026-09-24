@@ -1249,6 +1249,23 @@
   </div>
 </div>
 
+<!-- Item: real idle-timeout sign-out — a security best practice for an
+     app handling escrow payments and identity documents. Shows a real
+     warning with a live countdown before actually signing anyone out,
+     rather than silently ending a session someone's still reading. -->
+<div class="modal-overlay" id="idle-warning-modal">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-body" style="padding-top:28px;text-align:center;">
+      <div style="font-size:32px;margin-bottom:10px;">⏳</div>
+      <div style="font-size:15px;color:var(--navy);font-weight:600;margin-bottom:8px;">Still there?</div>
+      <div style="font-size:13.5px;color:var(--slate);line-height:1.6;">For your security, you'll be signed out in <strong id="idle-warning-countdown">60</strong> seconds due to inactivity.</div>
+    </div>
+    <div class="modal-footer" style="padding:0 24px 24px;">
+      <button class="confirm-btn" style="width:100%;" id="idle-warning-stay-btn">Stay Signed In</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="dispute-modal">
   <div class="modal">
     <div class="modal-header">
@@ -3683,6 +3700,7 @@ function goHome() {
 // so it must NOT clear auth state itself — only an explicit "Sign Out"
 // action should do that.
 async function logout() {
+  stopIdleTimer();
   stopMessagePolling();
   // Real server-side sign-out (see POST /auth/logout) — best-effort: if
   // this fails (offline, server hiccup), the person should still be able
@@ -5175,6 +5193,30 @@ async function downloadContractPDF(contractId) {
   }
 }
 
+async function downloadDisputeEvidence(disputeId, evidenceId, filename) {
+  if (!BACKEND_AVAILABLE) return showToast('Evidence download requires a live backend connection');
+  try {
+    const res = await fetch(API_BASE + `/disputes/${disputeId}/evidence/${evidenceId}/file`, {
+      headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Could not download that file');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'evidence';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (e) {
+    showToast(e.message || 'Could not download that file');
+  }
+}
+
 function openDisputeForm(contractId) {
   const modalHtml = `
     <div class="modal-overlay open" id="dispute-modal-overlay" onclick="if(event.target===this)document.getElementById('dispute-modal-overlay').remove()">
@@ -5202,12 +5244,51 @@ async function submitDispute(contractId) {
   if (!reason || reason.length < 10) return showToast('Describe the issue in at least 10 characters');
   if (!BACKEND_AVAILABLE) { showToast('Dispute submitted (demo mode)'); document.getElementById('dispute-modal-overlay').remove(); return; }
   try {
-    await apiFetch('POST', '/disputes', { contractId, reason });
+    const { dispute } = await apiFetch('POST', '/disputes', { contractId, reason });
     showToast('Dispute submitted — our team will review it');
-    document.getElementById('dispute-modal-overlay').remove();
+    // Real evidence upload — offered right after filing, since that's
+    // the natural moment someone actually has a photo or screenshot
+    // ready, rather than making them hunt for a separate screen later.
+    // Skipping is fine; the dispute itself is already filed either way.
+    document.getElementById('dispute-modal-overlay').innerHTML = `
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('dispute-modal-overlay').remove()">✕</button>
+          <h3>Add Evidence (optional)</h3>
+          <p>A photo, screenshot, or receipt helps our team resolve this faster.</p>
+        </div>
+        <div class="modal-body">
+          <input type="file" id="dispute-evidence-file" accept="image/jpeg,image/png,application/pdf"/>
+          <div id="dispute-evidence-list" style="margin-top:12px;font-size:12.5px;color:var(--slate);"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-sm btn-sm-outline" onclick="uploadDisputeEvidence('${dispute.id}')">Upload</button>
+          <button class="confirm-btn" onclick="document.getElementById('dispute-modal-overlay').remove()">Done</button>
+        </div>
+      </div>`;
     if (AUTH.user.role === 'customer') { await loadCustomerData(); selectCustomerSection('bookings'); }
     else { await loadProviderData(); selectProviderSection('contracts'); }
   } catch (e) { showToast(e.message || 'Could not submit dispute'); }
+}
+
+async function uploadDisputeEvidence(disputeId) {
+  const input = document.getElementById('dispute-evidence-file');
+  if (!input.files || !input.files[0]) return showToast('Choose a file first');
+  const formData = new FormData();
+  formData.append('file', input.files[0]);
+  try {
+    const res = await fetch(`${API_BASE}/disputes/${disputeId}/evidence`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${AUTH.token}` },
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    showToast('Evidence uploaded');
+    input.value = '';
+    const listEl = document.getElementById('dispute-evidence-list');
+    if (listEl) listEl.innerHTML += `<div>✓ ${escapeHtml(data.evidence.originalName)}</div>`;
+  } catch (e) { showToast(e.message || 'Could not upload evidence'); }
 }
 
 // The "Advertise Here" slide's real destination — a genuine inquiry form
@@ -6049,6 +6130,7 @@ async function logoutAllDevices() {
   if (!(await confirmDialog('Sign out of every device this account is currently logged into, including this one? You\'ll need to sign in again here too.', { danger: true, confirmLabel: 'Sign out everywhere' }))) return;
   try {
     const { signedOutDevices } = await apiFetch('POST', '/auth/logout-all', {});
+    stopIdleTimer();
     stopMessagePolling();
     AUTH.token = null;
     AUTH.user = null;
@@ -10544,6 +10626,7 @@ async function viewDispute(id) {
   const openedDate = d.createdAt ? new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null;
 
   let auditLogHTML = '';
+  let evidenceHTML = '';
   if (BACKEND_AVAILABLE) {
     try {
       const { log } = await apiFetch('GET', `/admin/disputes/${id}/audit-log`);
@@ -10554,6 +10637,13 @@ async function viewDispute(id) {
           </div>`;
       }
     } catch (e) { /* no audit entries yet, or not permitted — leave blank */ }
+    try {
+      const { evidence } = await apiFetch('GET', `/disputes/${id}/evidence`);
+      evidenceHTML = `<div class="form-label" style="margin:14px 0 8px;">Evidence ${evidence.length ? `(${evidence.length})` : ''}</div>` +
+        (evidence.length
+          ? `<div style="font-size:12.5px;line-height:2;">${evidence.map(e => `<div>📎 <a href="${API_BASE}/disputes/${id}/evidence/${e.id}/file" target="_blank" rel="noopener" onclick="event.preventDefault();downloadDisputeEvidence('${id}','${e.id}','${e.originalName.replace(/'/g, "\\'")}')" style="color:var(--navy);">${escapeHtml(e.originalName)}</a> <span style="color:var(--muted);">— uploaded by ${escapeHtml(e.uploadedByName)}</span></div>`).join('')}</div>`
+          : `<div style="font-size:12.5px;color:var(--slate);">No evidence uploaded for this dispute.</div>`);
+    } catch (e) { /* not permitted or none yet */ }
   }
 
   document.getElementById('dispute-modal-body').innerHTML = `
@@ -10567,6 +10657,7 @@ async function viewDispute(id) {
       ⚠️ Dispute opened${openedDate ? ` — ${openedDate}` : ''}<br/>
       ${d.status === 'resolved' ? (d.resolution === 'refund_customer' ? '✅ Resolved — customer refunded' : '✅ Resolved — escrow released to provider') : `Current status: ${DISPUTE_ACTION_LABEL[d.status] || d.status}`}
     </div>
+    ${evidenceHTML}
     ${auditLogHTML}`;
 
   const isSuperAdmin = AUTH.user && AUTH.user.isSuperAdmin;
@@ -10940,6 +11031,7 @@ async function completeAuthAndResumeIntent(role) {
   if (AUTH.user && AUTH.user.mustChangePassword) {
     return showForcePasswordChangeScreen();
   }
+  startIdleTimer();
   loadSupportContact().catch(() => {});
   const intent = getPendingBookingIntent();
   if (intent && intent.type === 'book' && role === 'customer') {
@@ -11284,6 +11376,76 @@ function showToast(msg) {
 // trimmed text on Confirm (validated non-empty first — Confirm just
 // shakes the field and refuses to close if it's blank), or null on
 // Cancel/Escape/overlay-click, in place of the usual true/false.
+// Item: real idle-timeout sign-out. A person is warned 60 seconds before
+// being signed out for real inactivity, with a live countdown and a
+// clear way to stay signed in — never a silent logout, which would just
+// look like a broken app to whoever it happens to. 20 minutes idle is
+// the actual trigger point; chosen because this app holds real escrow
+// payments and identity documents, not a low-stakes browsing site where
+// a much longer timeout would be reasonable.
+const IDLE_TIMEOUT_MS = 20 * 60 * 1000;
+const IDLE_WARNING_MS = 60 * 1000;
+let idleLastActivityAt = Date.now();
+let idleCheckInterval = null;
+let idleWarningShowing = false;
+const idleActivityListenerOptions = { passive: true };
+
+function idleRecordActivity() {
+  idleLastActivityAt = Date.now();
+}
+
+function idleCheckTick() {
+  if (!AUTH.token) return; // nothing to protect if nobody's signed in
+  const idleFor = Date.now() - idleLastActivityAt;
+  if (idleFor >= IDLE_TIMEOUT_MS) {
+    stopIdleTimer();
+    document.getElementById('idle-warning-modal').classList.remove('open');
+    idleWarningShowing = false;
+    showToast('Signed out after 20 minutes of inactivity');
+    logout();
+    return;
+  }
+  const remainingMs = IDLE_TIMEOUT_MS - idleFor;
+  if (remainingMs <= IDLE_WARNING_MS) {
+    if (!idleWarningShowing) {
+      idleWarningShowing = true;
+      document.getElementById('idle-warning-modal').classList.add('open');
+    }
+    document.getElementById('idle-warning-countdown').textContent = Math.max(1, Math.ceil(remainingMs / 1000));
+  } else if (idleWarningShowing) {
+    // Real activity came in while the warning was up (moving the mouse,
+    // typing) — dismiss it rather than forcing an explicit button click
+    // for every single kind of "still here" signal.
+    idleWarningShowing = false;
+    document.getElementById('idle-warning-modal').classList.remove('open');
+  }
+}
+
+// Started once, right after a real sign-in (see completeAuthAndResumeIntent)
+// or a restored session on page load — never for an anonymous visitor,
+// since there's no session to protect yet.
+function startIdleTimer() {
+  stopIdleTimer(); // never stack a second set of listeners on repeated logins
+  idleRecordActivity();
+  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(evt => {
+    document.addEventListener(evt, idleRecordActivity, idleActivityListenerOptions);
+  });
+  idleCheckInterval = setInterval(idleCheckTick, 2000);
+  document.getElementById('idle-warning-stay-btn').onclick = () => {
+    idleRecordActivity();
+    idleWarningShowing = false;
+    document.getElementById('idle-warning-modal').classList.remove('open');
+  };
+}
+
+function stopIdleTimer() {
+  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(evt => {
+    document.removeEventListener(evt, idleRecordActivity, idleActivityListenerOptions);
+  });
+  if (idleCheckInterval) { clearInterval(idleCheckInterval); idleCheckInterval = null; }
+  idleWarningShowing = false;
+}
+
 function confirmDialog(message, options = {}) {
   return new Promise((resolve) => {
     const overlay = document.getElementById('confirm-dialog-modal');

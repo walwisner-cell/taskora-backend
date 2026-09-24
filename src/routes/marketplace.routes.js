@@ -1,4 +1,7 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { COUNTRIES, statesForCountry, dialCodeForCountry } = require('../geo-data');
 const { nanoid } = require('nanoid');
 const rateLimit = require('express-rate-limit');
@@ -1816,6 +1819,111 @@ router.post('/disputes', requireAuth, disputeLimiter, async (req, res) => {
   await checkRapidDisputes(contract.providerId);
 
   res.status(201).json({ dispute });
+});
+
+// Item: disputes had no way to actually attach evidence — a photo of bad
+// work, a screenshot, a receipt — the dispute team only ever had the
+// typed reason to go on. Storage/validation reuse the exact same private,
+// magic-byte-verified pattern already used for identity documents (see
+// verificationDocStorage in src/routes/misc.routes.js) — evidence is
+// just as sensitive as an ID document and gets the same protection.
+const disputeEvidenceStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, require('../uploads').PRIVATE_UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ext = file.mimetype === 'application/pdf' ? '.pdf' : (path.extname(file.originalname).toLowerCase() || '.jpg');
+    cb(null, `dispute_ev_${req.params.id}_${nanoid(16)}${ext}`);
+  },
+});
+const disputeEvidenceFileFilter = (req, file, cb) => {
+  const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (!allowed.includes(file.mimetype)) return cb(new Error('Evidence must be a JPEG, PNG, or PDF file'));
+  cb(null, true);
+};
+const uploadDisputeEvidence = multer({ storage: disputeEvidenceStorage, fileFilter: disputeEvidenceFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Real permission check shared by all three routes below: a caller may
+// touch a dispute's evidence only if they're one of its two actual
+// parties (customer or provider on the underlying contract), OR they're
+// an admin whose department can already see disputes at all
+// (disputes/customer_service/legal — the same list GET /admin/disputes
+// itself uses — or a super admin). Everyone else gets a flat 404 rather
+// than a 403, so a dispute's existence isn't confirmable by a stranger
+// probing IDs.
+async function canAccessDisputeEvidence(req, dispute) {
+  const contract = await db.find('contracts', c => c.id === dispute.contractId);
+  if (contract && (contract.customerId === req.user.sub || contract.providerId === req.user.sub)) return true;
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me || me.role !== 'admin') return false;
+  if (me.isSuperAdmin) return true;
+  return ['disputes', 'customer_service', 'legal'].includes(me.adminDepartment);
+}
+
+// POST /api/disputes/:id/evidence — upload one piece of evidence.
+router.post('/disputes/:id/evidence', requireAuth, (req, res, next) => {
+  uploadDisputeEvidence.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Evidence upload failed' });
+    next();
+  });
+}, async (req, res) => {
+  const dispute = await db.find('disputes', d => d.id === req.params.id);
+  const { PRIVATE_UPLOADS_DIR, verifyImageMagicBytes, verifyPdfMagicBytes } = require('../uploads');
+  const cleanup = () => { if (req.file) { try { fs.unlinkSync(path.join(PRIVATE_UPLOADS_DIR, req.file.filename)); } catch (e) {} } };
+  if (!dispute) { cleanup(); return res.status(404).json({ error: 'Dispute not found' }); }
+  if (!(await canAccessDisputeEvidence(req, dispute))) { cleanup(); return res.status(404).json({ error: 'Dispute not found' }); }
+  if (!req.file) return res.status(400).json({ error: 'A file is required' });
+
+  const filePath = path.join(PRIVATE_UPLOADS_DIR, req.file.filename);
+  const bytesValid = req.file.mimetype === 'application/pdf' ? verifyPdfMagicBytes(filePath) : verifyImageMagicBytes(filePath, req.file.mimetype);
+  if (!bytesValid) { cleanup(); return res.status(400).json({ error: "That file doesn't look like a genuine document of the type it claims to be — please re-upload" }); }
+
+  const uploader = await db.find('users', u => u.id === req.user.sub);
+  const record = {
+    id: `dpev_${nanoid(10)}`,
+    disputeId: dispute.id,
+    uploadedBy: req.user.sub,
+    uploadedByName: uploader ? uploader.name : 'Unknown',
+    filename: req.file.filename,
+    originalName: (req.file.originalname || 'evidence').slice(0, 200),
+    mimeType: req.file.mimetype,
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('disputeEvidence', record);
+
+  // Whoever didn't upload this gets told something was added — the same
+  // "the other side should know" pattern the dispute notification itself
+  // already uses.
+  const contract = await db.find('contracts', c => c.id === dispute.contractId);
+  if (contract) {
+    const otherPartyId = req.user.sub === contract.customerId ? contract.providerId : contract.customerId;
+    await notify(otherPartyId, '📎', `New evidence was added to the dispute on "${contract.service}".`, 'bookingUpdates', { section: 'bookings' });
+  }
+  const { uploadedBy, ...publicRecord } = record;
+  res.status(201).json({ evidence: publicRecord });
+});
+
+// GET /api/disputes/:id/evidence — list, metadata only (no raw file
+// bytes here — see the dedicated download route below for that).
+router.get('/disputes/:id/evidence', requireAuth, async (req, res) => {
+  const dispute = await db.find('disputes', d => d.id === req.params.id);
+  if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
+  if (!(await canAccessDisputeEvidence(req, dispute))) return res.status(404).json({ error: 'Dispute not found' });
+  const list = (await db.filter('disputeEvidence', e => e.disputeId === dispute.id))
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .map(({ uploadedBy, ...rest }) => rest);
+  res.json({ evidence: list });
+});
+
+// GET /api/disputes/:id/evidence/:evidenceId/file — the actual file.
+router.get('/disputes/:id/evidence/:evidenceId/file', requireAuth, async (req, res) => {
+  const dispute = await db.find('disputes', d => d.id === req.params.id);
+  if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
+  if (!(await canAccessDisputeEvidence(req, dispute))) return res.status(404).json({ error: 'Dispute not found' });
+  const record = await db.find('disputeEvidence', e => e.id === req.params.evidenceId && e.disputeId === dispute.id);
+  if (!record) return res.status(404).json({ error: 'Evidence not found' });
+  const { PRIVATE_UPLOADS_DIR } = require('../uploads');
+  const filePath = path.join(PRIVATE_UPLOADS_DIR, record.filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File is missing on disk' });
+  res.sendFile(filePath);
 });
 
 module.exports = router;
