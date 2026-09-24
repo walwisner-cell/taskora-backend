@@ -51,6 +51,35 @@ You uploaded a second, older zip (`trothen-updates_22_.zip`) and asked me to che
 
 **I could only partially test this one.** Real Google-token verification needs to reach Google's own servers, which this sandbox's network rules don't allow — so I confirmed the code fails cleanly (a proper error, not a crash) when it can't reach Google, and confirmed nothing else broke, but I could not run an actual successful Google sign-in end to end the way I tested everything else this session. You'll want to genuinely click through it once this is live.
 
+## A real security hardening pass — best-practices review, not just bug reports
+
+**Dependency vulnerabilities — fixed.** `npm audit` found 4 moderate-severity known vulnerabilities in dependencies. Two fixed with a standard, safe update (`express`'s vulnerable `qs` dependency). The other two (`uuid`, pulled in by Google Sign-In's `gaxios` library) needed an explicit override since the upstream package hasn't updated yet — added one, then actually verified Google Sign-In's library still loads and works correctly with the newer version before keeping it. Zero known vulnerabilities now.
+
+**Cross-site scripting (XSS) — found and fixed real, exploitable gaps.** This is the most important part of this pass. Checked every place user-typed text gets shown back on a page, not just the specific screens reported as buggy. Found several genuine gaps where someone's own text — a job description, a booking's service line, a person's name — was being inserted directly into the page with no protection, meaning it could contain real, working code instead of being treated as plain text. Two matter most:
+
+- **A pending signup's name was shown completely unprotected on the very first screen an admin sees when reviewing new signups** — the single most-used, most routine part of the admin panel. Fixed.
+- **Job and booking descriptions — genuinely free text a customer types, with no restriction on what characters are allowed — were shown unprotected in provider, customer, and admin views** (payment history, contract lists, booking lists). Fixed everywhere it appeared, checked systematically rather than one report at a time.
+- Also fixed: provider names and roles on the **public homepage itself** (the featured-providers carousel) — this one didn't even require being logged in to be affected by.
+
+Proved the fix actually works with a real, live test — not just reading the code: posted a real job with an actual working script embedded in the description (`<img src=x onerror=alert(document.cookie)>`), confirmed it saved exactly as typed, then opened that page in a real browser and confirmed the text shows as harmless, plain text and nothing executes.
+
+Worth knowing: account names specifically already had some protection (only letters/spaces/hyphens are allowed at signup), so that particular vector was already partly blocked — but the escaping fix was still the right thing to do as a second, independent layer, and other fields like job descriptions had no such restriction at all, so those really were exploitable before this fix.
+
+**A real permission/authorization check** — done in an earlier round of this audit (see below) and re-confirmed here: every admin action requires a real, specific check, not just "any logged-in admin." The handful of genuinely public endpoints (contact form, job applications, the identity-verification webhook) are all correctly meant to be public, and the webhook has real cryptographic signature verification protecting it.
+
+## Google Sign-In: found a real bug, made a real improvement — here's what to check on your end
+
+You reported Google Sign-In isn't working. I can't test the real, live sign-in flow myself — this environment has no path to Google's own servers, the same limitation that's been true this whole build. But I read through the entire integration carefully looking for real bugs, and found one, plus made one more change based on Google's own current requirements:
+
+**Found and fixed: a real timing bug.** The Google button's script loads in the background while the rest of the page loads. The code checked exactly once whether that script had finished loading — if it hadn't (a slower connection, or just opening the sign-in screen quickly), the button would silently never appear, with no retry, unless something else happened to reopen the sign-in screen later. Fixed: it now checks repeatedly for up to 8 seconds before giving up, so a script that's simply still loading gets a real chance to catch up instead of being treated as broken. I proved this actually works by deliberately delaying the script in a real browser test and confirming the fix waits correctly and recovers.
+
+**Also added: Google's current recommended flag for the button flow** (`use_fedcm_for_button`). Google made a browser-level change mandatory in August 2025 for how sign-in buttons work, and the code wasn't using the setting Google recommends for it. This is a real, current best-practice fix based on Google's own documentation, added carefully alongside the existing fix for the popup window issue (from an earlier round) rather than replacing it, so either path a given browser takes should keep working.
+
+**What to actually check once this is deployed**, since I can't verify these myself:
+1. **The Google Cloud Console configuration itself** — under your OAuth Client ID's settings, "Authorized JavaScript origins" needs to include your real, live domain (e.g., `https://trothenpro.com`) exactly as it appears in the browser's address bar. This is the single most common reason Google Sign-In fails on a real site and isn't something I can check or fix from here — it's configured entirely on Google's side.
+2. **`GOOGLE_CLIENT_ID` is actually set on Render** and matches the Client ID from that same Google Cloud Console project.
+3. **What you actually see when it fails** — a blank popup, a button that never appears at all, an error message, or something else — would tell me a lot if the above doesn't resolve it. Your browser's developer console (F12 → Console tab) during the failed attempt would show a specific error message from Google's own script, which is the fastest way to narrow this down further if it's still not working after deploying this.
+
 ## Full system audit — this round
 
 You asked for a full audit rather than just moving to the next feature. Here's what that actually meant and what it found.
@@ -253,5 +282,7 @@ Render picks this up automatically.
 20. Sign up a brand-new test account and confirm a welcome notification shows up for it
 21. Open a provider's detail view as a regional admin and try "Propose Custom Commission Rate" — then confirm a super admin sees it and can approve it, and that the rate shows correctly afterward
 22. Reject a pending account application and confirm the reason you type actually reaches the applicant
+23. Try Google Sign-In for real — this is the actual test of everything above. If it still doesn't work, check your browser's console (F12) during the attempt and tell me the exact error message shown
+24. Post a job or a booking with unusual characters in the description (quotes, angle brackets) and confirm it displays back correctly, not broken
 
 If anything looks wrong, a screenshot plus what you expected instead is always the fastest way for me to trace it.

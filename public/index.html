@@ -1878,14 +1878,44 @@ async function initGoogleSignIn() {
   if (!BACKEND_AVAILABLE) { row.style.display = 'none'; divider.style.display = 'none'; return; }
   try {
     const { configured, clientId } = await apiFetch('GET', '/auth/google/config');
-    if (!configured || !clientId || !window.google || !window.google.accounts) {
+    if (!configured || !clientId) {
       row.style.display = 'none'; divider.style.display = 'none';
+      return;
+    }
+    // Real bug fix: the Google script tag loads with async defer, so on a
+    // slow connection or a fast first interaction, window.google may
+    // simply not exist yet the moment this runs. This used to check once
+    // and silently give up — the button would just never appear unless
+    // something else happened to call initGoogleSignIn() again later
+    // (like switching the login/signup tab) by coincidence. Now it waits
+    // for real: checks every 200ms for up to 8 seconds before finally
+    // giving up, since the script genuinely might not be reachable at
+    // all (blocked network, ad blocker) — at which point hiding the
+    // button really is correct, not a bug.
+    let waited = 0;
+    while ((!window.google || !window.google.accounts) && waited < 8000) {
+      await new Promise(r => setTimeout(r, 200));
+      waited += 200;
+    }
+    if (!window.google || !window.google.accounts) {
+      row.style.display = 'none'; divider.style.display = 'none';
+      console.warn('Google Sign-In script never became available — check network access to accounts.google.com/gsi/client, or an ad blocker may be involved.');
       return;
     }
     row.style.display = 'block';
     divider.style.display = 'block';
     if (!googleSignInInitialized) {
-      google.accounts.id.initialize({ client_id: clientId, callback: onGoogleCredentialResponse });
+      // use_fedcm_for_button: Google's own current guidance (their sign-in
+      // library has required FedCM adoption since August 2025) — without
+      // it, the button falls back to the older third-party-cookie-based
+      // flow, which browsers are actively restricting further over time.
+      // Safe to add alongside the existing COOP header fix: FedCM's
+      // browser-native picker doesn't depend on window.opener at all, so
+      // this doesn't remove protection for whichever path a given
+      // browser/version actually ends up taking — it just gives the
+      // modern path a real chance to be used instead of silently falling
+      // back to a legacy one that's getting less reliable over time.
+      google.accounts.id.initialize({ client_id: clientId, callback: onGoogleCredentialResponse, use_fedcm_for_button: true });
       googleSignInInitialized = true;
     }
     // Re-rendered every time the auth screen opens, not just once — the
@@ -2194,10 +2224,10 @@ function renderFeaturedCarouselSlides() {
     }
     const p = item.data;
     return `<div class="featured-slide ${i === featuredCarouselIndex ? 'active' : ''}">
-      <div class="featured-slide-avatar" ${p.profilePhotoUrl ? '' : `style="background:${p.color}"`}>${p.profilePhotoUrl ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : p.initials}</div>
+      <div class="featured-slide-avatar" ${p.profilePhotoUrl ? '' : `style="background:${p.color}"`}>${p.profilePhotoUrl ? `<img src="${encodeURI(p.profilePhotoUrl)}" alt="${escapeHtml(p.name)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : p.initials}</div>
       <div class="featured-slide-body">
-        <div class="featured-slide-name">${p.name} <span class="badge ${p.plan === 'superpro' ? 'badge-warn' : 'badge-success'}" style="font-size:9.5px;">${p.plan === 'superpro' ? 'SUPER PRO' : 'PRO'}</span></div>
-        <div class="featured-slide-sub">${p.role} · ${p.city} · ★ ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
+        <div class="featured-slide-name">${escapeHtml(p.name)} <span class="badge ${p.plan === 'superpro' ? 'badge-warn' : 'badge-success'}" style="font-size:9.5px;">${p.plan === 'superpro' ? 'SUPER PRO' : 'PRO'}</span></div>
+        <div class="featured-slide-sub">${escapeHtml(p.role)} · ${escapeHtml(p.city)} · ★ ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
       </div>
       <button class="btn-sm btn-sm-primary featured-slide-cta" onclick="viewProviderProfile('${p.id}')">View</button>
     </div>`;
@@ -2272,7 +2302,7 @@ function openJobCardHTML(j) {
           <div style="font-weight:700;color:var(--navy);font-size:14px;">${j.category}</div>
           <div style="font-size:11px;color:var(--muted);white-space:nowrap;">${timeAgo(j.createdAt)}</div>
         </div>
-        <div style="font-size:13px;color:var(--slate);margin-top:2px;line-height:1.5;">${j.description}</div>
+        <div style="font-size:13px;color:var(--slate);margin-top:2px;line-height:1.5;">${escapeHtml(j.description)}</div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:10px;flex-wrap:wrap;">
           ${j.budget ? `<span class="badge badge-neutral">Budget: ${j.budget}</span>` : '<span></span>'}
           <div style="display:flex;gap:8px;">
@@ -4907,14 +4937,14 @@ function paymentHistoryTableHTML(payments) {
   ${payments.map(p => `
     <tr style="cursor:pointer;" onclick="togglePaymentBreakdown('${p.contractId}')">
       <td><span id="payment-caret-${p.contractId}">▸</span></td>
-      <td>${p.date}</td><td>${p.providerName}</td><td>${p.service}</td><td>${p.bookingNumber}</td><td>$${p.amount}${p.paidCurrency && p.paidCurrency !== 'USD' && p.paidAmountLocal ? ` <span style="color:var(--muted);font-size:11px;">(${p.paidAmountLocal} ${p.paidCurrency})</span>` : ''}</td><td>${statusBadge(p.status)}</td>
+      <td>${p.date}</td><td>${escapeHtml(p.providerName)}</td><td>${escapeHtml(p.service)}</td><td>${p.bookingNumber}</td><td>$${p.amount}${p.paidCurrency && p.paidCurrency !== 'USD' && p.paidAmountLocal ? ` <span style="color:var(--muted);font-size:11px;">(${p.paidAmountLocal} ${p.paidCurrency})</span>` : ''}</td><td>${statusBadge(p.status)}</td>
     </tr>
     <tr id="payment-breakdown-${p.contractId}" style="display:none;">
       <td colspan="7" style="background:var(--offwhite);padding:0;">
         <div style="padding:12px 16px;border-top:1px solid var(--border);background:var(--white);">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
             <div>
-              <div style="font-weight:700;color:var(--navy);font-size:13.5px;">${p.service}</div>
+              <div style="font-weight:700;color:var(--navy);font-size:13.5px;">${escapeHtml(p.service)}</div>
               <div style="font-size:12px;color:var(--slate);margin-top:2px;">Booking #${p.bookingNumber} · Escrow ${p.escrowStatus}${p.disputeStatus ? ` · Dispute: ${p.disputeStatus}` : ''}</div>
             </div>
             <div style="text-align:right;">
@@ -5065,7 +5095,7 @@ async function removePaymentMethod(id) {
 function bookingsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No bookings yet — post a job or book a pro to get started.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Pro</th><th>Service</th><th>Date</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${b.pro}</td><td>${b.service}${addressLinkHTML(b.address)}</td><td>${b.date}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
+  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${escapeHtml(b.pro)}</td><td>${escapeHtml(b.service)}${addressLinkHTML(b.address)}</td><td>${b.date}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -7233,7 +7263,7 @@ function toggleEarningsBreakdown(which) {
   panel.innerHTML = `
     <div class="panel-title">${title}</div>
     ${contracts.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Amount</th><th>Contract Status</th></tr></thead><tbody>
-      ${contracts.map(c => `<tr><td>${c.customerName}</td><td>${c.service}</td><td>$${c.escrow.amount}</td><td>${statusBadge(c.status)}</td></tr>`).join('')}
+      ${contracts.map(c => `<tr><td>${escapeHtml(c.customerName)}</td><td>${escapeHtml(c.service)}</td><td>$${c.escrow.amount}</td><td>${statusBadge(c.status)}</td></tr>`).join('')}
       </tbody></table></div>`
       : `<div style="color:var(--slate);font-size:13px;padding:8px 0;">${which === 'available' ? 'Nothing here yet — this fills in once a customer marks a job complete.' : 'Nothing pending right now.'}</div>`}
   `;
@@ -7270,7 +7300,7 @@ function payoutLineItemDetailHTML(li) {
     <div style="padding:12px 16px;border-top:1px solid var(--border);background:var(--white);">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
         <div>
-          <div style="font-weight:700;color:var(--navy);font-size:13.5px;">${li.service}</div>
+          <div style="font-weight:700;color:var(--navy);font-size:13.5px;">${escapeHtml(li.service)}</div>
           <div style="font-size:12px;color:var(--slate);margin-top:2px;">Booking #${li.bookingNumber} · ${statusBadge(li.contractStatus)}</div>
         </div>
         <div style="text-align:right;">
@@ -7349,10 +7379,10 @@ function adminTransactionsTableHTML(transactions) {
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Customer</th><th>Provider</th><th>Category</th><th>Service</th><th>Amount</th><th>Materials Adv.</th><th>Escrow</th><th>Est. Commission</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${transactions.map(t => `<tr>
     <td>${t.date}</td>
-    <td>${t.customerName}</td>
-    <td>${t.providerName}</td>
+    <td>${escapeHtml(t.customerName)}</td>
+    <td>${escapeHtml(t.providerName)}</td>
     <td>${t.category || '—'}</td>
-    <td>${t.service}</td>
+    <td>${escapeHtml(t.service)}</td>
     <td>$${t.amount}</td>
     <td>${t.materialsAdvanceAmount ? `$${t.materialsAdvanceAmount}` : '—'}</td>
     <td>${t.escrowStatus}${t.paidOut ? ' (paid out)' : ''}</td>
@@ -7644,7 +7674,7 @@ function contractsTableWithEscrow(list) {
       else if (c.escrow.status === 'released') escrowLabel = '<span style="color:#2E8C6F;font-weight:600;">Available</span>';
       else if (c.escrow.status === 'held') escrowLabel = '<span style="color:var(--gold);">Held</span>';
     }
-    return `<tr><td>${c.bookingNumber || c.id}</td><td>${c.customer}</td><td>${c.service}</td><td>$${c.amount}</td><td>${escrowLabel}</td><td>${statusBadge(c.status)}</td><td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
+    return `<tr><td>${c.bookingNumber || c.id}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}</td><td>$${c.amount}</td><td>${escrowLabel}</td><td>${statusBadge(c.status)}</td><td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
   }).join('')}
   </tbody></table></div>`;
 }
@@ -8873,7 +8903,7 @@ const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disput
 function functionalAdminsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No functional team members yet — create one above with a Role other than "Regional Admin".</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Team</th><th>Scope</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
-  ${list.map(a => `<tr><td>${a.name}</td><td>${a.email}</td><td>${DEPARTMENT_LABELS[a.adminDepartment] || a.adminDepartment}</td>
+  ${list.map(a => `<tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.email)}</td><td>${DEPARTMENT_LABELS[a.adminDepartment] || a.adminDepartment}</td>
   <td>${a.regionScoped ? `Just ${escapeHtml(a.city || 'their city')}` : `<span style="color:#8a5a00;">Global — every city</span>`}</td>
   <td>${statusBadge(a.active === false ? 'suspended' : 'active')}</td>
   ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions">
@@ -10453,7 +10483,7 @@ async function decideCommissionRate(providerId, decision) {
 function usersTable(list, sectionKey) {
   if (!list.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">No pending approvals.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>User</th><th>Role</th><th>City</th><th>Country</th><th>Submitted</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(u => `<tr><td>${u.name}</td><td>${u.role}</td><td>${u.city || '—'}</td><td>${u.country}</td><td>${u.submitted}</td><td>${statusBadge(u.status)}</td>
+  ${list.map(u => `<tr><td>${escapeHtml(u.name)}</td><td>${u.role}</td><td>${escapeHtml(u.city) || '—'}</td><td>${escapeHtml(u.country)}</td><td>${u.submitted}</td><td>${statusBadge(u.status)}</td>
   <td class="row-actions">${u.status==='pending' ? `<button class="btn-sm btn-sm-primary" onclick="adminDecide('users','${u.id}','approve','${sectionKey}')">Approve</button><button class="btn-sm btn-sm-outline" onclick="adminDecide('users','${u.id}','reject','${sectionKey}')">Reject</button>` : '—'}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -11209,16 +11239,16 @@ async function confirmBooking() {
   // are held when they aren't.
   document.getElementById('confirm-details').innerHTML = isPendingOffer ? `
     <div class="confirm-detail"><span>Booking #</span><strong>${contractId}</strong></div>
-    <div class="confirm-detail"><span>Pro</span><strong>${currentPro.name}</strong></div>
-    <div class="confirm-detail"><span>Service</span><strong>${desc}</strong></div>
+    <div class="confirm-detail"><span>Pro</span><strong>${escapeHtml(currentPro.name)}</strong></div>
+    <div class="confirm-detail"><span>Service</span><strong>${escapeHtml(desc)}</strong></div>
     <div class="confirm-detail"><span>Date</span><strong>${date} · ${time}</strong></div>
-    <div class="confirm-detail"><span>Address</span><strong>${addr}</strong></div>
+    <div class="confirm-detail"><span>Address</span><strong>${escapeHtml(addr)}</strong></div>
     <div class="confirm-detail"><span>Your Offer</span><strong>$${total}</strong></div>
-    <div class="confirm-detail"><span>Status</span><strong style="color:#B08A3E">⏳ Awaiting ${currentPro.name}'s response</strong></div>
+    <div class="confirm-detail"><span>Status</span><strong style="color:#B08A3E">⏳ Awaiting ${escapeHtml(currentPro.name)}'s response</strong></div>
   ` : `
     <div class="confirm-detail"><span>Booking #</span><strong>${contractId}</strong></div>
-    <div class="confirm-detail"><span>Pro</span><strong>${currentPro.name}</strong></div>
-    <div class="confirm-detail"><span>Service</span><strong>${desc}</strong></div>
+    <div class="confirm-detail"><span>Pro</span><strong>${escapeHtml(currentPro.name)}</strong></div>
+    <div class="confirm-detail"><span>Service</span><strong>${escapeHtml(desc)}</strong></div>
     <div class="confirm-detail"><span>Date</span><strong>${date} · ${time}</strong></div>
     <div class="confirm-detail"><span>Address</span><strong>${addr}</strong></div>
     <div class="confirm-detail"><span>Escrow held</span><strong>$${total}</strong></div>
