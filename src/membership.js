@@ -23,9 +23,28 @@ const MEMBERSHIP_TIERS = {
   vip: { label: 'VIP', price: null, feeDiscount: 0.80, selfServe: false, description: 'Invitation/eligibility — includes concierge support. Granted by Trothen, not self-purchased.' },
 };
 
+// Resolves the real, current USD price for a paid tier: a super-admin
+// edit if one exists in the DB (see PATCH /admin/settings/membership-
+// pricing), otherwise the built-in default above — the exact same
+// "DB override, code default as fallback" pattern already used for
+// provider plan pricing (resolveUsdBase in src/plan-pricing.js). This is
+// the ONE place both what a customer is shown (GET /membership/tiers)
+// and what they're actually charged (POST /membership/subscribe) get
+// the price from — those two were previously two separate reads of the
+// same hardcoded constant, which is fine only as long as nothing is
+// ever editable; now that a price CAN be edited, both call sites go
+// through this so a customer is never shown one number and charged a
+// different, stale one.
+function resolveMembershipPrice(tier, baseRows) {
+  const config = MEMBERSHIP_TIERS[tier];
+  if (!config || config.price === null) return config ? config.price : null; // VIP stays null — never self-serve priced
+  const row = (baseRows || []).find(r => r.tier === tier);
+  return row ? row.usdPrice : config.price;
+}
+
 function feeDiscountForTier(tier) {
   const config = MEMBERSHIP_TIERS[tier];
   return config ? config.feeDiscount : 0;
 }
 
-module.exports = { MEMBERSHIP_TIERS, feeDiscountForTier };
+module.exports = { MEMBERSHIP_TIERS, feeDiscountForTier, resolveMembershipPrice };

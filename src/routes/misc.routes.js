@@ -744,17 +744,21 @@ router.get('/provider-score/mine', requireAuth, requireRole('provider'), async (
 // fundEscrowForContract in marketplace.routes.js) — one real conversion
 // system, not a second one invented just for membership.
 router.get('/membership/tiers', requireAuth, async (req, res) => {
-  const { MEMBERSHIP_TIERS } = require('../membership');
+  const { MEMBERSHIP_TIERS, resolveMembershipPrice } = require('../membership');
   const { currencyForCountry, convertFromUSD } = require('../currency-data');
   const { resolveRate } = require('../plan-pricing');
   const me = await db.find('users', u => u.id === req.user.sub);
   const currency = currencyForCountry(me ? me.country : 'United States');
   const rate = currency.code !== 'USD' ? resolveRate(currency.code, await db.all('exchangeRates')) : null;
+  const baseRows = await db.all('membershipPricingBase');
   const tiers = {};
-  for (const [key, cfg] of Object.entries(MEMBERSHIP_TIERS)) {
+  for (const key of Object.keys(MEMBERSHIP_TIERS)) {
+    const cfg = MEMBERSHIP_TIERS[key];
+    const price = resolveMembershipPrice(key, baseRows);
     tiers[key] = {
       ...cfg,
-      priceLocal: cfg.price != null && currency.code !== 'USD' ? convertFromUSD(cfg.price, currency.code, rate) : cfg.price,
+      price,
+      priceLocal: price != null && currency.code !== 'USD' ? convertFromUSD(price, currency.code, rate) : price,
       currencyCode: currency.code,
       currencySymbol: currency.symbol,
     };
@@ -768,7 +772,7 @@ router.get('/membership/tiers', requireAuth, async (req, res) => {
 // rejected here even if requested — see src/membership.js for why it's
 // never self-purchasable at any price.
 router.post('/membership/subscribe', requireAuth, requireRole('customer'), async (req, res) => {
-  const { MEMBERSHIP_TIERS } = require('../membership');
+  const { MEMBERSHIP_TIERS, resolveMembershipPrice } = require('../membership');
   const { tier } = req.body || {};
   const config = MEMBERSHIP_TIERS[tier];
   if (!config || !config.selfServe) {
@@ -776,12 +780,13 @@ router.post('/membership/subscribe', requireAuth, requireRole('customer'), async
   }
   const me = await db.find('users', u => u.id === req.user.sub);
   if (me.membershipTier === tier) return res.status(400).json({ error: `You're already on the ${config.label} tier` });
+  const realPrice = resolveMembershipPrice(tier, await db.all('membershipPricingBase'));
   const updated = await db.update('users', me.id, {
     membershipTier: tier,
     membershipStartedAt: new Date().toISOString(),
-    membershipPrice: config.price,
+    membershipPrice: realPrice,
   });
-  await notify(me.id, '⭐', `Welcome to Trothen ${config.label}! $${config.price}/month, cancel or change anytime.`, null, { section: 'settings' });
+  await notify(me.id, '⭐', `Welcome to Trothen ${config.label}! $${realPrice}/month, cancel or change anytime.`, null, { section: 'settings' });
   res.json({ user: updated });
 });
 

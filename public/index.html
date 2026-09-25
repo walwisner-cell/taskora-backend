@@ -8221,7 +8221,7 @@ let adminData = {
   stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
-  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, homepageImages: null, categoryImages: null, aboutUsContent: null, termsOfServiceCustomerContent: null, termsOfServiceProviderContent: null, footerInfo: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
+  cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, membershipPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, homepageImages: null, categoryImages: null, aboutUsContent: null, termsOfServiceCustomerContent: null, termsOfServiceProviderContent: null, footerInfo: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
   escrow: { held: 12400, released: 34500 },
 };
 
@@ -8240,7 +8240,7 @@ async function loadAdminData() {
     catch (e) { return null; }
   }
 
-  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, advertisingInquiries, reportsAnalytics, salesInquiries, organizations, careersInquiries, accessLogs, referralsOverview, contactSubmissions] = await Promise.all([
+  const [stats, pending, allPeople, verQueue, disputes, cats, countries, escrow, catRequests, transactions, fraudFlags, financialByRegion, planPricing, membershipPricing, advertisingInquiries, reportsAnalytics, salesInquiries, organizations, careersInquiries, accessLogs, referralsOverview, contactSubmissions] = await Promise.all([
     tryFetch('/admin/stats'),
     tryFetch('/admin/users/pending'),
     tryFetch('/admin/users/all'),
@@ -8254,6 +8254,7 @@ async function loadAdminData() {
     tryFetch('/admin/fraud-flags'),
     tryFetch('/admin/financial-by-region'),
     tryFetch('/admin/plan-pricing'),
+    tryFetch('/admin/settings/membership-pricing'),
     tryFetch('/admin/advertising-inquiries'),
     tryFetch('/admin/reports/analytics'),
     tryFetch('/admin/sales-inquiries'),
@@ -8277,6 +8278,7 @@ async function loadAdminData() {
   if (fraudFlags) adminData.fraudFlags = fraudFlags.flags;
   if (financialByRegion) adminData.financialByRegion = financialByRegion;
   if (planPricing) adminData.planPricing = planPricing;
+  if (membershipPricing) adminData.membershipPricing = membershipPricing.tiers;
   if (advertisingInquiries) adminData.advertisingInquiries = advertisingInquiries.inquiries;
   if (reportsAnalytics) adminData.reportsAnalytics = reportsAnalytics;
   if (salesInquiries) adminData.salesInquiries = salesInquiries.inquiries;
@@ -9146,6 +9148,19 @@ function superAdminPricingSectionHTML() {
       </tbody></table></div>
       <div style="font-size:12px;color:var(--slate);margin-top:10px;">Every country without its own override automatically follows this price, converted to local currency at the current exchange rate.</div>
     </div>
+    <div class="panel"><div class="panel-title">Customer Membership Pricing (USD)</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">Free is always $0 and VIP is never self-priced (it's granted, not purchased) — only Plus, Pro, and Elite are editable here. This is the exact price shown to and charged to customers, everywhere in the app.</div>
+      ${adminData.membershipPricing
+        ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Tier</th><th>Current USD Price</th><th>New Price</th><th>Action</th></tr></thead><tbody>
+        ${['plus', 'pro', 'elite'].map(tier => { const t = (adminData.membershipPricing || []).find(x => x.tier === tier); return t ? `<tr>
+          <td style="font-weight:600;">${t.label}</td>
+          <td>$${t.usdPrice}</td>
+          <td><input class="form-input" type="number" min="0" step="0.01" id="membership-price-${tier}" placeholder="${t.usdPrice}" style="width:120px;padding:6px 8px;"/></td>
+          <td><button class="btn-sm btn-sm-primary" onclick="saveMembershipPricing('${tier}')">Save</button></td>
+        </tr>` : ''; }).join('')}
+        </tbody></table></div>`
+        : `<div style="color:var(--slate);font-size:13px;">Loading…</div>`}
+    </div>
     <div class="panel"><div class="panel-title">Country Overrides <small style="font-weight:400;color:var(--slate);">${pp.overrides.length} set</small></div>
       ${planPricingOverridesTableHTML(pp.overrides)}
     </div>
@@ -9187,6 +9202,19 @@ async function saveBasePricing(plan) {
     await loadAdminData();
     selectAdminSection('pricing');
   } catch (e) { showToast(e.message || 'Could not update base price'); }
+}
+
+async function saveMembershipPricing(tier) {
+  const input = document.getElementById(`membership-price-${tier}`);
+  const usdPrice = parseFloat(input.value);
+  if (isNaN(usdPrice) || usdPrice < 0) return showToast('Enter a valid non-negative USD price');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/settings/membership-pricing', { tier, usdPrice });
+    showToast('Membership price updated — live immediately for every customer');
+    await loadAdminData();
+    selectAdminSection('pricing');
+  } catch (e) { showToast(e.message || 'Could not update membership price'); }
 }
 
 const RATE_SOURCE_BADGE = {
@@ -11770,6 +11798,22 @@ function initChatBubbleDrag() {
   bubble.addEventListener('touchstart', (e) => { const t = e.touches[0]; startDrag(t.clientX, t.clientY); }, { passive: true });
   document.addEventListener('touchmove', (e) => { if (chatBubbleDragState) { const t = e.touches[0]; moveDrag(t.clientX, t.clientY); } }, { passive: true });
   document.addEventListener('touchend', endDrag);
+  // Real bug fix: without this, a touch sequence the browser cancels
+  // instead of ending normally — a scroll gesture taking over, a system
+  // interruption, anything mobile browsers do fairly often — left
+  // chatBubbleDragState permanently set. A normal touchend is always
+  // followed by a click event, and it's actually handleChatBubbleClick
+  // (not endDrag itself, on purpose — see its comment) that clears the
+  // state afterward; a cancelled touch never generates that click, so
+  // reusing endDrag alone here wouldn't have been enough. The next
+  // unrelated touchmove ANYWHERE on the page (this listener is on
+  // document, not just the bubble) would then be read as still dragging
+  // the bubble, snapping it to wherever that unrelated touch happened to
+  // be. This is almost certainly what "moving anyhow" was.
+  document.addEventListener('touchcancel', () => {
+    endDrag();
+    chatBubbleDragState = null;
+  });
 }
 
 function applyBubblePosition(left, top) {
@@ -11779,6 +11823,45 @@ function applyBubblePosition(left, top) {
   bubble.style.top = `${top}px`;
   bubble.style.right = 'auto';
   bubble.style.bottom = 'auto';
+}
+
+// Real bug fix: the chat bubble and its panel sit at a higher z-index
+// (400) than every modal in the app (200) — and nothing ever hid the
+// bubble while a modal, or a full-screen view like signing in, was
+// showing. On a small phone screen, where there's little room to begin
+// with, the bubble could end up sitting directly on top of a screen's
+// own button or input, silently eating taps meant for the form
+// underneath instead of ever reaching it. Rather than touching the
+// dozens of existing modal open/close call sites throughout this file
+// (a real risk of missing one), a MutationObserver watches every modal
+// and the sign-in screen specifically for their own open/active state
+// and hides the bubble/panel whenever any of them is showing, bringing
+// it back the moment none are.
+function initChatBubbleModalGuard() {
+  const bubble = document.getElementById('support-chat-bubble');
+  const panel = document.getElementById('support-chat-panel');
+  if (!bubble) return;
+  const overlays = Array.from(document.querySelectorAll('.modal-overlay'));
+  // The actual screen this was reported on — signing in — isn't a modal
+  // at all, it's a full screen (#screen-auth, shown via showScreen()
+  // toggling an "active" class, a completely different mechanism from
+  // modal-overlay/open). The bubble sits at a fixed position over
+  // whatever's showing regardless of which of the two mechanisms is in
+  // play, so it needs to be watched too, specifically because this is
+  // the exact screen it was reported as blocking.
+  const authScreen = document.getElementById('screen-auth');
+  const updateVisibility = () => {
+    const anyModalOpen = overlays.some(o => o.classList.contains('open'));
+    const onAuthScreen = authScreen && authScreen.classList.contains('active');
+    const shouldHide = anyModalOpen || onAuthScreen;
+    bubble.style.display = shouldHide ? 'none' : '';
+    if (shouldHide && panel) panel.style.display = 'none';
+  };
+  overlays.forEach(o => {
+    new MutationObserver(updateVisibility).observe(o, { attributes: true, attributeFilter: ['class'] });
+  });
+  if (authScreen) new MutationObserver(updateVisibility).observe(authScreen, { attributes: true, attributeFilter: ['class'] });
+  updateVisibility();
 }
 
 function handleChatBubbleClick(event) {
@@ -11947,6 +12030,7 @@ async function askRealSupportChat(message) {
   startHeroWordRotation(); // works immediately with the default word list, even offline
   setupScrollFadeIn();
   initChatBubbleDrag();
+  initChatBubbleModalGuard();
   await checkBackend();
   if (BACKEND_AVAILABLE) {
     await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats(), loadSupportContact(), loadFooterInfo(), loadHomepageContent(), loadHomepageImages(), loadPopularProjects()]);

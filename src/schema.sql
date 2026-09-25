@@ -372,6 +372,17 @@ CREATE TABLE IF NOT EXISTS plan_pricing_base (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- The customer-facing membership tiers' real USD price — an explicit
+-- super-admin edit; falls back to the built-in default in
+-- src/membership.js when no row exists yet. Free ($0) and VIP (never
+-- self-priced) never get a row here — only plus/pro/elite.
+CREATE TABLE IF NOT EXISTS membership_pricing_base (
+  id          TEXT PRIMARY KEY,
+  tier        TEXT NOT NULL UNIQUE,
+  usd_price   NUMERIC NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- A regional admin's (or super admin's) real local-currency price for one
 -- plan in one country — overrides the auto-converted USD base for that
 -- country only. Absence of a row here means "use the converted default".

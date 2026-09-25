@@ -2608,6 +2608,36 @@ router.patch('/plan-pricing/base', requireSuperAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+// GET/PATCH /api/admin/settings/membership-pricing — super admin only:
+// the customer-facing membership tiers (Plus/Pro/Elite — Free is always
+// $0 and VIP is never self-priced, so neither is editable here). Same
+// "DB override, code default as fallback" pattern as plan pricing above
+// — see resolveMembershipPrice in src/membership.js, which both what a
+// customer is shown and what they're actually charged read from, so an
+// edit here can never leave the displayed price and the real charge out
+// of sync with each other.
+router.get('/settings/membership-pricing', requireSuperAdmin, async (req, res) => {
+  const { MEMBERSHIP_TIERS, resolveMembershipPrice } = require('../membership');
+  const baseRows = await db.all('membershipPricingBase');
+  const tiers = ['plus', 'pro', 'elite'].map(tier => ({
+    tier,
+    label: MEMBERSHIP_TIERS[tier].label,
+    defaultPrice: MEMBERSHIP_TIERS[tier].price,
+    usdPrice: resolveMembershipPrice(tier, baseRows),
+  }));
+  res.json({ tiers });
+});
+
+router.patch('/settings/membership-pricing', requireSuperAdmin, async (req, res) => {
+  const { tier, usdPrice } = req.body || {};
+  if (!['plus', 'pro', 'elite'].includes(tier)) return res.status(400).json({ error: 'tier must be plus, pro, or elite' });
+  if (typeof usdPrice !== 'number' || usdPrice < 0) return res.status(400).json({ error: 'Enter a valid non-negative USD price' });
+  const existing = await db.find('membershipPricingBase', r => r.tier === tier);
+  if (existing) await db.update('membershipPricingBase', existing.id, { usdPrice, updatedAt: new Date().toISOString() });
+  else await db.insert('membershipPricingBase', { id: `mpb_${tier}`, tier, usdPrice, updatedAt: new Date().toISOString() });
+  res.json({ ok: true });
+});
+
 // PATCH /api/admin/plan-pricing/override — set (or update) one country's
 // real local-currency price for one plan. A regional admin can only do
 // this for their own assigned country; a super admin can do it for any

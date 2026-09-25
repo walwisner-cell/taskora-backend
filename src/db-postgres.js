@@ -66,6 +66,7 @@ const TABLES = {
   organizations: { table: 'organizations', columns: ['id','name','sales_inquiry_id','agreed_price','agreed_currency','commission_rate','seat_limit','account_manager_id','billing_contact_name','billing_contact_email','status','created_by','created_at','updated_at'] },
   organizationInvites: { table: 'organization_invites', columns: ['id','organization_id','code','created_by','max_uses','uses_count','expires_at','status','created_at'] },
   planPricingBase: { table: 'plan_pricing_base', columns: ['id','plan','usd_price','updated_at'] },
+  membershipPricingBase: { table: 'membership_pricing_base', columns: ['id','tier','usd_price','updated_at'] },
   planPricingOverrides: { table: 'plan_pricing_overrides', columns: ['id','country','plan','local_price','currency_code','set_by','updated_at'] },
   exchangeRates: { table: 'exchange_rates', columns: ['id','currency_code','rate_to_usd','source','fetched_at','updated_at'] },
   // Item 14 — the permanent trail behind every dispute action (request

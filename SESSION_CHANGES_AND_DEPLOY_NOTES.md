@@ -51,6 +51,22 @@ You uploaded a second, older zip (`trothen-updates_22_.zip`) and asked me to che
 
 **I could only partially test this one.** Real Google-token verification needs to reach Google's own servers, which this sandbox's network rules don't allow — so I confirmed the code fails cleanly (a proper error, not a crash) when it can't reach Google, and confirmed nothing else broke, but I could not run an actual successful Google sign-in end to end the way I tested everything else this session. You'll want to genuinely click through it once this is live.
 
+## The chat bubble on mobile — two real, separate bugs, both fixed
+
+You reported it was moving around on its own and making it hard to sign in. Both turned out to be real, and different from each other:
+
+**Why it was hard to sign in:** the chat bubble sits fixed in the corner of the screen and was always drawn *on top of* everything else, including the actual sign-in screen — nothing had ever told it to get out of the way. On a small phone screen, where there's little room to begin with, it could end up sitting right on top of the sign-in button itself, quietly catching the tap instead of the button underneath it ever receiving it. Fixed: the bubble now hides itself the moment you're on the sign-in screen, or any pop-up window in the app, and comes right back once you're not.
+
+**Why it seemed to move on its own:** the bubble can be dragged out of the way, which is intentional. But if a drag gets interrupted mid-motion — your finger starts a scroll instead, the phone briefly interrupts the touch, anything like that happens fairly often on phones — the app never noticed the drag had actually stopped. The next time you touched *anywhere* on the page, even somewhere completely unrelated to the bubble, it would jump to that new touch as if you were still dragging it. Fixed: the app now correctly notices when a touch gets interrupted like that and resets properly, instead of getting stuck thinking a drag is still happening.
+
+Tested both for real — not just read the code and guessed. Confirmed the bubble actually disappears the moment the sign-in screen opens and reappears the moment you leave it; confirmed the same for any pop-up window in the app; and reproduced the exact "stuck thinking it's still being dragged" scenario directly and confirmed it no longer causes the bubble to jump around afterward.
+
+## Membership pricing is now something you can actually edit
+
+You asked where to change the membership price — turned out you could already change the currency conversion, but not the actual dollar amount ($9.99, $19.99, $39.99). That's fixed: **Admin → Settings → Plans & Pricing → Customer Membership Pricing**. Free stays $0 and VIP stays invitation-only on purpose (never self-purchased at any price) — Plus, Pro, and Elite are the three you can now actually edit.
+
+The important part I made sure of: the price a customer *sees* and the price they're actually *charged* now come from the exact same place, so an edit here can never leave those two out of sync — tested directly by changing Plus from $9.99 to $12.50 and confirming both the price shown and the price actually stored on a real subscription came back as $12.50, not a stale old number.
+
 ## Real idle-timeout sign-out — a security best practice you asked about
 
 Anyone signed in now gets automatically signed out after 20 minutes of real inactivity — no mouse movement, no clicks, no typing. This is standard practice for anything handling money or personal documents, which this app does.
@@ -302,5 +318,7 @@ Render picks this up automatically.
 24. Post a job or a booking with unusual characters in the description (quotes, angle brackets) and confirm it displays back correctly, not broken
 25. File a real dispute and attach a photo — confirm the other person on that booking, and your dispute team, can both see and open it
 26. Sign in and just leave the tab open, untouched, for 19-20 minutes — confirm the warning appears with a countdown, and that you get signed out automatically if you never touch anything
+27. Go to Admin → Settings → Plans & Pricing and change one of the membership prices — confirm it shows correctly on the customer-facing membership screen right away
+28. On an actual phone, open the sign-in screen and confirm the chat bubble is gone from the corner and doesn't get in the way of the button
 
 If anything looks wrong, a screenshot plus what you expected instead is always the fastest way for me to trace it.
