@@ -1152,6 +1152,7 @@
       <div class="pricing-eyebrow">Contact Us</div>
       <div class="pricing-title" style="font-size:32px;">We're glad to help</div>
       <div style="font-size:14px;line-height:1.7;color:var(--slate);margin-top:16px;margin-bottom:24px;">For account-specific issues (a booking, a dispute, verification), signing in and using the in-app support chat gets you help fastest. For everything else, use the form below.</div>
+      <div class="panel" id="contact-direct-info" style="display:none;margin-bottom:16px;"></div>
       <div class="panel" id="contact-form-panel">
         <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" type="text" id="contact-name"/></div>
         <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="contact-email"/></div>
@@ -3526,6 +3527,30 @@ function showCareersPage() {
 function showContactPage() {
   showScreen('screen-contact');
   renderNavbar('navbar-contact', 'home');
+  loadContactDirectInfo();
+}
+
+// Item: "Regional customer service email" — the Contact Us page was a
+// pure submit-and-wait form with no way to see a direct email/WhatsApp/
+// phone at all, region-aware the same way the support chat's contact
+// links already are. Uses the signed-in visitor's own city if there is
+// one, otherwise the platform-wide default — never blocks the page if
+// this fails, since the form itself still works either way.
+async function loadContactDirectInfo() {
+  const el = document.getElementById('contact-direct-info');
+  if (!el || !BACKEND_AVAILABLE) return;
+  try {
+    const city = AUTH.user && AUTH.user.city ? `?city=${encodeURIComponent(AUTH.user.city)}` : '';
+    const contact = await apiFetch('GET', `/support-contact${city}`);
+    if (contact.isPlaceholder) return; // nothing real to show yet
+    el.innerHTML = `<div class="form-label" style="margin-bottom:8px;">Prefer to reach us directly${contact.region ? ` in ${escapeHtml(contact.region)}` : ''}?</div>
+      <div style="font-size:13.5px;line-height:2;">
+        ${contact.email ? `✉️ <a href="mailto:${escapeHtml(contact.email)}" style="color:var(--navy);font-weight:600;">${escapeHtml(contact.email)}</a><br/>` : ''}
+        📱 <a href="https://wa.me/${contact.whatsapp}" target="_blank" rel="noopener" style="color:var(--navy);font-weight:600;">WhatsApp us</a><br/>
+        ☎️ <a href="tel:+${contact.whatsapp}" style="color:var(--navy);font-weight:600;">${escapeHtml(contact.phoneDisplay)}</a>
+      </div>`;
+    el.style.display = 'block';
+  } catch (e) { /* the form below still works fine without this */ }
 }
 
 async function submitContactForm() {
@@ -7129,11 +7154,12 @@ async function saveBookingWindow() {
 async function saveSupportContact() {
   const whatsapp = document.getElementById('support-whatsapp').value.trim();
   const phoneDisplay = document.getElementById('support-phone-display').value.trim();
+  const email = document.getElementById('support-email').value.trim();
   if (!/^\d{7,15}$/.test(whatsapp)) return showToast('WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567');
   if (phoneDisplay.length < 5) return showToast('Enter a valid display phone number');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
-    await apiFetch('PATCH', '/admin/settings/support-contact', { whatsapp, phoneDisplay });
+    await apiFetch('PATCH', '/admin/settings/support-contact', { whatsapp, phoneDisplay, email });
     showToast('Support contact info updated — live on the homepage now');
     await loadAdminData();
     await loadSupportContact();
@@ -7144,11 +7170,12 @@ async function saveSupportContact() {
 async function saveRegionalSupportContact() {
   const whatsapp = document.getElementById('regional-support-whatsapp').value.trim();
   const phoneDisplay = document.getElementById('regional-support-phone-display').value.trim();
+  const email = document.getElementById('regional-support-email').value.trim();
   if (!/^\d{7,15}$/.test(whatsapp)) return showToast('WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567');
   if (phoneDisplay.length < 5) return showToast('Enter a valid display phone number');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
-    await apiFetch('PATCH', '/admin/settings/support-contact', { whatsapp, phoneDisplay });
+    await apiFetch('PATCH', '/admin/settings/support-contact', { whatsapp, phoneDisplay, email });
     showToast(`Support contact updated for ${AUTH.user.region || 'your city'}`);
     await loadAdminData();
     selectAdminSection('settings');
@@ -8884,6 +8911,7 @@ const ADMIN_SECTIONS = {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">WhatsApp Number <span style="color:var(--slate);font-weight:400;">(digits only, country code, e.g. 15551234567)</span></label><input class="form-input" id="regional-support-whatsapp" value="${adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? adminData.supportContact.whatsapp : ''}" placeholder="15551234567"/></div>
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Phone Number Shown to Visitors</label><input class="form-input" id="regional-support-phone-display" value="${adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? adminData.supportContact.phoneDisplay : ''}" placeholder="+1 (555) 123-4567"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Support Email <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="email" id="regional-support-email" value="${adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? (adminData.supportContact.email || '') : ''}" placeholder="support@yourcity.trothenpro.com"/></div>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn-sm btn-sm-primary" onclick="saveRegionalSupportContact()">Save</button>
@@ -8907,6 +8935,7 @@ const ADMIN_SECTIONS = {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">WhatsApp Number <span style="color:var(--slate);font-weight:400;">(digits only, country code, e.g. 15551234567)</span></label><input class="form-input" id="support-whatsapp" value="${adminData.supportContact ? adminData.supportContact.whatsapp : ''}" placeholder="15551234567"/></div>
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Phone Number Shown to Visitors</label><input class="form-input" id="support-phone-display" value="${adminData.supportContact ? adminData.supportContact.phoneDisplay : ''}" placeholder="+1 (555) 123-4567"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Support Email <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="email" id="support-email" value="${adminData.supportContact ? (adminData.supportContact.email || '') : ''}" placeholder="support@trothenpro.com"/></div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveSupportContact()">Save</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
@@ -11713,7 +11742,7 @@ function setupScrollFadeIn() {
   els.forEach(el => observer.observe(el));
 }
 function supportContactHTML() {
-  return `<br/><br/>📱 WhatsApp: <a href="https://wa.me/${SUPPORT_CONTACT.whatsapp}" target="_blank" style="color:var(--gold);">Chat with us</a><br/>☎️ Call: <a href="tel:+${SUPPORT_CONTACT.whatsapp}" style="color:var(--gold);">${SUPPORT_CONTACT.phoneDisplay}</a>`;
+  return `<br/><br/>📱 WhatsApp: <a href="https://wa.me/${SUPPORT_CONTACT.whatsapp}" target="_blank" style="color:var(--gold);">Chat with us</a><br/>☎️ Call: <a href="tel:+${SUPPORT_CONTACT.whatsapp}" style="color:var(--gold);">${SUPPORT_CONTACT.phoneDisplay}</a>${SUPPORT_CONTACT.email ? `<br/>✉️ Email: <a href="mailto:${escapeHtml(SUPPORT_CONTACT.email)}" style="color:var(--gold);">${escapeHtml(SUPPORT_CONTACT.email)}</a>` : ''}`;
 }
 
 const SUPPORT_FAQ = [

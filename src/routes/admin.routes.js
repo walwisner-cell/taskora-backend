@@ -1432,23 +1432,32 @@ router.patch('/settings/support-contact', requireAuth, requireRole('admin'), asy
   if (!m.isSuperAdmin && m.adminDepartment) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
-  const { whatsapp, phoneDisplay } = req.body || {};
+  const { whatsapp, phoneDisplay, email } = req.body || {};
   if (!isNonEmptyString(whatsapp) || !/^\d{7,15}$/.test(whatsapp)) {
     return res.status(400).json({ error: 'WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567' });
   }
   if (!isNonEmptyString(phoneDisplay, { min: 5, max: 30 })) {
     return res.status(400).json({ error: 'Enter a valid display phone number' });
   }
+  // Item: "Regional customer service email" — this contact record only
+  // ever had WhatsApp and a phone number, with no way to also give a
+  // region (or the platform-wide fallback) a real support email.
+  // Optional, unlike the two above: a region/platform may reasonably
+  // rely on WhatsApp and phone alone with no dedicated support inbox.
+  const trimmedEmail = typeof email === 'string' ? email.trim() : '';
+  if (trimmedEmail && !isValidEmail(trimmedEmail)) {
+    return res.status(400).json({ error: 'Enter a valid email address, or leave it blank' });
+  }
   const { getSetting, setSetting } = require('../platform-settings');
   const region = await myRegion(req);
   if (!region) {
-    await setSetting('supportContact', { whatsapp, phoneDisplay });
-    return res.json({ ok: true, whatsapp, phoneDisplay, region: null });
+    await setSetting('supportContact', { whatsapp, phoneDisplay, email: trimmedEmail });
+    return res.json({ ok: true, whatsapp, phoneDisplay, email: trimmedEmail, region: null });
   }
   const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
-  regionalContacts[region] = { whatsapp, phoneDisplay };
+  regionalContacts[region] = { whatsapp, phoneDisplay, email: trimmedEmail };
   await setSetting('regionalSupportContacts', regionalContacts);
-  res.json({ ok: true, whatsapp, phoneDisplay, region });
+  res.json({ ok: true, whatsapp, phoneDisplay, email: trimmedEmail, region });
 });
 
 // DELETE /api/admin/settings/support-contact — a regional admin can remove

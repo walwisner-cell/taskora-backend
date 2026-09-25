@@ -16,6 +16,7 @@ const DEFAULTS = {
   supportContact: {
     whatsapp: '15551234567',
     phoneDisplay: '+1 (555) 123-4567',
+    email: '',
   },
   // The site-wide footer line ("© 2026 [company] · [location] · [email]"),
   // hardcoded in five places in public/index.html until now. This was

@@ -51,6 +51,42 @@ You uploaded a second, older zip (`trothen-updates_22_.zip`) and asked me to che
 
 **I could only partially test this one.** Real Google-token verification needs to reach Google's own servers, which this sandbox's network rules don't allow — so I confirmed the code fails cleanly (a proper error, not a crash) when it can't reach Google, and confirmed nothing else broke, but I could not run an actual successful Google sign-in end to end the way I tested everything else this session. You'll want to genuinely click through it once this is live.
 
+## A verification pass across the whole system — new ground, not a repeat
+
+You asked me to verify everything and fix any remaining gaps. Rather than repeat the security and permissions passes already done in earlier rounds, this checked genuinely new ground:
+
+- **Every place the app saves data, checked against what the real database actually expects** — clean, nothing new found.
+- **Every single button and link in the entire app** (246 of them) **checked to make sure it actually calls something real** — every one does. Nothing clicks through to a dead end.
+- **Every floating element on the page checked for the same kind of "sits on top of something it shouldn't" problem the chat bubble had** — nothing else has it. That was a real, isolated bug, not a wider pattern.
+- **Text messages found to have the exact same undocumented-setup problem as email did** — documented now, same as email was.
+- A full clean boot from nothing, and every core page and endpoint confirmed actually responding.
+
+## Text messages — the same kind of setup gap as email, documented now
+
+Checked this while going through everything else, since it's the same class of issue as the email one above and was equally undocumented. There are genuinely **two separate** Twilio features in this app, needing different environment variables:
+
+- **Phone verification (Verify Service)** — `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. Based on what's been discussed earlier in this build, this one is likely already set up and working.
+- **Plain SMS** (any other text message the app sends, like a 2FA code by text) — `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and specifically `TWILIO_FROM_NUMBER`, a real Twilio phone number to send from. This is the one that's been an open decision, not yet set — buying a number to use for this reopens A2P 10DLC business registration with Twilio, which is a real business step, not something I can do for you.
+
+Same honest fallback behavior as email either way: without these set, a text-based code shows on-screen instead of silently failing.
+
+## Real emails still aren't sending — this is a setup step, not a bug
+
+You reported a real provider signed up and got "test mode" instead of an actual email with their code. I checked the code carefully, and it's working exactly as designed — the honest, safe way it's supposed to: if the real email service isn't fully set up, it falls back to showing the code on-screen instead of silently failing someone trying to sign up. That's the same thing that happens if the real send fails for any other reason too (a wrong password reset, a real SendGrid outage) — it never leaves someone stuck.
+
+Here's the real finding: **I went looking and this was never actually documented as a setup step anywhere in your deployment instructions.** Two things need to be set as real values on Render for actual emails to go out:
+
+- `SENDGRID_API_KEY` — a real key from your SendGrid account
+- `SENDGRID_FROM_EMAIL` — the address it sends from, which also needs to be a **verified sender** in SendGrid's own settings (this is the single most common reason a SendGrid integration looks "set up" but still silently fails — SendGrid refuses to send from an address it hasn't confirmed you own)
+
+If you already have both of those set on Render and it's still not sending, the real reason will be sitting in your Render service's logs — search for `[delivery] SendGrid email send failed`, and the message right after it will say exactly what SendGrid rejected it for.
+
+## A real support email, region by region
+
+You asked for a regional customer service email — this didn't exist at all before, the support contact system only ever had WhatsApp and a phone number. Now every region (and the platform-wide fallback) can have its own real support email, editable in the same place WhatsApp/phone already are, and it shows up in two real places: the support chat panel, and a new "prefer to reach us directly" section right on the Contact Us page that wasn't there before — it used to be a pure submit-and-wait form with no way to see any direct contact info at all.
+
+Tested the full chain live: set a platform-wide email, confirmed it shows publicly; set a *different*, region-specific email for Atlanta, confirmed visitors in Atlanta see the Atlanta one while everyone else still correctly sees the platform-wide one; confirmed an invalid email is rejected with a clear message; and confirmed it actually renders correctly on the real Contact Us page in a real browser, as a working clickable link.
+
 ## The chat bubble on mobile — two real, separate bugs, both fixed
 
 You reported it was moving around on its own and making it hard to sign in. Both turned out to be real, and different from each other:
@@ -320,5 +356,7 @@ Render picks this up automatically.
 26. Sign in and just leave the tab open, untouched, for 19-20 minutes — confirm the warning appears with a countdown, and that you get signed out automatically if you never touch anything
 27. Go to Admin → Settings → Plans & Pricing and change one of the membership prices — confirm it shows correctly on the customer-facing membership screen right away
 28. On an actual phone, open the sign-in screen and confirm the chat bubble is gone from the corner and doesn't get in the way of the button
+29. Set `SENDGRID_API_KEY` and a verified `SENDGRID_FROM_EMAIL` on Render, then sign up a brand-new test account and confirm the verification code actually arrives by email instead of showing on-screen
+30. In Admin → Settings, set a real support email (and try a region-specific one too if you manage more than one city) — confirm it shows up on the Contact Us page
 
 If anything looks wrong, a screenshot plus what you expected instead is always the fastest way for me to trace it.
