@@ -4498,8 +4498,8 @@ function verificationHTML(role, status) {
   ${role === 'provider' ? `<div class="panel"><div class="panel-title">Additional Trust Checks</div>
     <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Check</th><th>Status</th></tr></thead><tbody>
     <tr><td>Background Check</td><td>${guarantorBackgroundCheckStatusHTML()}</td></tr>
-    <tr><td>Two-Factor Authentication</td><td>${statusBadge('completed')}</td></tr>
-    <tr><td>Automated Fraud Screening</td><td>${statusBadge('completed')}</td></tr>
+    <tr><td>Two-Factor Authentication</td><td>${twoFactorTrustCheckHTML()}</td></tr>
+    <tr><td>Automated Fraud Screening</td><td>${AUTH.user && AUTH.user.hasOpenFraudFlags ? statusBadge('processing') : statusBadge('completed')}</td></tr>
     </tbody></table></div>
   </div>
   <div class="panel">
@@ -4507,6 +4507,33 @@ function verificationHTML(role, status) {
     <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">Some regions don't have real background-check infrastructure available yet. Adding up to 3 guarantors — real people who can vouch for you, like a property owner or long-time client — gives our verification team a real way to check on you in the meantime. Our team will call each guarantor directly. Always optional, never required to work on Trothen.</div>
     <div id="guarantors-form-area">${guarantorFormHTML()}</div>
   </div>` : ''}`;
+}
+
+// Item: the "Two-Factor Authentication" row in Additional Trust Checks
+// used to hardcode "completed" for every single provider, regardless of
+// whether they'd actually turned it on — since 2FA was, until now, only
+// ever auto-enabled for admin accounts, this was flatly false for every
+// provider on the platform. The real login-time 2FA check
+// (src/routes/auth.routes.js) already works for ANY user with
+// twoFactorEnabled set, not just admins, and that field was already
+// safe to self-update (see the allowed-fields list on the profile PATCH
+// route) — so turning this into a real, working toggle needed no new
+// backend work, just a real UI for something the backend already
+// supported.
+function twoFactorTrustCheckHTML() {
+  const enabled = AUTH.user && AUTH.user.twoFactorEnabled;
+  if (enabled) return statusBadge('completed');
+  return `<span class="badge badge-neutral" style="margin-right:8px;">Not Yet Enabled</span><button class="btn-sm btn-sm-outline" onclick="enableProviderTwoFactor()">Turn On</button>`;
+}
+
+async function enableProviderTwoFactor() {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { twoFactorEnabled: true });
+    AUTH.user = user;
+    showToast('Two-factor authentication turned on — you\'ll be asked for a code the next time you sign in');
+    selectProviderSection('verification');
+  } catch (e) { showToast(e.message || 'Could not turn on two-factor authentication'); }
 }
 
 function guarantorBackgroundCheckStatusHTML() {
@@ -6605,12 +6632,14 @@ let providerData = { matches: FALLBACK_MATCHES, contracts: FALLBACK_CONTRACTS_PR
 async function loadProviderData() {
   if (!BACKEND_AVAILABLE) { providerData.verificationStatus = 'verified'; return; }
   try {
-    const [{ matches }, { contracts }, { payouts }, { photos }] = await Promise.all([
+    const [{ matches }, { contracts }, { payouts }, { photos }, { user: freshMe }] = await Promise.all([
       apiFetch('GET', '/matches/mine'),
       apiFetch('GET', '/contracts/mine'),
       apiFetch('GET', '/payouts/mine'),
       apiFetch('GET', '/portfolio/mine'),
+      apiFetch('GET', '/auth/me'), // real per-user trust-check data (2FA status, open fraud flags) — see verificationHTML()
     ]);
+    AUTH.user = freshMe; // keep the rest of the app's existing AUTH.user reads (weeklyJobAccess, etc.) correct too
     providerData.matches = matches.map(m => ({
       id: m.id, customerId: m.customerId, jobId: m.jobId, status: m.status,
       customer: m.customerName || 'Customer', service: m.job ? m.job.description : 'Service request',
@@ -7190,6 +7219,39 @@ async function removeRegionalSupportContact() {
     await loadAdminData();
     selectAdminSection('settings');
   } catch (e) { showToast(e.message || 'Could not remove this setting'); }
+}
+
+// Item: same real gap as country pricing had — a super admin could only
+// ever set the platform-wide fallback contact, with no way to set a
+// specific OTHER city's contact directly the way a regional admin can
+// for their own city. Real backend support for targetRegion was added
+// alongside this (see PATCH /admin/settings/support-contact) — this was
+// missing on both sides, not just the screen.
+async function saveNewRegionalContact() {
+  const city = document.getElementById('new-regional-contact-city').value;
+  const whatsapp = document.getElementById('new-regional-contact-whatsapp').value.trim();
+  const phoneDisplay = document.getElementById('new-regional-contact-phone').value.trim();
+  const email = document.getElementById('new-regional-contact-email').value.trim();
+  if (!city) return showToast('Choose a city');
+  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567');
+  if (phoneDisplay.length < 5) return showToast('Enter a valid display phone number');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/settings/support-contact', { whatsapp, phoneDisplay, email, targetRegion: city });
+    showToast(`Contact set for ${city}`);
+    await loadAdminData();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not set this contact'); }
+}
+
+async function clearAnyRegionalContact(city) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('DELETE', '/admin/settings/support-contact', { targetRegion: city });
+    showToast(`Contact cleared for ${city}`);
+    await loadAdminData();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not clear this contact'); }
 }
 
 async function saveHomepageContent() {
@@ -8295,7 +8357,7 @@ async function loadAdminData() {
   if (stats) adminData.stats = stats;
   if (pending) adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
   if (allPeople) adminData.people = allPeople.users.map(u => ({ ...u, role: u.role[0].toUpperCase() + u.role.slice(1), active: u.active !== false }));
-  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status }));
+  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, doc: v.docType, country: v.country, city: v.city, status: v.status, reviewDeadline: v.reviewDeadline }));
   if (disputes) adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
   if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active, responseWindowOverrideHours: c.responseWindowOverrideHours }));
   if (countries) adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
@@ -8344,7 +8406,7 @@ async function loadAdminData() {
     if (subAdmins) adminData.subAdmins = subAdmins.admins;
     if (exchangeRates) adminData.exchangeRates = exchangeRates.rates;
     if (bookingWindow) adminData.bookingWindowTiers = bookingWindow.tiers;
-    if (supportContact) adminData.supportContact = supportContact;
+    if (supportContact) { adminData.supportContact = supportContact; adminData.allRegionalContacts = supportContact.allRegional || []; }
     if (homepageContent) adminData.homepageContent = homepageContent;
     if (homepageImages) adminData.homepageImages = homepageImages;
     if (categoryImages) adminData.categoryImages = categoryImages;
@@ -8938,6 +9000,21 @@ const ADMIN_SECTIONS = {
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Support Email <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="email" id="support-email" value="${adminData.supportContact ? (adminData.supportContact.email || '') : ''}" placeholder="support@trothenpro.com"/></div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveSupportContact()">Save</button>
+      <div style="background:var(--offwhite);border-radius:10px;padding:14px;margin-top:16px;">
+        <div class="form-label" style="margin-bottom:8px;">Set a contact for a specific city</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div><label class="form-label" style="font-size:11px;">City</label><select class="form-input" id="new-regional-contact-city" style="width:160px;padding:6px 8px;">${(adminData.cities || []).map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('')}</select></div>
+          <div><label class="form-label" style="font-size:11px;">WhatsApp</label><input class="form-input" id="new-regional-contact-whatsapp" style="width:150px;padding:6px 8px;" placeholder="15551234567"/></div>
+          <div><label class="form-label" style="font-size:11px;">Phone Shown</label><input class="form-input" id="new-regional-contact-phone" style="width:150px;padding:6px 8px;" placeholder="+1 (555) 123-4567"/></div>
+          <div><label class="form-label" style="font-size:11px;">Email (optional)</label><input class="form-input" type="email" id="new-regional-contact-email" style="width:170px;padding:6px 8px;" placeholder="support@city.trothenpro.com"/></div>
+          <button class="btn-sm btn-sm-primary" onclick="saveNewRegionalContact()">Set Contact</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--slate);margin-top:8px;">This is the real way to set a contact for a city that doesn't have its own regional admin logged in yet to set one themselves.</div>
+      </div>
+      ${(adminData.allRegionalContacts || []).length ? `<div class="data-table-wrap" style="margin-top:14px;"><table class="data-table"><thead><tr><th>City</th><th>WhatsApp</th><th>Phone</th><th>Email</th><th>Action</th></tr></thead><tbody>
+        ${adminData.allRegionalContacts.map(c => `<tr><td>${escapeHtml(c.city)}</td><td>${escapeHtml(c.whatsapp)}</td><td>${escapeHtml(c.phoneDisplay)}</td><td>${escapeHtml(c.email || '—')}</td>
+        <td class="row-actions"><button class="btn-sm btn-sm-outline" data-city="${escapeHtml(c.city)}" onclick="clearAnyRegionalContact(this.dataset.city)">Clear</button></td></tr>`).join('')}
+        </tbody></table></div>` : `<div style="color:var(--slate);font-size:12.5px;margin-top:10px;">No city has its own contact set yet — every city follows the platform-wide number above.</div>`}
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Homepage Content</div>
       <div style="font-size:12.5px;color:var(--slate);margin-bottom:14px;">The actual on-screen copy for the homepage hero and mission section. Changes go live immediately for every visitor — no deploy needed.</div>
@@ -9191,6 +9268,16 @@ function superAdminPricingSectionHTML() {
         : `<div style="color:var(--slate);font-size:13px;">Loading…</div>`}
     </div>
     <div class="panel"><div class="panel-title">Country Overrides <small style="font-weight:400;color:var(--slate);">${pp.overrides.length} set</small></div>
+      <div style="background:var(--offwhite);border-radius:10px;padding:14px;margin-bottom:14px;">
+        <div class="form-label" style="margin-bottom:8px;">Set a price for a country</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div><label class="form-label" style="font-size:11px;">Country</label><select class="form-input" id="new-override-country" style="width:180px;padding:6px 8px;">${(GEO_DATA.countries || []).map(c => `<option value="${c}">${c}</option>`).join('')}</select></div>
+          <div><label class="form-label" style="font-size:11px;">Plan</label><select class="form-input" id="new-override-plan" style="width:130px;padding:6px 8px;">${Object.keys(PLAN_LABELS_CLIENT).map(k => `<option value="${k}">${PLAN_LABELS_CLIENT[k] || k}</option>`).join('')}</select></div>
+          <div><label class="form-label" style="font-size:11px;">Local Price</label><input class="form-input" type="number" min="0" step="0.01" id="new-override-price" style="width:110px;padding:6px 8px;" placeholder="0.00"/></div>
+          <button class="btn-sm btn-sm-primary" onclick="saveNewCountryOverride()">Set Price</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--slate);margin-top:8px;">This is the real way to set a price for a country that doesn't have one yet — until now, a super admin could only view and clear existing overrides here, not create new ones.</div>
+      </div>
       ${planPricingOverridesTableHTML(pp.overrides)}
     </div>
     <div class="panel">
@@ -9218,6 +9305,27 @@ async function clearAnyPricingOverride(country, plan) {
     await loadAdminData();
     selectAdminSection('pricing');
   } catch (e) { showToast(e.message || 'Could not clear override'); }
+}
+
+// Item: a super admin previously had no way to set a NEW country's
+// price at all — the panel only ever showed existing overrides with a
+// Clear button. The backend already fully supported a super admin
+// setting any country's price (see PATCH /admin/plan-pricing/override
+// in src/routes/admin.routes.js — it explicitly allows this), so this
+// is a real missing piece of frontend, not a backend limitation.
+async function saveNewCountryOverride() {
+  const country = document.getElementById('new-override-country').value;
+  const plan = document.getElementById('new-override-plan').value;
+  const localPrice = parseFloat(document.getElementById('new-override-price').value);
+  if (!country) return showToast('Choose a country');
+  if (isNaN(localPrice) || localPrice < 0) return showToast('Enter a valid non-negative price');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/plan-pricing/override', { country, plan, localPrice });
+    showToast(`Price set for ${country}`);
+    await loadAdminData();
+    selectAdminSection('pricing');
+  } catch (e) { showToast(e.message || 'Could not set price'); }
 }
 
 async function saveBasePricing(plan) {
@@ -10630,8 +10738,15 @@ function usersTable(list, sectionKey) {
 function verificationQueueTable() {
   if (!adminData.verificationQueue.length) return `<div style="color:var(--slate);font-size:13px;padding:12px 0;">Verification queue is empty.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Document</th><th>City</th><th>Country</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${adminData.verificationQueue.map(v => `<tr><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.doc)}</td><td>${escapeHtml(v.city || '—')}</td><td>${escapeHtml(v.country)}</td><td>${statusBadge(v.status)}</td>
-  <td class="row-actions">${v.status==='in review' ? `<button class="btn-sm btn-sm-primary" onclick="adminDecide('verification','${v.id}','approve','verification')">Approve</button><button class="btn-sm btn-sm-outline" onclick="adminDecide('verification','${v.id}','reject','verification')">Reject</button>` : '—'}</td></tr>`).join('')}
+  ${adminData.verificationQueue.map(v => {
+    // Item (best practice): a real 48-hour review SLA — previously a
+    // submission could sit untouched indefinitely with no visible sign
+    // it needed attention. Only ever shown for genuinely open items;
+    // never claims something's overdue after it's already been decided.
+    const isOverdue = v.reviewDeadline && new Date(v.reviewDeadline) < new Date() && (v.status === 'pending' || v.status === 'review_required' || v.status === 'in review');
+    return `<tr><td>${escapeHtml(v.name)}</td><td>${escapeHtml(v.doc)}</td><td>${escapeHtml(v.city || '—')}</td><td>${escapeHtml(v.country)}</td><td>${statusBadge(v.status)}${isOverdue ? ' <span class="badge badge-danger" title="Past the 48-hour review window">⏰ Overdue</span>' : ''}</td>
+  <td class="row-actions">${v.status==='in review' ? `<button class="btn-sm btn-sm-primary" onclick="adminDecide('verification','${v.id}','approve','verification')">Approve</button><button class="btn-sm btn-sm-outline" onclick="adminDecide('verification','${v.id}','reject','verification')">Reject</button>` : '—'}</td></tr>`;
+  }).join('')}
   </tbody></table></div>`;
 }
 

@@ -1415,7 +1415,15 @@ router.get('/settings/support-contact', requireAuth, requireRole('admin'), async
   const region = await myRegion(req);
   const global = await getSetting('supportContact');
   if (!region) {
-    return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null });
+    // Item: a super admin previously had no way to even SEE what
+    // regional contacts already existed, let alone set a new one for a
+    // city other than their own (they don't have one) — same real gap
+    // as the pricing overrides table had. allRegional here is exactly
+    // that: every city that currently has its own contact set, so the
+    // admin panel can list and manage them directly.
+    const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
+    const allRegional = Object.entries(regionalContacts).map(([city, c]) => ({ city, ...c }));
+    return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null, allRegional });
   }
   const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
   const own = regionalContacts[region];
@@ -1449,7 +1457,18 @@ router.patch('/settings/support-contact', requireAuth, requireRole('admin'), asy
     return res.status(400).json({ error: 'Enter a valid email address, or leave it blank' });
   }
   const { getSetting, setSetting } = require('../platform-settings');
-  const region = await myRegion(req);
+  // Item: same real gap as the pricing overrides had — a super admin
+  // could only ever set the platform-wide fallback contact, with no way
+  // to set a SPECIFIC other city's contact directly, the way a regional
+  // admin can for their own city. Unlike pricing (country-scoped, and
+  // the backend already fully supported any country), this one is
+  // genuinely new on the backend too: myRegion() only ever reflects the
+  // CALLER's own assignment, so a super admin had no way to name a
+  // different target at all, even via a raw API call. targetRegion is
+  // only honored for a super admin — a plain regional admin still only
+  // ever affects their own city, exactly as before.
+  const { targetRegion } = req.body || {};
+  const region = (m.isSuperAdmin && isNonEmptyString(targetRegion)) ? targetRegion.trim() : await myRegion(req);
   if (!region) {
     await setSetting('supportContact', { whatsapp, phoneDisplay, email: trimmedEmail });
     return res.json({ ok: true, whatsapp, phoneDisplay, email: trimmedEmail, region: null });
@@ -1469,7 +1488,11 @@ router.delete('/settings/support-contact', requireAuth, requireRole('admin'), as
   if (!m.isSuperAdmin && m.adminDepartment) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
-  const region = await myRegion(req);
+  // Same targetRegion pattern as the PATCH route above — a super admin
+  // clearing a specific OTHER city's contact, not just their own (which
+  // they don't have).
+  const { targetRegion } = req.body || {};
+  const region = (m.isSuperAdmin && isNonEmptyString(targetRegion)) ? targetRegion.trim() : await myRegion(req);
   if (!region) return res.status(400).json({ error: 'The platform-wide number can be changed, but not removed — set a new one instead.' });
   const { getSetting, setSetting } = require('../platform-settings');
   const regionalContacts = (await getSetting('regionalSupportContacts')) || {};

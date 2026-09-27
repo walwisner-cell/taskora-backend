@@ -1,0 +1,37 @@
+# Real, automated dependency vulnerability monitoring — the actual
+# quick win from the security certification conversation. Without this,
+# nobody finds out about a newly-discovered vulnerability in something
+# Trothen depends on until someone happens to run `npm audit` by hand.
+# With it, GitHub itself watches every dependency continuously and opens
+# a real pull request automatically the moment a fix exists — this is
+# exactly the kind of documented, automated process a SOC 2 or ISO 27001
+# auditor is specifically looking for, not ad-hoc manual checks.
+version: 2
+updates:
+  # The Node.js/npm dependencies themselves (package.json).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # Security fixes are the priority here — the certification checklist
+    # cares about vulnerabilities getting patched promptly, not about
+    # staying on the latest version of everything for its own sake, so
+    # this doesn't try to chase every minor/patch release, only real
+    # security-relevant updates plus a weekly routine check.
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "deps"
+
+  # GitHub Actions workflow files themselves can also carry known
+  # vulnerabilities in the actions they call — easy to forget, real to
+  # check.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "security"

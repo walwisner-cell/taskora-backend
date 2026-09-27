@@ -533,6 +533,13 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
     // the actual call on legitimate differences (item 7).
     status: nameMatch ? 'pending' : 'review_required',
     rejectionReason: null,
+    // Item (best practice): a real review SLA, the same idea already
+    // used for fraud flags (src/fraud-detection.js) — without this, a
+    // submission could sit untouched indefinitely with nothing to
+    // surface that it's overdue. 48 hours is standard practice for
+    // manual identity review — enough time for a real human queue, not
+    // so long that someone waiting to start work never hears back.
+    reviewDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
     createdAt: new Date().toISOString(),
   };
   await db.insert('verifications', record);
@@ -541,6 +548,16 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
     const admins = await db.filter('users', u => u.role === 'admin' && (u.isSuperAdmin || u.adminDepartment === 'verification' || (!u.adminDepartment && u.city === user.city)));
     for (const admin of admins) {
       await notify(admin.id, '⚠️', `${user.name}'s submitted ID name ("${idLegalName.trim()}") doesn't clearly match their account name — needs manual review.`, null, { section: 'verification' });
+    }
+  } else {
+    // Item (best practice): a normal, clean submission — the common
+    // case, not the exception — used to notify no one at all. It just
+    // sat in the queue until an admin happened to check manually. A
+    // real review queue tells reviewers when something new actually
+    // needs them, not just the flagged exceptions.
+    const admins = await db.filter('users', u => u.role === 'admin' && (u.isSuperAdmin || u.adminDepartment === 'verification' || (!u.adminDepartment && u.city === user.city)));
+    for (const admin of admins) {
+      await notify(admin.id, '🪪', `${user.name} submitted identity verification — ready for review.`, null, { section: 'verification' });
     }
   }
 

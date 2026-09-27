@@ -1,0 +1,48 @@
+name: Security Audit
+
+# Runs a real dependency vulnerability check on every push and every pull
+# request — a real, visible, automated record that this check happens
+# every time, not "we ran it once during a security review." This is the
+# other half of the automated-scanning piece from the certification
+# conversation: Dependabot (.github/dependabot.yml) watches continuously
+# in the background and opens fixes on its own; this workflow is the
+# active gate that actually stops a change from merging if it introduces
+# something high-severity.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Also runs on its own every Monday, so a newly-published vulnerability
+  # in something already installed gets caught even on a week with no
+  # code changes at all — not just when someone happens to push.
+  schedule:
+    - cron: '0 9 * * 1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run dependency vulnerability audit
+        # --audit-level=high: fails the check (and blocks the PR) on
+        # high or critical severity findings — the same bar real
+        # security-certification programs actually care about. Moderate
+        # and low findings still show up in the log below for a human to
+        # see, but don't block a merge on their own; this mirrors the
+        # judgment call already made by hand during past security passes
+        # in this project.
+        run: npm audit --audit-level=high
+
+      - name: Full audit report (visible even when the above step passes)
+        if: always()
+        run: npm audit || true

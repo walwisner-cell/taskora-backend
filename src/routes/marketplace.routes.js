@@ -64,6 +64,33 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   const rate = wantsLocal ? resolveRate(currency.code, await db.all('exchangeRates')) : null;
   const paidAmountLocal = wantsLocal ? convertFromUSD(contract.amount, currency.code, rate) : null;
 
+  // Real integration point for Liberia mobile money collections (LCMMMI
+  // — see src/liberia-momo.js for the full picture). isLiberiaMoMoConfigured()
+  // returns false until real credentials exist, so this changes nothing
+  // for any booking today — confirmed live. Once real credentials ARE
+  // set: a Liberian customer paying by mobile money gets a genuine
+  // charge attempt HERE, before the escrow record below is ever
+  // created. MTN's API is asynchronous (a successful call here only
+  // means "accepted for processing," never "paid") — the real outcome
+  // needs a follow-up status check or a real webhook, not this call
+  // alone; for now, a failed *request* (never even accepted) is enough
+  // reason to stop and refuse to create an escrow record for money that
+  // was never actually collected — express-async-errors (already used
+  // throughout this file) turns this throw into a real, clean error
+  // response instead of a crash.
+  let liberiaMoMoReference = null;
+  if (customer && customer.country === 'Liberia') {
+    const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('../liberia-momo');
+    if (isLiberiaMoMoConfigured()) {
+      const defaultMethod = await db.find('paymentMethods', m => m.userId === customer.id && m.isDefault);
+      if (defaultMethod && defaultMethod.type === 'mobile_money') {
+        const result = await requestMobileMoneyCollection(defaultMethod.mobileMoneyNumber, contract.amount, contract.id, rate);
+        if (!result.success) throw new Error(`Mobile money charge could not be started: ${result.message}`);
+        liberiaMoMoReference = result.referenceId;
+      }
+    }
+  }
+
   // A materials advance is tracked on the SAME escrow record as separate
   // fields, rather than as a second record — every existing feature
   // (payouts, PDFs, admin reporting) assumes one escrow per contract, and
@@ -84,6 +111,7 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
     materialsAdvanceAmount: advance,
     materialsAdvanceReleased: false,
     materialsAdvancePayoutId: null,
+    liberiaMoMoReference, // null unless a real LCMMMI collection request was actually made for this escrow — see above
     createdAt: new Date().toISOString(),
   };
   await db.insert('escrowTransactions', escrow);

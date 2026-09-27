@@ -16,7 +16,17 @@ services:
     name: trothen-api
     runtime: node
     plan: starter
-    region: oregon                # pick whichever region is closest to you
+    region: oregon                # Real, important constraint: this describes where the
+                                   # ALREADY-RUNNING service actually is — it is not a
+                                   # dial you can turn to move it. Render rejects the
+                                   # entire deployment outright if this is edited on an
+                                   # existing service ("changing region not supported"),
+                                   # not just this one line — so a real region move is a
+                                   # real second service, created fresh in Frankfurt, with
+                                   # the domain pointed at it once it's confirmed working —
+                                   # never just changing this value on the service already
+                                   # running here. See MOVING TO EUROPE below for the real
+                                   # steps.
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
@@ -76,3 +86,44 @@ services:
 # signup/login, AI matching, escrow, reviews, messaging, regional admin
 # scoping, all pass identically to the JSON-file version. The switch is a
 # config change, not a code change.
+
+# ── MOVING TO EUROPE (Liberia mobile money requires this) ──────────────────
+# Render will not move an existing service between regions — confirmed
+# directly against Render's own current documentation, not assumed. It
+# rejects the whole deployment if you just edit the region line above on
+# a service that's already running. The real move is always: a genuine
+# second, new service, created fresh in Frankfurt, with the domain
+# pointed at it once it's confirmed working — never an edit to this file
+# alone.
+#
+# Two real paths, depending on whether there's anything worth keeping on
+# the current Oregon service:
+#
+# IF NOTHING NEEDS TO CARRY OVER (no real customer data yet — just
+# accumulated test/demo activity from development):
+#   1. In the Render dashboard: "New +" → "Blueprint" (or "Web Service").
+#      Point it at the same GitHub repo.
+#   2. When asked for a region, choose Frankfurt.
+#   3. Copy every real environment variable from the Oregon service's
+#      Environment tab into the new one — SENDGRID_API_KEY,
+#      GOOGLE_CLIENT_ID, any LCMMMI_* variables, all of it. Nothing
+#      carries over automatically between two separate services.
+#   4. Once the new service builds and boots clean, open its own Render
+#      URL directly and smoke-test it for real before touching your
+#      domain at all.
+#   5. Only then: repoint trothenpro.com's DNS at the new service, and
+#      delete the old Oregon one once you're confident the new one's
+#      solid.
+#
+# IF THERE'S REAL DATA TO KEEP:
+#   Same steps 1-3 above, but before step 4: export the real data first.
+#   If still on the JSON-file disk store (no DATABASE_URL set above),
+#   that means copying the actual files off the "taskora-data" disk
+#   through the Render dashboard's shell/file access before the new
+#   service ever goes live, then placing them on the new service's own
+#   disk. If already on real Postgres, it means a real pg_dump from the
+#   old database and a pg_restore into a new Postgres instance created
+#   in Frankfurt — tell me which one you're actually on and I'll write
+#   out the exact commands for that specific case, since the two paths
+#   genuinely don't share steps.
+

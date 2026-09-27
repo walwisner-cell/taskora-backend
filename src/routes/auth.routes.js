@@ -705,6 +705,15 @@ router.get('/me', requireAuth, async (req, res) => {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const usedThisWeek = (await db.filter('matches', m => m.providerId === user.id && m.createdAt >= sevenDaysAgo)).length;
     result.weeklyJobAccess = { used: usedThisWeek, cap: weeklyJobAccessCapForScore(user.trustScore) };
+    // Item: the "Additional Trust Checks" panel used to hardcode
+    // Automated Fraud Screening as always "completed" for every
+    // provider, regardless of whether they actually had a real, open
+    // flag against them — a false trust signal shown to the provider
+    // and, indirectly, to anyone deciding whether to trust them. Live
+    // check here (real fraudFlags records, see src/fraud-detection.js),
+    // never stale, same reasoning as weeklyJobAccess just above it.
+    const openFlags = await db.filter('fraudFlags', f => f.userId === user.id && f.status === 'open');
+    result.hasOpenFraudFlags = openFlags.length > 0;
   }
   res.json({ user: result });
 });

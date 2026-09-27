@@ -51,6 +51,93 @@ You uploaded a second, older zip (`trothen-updates_22_.zip`) and asked me to che
 
 **I could only partially test this one.** Real Google-token verification needs to reach Google's own servers, which this sandbox's network rules don't allow — so I confirmed the code fails cleanly (a proper error, not a crash) when it can't reach Google, and confirmed nothing else broke, but I could not run an actual successful Google sign-in end to end the way I tested everything else this session. You'll want to genuinely click through it once this is live.
 
+## Checked the whole app for the same pattern — found one more real gap, fixed it too
+
+Went through every single "clear/remove/delete" action in the admin panel checking for the same issue as the pricing one — somewhere you can view and remove something, but never actually create a new one. Checked all of them: countries, categories, sub-admins, promotions, organization seats, category response-time overrides, filters, photo uploads. All of those already have a real, working way to add something new — no gap there.
+
+**Found one more real, genuine match: regional support contacts.** A super admin could only ever set the platform-wide fallback number — never a specific city's contact directly, the way a regional admin can for their own city. This one needed a small real backend fix too, not just a missing screen — the server itself had no way to be told "set this for Lagos specifically" if you're not logged in as a Lagos admin.
+
+**Fixed on both sides.** Admin → Settings now has a real "Set a contact for a specific city" form, plus a real list of every city that already has its own contact set. Tested the complete path: set Lagos's contact directly as the super admin (something genuinely impossible before), confirmed it's listed correctly, and confirmed it actually reaches the real, public-facing support contact that a real visitor to Trothen would see — the same end-to-end proof as the pricing fix.
+
+## Setting a country's price — a real gap you found by just asking
+
+You asked how to set the pricing shown for a country (Ghana, Liberia, Nigeria — the dropdown from your screenshot). Looking into it turned up a genuine gap: **there was no way to do this.** The admin screen could only show and clear prices that already existed for a country — there was never a way to actually set a brand-new one. The backend already fully supported it; the screen to do it just didn't exist.
+
+Fixed — **Admin → Plans & Pricing → Country Overrides** now has a real form right at the top: pick a country, pick a plan, type the price, and it's live immediately. Tested the entire path directly: set a real price for Ghana's Pro plan, confirmed it shows up correctly on the actual public pricing page (the one from your screenshot) with the right currency, and confirmed every other plan and every other country stays exactly on the automatic exchange-rate conversion, untouched. Also confirmed the real button works by actually clicking through it in a browser, not just calling the API directly.
+
+## Moving to Europe — a real correction to what I told you before
+
+I need to be upfront about this: what I described earlier as "I can just change the setting" wasn't quite right, and I want to correct it rather than let it stand. I checked directly against Render's own current documentation, and **Render doesn't support changing an existing service's region at all** — for anyone, not just this app. If the region line in `render.yaml` gets edited on a service that's already running, Render rejects the entire deployment outright, not just that one line.
+
+The real move, confirmed against Render's own guidance: a genuine second, new service, created fresh in Frankfurt, with your domain pointed at it once it's confirmed working. `render.yaml` now has a full, real, step-by-step section on exactly how to do this — search for "MOVING TO EUROPE" in the file. It covers both real cases: starting fresh if there's nothing worth keeping from Oregon yet, or a real data export/import first if there is.
+
+This is genuinely a Render dashboard action on your end, not something I can hand you as a single file that does it — but I've laid out the exact steps, and I'm ready to write out the precise data-export commands the moment you tell me whether you're on the JSON-file disk store or real Postgres.
+
+## Real identity-verification best practices — closing the gaps that actually mattered
+
+Went back through the whole real verification flow specifically looking for standard best practices, not hypothetical ones. Found and fixed two real, genuine gaps in the manual review path (the one that's always in play, even when the real Persona integration is connected, since some cases still route to a human):
+
+**A normal, clean submission notified no one.** Only a name-mismatch triggered an alert to the review team — an ordinary submission, the common case, just sat in the queue until someone happened to check manually. Every new submission now notifies the right reviewers the moment it comes in, not just the exceptions.
+
+**Nothing tracked how long a submission had been waiting.** Now every submission gets a real 48-hour review window the moment it's submitted, and the admin queue shows a real, live "⏰ Overdue" warning the moment that window passes on anything still unresolved — so an old submission is visible, not just sitting there.
+
+Tested completely, live: submitted a real, clean identity verification and confirmed the review team actually got notified this time; confirmed the real 48-hour deadline is set and correctly returned through the full pipeline; confirmed in a real browser that the Overdue badge only appears once that deadline has genuinely passed, never before.
+
+Worth knowing: real, professional-grade identity verification (Persona — actual document authenticity and liveness checking, not just a photo sitting for a human to eyeball) is already built into this app, same honest not-yet-configured fallback pattern as SendGrid/Twilio/everything else — it just needs real Persona credentials to turn on, which is a business decision, not something left undone in the code.
+
+## Joseph's screenshot: two of the three "Trust Check" badges were quietly false — fixed
+
+Joseph shared a screenshot of the real "Additional Trust Checks" panel on a provider's Verification screen, asking to "activate verification" so it could actually be tested. Looking into it turned up something real and worth knowing about directly, not just a request to flip a switch.
+
+**Identity Verification itself was already completely real** — nothing to activate there. The document upload, the admin review, the "Verified" badge — all genuinely working, all along.
+
+**But two of the three "Additional Trust Checks" were hardcoded to always say "Completed," no matter what was actually true for that specific provider:**
+- **Two-Factor Authentication** said "Completed" for every single provider, even though 2FA had never actually been available to turn on for a provider account — only admins had it. This was a real, false trust signal.
+- **Automated Fraud Screening** also always said "Completed," regardless of whether that specific provider actually had any real, open fraud flag against them.
+
+**Both are fixed and genuinely real now.** Two-Factor Authentication shows an honest "Not Yet Enabled" with a real, working "Turn On" button when it's actually off — and I proved this isn't cosmetic: after turning it on, that provider's very next login for real required a 2FA code, not just a badge that changed color. Automated Fraud Screening now reflects that specific provider's real flag status, computed fresh every time the page loads, using the real fraud-detection system already running in the background — so a provider who genuinely has an open flag no longer gets shown as "clean" when they're not.
+
+**Background Check** — this one was already honest. It's built as a guarantor/reference system, with copy that's upfront about that ("some regions don't have real background-check infrastructure available yet"), not dressed up as something it isn't.
+
+## Two real quick wins for the security certification conversation
+
+From the SOC 2/ISO 27001 discussion — these are the genuinely code/config pieces, done now regardless of which certification path you end up choosing, since they're real security improvements on their own.
+
+**Automated dependency vulnerability scanning — actually set up now, not just talked about.** Two things work together:
+- `.github/dependabot.yml` — GitHub itself now watches every dependency continuously in the background and opens a real pull request automatically the moment a fix exists for something vulnerable. Zero ongoing effort on your end.
+- `.github/workflows/security-audit.yml` — a real, visible check that runs on every push, every pull request, and once a week on its own, and fails loudly if anything high-severity turns up. I ran this exact check against the current code just now: **zero vulnerabilities, passes cleanly.**
+
+This is exactly the kind of "documented, automated process" an auditor is specifically looking for — a screenshot of this actually running is real evidence, not a claim.
+
+**Backup settings — checked Render's real, current documentation rather than assuming.** Good news: if Trothen is on any paid Render Postgres plan, continuous point-in-time recovery is already automatic — no setup needed. The recovery window depends on the plan: 3 days on Hobby, 7 days on Pro or higher. Worth checking directly which plan is actually in use, since the free tier doesn't include this. If a certification ends up wanting longer retention than a few days (compliance reviews often do), Render has an official path for that too — a scheduled job that archives backups to Amazon S3 for as long as you want to keep them, which I can help set up once you know what retention period you actually need. **This part really is a Render account setting, not something in the code itself** — worth confirming directly on your Render dashboard.
+
+## Liberia mobile money — now with a real, deliberate "off" switch you control
+
+You asked for this specifically: don't let the code touch MTN's real servers — sandbox or production — until you explicitly say so, even once credentials exist. Done, and built as a real second gate, not just relying on credentials being absent.
+
+There's now one single setting, `LCMMMI_INTEGRATION_ENABLED`, that has to be set to the **exact word `true`** — not `1`, not `yes`, nothing else counts — before any real network call can happen at all. It's checked independently in every single function that would actually reach out to MTN, not just once somewhere upstream, so there's no path around it. I tested this directly: set real-looking credentials without this switch on, and confirmed it stays completely inert; tried a sloppy value like `1` instead of `true` and confirmed that's correctly still treated as off; only flipping it to exactly `true` (with credentials) lets the code attempt a real call.
+
+**So the current state is exactly what you asked for:** fully built, fully ready, sitting on your side, and genuinely incapable of reaching MTN until you tell me to set `LCMMMI_INTEGRATION_ENABLED=true` — whether that's for your own sandbox testing or once the real paperwork clears. Nothing else changed; every existing booking still works exactly as before.
+
+## Liberia mobile money — a real, working implementation now, not a placeholder
+
+This moved a real step forward since the last round. MTN Group runs a genuine, public, well-documented "MoMo Open API" across every market it operates Mobile Money in — the same "Open API Platform" LCMMMI's own contract names directly. That's real, current, cross-checked documentation, not a guess, so `src/liberia-momo.js` is now a real implementation built against it: the actual authentication flow, the actual request and status-check shapes for both Collections and Disbursement, wired into the exact single point in the code where every escrow hold already runs through.
+
+**Tested as far as this environment honestly allows.** This sandbox can't reach the internet freely, so I couldn't complete a real call to MTN's sandbox — but I proved the code reaches exactly the right place: with real-shaped test credentials set, it correctly builds and attempts the actual network request to `sandbox.momodeveloper.mtn.com`, and fails only because *this specific development environment* can't reach outside its own network allowlist — the same limitation Google Sign-In has had all along, not a bug in the code. Once this is deployed to Render, which has normal internet access, this same code would actually reach MTN's real public sandbox. Also confirmed directly: with no credentials set, nothing changes for any booking in any country — proven live, not assumed.
+
+**To actually try this for real, once you're ready — this now needs one extra, deliberate step:**
+1. Sign up at `https://momodeveloper.mtn.com/` (MTN's own real, public developer portal) and subscribe to both the Collections and Disbursement sandbox products
+2. Set these on Render: `LCMMMI_COLLECTIONS_SUBSCRIPTION_KEY`, `LCMMMI_COLLECTIONS_API_USER`, `LCMMMI_COLLECTIONS_API_KEY`, and the matching `LCMMMI_DISBURSEMENT_*` three for the Disbursement side
+3. `LCMMMI_BASE_URL` and `LCMMMI_TARGET_ENVIRONMENT` both already default to MTN's real public sandbox — nothing else to set for testing
+4. **Set `LCMMMI_INTEGRATION_ENABLED` to exactly `true`.** Without this, nothing above matters — the code stays fully inert no matter what else is set. This is the deliberate, separate go-ahead you asked for.
+5. Once LCMMMI approves the real Liberia partnership: `LCMMMI_BASE_URL` and `LCMMMI_TARGET_ENVIRONMENT` change to whatever they specify, and the same four credential variables get replaced with Liberia's real production ones — the code itself doesn't need to change
+
+**Still the same two real blockers as before, unchanged by any of this:** no SOC 2/ISO 27001-equivalent certification or audited financials yet, and hosting is still in the US, not Africa or Europe as required. Real business steps, not something this code touches.
+
+## Draft answers to LCMMMI's actual paperwork
+
+`LCMMMI_INTEGRATION_DRAFT.md` still has the full, real draft answers to LCMMMI's actual Data Privacy and IT Security questionnaires, checked directly against what Trothen's code verifiably does today.
+
 ## A verification pass across the whole system — new ground, not a repeat
 
 You asked me to verify everything and fix any remaining gaps. Rather than repeat the security and permissions passes already done in earlier rounds, this checked genuinely new ground:
@@ -358,5 +445,6 @@ Render picks this up automatically.
 28. On an actual phone, open the sign-in screen and confirm the chat bubble is gone from the corner and doesn't get in the way of the button
 29. Set `SENDGRID_API_KEY` and a verified `SENDGRID_FROM_EMAIL` on Render, then sign up a brand-new test account and confirm the verification code actually arrives by email instead of showing on-screen
 30. In Admin → Settings, set a real support email (and try a region-specific one too if you manage more than one city) — confirm it shows up on the Contact Us page
+31. If you want to try the Liberia mobile money code for real: sign up at momodeveloper.mtn.com, set the six `LCMMMI_COLLECTIONS_*`/`LCMMMI_DISBURSEMENT_*` variables on Render with your real sandbox keys, **and set `LCMMMI_INTEGRATION_ENABLED=true`** (the code stays fully inert without this exact value, on purpose) — then book something as a Liberia-based test customer using mobile money as the payment method and confirm a request actually reaches MTN's sandbox
 
 If anything looks wrong, a screenshot plus what you expected instead is always the fastest way for me to trace it.

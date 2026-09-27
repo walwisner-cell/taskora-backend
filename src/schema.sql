@@ -516,6 +516,11 @@ ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS service_fee NUMERIC(10,
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_amount NUMERIC(10,2) DEFAULT 0;
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_released BOOLEAN DEFAULT FALSE;
 ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS materials_advance_payout_id TEXT;
+-- The real LCMMMI (Liberia mobile money) collection request reference,
+-- when a real charge attempt was actually made for this escrow — see
+-- src/liberia-momo.js. Null for every escrow that isn't a Liberia
+-- mobile money payment.
+ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS liberia_mo_mo_reference TEXT;
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS link_to JSONB;
 ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS target_city TEXT;
 ALTER TABLE advertising_inquiries ADD COLUMN IF NOT EXISTS is_live BOOLEAN NOT NULL DEFAULT false;
@@ -796,6 +801,10 @@ ALTER TABLE verifications ADD COLUMN IF NOT EXISTS name_match BOOLEAN;
 ALTER TABLE verifications ADD COLUMN IF NOT EXISTS document_filename TEXT;
 ALTER TABLE verifications ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 ALTER TABLE verifications ALTER COLUMN status SET DEFAULT 'pending';
+-- Item (best practice): a real 48-hour review SLA, the same idea
+-- already used for fraud flags — without this a submission could sit
+-- untouched indefinitely with nothing to surface that it's overdue.
+ALTER TABLE verifications ADD COLUMN IF NOT EXISTS review_deadline TIMESTAMPTZ;
 
 -- Item 14 / Super Admin Dispute Actions — the permanent audit trail
 -- behind every dispute action (request info, escalate, reject, close,
