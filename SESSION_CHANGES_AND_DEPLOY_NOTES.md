@@ -51,6 +51,29 @@ You uploaded a second, older zip (`trothen-updates_22_.zip`) and asked me to che
 
 **I could only partially test this one.** Real Google-token verification needs to reach Google's own servers, which this sandbox's network rules don't allow — so I confirmed the code fails cleanly (a proper error, not a crash) when it can't reach Google, and confirmed nothing else broke, but I could not run an actual successful Google sign-in end to end the way I tested everything else this session. You'll want to genuinely click through it once this is live.
 
+## The most serious bug found this entire build — identity verification was completely broken
+
+You asked me to look through the whole codebase for gaps like the pricing one. I found something far more serious, and it needs to be said plainly: **nobody has ever been able to successfully submit identity verification through the real app.** Not a small edge case — every single real attempt, for every customer and every provider, in every country, has failed.
+
+I found it by systematically checking every button in the app against what actually happens on the backend when it's clicked, and this one stood out immediately. The actual cause was severe and specific:
+
+- The two "upload boxes" on the verification screen were decorative — plain text in a box, no real file selector behind either one
+- The "Submit for Review" button sent a request with no file attached at all
+- It also sent a hardcoded document type that matched none of the backend's real accepted values, for any country
+- It never sent the person's legal name either, which the backend also requires
+
+I confirmed this wasn't theoretical — I submitted exactly what the real button used to send and watched it come back with a real 400 error. This is almost certainly the real story behind Joseph's original "please activate verification, so we can test it" message — a more literal read than I gave it at the time.
+
+**Completely rebuilt, and proven working end to end.** The screen now has a real file picker, a real legal-name field, and a real document-type dropdown — genuinely populated from the backend's own country-aware list (an endpoint that, remarkably, already existed and worked perfectly, just had nothing calling it). I proved the whole thing works by creating a fresh test account, going through the actual screen exactly the way a real person would, and confirming a real, complete, correctly-formed record landed in the admin review queue afterward — the first real one that's ever existed.
+
+## The "Live in..." line — now real, editable, and animated
+
+You flagged that the "Live in the U.S. · Nigeria · Ghana · Liberia" line under the homepage headline was just permanently hardcoded — not reflecting anything real, and not something you could change without a code deploy. Fixed properly:
+
+- It's now a real, admin-editable list — **Admin → Settings → Homepage Content → Featured Countries** — separate from the platform's full technical "live countries" list (which defaults to nearly every country in the world and would make a meaningless marketing line if used directly)
+- It has a real, continuous scrolling animation now, the "live" feel you asked for — and respects a visitor's system-level "reduce motion" preference, same as the rest of the app already does elsewhere
+- Tested for real: set it to a genuinely different set of countries, confirmed the real public homepage actually shows the new list, and confirmed the old hardcoded countries are genuinely gone, not just hidden
+
 ## Checked the whole app for the same pattern — found one more real gap, fixed it too
 
 Went through every single "clear/remove/delete" action in the admin panel checking for the same issue as the pricing one — somewhere you can view and remove something, but never actually create a new one. Checked all of them: countries, categories, sub-admins, promotions, organization seats, category response-time overrides, filters, photo uploads. All of those already have a real, working way to add something new — no gap there.

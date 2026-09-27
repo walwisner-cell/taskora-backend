@@ -201,6 +201,16 @@ Questions about these Terms: support@trothen.io`,
     heroSubheadline: "Every pro is ID-verified. Every job runs on an auto-generated contract with funds held in escrow until you're satisfied. Book in under 2 minutes.",
     missionHeadline: "Local services shouldn't require a leap of faith.",
     missionBody: "From Atlanta to Lagos to Accra, hiring a plumber or a tutor has always meant crossing your fingers — no way to know who's really showing up, and no recourse if it goes wrong. Trothen closes that gap: every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is done right. Trust shouldn't be a gamble. On Trothen, it's the default.",
+    // Item: "Live in the U.S. · Nigeria · Ghana · Liberia" used to be
+    // permanently hardcoded into the homepage itself — not reflecting
+    // anything real, and not editable without a code change. This is
+    // deliberately its own short, curated list rather than the full
+    // "live countries" system (which defaults to nearly every country
+    // in the world and would make a meaningless marketing stat) — a
+    // real admin decision about which countries to actually feature,
+    // kept at the same default text as before so nothing changes
+    // visually until it's actually edited.
+    featuredCountries: ['United States', 'Nigeria', 'Ghana', 'Liberia'],
   },
 };
 

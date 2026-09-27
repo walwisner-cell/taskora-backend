@@ -154,7 +154,11 @@
     cursor:pointer; transition:all .2s; backdrop-filter:blur(4px);
   }
   .hero-cat:hover { background:var(--teal); border-color:var(--teal); color:var(--navy); font-weight:600; }
-  .hero-locales { margin-top:22px; color:rgba(255,255,255,.55); font-size:12px; letter-spacing:.3px; position:relative; z-index:1; }
+  .hero-locales { margin-top:22px; color:rgba(255,255,255,.55); font-size:12px; letter-spacing:.3px; position:relative; z-index:1; overflow:hidden; white-space:nowrap; mask-image:linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); -webkit-mask-image:linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+  .hero-locales-track { display:inline-block; animation: heroLocalesScroll 22s linear infinite; }
+  .hero-locales-track span { margin:0 28px; }
+  @keyframes heroLocalesScroll { from { transform:translateX(0); } to { transform:translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .hero-locales-track { animation:none; } }
 
   /* ── TRUST STRIP ── */
   .trust-strip { background:var(--white); border-bottom:1px solid var(--border); padding:22px 24px; }
@@ -929,7 +933,7 @@
       <div class="hero-cat" onclick="filterCat('Painting')">🎨 Painting</div>
       <div class="hero-cat" onclick="filterCat('Landscaping')">🌿 Landscaping</div>
     </div>
-    <div class="hero-locales">Live in the U.S. · Nigeria · Ghana · Liberia — expanding globally</div>
+    <div class="hero-locales" id="hero-locales"><div class="hero-locales-track" id="hero-locales-track">Live in the U.S. · Nigeria · Ghana · Liberia — expanding globally</div></div>
   </div>
 
   <div id="customer-welcome-banner" style="display:none;"></div>
@@ -4493,7 +4497,18 @@ function verificationHTML(role, status) {
       ? `<div class="badge badge-success" style="font-size:13px;padding:8px 16px;">✓ Identity Verified — government ID confirmed</div>`
       : inReview
         ? `<div class="badge badge-warn" style="font-size:13px;padding:8px 16px;">⏳ Submitted — awaiting review</div>`
-        : `<div id="verification-action-area"><div class="upload-box">📄 Upload Government-Issued ID</div><div class="upload-box">🤳 Take a Selfie for Face Match</div><button class="btn-sm btn-sm-primary" onclick="submitVerification('${role}')">Submit for Review</button></div>`}
+        : `<div id="verification-action-area">
+            <div class="form-group"><label class="form-label">Document Type</label>
+              <select class="form-input" id="verification-doc-type-select"><option>Loading…</option></select>
+            </div>
+            <div class="form-group"><label class="form-label">Full Legal Name (exactly as printed on the document)</label>
+              <input class="form-input" id="verification-legal-name-input" placeholder="e.g. Marcus T. Johnson"/>
+            </div>
+            <div class="form-group"><label class="form-label">Upload Government-Issued ID</label>
+              <input class="form-input" type="file" id="verification-doc-file-input" accept="image/jpeg,image/png,application/pdf"/>
+            </div>
+            <button class="btn-sm btn-sm-primary" onclick="submitVerification('${role}')">Submit for Review</button>
+          </div>`}
   </div>
   ${role === 'provider' ? `<div class="panel"><div class="panel-title">Additional Trust Checks</div>
     <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Check</th><th>Status</th></tr></thead><tbody>
@@ -4582,13 +4597,39 @@ async function saveGuarantors() {
   } catch (e) { showToast(e.message || 'Could not save guarantors'); }
 }
 
+// Item: this was the actual, live-confirmed root cause of every real
+// verification submission failing. The old version sent a plain JSON
+// body with no file attached at all, a hardcoded docType that matched
+// NONE of the backend's real accepted values for any country, and no
+// legal-name field even though the backend requires one — confirmed by
+// actually submitting exactly what this function used to send and
+// getting a real 400 back. Now sends a real FormData request matching
+// exactly what POST /verification/submit (src/routes/misc.routes.js)
+// actually expects.
 async function submitVerification(role) {
   if (!BACKEND_AVAILABLE) {
     showToast('Submitted for review (demo mode — no backend detected)');
     return;
   }
+  const docType = document.getElementById('verification-doc-type-select').value;
+  const idLegalName = document.getElementById('verification-legal-name-input').value.trim();
+  const fileInput = document.getElementById('verification-doc-file-input');
+  if (!idLegalName) return showToast('Enter your full legal name exactly as printed on the document');
+  if (!fileInput.files || !fileInput.files[0]) return showToast('Choose a file to upload');
+
+  const formData = new FormData();
+  formData.append('docType', docType);
+  formData.append('idLegalName', idLegalName);
+  formData.append('document', fileInput.files[0]);
+
   try {
-    await apiFetch('POST', '/verification/submit', { docType: role === 'provider' ? 'Government ID + Background Check' : 'Government ID' });
+    const res = await fetch(`${API_BASE}/verification/submit`, {
+      method: 'POST',
+      headers: AUTH.token ? { Authorization: `Bearer ${AUTH.token}` } : {},
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not submit for review');
     showToast('Submitted — an admin will review it shortly');
     if (role === 'customer') { await loadCustomerData(); selectCustomerSection('verification'); }
     else { await loadProviderData(); selectProviderSection('verification'); }
@@ -4602,10 +4643,27 @@ async function submitVerification(role) {
 // automatically via webhook (see misc.routes.js). If Persona isn't
 // configured, this is a no-op and the manual submit flow above stays as
 // the only option, same as before this existed.
+// Item: this endpoint (GET /verification/doc-types) already existed on
+// the backend — real, working, country-aware — with zero frontend
+// caller anywhere before this. It's the honest source for this
+// dropdown instead of a hardcoded guess: the real list of acceptable ID
+// types actually differs by country (Driver's License/State ID/
+// Passport in the US, different real document types elsewhere).
+async function loadVerificationDocTypes() {
+  const select = document.getElementById('verification-doc-type-select');
+  if (!select) return;
+  if (!BACKEND_AVAILABLE) { select.innerHTML = '<option>Government ID</option>'; return; }
+  try {
+    const { docTypes } = await apiFetch('GET', '/verification/doc-types');
+    select.innerHTML = docTypes.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  } catch (e) { select.innerHTML = '<option>Government ID</option>'; }
+}
+
 async function loadVerificationOptions() {
   if (!BACKEND_AVAILABLE) return;
   const area = document.getElementById('verification-action-area');
   if (!area) return; // already verified or in review — nothing to swap in
+  loadVerificationDocTypes(); // populate the real, country-aware document-type dropdown regardless of whether Persona ends up replacing this area below
   try {
     const data = await apiFetch('GET', '/verification/start');
     const target = document.getElementById('verification-action-area');
@@ -7261,15 +7319,17 @@ async function saveHomepageContent() {
   const heroSubheadline = document.getElementById('hc-hero-subheadline').value.trim();
   const missionHeadline = document.getElementById('hc-mission-headline').value.trim();
   const missionBody = document.getElementById('hc-mission-body').value.trim();
+  const featuredCountries = document.getElementById('hc-featured-countries').value.split(',').map(c => c.trim()).filter(Boolean);
   if (!heroPrefix) return showToast('Enter a hero headline prefix');
   if (!heroRotatingWords.length) return showToast('Enter at least one rotating word, comma-separated');
   if (!heroSuffix) return showToast('Enter a hero headline suffix');
   if (heroSubheadline.length < 10) return showToast('Hero subheadline is too short');
   if (!missionHeadline) return showToast('Enter a mission headline');
   if (missionBody.length < 20) return showToast('Mission body is too short');
+  if (!featuredCountries.length) return showToast('Enter at least one featured country, comma-separated');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
-    await apiFetch('PATCH', '/admin/settings/homepage-content', { heroPrefix, heroRotatingWords, heroSuffix, heroSubheadline, missionHeadline, missionBody });
+    await apiFetch('PATCH', '/admin/settings/homepage-content', { heroPrefix, heroRotatingWords, heroSuffix, heroSubheadline, missionHeadline, missionBody, featuredCountries });
     showToast('Homepage content updated — live now');
     await loadAdminData();
     selectAdminSection('settings');
@@ -9026,6 +9086,7 @@ const ADMIN_SECTIONS = {
       <div class="form-group"><label class="form-label">Hero Subheadline</label><textarea class="form-input" id="hc-hero-subheadline" rows="2" style="resize:vertical;">${adminData.homepageContent ? adminData.homepageContent.heroSubheadline : ''}</textarea></div>
       <div class="form-group"><label class="form-label">Mission Headline</label><input class="form-input" id="hc-mission-headline" value="${adminData.homepageContent ? adminData.homepageContent.missionHeadline : ''}"/></div>
       <div class="form-group"><label class="form-label">Mission Body</label><textarea class="form-input" id="hc-mission-body" rows="4" style="resize:vertical;">${adminData.homepageContent ? adminData.homepageContent.missionBody : ''}</textarea></div>
+      <div class="form-group"><label class="form-label">Featured Countries <span style="color:var(--slate);font-weight:400;">(comma-separated — the real "Live in..." line under the hero, now genuinely editable instead of hardcoded)</span></label><input class="form-input" id="hc-featured-countries" value="${adminData.homepageContent && adminData.homepageContent.featuredCountries ? adminData.homepageContent.featuredCountries.join(', ') : ''}" placeholder="United States, Nigeria, Ghana, Liberia"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveHomepageContent()">Save</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Homepage Photos</div>
@@ -11770,6 +11831,17 @@ async function loadHomepageContent() {
     if (Array.isArray(content.heroRotatingWords) && content.heroRotatingWords.length) {
       HERO_ROTATING_WORDS = content.heroRotatingWords;
       startHeroWordRotation(); // restart with the real word list
+    }
+    // Item: "Live in the U.S. · Nigeria · Ghana · Liberia" used to be
+    // permanently hardcoded — never reflected reality, and could only
+    // ever be changed by editing the code. Real now, and the content is
+    // duplicated once here so the scrolling animation below can loop
+    // seamlessly at exactly the halfway point, with no visible seam or
+    // jump.
+    const localesTrack = document.getElementById('hero-locales-track');
+    if (localesTrack && Array.isArray(content.featuredCountries) && content.featuredCountries.length) {
+      const line = `Live in ${content.featuredCountries.map(c => escapeHtml(c)).join(' · ')} — expanding globally`;
+      localesTrack.innerHTML = `<span>${line}</span><span>${line}</span>`;
     }
   } catch (e) { console.warn('Could not load homepage content, using defaults.', e); }
 }
