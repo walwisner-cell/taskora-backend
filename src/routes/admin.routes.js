@@ -1133,7 +1133,14 @@ router.get('/disputes/:id/audit-log', requireDepartment(['disputes', 'customer_s
 // trusted from an earlier preview — a preview and an execute call could
 // be minutes apart, and something could have genuinely changed.
 async function findUntouchedTestAccounts(country) {
-  const candidates = await db.filter('users', u => u.country === country && (u.role === 'customer' || u.role === 'provider') && !u.isSeedAccount);
+  // Item: Walter's real, explicit need — cleaning everything before
+  // going live, not one country at a time. country is now optional:
+  // omit it (or pass null) for a genuine sweep across every country at
+  // once. Every existing safety rule still applies exactly as before —
+  // no financial/contract/compliance history, never a seed/demo
+  // account — this only changes which accounts are even considered, not
+  // how safely they're filtered.
+  const candidates = await db.filter('users', u => (!country || u.country === country) && (u.role === 'customer' || u.role === 'provider') && !u.isSeedAccount);
   const [contracts, escrow, payouts, disputes] = await Promise.all([
     db.all('contracts'), db.all('escrowTransactions'), db.all('payouts'), db.all('disputes'),
   ]);
@@ -1156,8 +1163,9 @@ async function findUntouchedTestAccounts(country) {
 // admin can actually look before deleting anything.
 router.post('/data-cleanup/preview', requireSuperAdmin, async (req, res) => {
   const { country } = req.body || {};
-  if (!isNonEmptyString(country)) return res.status(400).json({ error: 'country is required' });
-  const untouched = await findUntouchedTestAccounts(country);
+  // country is genuinely optional now — omit it for a real preview
+  // across every country's untouched test accounts at once.
+  const untouched = await findUntouchedTestAccounts(country || null);
   const untouchedIds = new Set(untouched.map(u => u.id));
   const [matches, notifications, verifications, portfolioPhotos] = await Promise.all([
     db.all('matches'), db.all('notifications'), db.all('verifications'), db.all('portfolioPhotos'),
@@ -1193,13 +1201,18 @@ router.post('/data-cleanup/preview', requireSuperAdmin, async (req, res) => {
 // behavior, unchanged.
 router.post('/data-cleanup/execute', requireSuperAdmin, async (req, res) => {
   const { country, confirmPhrase, accountIds } = req.body || {};
-  if (!isNonEmptyString(country)) return res.status(400).json({ error: 'country is required' });
-  const expectedPhrase = `DELETE TEST DATA FOR ${country.toUpperCase()}`;
+  // Item: a real "clear everything" mode — country is genuinely
+  // optional now. The confirmation phrase for this is deliberately
+  // different and more explicit than the per-country one
+  // ("DELETE ALL TEST DATA" vs. "DELETE TEST DATA FOR <country>") —
+  // proportional to the real difference in blast radius between
+  // clearing one country and clearing everything at once.
+  const expectedPhrase = country ? `DELETE TEST DATA FOR ${country.toUpperCase()}` : 'DELETE ALL TEST DATA';
   if (confirmPhrase !== expectedPhrase) {
     return res.status(400).json({ error: `Type exactly "${expectedPhrase}" to confirm this action` });
   }
 
-  let untouched = await findUntouchedTestAccounts(country);
+  let untouched = await findUntouchedTestAccounts(country || null);
   if (Array.isArray(accountIds)) {
     const selected = new Set(accountIds);
     untouched = untouched.filter(u => selected.has(u.id));
@@ -1226,7 +1239,7 @@ router.post('/data-cleanup/execute', requireSuperAdmin, async (req, res) => {
   const actor = await me(req);
   await db.insert('dataCleanupAuditLog', {
     id: `dca_${nanoid(10)}`,
-    country,
+    country: country || 'ALL COUNTRIES',
     actorId: actor ? actor.id : null,
     actorName: actor ? actor.name : 'Unknown admin',
     accountsDeleted: untouched.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role })),

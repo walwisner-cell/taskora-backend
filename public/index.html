@@ -4149,6 +4149,15 @@ async function mockAuth() {
 }
 
 let pendingSignupId = null;
+// Item: Walter's explicit request — the system should actively prompt
+// for identity verification right at the moment someone actually
+// becomes a customer or provider, not just wait for the 24-hour
+// reminder (src/document-upload-reminder-scheduler.js) to eventually
+// catch them. Set true only at the exact moment a brand-new signup
+// completes (never on a regular login, which would make this an
+// annoying repeat nag instead of a real one-time part of onboarding),
+// consumed once right after the terms gate closes.
+let JUST_COMPLETED_SIGNUP = false;
 let pendingLoginId = null;
 let pendingReferralCode = null;
 
@@ -4162,6 +4171,7 @@ async function submitSignupVerification() {
     saveAuthSession(data.token);
     pendingSignupId = null;
     pendingReferralCode = null;
+    JUST_COMPLETED_SIGNUP = true; // consumed once, right after the terms gate closes below — see submitTermsAgreement()
     document.getElementById('signup-verify-view').style.display = 'none';
     document.getElementById('auth-main-form').style.display = 'block';
     if (pendingPlanSelection && data.user.role === 'provider') {
@@ -4416,11 +4426,52 @@ async function submitTermsAgreement() {
     const overlay = document.getElementById('terms-gate-overlay');
     if (overlay) overlay.remove();
     showToast('Thanks — you\'re all set.');
+    if (JUST_COMPLETED_SIGNUP) {
+      JUST_COMPLETED_SIGNUP = false; // one-time — never fires again for this account after this
+      if (!AUTH.user.verified) showVerificationOnboardingPrompt();
+    }
   } catch (e) {
     showToast(e.message || 'Could not save your agreement — please try again');
     btn.disabled = false;
     btn.textContent = 'I Agree — Continue';
   }
+}
+
+// Item: the real, active version of "the system asks you to verify" —
+// shown exactly once, right at the true moment of finishing signup, not
+// a passive screen someone has to go discover on their own. Dismissible
+// on purpose, not a hard gate like the terms agreement — someone who
+// isn't ready right this second still has a real account and can still
+// browse; the 24-hour reminder scheduler is the real safety net for
+// anyone who dismisses this and doesn't come back to it themselves.
+function showVerificationOnboardingPrompt() {
+  const role = AUTH.user.role;
+  const isProvider = role === 'provider';
+  const title = isProvider ? 'One last step to become a Pro' : 'Verify your identity';
+  const body = isProvider
+    ? `You're almost there — customers only ever book verified pros. Upload a government ID now and you'll typically be approved within a day, sometimes sooner.`
+    : `Verifying your identity unlocks booking a pro directly. It only takes a couple of minutes, and your document stays private — only your review is ever visible to anyone else.`;
+  const modalHtml = `
+    <div class="modal-overlay open" id="verification-onboarding-prompt" style="z-index:4500;">
+      <div class="modal" style="max-width:440px;" onclick="event.stopPropagation()">
+        <div class="modal-body" style="padding-top:28px;text-align:center;">
+          <div style="font-size:32px;margin-bottom:10px;">🪪</div>
+          <div style="font-size:16px;color:var(--navy);font-weight:700;margin-bottom:8px;">${title}</div>
+          <div style="font-size:13.5px;color:var(--slate);line-height:1.6;">${body}</div>
+        </div>
+        <div class="modal-footer" style="display:flex;flex-direction:column;gap:8px;padding:0 24px 24px;">
+          <button class="confirm-btn" style="width:100%;" onclick="startVerificationFromPrompt('${role}')">Verify Now</button>
+          <button class="btn-sm btn-sm-outline" style="width:100%;" onclick="document.getElementById('verification-onboarding-prompt').remove()">Maybe Later</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+function startVerificationFromPrompt(role) {
+  document.getElementById('verification-onboarding-prompt').remove();
+  if (role === 'provider') selectProviderSection('verification');
+  else selectCustomerSection('verification');
 }
 
 /* ══════════════════════ SHARED DASHBOARD HELPERS ══════════════════════ */
@@ -8898,7 +8949,7 @@ const ADMIN_SECTIONS = {
     <div class="dash-header"><div><div class="dash-title">Data Cleanup</div><div class="dash-sub">Safely clear untouched test accounts under a country — never touches any account with real contract, payment, or dispute history</div></div></div>
     <div class="panel">
       <div class="panel-title">Preview</div>
-      <div class="form-group"><label class="form-label">Country</label><input class="form-input" id="cleanup-country-input" placeholder="e.g. Liberia"/></div>
+      <div class="form-group"><label class="form-label">Country <span style="color:var(--slate);font-weight:400;">(leave blank to check every country at once)</span></label><input class="form-input" id="cleanup-country-input" placeholder="e.g. Liberia — or leave blank for all countries"/></div>
       <button class="btn-sm btn-sm-outline" onclick="previewDataCleanup()">Preview what would be removed</button>
       <div id="data-cleanup-preview-panel" style="margin-top:14px;"></div>
     </div>
@@ -9624,21 +9675,29 @@ async function viewAnnouncementStats(id) {
 // POST /admin/data-cleanup/execute in admin.routes.js for why: this is
 // permanent deletion, so a checkbox isn't enough friction for it).
 let lastCleanupPreviewCountry = null;
+let lastCleanupPreviewDone = false; // separate from the country value itself, since "all countries" is a real, valid target (country: null) distinct from "nothing previewed yet"
+
 async function previewDataCleanup() {
-  const country = document.getElementById('cleanup-country-input').value.trim();
-  if (!country) return showToast('Enter a country');
+  // Item: Walter's real, explicit need before going live — clearing test
+  // data across every country at once, not one at a time. Leaving the
+  // country field blank now means exactly that; typing a specific
+  // country still scopes it the same way as before.
+  const countryInput = document.getElementById('cleanup-country-input').value.trim();
+  const country = countryInput || null;
   const target = document.getElementById('data-cleanup-preview-panel');
   if (!BACKEND_AVAILABLE) { target.innerHTML = '<div style="color:var(--slate);font-size:12.5px;">Preview unavailable in demo mode.</div>'; return; }
   try {
     const result = await apiFetch('POST', '/admin/data-cleanup/preview', { country });
     lastCleanupPreviewCountry = country;
-    const expectedPhrase = `DELETE TEST DATA FOR ${country.toUpperCase()}`;
+    lastCleanupPreviewDone = true;
+    const scopeLabel = country ? escapeHtml(country) : 'every country';
+    const expectedPhrase = country ? `DELETE TEST DATA FOR ${country.toUpperCase()}` : 'DELETE ALL TEST DATA';
     if (!result.accountsEligible.length) {
-      target.innerHTML = `<div style="color:var(--slate);font-size:12.5px;">No untouched test accounts found under ${escapeHtml(country)} — nothing eligible to clear. Any account there has real contract, payment, or dispute history and won't be touched by this tool.</div>`;
+      target.innerHTML = `<div style="color:var(--slate);font-size:12.5px;">No untouched test accounts found under ${scopeLabel} — nothing eligible to clear. Any account there has real contract, payment, or dispute history and won't be touched by this tool.</div>`;
       return;
     }
     target.innerHTML = `
-      <div style="font-size:12.5px;color:var(--navy);margin-bottom:8px;"><strong>${result.accountsEligible.length} account${result.accountsEligible.length === 1 ? '' : 's'}</strong> eligible for removal, plus related match/notification/verification/photo records for whichever ones you select below. None of these have ever had a real contract, payment, or dispute.</div>
+      <div style="font-size:12.5px;color:var(--navy);margin-bottom:8px;"><strong>${result.accountsEligible.length} account${result.accountsEligible.length === 1 ? '' : 's'}</strong> eligible for removal under ${scopeLabel}, plus related match/notification/verification/photo records for whichever ones you select below. None of these have ever had a real contract, payment, or dispute.</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
         <span style="font-size:11.5px;color:var(--slate);">Select which accounts to remove — all selected by default</span>
         <span><a onclick="toggleAllCleanupSelections(true)" style="font-size:11.5px;cursor:pointer;color:var(--navy);font-weight:600;">Select all</a> · <a onclick="toggleAllCleanupSelections(false)" style="font-size:11.5px;cursor:pointer;color:var(--navy);font-weight:600;">Select none</a></span>
@@ -9674,7 +9733,7 @@ function toggleAllCleanupSelections(checked) {
 
 async function executeDataCleanup() {
   const confirmPhrase = document.getElementById('cleanup-confirm-input').value.trim();
-  if (!lastCleanupPreviewCountry) return showToast('Preview first');
+  if (!lastCleanupPreviewDone) return showToast('Preview first');
   const accountIds = Array.from(document.querySelectorAll('.cleanup-account-checkbox:checked')).map(cb => cb.dataset.accountId);
   if (!accountIds.length) return showToast('Select at least one account first');
   try {

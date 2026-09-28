@@ -51,6 +51,29 @@ You uploaded a second, older zip (`trothen-updates_22_.zip`) and asked me to che
 
 **I could only partially test this one.** Real Google-token verification needs to reach Google's own servers, which this sandbox's network rules don't allow — so I confirmed the code fails cleanly (a proper error, not a crash) when it can't reach Google, and confirmed nothing else broke, but I could not run an actual successful Google sign-in end to end the way I tested everything else this session. You'll want to genuinely click through it once this is live.
 
+## The system now actively asks for verification, right when it matters
+
+You asked for this specifically: the system should prompt for documents, not just wait for someone to find the screen on their own. There was already a real 24-hour reminder if someone forgot — but that's a delayed safety net, not the immediate "let's get this done" moment you wanted.
+
+**Built the real thing.** The instant someone finishes signing up and agrees to the terms — genuinely the first natural moment, not a random interruption later — the app now shows a real prompt asking them to verify right then, with copy that's different for customers versus providers ("One last step to become a Pro" for providers specifically). A real "Verify Now" button takes them straight to the actual working verification screen. A real "Maybe Later" lets them skip it without being blocked — their account still works, and the existing 24-hour reminder still catches them if they never come back to it themselves.
+
+Important thing I made sure of: **this only ever fires once, at the true moment of signing up** — I confirmed directly that logging back in later as that same still-unverified person does *not* bring it back. A repeat nag on every login would just be annoying; a real one-time nudge at the moment it's most natural is the actual ask.
+
+## Verification, stress-tested beyond the happy path — and a real clean-slate tool before you go live
+
+You asked me to make sure verification is genuinely solid, and to give you a real way to clear out test accounts everywhere before real providers start signing up. Both done, both tested for real.
+
+**Verification, pushed harder than the first pass:**
+- A fake file with a spoofed `.jpg` extension but no real image data — correctly rejected, caught by checking the actual file content, not just the name
+- Admin rejects with a real, typed reason — the provider gets a real, specific notification with that exact reason, not a generic message
+- Resubmitting after a rejection — works correctly, and the old rejected record is properly replaced, not left sitting there as a duplicate
+
+**How it actually works, plainly:** anyone can sign up immediately, but can't post or accept real work until an admin approves their submitted ID — a real document, a real legal name, checked against the account. A provider additionally needs a profile photo before showing up in search at all. Every decision, approved or rejected, is a real person's real judgment call — nothing here auto-approves itself.
+
+**A real "clean everything" tool, not just per-country.** The existing Data Cleanup tool already only ever touches accounts with zero real contract, payment, or dispute history — that part was already solid. What was missing: it only ever worked one country at a time, and you're operating in several now. Leave the country field blank and it sweeps every country at once, with the exact same safety rules and a real, typed confirmation phrase — a more deliberate one than the per-country version, since clearing everything is a bigger action than clearing one place.
+
+Proved this directly: set up real test accounts across three different countries plus one account with a genuine contract on its record, ran the sweep, and confirmed exactly the three untouched ones were removed while the one with real history — and its contract — were both left completely alone.
+
 ## The most serious bug found this entire build — identity verification was completely broken
 
 You asked me to look through the whole codebase for gaps like the pricing one. I found something far more serious, and it needs to be said plainly: **nobody has ever been able to successfully submit identity verification through the real app.** Not a small edge case — every single real attempt, for every customer and every provider, in every country, has failed.
