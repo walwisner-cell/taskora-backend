@@ -1513,7 +1513,7 @@ router.get('/settings/homepage-content', requireSuperAdmin, async (req, res) => 
 // the homepage copy. Takes effect immediately for every visitor — no
 // deploy needed.
 router.patch('/settings/homepage-content', requireSuperAdmin, async (req, res) => {
-  const { heroPrefix, heroRotatingWords, heroSuffix, heroSubheadline, missionHeadline, missionBody, featuredCountries } = req.body || {};
+  const { heroPrefix, heroRotatingWords, heroSuffix, heroSubheadline, missionHeadline, missionBody } = req.body || {};
   if (!isNonEmptyString(heroPrefix, { min: 2, max: 60 })) return res.status(400).json({ error: 'Enter a hero headline prefix' });
   if (!Array.isArray(heroRotatingWords) || heroRotatingWords.length === 0 || heroRotatingWords.some(w => typeof w !== 'string' || !w.trim())) {
     return res.status(400).json({ error: 'Enter at least one rotating word (comma-separated)' });
@@ -1522,12 +1522,6 @@ router.patch('/settings/homepage-content', requireSuperAdmin, async (req, res) =
   if (!isNonEmptyString(heroSubheadline, { min: 10, max: 400 })) return res.status(400).json({ error: 'Enter a hero subheadline (10-400 characters)' });
   if (!isNonEmptyString(missionHeadline, { min: 5, max: 150 })) return res.status(400).json({ error: 'Enter a mission headline' });
   if (!isNonEmptyString(missionBody, { min: 20, max: 1200 })) return res.status(400).json({ error: 'Enter mission body text (20-1200 characters)' });
-  // Item: the old hardcoded "Live in the U.S. · Nigeria · Ghana ·
-  // Liberia" line — real now, and genuinely editable, rather than a
-  // permanent, increasingly-false claim baked into the page itself.
-  if (!Array.isArray(featuredCountries) || featuredCountries.length === 0 || featuredCountries.some(c => typeof c !== 'string' || !c.trim())) {
-    return res.status(400).json({ error: 'Enter at least one featured country (comma-separated)' });
-  }
   const { setSetting } = require('../platform-settings');
   const content = {
     heroPrefix: heroPrefix.trim(),
@@ -1536,7 +1530,6 @@ router.patch('/settings/homepage-content', requireSuperAdmin, async (req, res) =
     heroSubheadline: heroSubheadline.trim(),
     missionHeadline: missionHeadline.trim(),
     missionBody: missionBody.trim(),
-    featuredCountries: featuredCountries.map(c => c.trim()).filter(Boolean),
   };
   await setSetting('homepageContent', content);
   res.json({ ok: true, ...content });

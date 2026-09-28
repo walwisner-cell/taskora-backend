@@ -66,13 +66,13 @@ I confirmed this wasn't theoretical — I submitted exactly what the real button
 
 **Completely rebuilt, and proven working end to end.** The screen now has a real file picker, a real legal-name field, and a real document-type dropdown — genuinely populated from the backend's own country-aware list (an endpoint that, remarkably, already existed and worked perfectly, just had nothing calling it). I proved the whole thing works by creating a fresh test account, going through the actual screen exactly the way a real person would, and confirming a real, complete, correctly-formed record landed in the admin review queue afterward — the first real one that's ever existed.
 
-## The "Live in..." line — now real, editable, and animated
+## The "Live in..." line — a real correction, now genuinely connected
 
-You flagged that the "Live in the U.S. · Nigeria · Ghana · Liberia" line under the homepage headline was just permanently hardcoded — not reflecting anything real, and not something you could change without a code deploy. Fixed properly:
+You caught something real: the first fix made this dynamic, but from a separate, manually-typed setting — not the actual Countries panel where you really manage which countries are live. That's exactly the kind of "looks connected but isn't really" gap you'd already caught me on with the pricing and support-contact screens, and you were right to catch it here too.
 
-- It's now a real, admin-editable list — **Admin → Settings → Homepage Content → Featured Countries** — separate from the platform's full technical "live countries" list (which defaults to nearly every country in the world and would make a meaningless marketing line if used directly)
-- It has a real, continuous scrolling animation now, the "live" feel you asked for — and respects a visitor's system-level "reduce motion" preference, same as the rest of the app already does elsewhere
-- Tested for real: set it to a genuinely different set of countries, confirmed the real public homepage actually shows the new list, and confirmed the old hardcoded countries are genuinely gone, not just hidden
+**Fixed properly this time — this line now reads directly from the real thing.** There's no separate field to manage anymore. Whatever countries are actually toggled "live" in **Admin → Locations & Countries** is exactly what shows on the homepage, live, with zero extra save step. I proved this the strongest way I could: logged in as a super admin, flipped one real country's status using the exact same action you'd take, and confirmed the public homepage reflected it immediately — no separate settings screen involved at all. The old manual text field is gone entirely, not just hidden.
+
+Still has the real scrolling animation from before, still respects a visitor's reduced-motion preference.
 
 ## Checked the whole app for the same pattern — found one more real gap, fixed it too
 

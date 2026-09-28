@@ -7319,17 +7319,15 @@ async function saveHomepageContent() {
   const heroSubheadline = document.getElementById('hc-hero-subheadline').value.trim();
   const missionHeadline = document.getElementById('hc-mission-headline').value.trim();
   const missionBody = document.getElementById('hc-mission-body').value.trim();
-  const featuredCountries = document.getElementById('hc-featured-countries').value.split(',').map(c => c.trim()).filter(Boolean);
   if (!heroPrefix) return showToast('Enter a hero headline prefix');
   if (!heroRotatingWords.length) return showToast('Enter at least one rotating word, comma-separated');
   if (!heroSuffix) return showToast('Enter a hero headline suffix');
   if (heroSubheadline.length < 10) return showToast('Hero subheadline is too short');
   if (!missionHeadline) return showToast('Enter a mission headline');
   if (missionBody.length < 20) return showToast('Mission body is too short');
-  if (!featuredCountries.length) return showToast('Enter at least one featured country, comma-separated');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
-    await apiFetch('PATCH', '/admin/settings/homepage-content', { heroPrefix, heroRotatingWords, heroSuffix, heroSubheadline, missionHeadline, missionBody, featuredCountries });
+    await apiFetch('PATCH', '/admin/settings/homepage-content', { heroPrefix, heroRotatingWords, heroSuffix, heroSubheadline, missionHeadline, missionBody });
     showToast('Homepage content updated — live now');
     await loadAdminData();
     selectAdminSection('settings');
@@ -9086,7 +9084,9 @@ const ADMIN_SECTIONS = {
       <div class="form-group"><label class="form-label">Hero Subheadline</label><textarea class="form-input" id="hc-hero-subheadline" rows="2" style="resize:vertical;">${adminData.homepageContent ? adminData.homepageContent.heroSubheadline : ''}</textarea></div>
       <div class="form-group"><label class="form-label">Mission Headline</label><input class="form-input" id="hc-mission-headline" value="${adminData.homepageContent ? adminData.homepageContent.missionHeadline : ''}"/></div>
       <div class="form-group"><label class="form-label">Mission Body</label><textarea class="form-input" id="hc-mission-body" rows="4" style="resize:vertical;">${adminData.homepageContent ? adminData.homepageContent.missionBody : ''}</textarea></div>
-      <div class="form-group"><label class="form-label">Featured Countries <span style="color:var(--slate);font-weight:400;">(comma-separated — the real "Live in..." line under the hero, now genuinely editable instead of hardcoded)</span></label><input class="form-input" id="hc-featured-countries" value="${adminData.homepageContent && adminData.homepageContent.featuredCountries ? adminData.homepageContent.featuredCountries.join(', ') : ''}" placeholder="United States, Nigeria, Ghana, Liberia"/></div>
+      <div class="form-group"><label class="form-label">Featured Countries</label>
+        <div style="font-size:12.5px;color:var(--slate);background:var(--offwhite);border-radius:8px;padding:10px 12px;">This line is genuinely connected to <strong>Admin → Locations & Countries</strong> now, not a separate field here — it always shows whichever countries are actually toggled "live" there. To change what shows on the homepage, toggle a country's status on that screen instead.</div>
+      </div>
       <button class="btn-sm btn-sm-primary" onclick="saveHomepageContent()">Save</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Homepage Photos</div>

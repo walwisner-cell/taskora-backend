@@ -373,7 +373,16 @@ router.get('/homepage-content', async (req, res) => {
   // there's no real case where someone deliberately re-saves the exact
   // default text and expects it to stop translating.
   const isCustomized = JSON.stringify(content) !== JSON.stringify(DEFAULTS.homepageContent);
-  res.json({ ...content, isCustomized });
+  // Item: genuinely connected to the real Countries admin panel now —
+  // this is Walter's actual, real, explicit correction: a separate,
+  // manually-typed "Featured Countries" text field could drift out of
+  // sync with what's really configured, which is exactly the bug he
+  // caught. There's no separate setting to edit anymore — this always
+  // reflects whichever countries are actually toggled to "live" in
+  // Admin → Locations & Countries, live, every time this loads. Editing
+  // this line now means editing the real thing, not a duplicate of it.
+  const liveCountries = (await db.filter('countries', c => c.status === 'live')).map(c => c.name);
+  res.json({ ...content, featuredCountries: liveCountries, isCustomized });
 });
 
 // GET /api/about-us-content, /api/terms-of-service-customer-content,
