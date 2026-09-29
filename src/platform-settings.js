@@ -195,12 +195,12 @@ Questions about these Terms: support@trothen.io`,
   // full page-builder — the rest of the homepage (stats, categories,
   // trust badges) is generated from real data and isn't free-text anyway.
   homepageContent: {
-    heroPrefix: 'Find Trusted Local',
-    heroRotatingWords: ['Pros', 'Plumbers', 'Cleaners', 'Tutors', 'Electricians'],
-    heroSuffix: 'Instantly',
-    heroSubheadline: "Every pro is ID-verified. Every job runs on an auto-generated contract with funds held in escrow until you're satisfied. Book in under 2 minutes.",
-    missionHeadline: "Local services shouldn't require a leap of faith.",
-    missionBody: "From Atlanta to Lagos to Accra, hiring a plumber or a tutor has always meant crossing your fingers — no way to know who's really showing up, and no recourse if it goes wrong. Trothen closes that gap: every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is done right. Trust shouldn't be a gamble. On Trothen, it's the default.",
+    heroPrefix: "Local",
+    heroRotatingWords: ['pros', 'plumbers', 'cleaners', 'tutors', 'electricians', 'painters'],
+    heroSuffix: "you can check before you hire.",
+    heroSubheadline: "Every pro on Trothen has had their government ID checked. You agree the price and the work in writing, and your payment is held until you mark the job done.",
+    missionHeadline: "Hiring someone local shouldn't be a gamble.",
+    missionBody: "Most people find a plumber or a tutor through a friend of a friend and hope it works out. If it doesn't, there's usually nobody to call. Trothen checks every pro's government ID before they can take a job, puts the price and the work in writing for every booking, and holds the payment until you say the job is done. If something goes wrong, our dispute team steps in.",
   },
 };
 
