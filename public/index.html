@@ -1513,6 +1513,108 @@
   }
   /* Pop-ups always sit above the early-access notice */
   .modal-overlay { z-index:600; }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     v60 A FRONT PAGE THAT MOVES
+     The job ticket now runs through a booking on a loop, with a status
+     chip, a ring on the step in progress, ticks on finished steps, a
+     shimmer on the lines still to come and a "Job done" stamp at the
+     end. Sections below the hero slide in as they're reached, and the
+     "Popular right now" cards get a drawn icon, a pro count and a lift
+     on hover.
+     ═══════════════════════════════════════════════════════════════════ */
+  @keyframes v60Ring { 0% { transform:scale(.85); opacity:.7; } 100% { transform:scale(1.55); opacity:0; } }
+  @keyframes v60Shimmer { from { background-position:-180px 0; } to { background-position:180px 0; } }
+  @keyframes v60Stamp { 0% { opacity:0; transform:scale(1.8) rotate(-18deg); } 60% { opacity:1; transform:scale(.94) rotate(-9deg); } 100% { opacity:1; transform:scale(1) rotate(-9deg); } }
+  @keyframes v60Blink { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+  @keyframes v60In { from { opacity:0; transform:translateY(22px); } to { opacity:1; transform:none; } }
+
+  /* Ticket header: title and a live status chip */
+  .ticket-title-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 16px; }
+  .ticket-title-row h2 { margin:0 !important; }
+  .ticket-status { flex-shrink:0; display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:700; padding:5px 10px; border-radius:999px; background:#E6EEF7; color:var(--teal-dark); white-space:nowrap; }
+  .ticket-status::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; }
+  .ticket.autoplaying .ticket-status::before { animation:v60Blink 1.2s ease-in-out infinite; }
+  .ticket-status[data-stage="1"] { background:#E3E8EF; color:var(--navy); }
+  .ticket-status[data-stage="2"] { background:#FCEFC4; color:#6B4E00; }
+  .ticket-status[data-stage="3"] { background:#DCF1E6; color:var(--success); }
+  .ticket-status.is-swapping { animation:v57Drop .3s ease-out both; }
+
+  /* Steps: ring on the one in progress, a tick on finished ones */
+  .ticket-step span { position:relative; width:32px; height:32px; font-size:14.5px; }
+  .ticket-step span b { font-weight:700; }
+  .ticket-step span svg { display:none; width:16px; height:16px; fill:none; stroke:#fff; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+  .ticket-step.is-done span b { display:none; }
+  .ticket-step.is-done span svg { display:block; }
+  .ticket-step.is-on span::after { content:''; position:absolute; inset:-5px; border-radius:50%; border:2px solid var(--teal); opacity:0; }
+  .ticket.autoplaying .ticket-step.is-on span::after { animation:v60Ring 1.5s ease-out infinite; }
+  .ticket-steps::before, .ticket-steps::after { top:15px; height:3px; border-radius:2px; }
+  .ticket-steps::after { transition:width .6s cubic-bezier(.4,0,.2,1); background:linear-gradient(90deg, var(--teal), #3C86D6); }
+
+  /* Lines still to come shimmer, so the ticket reads as "filling in" */
+  .tf.is-pending dd::after { background:linear-gradient(90deg, #E3E8EE 0, #F4F6F9 40%, #E3E8EE 80%) 0 0 / 180px 100% repeat-x; animation:v60Shimmer 1.4s linear infinite; border-radius:4px; height:10px; margin-top:-5px; }
+  .tf { transition:background-color .4s ease; }
+  .tf.is-new { background:linear-gradient(90deg, rgba(242,194,48,.14), transparent 70%); }
+
+  /* The "Job done" stamp */
+  .ticket-body { position:relative; }
+  .ticket-stamp { position:absolute; right:20px; top:112px; pointer-events:none; opacity:0; }
+  .ticket-stamp span { display:inline-flex; align-items:center; gap:6px; border:3px solid var(--success); color:var(--success); border-radius:8px; padding:6px 12px; font-family:var(--font-display); font-weight:700; font-size:22px; background:rgba(255,255,255,.88); box-shadow:inset 0 0 0 2px #fff, inset 0 0 0 4px rgba(31,122,85,.35); }
+  .ticket[data-stage="3"] .ticket-stamp { animation:v60Stamp .55s cubic-bezier(.3,.8,.3,1.1) .25s both; }
+  .ticket.resetting .ticket-stamp, .ticket.resetting .tf dd { opacity:0; transition:opacity .3s ease; }
+
+  .ticket-timer { height:4px; }
+
+  /* Popular right now */
+  .popular-projects-grid { grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; }
+  .pp-card { display:flex; flex-direction:column; align-items:flex-start; gap:4px; text-align:left; background:#fff; border:1px solid var(--border); border-radius:var(--r-card); padding:20px; cursor:pointer; font-family:inherit; color:var(--text); position:relative; overflow:hidden; transition:transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+  .pp-card::after { content:''; position:absolute; left:0; right:0; bottom:0; height:3px; background:var(--pp-accent, var(--teal)); transform:scaleX(0); transform-origin:left; transition:transform .3s ease; }
+  .pp-card:hover { transform:translateY(-4px); box-shadow:0 14px 30px rgba(15,38,64,.12); border-color:#9AA6B2; }
+  .pp-card:hover::after { transform:scaleX(1); }
+  .pp-photo { width:calc(100% + 40px); margin:-20px -20px 14px; aspect-ratio:16/9; object-fit:cover; display:block; }
+  .pp-icon { width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; margin-bottom:12px; background:var(--pp-tint, #E6EEF7); color:var(--pp-accent, var(--teal)); font-family:var(--font-display); font-weight:700; font-size:20px; transition:transform .25s cubic-bezier(.3,.7,.3,1.3); }
+  .pp-icon svg { width:26px; height:26px; }
+  .pp-card:hover .pp-icon { transform:scale(1.08) rotate(-4deg); }
+  .pp-name { font-family:var(--font-display); font-size:21px; font-weight:600; color:var(--navy); line-height:1.15; }
+  .pp-price { font-size:16px; color:var(--text); font-weight:600; }
+  .pp-meta { font-size:14.5px; color:var(--slate); }
+  .pp-go { margin-top:10px; font-size:14.5px; font-weight:700; color:var(--teal); border-bottom:2px solid rgba(29,95,168,.3); transition:border-color .2s ease; }
+  .pp-card:hover .pp-go { border-bottom-color:var(--teal); }
+
+  /* Pro cards and the location note */
+  .provider-card { transition:transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+  .provider-card:hover { transform:translateY(-4px); box-shadow:0 14px 30px rgba(15,38,64,.12); border-color:#9AA6B2; }
+  .provider-avatar { box-shadow:0 0 0 3px #fff, 0 0 0 5px #D8E3EF; }
+  #providers-scope-note { background:#EEF4FB !important; border:1px solid #C9DAEE !important; color:var(--navy) !important; border-radius:var(--r-control) !important; font-size:14.5px !important; }
+
+  /* Category rows: count as a small pill */
+  .cat-row .cat-n { background:var(--offwhite); padding:2px 8px; border-radius:999px; }
+
+  /* Tighter rhythm between the white sections */
+  #screen-home .section { padding-top:52px; padding-bottom:52px; }
+  #screen-home .section + .section { border-top:1px solid #E6EAEF; }
+
+  /* Sections slide in as they're reached */
+  .rv { opacity:0; transform:translateY(22px); }
+  .rv.rv-in { animation:v60In .7s cubic-bezier(.2,.7,.2,1) var(--rv-delay, 0s) both; }
+
+  @media (max-width: 700px) {
+    .ticket-title-row { flex-wrap:wrap; }
+    .ticket-stamp { right:12px; top:120px; }
+    .ticket-stamp span { font-size:18px; }
+    .popular-projects-grid { grid-template-columns:1fr 1fr; }
+    .pp-card { padding:16px; }
+    .pp-photo { width:calc(100% + 32px); margin:-16px -16px 12px; }
+    .pp-name { font-size:18px; }
+  }
+  @media (max-width: 380px) { .popular-projects-grid { grid-template-columns:1fr; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rv { opacity:1 !important; transform:none !important; animation:none !important; }
+    .ticket-step.is-on span::after, .tf.is-pending dd::after, .ticket-status::before { animation:none !important; }
+    .ticket[data-stage="3"] .ticket-stamp { animation:none !important; opacity:1; transform:rotate(-9deg); }
+    .pp-card, .provider-card, .pp-icon { transition:none !important; transform:none !important; }
+  }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -1565,12 +1667,15 @@
            no names, prices or people are invented. -->
       <section class="ticket" aria-labelledby="ticket-title">
         <div class="ticket-head">
-          <h2 id="ticket-title" data-i18n="ticket_title">What happens when you book</h2>
+          <div class="ticket-title-row">
+            <h2 id="ticket-title" data-i18n="ticket_title">What happens when you book</h2>
+            <span class="ticket-status" id="ticket-status" data-stage="0" data-i18n="ticket_status_1">Finding pros</span>
+          </div>
           <div class="ticket-steps" role="tablist" aria-label="Booking steps">
-            <button type="button" role="tab" class="ticket-step is-on" aria-selected="true" data-step="0" onclick="ticketGo(0)"><span>1</span><em data-i18n="ticket_s1">You ask</em></button>
-            <button type="button" role="tab" class="ticket-step" aria-selected="false" data-step="1" onclick="ticketGo(1)" tabindex="-1"><span>2</span><em data-i18n="ticket_s2">You agree</em></button>
-            <button type="button" role="tab" class="ticket-step" aria-selected="false" data-step="2" onclick="ticketGo(2)" tabindex="-1"><span>3</span><em data-i18n="ticket_s3">Payment held</em></button>
-            <button type="button" role="tab" class="ticket-step" aria-selected="false" data-step="3" onclick="ticketGo(3)" tabindex="-1"><span>4</span><em data-i18n="ticket_s4">Job done</em></button>
+            <button type="button" role="tab" class="ticket-step is-on" aria-selected="true" data-step="0" onclick="ticketGo(0)"><span><b>1</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><em data-i18n="ticket_s1">You ask</em></button>
+            <button type="button" role="tab" class="ticket-step" aria-selected="false" data-step="1" onclick="ticketGo(1)" tabindex="-1"><span><b>2</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><em data-i18n="ticket_s2">You agree</em></button>
+            <button type="button" role="tab" class="ticket-step" aria-selected="false" data-step="2" onclick="ticketGo(2)" tabindex="-1"><span><b>3</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><em data-i18n="ticket_s3">Payment held</em></button>
+            <button type="button" role="tab" class="ticket-step" aria-selected="false" data-step="3" onclick="ticketGo(3)" tabindex="-1"><span><b>4</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><em data-i18n="ticket_s4">Job done</em></button>
           </div>
         </div>
         <div class="ticket-body" role="tabpanel" aria-live="polite">
@@ -1581,6 +1686,7 @@
             <div class="tf" data-from="2"><dt data-i18n="ticket_f_pay">Your payment</dt><dd data-i18n="ticket_v_pay">Held by Trothen</dd></div>
             <div class="tf" data-from="3"><dt data-i18n="ticket_f_status">Status</dt><dd data-i18n="ticket_v_status">Complete, pro paid</dd></div>
           </dl>
+          <div class="ticket-stamp" aria-hidden="true"><span data-i18n="ticket_stamp">Job done</span></div>
           <p class="ticket-note" id="ticket-note" data-i18n="ticket_n1">Tell us the job and where it is. You'll see nearby pros whose ID we've checked, with their rates and reviews.</p>
         </div>
         <div class="ticket-foot">
@@ -3695,6 +3801,15 @@ const I18N = {
     banner_short_body: "payments are simulated.",
     banner_short_card: "Don't enter real card details.",
     banner_short_generic: "some features are in test mode.",
+    ticket_status_1: "Finding pros",
+    ticket_status_2: "Agreed",
+    ticket_status_3: "Payment held",
+    ticket_status_4: "Complete",
+    ticket_stamp: "Job done",
+    popular_from: "From",
+    popular_pro_one: "checked pro ready",
+    popular_pro_many: "checked pros ready",
+    popular_see: "See pros",
   },
   es: {
     lang_name: 'Español',
@@ -3777,6 +3892,15 @@ const I18N = {
     banner_short_body: "los pagos son simulados.",
     banner_short_card: "No ingreses datos reales de tarjeta.",
     banner_short_generic: "algunas funciones están en modo de prueba.",
+    ticket_status_1: "Buscando",
+    ticket_status_2: "Acordado",
+    ticket_status_3: "Pago retenido",
+    ticket_status_4: "Completado",
+    ticket_stamp: "Hecho",
+    popular_from: "Desde",
+    popular_pro_one: "profesional verificado",
+    popular_pro_many: "profesionales verificados",
+    popular_see: "Ver profesionales",
   },
   fr: {
     lang_name: 'Français',
@@ -12890,16 +13014,7 @@ async function loadPopularProjects() {
   try {
     const { projects } = await apiFetch('GET', '/popular-projects');
     if (!projects.length) return; // stays hidden — nothing real to show yet
-    document.getElementById('popular-projects-grid').innerHTML = projects.map(p => `
-      <div class="popular-project-card" onclick="filterCat('${p.name.replace(/'/g, "\\'")}')">
-        ${p.imageUrl
-          ? `<img src="${p.imageUrl}" alt="${p.name}" class="popular-project-photo"/>`
-          : `<div class="popular-project-photo-fallback">${p.icon}</div>`}
-        <div class="popular-project-body">
-          <div class="popular-project-name">${p.name}</div>
-          <div class="popular-project-price">${p.startingAt != null ? `Starting at $${p.startingAt}/hr` : `${p.proCount} verified pro${p.proCount === 1 ? '' : 's'}`}</div>
-        </div>
-      </div>`).join('');
+    document.getElementById('popular-projects-grid').innerHTML = projects.map((p, i) => popularCardHTML(p, i)).join('');
     section.style.display = '';
   } catch (e) { console.warn('Could not load popular projects', e); }
 }
@@ -13324,6 +13439,14 @@ function ticketGo(target, fromAutoplay) {
     row.classList.toggle('is-pending', from > next);
     row.classList.toggle('is-new', from === next && next !== prev && from > 0);
   });
+  const chip = document.getElementById('ticket-status');
+  if (chip) {
+    const key = 'ticket_status_' + (next + 1);
+    chip.dataset.i18n = key; chip.textContent = t(key); chip.dataset.stage = String(next);
+    if (next !== prev) { chip.classList.remove('is-swapping'); void chip.offsetWidth; chip.classList.add('is-swapping'); }
+  }
+  const ticketEl = document.querySelector('.ticket');
+  if (ticketEl) ticketEl.dataset.stage = String(next);
   const note = document.getElementById('ticket-note');
   if (note) {
     note.dataset.i18n = 'ticket_n' + (next + 1); note.textContent = t('ticket_n' + (next + 1));
@@ -13512,16 +13635,26 @@ function startHeroWordRotation() {
   }, 2800);
 }
 
-// The ticket plays through a booking once by itself when it's on screen.
-// Hovering or focusing it pauses; clicking anything in it hands control to
-// the visitor for good. Never plays for reduced-motion users.
-const TICKET_STEP_MS = 3400;
+// The ticket plays through a booking on its own, over and over, while
+// it's on screen: step 1 → 2 → 3 → 4, a short pause on "Job done", then
+// back to the start. Clicking a step or "Next step" takes over; it picks
+// up again by itself after a few quiet seconds. It holds still only
+// while the pointer is on its buttons, while someone is using it with the
+// keyboard, or when nobody can see it. Never plays for reduced-motion
+// users.
+const TICKET_STEP_MS = 3200;
+const TICKET_LAST_HOLD_MS = 4200;
+const TICKET_RESUME_AFTER_MS = 9000;
 let TICKET_TIMER = null;
-let TICKET_USER_TOOK_OVER = false;
+let TICKET_RESUME_TIMER = null;
 let TICKET_PAUSED = false;
-function ticketRestartTimerLine() {
+let TICKET_ON_SCREEN = false;
+function ticketStepCount() { return document.querySelectorAll('.ticket-step').length || 4; }
+function ticketRestartTimerLine(ms) {
+  const ticket = document.querySelector('.ticket');
   const line = document.querySelector('.ticket-timer');
-  if (!line) return;
+  if (!ticket || !line) return;
+  ticket.style.setProperty('--ticket-step-ms', ms + 'ms');
   line.classList.remove('run');
   void line.offsetWidth;
   line.classList.add('run');
@@ -13532,33 +13665,63 @@ function ticketStopAutoplay() {
   const ticket = document.querySelector('.ticket');
   if (ticket) ticket.classList.remove('autoplaying');
 }
+function ticketCanPlay() {
+  const home = document.getElementById('screen-home');
+  return !V57_REDUCED_MOTION && TICKET_ON_SCREEN && !document.hidden && !!home && home.classList.contains('active');
+}
 function ticketScheduleNext() {
   if (TICKET_TIMER) clearTimeout(TICKET_TIMER);
-  const steps = document.querySelectorAll('.ticket-step').length;
-  if (TICKET_USER_TOOK_OVER || TICKET_STAGE >= steps - 1) { ticketStopAutoplay(); return; }
   const ticket = document.querySelector('.ticket');
-  if (ticket) ticket.classList.add('autoplaying');
-  ticketRestartTimerLine();
+  if (!ticket) return;
+  const atEnd = TICKET_STAGE >= ticketStepCount() - 1;
+  const wait = atEnd ? TICKET_LAST_HOLD_MS : TICKET_STEP_MS;
+  ticket.classList.add('autoplaying');
+  ticketRestartTimerLine(wait);
   TICKET_TIMER = setTimeout(() => {
-    const homeShowing = document.getElementById('screen-home') && document.getElementById('screen-home').classList.contains('active');
-    if (TICKET_PAUSED || document.hidden || !homeShowing) { ticketScheduleNext(); return; }
-    ticketGo(TICKET_STAGE + 1, true);
-    ticketScheduleNext();
-  }, TICKET_STEP_MS);
+    if (TICKET_PAUSED || !ticketCanPlay()) { ticket.classList.remove('autoplaying'); TICKET_TIMER = null; return; }
+    if (atEnd) {
+      ticket.classList.add('resetting');
+      setTimeout(() => { ticket.classList.remove('resetting'); ticketGo(0, true); ticketScheduleNext(); }, 420);
+    } else {
+      ticketGo(TICKET_STAGE + 1, true);
+      ticketScheduleNext();
+    }
+  }, wait);
+}
+function ticketResumeSoon(ms) {
+  if (TICKET_RESUME_TIMER) clearTimeout(TICKET_RESUME_TIMER);
+  TICKET_RESUME_TIMER = setTimeout(() => { if (!TICKET_PAUSED && ticketCanPlay()) ticketScheduleNext(); }, ms);
 }
 function setupTicketMotion() {
   const ticket = document.querySelector('.ticket');
   if (!ticket) return;
-  ticket.style.setProperty('--ticket-step-ms', TICKET_STEP_MS + 'ms');
   if (!ticket.querySelector('.ticket-timer')) ticket.insertAdjacentHTML('beforeend', '<div class="ticket-timer" aria-hidden="true"></div>');
-  ticket.addEventListener('mouseenter', () => { TICKET_PAUSED = true; ticket.classList.remove('autoplaying'); });
-  ticket.addEventListener('mouseleave', () => { TICKET_PAUSED = false; if (TICKET_TIMER) ticketScheduleNext(); });
-  ticket.addEventListener('focusin', () => { TICKET_PAUSED = true; });
-  ticket.addEventListener('focusout', () => { TICKET_PAUSED = false; });
-  ticket.addEventListener('click', () => { TICKET_USER_TOOK_OVER = true; ticketStopAutoplay(); });
+  const foot = ticket.querySelector('.ticket-foot');
+  if (foot) {
+    foot.addEventListener('mouseenter', () => { TICKET_PAUSED = true; ticketStopAutoplay(); });
+    foot.addEventListener('mouseleave', () => { TICKET_PAUSED = false; ticketResumeSoon(1500); });
+  }
+  ticket.addEventListener('focusin', (e) => { if (e.target.matches(':focus-visible')) { TICKET_PAUSED = true; ticketStopAutoplay(); } });
+  ticket.addEventListener('focusout', () => { TICKET_PAUSED = false; ticketResumeSoon(TICKET_RESUME_AFTER_MS); });
+  ticket.addEventListener('click', (e) => {
+    if (!e.target.closest('.ticket-step, .ticket-next')) return;
+    ticketStopAutoplay();
+    ticketResumeSoon(TICKET_RESUME_AFTER_MS);
+  });
   if (V57_REDUCED_MOTION) return;
-  // Wait for the hero's arrival to finish before the first step moves.
-  whenVisible(ticket, () => setTimeout(() => { if (!TICKET_USER_TOOK_OVER) ticketScheduleNext(); }, 1200), 0.6);
+  const start = () => { if (!TICKET_TIMER && !TICKET_PAUSED && ticketCanPlay()) ticketScheduleNext(); };
+  if ('IntersectionObserver' in window) {
+    let first = true;
+    new IntersectionObserver(entries => {
+      TICKET_ON_SCREEN = entries.some(en => en.isIntersecting);
+      if (TICKET_ON_SCREEN) setTimeout(start, first ? 1200 : 300);
+      first = false;
+    }, { threshold: 0.35 }).observe(ticket);
+  } else { TICKET_ON_SCREEN = true; setTimeout(start, 1200); }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(start, 400); });
+  // Coming back to the home page from another screen
+  const home = document.getElementById('screen-home');
+  if (home) new MutationObserver(() => { if (home.classList.contains('active')) setTimeout(start, 500); }).observe(home, { attributes: true, attributeFilter: ['class'] });
 }
 
 // "What we check" icons draw themselves once, when that section comes
@@ -13662,6 +13825,75 @@ function setupAllScreenSizes() {
   }
 }
 
+/* ══════════════════════ v60: MOVING FRONT PAGE ══════════════════════ */
+// Drawn icons for kinds of work, matched on words in the category name.
+// Anything without a match gets its initials in a coloured tile.
+const WORK_ICONS = [
+  [/plumb|pipe|drain/i, '<path d="M12 3.5s6 6.6 6 10.5a6 6 0 0 1-12 0c0-3.9 6-10.5 6-10.5z"/><path d="M9.5 14.5a2.5 2.5 0 0 0 2.5 2.5"/>'],
+  [/electric|wiring|solar/i, '<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/>'],
+  [/clean|laundry|wash|janitor/i, '<path d="M12 3.5v3.5M12 17v3.5M3.5 12H7M17 12h3.5M6 6l2.4 2.4M15.6 15.6L18 18M18 6l-2.4 2.4M8.4 15.6L6 18"/>'],
+  [/paint|decor/i, '<rect x="4" y="4" width="13" height="5" rx="1"/><path d="M17 6.5h2.5v5H11.5v3"/><rect x="10" y="14.5" width="3" height="6" rx="1"/>'],
+  [/mov|junk|furniture|pick|haul|delivery/i, '<path d="M3.5 7.5L12 3.5l8.5 4v9L12 20.5l-8.5-4z"/><path d="M3.5 7.5L12 11.5l8.5-4M12 11.5v9"/>'],
+  [/tutor|lesson|test prep|language|teach|school/i, '<path d="M4 5.5a2 2 0 0 1 2-2h13v14H6a2 2 0 0 0-2 2z"/><path d="M4 19.5a2 2 0 0 0 2 2h13v-4M8 7.5h7"/>'],
+  [/landscap|lawn|garden|tree|fence|yard/i, '<path d="M5 19c0-8 5-13 14-14 0 9-5 14-13 14"/><path d="M5 19l7-7"/>'],
+  [/design|publish|graphic|web|print|layout/i, '<rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M3.5 9h17M9 9v10.5M12 13h5.5M12 16h4"/>'],
+  [/photo|video|camera|film/i, '<rect x="3.5" y="7" width="17" height="12" rx="2"/><path d="M8.5 7l1.5-2.5h4L15.5 7"/><circle cx="12" cy="13" r="3.2"/>'],
+  [/auto|car|tow|mechanic|detail/i, '<path d="M4 16.5l1.5-6 2-3h9l2 3 1.5 6zM6.5 16.5v2.5M17.5 16.5v2.5M4 16.5h16"/>'],
+  [/hvac|air|heating|cool/i, '<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/><path d="M9.5 4.5L12 7l2.5-2.5M9.5 19.5L12 17l2.5 2.5"/>'],
+  [/pet|dog|cat|groom/i, '<circle cx="7" cy="9" r="1.8"/><circle cx="12" cy="6.5" r="1.8"/><circle cx="17" cy="9" r="1.8"/><path d="M8 17c0-3 2-5 4-5s4 2 4 5a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2z"/>'],
+  [/it support|computer|laptop|tech/i, '<rect x="4.5" y="5" width="15" height="10" rx="1.5"/><path d="M2.5 19h19"/>'],
+  [/roof|renovat|contract|carpent|handyman|mason|weld|floor|window|lock/i, '<path d="M14.5 5.5a4 4 0 0 0-5 5L4 16v4h4l5.5-5.5a4 4 0 0 0 5-5L16 12l-4-4z"/>'],
+];
+const WORK_TINTS = [['#E6EEF7', '#1D5FA8'], ['#FCEFC4', '#7A5600'], ['#DCF1E6', '#1F7A55'], ['#E3E8EF', '#0F2640']];
+function workIconHTML(name) {
+  const hit = WORK_ICONS.find(([re]) => re.test(name || ''));
+  if (hit) return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${hit[1]}</svg>`;
+  const initials = String(name || '?').split(/[\s&]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+  return `<span aria-hidden="true">${escapeHtml(initials)}</span>`;
+}
+function popularCardHTML(p, i) {
+  const [tint, accent] = WORK_TINTS[i % WORK_TINTS.length];
+  const n = Number(p.proCount) || 0;
+  return `<button type="button" class="pp-card" style="--pp-tint:${tint};--pp-accent:${accent}" data-catname="${escapeHtml(p.name)}" onclick="filterCat(this.dataset.catname)">
+    ${p.imageUrl ? `<img src="${escapeHtml(p.imageUrl)}" alt="" class="pp-photo"/>` : `<span class="pp-icon">${workIconHTML(p.name)}</span>`}
+    <span class="pp-name">${escapeHtml(translateCategoryName(p.name))}</span>
+    ${p.startingAt != null ? `<span class="pp-price">${escapeHtml(t('popular_from'))} $${escapeHtml(String(p.startingAt))}/hr</span>` : ''}
+    <span class="pp-meta">${n} ${escapeHtml(t(n === 1 ? 'popular_pro_one' : 'popular_pro_many'))}</span>
+    <span class="pp-go">${escapeHtml(t('popular_see'))}</span>
+  </button>`;
+}
+
+// Sections and cards below the hero slide in the first time they're
+// reached. New cards that arrive later (search results, loaded lists)
+// get the same treatment.
+const REVEAL_SELECTOR = '#screen-home .section-header, #screen-home .checks-title, #screen-home .checks-list li, #screen-home .pp-card, #screen-home .cat-row, #screen-home .provider-card, #screen-home .mission-text, #screen-home .faq-wrap, #screen-home .faq-item, #screen-home .two-way, #screen-home .stat';
+let REVEAL_IO = null;
+function tagReveals() {
+  if (V57_REDUCED_MOTION || !REVEAL_IO) return;
+  const fresh = Array.from(document.querySelectorAll(REVEAL_SELECTOR)).filter(el => !el.dataset.rv);
+  fresh.forEach(el => {
+    el.dataset.rv = '1';
+    const siblings = Array.from(el.parentElement ? el.parentElement.children : []);
+    const idx = Math.max(0, siblings.indexOf(el));
+    el.style.setProperty('--rv-delay', (Math.min(idx, 8) * 0.06) + 's');
+    const r = el.getBoundingClientRect();
+    if (r.top < window.innerHeight * 0.92 && r.bottom > 0) { el.classList.add('rv', 'rv-in'); return; } // already on screen: just play
+    el.classList.add('rv');
+    REVEAL_IO.observe(el);
+  });
+}
+function setupReveals() {
+  if (V57_REDUCED_MOTION || !('IntersectionObserver' in window)) return;
+  REVEAL_IO = new IntersectionObserver(entries => {
+    entries.forEach(en => { if (en.isIntersecting) { en.target.classList.add('rv-in'); REVEAL_IO.unobserve(en.target); } });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+  tagReveals();
+  ['popular-projects-grid', 'categories-grid', 'providers-grid', 'homepage-faq-list'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) new MutationObserver(() => requestAnimationFrame(tagReveals)).observe(el, { childList: true });
+  });
+}
+
 (async function initApp() {
   document.documentElement.dir = I18N[CURRENT_LANG].rtl ? 'rtl' : 'ltr';
   document.documentElement.lang = CURRENT_LANG;
@@ -13681,6 +13913,7 @@ function setupAllScreenSizes() {
   startHeroWordRotation(); // works immediately with the default word list, even offline
   setupHomepageV57();
   setupAllScreenSizes();
+  setupReveals();
   initChatBubbleDrag();
   initChatBubbleModalGuard();
   await checkBackend();
