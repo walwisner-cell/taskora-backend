@@ -68,7 +68,11 @@ async function syncReferenceData() {
   const existingCountryNames = new Set(existingCountries.map(c => c.name));
   for (const name of COUNTRIES) {
     if (!existingCountryNames.has(name)) {
-      await db.insert('countries', { id: `cty_${nanoid(8)}`, name, status: 'live' });
+      // A newly-listed country starts as "planned": turning a market on is
+      // a business decision made in the admin panel, not a side effect of
+      // syncing the reference list. The four core markets are still
+      // switched live just below.
+      await db.insert('countries', { id: `cty_${nanoid(8)}`, name, status: CORE_COUNTRIES.includes(name) ? 'live' : 'planned' });
       result.countriesAdded.push(name);
     }
   }

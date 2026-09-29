@@ -51,6 +51,10 @@ function looksLikeRealText(str) {
 // exhaustive — it exists to catch the most obvious "password123"-style
 // choices, not to replace a real breached-password database at scale.
 const COMMON_WEAK_PASSWORDS = new Set([
+  // This app's own published demo passwords (current and Taskora-era) —
+  // written in the source code, so never acceptable as a real password.
+  'trothen123', 'taskora123',
+
   'password', 'password1', 'password123', '12345678', '123456789', '1234567890',
   'qwerty123', 'qwertyuiop', 'letmein123', 'welcome123', 'admin1234', 'iloveyou1',
   'abc123456', '11111111', '00000000', 'trothen123', // yes, even our own demo password shouldn't be reused for a real account

@@ -914,3 +914,17 @@ CREATE TABLE IF NOT EXISTS dispute_evidence (
 );
 CREATE INDEX IF NOT EXISTS idx_dispute_evidence_dispute ON dispute_evidence(dispute_id);
 
+
+-- Go-Live actions (creating real super admins, removing demo data).
+-- A permanent record: nothing in the app deletes from this table. No
+-- foreign key on actor_id on purpose — the log must outlive any account.
+CREATE TABLE IF NOT EXISTS go_live_audit_log (
+  id                TEXT PRIMARY KEY,
+  action            TEXT NOT NULL,
+  actor_id          TEXT,
+  actor_name        TEXT NOT NULL,
+  accounts_removed  JSONB NOT NULL DEFAULT '[]',
+  counts            JSONB NOT NULL DEFAULT '{}',
+  target            JSONB,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);

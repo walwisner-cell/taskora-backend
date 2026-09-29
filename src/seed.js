@@ -15,7 +15,7 @@ function id(prefix) {
 
 const now = () => new Date().toISOString();
 
-async function seedDatabase() {
+async function seedDatabase({ referenceOnly = false } = {}) {
 
 // ---- Users (customers, providers) — every user belongs to a city -----------
 const users = [
@@ -80,7 +80,10 @@ const users = [
   skills: u.skills || (u.tags && u.tags.length ? u.tags.join(', ') : undefined),
 }));
 
-await db.replaceAll('users', users);
+// On a real (production) server, no demo people are ever created — only
+// the reference lists below (categories, countries) that every real
+// signup needs. See seedIfEmpty.
+if (!referenceOnly) await db.replaceAll('users', users);
 
 // ---- Categories & countries (global config — super admin only) -------------
 // A genuinely comprehensive default list, not just the original handful of
@@ -380,6 +383,21 @@ await db.replaceAll('countries', [
 
 ]);
 
+if (referenceOnly) {
+  // Every country above is listed as "live" for local demos. On a real
+  // server that would put all ~197 countries on the homepage "Live in…"
+  // line and open signup to all of them, so only the four core markets
+  // start live; the rest start as "planned" and can be switched on from
+  // Admin → Go-Live or Categories & Countries.
+  const CORE = ['United States', 'Nigeria', 'Ghana', 'Liberia'];
+  for (const c of await db.all('countries')) {
+    await db.update('countries', c.id, { status: CORE.includes(c.name) ? 'live' : 'planned' });
+  }
+  await db.replaceAll('cities', []);
+  console.log('✅ Reference data seeded (categories, countries). No demo accounts were created.');
+  return;
+}
+
 // ---- Cities registry (which cities are open, and who admins them) ----------
 await db.replaceAll('cities', [
   { id: 'city_atlanta', name: 'Atlanta', country: 'United States', adminId: 'u_amara' },
@@ -472,18 +490,34 @@ console.log('   Provider:      marcus@example.com   (Atlanta)');
 // on it is left completely untouched, redeploy after redeploy.
 async function seedIfEmpty() {
   const existingUsers = await db.all('users');
-  const hasData = existingUsers.length > 0;
-  if (hasData) {
-    console.log('ℹ️  Existing data found — skipping auto-seed (use `npm run seed` to force-reset).');
+  const existingCategories = await db.all('categories').catch(() => []);
+  const production = process.env.NODE_ENV === 'production';
+  if (existingUsers.length > 0 || (production && existingCategories.length > 0)) {
+    console.log('ℹ️  Existing data found — skipping auto-seed.');
     return false;
   }
-  console.log('ℹ️  No existing data found — seeding demo data for first boot...');
+  if (production) {
+    // A real server must never create demo accounts: they share a
+    // password that is written in this file, and fake providers would
+    // show up in real customers' searches.
+    console.log('ℹ️  Empty production database — seeding reference data only (no demo accounts)...');
+    await seedDatabase({ referenceOnly: true });
+    return true;
+  }
+  console.log('ℹ️  No existing data found — seeding demo data for first boot (local development)...');
   await seedDatabase();
   return true;
 }
 
 // Run immediately (and unconditionally) when invoked directly via `npm run seed`.
 if (require.main === module) {
+  // `npm run seed` REPLACES every collection — every real account, booking
+  // and payment record would be erased. Refuse on a production server
+  // unless someone deliberately confirms it.
+  if (process.env.NODE_ENV === 'production' && process.env.CONFIRM_WIPE_PRODUCTION !== 'yes') {
+    console.error('Refusing to run `npm run seed` in production: it erases all real data. Set CONFIRM_WIPE_PRODUCTION=yes only if you truly mean to wipe everything.');
+    process.exit(1);
+  }
   seedDatabase()
     .then(() => process.exit(0))
     .catch(err => { console.error('Seed failed:', err); process.exit(1); });

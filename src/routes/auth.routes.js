@@ -10,6 +10,39 @@ const { isValidStateForCountry, isPlausibleCityForCountry } = require('../geo-da
 
 const router = express.Router();
 
+// The real public address of this app, for links inside emails. APP_URL
+// wins when it's set; otherwise it's taken from the incoming request
+// itself. Before this, an unset APP_URL produced a bare "/?resetToken=..."
+// link in the password-reset email — a link with no website in it, which
+// does nothing when clicked from an inbox.
+function appBaseUrl(req) {
+  const configured = (process.env.APP_URL || '').trim().replace(/\/$/, '');
+  if (configured) return configured;
+  if (req && typeof req.get === 'function' && req.get('host')) return `${req.protocol}://${req.get('host')}`;
+  return 'https://trothenpro.com';
+}
+
+// Sent right when an account is created (regular and Google signup), next
+// to the welcome email — asks for ID documents immediately instead of only
+// through the 24-hour reminder. The link opens the real verification
+// screen (?verify=1 is handled in initApp on the frontend).
+async function sendVerificationInviteEmail(req, user) {
+  try {
+    const { sendEmail } = require('../delivery');
+    const firstName = String(user.name || '').split(' ')[0] || 'there';
+    const link = `${appBaseUrl(req)}/?verify=1`;
+    const isPro = user.role === 'provider';
+    const subject = isPro ? 'One last step to become a Trothen Pro' : 'Verify your identity on Trothen';
+    const body = isPro
+      ? `Hi ${firstName},\n\nBefore you can show up in customer searches, we need to verify your identity. It takes about two minutes: upload a clear photo of a government-issued ID and enter your full legal name.\n\nStart here: ${link}\n\nOur team reviews every submission, usually within 48 hours, and you'll get a notification the moment it's done.\n\n— The Trothen Team`
+      : `Hi ${firstName},\n\nVerifying your identity helps keep everyone on Trothen safe, and it only takes about two minutes: upload a clear photo of a government-issued ID and enter your full legal name.\n\nStart here: ${link}\n\nOur team reviews every submission, usually within 48 hours.\n\n— The Trothen Team`;
+    await sendEmail(user.email, subject, body);
+  } catch (e) {
+    // Never let a failed invite email break account creation itself.
+    console.error('[auth] verification invite email failed:', e.message);
+  }
+}
+
 // Rate limiting on every sensitive auth endpoint — this genuinely didn't
 // exist anywhere in the app before. Without it, there was no limit at all
 // on how many times someone could try a password against a known email
@@ -151,9 +184,17 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
     });
   }
 
-  // Email isn't delivering for real yet (not configured, or the send just
-  // failed) — same test-mode fallback as before, so signup is never
-  // blocked by a delivery gap.
+  // Email IS set up but this one send failed: say so and stop. Showing the
+  // code on screen here would let anyone "verify" an email address they
+  // don't own — the whole point of the code. The on-screen fallback below
+  // is only for a server that has no email provider connected at all.
+  if (isEmailConfigured()) {
+    await db.remove('pendingRegistrations', pending.id);
+    return res.status(502).json({ error: "We couldn't send your code just now. Please wait a minute and try again." });
+  }
+
+  // No email provider connected at all — test-mode fallback so signup
+  // still works while email is being set up.
   console.log(`[TEST MODE] Registration code for ${email.trim()}: ${emailCode}`);
 
   res.status(201).json({
@@ -276,6 +317,7 @@ async function completeSignupVerify(req, res, pending) {
     : `Hi ${firstNameForWelcome},\n\nWelcome to Trothen — real local pros, verified before they ever show up.\n\nHere's how it works: tell us what you need done, we match you with verified, ID-checked professionals nearby, and every booking runs on an auto-generated contract with your payment held safely in escrow until you're satisfied with the work. No guessing who's really coming to your door.\n\nReady when you are — just search for what you need on your dashboard.\n\n— The Trothen Team`;
   const { sendEmail } = require('../delivery');
   await sendEmail(user.email, welcomeSubject, welcomeBody);
+  await sendVerificationInviteEmail(req, user);
   await notify(user.id, '👋', `Welcome to Trothen, ${firstNameForWelcome}! Here's how it works: ${user.role === 'provider' ? 'get matched to jobs in your category, and every payment is held safely in escrow until the work is confirmed done.' : 'tell us what you need, we match you with a verified local pro, and your payment stays safely in escrow until you\'re satisfied.'}`);
 
   if (payload.referredByUserId) {
@@ -373,6 +415,11 @@ router.post('/signup/resend', async (req, res) => {
   if (emailDelivered) {
     return res.json({ testMode: false });
   }
+  if (isEmailConfigured()) {
+    // Same rule as /signup/start: a configured-but-failed send never falls
+    // back to showing the code.
+    return res.status(502).json({ error: "We couldn't send your code just now. Please wait a minute and try again." });
+  }
 
   console.log(`[TEST MODE] Resent registration code for ${pending.payload.email}: ${emailCode}`);
 
@@ -419,6 +466,13 @@ async function issueSessionOrRequire2FA(user, req, res) {
     if (delivered) {
       return res.json({ requires2FA: true, pendingLoginId: pendingLogin.id, testMode: false });
     }
+    // A provider is connected but the send failed. Handing the code back
+    // to whoever just typed the password would make two-factor protect
+    // nothing, so the sign-in stops here instead.
+    if (isEmailConfigured() || (isSmsConfigured() && user.phone)) {
+      await db.remove('pendingLogins', pendingLogin.id);
+      return res.status(502).json({ error: "We couldn't send your code just now. Please wait a minute and try again." });
+    }
     return res.json({
       requires2FA: true,
       pendingLoginId: pendingLogin.id,
@@ -438,6 +492,14 @@ router.post('/login', loginLimiter, async (req, res) => {
   const user = await db.find('users', u => u.email.toLowerCase() === (email || '').toLowerCase());
   if (!user || !verifyPassword(password, user.passwordHash)) {
     return res.status(401).json({ error: 'Invalid email or password' });
+  }
+  // The demo password is written in this app's source code. On the real
+  // server, anyone signing in with it must set their own password before
+  // they can do anything else (requireAuth enforces mustChangePassword).
+  const { DEMO_PASSWORD, isProduction } = require('../go-live');
+  if (isProduction() && password === DEMO_PASSWORD && !user.mustChangePassword) {
+    await db.update('users', user.id, { mustChangePassword: true });
+    user.mustChangePassword = true;
   }
   return issueSessionOrRequire2FA(user, req, res);
 });
@@ -629,6 +691,7 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
       : `Hi ${firstNameForWelcome},\n\nWelcome to Trothen — real local pros, verified before they ever show up.\n\nHere's how it works: tell us what you need done, we match you with verified, ID-checked professionals nearby, and every booking runs on an auto-generated contract with your payment held safely in escrow until you're satisfied with the work. No guessing who's really coming to your door.\n\nReady when you are — just search for what you need on your dashboard.\n\n— The Trothen Team`;
     const { sendEmail } = require('../delivery');
     await sendEmail(user.email, welcomeSubject, welcomeBody);
+    await sendVerificationInviteEmail(req, user);
     await notify(user.id, '👋', `Welcome to Trothen, ${firstNameForWelcome}! Here's how it works: ${user.role === 'provider' ? 'get matched to jobs in your category, and every payment is held safely in escrow until the work is confirmed done.' : 'tell us what you need, we match you with a verified local pro, and your payment stays safely in escrow until you\'re satisfied.'}`);
   }
 
@@ -1005,6 +1068,12 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
     // like any other wrong token would. Same UX, same test-mode
     // convenience, no distinguishable signal.
     const decoyToken = generateResetToken();
+    // With real email connected, a real account's response is plain
+    // { testMode:false } — so this one must be too, or the difference
+    // itself reveals which emails have accounts.
+    if (require('../delivery').isEmailConfigured()) {
+      return res.json({ ...genericResponse, testMode: false });
+    }
     console.log(`[TEST MODE] Password reset requested for an email with no account (${normalized}) — no token was actually issued.`);
     return res.json({
       ...genericResponse,
@@ -1033,7 +1102,7 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
   await db.insert('passwordResets', record);
 
   const { isEmailConfigured, sendEmail } = require('../delivery');
-  const resetLink = `${(process.env.APP_URL || '').replace(/\/$/, '')}/?resetToken=${rawToken}`;
+  const resetLink = `${appBaseUrl(req)}/?resetToken=${rawToken}`;
   let delivered = false;
   if (isEmailConfigured()) {
     delivered = (await sendEmail(
@@ -1042,6 +1111,14 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
     )).sent;
   }
   if (delivered) {
+    return res.json({ ...genericResponse, testMode: false });
+  }
+  if (isEmailConfigured()) {
+    // Email is connected but this send failed. Returning the reset token
+    // here would let ANYONE reset ANY account's password just by typing
+    // its email while the mail service is having a bad minute. Give the
+    // same generic answer as success; they can simply ask again.
+    console.error(`[auth] password reset email failed to send for ${user.email}`);
     return res.json({ ...genericResponse, testMode: false });
   }
 
@@ -1128,6 +1205,11 @@ router.post('/send-phone-otp', requireAuth, async (req, res) => {
   const delivered = usingVerify ? verifyStarted : (isSmsConfigured() ? (await sendSms(user.phone, `Your Trothen phone verification code is ${code}.`)).sent : false);
   if (delivered) {
     return res.json({ message: `A verification code was sent to ${user.phone}.`, testMode: false });
+  }
+  if (usingVerify || isSmsConfigured()) {
+    // Text messaging is connected but this send failed — never fall back
+    // to showing the code, or "verified phone" would mean nothing.
+    return res.status(502).json({ error: "We couldn't send your code just now. Please wait a minute and try again." });
   }
 
   console.log(`[TEST MODE] Phone verification code for ${user.phone}: ${code || 'sent via Twilio Verify'} (expires in 10 min)`);

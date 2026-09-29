@@ -1258,6 +1258,82 @@ router.get('/data-cleanup/audit-log', requireSuperAdmin, async (req, res) => {
   res.json({ log });
 });
 
+// ---- Go-Live: real super admins, demo removal, readiness checklist ----------
+// See src/go-live.js for the full reasoning. Super admin only.
+router.get('/go-live/status', requireSuperAdmin, async (req, res) => {
+  const { readinessReport } = require('../go-live');
+  const actor = await me(req);
+  res.json(await readinessReport(actor));
+});
+
+router.post('/go-live/super-admins', requireSuperAdmin, async (req, res) => {
+  const { name, email, password } = req.body || {};
+  const errors = validate([
+    ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
+    ['email', isValidEmail(email), 'Enter a valid email address'],
+    ['password', isValidPassword(password), 'Temporary password must be 8-72 characters and not a common password'],
+  ]);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  const { isDemoAccount, createSuperAdmin } = require('../go-live');
+  if (isDemoAccount({ email })) return res.status(400).json({ error: 'Use a real email address, not a demo one.' });
+  const existing = await db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
+  if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
+  const admin = await createSuperAdmin({ name, email, password });
+  const actor = await me(req);
+  await db.insert('goLiveAuditLog', {
+    id: `gla_${nanoid(10)}`, action: 'create_super_admin', actorId: actor ? actor.id : null, actorName: actor ? actor.name : 'Unknown',
+    target: { id: admin.id, name: admin.name, email: admin.email }, createdAt: new Date().toISOString(),
+  });
+  res.status(201).json({ user: publicAdmin(admin) });
+});
+
+router.post('/go-live/demo-data/preview', requireSuperAdmin, async (req, res) => {
+  const { planDemoRemoval } = require('../go-live');
+  const actor = await me(req);
+  const plan = await planDemoRemoval(actor ? [actor.id] : []);
+  const records = {};
+  for (const [k, v] of Object.entries(plan.records)) records[k] = v.length;
+  res.json({
+    accounts: plan.users.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
+    records,
+  });
+});
+
+router.post('/go-live/demo-data/remove', requireSuperAdmin, async (req, res) => {
+  const { confirmPhrase } = req.body || {};
+  if (confirmPhrase !== 'REMOVE ALL DEMO DATA') {
+    return res.status(400).json({ error: 'Type exactly "REMOVE ALL DEMO DATA" to confirm' });
+  }
+  const { isDemoAccount, executeDemoRemoval } = require('../go-live');
+  const actor = await me(req);
+  // Removing demo data while signed in as the demo super admin would
+  // leave no way back in. Require a real super admin to do it.
+  if (!actor || isDemoAccount(actor)) {
+    return res.status(400).json({ error: 'You are signed in with a demo account. Create your own super admin first, sign in with it, then remove the demo data.' });
+  }
+  const counts = await executeDemoRemoval([actor.id], actor);
+  res.json({ removed: counts });
+});
+
+router.post('/go-live/live-countries', requireSuperAdmin, async (req, res) => {
+  const { countries } = req.body || {};
+  if (!Array.isArray(countries) || !countries.length) return res.status(400).json({ error: 'Give at least one country' });
+  const { setLiveCountries } = require('../go-live');
+  const result = await setLiveCountries(countries);
+  if (result.error) return res.status(400).json({ error: result.error });
+  const actor = await me(req);
+  await db.insert('goLiveAuditLog', {
+    id: `gla_${nanoid(10)}`, action: 'set_live_countries', actorId: actor ? actor.id : null, actorName: actor ? actor.name : 'Unknown',
+    target: { live: result.live }, counts: { changed: result.changed }, createdAt: new Date().toISOString(),
+  });
+  res.json(result);
+});
+
+router.get('/go-live/audit-log', requireSuperAdmin, async (req, res) => {
+  const log = (await db.all('goLiveAuditLog').catch(() => [])).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ log });
+});
+
 // ---- Administration Announcement Center (item 16) ---------------------------
 // A real, centralized way for Administration/Super Admin to reach every
 // Regional Manager (or a chosen subset of regions) with something they

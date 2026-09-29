@@ -886,7 +886,7 @@
 <body>
 
 <div id="test-mode-banner" style="background:#FBF3E4;color:var(--navy);text-align:center;font-size:12.5px;font-weight:500;padding:9px 40px;position:relative;z-index:500;line-height:1.5;border-bottom:1px solid #E9D6A8;">
-  <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--gold);color:#fff;font-size:10px;font-weight:800;vertical-align:-3px;margin-right:6px;">!</span><strong>Test environment</strong> — nothing here is real yet. Verification codes appear on-screen instead of being sent, and every payment is simulated. <strong>Don't enter real passwords or card details.</strong>
+  <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--gold);color:#fff;font-size:10px;font-weight:800;vertical-align:-3px;margin-right:6px;">!</span><span id="test-mode-banner-text"><strong>Early access</strong> — accounts and ID verification are real, but payments aren't live yet: every payment and payout is simulated and no real money moves. <strong>Don't enter real card details.</strong></span>
   <span onclick="document.getElementById('test-mode-banner').style.display='none'" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-weight:700;padding:3px 7px;border-radius:5px;color:var(--slate);opacity:.7;transition:opacity .15s ease,background .15s ease;" onmouseover="this.style.opacity=1;this.style.background='rgba(18,22,31,.06)'" onmouseout="this.style.opacity=.7;this.style.background='transparent'">✕</span>
 </div>
 
@@ -1584,8 +1584,8 @@
   <div class="dash-layout">
     <aside class="dash-sidebar">
       <div class="dash-sidebar-user">
-        <div class="dash-avatar" id="customer-sidebar-avatar">JD</div>
-        <div><div class="dash-user-name" id="customer-sidebar-name">Jordan Diaz</div><div class="dash-user-role" id="customer-sidebar-role">Customer · Verified ✓</div></div>
+        <div class="dash-avatar" id="customer-sidebar-avatar"></div>
+        <div><div class="dash-user-name" id="customer-sidebar-name"></div><div class="dash-user-role" id="customer-sidebar-role">Customer</div></div>
       </div>
       <nav class="dash-nav" id="customer-nav"></nav>
     </aside>
@@ -1599,8 +1599,8 @@
   <div class="dash-layout">
     <aside class="dash-sidebar">
       <div class="dash-sidebar-user">
-        <div class="dash-avatar" id="provider-sidebar-avatar" style="background:#2E8C6F">MT</div>
-        <div><div class="dash-user-name" id="provider-sidebar-name">Marcus T.</div><div class="dash-user-role" id="provider-sidebar-role">Provider · Verified ✓</div></div>
+        <div class="dash-avatar" id="provider-sidebar-avatar" style="background:#2E8C6F"></div>
+        <div><div class="dash-user-name" id="provider-sidebar-name"></div><div class="dash-user-role" id="provider-sidebar-role">Provider</div></div>
       </div>
       <nav class="dash-nav" id="provider-nav"></nav>
     </aside>
@@ -1847,12 +1847,8 @@ async function checkBackend() {
 }
 
 // Demo accounts seeded by `npm run seed` — used by the role-switcher for one-click demo login.
-const DEMO_ACCOUNTS = {
-  customer: { email: 'jordan@example.com', password: 'trothen123' },
-  provider: { email: 'marcus@example.com', password: 'trothen123' },
-  admin: { email: 'amara@example.com', password: 'trothen123' },
-  superadmin: { email: 'superadmin@trothen.io', password: 'trothen123' },
-};
+// (Removed: a list of demo accounts and their shared password used to
+// be shipped to every visitor's browser here. Nothing used it.)
 
 // Session persistence — this is a real deployed web app, not a sandboxed
 // chat artifact, so localStorage is the standard, correct tool here (unlike
@@ -2058,17 +2054,11 @@ async function submitGoogleSignup() {
   } catch (e) { showToast(e.message || 'Could not create account'); }
 }
 
-const FALLBACK_PROVIDERS = [
-  { id:'1', name:"Marcus T.", initials:"MT", role:"Master Plumber", cat:"Plumbing",  rating:4.9, jobs:312, price:85,  tags:["Pipe Repair","Drain Cleaning","Fixtures"],   color:"#12161F", since:"2022" },
-  { id:'2', name:"Aisha K.",  initials:"AK", role:"Home Cleaning Pro", cat:"Cleaning",  rating:5.0, jobs:487, price:65,  tags:["Deep Clean","Move-Out","Weekly Service"], color:"#2E8C6F", since:"2023" },
-  { id:'3', name:"James R.",  initials:"JR", role:"Math & Science Tutor",cat:"Tutoring", rating:4.8, jobs:156, price:55,  tags:["SAT Prep","Algebra","Physics"],          color:"#B08A3E", since:"2021" },
-  { id:'4', name:"Sofia M.",  initials:"SM", role:"Licensed Electrician", cat:"Electrical",rating:4.9, jobs:228, price:95,  tags:["Wiring","Panel Upgrade","Outlets"],     color:"#4B5D7A", since:"2020" },
-  { id:'5', name:"DeShawn L.",initials:"DL", role:"Personal Trainer",    cat:"Fitness",  rating:4.7, jobs:203, price:70,  tags:["Weight Loss","HIIT","Strength"],         color:"#B3423A", since:"2023" },
-  { id:'6', name:"Priya N.",  initials:"PN", role:"Interior Painter",    cat:"Painting", rating:4.8, jobs:91,  price:75,  tags:["Interior","Exterior","Accent Walls"],    color:"#2F6F62", since:"2022" },
-  { id:'7', name:"Tom B.",    initials:"TB", role:"Moving Specialist",   cat:"Moving",   rating:4.6, jobs:178, price:110, tags:["Local Move","Packing","Furniture"],      color:"#6B4C7A", since:"2021" },
-  { id:'8', name:"Keisha W.", initials:"KW", role:"Landscape Designer",  cat:"Landscaping",rating:4.9,jobs:144, price:80,  tags:["Lawn Care","Garden Design","Mulching"], color:"#3F6B4A", since:"2022" },
-];
-let PROVIDERS = FALLBACK_PROVIDERS.slice();
+// No invented providers. A made-up list (with invented ratings and job
+// counts) used to be painted on every page load before real data arrived,
+// and stayed on screen whenever the platform had no real pros yet.
+const FALLBACK_PROVIDERS = [];
+let PROVIDERS = [];
 
 let loadProvidersRequestId = 0;
 
@@ -2115,11 +2105,11 @@ async function loadProviders() {
     // exact "pros from the wrong country" problem this fix exists to
     // solve. Without a country param, an empty response is more likely a
     // transient issue, so the previous list is kept rather than wiped.
-    if (data.providers && (data.providers.length || country)) {
+    if (Array.isArray(data.providers)) {
       PROVIDERS = data.providers.map(p => ({
         id: p.id, name: p.name, initials: p.initials, role: p.role, cat: p.category,
         rating: p.rating, jobs: p.jobs, price: p.price, tags: p.tags || [], color: p.color, since: p.since,
-        verified: p.verified !== false, city: p.city || 'Atlanta',
+        verified: p.verified !== false, city: p.city || '',
         availability: p.availability && p.availability.length ? p.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'],
         pricingModel: p.pricingModel || 'hourly',
         profilePhotoUrl: p.profilePhotoUrl || null,
@@ -2127,7 +2117,7 @@ async function loadProviders() {
         trustScore: p.trustScore != null ? p.trustScore : null,
       }));
     }
-  } catch (e) { console.warn('Could not load providers from API, using demo data.', e); }
+  } catch (e) { console.warn('Could not load providers from API.', e); }
 }
 
 /* ══════════════════════ FEATURED PROVIDER CAROUSEL ══════════════════════
@@ -3205,7 +3195,7 @@ function navbarHTML(active) {
   const bell = isDash ? `
     <div style="position:relative;">
       <div class="notif-bell" onclick="toggleNotifPanel(event)">🔔${CURRENT_NOTIFICATIONS.some(n => !n.read) ? '<span class="notif-dot"></span>' : ''}</div>
-      <div class="notif-panel" id="notif-panel">${notifPanelInnerHTML()}</div>
+      <div class="notif-panel">${notifPanelInnerHTML()}</div>
     </div>` : '';
   // Logged-in users get a way back to the public marketplace + notifications
   // + a real Sign Out. Anonymous visitors only ever see Become a Pro / Sign
@@ -3223,7 +3213,7 @@ function navbarHTML(active) {
   const accountMenu = isDash ? `
     <div class="account-menu">
       <button class="account-menu-btn" onclick="toggleAccountMenu(event)">👤 ${(AUTH.user && AUTH.user.name ? AUTH.user.name.split(' ')[0] : 'Account')} ▾</button>
-      <div class="account-dropdown" id="account-dropdown">
+      <div class="account-dropdown">
         <div class="account-dropdown-head">
           <div class="account-dropdown-name">${escapeHtml((AUTH.user && AUTH.user.name) || '')}</div>
           <div class="account-dropdown-role">${escapeHtml(roleLabel)}</div>
@@ -3259,11 +3249,8 @@ function navbarHTML(active) {
     </div>`;
 }
 
-const FALLBACK_NOTIFICATIONS = [
-  { id: 'demo_1', icon: '✅', text: 'Your identity verification was approved.', createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-  { id: 'demo_2', icon: '💰', text: 'Escrow released — $140 for Deep Clean job.', createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
-  { id: 'demo_3', icon: '💬', text: 'New message from Marcus T.', createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() },
-];
+// No invented records — a real person must never see made-up bookings, payouts or messages as if they were theirs.
+const FALLBACK_NOTIFICATIONS = [];
 let CURRENT_NOTIFICATIONS = FALLBACK_NOTIFICATIONS;
 
 async function refreshNotifications() {
@@ -3291,8 +3278,7 @@ function notifPanelInnerHTML() {
 // closing it out from under whoever's using it.
 async function dismissNotification(id) {
   CURRENT_NOTIFICATIONS = CURRENT_NOTIFICATIONS.filter(n => n.id !== id);
-  const panel = document.getElementById('notif-panel');
-  if (panel) panel.innerHTML = notifPanelInnerHTML();
+  refreshAllNotifPanels();
   if (BACKEND_AVAILABLE) {
     try { await apiFetch('DELETE', `/notifications/${id}`); } catch (e) { /* already removed from view; a failed background delete isn't worth interrupting anyone over */ }
   }
@@ -3301,12 +3287,11 @@ async function dismissNotification(id) {
 async function clearAllNotifications() {
   const previous = CURRENT_NOTIFICATIONS;
   CURRENT_NOTIFICATIONS = [];
-  const panel = document.getElementById('notif-panel');
-  if (panel) panel.innerHTML = notifPanelInnerHTML();
+  refreshAllNotifPanels();
   document.querySelectorAll('.notif-dot').forEach(dot => dot.remove());
   if (BACKEND_AVAILABLE) {
     try { await apiFetch('DELETE', '/notifications'); }
-    catch (e) { CURRENT_NOTIFICATIONS = previous; if (panel) panel.innerHTML = notifPanelInnerHTML(); showToast('Could not clear notifications — please try again'); }
+    catch (e) { CURRENT_NOTIFICATIONS = previous; refreshAllNotifPanels(); showToast('Could not clear notifications — please try again'); }
   }
 }
 
@@ -3316,7 +3301,7 @@ async function clearAllNotifications() {
 // (e.g. "bookings") means something slightly different per role, since
 // customers and providers don't share section names 1:1.
 function navigateFromNotification(linkTo) {
-  document.getElementById('notif-panel').classList.remove('open');
+  closeAllNotifPanels();
   if (!AUTH.user || !linkTo || !linkTo.section) return;
   const role = AUTH.user.role;
   if (role === 'customer') {
@@ -3337,8 +3322,14 @@ function navigateFromNotification(linkTo) {
 
 async function toggleNotifPanel(e) {
   e.stopPropagation();
-  const panel = document.getElementById('notif-panel');
+  // Every screen renders its own navbar, so several notification panels
+  // exist in the page at once. Find the one next to the bell that was
+  // actually clicked — a global ID lookup always hit the hidden home copy.
+  const panel = e.currentTarget.parentElement.querySelector('.notif-panel');
+  if (!panel) return;
   const isOpening = !panel.classList.contains('open');
+  closeAllAccountMenus();
+  document.querySelectorAll('.notif-panel.open').forEach(p => { if (p !== panel) p.classList.remove('open'); });
   panel.classList.toggle('open');
 
   if (isOpening && BACKEND_AVAILABLE) {
@@ -3352,19 +3343,33 @@ async function toggleNotifPanel(e) {
     }
   }
 }
+function refreshAllNotifPanels() {
+  document.querySelectorAll('.notif-panel').forEach(p => { p.innerHTML = notifPanelInnerHTML(); });
+}
+function closeAllNotifPanels() {
+  document.querySelectorAll('.notif-panel.open').forEach(p => p.classList.remove('open'));
+}
+function closeAllAccountMenus() {
+  document.querySelectorAll('.account-dropdown.open').forEach(d => d.classList.remove('open'));
+}
 document.addEventListener('click', () => {
-  const p = document.getElementById('notif-panel');
-  if (p) p.classList.remove('open');
-  const a = document.getElementById('account-dropdown');
-  if (a) a.classList.remove('open');
+  closeAllNotifPanels();
+  closeAllAccountMenus();
 });
 
 function toggleAccountMenu(e) {
   e.stopPropagation();
-  document.getElementById('account-dropdown')?.classList.toggle('open');
+  // Same reason as toggleNotifPanel: open the dropdown that belongs to the
+  // button actually clicked, not the first copy in the page.
+  const menu = e.currentTarget.parentElement.querySelector('.account-dropdown');
+  if (!menu) return;
+  const isOpening = !menu.classList.contains('open');
+  closeAllNotifPanels();
+  closeAllAccountMenus();
+  if (isOpening) menu.classList.add('open');
 }
 function closeAccountMenu() {
-  document.getElementById('account-dropdown')?.classList.remove('open');
+  closeAllAccountMenus();
 }
 
 function showPricing() {
@@ -3829,8 +3834,7 @@ async function startMessagePolling() {
       // If the panel happens to already be open when a new one arrives,
       // update its contents live rather than making the person close and
       // reopen it to see what just came in.
-      const panel = document.getElementById('notif-panel');
-      if (panel && panel.classList.contains('open')) panel.innerHTML = notifPanelInnerHTML();
+      document.querySelectorAll('.notif-panel.open').forEach(p => { p.innerHTML = notifPanelInnerHTML(); });
     } catch (e) { /* a failed poll just tries again next interval */ }
   }, 5000);
 }
@@ -5043,18 +5047,13 @@ const CUSTOMER_NAV_ITEMS = [
   { key: 'settings', label: 'Settings', icon: '⚙️' },
 ];
 
-const FALLBACK_BOOKINGS = [
-  { id: 'BK-1042', pro: 'Marcus T.', service: 'Kitchen sink pipe repair', date: '2026-07-15', status: 'confirmed', escrow: 180 },
-  { id: 'BK-1039', pro: 'Aisha K.', service: 'Deep clean — 3BR apartment', date: '2026-07-10', status: 'completed', escrow: 140 },
-  { id: 'BK-1031', pro: 'James R.', service: 'SAT prep — 4 sessions', date: '2026-07-02', status: 'completed', escrow: 220 },
-  { id: 'BK-1024', pro: 'Sofia M.', service: 'Panel upgrade estimate', date: '2026-06-24', status: 'disputed', escrow: 0 },
-];
+// No invented records — a real person must never see made-up bookings, payouts or messages as if they were theirs.
+const FALLBACK_BOOKINGS = [];
 
-const FALLBACK_PAYMENT_METHODS = [
-  { id: 'pm_demo1', brand: 'Visa', last4: '4821', nameOnCard: 'Jordan Diaz', expiry: '09/28', isDefault: true, mode: 'test' },
-];
+// No invented records — a real person must never see made-up bookings, payouts or messages as if they were theirs.
+const FALLBACK_PAYMENT_METHODS = [];
 
-let customerData = { bookings: FALLBACK_BOOKINGS, notifications: [], verificationStatus: 'verified', paymentMethods: FALLBACK_PAYMENT_METHODS };
+let customerData = { bookings: [], notifications: [], verificationStatus: 'none', paymentMethods: [] };
 
 async function computeVerificationStatus() {
   if (!AUTH.user) return 'verified'; // fallback/demo mode
@@ -5079,7 +5078,7 @@ async function loadCustomerData() {
     customerData.notifications = notifications;
     const { methods } = await apiFetch('GET', '/payment-methods/mine');
     customerData.paymentMethods = methods;
-  } catch (e) { console.warn('Falling back to demo bookings', e); customerData.bookings = FALLBACK_BOOKINGS; }
+  } catch (e) { console.warn('Could not load bookings', e); showToast('Could not load your bookings — please refresh'); }
   try {
     const { payments } = await apiFetch('GET', '/payments/mine');
     customerData.payments = payments;
@@ -5793,7 +5792,7 @@ const CUSTOMER_SECTIONS = {
     const vLabel = vStatus === 'verified' ? '✓ Verified' : vStatus === 'in review' ? '⏳ In Review' : '⚠ Not Verified';
     const vColor = vStatus === 'verified' ? '#256B54' : vStatus === 'in review' ? '#8C6423' : '#B3423A';
     return `
-    <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Jordan'}</div><div class="dash-sub">Here's what's happening with your bookings</div></div>
+    <div class="dash-header"><div><div class="dash-title">Welcome back${AUTH.user && AUTH.user.name ? ', ' + escapeHtml(AUTH.user.name.split(' ')[0]) : ''}</div><div class="dash-sub">Here's what's happening with your bookings</div></div>
     <button class="btn-sm btn-sm-primary" onclick="openPostJobModal()">+ Post a New Job</button></div>
     <div id="customer-promotions-banner"></div>
     <div class="stat-cards">
@@ -5833,7 +5832,7 @@ const CUSTOMER_SECTIONS = {
         <div class="form-group"><label class="form-label">Card Number</label><input class="form-input" id="pm-card-number" placeholder="4242 4242 4242 4242"/></div>
         <div class="dates-row">
           <div class="form-group"><label class="form-label">Expiry (MM/YY)</label><input class="form-input" id="pm-expiry" placeholder="12/28"/></div>
-          <div class="form-group"><label class="form-label">Name on Card</label><input class="form-input" id="pm-name" placeholder="Jordan Diaz"/></div>
+          <div class="form-group"><label class="form-label">Name on Card</label><input class="form-input" id="pm-name" placeholder="Name as shown on the card"/></div>
         </div>
         <div class="form-group"><label class="form-label">Billing Address</label><input class="form-input" id="pm-billing-address"/></div>
         <div class="form-group"><label class="form-label">Billing Zip / Postal Code</label><input class="form-input" id="pm-billing-zip"/></div>
@@ -5869,8 +5868,8 @@ const CUSTOMER_SECTIONS = {
   settings: () => `
     <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Account preferences ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Saved to your account</span>' : ''}</div></div></div>
     <div class="panel"><div class="panel-title">Profile</div>
-      <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="set-cust-name" value="${(AUTH.user && AUTH.user.name) || 'Jordan Diaz'}"/></div>
-      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-cust-email" value="${(AUTH.user && AUTH.user.email) || 'jordan@example.com'}"/></div>
+      <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="set-cust-name" value="${escapeHtml((AUTH.user && AUTH.user.name) || '')}"/></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-cust-email" value="${escapeHtml((AUTH.user && AUTH.user.email) || '')}"/></div>
       <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="set-cust-phone" value="${(AUTH.user && AUTH.user.phone) || '+1 (404) 555-0148'}"/></div>
       <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="set-cust-address" value="${(AUTH.user && AUTH.user.address) || ''}"/></div>
       <div class="form-group"><label class="form-label">Zip / Postal Code</label><input class="form-input" id="set-cust-zip" value="${(AUTH.user && AUTH.user.zipCode) || ''}"/></div>
@@ -6359,11 +6358,6 @@ function updateCustomerSidebar() {
 async function initCustomerDash() { await loadCustomerData(); updateCustomerSidebar(); selectCustomerSection('overview'); }
 
 /* ══════════════════════ PROVIDER PROFILE ══════════════════════ */
-const REVIEW_BANK = [
-  { name: 'Renee P.', stars: 5, text: 'Showed up on time, explained everything clearly, and the price matched the quote exactly. Would book again.' },
-  { name: 'Malik O.', stars: 5, text: 'Excellent work — fast, clean, and professional. The escrow process made the whole thing feel safe.' },
-  { name: 'Priya S.', stars: 4, text: 'Good work overall, arrived a little later than scheduled but communicated well throughout.' },
-];
 const PORTFOLIO_ICONS = ['🔧','🧰','🚿','🪠','🛠️','📐'];
 
 async function viewProviderProfile(id) {
@@ -6376,7 +6370,7 @@ async function viewProviderProfile(id) {
     <div>
       <div class="profile-name-row"><div class="profile-name">${escapeHtml(p.name)}</div>${p.verified !== false ? '<span class="badge badge-success">✓ Verified</span>' : '<span class="badge badge-warn">Verification pending</span>'}</div>
       ${p.businessName ? `<div style="font-size:13px;color:var(--slate);margin-top:-4px;margin-bottom:4px;">${escapeHtml(p.businessName)}</div>` : ''}
-      <div class="profile-role">${escapeHtml(p.role)} · Serving ${escapeHtml(p.city) || 'Atlanta'} · Trothen Pro since ${escapeHtml(p.since)}</div>
+      <div class="profile-role">${escapeHtml(p.role)} · ${p.city ? `Serving ${escapeHtml(p.city)} · ` : ''} Trothen Pro since ${escapeHtml(p.since)}</div>
       <div class="profile-meta-row">
         <div class="profile-meta-item">★ ${p.rating ? Number(p.rating).toFixed(1) : 'No'} rating</div>
         <div class="profile-meta-item">📋 ${escapeHtml(p.jobs)} jobs completed</div>
@@ -6720,23 +6714,14 @@ const PROVIDER_NAV_ITEMS = [
   { key: 'settings', label: 'Settings', icon: '⚙️' },
 ];
 
-const FALLBACK_MATCHES = [
-  { id: 'JM-501', customer: 'Elena Cruz', service: 'Leaking bathroom pipe', budget: '$80–120', matchScore: 96, distance: '2.1 mi' },
-  { id: 'JM-498', customer: 'Grant Lee', service: 'Water heater install', budget: '$150–220', matchScore: 91, distance: '4.5 mi' },
-  { id: 'JM-492', customer: 'Priya Shah', service: 'Kitchen faucet replacement', budget: '$60–90', matchScore: 88, distance: '1.3 mi' },
-];
-const FALLBACK_CONTRACTS_PROVIDER = [
-  { id: 'CT-1042', customer: 'Jordan Diaz', service: 'Kitchen sink pipe repair', amount: 180, status: 'active', signed: '2026-07-12' },
-  { id: 'CT-1039', customer: 'Renee Park', service: 'Bathroom drain cleaning', amount: 95, status: 'completed', signed: '2026-07-05' },
-  { id: 'CT-1020', customer: 'Malik Owens', service: 'Panel upgrade', amount: 640, status: 'completed', signed: '2026-06-18' },
-];
-const FALLBACK_PAYOUTS = [
-  { id: 'PO-330', date: '2026-07-10', amount: 530, method: 'Bank Transfer', status: 'completed' },
-  { id: 'PO-321', date: '2026-07-03', amount: 410, method: 'Bank Transfer', status: 'completed' },
-  { id: 'PO-312', date: '2026-06-26', amount: 295, method: 'Wallet', status: 'completed' },
-];
+// No invented records — a real person must never see made-up bookings, payouts or messages as if they were theirs.
+const FALLBACK_MATCHES = [];
+// No invented records — a real person must never see made-up bookings, payouts or messages as if they were theirs.
+const FALLBACK_CONTRACTS_PROVIDER = [];
+// No invented records — a real person must never see made-up bookings, payouts or messages as if they were theirs.
+const FALLBACK_PAYOUTS = [];
 
-let providerData = { matches: FALLBACK_MATCHES, contracts: FALLBACK_CONTRACTS_PROVIDER, payouts: FALLBACK_PAYOUTS, verificationStatus: 'verified', portfolioPhotos: [] };
+let providerData = { matches: [], contracts: [], payouts: [], verificationStatus: 'none', portfolioPhotos: [] };
 
 async function loadProviderData() {
   if (!BACKEND_AVAILABLE) { providerData.verificationStatus = 'verified'; return; }
@@ -6760,7 +6745,7 @@ async function loadProviderData() {
     providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, address: c.address, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt, materialsOnHand: c.materialsOnHand, createdAt: c.createdAt })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     providerData.payouts = payouts;
     providerData.portfolioPhotos = photos;
-  } catch (e) { console.warn('Falling back to demo provider data', e); }
+  } catch (e) { console.warn('Could not load provider data', e); showToast('Could not load your dashboard data — please refresh'); }
   providerData.verificationStatus = await computeVerificationStatus();
 }
 // Small helper since match responses now include customerName directly from
@@ -6844,7 +6829,7 @@ const PROVIDER_SECTIONS = {
         </div>`
       : renderTierProgress(currentPlan, jobsCompleted, rating, cancellationRate);
     return `
-    <div class="dash-header"><div><div class="dash-title">Welcome back, ${(AUTH.user && AUTH.user.name.split(' ')[0]) || 'Marcus'}</div><div class="dash-sub">Your matched jobs and contract activity</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Welcome back${AUTH.user && AUTH.user.name ? ', ' + escapeHtml(AUTH.user.name.split(' ')[0]) : ''}</div><div class="dash-sub">Your matched jobs and contract activity</div></div></div>
     <div id="provider-promotions-banner"></div>
     ${payoutBanner}
     ${catBanner}
@@ -6952,8 +6937,8 @@ const PROVIDER_SECTIONS = {
       </div>
     </div>
     <div class="panel"><div class="panel-title">Profile</div>
-      <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="set-prov-name" value="${(AUTH.user && AUTH.user.name) || 'Marcus T.'}"/></div>
-      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-prov-email" value="${(AUTH.user && AUTH.user.email) || 'marcus@example.com'}"/></div>
+      <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="set-prov-name" value="${escapeHtml((AUTH.user && AUTH.user.name) || '')}"/></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-prov-email" value="${escapeHtml((AUTH.user && AUTH.user.email) || '')}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveProviderSettings()">Save Changes</button>
     </div>
     <div class="panel"><div class="panel-title">Location</div>
@@ -8378,49 +8363,29 @@ function getAdminNavItems() {
     base.push({ key: 'referrals', label: 'Referrals', icon: '🔗' });
     base.push({ key: 'accesslogs', label: 'Access Logs', icon: '🔍' });
     base.push({ key: 'datacleanup', label: 'Data Cleanup', icon: '🧹' });
+    base.push({ key: 'golive', label: 'Go-Live', icon: '🚀' });
   }
   base.push({ key: 'settings', label: 'Settings', icon: '⚙️' });
   return base;
 }
 
-const FALLBACK_PENDING_USERS = [
-  { id: 'U-2291', name: 'Grace Boakye', role: 'Provider', country: 'Ghana', city: 'Accra', submitted: '2026-07-11', status: 'pending' },
-  { id: 'U-2288', name: 'Emeka N.', role: 'Provider', country: 'Nigeria', city: 'Lagos', submitted: '2026-07-10', status: 'pending' },
-  { id: 'U-2280', name: 'Sarah Whitfield', role: 'Customer', country: 'United States', city: 'Atlanta', submitted: '2026-07-09', status: 'pending' },
-];
-const FALLBACK_VERIFICATION_QUEUE = [
-  { id: 'V-884', name: 'Grace Boakye', doc: 'National ID', country: 'Ghana', city: 'Accra', status: 'in review' },
-  { id: 'V-883', name: 'Emeka N.', doc: 'BVN + NIN', country: 'Nigeria', city: 'Lagos', status: 'in review' },
-];
-const FALLBACK_DISPUTES = [
-  { id: 'DP-118', parties: 'Sofia M. ↔ Malik Owens', reason: 'Incomplete work', amount: 640, status: 'open' },
-  { id: 'DP-114', parties: 'Priya N. ↔ Renee Park', reason: 'Late arrival', amount: 75, status: 'in review' },
-  { id: 'DP-109', parties: 'Tom B. ↔ Grant Lee', reason: 'Damaged item during move', amount: 220, status: 'resolved' },
-];
-const FALLBACK_CATEGORIES = [
-  { id: 'Plumbing', name: 'Plumbing', pros: 48, active: true }, { id: 'Cleaning', name: 'Cleaning', pros: 92, active: true },
-  { id: 'Tutoring', name: 'Tutoring', pros: 65, active: true }, { id: 'Electrical', name: 'Electrical', pros: 37, active: true },
-  { id: 'Moving', name: 'Moving', pros: 29, active: true }, { id: 'Painting', name: 'Painting', pros: 41, active: true },
-  { id: 'Landscaping', name: 'Landscaping', pros: 33, active: true },
-];
-const FALLBACK_COUNTRIES = [
-  { id: 'US', name: 'United States', status: 'live' }, { id: 'NG', name: 'Nigeria', status: 'live' },
-  { id: 'GH', name: 'Ghana', status: 'live' }, { id: 'LR', name: 'Liberia', status: 'live' },
-  { id: 'UK', name: 'United Kingdom', status: 'planned' }, { id: 'CA', name: 'Canada', status: 'planned' },
-  { id: 'KE', name: 'Kenya', status: 'planned' }, { id: 'ZA', name: 'South Africa', status: 'planned' },
-];
-const FALLBACK_CITIES = [
-  { id: 'city_atlanta', name: 'Atlanta', country: 'United States', adminName: 'Amara O.', adminEmail: 'amara@example.com', adminActive: true, userCount: 9 },
-  { id: 'city_lagos', name: 'Lagos', country: 'Nigeria', adminName: 'Ngozi A.', adminEmail: 'ngozi@example.com', adminActive: true, userCount: 2 },
-  { id: 'city_accra', name: 'Accra', country: 'Ghana', adminName: 'Kwame B.', adminEmail: 'kwame@example.com', adminActive: true, userCount: 2 },
-];
+// No made-up records. These used to hold invented users, disputes, cities
+// and dollar amounts that stayed on screen for any admin whose role isn't
+// allowed to load that section (or whenever a request failed) — an admin
+// could not tell them apart from real data. Empty means "nothing loaded".
+const FALLBACK_PENDING_USERS = [];
+const FALLBACK_VERIFICATION_QUEUE = [];
+const FALLBACK_DISPUTES = [];
+const FALLBACK_CATEGORIES = [];
+const FALLBACK_COUNTRIES = [];
+const FALLBACK_CITIES = [];
 
 let adminData = {
-  stats: { totalUsers: 1243, pendingApprovals: 3, openDisputes: 2, gmv: 48200, region: 'Atlanta' },
+  stats: { totalUsers: 0, pendingApprovals: 0, openDisputes: 0, gmv: 0, region: null },
   pendingUsers: FALLBACK_PENDING_USERS, verificationQueue: FALLBACK_VERIFICATION_QUEUE,
   disputes: FALLBACK_DISPUTES, categories: FALLBACK_CATEGORIES, countries: FALLBACK_COUNTRIES,
   cities: FALLBACK_CITIES, subAdmins: [], people: [], categoryRequests: [], transactions: [], fraudFlags: [], advertisingInquiries: [], salesInquiries: [], planPricing: null, membershipPricing: null, exchangeRates: [], reportsAnalytics: null, organizations: [], bookingWindowTiers: null, supportContact: null, homepageContent: null, homepageImages: null, categoryImages: null, aboutUsContent: null, termsOfServiceCustomerContent: null, termsOfServiceProviderContent: null, footerInfo: null, financialByRegion: { regions: [], total: { held: 0, released: 0, commissionRevenue: 0, transactionCount: 0 } },
-  escrow: { held: 12400, released: 34500 },
+  escrow: { held: 0, released: 0 },
 };
 
 async function loadAdminData() {
@@ -8592,10 +8557,10 @@ const ADMIN_SECTIONS = {
     return `
     <div class="dash-header"><div><div class="dash-title">${isSuper ? 'Global Overview' : 'Region Overview'} — ${region}</div><div class="dash-sub">${isSuper ? 'Platform health across every city Trothen operates in' : 'Platform health across your assigned city'} ${BACKEND_AVAILABLE ? '<span class="badge badge-success" style="margin-left:6px;">Live data</span>' : ''}</div></div></div>
     <div class="stat-cards">
-      <div class="stat-card"><div class="stat-card-label">Total Users</div><div class="stat-card-val">${adminData.stats.totalUsers.toLocaleString()}</div><div class="stat-card-delta">↑ 8% this month</div></div>
+      <div class="stat-card"><div class="stat-card-label">Total Users</div><div class="stat-card-val">${adminData.stats.totalUsers.toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-card-label">Pending Approvals</div><div class="stat-card-val">${adminData.stats.pendingApprovals}</div></div>
       <div class="stat-card"><div class="stat-card-label">Open Disputes</div><div class="stat-card-val">${adminData.stats.openDisputes}</div></div>
-      <div class="stat-card"><div class="stat-card-label">GMV This Month</div><div class="stat-card-val">$${adminData.stats.gmv.toLocaleString()}</div><div class="stat-card-delta">↑ 15%</div></div>
+      <div class="stat-card"><div class="stat-card-label">Total Booked Value</div><div class="stat-card-val">$${adminData.stats.gmv.toLocaleString()}</div><div class="stat-card-delta" style="color:var(--slate);">All time · simulated, payments not live</div></div>
     </div>
     ${isSuper ? `<div class="panel"><div class="panel-title">Locations <small>${adminData.cities.length} active</small></div>${citiesTable(adminData.cities)}</div>` : ''}
     <div class="panel"><div class="panel-title">Pending Approvals <small>${adminData.pendingUsers.length} total</small></div>${usersTable(adminData.pendingUsers.slice(0,3), 'overview')}</div>
@@ -8623,7 +8588,11 @@ const ADMIN_SECTIONS = {
     </div>`,
   verification: () => `
     <div class="dash-header"><div><div class="dash-title">Verification Queue</div><div class="dash-sub">ID, BVN/NIN, and passport submissions awaiting review</div></div></div>
-    <div class="panel">${verificationQueueTable()}</div>`,
+    <div class="panel">${verificationQueueTable()}</div>
+    <div class="panel">
+      <div class="panel-title">Guarantors to Call <small>background-check references submitted by providers</small></div>
+      <div id="guarantors-review-panel"><div style="color:var(--slate);font-size:12.5px;padding:12px 0;">Loading…</div></div>
+    </div>`,
   providerscores: () => `
     <div class="dash-header"><div><div class="dash-title">Provider Scores</div><div class="dash-sub">Ranked by real, computed trust score — updated daily. Flags a recommended pause when a score drops, but never applies one automatically; that's always a real click from a real admin.</div></div></div>
     <div class="panel" id="provider-scores-panel"><div style="color:var(--slate);font-size:12.5px;padding:12px 0;">Loading…</div></div>`,
@@ -8945,6 +8914,34 @@ const ADMIN_SECTIONS = {
     </div>` : ''}
     <div class="panel"><div class="panel-title">${isSuper ? 'History' : 'Your announcements'}</div><div id="announcements-list-panel"><div style="color:var(--slate);font-size:12.5px;padding:12px 0;">Loading…</div></div></div>`;
   },
+  golive: () => `
+    <div class="dash-header"><div><div class="dash-title">Go-Live</div><div class="dash-sub">Everything that has to be true before real people use Trothen — checked live from this server, not typed in by hand.</div></div></div>
+    <div class="panel"><div class="panel-title">Readiness checklist</div><div id="golive-checklist"><div style="color:var(--slate);font-size:12.5px;">Loading…</div></div></div>
+    <div class="panel">
+      <div class="panel-title">Step 1 — Create your real super admin</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">Use your own email. The password you type here is temporary: the first time you sign in you'll be asked to set your own, and two-factor sign-in is on from the start.</div>
+      <div class="form-group"><label class="form-label">Full name</label><input class="form-input" id="golive-admin-name" autocomplete="off"/></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="golive-admin-email" type="email" autocomplete="off"/></div>
+      <div class="form-group"><label class="form-label">Temporary password (8+ characters)</label><input class="form-input" id="golive-admin-password" type="text" autocomplete="new-password"/></div>
+      <button class="btn-sm btn-sm-primary" onclick="submitGoLiveSuperAdmin()">Create super admin</button>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Step 2 — Remove all demo data</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">Removes every demo account (fake pros, customers and admins) and everything attached to them — demo bookings, reviews, payouts, disputes, messages and notifications. Real accounts are never touched. You must be signed in with your real super admin (Step 1) to do this.</div>
+      <div id="golive-demo-preview" style="margin-bottom:12px;"></div>
+      <button class="btn-sm btn-sm-outline" onclick="previewGoLiveDemoRemoval()">Preview what will be removed</button>
+      <button class="btn-sm btn-sm-primary" style="background:#C1554D;border-color:#C1554D;" onclick="executeGoLiveDemoRemoval()">Remove all demo data</button>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Step 3 — Choose the countries you actually serve</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:12px;">Only these countries appear on the homepage "Live in…" line and in the signup country list. Every other country is set to "planned". Nothing is deleted, and people already signed up anywhere keep their accounts.</div>
+      <div class="form-group"><label class="form-label">Live countries (one per line)</label><textarea class="form-input" id="golive-countries" rows="4" style="resize:vertical;">United States
+Nigeria
+Ghana
+Liberia</textarea></div>
+      <button class="btn-sm btn-sm-primary" onclick="submitGoLiveCountries()">Set these countries live</button>
+    </div>
+    <div class="panel"><div class="panel-title">History</div><div id="golive-log"><div style="color:var(--slate);font-size:12.5px;">Loading…</div></div></div>`,
   datacleanup: () => `
     <div class="dash-header"><div><div class="dash-title">Data Cleanup</div><div class="dash-sub">Safely clear untouched test accounts under a country — never touches any account with real contract, payment, or dispute history</div></div></div>
     <div class="panel">
@@ -9591,12 +9588,121 @@ async function loadProviderScoresPanel() {
             : p.recommendedAction
               ? `<span class="badge" style="background:#FBF3E3;color:#8A6A2A;">${escapeHtml(p.recommendedAction.label)}</span>`
               : '<span class="badge badge-success">Good standing</span>'}</td>
-        <td>${p.onHold ? '—' : `<button class="btn-sm btn-sm-outline" onclick="openProviderHoldForm('${p.id}', '${escapeHtml(p.name)}')">Place on Hold</button>`}</td>
+        <td class="row-actions">
+          <button class="btn-sm btn-sm-outline" data-pid="${escapeHtml(p.id)}" data-pname="${escapeHtml(p.name)}" onclick="openProviderScoreBreakdown(this.dataset.pid, this.dataset.pname)">Breakdown</button>
+          ${p.onHold ? '' : `<button class="btn-sm btn-sm-outline" data-pid="${escapeHtml(p.id)}" data-pname="${escapeHtml(p.name)}" onclick="openProviderHoldForm(this.dataset.pid, this.dataset.pname)">Place on Hold</button>`}
+        </td>
       </tr>`).join('')}
       </tbody></table></div>`;
   } catch (e) {
     const target = document.getElementById('provider-scores-panel');
     if (target) target.textContent = 'Could not load provider scores right now.';
+  }
+}
+
+// Per-component view of one provider's trust score, computed live by
+// GET /admin/providers/:id/score. Before this, admins only ever saw the
+// single total number, with no way to tell WHY a provider scored low.
+const SCORE_COMPONENT_LABELS = {
+  identityVerification: 'Identity verification',
+  documentVerification: 'License / documents',
+  jobsCompleted: 'Jobs completed',
+  arrivedOnTime: 'Arrived on time',
+  repeatedCustomers: 'Repeat customers',
+  responseTime: 'Response time',
+  backgroundCheck: 'Background check (guarantors)',
+  cancellationRate: 'Low cancellation rate',
+  customerTrustRating: 'Customer trust rating',
+};
+async function openProviderScoreBreakdown(providerId, providerName) {
+  document.getElementById('score-breakdown-overlay')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay open" id="score-breakdown-overlay" onclick="if(event.target===this)this.remove()">
+      <div class="modal" style="max-width:520px;">
+        <div class="modal-header">
+          <button class="modal-close" onclick="document.getElementById('score-breakdown-overlay').remove()">✕</button>
+          <h3>Trust score — ${escapeHtml(providerName)}</h3>
+          <p>Computed live right now, not the last daily run.</p>
+        </div>
+        <div class="modal-body" id="score-breakdown-body"><div style="color:var(--slate);font-size:12.5px;">Loading…</div></div>
+      </div>
+    </div>`);
+  const body = document.getElementById('score-breakdown-body');
+  try {
+    const r = await apiFetch('GET', `/admin/providers/${encodeURIComponent(providerId)}/score`);
+    const rows = Object.keys(r.breakdown || {}).map(k => {
+      const got = r.breakdown[k];
+      const max = (r.weights || {})[k] || 0;
+      const pct = max ? Math.max(0, Math.min(100, Math.round((got / max) * 100))) : 0;
+      const color = pct >= 80 ? 'var(--success,#2E8C6F)' : pct >= 50 ? 'var(--gold,#B08A3E)' : '#C1554D';
+      return `<div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px;"><span>${escapeHtml(SCORE_COMPONENT_LABELS[k] || k)}</span><strong>${got} / ${max}</strong></div>
+        <div style="height:6px;background:var(--offwhite);border-radius:4px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>
+      </div>`;
+    }).join('');
+    const target = document.getElementById('score-breakdown-body');
+    if (!target) return;
+    target.innerHTML = `
+      <div style="font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;">${r.total}/99</div>
+      ${r.recommendedAction ? `<div class="badge" style="background:#FBF3E3;color:#8A6A2A;white-space:normal;margin-bottom:14px;">${escapeHtml(r.recommendedAction.label)}</div>` : '<div class="badge badge-success" style="margin-bottom:14px;">Good standing</div>'}
+      ${rows}`;
+  } catch (e) {
+    if (body) body.textContent = (e && e.message) || 'Could not load this score right now.';
+  }
+}
+
+// The admin side of the "Background Check" trust item. Providers could
+// already submit up to 3 guarantors and the backend could already record
+// a call, but no screen anywhere let the verification team see the list
+// or mark anyone contacted/verified — so every guarantor sat at
+// "submitted" forever and the background-check score never moved.
+const GUARANTOR_STATUS_BADGE = { submitted: 'badge-warn', contacted: 'badge-neutral', verified: 'badge-success' };
+async function loadGuarantorsReviewPanel() {
+  if (!BACKEND_AVAILABLE) return;
+  const target = document.getElementById('guarantors-review-panel');
+  if (!target) return;
+  try {
+    const { providers } = await apiFetch('GET', '/admin/providers-with-guarantors');
+    const el = document.getElementById('guarantors-review-panel');
+    if (!el) return;
+    if (!providers.length) {
+      el.innerHTML = `<div style="color:var(--slate);font-size:12.5px;padding:12px 0;">No provider has submitted guarantors yet.</div>`;
+      return;
+    }
+    // Providers with someone still waiting for a call go first.
+    const waiting = p => (p.guarantors || []).filter(g => g.status !== 'verified').length;
+    providers.sort((a, b) => waiting(b) - waiting(a));
+    el.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Guarantor</th><th>Phone</th><th>Relationship</th><th>Status</th><th>Action</th></tr></thead><tbody>
+      ${providers.map(p => (p.guarantors || []).map((g, i) => `<tr>
+        <td>${i === 0 ? `<strong>${escapeHtml(p.name)}</strong><div style="font-size:11.5px;color:var(--slate);">${escapeHtml(p.category || '')}${p.city ? ' · ' + escapeHtml(p.city) : ''}</div>` : ''}</td>
+        <td>${escapeHtml(g.name)}</td>
+        <td><a href="tel:${escapeHtml(String(g.phone).replace(/[^+0-9]/g, ''))}">${escapeHtml(g.phone)}</a></td>
+        <td>${escapeHtml(g.relationship || '—')}</td>
+        <td><span class="badge ${GUARANTOR_STATUS_BADGE[g.status] || 'badge-neutral'}">${escapeHtml(g.status || 'submitted')}</span>${g.contactedAt ? `<div style="font-size:11px;color:var(--slate);">${new Date(g.contactedAt).toLocaleDateString()}</div>` : ''}</td>
+        <td class="row-actions">
+          ${g.status === 'submitted' ? `<button class="btn-sm btn-sm-outline" data-pid="${escapeHtml(p.id)}" data-idx="${i}" onclick="markGuarantor(this.dataset.pid, this.dataset.idx, 'contacted')">Mark Contacted</button>` : ''}
+          ${g.status !== 'verified' ? `<button class="btn-sm btn-sm-primary" data-pid="${escapeHtml(p.id)}" data-idx="${i}" data-gname="${escapeHtml(g.name)}" onclick="markGuarantor(this.dataset.pid, this.dataset.idx, 'verified', this.dataset.gname)">Mark Verified</button>` : '—'}
+        </td>
+      </tr>`).join('')).join('')}
+      </tbody></table></div>`;
+  } catch (e) {
+    const el = document.getElementById('guarantors-review-panel');
+    if (el) el.textContent = (e && e.status === 403)
+      ? 'Guarantor calls are handled by the Verification team.'
+      : 'Could not load guarantors right now.';
+  }
+}
+async function markGuarantor(providerId, index, status, guarantorName) {
+  if (status === 'verified') {
+    const ok = await confirmDialog(`Mark ${guarantorName || 'this guarantor'} as verified? Only do this after you have actually spoken with them. The provider is notified.`);
+    if (!ok) return;
+  }
+  try {
+    await apiFetch('PATCH', `/admin/providers/${encodeURIComponent(providerId)}/guarantors/${encodeURIComponent(index)}`, { status });
+    showToast(status === 'verified' ? 'Guarantor marked verified' : 'Marked as contacted');
+    loadGuarantorsReviewPanel();
+  } catch (e) {
+    showToast((e && e.message) || 'Could not update this guarantor');
   }
 }
 
@@ -9742,6 +9848,76 @@ async function executeDataCleanup() {
     document.getElementById('data-cleanup-preview-panel').innerHTML = '';
     loadDataCleanupLogPanel();
   } catch (e) { showToast(e.message || 'Could not complete cleanup'); }
+}
+
+// ---- Go-Live screen (backend: /admin/go-live/* in admin.routes.js) ----
+async function loadGoLivePanel() {
+  const box = document.getElementById('golive-checklist');
+  if (!box) return;
+  try {
+    const r = await apiFetch('GET', '/admin/go-live/status');
+    const sevLabel = { required: 'Required', recommended: 'Recommended', optional: 'Optional', business: 'Business step' };
+    box.innerHTML = `<div style="font-size:12.5px;margin-bottom:10px;">${r.counts.realAccounts} real account(s) · ${r.counts.demoAccounts} demo account(s)</div>` +
+      r.items.map(i => `
+      <div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--border);">
+        <div style="font-size:16px;line-height:1.2;">${i.ok ? '✅' : (i.severity === 'required' ? '❌' : '⚪')}</div>
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:13px;">${escapeHtml(i.label)} <span class="badge badge-neutral" style="margin-left:6px;">${sevLabel[i.severity] || ''}</span></div>
+          <div style="font-size:12px;color:var(--slate);margin-top:2px;">${escapeHtml(i.detail || '')}</div>
+        </div>
+      </div>`).join('');
+  } catch (e) { box.textContent = (e && e.message) || 'Could not load the checklist.'; }
+  const logBox = document.getElementById('golive-log');
+  if (logBox) {
+    try {
+      const { log } = await apiFetch('GET', '/admin/go-live/audit-log');
+      logBox.innerHTML = log.length ? log.map(l => `<div style="font-size:12.5px;padding:6px 0;border-top:1px solid var(--border);">${new Date(l.createdAt).toLocaleString()} — <strong>${escapeHtml(l.actorName)}</strong>: ${l.action === 'create_super_admin' ? `created super admin ${escapeHtml((l.target && l.target.email) || '')}` : l.action === 'set_live_countries' ? `set live countries: ${escapeHtml(((l.target && l.target.live) || []).join(', '))}` : `removed ${(l.counts && l.counts.accounts) || 0} demo account(s) and their records`}</div>`).join('')
+        : '<div style="color:var(--slate);font-size:12.5px;">Nothing yet.</div>';
+    } catch (e) { logBox.textContent = ''; }
+  }
+}
+async function submitGoLiveSuperAdmin() {
+  const name = document.getElementById('golive-admin-name').value.trim();
+  const email = document.getElementById('golive-admin-email').value.trim();
+  const password = document.getElementById('golive-admin-password').value;
+  try {
+    await apiFetch('POST', '/admin/go-live/super-admins', { name, email, password });
+    showToast(`Super admin created for ${email}. Sign out, then sign in with it.`);
+    ['golive-admin-name', 'golive-admin-email', 'golive-admin-password'].forEach(id => { document.getElementById(id).value = ''; });
+    loadGoLivePanel();
+  } catch (e) { showToast((e && e.message) || 'Could not create the super admin'); }
+}
+async function submitGoLiveCountries() {
+  const countries = document.getElementById('golive-countries').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const ok = await confirmDialog(`Set exactly these ${countries.length} countries live and every other country to planned?\n\n${countries.join(', ')}`, { confirmLabel: 'Set live countries' });
+  if (!ok) return;
+  try {
+    const r = await apiFetch('POST', '/admin/go-live/live-countries', { countries });
+    showToast(`Live now: ${r.live.join(', ')}`);
+    await loadAdminData();
+    loadGoLivePanel();
+  } catch (e) { showToast((e && e.message) || 'Could not update countries'); }
+}
+async function previewGoLiveDemoRemoval() {
+  const box = document.getElementById('golive-demo-preview');
+  try {
+    const r = await apiFetch('POST', '/admin/go-live/demo-data/preview', {});
+    if (!r.accounts.length) { box.innerHTML = '<div style="font-size:12.5px;">✅ No demo data left.</div>'; return; }
+    const recs = Object.entries(r.records).map(([k, v]) => `${escapeHtml(k)}: ${v}`).join(' · ');
+    box.innerHTML = `<div style="font-size:12.5px;"><strong>${r.accounts.length} demo account(s):</strong> ${r.accounts.map(a => `${escapeHtml(a.name)} (${escapeHtml(a.email)}, ${escapeHtml(a.role)})`).join(', ')}</div>
+      ${recs ? `<div style="font-size:12px;color:var(--slate);margin-top:6px;">Records attached to them: ${recs}</div>` : ''}`;
+  } catch (e) { box.textContent = (e && e.message) || 'Could not load the preview.'; }
+}
+async function executeGoLiveDemoRemoval() {
+  const phrase = await confirmDialog('This permanently removes every demo account and everything attached to them. Real accounts are not touched. Type REMOVE ALL DEMO DATA to confirm.', { requireTextInput: true, danger: true, confirmLabel: 'Remove demo data' });
+  if (!phrase) return;
+  try {
+    const r = await apiFetch('POST', '/admin/go-live/demo-data/remove', { confirmPhrase: typeof phrase === 'string' ? phrase.trim() : '' });
+    showToast(`Removed ${r.removed.accounts} demo account(s) and their records`);
+    document.getElementById('golive-demo-preview').innerHTML = '';
+    await loadAdminData();
+    loadGoLivePanel();
+  } catch (e) { showToast((e && e.message) || 'Could not remove demo data'); }
 }
 
 async function loadDataCleanupLogPanel() {
@@ -10999,9 +11175,11 @@ function selectAdminSection(key) {
   renderDashNav('admin-nav', getAdminNavItems(), key, 'selectAdminSection');
   renderSectionSafely('admin-main', key, () => ADMIN_SECTIONS[key]());
   if (key === 'providerscores') loadProviderScoresPanel();
+  if (key === 'verification') loadGuarantorsReviewPanel();
   if (key === 'promotions') loadAdminPromotionsPanel();
   if (key === 'announcements') loadAnnouncementsPanel();
   if (key === 'datacleanup') loadDataCleanupLogPanel();
+  if (key === 'golive') loadGoLivePanel();
 }
 
 function updateAdminSidebar() {
@@ -11339,7 +11517,16 @@ async function completeAuthAndResumeIntent(role) {
     // through to the normal dashboard rather than silently doing nothing.
   }
   await goDashboard(role);
+  // Set when the page was opened from the "verify your identity" email
+  // link (?verify=1). Lands the person on the real verification form
+  // right after sign-in instead of the dashboard's default tab.
+  if (OPEN_VERIFICATION_AFTER_AUTH) {
+    OPEN_VERIFICATION_AFTER_AUTH = false;
+    if (role === 'provider') selectProviderSection('verification');
+    else if (role === 'customer') selectCustomerSection('verification');
+  }
 }
+let OPEN_VERIFICATION_AFTER_AUTH = false;
 
 let bookingPricingChoice = null; // 'hourly' | 'offer' — only meaningful when the provider's pricingModel is 'both'
 
@@ -12287,6 +12474,35 @@ async function askRealSupportChat(message) {
   return answer;
 }
 
+// The notice at the top of every page, built from what the server says is
+// actually connected right now (GET /api/system-status) instead of fixed
+// wording. The fixed text in the HTML is the safe default shown until this
+// loads (and if it can't load): it only states what is true regardless of
+// configuration — payments are simulated.
+async function loadSystemStatusBanner() {
+  const el = document.getElementById('test-mode-banner-text');
+  if (!el) return;
+  try {
+    const st = await apiFetch('GET', '/system-status');
+    const parts = [];
+    if (st.cardPaymentsLive) {
+      // Nothing left to warn about for payments.
+    } else if (st.liberiaMoMoLive) {
+      parts.push('Card payments aren\'t live yet — card payments and payouts are simulated. Liberia mobile money payments are real.');
+    } else {
+      parts.push('Payments aren\'t live yet — every payment and payout is simulated and no real money moves.');
+    }
+    if (!st.emailLive) parts.push('Email sending isn\'t connected, so account codes appear on-screen instead of being emailed.');
+    if (!st.smsLive) parts.push('Text-message codes aren\'t connected, so phone codes appear on-screen.');
+    if (!parts.length) {
+      document.getElementById('test-mode-banner').style.display = 'none';
+      return;
+    }
+    const warn = st.cardPaymentsLive ? '' : ' <strong>Don\'t enter real card details.</strong>';
+    el.innerHTML = '<strong>Early access</strong> — accounts and ID verification are real. ' + parts.map(escapeHtml).join(' ') + warn;
+  } catch (e) { /* keep the safe default wording */ }
+}
+
 (async function initApp() {
   document.documentElement.dir = I18N[CURRENT_LANG].rtl ? 'rtl' : 'ltr';
   document.documentElement.lang = CURRENT_LANG;
@@ -12316,6 +12532,7 @@ async function askRealSupportChat(message) {
     console.log('%cTrothen API not detected — running on demo data. Start the backend (npm start in /trothen-backend) for live data.', 'color:#B08A3E;');
   }
   loadFeaturedCarousel();
+  if (BACKEND_AVAILABLE) loadSystemStatusBanner();
 
   // If the page was opened with ?resetToken=... (what a real password-reset
   // email link would look like), jump straight to the reset-password form —
@@ -12324,8 +12541,35 @@ async function askRealSupportChat(message) {
   const urlResetToken = urlParams.get('resetToken');
   const urlInviteCode = urlParams.get('invite');
   const urlReferralCode = urlParams.get('ref');
+  const urlVerify = urlParams.get('verify') === '1';
   if (urlResetToken) {
     showResetPasswordForm(urlResetToken);
+  } else if (urlVerify) {
+    // Opened from the verification-invite email. Remove the parameter so a
+    // refresh doesn't repeat this, then either restore the saved session
+    // (a stored token is only a token — the user object has to be fetched
+    // from /auth/me first) or ask them to sign in with a clear reason.
+    try { history.replaceState(null, '', window.location.pathname); } catch (e) {}
+    OPEN_VERIFICATION_AFTER_AUTH = true;
+    const savedToken = BACKEND_AVAILABLE ? getSavedAuthToken() : null;
+    let restored = false;
+    if (savedToken) {
+      try {
+        AUTH.token = savedToken;
+        const { user } = await apiFetch('GET', '/auth/me');
+        AUTH.user = user;
+        restored = true;
+        await completeAuthAndResumeIntent(user.role);
+      } catch (e) {
+        AUTH.token = null;
+        AUTH.user = null;
+        clearAuthSession();
+      }
+    }
+    if (!restored) {
+      showAuth('login');
+      showToast('Sign in to finish verifying your identity');
+    }
   } else if (urlInviteCode && !getSavedAuthToken()) {
     // An organization invite link — jump straight to a provider signup
     // form with the code pre-filled and already validated, rather than

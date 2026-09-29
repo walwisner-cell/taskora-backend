@@ -868,7 +868,7 @@ router.post('/provider/guarantors', requireAuth, requireRole('provider'), async 
     const verificationAdmins = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'verification');
     const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
     for (const admin of (verificationAdmins.length ? verificationAdmins : superAdmins)) {
-      await notify(admin.id, '📋', `${updated.name} submitted ${merged.length} guarantor${merged.length === 1 ? '' : 's'} for review — a real person to call for background-check purposes.`, null, { section: 'approvals' });
+      await notify(admin.id, '📋', `${updated.name} submitted ${merged.length} guarantor${merged.length === 1 ? '' : 's'} for review — a real person to call for background-check purposes.`, null, { section: 'verification' });
     }
   }
   res.json({ user: updated });

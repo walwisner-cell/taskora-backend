@@ -82,6 +82,7 @@ const TABLES = {
   // Item 13 — the permanent record of every data-cleanup run. Also
   // insert-only, for the same reason as disputeAuditLog above.
   dataCleanupAuditLog: { table: 'data_cleanup_audit_log', columns: ['id','country','actor_id','actor_name','accounts_deleted','counts','created_at'] },
+  goLiveAuditLog: { table: 'go_live_audit_log', columns: ['id','action','actor_id','actor_name','accounts_removed','counts','target','created_at'] },
   // Item 2 — true background push notification subscriptions.
   pushSubscriptions: { table: 'push_subscriptions', columns: ['id','user_id','endpoint','p256dh','auth','created_at'] },
   // Per-device sign-out — one row per active login.
