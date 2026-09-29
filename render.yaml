@@ -40,6 +40,24 @@ services:
         value: /var/data          # points the JSON datastore at the persistent disk below
       - key: UPLOADS_DIR
         value: /var/data/uploads  # portfolio photos live on the same persistent disk, in their own subfolder
+      - key: PRIVATE_UPLOADS_DIR
+        value: /var/data/private-uploads  # ID documents — MUST be on the disk, or every one is erased on each deploy
+      - key: APP_URL
+        sync: false                       # e.g. https://trothenpro.com — ONLY once that domain opens this app; links fall back to the request's own address if unset
+      # Set these in the Render dashboard (secret values, never committed):
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: SENDGRID_FROM_EMAIL
+        sync: false                       # must be a sender verified in SendGrid, e.g. noreply@trothenpro.com
+      - key: GOOGLE_CLIENT_ID
+        sync: false                       # optional — Google Sign-In
+      # Only for a brand-new, empty database: creates the first real super
+      # admin on boot (temporary password printed once in the log).
+      # Remove both after first sign-in.
+      - key: BOOTSTRAP_SUPERADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_SUPERADMIN_NAME
+        sync: false
       # Add this once you've created a Render Postgres instance (see below) —
       # uncommenting this alone is what switches the app from the JSON-file
       # store to real Postgres. No code change needed; db.js picks the

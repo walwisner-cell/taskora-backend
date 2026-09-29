@@ -47,6 +47,15 @@ const helmet = require('helmet');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Render (like every hosted platform) puts one proxy hop in front of this
+// app. Without this line, Express sees the PROXY's address as every
+// visitor's IP — which meant every rate limit in the app (login attempts,
+// code guesses, signups) was one shared bucket for the whole world: ten
+// bad logins from anyone locked out everyone for 15 minutes. Trusting
+// exactly one hop gives each real visitor their own limit and makes
+// req.protocol report https correctly for links built from the request.
+app.set('trust proxy', 1);
+
 // Standard security headers this app had none of before: clickjacking
 // protection (X-Frame-Options), MIME-sniffing protection
 // (X-Content-Type-Options), HSTS, and a few others helmet sets by
@@ -120,6 +129,33 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// What is actually live on THIS server right now, read straight from its
+// real configuration — never hardcoded. The site-wide notice at the top of
+// every page is built from this, so it can't drift out of date again the
+// way the old fixed "codes appear on-screen" wording did once real email
+// sending was connected. Only yes/no flags are returned, never any key.
+app.get('/api/system-status', (req, res) => {
+  const delivery = require('./src/delivery');
+  let liberiaMoMoLive = false;
+  try {
+    const momo = require('./src/liberia-momo');
+    liberiaMoMoLive = process.env.LCMMMI_INTEGRATION_ENABLED === 'true' && !!(momo.isLiberiaMoMoConfigured && momo.isLiberiaMoMoConfigured());
+  } catch (e) { liberiaMoMoLive = false; }
+  let googleSignInLive = false;
+  try { googleSignInLive = require('./src/google-auth').isGoogleSignInConfigured(); } catch (e) {}
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    emailLive: delivery.isEmailConfigured(),
+    smsLive: delivery.isSmsConfigured() || delivery.isVerifyConfigured(),
+    googleSignInLive,
+    // Card payments and payouts have no real payment processor behind them
+    // (Stripe Connect is waiting on attorney sign-off), so this is false
+    // until that code exists — not a setting anyone can flip by accident.
+    cardPaymentsLive: false,
+    liberiaMoMoLive,
+  });
+});
+
 // ---- Serve uploaded portfolio photos ----
 app.use('/uploads', express.static(UPLOADS_DIR));
 
@@ -177,6 +213,7 @@ process.on('uncaughtException', (err) => {
 // Postgres backend, the very first query needs the schema to exist and the
 // seed check needs to actually finish, not race against incoming traffic.
 seedIfEmpty()
+  .then(() => require('./src/go-live').bootstrapSuperAdminIfNeeded())
   .then(() => {
     app.listen(PORT, () => {
       console.log(`\n  Trothen API + frontend running at http://localhost:${PORT}\n`);
