@@ -2174,6 +2174,25 @@
   /* Steps inside the panel never pick up the card styling */
   #screen-home .checks-list .cp-steps li { background:none; border:none; border-radius:0; padding:0; box-shadow:none; flex-direction:row; transform:none; }
   #screen-home .checks-panel { list-style:none; }
+
+  /* v72 wording editor (Admin → Settings) */
+  .we-intro { font-size:14px; color:var(--slate); margin-bottom:14px; line-height:1.55; }
+  .we-group { border:1px solid var(--border); border-radius:var(--r-card); margin-bottom:10px; background:#fff; }
+  .we-group > summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:10px; padding:13px 16px; font-weight:700; color:var(--navy); font-size:15px; }
+  .we-group > summary::-webkit-details-marker { display:none; }
+  .we-group > summary::before { content:''; width:8px; height:8px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); transition:transform .2s ease; }
+  .we-group[open] > summary::before { transform:rotate(45deg); }
+  .we-group > summary em { font-style:normal; font-size:12.5px; font-weight:700; color:#6B4E00; background:#FCEFC4; border-radius:999px; padding:2px 9px; }
+  .we-fields { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px 16px; padding:4px 16px 16px; }
+  .we-field { display:grid; grid-template-columns:1fr auto; gap:4px 8px; align-items:end; }
+  .we-field .we-label { grid-column:1 / -1; font-size:13.5px; font-weight:600; color:var(--text); display:flex; gap:8px; align-items:center; }
+  .we-field .we-label b { font-size:11.5px; color:#6B4E00; background:#FCEFC4; border-radius:999px; padding:1px 7px; }
+  .we-field.is-changed .form-input { border-color:#D9A916; background:#FFFBEB; }
+  .we-field .form-input { font-size:14.5px; padding:9px 11px; }
+  .we-reset { background:none; border:1px solid var(--border); border-radius:var(--r-control); font-size:12.5px; padding:8px 10px; cursor:pointer; color:var(--slate); }
+  .we-reset:hover { border-color:var(--slate); color:var(--text); }
+  .we-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; }
+  @media (max-width:760px) { .we-fields { grid-template-columns:1fr; } }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
@@ -4753,6 +4772,8 @@ if (!['en', 'es'].includes(CURRENT_LANG)) CURRENT_LANG = 'en';
 // shows the key name, which is at least visibly a "needs translating"
 // signal rather than a broken-looking gap.
 function t(key) {
+  // English wording the super admin changed in Admin → Settings wins.
+  if (CURRENT_LANG === 'en' && typeof CONTENT_OVERRIDES !== 'undefined' && CONTENT_OVERRIDES[key]) return CONTENT_OVERRIDES[key];
   return (I18N[CURRENT_LANG] && I18N[CURRENT_LANG][key]) || I18N.en[key] || key;
 }
 
@@ -10784,6 +10805,11 @@ Liberia</textarea></div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveHomepageContent()">Save</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
+      <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Front page wording</div>
+      <div class="we-intro">Every other piece of text on the front page: the search box, the job ticket, the four checks and their "how it works" steps, section headings, the closing boxes and the footer line. Each box shows what visitors see now. Change what you like and press Save; it's live straight away. <strong>Reset</strong> puts one box back to the built-in text. These are the English words; visitors who pick Spanish still see the built-in Spanish.</div>
+      <div id="wording-editor"><div class="ver-note">Loading…</div></div>
+      <div class="we-actions"><button class="btn-sm btn-sm-primary" onclick="saveWording()">Save wording</button><button class="btn-sm btn-sm-outline" onclick="resetAllWording()">Reset everything to built-in</button></div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Homepage Photos</div>
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Real photos for the hero and mission sections. Neither is required — without one, that section just keeps its current icon/gradient look.</div>
       ${homepageImageUploadRowHTML('hero', 'Hero Background', adminData.homepageImages && adminData.homepageImages.hero)}
@@ -12876,6 +12902,7 @@ function selectAdminSection(key) {
   renderSectionSafely('admin-main', key, () => ADMIN_SECTIONS[key]());
   if (key === 'providerscores') loadProviderScoresPanel();
   if (key === 'verification') { loadGuarantorsReviewPanel(); loadVerificationGaps(); }
+  if (key === 'settings') loadWordingEditor();
   if (key === 'promotions') loadAdminPromotionsPanel();
   if (key === 'announcements') loadAnnouncementsPanel();
   if (key === 'datacleanup') loadDataCleanupLogPanel();
@@ -15091,6 +15118,99 @@ function setupInteractiveChecks() {
   });
 }
 
+/* ══════════════════════ v72: EDIT THE FRONT PAGE WORDING FROM ADMIN ══════════════════════ */
+// Text the super admin changed in Admin → Settings → Front page wording.
+// English only: other languages keep their built-in translations.
+let CONTENT_OVERRIDES = {};
+const EDITABLE_CONTENT_GROUPS = [{"title": "Search box", "keys": [{"key": "composer_what", "label": "Words before the first box"}, {"key": "composer_where", "label": "Word before the city box"}, {"key": "composer_go", "label": "Search button"}, {"key": "search_placeholder", "label": "Grey hint in the first box"}, {"key": "search_city_placeholder", "label": "Grey hint in the city box"}, {"key": "hero_often", "label": "Words before the shortcut links"}]}, {"title": "Job ticket (top of the page)", "keys": [{"key": "ticket_title", "label": "Ticket heading"}, {"key": "ticket_s1", "label": "Step 1 name"}, {"key": "ticket_s2", "label": "Step 2 name"}, {"key": "ticket_s3", "label": "Step 3 name"}, {"key": "ticket_s4", "label": "Step 4 name"}, {"key": "ticket_status_1", "label": "Status chip at step 1"}, {"key": "ticket_status_2", "label": "Status chip at step 2"}, {"key": "ticket_status_3", "label": "Status chip at step 3"}, {"key": "ticket_status_4", "label": "Status chip at step 4"}, {"key": "ticket_f_job", "label": "Row label: the job"}, {"key": "ticket_f_pro", "label": "Row label: pro"}, {"key": "ticket_f_terms", "label": "Row label: price and scope"}, {"key": "ticket_f_pay", "label": "Row label: payment"}, {"key": "ticket_f_status", "label": "Row label: status"}, {"key": "ticket_v_job", "label": "Example job"}, {"key": "ticket_v_pro", "label": "Pro row value"}, {"key": "ticket_v_terms", "label": "Price row value"}, {"key": "ticket_v_pay", "label": "Payment row value"}, {"key": "ticket_v_status", "label": "Status row value"}, {"key": "ticket_n1", "label": "Explanation at step 1"}, {"key": "ticket_n2", "label": "Explanation at step 2"}, {"key": "ticket_n3", "label": "Explanation at step 3"}, {"key": "ticket_n4", "label": "Explanation at step 4"}, {"key": "ticket_stamp", "label": "Stamp at the last step"}, {"key": "ticket_next", "label": "\"Next step\" button"}, {"key": "ticket_again", "label": "\"Start over\" button"}, {"key": "ticket_post", "label": "\"Post a job\" button"}]}, {"title": "\"Live now in\" strip", "keys": [{"key": "loc_live", "label": "Words before the countries"}]}, {"title": "Numbers band", "keys": [{"key": "stat_pros", "label": "Under the number of pros"}, {"key": "stat_rating", "label": "Under the rating"}, {"key": "stat_jobs", "label": "Under jobs completed"}, {"key": "stat_fee", "label": "Under the booking fee"}]}, {"title": "Before a pro can take your job", "keys": [{"key": "checks_title", "label": "Section heading"}, {"key": "checks_sub", "label": "Line beside the heading"}, {"key": "checks_tag", "label": "Small green tag on each card"}, {"key": "checks_more", "label": "\"See how it works\" link"}, {"key": "checks_less", "label": "\"Hide\" link"}, {"key": "check1_t", "label": "Card 1 title"}, {"key": "check1_d", "label": "Card 1 text"}, {"key": "check1_s1", "label": "Card 1, step 1"}, {"key": "check1_s2", "label": "Card 1, step 2"}, {"key": "check1_s3", "label": "Card 1, step 3"}, {"key": "check2_t", "label": "Card 2 title"}, {"key": "check2_d", "label": "Card 2 text"}, {"key": "check2_s1", "label": "Card 2, step 1"}, {"key": "check2_s2", "label": "Card 2, step 2"}, {"key": "check2_s3", "label": "Card 2, step 3"}, {"key": "check3_t", "label": "Card 3 title"}, {"key": "check3_d", "label": "Card 3 text"}, {"key": "check3_s1", "label": "Card 3, step 1"}, {"key": "check3_s2", "label": "Card 3, step 2"}, {"key": "check3_s3", "label": "Card 3, step 3"}, {"key": "check3_note", "label": "Card 3, yellow note"}, {"key": "check4_t", "label": "Card 4 title"}, {"key": "check4_d", "label": "Card 4 text"}, {"key": "check4_s1", "label": "Card 4, step 1"}, {"key": "check4_s2", "label": "Card 4, step 2"}, {"key": "check4_s3", "label": "Card 4, step 3"}]}, {"title": "Popular right now", "keys": [{"key": "popular_title", "label": "Section heading"}, {"key": "popular_sub", "label": "Line under the heading"}, {"key": "popular_from", "label": "Word before the price"}, {"key": "popular_pro_one", "label": "After the count, for 1 pro"}, {"key": "popular_pro_many", "label": "After the count, for several pros"}, {"key": "popular_see", "label": "Link on each card"}]}, {"title": "Recent work", "keys": [{"key": "work_title", "label": "Section heading"}, {"key": "work_sub", "label": "Line under the heading"}]}, {"title": "Every kind of work", "keys": [{"key": "cats_title", "label": "Section heading"}, {"key": "cats_all", "label": "Link to all categories"}]}, {"title": "Top pros", "keys": [{"key": "pros_all", "label": "Link to every pro"}]}, {"title": "What customers say", "keys": [{"key": "reviews_title", "label": "Section heading"}, {"key": "reviews_sub", "label": "Line under the heading"}, {"key": "reviews_hired", "label": "Word before the pro's name"}]}, {"title": "Common questions", "keys": [{"key": "faq_title", "label": "Section heading"}, {"key": "faq_sub", "label": "Line under the heading"}]}, {"title": "Closing boxes", "keys": [{"key": "cta_hire_t", "label": "Left box heading"}, {"key": "cta_hire_d", "label": "Left box text"}, {"key": "cta_pro_t", "label": "Right box heading"}, {"key": "cta_pro_d", "label": "Right box text"}]}, {"title": "Footer", "keys": [{"key": "footer_line", "label": "Line under the logo"}]}];
+async function loadContentOverrides() {
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const { overrides } = await apiFetch('GET', '/content-overrides');
+    CONTENT_OVERRIDES = overrides || {};
+    refreshAfterWordingChange();
+  } catch (e) { /* built-in wording stays */ }
+}
+function refreshAfterWordingChange() {
+  applyTranslations();
+  if (typeof ticketGo === 'function' && document.querySelector('.ticket-step')) {
+    const note = document.getElementById('ticket-note');
+    const chip = document.getElementById('ticket-status');
+    if (note) note.textContent = t('ticket_n' + (TICKET_STAGE + 1));
+    if (chip) chip.textContent = t('ticket_status_' + (TICKET_STAGE + 1));
+  }
+  if (typeof OPEN_CHECK !== 'undefined' && OPEN_CHECK >= 0) {
+    const panel = document.getElementById('checks-panel');
+    if (panel && !panel.hidden) panel.innerHTML = checksPanelHTML(OPEN_CHECK);
+  }
+  document.querySelectorAll('.check-card').forEach((c, k) => { const m = c.querySelector('.checks-more'); if (m) m.textContent = t(k === OPEN_CHECK ? 'checks_less' : 'checks_more'); });
+  if (typeof HERO_LOCALES !== 'undefined' && HERO_LOCALES) renderHeroLocales(HERO_LOCALES);
+  if (typeof loadPopularProjects === 'function') loadPopularProjects();
+}
+function builtInEnglish(key) { return (I18N.en && I18N.en[key]) || ''; }
+
+// Admin: the editor itself. Every box starts with the text visitors see
+// now. Only boxes that differ from the built-in wording are saved.
+async function loadWordingEditor() {
+  const box = document.getElementById('wording-editor');
+  if (!box || !BACKEND_AVAILABLE) return;
+  let current = {};
+  try { current = (await apiFetch('GET', '/admin/settings/content-overrides')).overrides || {}; }
+  catch (e) { box.innerHTML = `<div class="ver-note">${escapeHtml(e.message || 'Could not load the wording')}</div>`; return; }
+  box.innerHTML = EDITABLE_CONTENT_GROUPS.map((g, gi) => {
+    const changed = g.keys.filter(k => current[k.key]).length;
+    return `<details class="we-group"${gi === 0 ? ' open' : ''}>
+      <summary><span>${escapeHtml(g.title)}</span>${changed ? `<em>${changed} changed</em>` : ''}</summary>
+      <div class="we-fields">${g.keys.map(k => {
+        const def = builtInEnglish(k.key);
+        const val = current[k.key] || def;
+        const long = def.length > 70;
+        return `<label class="we-field${current[k.key] ? ' is-changed' : ''}">
+          <span class="we-label">${escapeHtml(k.label)}${current[k.key] ? '<b>changed</b>' : ''}</span>
+          ${long ? `<textarea class="form-input" rows="3" data-key="${k.key}" oninput="markWordingChanged(this)">${escapeHtml(val)}</textarea>` : `<input class="form-input" data-key="${k.key}" value="${escapeHtml(val)}" oninput="markWordingChanged(this)"/>`}
+          <button type="button" class="we-reset" onclick="resetWordingField('${k.key}')" title="Put back the built-in wording">Reset</button>
+        </label>`;
+      }).join('')}</div>
+    </details>`;
+  }).join('');
+}
+function markWordingChanged(el) {
+  const field = el.closest('.we-field');
+  if (field) field.classList.toggle('is-changed', el.value.trim() !== builtInEnglish(el.dataset.key));
+}
+function resetWordingField(key) {
+  const el = document.querySelector(`#wording-editor [data-key="${key}"]`);
+  if (!el) return;
+  el.value = builtInEnglish(key);
+  markWordingChanged(el);
+}
+async function saveWording() {
+  const overrides = {};
+  for (const el of document.querySelectorAll('#wording-editor [data-key]')) {
+    const v = el.value.trim();
+    if (/[<>]/.test(v)) return showToast('Please don\'t use < or > in the wording');
+    if (v && v !== builtInEnglish(el.dataset.key)) overrides[el.dataset.key] = v;
+  }
+  try {
+    const res = await apiFetch('PATCH', '/admin/settings/content-overrides', { overrides });
+    CONTENT_OVERRIDES = res.overrides || {};
+    showToast(`Saved. ${Object.keys(CONTENT_OVERRIDES).length} piece${Object.keys(CONTENT_OVERRIDES).length === 1 ? '' : 's'} of text changed from the built-in wording. Live now.`);
+    refreshAfterWordingChange();
+    loadWordingEditor();
+  } catch (e) { showToast(e.message || 'Could not save the wording'); }
+}
+async function resetAllWording() {
+  const ok = await confirmDialog('Put every piece of front-page wording back to the built-in text? This affects the live site straight away.', { confirmLabel: 'Reset everything', danger: true });
+  if (!ok) return;
+  try {
+    await apiFetch('PATCH', '/admin/settings/content-overrides', { overrides: {} });
+    CONTENT_OVERRIDES = {};
+    showToast('All front-page wording is back to the built-in text');
+    refreshAfterWordingChange();
+    loadWordingEditor();
+  } catch (e) { showToast(e.message || 'Could not reset'); }
+}
+
 (async function initApp() {
   document.documentElement.dir = I18N[CURRENT_LANG].rtl ? 'rtl' : 'ltr';
   document.documentElement.lang = CURRENT_LANG;
@@ -15122,6 +15242,7 @@ function setupInteractiveChecks() {
     renderProviders(PROVIDERS);
     renderHomeCategories();
     loadShowcase();
+    loadContentOverrides();
     console.log('%cTrothen API connected — live data enabled.', 'color:#1D5FA8;font-weight:bold;');
   } else {
     console.log('%cTrothen API not detected — running on demo data. Start the backend (npm start in /trothen-backend) for live data.', 'color:var(--gold);');

@@ -205,6 +205,8 @@ function publicProvider(u) {
     acceptingBookings: u.acceptingBookings !== false,
     serviceRadiusMiles: u.serviceRadiusMiles != null ? u.serviceRadiusMiles : null,
     trustScore: u.trustScore != null ? u.trustScore : null,
+    // Only a yes/no, so a profile can say "two-step sign-in turned on" truthfully.
+    twoFactorEnabled: u.twoFactorEnabled === true,
   };
 }
 
@@ -361,6 +363,15 @@ router.get('/footer', async (req, res) => {
 // GET /api/homepage-content — public, no auth: the real, current homepage
 // copy (hero headline pieces, rotating word list, subheadline, mission
 // section). Editable in Settings → Platform Settings (super admin).
+// GET /api/content-overrides — public: front-page wording the super admin
+// has changed (English only). An empty object means nothing's changed.
+router.get('/content-overrides', async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  const overrides = await getSetting('contentOverrides');
+  res.set('Cache-Control', 'no-cache');
+  res.json({ overrides: overrides && typeof overrides === 'object' ? overrides : {} });
+});
+
 router.get('/homepage-content', async (req, res) => {
   const { getSetting, DEFAULTS } = require('../platform-settings');
   const content = await getSetting('homepageContent');

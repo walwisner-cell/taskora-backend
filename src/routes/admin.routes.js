@@ -1685,6 +1685,35 @@ router.patch('/settings/homepage-content', requireSuperAdmin, async (req, res) =
   res.json({ ok: true, ...content });
 });
 
+// GET/PATCH /api/admin/settings/content-overrides — super admin only: the
+// rest of the front-page wording (search box, job ticket, the four checks,
+// section titles, closing boxes, footer line). Only known keys are
+// accepted, only plain text (no < or >), each up to 600 characters. A key
+// that's left out goes back to the built-in wording. Live immediately.
+router.get('/settings/content-overrides', requireSuperAdmin, async (req, res) => {
+  const { getSetting, EDITABLE_CONTENT_KEYS } = require('../platform-settings');
+  res.json({ overrides: (await getSetting('contentOverrides')) || {}, editableKeys: EDITABLE_CONTENT_KEYS });
+});
+router.patch('/settings/content-overrides', requireSuperAdmin, async (req, res) => {
+  const { setSetting, EDITABLE_CONTENT_KEYS } = require('../platform-settings');
+  const { overrides } = req.body || {};
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return res.status(400).json({ error: 'overrides must be an object of key → text' });
+  const clean = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!EDITABLE_CONTENT_KEYS.includes(key)) return res.status(400).json({ error: `"${key}" isn't an editable piece of text` });
+    if (typeof value !== 'string') return res.status(400).json({ error: `The text for "${key}" must be plain text` });
+    const text = value.trim();
+    if (!text) continue; // blank = use the built-in wording
+    if (text.length > 600) return res.status(400).json({ error: `The text for "${key}" is too long (600 characters at most)` });
+    if (/[<>]/.test(text)) return res.status(400).json({ error: `Please don't use < or > in "${key}"` });
+    clean[key] = text;
+  }
+  await setSetting('contentOverrides', clean);
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'content_overrides_update', null);
+  res.json({ ok: true, overrides: clean });
+});
+
 // ── ABOUT US & TERMS OF SERVICE ──────────────────────────────────────────
 // Real, admin-editable long-form pages — previously both were hardcoded
 // directly in the HTML with no way to change them without a code deploy.

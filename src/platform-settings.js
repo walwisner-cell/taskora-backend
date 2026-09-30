@@ -204,6 +204,12 @@ Questions about these Terms: support@trothen.io`,
   },
 };
 
+// Front-page wording the super admin has changed from the built-in
+// English (Admin → Settings → Front page wording). Empty = everything as
+// shipped. Keys must be in EDITABLE_CONTENT_KEYS below.
+DEFAULTS.contentOverrides = {};
+const EDITABLE_CONTENT_KEYS = ["composer_what", "composer_where", "composer_go", "search_placeholder", "search_city_placeholder", "hero_often", "ticket_title", "ticket_s1", "ticket_s2", "ticket_s3", "ticket_s4", "ticket_status_1", "ticket_status_2", "ticket_status_3", "ticket_status_4", "ticket_f_job", "ticket_f_pro", "ticket_f_terms", "ticket_f_pay", "ticket_f_status", "ticket_v_job", "ticket_v_pro", "ticket_v_terms", "ticket_v_pay", "ticket_v_status", "ticket_n1", "ticket_n2", "ticket_n3", "ticket_n4", "ticket_stamp", "ticket_next", "ticket_again", "ticket_post", "loc_live", "stat_pros", "stat_rating", "stat_jobs", "stat_fee", "checks_title", "checks_sub", "checks_tag", "checks_more", "checks_less", "check1_t", "check1_d", "check1_s1", "check1_s2", "check1_s3", "check2_t", "check2_d", "check2_s1", "check2_s2", "check2_s3", "check3_t", "check3_d", "check3_s1", "check3_s2", "check3_s3", "check3_note", "check4_t", "check4_d", "check4_s1", "check4_s2", "check4_s3", "popular_title", "popular_sub", "popular_from", "popular_pro_one", "popular_pro_many", "popular_see", "work_title", "work_sub", "cats_title", "cats_all", "pros_all", "reviews_title", "reviews_sub", "reviews_hired", "faq_title", "faq_sub", "cta_hire_t", "cta_hire_d", "cta_pro_t", "cta_pro_d", "footer_line"];
+
 async function getSetting(key) {
   const row = await db.find('platformSettings', s => s.key === key);
   if (row) return row.value;
@@ -252,4 +258,4 @@ function computeResponseWindowHours({ now, jobDateTime, tiers, categoryOverrideH
   return Math.round(hours * 100) / 100;
 }
 
-module.exports = { getSetting, setSetting, computeResponseWindowHours, DEFAULTS };
+module.exports = { getSetting, setSetting, computeResponseWindowHours, DEFAULTS, EDITABLE_CONTENT_KEYS };
