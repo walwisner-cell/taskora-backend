@@ -1906,6 +1906,87 @@
   .ver-note { font-size:13px; color:var(--muted); margin-top:3px; }
   .badge-success { color:var(--success); background:rgba(31,122,85,.12); }
   .badge-danger { color:var(--red); background:rgba(179,66,58,.12); }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     v65 A WARMER, PRINTED FINISH
+     The dotted and gridded blue backgrounds are gone. In their place:
+       · a light hero, with navy used as a solid "stage" behind the
+         job ticket rather than a whole blue page;
+       · a fine paper grain on navy and light surfaces, so colour reads
+         like ink on card stock instead of a flat screen fill;
+       · a strip of yellow-and-navy hazard tape, used in two places only,
+         as the one trade-site detail.
+     ═══════════════════════════════════════════════════════════════════ */
+  :root {
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    --grain-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    --paper: #F4F6F8;
+    --ink: #0F2640;
+    --hazard: repeating-linear-gradient(-45deg, var(--signal) 0 12px, var(--ink) 12px 24px);
+  }
+
+  /* ── Hero: light page, navy stage behind the ticket ── */
+  .hero, .hero.has-photo { background:var(--paper); background-image:var(--grain-light); color:var(--text); }
+  .hero-grid { padding-top:56px; padding-bottom:56px; align-items:center; }
+  .hero .hero-title, .hero h1.hero-title { color:var(--ink); }
+  .hero-blank::after { background:var(--signal); height:.16em; }
+  .hero .hero-lede { color:var(--slate); }
+  .composer { box-shadow:0 1px 2px rgba(15,38,64,.08), 0 14px 34px rgba(15,38,64,.12); border:1px solid #D2DAE3; }
+  .composer:focus-within { box-shadow:0 0 0 3px rgba(242,194,48,.6), 0 14px 34px rgba(15,38,64,.12); }
+  .hero .hero-shortcuts { color:var(--slate); }
+  .hero-shortcuts button { color:var(--ink); border-bottom-color:rgba(15,38,64,.3); font-weight:600; }
+  .hero-shortcuts button:hover { color:var(--teal); border-bottom-color:var(--signal); }
+
+  .hero-stage { position:relative; padding:34px 30px; border-radius:18px; background-color:var(--ink); background-image:var(--grain); box-shadow:0 30px 60px rgba(15,38,64,.22); }
+  .hero-stage::before { content:''; position:absolute; left:26px; right:26px; top:-7px; height:14px; border-radius:3px; background:var(--hazard); box-shadow:0 4px 10px rgba(0,0,0,.15); }
+  .hero.has-photo .hero-stage { background-image:linear-gradient(rgba(15,38,64,.78), rgba(15,38,64,.86)), var(--hero-photo-url); background-size:cover; background-position:center; }
+  .hero.has-photo .ticket-head::before, .hero.has-photo .ticket-head::after { display:block; }
+  .hero-stage .ticket { margin-top:0; box-shadow:0 18px 40px rgba(0,0,0,.35); }
+
+  .hero-locales { color:var(--slate); border-top:1px solid #DDE3EA; background:#fff; }
+
+  /* ── Navy bands: grain instead of dots ── */
+  .page-hero, #screen-home .section-directory::before, .reviews-wall, .two-ways, .footer { background-color:var(--ink); background-image:var(--grain); background-size:auto; }
+  .footer { background-color:#0B1D31; }
+  .page-hero { border-bottom:none; position:relative; }
+  .page-hero::after { content:''; position:absolute; left:0; right:0; bottom:0; height:8px; background:var(--hazard); }
+
+  /* ── Light bands: plain paper instead of blueprint grid ── */
+  #screen-home .popular-projects-section::before, #screen-home .faq-section::before,
+  .has-page-hero .pricing-wrap, .has-page-hero .browse-wrap { background-color:var(--paper); background-image:var(--grain-light); background-size:auto; }
+  #screen-home .section-pros::before { background:#EAF0F6; background-image:var(--grain-light); }
+  .checks { background:#fff; }
+  #screen-home .checks { border-top:1px solid #E3E8EE; }
+
+  /* Cards on paper: crisper edges, calmer shadows */
+  #screen-home .pp-card, #screen-home .section-pros .provider-card, #screen-home .faq-list,
+  :is(#screen-about, #screen-terms, #screen-careers, #screen-contact) .pricing-inner, .directory-controls, #screen-categories .cats-grid {
+    border-color:#D4DCE5; box-shadow:0 1px 0 rgba(15,38,64,.04), 0 10px 26px rgba(15,38,64,.07);
+  }
+
+  @media (max-width:980px) {
+    .hero-stage { padding:28px 18px 22px; max-width:600px; }
+  }
+  @media (max-width:700px) {
+    .hero-grid { padding-top:32px; padding-bottom:36px; }
+    .hero-stage { margin:0 -6px; padding:26px 12px 16px; border-radius:14px; }
+    .hero-stage::before { left:16px; right:16px; }
+    .hero .ticket { max-width:none; }
+  }
+
+  /* Dark mode: the hero goes back to ink, with the stage one step lighter */
+  html.dark .hero, html.dark .hero.has-photo { background-color:#0B1A2B; background-image:var(--grain); }
+  html.dark .hero .hero-title, html.dark .hero h1.hero-title { color:#fff; }
+  html.dark .hero .hero-lede, html.dark .hero .hero-shortcuts { color:#B7C7D8; }
+  html.dark .hero-shortcuts button { color:#E6EDF5; border-bottom-color:rgba(230,237,245,.35); }
+  html.dark .hero-stage { background-color:#132B45; }
+  html.dark .hero-locales { background:#0E2034; border-color:#1F3650; color:#A9BCD0; }
+  html.dark .composer { border-color:#24405E; }
+  html.dark #screen-home .popular-projects-section::before, html.dark #screen-home .faq-section::before,
+  html.dark .has-page-hero .pricing-wrap, html.dark .has-page-hero .browse-wrap { background-color:#0B1A2B; background-image:var(--grain); }
+  html.dark #screen-home .section-pros::before { background:#0E2034; background-image:var(--grain); }
+  html.dark .checks { background:#0E2034; }
+  html.dark .ticket-head::before, html.dark .ticket-head::after { background:#132B45; }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
@@ -1961,6 +2042,7 @@
 
       <!-- The job ticket. Illustrates the real booking flow step by step;
            no names, prices or people are invented. -->
+      <div class="hero-stage">
       <section class="ticket" aria-labelledby="ticket-title">
         <div class="ticket-head">
           <div class="ticket-title-row">
@@ -1990,6 +2072,7 @@
           <button type="button" class="ticket-post" onclick="openPostJobModal()" data-i18n="ticket_post">Post a job</button>
         </div>
       </section>
+      </div>
     </div>
 
     <div class="hero-locales" id="hero-locales"><div class="hero-locales-track" id="hero-locales-track">Live in the U.S. · Nigeria · Ghana · Liberia</div></div>
