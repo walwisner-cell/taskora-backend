@@ -863,6 +863,22 @@ router.patch('/me', requireAuth, async (req, res) => {
   if ('name' in patch && !isValidName(patch.name)) {
     return res.status(400).json({ error: 'Enter a real name — letters, spaces, hyphens, and apostrophes only' });
   }
+  // Once someone's ID has been checked, their name is tied to it: a
+  // verified pro can't rename their account to someone else and keep the
+  // "ID checked" badge. Small edits that still match the ID (adding a
+  // middle name, fixing a typo) go through; anything else goes to support.
+  if ('name' in patch && req.user.role !== 'admin') {
+    const current = await db.find('users', u => u.id === req.user.sub);
+    if (current && current.verified === true && String(patch.name).trim() !== String(current.name || '').trim()) {
+      const { namesLikelyMatch } = require('../validators');
+      const approved = (await db.filter('verifications', v => v.userId === current.id && v.status === 'approved' && v.idLegalName))
+        .sort((x, y) => String(y.createdAt || '').localeCompare(String(x.createdAt || '')))[0];
+      const reference = approved ? approved.idLegalName : current.name;
+      if (!namesLikelyMatch(patch.name, reference)) {
+        return res.status(400).json({ error: 'Your name is tied to the ID we checked. To change it to something different, contact support so we can check your new ID.' });
+      }
+    }
+  }
   if ('email' in patch) {
     if (!isValidEmail(patch.email)) return res.status(400).json({ error: 'Enter a valid email address' });
     patch.email = patch.email.trim();

@@ -490,6 +490,16 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
   if (!req.file) return res.status(400).json({ error: 'A document file is required' });
   const cleanup = () => { try { fs.unlinkSync(path.join(PRIVATE_UPLOADS_DIR, req.file.filename)); } catch (e) {} };
 
+  // At most 5 submissions a day per account. Real people rarely need more
+  // than two tries; someone cycling through many different IDs is a
+  // pattern reviewers should never have to wade through.
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const recentSubmissions = await db.filter('verifications', v => v.userId === req.user.sub && v.createdAt >= dayAgo && v.source !== 'persona');
+  if (recentSubmissions.length >= 5) {
+    cleanup();
+    return res.status(429).json({ error: 'You\'ve submitted several documents today. Please wait until tomorrow, or contact support if something isn\'t working.' });
+  }
+
   if (!isNonEmptyString(idLegalName, { min: 2, max: 150 })) {
     cleanup();
     return res.status(400).json({ error: 'Enter the full legal name exactly as printed on the document' });
@@ -532,6 +542,7 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
     // rather than silently passing or silently blocking — a human makes
     // the actual call on legitimate differences (item 7).
     status: nameMatch ? 'pending' : 'review_required',
+    source: 'upload',
     rejectionReason: null,
     // Item (best practice): a real review SLA, the same idea already
     // used for fraud flags (src/fraud-detection.js) — without this, a
@@ -594,33 +605,50 @@ router.post('/webhooks/persona', async (req, res) => {
   }
 
   const event = req.body;
+  const eventId = event && event.data && event.data.id;
   const eventType = event && event.data && event.data.attributes && event.data.attributes.name;
   const inquiry = event && event.data && event.data.attributes && event.data.attributes.payload && event.data.attributes.payload.data;
   const userId = inquiry && inquiry.attributes && inquiry.attributes['reference-id'];
   if (!userId) return res.status(200).json({ ok: true }); // nothing to act on, but acknowledge receipt so Persona doesn't retry forever
 
+  // Persona retries until it gets a 200, so the same event can arrive
+  // more than once. Each one is acted on only the first time.
+  if (eventId && await db.find('verifications', v => v.personaEventId === eventId)) return res.status(200).json({ ok: true, duplicate: true });
+
   const user = await db.find('users', u => u.id === userId);
   if (!user) return res.status(200).json({ ok: true });
 
+  const { personaVerifiedName } = require('../persona-verification');
+  const { namesLikelyMatch } = require('../validators');
+  const idName = personaVerifiedName(inquiry);
+  const base = {
+    id: `ver_${nanoid(10)}`, userId: user.id, docType: 'ID + selfie (Persona, automated)', source: 'persona',
+    personaEventId: eventId || null, personaInquiryId: inquiry.id || null, idLegalName: idName,
+    createdAt: new Date().toISOString(),
+  };
+  const notifyReviewers = async (message) => {
+    const admins = await db.filter('users', u => u.role === 'admin' && (u.isSuperAdmin || u.adminDepartment === 'verification' || (!u.adminDepartment && u.city === user.city)));
+    for (const admin of admins) await notify(admin.id, '⚠️', message, null, { section: 'verification' });
+  };
+
   if (eventType === 'inquiry.approved') {
-    await db.update('users', user.id, { verified: true });
-    await db.insert('verifications', {
-      id: `ver_${nanoid(10)}`, userId: user.id, docType: 'ID + selfie (Persona, automated)',
-      status: 'approved', createdAt: new Date().toISOString(),
-    });
-    await notify(user.id, '✅', 'Your identity was verified automatically.', null, { section: 'verification' });
-  } else if (eventType === 'inquiry.declined' || eventType === 'inquiry.failed') {
-    await db.insert('verifications', {
-      id: `ver_${nanoid(10)}`, userId: user.id, docType: 'ID + selfie (Persona, automated)',
-      status: 'in review', createdAt: new Date().toISOString(),
-    });
-    const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
-    const regionalAdmins = user.city
-      ? await db.filter('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === user.city)
-      : [];
-    for (const admin of [...superAdmins, ...regionalAdmins]) {
-      await notify(admin.id, '⚠️', `${user.name}'s automated ID verification didn't pass — needs manual review.`, null, { section: 'verification' });
+    // Persona confirms the ID is genuine and the selfie matches it. It
+    // doesn't know whose Trothen account this is meant to be, so the name
+    // on the ID is compared with the account name before the badge goes
+    // on. A mismatch goes to a person instead of approving automatically.
+    const nameMatch = idName ? namesLikelyMatch(user.name, idName) : true;
+    if (nameMatch) {
+      await db.update('users', user.id, { verified: true });
+      await db.insert('verifications', { ...base, nameMatch: idName ? true : null, status: 'approved', reviewedBy: 'persona', reviewedAt: new Date().toISOString() });
+      await notify(user.id, '✅', 'Your identity was verified automatically.', null, { section: 'verification' });
+    } else {
+      await db.insert('verifications', { ...base, nameMatch: false, status: 'review_required', reviewDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() });
+      await notifyReviewers(`${user.name}'s automated ID check passed, but the name on the ID ("${idName}") doesn't match the account name — needs manual review.`);
+      await notify(user.id, '🪪', 'Your ID was checked. A member of our team is confirming a few details and will finish your verification shortly.', null, { section: 'verification' });
     }
+  } else if (eventType === 'inquiry.declined' || eventType === 'inquiry.failed') {
+    await db.insert('verifications', { ...base, nameMatch: null, status: 'review_required', reviewDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() });
+    await notifyReviewers(`${user.name}'s automated ID verification didn't pass — needs manual review.`);
     await notify(user.id, '⚠️', 'Automated identity verification didn\'t go through — a real person will review it shortly.', null, { section: 'verification' });
   }
   res.status(200).json({ ok: true });

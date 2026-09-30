@@ -290,7 +290,7 @@ router.get('/reports/analytics', async (req, res) => {
 // GET /api/admin/users/pending
 router.get('/users/pending', async (req, res) => {
   const region = await myRegion(req);
-  const pending = (await db.filter('users', u => u.role !== 'admin' && u.verified === false && (!region || u.city === region)))
+  const pending = (await db.filter('users', u => u.role !== 'admin' && u.verified === false && u.status !== 'approved' && u.status !== 'rejected' && (!region || u.city === region)))
     .map(publicAdmin);
   res.json({ users: pending });
 });
@@ -622,10 +622,25 @@ router.post('/users/:id/decide', requireDepartment(['verification', 'customer_se
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
   const finalRejectionReason = decision === 'reject' ? rejectionReason.trim() : null;
-  const updated = await db.update('users', req.params.id, { verified: decision === 'approve', status: decision === 'approve' ? 'approved' : 'rejected', rejectionReason: finalRejectionReason });
-  const approveMessage = target.role === 'provider' && !target.profilePhotoUrl
-    ? 'Your account has been approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
-    : 'Your account has been approved.';
+  // A provider's "ID checked" badge (the `verified` flag) now comes only
+  // from an ID that was actually reviewed — an approved document in the
+  // Verification Queue, or an automated Persona check. Approving the
+  // account alone lets them in, but doesn't put the badge on.
+  // Customers are unchanged: approving a customer's account is what lets
+  // them post jobs, as before.
+  let verifiedValue = decision === 'approve';
+  let providerNeedsId = false;
+  if (decision === 'approve' && target.role === 'provider') {
+    const approvedId = await db.find('verifications', v => v.userId === target.id && v.status === 'approved');
+    verifiedValue = !!approvedId;
+    providerNeedsId = !approvedId;
+  }
+  const updated = await db.update('users', req.params.id, { verified: verifiedValue, status: decision === 'approve' ? 'approved' : 'rejected', rejectionReason: finalRejectionReason, approvedBy: decision === 'approve' ? req.user.sub : null, approvedAt: decision === 'approve' ? new Date().toISOString() : null });
+  const approveMessage = providerNeedsId
+    ? 'Your account has been approved. Next, verify your identity in the Verification section, so customers see "ID checked" and you appear in search.'
+    : target.role === 'provider' && !target.profilePhotoUrl
+      ? 'Your account has been approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
+      : 'Your account has been approved.';
   await notify(target.id, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? approveMessage : `Your account application was not approved: ${finalRejectionReason}`, null, { section: 'overview' });
   res.json({ user: publicAdmin(updated) });
 });
@@ -675,10 +690,42 @@ router.get('/verification-queue', requireDepartment(['verification']), async (re
   const queue = [];
   for (const v of open) {
     const user = await db.find('users', u => u.id === v.userId);
-    const entry = { ...v, userName: user ? user.name : 'Unknown', accountName: user ? user.name : null, country: user ? user.country : '', city: user ? user.city : null };
+    const entry = { ...v, userName: user ? user.name : 'Unknown', accountName: user ? user.name : null, role: user ? user.role : null, country: user ? user.country : '', city: user ? user.city : null, hasDocument: !!v.documentFilename };
     if (!region || entry.city === region) queue.push(entry);
   }
   res.json({ queue });
+});
+
+// GET /api/admin/verification-gaps — providers who carry the verified
+// badge but have no approved ID on file (for example, approved through
+// account approval before v64). Listed so a reviewer can ask them for an
+// ID, or take the badge off until one is checked.
+router.get('/verification-gaps', requireDepartment(['verification']), async (req, res) => {
+  const region = await myRegion(req);
+  const approvedIds = new Set((await db.filter('verifications', v => v.status === 'approved')).map(v => v.userId));
+  const openIds = new Set((await db.filter('verifications', v => ['pending', 'review_required'].includes(v.status))).map(v => v.userId));
+  const gaps = (await db.filter('users', u => u.role === 'provider' && u.verified === true && !approvedIds.has(u.id) && (!region || u.city === region)))
+    .map(u => ({ id: u.id, name: u.name, city: u.city || null, country: u.country || null, idSubmitted: openIds.has(u.id) }));
+  res.json({ gaps });
+});
+
+// POST /api/admin/verification-gaps/:userId  { action: 'request' | 'remove_badge' }
+router.post('/verification-gaps/:userId', requireDepartment(['verification']), async (req, res) => {
+  const { action } = req.body || {};
+  if (!['request', 'remove_badge'].includes(action)) return res.status(400).json({ error: 'action must be request or remove_badge' });
+  const region = await myRegion(req);
+  const target = await db.find('users', u => u.id === req.params.userId && u.role === 'provider');
+  if (!target) return res.status(404).json({ error: 'Provider not found' });
+  if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (action === 'remove_badge') {
+    await db.update('users', target.id, { verified: false });
+    await notify(target.id, '🪪', 'To keep your "ID checked" badge and stay in search, please verify your identity in the Verification section. It only takes a few minutes.', null, { section: 'verification' });
+  } else {
+    await notify(target.id, '🪪', 'Please verify your identity in the Verification section, so the "ID checked" badge on your profile is backed by a reviewed ID.', null, { section: 'verification' });
+  }
+  const { logAccess } = require('../access-log');
+  await logAccess(req, `verification_gap_${action}`, target.id);
+  res.json({ ok: true });
 });
 
 // GET /api/admin/verification/:id/document — the actual document file
@@ -699,6 +746,12 @@ router.get('/verification/:id/document', requireDepartment(['verification']), as
   const { PRIVATE_UPLOADS_DIR } = require('../uploads');
   const filePath = require('path').join(PRIVATE_UPLOADS_DIR, record.documentFilename);
   if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'Document file is missing on disk' });
+  // Every look at someone's ID is recorded (who, when, which record), and
+  // the file is never kept in the browser's or any proxy's cache.
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'verification_document', record.id);
+  res.set('Cache-Control', 'no-store, private');
+  res.set('X-Content-Type-Options', 'nosniff');
   res.sendFile(filePath);
 });
 
@@ -711,12 +764,20 @@ router.post('/verification/:id/decide', requireDepartment(['verification']), asy
   }
   const record = await db.find('verifications', v => v.id === req.params.id);
   if (!record) return res.status(404).json({ error: 'Verification record not found' });
+  // Only a submission that's still waiting can be decided. An older one
+  // replaced by a newer upload ("superseded"), or one already decided,
+  // can't be approved by mistake from a stale screen.
+  if (!['pending', 'review_required'].includes(record.status)) {
+    return res.status(409).json({ error: `This submission is already ${record.status.replace('_', ' ')} — refresh the queue.` });
+  }
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
   if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (user && user.id === req.user.sub) return res.status(403).json({ error: 'You can\'t review your own verification' });
   const status = decision === 'approve' ? 'approved' : 'rejected';
   const finalRejectionReason = decision === 'reject' ? rejectionReason.trim() : null;
-  await db.update('verifications', record.id, { status, rejectionReason: finalRejectionReason });
+  // Who decided and when, kept with the record.
+  await db.update('verifications', record.id, { status, rejectionReason: finalRejectionReason, reviewedBy: req.user.sub, reviewedAt: new Date().toISOString() });
   if (decision === 'approve') await db.update('users', record.userId, { verified: true });
   const approveMessage = user && user.role === 'provider' && !user.profilePhotoUrl
     ? 'Your identity verification was approved. One more step before you appear in search and job matches: add a profile picture in Settings.'

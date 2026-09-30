@@ -44,20 +44,34 @@ function buildHostedFlowUrl(referenceId) {
 // same general scheme as Stripe's webhook signing. Requires the RAW
 // request body (before JSON parsing mutates it), which is why server.js
 // captures req.rawBody via express.json()'s verify callback.
-function verifyWebhookSignature(rawBody, signatureHeader) {
+// Two protections on top of the signature itself:
+//  - the timestamp must be within 5 minutes of now, so a captured
+//    "approved" message can't be replayed later to re-verify an account
+//    whose verification was since removed;
+//  - while Persona is rotating secrets it sends more than one
+//    "t=…,v1=…" set separated by spaces; any valid one is accepted.
+const PERSONA_SIGNATURE_TOLERANCE_SECONDS = 300;
+function verifyWebhookSignature(rawBody, signatureHeader, nowMs = Date.now()) {
   const secret = process.env.PERSONA_WEBHOOK_SECRET;
   if (!secret || !signatureHeader) return false;
-  const parts = Object.fromEntries(
-    signatureHeader.split(',').map(p => p.split('=')).filter(p => p.length === 2)
-  );
-  if (!parts.t || !parts.v1) return false;
-  const expected = crypto.createHmac('sha256', secret).update(`${parts.t}.${rawBody}`).digest('hex');
-  // Constant-time comparison — a signature check that leaks timing
-  // information is a real, if narrow, attack surface.
-  const expectedBuf = Buffer.from(expected, 'hex');
-  const actualBuf = Buffer.from(parts.v1, 'hex');
-  if (expectedBuf.length !== actualBuf.length) return false;
-  return crypto.timingSafeEqual(expectedBuf, actualBuf);
+  return String(signatureHeader).trim().split(/\s+/).some(set => {
+    const parts = Object.fromEntries(set.split(',').map(p => p.split('=')).filter(p => p.length === 2));
+    if (!parts.t || !parts.v1 || !/^\d+$/.test(parts.t) || !/^[0-9a-f]+$/i.test(parts.v1)) return false;
+    if (Math.abs(nowMs / 1000 - Number(parts.t)) > PERSONA_SIGNATURE_TOLERANCE_SECONDS) return false;
+    const expected = crypto.createHmac('sha256', secret).update(`${parts.t}.${rawBody}`).digest('hex');
+    // Constant-time comparison — a signature check that leaks timing
+    // information is a real, if narrow, attack surface.
+    const expectedBuf = Buffer.from(expected, 'hex');
+    const actualBuf = Buffer.from(parts.v1, 'hex');
+    if (expectedBuf.length !== actualBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, actualBuf);
+  });
 }
 
-module.exports = { isPersonaConfigured, isPersonaWebhookConfigured, buildHostedFlowUrl, verifyWebhookSignature };
+// The name Persona read off the ID, when the inquiry includes it.
+function personaVerifiedName(inquiry) {
+  const a = (inquiry && inquiry.attributes) || {};
+  return ['name-first', 'name-middle', 'name-last'].map(k => a[k]).filter(v => typeof v === 'string' && v.trim()).join(' ').trim() || null;
+}
+
+module.exports = { isPersonaConfigured, isPersonaWebhookConfigured, buildHostedFlowUrl, verifyWebhookSignature, personaVerifiedName };
