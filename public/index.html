@@ -1987,6 +1987,25 @@
   html.dark #screen-home .section-pros::before { background:#0E2034; background-image:var(--grain); }
   html.dark .checks { background:#0E2034; }
   html.dark .ticket-head::before, html.dark .ticket-head::after { background:#132B45; }
+
+  /* v66 "Live in" strip: a solid navy band, white text, each country as
+     a chip with a green "live" dot. It only scrolls when the list is too
+     long to fit; a short list sits still in the middle. */
+  .hero .hero-locales { background:var(--ink); background-image:var(--grain); color:#fff; border-top:none; padding:0; font-size:15.5px; -webkit-mask-image:none; mask-image:none; }
+  .hero-locales-track { display:inline-flex; align-items:center; gap:0; padding:14px 0; }
+  .hero-locales-track .loc-set { display:inline-flex; align-items:center; gap:10px; margin:0 20px; }
+  .hero-locales .loc-label { display:inline-flex; align-items:center; gap:8px; font-weight:700; color:#fff; letter-spacing:.01em; }
+  .hero-locales .live-dot { width:9px; height:9px; border-radius:50%; background:#3DDC84; box-shadow:0 0 0 0 rgba(61,220,132,.6); animation:v66Live 2s ease-out infinite; }
+  @keyframes v66Live { 0% { box-shadow:0 0 0 0 rgba(61,220,132,.55); } 100% { box-shadow:0 0 0 9px rgba(61,220,132,0); } }
+  .hero-locales .loc-chip { display:inline-flex; align-items:center; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.22); border-radius:999px; padding:5px 13px; font-weight:600; color:#fff; white-space:nowrap; }
+  .hero-locales .loc-more { color:var(--signal); font-weight:600; white-space:nowrap; }
+  .hero-locales.is-static { text-align:center; }
+  .hero-locales.is-static .loc-set { flex-wrap:wrap; justify-content:center; row-gap:8px; margin:0; }
+  .hero-locales.is-static .hero-locales-track { display:flex; animation:none; flex-wrap:wrap; justify-content:center; white-space:normal; row-gap:8px; padding:14px 16px; }
+  .hero-locales:not(.is-static) { -webkit-mask-image:linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent); mask-image:linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent); }
+  html.dark .hero .hero-locales { background-color:#132B45; color:#fff; }
+  @media (max-width:700px) { .hero .hero-locales { font-size:14.5px; } .hero-locales .loc-chip { padding:4px 11px; } }
+  @media (prefers-reduced-motion: reduce) { .hero-locales .live-dot { animation:none; } }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
@@ -2075,7 +2094,7 @@
       </div>
     </div>
 
-    <div class="hero-locales" id="hero-locales"><div class="hero-locales-track" id="hero-locales-track">Live in the U.S. · Nigeria · Ghana · Liberia</div></div>
+    <div class="hero-locales is-static" id="hero-locales" hidden><div class="hero-locales-track" id="hero-locales-track"></div></div>
   </header>
 
   <div id="customer-welcome-banner" style="display:none;"></div>
@@ -4283,6 +4302,8 @@ const I18N = {
     trust_payment: "Payment held until the job is done",
     trust_fraud: "Every booking screened for fraud",
     trust_2fa: "Two-step sign-in turned on",
+    loc_live: "Live now in",
+    loc_more: "More countries coming soon",
   },
   es: {
     lang_name: 'Español',
@@ -4415,6 +4436,8 @@ const I18N = {
     trust_payment: "Pago retenido hasta terminar el trabajo",
     trust_fraud: "Cada reserva revisada contra fraude",
     trust_2fa: "Verificación en dos pasos activada",
+    loc_live: "Ya disponible en",
+    loc_more: "Pronto en más países",
   },
   fr: {
     lang_name: 'Français',
@@ -13566,8 +13589,7 @@ async function loadHomepageContent() {
     // jump.
     const localesTrack = document.getElementById('hero-locales-track');
     if (localesTrack && Array.isArray(content.featuredCountries) && content.featuredCountries.length) {
-      const line = `Live in ${content.featuredCountries.map(c => escapeHtml(c)).join(' · ')} — expanding globally`;
-      localesTrack.innerHTML = `<span>${line}</span><span>${line}</span>`;
+      renderHeroLocales(content.featuredCountries);
     }
   } catch (e) { console.warn('Could not load homepage content, using defaults.', e); }
 }
@@ -13579,6 +13601,27 @@ async function loadHomepageContent() {
 // nothing real to show yet (a brand-new deployment with no verified
 // providers in any category), rather than displaying an empty or
 // placeholder-filled grid.
+// "Live now in" strip: each live country as a chip. If they all fit on
+// one line it sits still in the middle; only a long list scrolls (and is
+// then duplicated once so the loop has no seam).
+let HERO_LOCALES = null;
+function renderHeroLocales(countries) {
+  HERO_LOCALES = countries;
+  const bar = document.getElementById('hero-locales');
+  const track = document.getElementById('hero-locales-track');
+  if (!bar || !track) return;
+  const set = `<span class="loc-set"><span class="loc-label"><i class="live-dot" aria-hidden="true"></i>${escapeHtml(t('loc_live'))}</span>${countries.map(c => `<span class="loc-chip">${escapeHtml(c)}</span>`).join('')}<span class="loc-more">${escapeHtml(t('loc_more'))}</span></span>`;
+  bar.hidden = false;
+  bar.classList.add('is-static');
+  track.innerHTML = set;
+  requestAnimationFrame(() => {
+    const fits = countries.length <= 4 || track.scrollWidth <= bar.clientWidth - 24;
+    bar.classList.toggle('is-static', fits);
+    track.innerHTML = fits ? set : set + set.replace('<span class="loc-set">', '<span class="loc-set" aria-hidden="true">');
+  });
+}
+window.addEventListener('resize', () => { if (HERO_LOCALES) renderHeroLocales(HERO_LOCALES); });
+
 async function loadPopularProjects() {
   const section = document.getElementById('popular-projects-section');
   if (!section || !BACKEND_AVAILABLE) return;
