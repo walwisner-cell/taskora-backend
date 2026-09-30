@@ -1669,8 +1669,174 @@
     #screen-home .mission-inner { padding-left:20px; border-left-width:5px; margin:0 18px; }
     #screen-home .faq-list { padding:2px 14px; }
   }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     v62 QUICK VIEW · RECENT WORK · REVIEWS WALL · DARK MODE · INSTALL
+     ═══════════════════════════════════════════════════════════════════ */
+  [hidden] { display:none !important; }
+
+  /* Pro quick view: a side panel on computers, a bottom sheet on phones */
+  html.qv-lock, html.qv-lock body { overflow:hidden; }
+  .qv-overlay { position:fixed; inset:0; z-index:700; background:rgba(8,19,31,0); display:flex; justify-content:flex-end; transition:background-color .26s ease; }
+  .qv-overlay.is-open { background:rgba(8,19,31,.55); }
+  .qv { position:relative; width:min(460px, 100%); height:100%; background:#fff; color:var(--text); overflow-y:auto; overscroll-behavior:contain; box-shadow:-20px 0 50px rgba(0,0,0,.25); transform:translateX(104%); transition:transform .3s cubic-bezier(.2,.8,.2,1); outline:none; }
+  .qv-overlay.is-open .qv { transform:none; }
+  .qv-close { position:sticky; top:12px; float:right; margin:12px 12px 0 0; width:40px; height:40px; border-radius:50%; border:1px solid var(--border); background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:2; }
+  .qv-close svg { width:18px; height:18px; stroke:var(--text); stroke-width:2; fill:none; stroke-linecap:round; }
+  .qv-body { padding:28px 26px 30px; clear:both; }
+  .qv-top { display:flex; gap:16px; align-items:center; margin-top:-24px; }
+  .qv-avatar { width:78px; height:78px; border-radius:50%; object-fit:cover; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; font-family:var(--font-display); font-size:28px; font-weight:700; box-shadow:0 0 0 3px #fff, 0 0 0 5px #D8E3EF; }
+  .qv-name { font-size:27px; color:var(--navy); margin:0; line-height:1.1; }
+  .qv-role { font-size:16px; color:var(--slate); margin-top:2px; }
+  .qv-facts { display:grid; grid-template-columns:repeat(auto-fit, minmax(90px, 1fr)); gap:8px; margin:22px 0 16px; }
+  .qv-facts > div { background:var(--offwhite); border:1px solid var(--border); border-radius:var(--r-control); padding:10px 12px; }
+  .qv-facts strong { display:block; font-family:var(--font-display); font-size:24px; color:var(--navy); line-height:1.1; }
+  .qv-facts span { font-size:13.5px; color:var(--slate); }
+  .qv-stars { color:#C08B00; letter-spacing:1px; font-size:14px; }
+  .qv-stars span { color:#C9D1DA; }
+  .qv-line { display:flex; align-items:center; gap:6px; font-size:15px; color:var(--slate); margin:0 0 12px; }
+  .qv-line svg { width:16px; height:16px; flex-shrink:0; }
+  .qv-h { font-size:18px; color:var(--navy); margin:22px 0 10px; font-weight:600; }
+  .qv-h small { font-family:var(--font-body); font-size:13px; font-weight:700; background:var(--offwhite); border-radius:999px; padding:2px 8px; margin-left:6px; color:var(--slate); }
+  .qv-photos { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+  .qv-photo { padding:0; border:none; border-radius:var(--r-control); overflow:hidden; aspect-ratio:1; cursor:zoom-in; background:var(--offwhite); }
+  .qv-photo img { width:100%; height:100%; object-fit:cover; display:block; transition:transform .3s ease; }
+  .qv-photo:hover img { transform:scale(1.06); }
+  .qv-zoom { position:fixed; inset:0; z-index:5; background:rgba(8,19,31,.92); display:flex; align-items:center; justify-content:center; padding:20px; cursor:zoom-out; animation:v57Fade .2s ease both; }
+  .qv-zoom img { max-width:100%; max-height:100%; border-radius:var(--r-card); }
+  .qv-review { margin:0 0 12px; padding:14px 16px; background:var(--offwhite); border-radius:var(--r-card); border-left:4px solid var(--signal); }
+  .qv-review blockquote { margin:6px 0; font-size:15.5px; line-height:1.55; color:var(--text); }
+  .qv-review figcaption { font-size:14px; font-weight:700; color:var(--slate); }
+  .qv-empty { color:var(--slate); font-size:15px; }
+  .qv-actions { position:sticky; bottom:0; display:flex; gap:10px; padding:16px 0 4px; background:linear-gradient(transparent, #fff 30%); margin-top:10px; }
+  .qv-actions .btn-solid { flex:1; }
+  .qv-profile { flex:1; background:#fff; border:1px solid var(--border); border-radius:var(--r-control); font-weight:600; font-size:15px; padding:12px; cursor:pointer; color:var(--text); }
+  .qv-profile:hover { border-color:var(--slate); }
+  .qv-loading { display:grid; gap:12px; padding-top:20px; }
+  .qv-loading div { height:18px; border-radius:6px; background:linear-gradient(90deg, #E3E8EE 0, #F4F6F9 40%, #E3E8EE 80%) 0 0 / 180px 100% repeat-x; animation:v60Shimmer 1.4s linear infinite; }
+  .qv-loading div:first-child { height:78px; width:78px; border-radius:50%; }
+  @media (max-width:700px) {
+    .qv-overlay { align-items:flex-end; }
+    .qv { width:100%; height:auto; max-height:92vh; max-height:92dvh; border-radius:18px 18px 0 0; transform:translateY(104%); }
+    .qv-body { padding:26px 18px calc(22px + env(safe-area-inset-bottom, 0px)); }
+    .qv-name { font-size:24px; }
+  }
+
+  /* Recent work */
+  #screen-home .work-section::before { background:#fff; }
+  .work-arrows { display:flex; gap:8px; }
+  .work-arrow { width:44px; height:44px; border-radius:50%; border:1px solid var(--border); background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background-color .15s ease, border-color .15s ease; }
+  .work-arrow:hover { background:var(--navy); border-color:var(--navy); }
+  .work-arrow svg { width:20px; height:20px; fill:none; stroke:var(--navy); stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+  .work-arrow:hover svg { stroke:#fff; }
+  .work-track { display:flex; gap:16px; overflow-x:auto; scroll-snap-type:x mandatory; padding:4px 2px 16px; scrollbar-width:thin; -webkit-overflow-scrolling:touch; }
+  .work-card { flex:0 0 clamp(230px, 28vw, 320px); aspect-ratio:4/5; position:relative; border:none; padding:0; border-radius:var(--r-card); overflow:hidden; cursor:pointer; scroll-snap-align:start; background:var(--offwhite); box-shadow:0 8px 22px rgba(15,38,64,.12); }
+  .work-card img { width:100%; height:100%; object-fit:cover; display:block; transition:transform .6s cubic-bezier(.2,.7,.2,1); }
+  .work-card:hover img { transform:scale(1.06); }
+  .work-cap { position:absolute; left:0; right:0; bottom:0; display:flex; align-items:center; gap:10px; padding:40px 14px 14px; background:linear-gradient(transparent, rgba(8,19,31,.85)); color:#fff; text-align:left; }
+  .work-cap strong { display:block; font-size:16px; }
+  .work-cap em { font-style:normal; font-size:13.5px; color:#C9D8E8; }
+  .sc-avatar { width:36px; height:36px; border-radius:50%; object-fit:cover; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; color:#fff; font-size:13px; font-weight:700; box-shadow:0 0 0 2px #fff; }
+
+  /* Reviews wall */
+  .reviews-wall { background:var(--navy); color:#fff; padding:64px 0 56px; overflow:hidden; position:relative; }
+  .reviews-head { max-width:1160px; margin:0 auto 28px; padding:0 28px; }
+  .reviews-wall .section-title { color:#fff; }
+  .reviews-wall .section-sub { color:#B9CBDD; }
+  .rv-row { overflow:hidden; padding:8px 0; -webkit-mask-image:linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); mask-image:linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
+  .rv-track { display:flex; gap:18px; width:max-content; animation:v62Drift var(--rv-dur, 40s) linear infinite; }
+  .rv-dup { display:flex; gap:18px; }
+  .rv-row-back .rv-track { animation-direction:reverse; }
+  .rv-row:hover .rv-track { animation-play-state:paused; }
+  @keyframes v62Drift { from { transform:translateX(0); } to { transform:translateX(calc(-50% - 9px)); } }
+  .rv-card { flex:0 0 340px; margin:0; background:#fff; color:var(--text); border-radius:var(--r-card); padding:20px 22px; cursor:pointer; box-shadow:0 10px 26px rgba(0,0,0,.25); transition:transform .2s ease; }
+  .rv-card:hover { transform:translateY(-4px) rotate(-.4deg); }
+  .rv-card blockquote { margin:8px 0 14px; font-size:16.5px; line-height:1.5; }
+  .rv-card figcaption { display:flex; align-items:center; gap:10px; }
+  .rv-card figcaption strong { display:block; font-size:15px; }
+  .rv-card figcaption em { font-style:normal; font-size:13.5px; color:var(--slate); }
+  .rv-stars .qv-stars { font-size:16px; }
+  @media (max-width:700px) { .reviews-wall { padding:44px 0 40px; } .reviews-head { padding:0 18px; } .rv-card { flex-basis:280px; } }
+
+  /* Footer tools: theme switch and install */
+  .footer-tools { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; align-items:center; }
+  .theme-switch { display:inline-flex; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); border-radius:999px; padding:3px; }
+  .theme-switch button { background:none; border:none; color:#C9D8E8; font-size:13.5px; font-weight:600; padding:6px 12px; border-radius:999px; cursor:pointer; font-family:inherit; }
+  .theme-switch button[aria-pressed="true"] { background:#fff; color:var(--navy); }
+  .install-btn { display:none; align-items:center; gap:8px; background:var(--signal); color:var(--navy); border:none; border-radius:999px; font-weight:700; font-size:14px; padding:8px 14px; cursor:pointer; font-family:inherit; }
+  .install-btn svg { width:16px; height:16px; }
+  html.can-install .install-btn { display:inline-flex; }
+  .nav-install { display:none !important; }
+  @media (max-width:760px) { html.can-install .navbar.menu-open .nav-more .nav-install { display:block !important; color:var(--signal); } }
+  .install-sheet { margin:auto auto 0; background:#fff; border-radius:18px 18px 0 0; padding:24px 22px calc(22px + env(safe-area-inset-bottom, 0px)); width:100%; max-width:480px; }
+  .install-sheet h3 { font-size:22px; color:var(--navy); margin:0 0 10px; }
+  .install-sheet ol { margin:0 0 18px; padding-left:20px; font-size:16px; line-height:1.6; }
+  .install-sheet .btn-solid { width:100%; }
+  #install-help { align-items:flex-end; justify-content:center; background:rgba(8,19,31,.55); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rv-track { animation:none !important; flex-wrap:wrap; width:auto; padding:0 18px; }
+    .rv-dup { display:none; }
+    .rv-row { -webkit-mask-image:none; mask-image:none; }
+    .qv, .qv-overlay, .work-card img, .rv-card { transition:none !important; }
+  }
+
+  /* ── DARK MODE (public pages) ─────────────────────────────────────── */
+  html.dark body { background:#08131F; }
+  html.dark #screen-home, html.dark #screen-categories, html.dark #screen-directory { background:#0B1A2B; color:#E6EDF5; }
+  html.dark #screen-home .stats-strip { background:#0E2034; border-color:#1F3650; }
+  html.dark #screen-home .stat { border-color:#1F3650; }
+  html.dark #screen-home .stat-val { color:#fff; }
+  html.dark #screen-home .stat-label, html.dark #screen-home .section-sub { color:#A9BCD0; }
+  html.dark #screen-home .section-title, html.dark #screen-home .checks-title, html.dark #screen-home .mission-headline { color:#fff; }
+  html.dark #screen-home .checks { background:#0E2034; border-color:#1F3650; }
+  html.dark #screen-home .checks-list strong { color:#fff; }
+  html.dark #screen-home .checks-list p, html.dark #screen-home .mission-body { color:#B7C7D8; }
+  html.dark #screen-home .checks-icon { background:#12263D; border-color:#24405E; color:#7FB2EC; }
+  html.dark #screen-home .popular-projects-section::before, html.dark #screen-home .faq-section::before {
+    background-color:#0B1A2B;
+    background-image:linear-gradient(rgba(127,178,236,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(127,178,236,.08) 1px, transparent 1px), linear-gradient(rgba(127,178,236,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(127,178,236,.04) 1px, transparent 1px);
+  }
+  html.dark #screen-home .section-directory::before { background-color:#06101B; }
+  html.dark #screen-home .section-pros::before { background:linear-gradient(180deg, #0E2034, #0B1A2B); }
+  html.dark #screen-home .work-section::before { background:#0E2034; }
+  html.dark .pp-card, html.dark .provider-card, html.dark #screen-home .faq-list, html.dark .cat-card { background:#12263D; border-color:#24405E; color:#E6EDF5; box-shadow:0 8px 22px rgba(0,0,0,.3); }
+  html.dark .pp-name, html.dark .provider-name, html.dark .provider-price, html.dark #screen-home .faq-question { color:#fff; }
+  html.dark .pp-price, html.dark .provider-role, html.dark .meta-chip, html.dark .pp-meta, html.dark #screen-home .faq-answer-inner { color:#B7C7D8; }
+  html.dark .pp-go, html.dark #screen-home .see-all { color:#7FB2EC; border-bottom-color:rgba(127,178,236,.4); }
+  html.dark #screen-home .section-directory .see-all { color:var(--signal); }
+  html.dark .tag { background:#0B1A2B; border-color:#24405E; color:#D4DFEA; }
+  html.dark .provider-footer, html.dark #screen-home .faq-item { border-color:#24405E; }
+  html.dark #screen-home .faq-list { border-top-color:var(--signal); }
+  html.dark #screen-home #providers-scope-note { background:#12263D !important; border-color:#24405E !important; color:#D4DFEA !important; }
+  html.dark #screen-home .mission-section { background:#0B1A2B; }
+  html.dark .featured-carousel { background:#0B1A2B; border-color:#1F3650; }
+  html.dark .featured-carousel-label { color:#A9BCD0; }
+  html.dark .work-arrow { background:#12263D; border-color:#24405E; }
+  html.dark .work-arrow svg { stroke:#fff; }
+  html.dark .browse-wrap { background:#0B1A2B; }
+  html.dark .browse-title { color:#fff; }
+  html.dark .browse-sub, html.dark .browse-back { color:#A9BCD0; }
+  html.dark .cat-row { color:#E6EDF5; border-bottom-color:#24405E; }
+  html.dark .directory-chip { background:#12263D; border-color:#24405E; color:#D4DFEA; }
+  html.dark .directory-chip.active { background:#fff; color:var(--navy); border-color:#fff; }
+  html.dark .qv, html.dark .qv-close, html.dark .qv-profile { background:#0E2034; color:#E6EDF5; border-color:#24405E; }
+  html.dark .qv-close svg { stroke:#fff; }
+  html.dark .qv-name, html.dark .qv-h, html.dark .qv-facts strong { color:#fff; }
+  html.dark .qv-facts > div, html.dark .qv-review { background:#12263D; border-color:#24405E; }
+  html.dark .qv-role, html.dark .qv-facts span, html.dark .qv-line, html.dark .qv-review figcaption { color:#B7C7D8; }
+  html.dark .qv-review blockquote { color:#E6EDF5; }
+  html.dark .qv-actions { background:linear-gradient(transparent, #0E2034 30%); }
+  html.dark .qv-avatar { box-shadow:0 0 0 3px #0E2034, 0 0 0 5px #24405E; }
+  html.qv-lock .support-chat-bubble, html.qv-lock .support-chat-panel { display:none !important; }
+  @media (max-width:700px) { .qv-facts { grid-template-columns:1fr 1fr; } }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+  (function () { try { var c = localStorage.getItem('trothen_theme') || 'auto';
+    var d = c === 'dark' || (c === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (d) document.documentElement.classList.add('dark'); } catch (e) {} })();
+</script>
 </head>
 <body>
 
@@ -1792,6 +1958,21 @@
     <div class="popular-projects-grid" id="popular-projects-grid"></div>
   </div>
 
+  <!-- RECENT WORK: real photos from pros' portfolios (hidden until there are enough). -->
+  <div class="section work-section" id="work-showcase" hidden>
+    <div class="section-header">
+      <div>
+        <h2 class="section-title" data-i18n="work_title">Recent work on Trothen</h2>
+        <div class="section-sub" data-i18n="work_sub">Photos pros have added to their profiles. Tap one to meet the pro.</div>
+      </div>
+      <div class="work-arrows">
+        <button type="button" class="work-arrow" onclick="scrollWork(-1)" aria-label="Previous photos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <button type="button" class="work-arrow" onclick="scrollWork(1)" aria-label="Next photos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
+    </div>
+    <div class="work-track" id="work-track" tabindex="0" aria-label="Recent work photos"></div>
+  </div>
+
   <!-- CATEGORIES: a plain directory index. -->
   <div class="section section-directory">
     <div class="section-header">
@@ -1816,6 +1997,15 @@
     </div>
     <div class="providers-grid" id="providers-grid"></div>
   </div>
+
+  <!-- REVIEWS WALL: real 4 and 5 star reviews (hidden until there are at least 3). -->
+  <section class="reviews-wall" id="reviews-wall" hidden>
+    <div class="reviews-head">
+      <h2 class="section-title" data-i18n="reviews_title">What customers say</h2>
+      <div class="section-sub" data-i18n="reviews_sub">Recent 4 and 5 star reviews, written after a completed booking.</div>
+    </div>
+    <div class="reviews-rows" id="reviews-rows"></div>
+  </section>
 
   <!-- WHY TROTHEN EXISTS (admin-editable) -->
   <section class="mission-section">
@@ -1858,6 +2048,14 @@
       <div class="footer-brand">
         <div class="footer-logo" id="footer-logo-home"></div>
         <p data-i18n="footer_line">Local work, done by people whose ID we've checked.</p>
+        <div class="footer-tools">
+          <div class="theme-switch" role="group" aria-label="Colour theme">
+            <button type="button" data-theme-choice="auto" onclick="setThemeChoice('auto')" data-i18n="theme_auto">Auto</button>
+            <button type="button" data-theme-choice="light" onclick="setThemeChoice('light')" data-i18n="theme_light">Light</button>
+            <button type="button" data-theme-choice="dark" onclick="setThemeChoice('dark')" data-i18n="theme_dark">Dark</button>
+          </div>
+          <button type="button" class="install-btn" onclick="installTrothen()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M12 8v6M9.5 11.5L12 14l2.5-2.5"/></svg><span data-i18n="install_btn">Add Trothen to your phone</span></button>
+        </div>
       </div>
       <nav class="footer-links" aria-label="Footer">
         <a onclick="showAboutPage()" data-i18n="footer_about">About Us</a>
@@ -2571,6 +2769,26 @@
   </div>
 </div>
 
+<!-- PRO QUICK VIEW: opens over any page from a pro card or a work photo. -->
+<div class="qv-overlay" id="qv-overlay" hidden onclick="if(event.target===this)closeProQuickView()">
+  <aside class="qv" role="dialog" aria-modal="true" aria-labelledby="qv-name" tabindex="-1">
+    <button type="button" class="qv-close" onclick="closeProQuickView()" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="qv-body" id="qv-body"></div>
+  </aside>
+</div>
+
+<!-- Add-to-home-screen help for iPhone / iPad (they have no install prompt). -->
+<div class="qv-overlay" id="install-help" hidden onclick="if(event.target===this)this.hidden=true">
+  <div class="install-sheet" role="dialog" aria-modal="true" aria-labelledby="install-title">
+    <h3 id="install-title" data-i18n="install_ios_title">Add Trothen to your home screen</h3>
+    <ol>
+      <li data-i18n="install_ios_1">Tap the Share button at the bottom of Safari (the square with an arrow).</li>
+      <li data-i18n="install_ios_2">Scroll down and tap "Add to Home Screen".</li>
+      <li data-i18n="install_ios_3">Tap "Add". Trothen will open like an app from your home screen.</li>
+    </ol>
+    <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
+  </div>
+</div>
 <script>
 /* ══════════════════════ API LAYER ══════════════════════
    If this page is served by the Trothen backend (npm start in
@@ -3864,6 +4082,38 @@ const I18N = {
     popular_pro_one: "checked pro ready",
     popular_pro_many: "checked pros ready",
     popular_see: "See pros",
+    work_title: "Recent work on Trothen",
+    work_sub: "Photos pros have added to their profiles. Tap one to meet the pro.",
+    work_alt: "Work by",
+    reviews_title: "What customers say",
+    reviews_sub: "Recent 4 and 5 star reviews, written after a completed booking.",
+    reviews_hired: "hired",
+    qv_customer: "A customer",
+    qv_id_checked: "ID checked",
+    qv_new: "New on Trothen",
+    qv_jobs: "jobs done",
+    qv_from: "starting price",
+    qv_per_hour: "per hour",
+    qv_score: "Trothen Score",
+    qv_within: "works within",
+    qv_work: "Their work",
+    qv_photo: "Work photo",
+    qv_reviews: "Reviews",
+    qv_no_reviews: "No reviews yet. Reviews appear here after a completed booking.",
+    qv_not_taking: "Not taking bookings right now",
+    qv_book: "Book",
+    qv_full: "Full profile",
+    qv_error: "This pro's details couldn't load. Try their full profile instead.",
+    theme_auto: "Auto",
+    theme_light: "Light",
+    theme_dark: "Dark",
+    install_btn: "Add Trothen to your phone",
+    install_done: "Trothen is on your home screen.",
+    install_ios_title: "Add Trothen to your home screen",
+    install_ios_1: "Tap the Share button at the bottom of Safari (the square with an arrow).",
+    install_ios_2: "Scroll down and tap \"Add to Home Screen\".",
+    install_ios_3: "Tap \"Add\". Trothen will open like an app from your home screen.",
+    install_ok: "Got it",
   },
   es: {
     lang_name: 'Español',
@@ -3955,6 +4205,38 @@ const I18N = {
     popular_pro_one: "profesional verificado",
     popular_pro_many: "profesionales verificados",
     popular_see: "Ver profesionales",
+    work_title: "Trabajos recientes en Trothen",
+    work_sub: "Fotos que los profesionales añadieron a su perfil. Toca una para conocer al profesional.",
+    work_alt: "Trabajo de",
+    reviews_title: "Lo que dicen los clientes",
+    reviews_sub: "Reseñas recientes de 4 y 5 estrellas, escritas tras una reserva completada.",
+    reviews_hired: "contrató a",
+    qv_customer: "Un cliente",
+    qv_id_checked: "Identidad verificada",
+    qv_new: "Nuevo en Trothen",
+    qv_jobs: "trabajos hechos",
+    qv_from: "precio inicial",
+    qv_per_hour: "por hora",
+    qv_score: "Puntuación Trothen",
+    qv_within: "trabaja a",
+    qv_work: "Su trabajo",
+    qv_photo: "Foto de trabajo",
+    qv_reviews: "Reseñas",
+    qv_no_reviews: "Aún no hay reseñas. Aparecen aquí tras una reserva completada.",
+    qv_not_taking: "No acepta reservas ahora",
+    qv_book: "Reservar",
+    qv_full: "Perfil completo",
+    qv_error: "No se pudieron cargar los datos. Prueba el perfil completo.",
+    theme_auto: "Auto",
+    theme_light: "Claro",
+    theme_dark: "Oscuro",
+    install_btn: "Añade Trothen a tu teléfono",
+    install_done: "Trothen está en tu pantalla de inicio.",
+    install_ios_title: "Añade Trothen a tu pantalla de inicio",
+    install_ios_1: "Toca el botón Compartir abajo en Safari (el cuadrado con una flecha).",
+    install_ios_2: "Desliza y toca \"Añadir a pantalla de inicio\".",
+    install_ios_3: "Toca \"Añadir\". Trothen se abrirá como una app.",
+    install_ok: "Entendido",
   },
   fr: {
     lang_name: 'Français',
@@ -4193,7 +4475,7 @@ function navbarHTML(active) {
   // real site's language control.
   const rightSide = isDash
     ? `${languageSwitcherHTML()}${bell}${accountMenu}`
-    : `${languageSwitcherHTML()}<span class="nav-more"><button class="nav-btn" onclick="closeNavMenus();goDirectory()">${t('nav_browse')}</button><button class="nav-btn" onclick="closeNavMenus();showPricing()">${t('nav_become_pro')}</button></span><button class="nav-btn nav-cta" onclick="closeNavMenus();showAuth('login')">${t('nav_sign_in')}</button><button type="button" class="nav-menu-btn" aria-expanded="false" aria-label="Menu" onclick="toggleNavMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>${t('nav_menu')}</span></button>`;
+    : `${languageSwitcherHTML()}<span class="nav-more"><button class="nav-btn" onclick="closeNavMenus();goDirectory()">${t('nav_browse')}</button><button class="nav-btn" onclick="closeNavMenus();showPricing()">${t('nav_become_pro')}</button><button class="nav-btn nav-install" onclick="closeNavMenus();installTrothen()">${t('install_btn')}</button></span><button class="nav-btn nav-cta" onclick="closeNavMenus();showAuth('login')">${t('nav_sign_in')}</button><button type="button" class="nav-menu-btn" aria-expanded="false" aria-label="Menu" onclick="toggleNavMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>${t('nav_menu')}</span></button>`;
   return `
     <div class="navbar-logo" onclick="goHome()" role="link" tabindex="0" aria-label="Trothen home" onkeydown="if(event.key==='Enter')goHome()">${brandMarkHTML('navbar')}</div>
     <div class="navbar-nav">
@@ -12170,7 +12452,7 @@ function avatarHTML(p, sizePx, extraStyle = '') {
 function providerCardsHTML(list) {
   if (!list.length) return `<div style="grid-column:1/-1;padding:28px 0;color:var(--slate);font-size:15px;">No pros to show here yet. Try a different kind of work, or a nearby city.</div>`;
   return list.map(p => `
-    <div class="provider-card" onclick="viewProviderProfile('${p.id}')">
+    <div class="provider-card" onclick="openProQuickView('${p.id}')">
       <div class="pc-top">
         ${p.profilePhotoUrl
           ? `<img src="${escapeHtml(p.profilePhotoUrl)}" alt="${escapeHtml(p.name)}" class="provider-avatar" style="object-fit:cover;"/>`
@@ -13920,7 +14202,7 @@ function popularCardHTML(p, i) {
 // Sections and cards below the hero slide in the first time they're
 // reached. New cards that arrive later (search results, loaded lists)
 // get the same treatment.
-const REVEAL_SELECTOR = '#screen-home .section-header, #screen-home .checks-title, #screen-home .checks-list li, #screen-home .pp-card, #screen-home .cat-row, #screen-home .provider-card, #screen-home .mission-text, #screen-home .faq-wrap, #screen-home .faq-item, #screen-home .two-way, #screen-home .stat';
+const REVEAL_SELECTOR = '#screen-home .section-header, #screen-home .checks-title, #screen-home .checks-list li, #screen-home .pp-card, #screen-home .cat-row, #screen-home .provider-card, #screen-home .mission-text, #screen-home .faq-wrap, #screen-home .faq-item, #screen-home .two-way, #screen-home .stat, #screen-home .work-card';
 let REVEAL_IO = null;
 function tagReveals() {
   if (V57_REDUCED_MOTION || !REVEAL_IO) return;
@@ -13948,6 +14230,193 @@ function setupReveals() {
   });
 }
 
+/* ══════════════════════ v62: QUICK VIEW, WORK PHOTOS, REVIEWS, DARK MODE, INSTALL ══════════════════════ */
+
+// ── Pro quick view ──────────────────────────────────────────────────────
+// Opens a side panel (a bottom sheet on phones) with the pro's real
+// profile, work photos and reviews, without leaving the page. Everything
+// in it comes from GET /api/providers/:id.
+let QV_LAST_FOCUS = null;
+function qvStars(n) {
+  const full = Math.round(Number(n) || 0);
+  return '<span class="qv-stars" aria-label="' + full + ' out of 5">' + '★★★★★'.slice(0, full) + '<span>' + '★★★★★'.slice(full) + '</span></span>';
+}
+function qvShortName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return t('qv_customer');
+  return parts.length > 1 ? parts[0] + ' ' + parts[parts.length - 1][0].toUpperCase() + '.' : parts[0];
+}
+function closeProQuickView() {
+  const ov = document.getElementById('qv-overlay');
+  if (!ov || ov.hidden) return;
+  ov.classList.remove('is-open');
+  document.documentElement.classList.remove('qv-lock');
+  setTimeout(() => { ov.hidden = true; }, V57_REDUCED_MOTION ? 0 : 260);
+  if (QV_LAST_FOCUS && QV_LAST_FOCUS.focus) QV_LAST_FOCUS.focus();
+}
+async function openProQuickView(id) {
+  if (!BACKEND_AVAILABLE) { viewProviderProfile(id); return; }
+  const ov = document.getElementById('qv-overlay');
+  const body = document.getElementById('qv-body');
+  if (!ov || !body) { viewProviderProfile(id); return; }
+  QV_LAST_FOCUS = document.activeElement;
+  body.innerHTML = '<div class="qv-loading"><div></div><div></div><div></div></div>';
+  ov.hidden = false;
+  document.documentElement.classList.add('qv-lock');
+  requestAnimationFrame(() => { ov.classList.add('is-open'); ov.querySelector('.qv').focus(); });
+  try {
+    const { provider: p, reviews = [], portfolio = [] } = await apiFetch('GET', '/providers/' + encodeURIComponent(id));
+    const photos = portfolio.filter(ph => /\.(jpe?g|png|webp|gif)$/i.test(ph.url || '')).slice(0, 6);
+    const recent = reviews.slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 3);
+    const place = [p.city, p.state, p.country].filter(Boolean).map(escapeHtml).join(', ');
+    body.innerHTML = `
+      <div class="qv-top">
+        ${p.profilePhotoUrl ? `<img class="qv-avatar" src="${escapeHtml(p.profilePhotoUrl)}" alt=""/>` : `<div class="qv-avatar" style="background:${escapeHtml(p.color || '#1D5FA8')}">${escapeHtml(p.initials || '')}</div>`}
+        <div>
+          <h3 class="qv-name" id="qv-name">${escapeHtml(p.name)}</h3>
+          <div class="qv-role">${escapeHtml(p.role || translateCategoryName(p.category || ''))}</div>
+          ${p.verified ? `<div class="pc-verified">${uiIcon('check')}${escapeHtml(t('qv_id_checked'))}</div>` : ''}
+        </div>
+      </div>
+      <div class="qv-facts">
+        <div><strong>${p.rating ? Number(p.rating).toFixed(1) : '—'}</strong><span>${p.rating ? qvStars(p.rating) : escapeHtml(t('qv_new'))}</span></div>
+        <div><strong>${escapeHtml(String(p.jobs || 0))}</strong><span>${escapeHtml(t('qv_jobs'))}</span></div>
+        <div><strong>$${escapeHtml(String(p.price || '—'))}</strong><span>${escapeHtml(t(p.pricingModel === 'fixed' ? 'qv_from' : 'qv_per_hour'))}</span></div>
+        ${p.trustScore != null ? `<div><strong>${escapeHtml(String(p.trustScore))}</strong><span>${escapeHtml(t('qv_score'))}</span></div>` : ''}
+      </div>
+      ${place ? `<p class="qv-line">${uiIcon('pin')} ${place}${p.serviceRadiusMiles ? ' · ' + escapeHtml(t('qv_within')) + ' ' + escapeHtml(String(p.serviceRadiusMiles)) + ' mi' : ''}</p>` : ''}
+      ${(p.tags || []).length ? `<div class="provider-tags">${p.tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+      ${photos.length ? `<h4 class="qv-h">${escapeHtml(t('qv_work'))}</h4><div class="qv-photos">${photos.map((ph, i) => `<button type="button" class="qv-photo" onclick="qvZoom(this)" aria-label="${escapeHtml(t('qv_photo'))} ${i + 1}"><img src="${escapeHtml(ph.url)}" alt="" loading="lazy"/></button>`).join('')}</div>` : ''}
+      <h4 class="qv-h">${escapeHtml(t('qv_reviews'))}${reviews.length ? ` <small>${reviews.length}</small>` : ''}</h4>
+      ${recent.length ? recent.map(r => `<figure class="qv-review"><div>${qvStars(r.stars)}</div><blockquote>${escapeHtml(String(r.text || '').slice(0, 280))}</blockquote><figcaption>${escapeHtml(qvShortName(r.authorName))}</figcaption></figure>`).join('') : `<p class="qv-empty">${escapeHtml(t('qv_no_reviews'))}</p>`}
+      <div class="qv-actions">
+        ${p.acceptingBookings === false ? `<span class="badge badge-neutral">${escapeHtml(t('qv_not_taking'))}</span>` : `<button type="button" class="btn-solid" onclick="closeProQuickView();openBooking('${escapeHtml(p.id)}')">${escapeHtml(t('qv_book'))}</button>`}
+        <button type="button" class="qv-profile" onclick="closeProQuickView();viewProviderProfile('${escapeHtml(p.id)}')">${escapeHtml(t('qv_full'))}</button>
+      </div>`;
+  } catch (e) {
+    body.innerHTML = `<p class="qv-empty">${escapeHtml(t('qv_error'))}</p><div class="qv-actions"><button type="button" class="qv-profile" onclick="closeProQuickView();viewProviderProfile('${escapeHtml(id)}')">${escapeHtml(t('qv_full'))}</button></div>`;
+  }
+}
+function qvZoom(btn) {
+  const img = btn.querySelector('img');
+  const wrap = document.createElement('div');
+  wrap.className = 'qv-zoom';
+  wrap.innerHTML = `<img src="${img.src}" alt=""/>`;
+  wrap.onclick = () => wrap.remove();
+  btn.closest('.qv').appendChild(wrap);
+}
+
+// ── Showcase: recent work photos and the reviews wall ──────────────────
+function showcaseAvatar(p) {
+  return p.profilePhotoUrl
+    ? `<img src="${escapeHtml(p.profilePhotoUrl)}" alt="" class="sc-avatar"/>`
+    : `<span class="sc-avatar" style="background:${escapeHtml(p.color || '#1D5FA8')}">${escapeHtml(p.initials || '')}</span>`;
+}
+function scrollWork(dir) {
+  const track = document.getElementById('work-track');
+  if (track) track.scrollBy({ left: dir * Math.max(260, track.clientWidth * 0.8), behavior: V57_REDUCED_MOTION ? 'auto' : 'smooth' });
+}
+function reviewCardHTML(r) {
+  return `<figure class="rv-card" onclick="openProQuickView('${escapeHtml(r.provider.id)}')">
+    <div class="rv-stars">${qvStars(r.stars)}</div>
+    <blockquote>${escapeHtml(r.text)}</blockquote>
+    <figcaption>${showcaseAvatar(r.provider)}<span><strong>${escapeHtml(r.authorName)}</strong><em>${escapeHtml(t('reviews_hired'))} ${escapeHtml(r.provider.name)}</em></span></figcaption>
+  </figure>`;
+}
+async function loadShowcase() {
+  if (!BACKEND_AVAILABLE) return;
+  try {
+    const { reviews = [], photos = [] } = await apiFetch('GET', '/showcase');
+    const work = document.getElementById('work-showcase');
+    if (work && photos.length) {
+      document.getElementById('work-track').innerHTML = photos.map(ph => `
+        <button type="button" class="work-card" onclick="openProQuickView('${escapeHtml(ph.provider.id)}')">
+          <img src="${escapeHtml(ph.url)}" alt="${escapeHtml(t('work_alt'))} ${escapeHtml(ph.provider.name)}" loading="lazy"/>
+          <span class="work-cap">${showcaseAvatar(ph.provider)}<span><strong>${escapeHtml(ph.provider.name)}</strong><em>${escapeHtml(translateCategoryName(ph.provider.category || ''))}</em></span></span>
+        </button>`).join('');
+      work.hidden = false;
+    }
+    const wall = document.getElementById('reviews-wall');
+    if (wall && reviews.length) {
+      // Two rows drifting in opposite directions. Each row's cards are
+      // repeated once so the loop has no visible seam.
+      const half = Math.ceil(reviews.length / 2);
+      const rows = reviews.length >= 6 ? [reviews.slice(0, half), reviews.slice(half)] : [reviews];
+      document.getElementById('reviews-rows').innerHTML = rows.map((row, i) => {
+        const cards = row.map(reviewCardHTML).join('');
+        return `<div class="rv-row${i % 2 ? ' rv-row-back' : ''}" style="--rv-dur:${Math.max(28, row.length * 9)}s"><div class="rv-track">${cards}<div class="rv-dup" aria-hidden="true">${cards}</div></div></div>`;
+      }).join('');
+      wall.hidden = false;
+    }
+    if (typeof tagReveals === 'function') requestAnimationFrame(tagReveals);
+  } catch (e) { console.warn('Could not load showcase', e); }
+}
+
+// ── Colour theme: Auto (follows the device), Light or Dark ──────────────
+// Dark mode covers the public pages (home, categories, all pros). Signed-in
+// dashboards and forms stay light for now.
+const THEME_KEY = 'trothen_theme';
+function currentThemeChoice() { try { return localStorage.getItem(THEME_KEY) || 'auto'; } catch (e) { return 'auto'; } }
+function applyTheme() {
+  const choice = currentThemeChoice();
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const dark = choice === 'dark' || (choice === 'auto' && prefersDark);
+  document.documentElement.classList.toggle('dark', dark);
+  document.querySelectorAll('[data-theme-choice]').forEach(b => b.setAttribute('aria-pressed', b.dataset.themeChoice === choice ? 'true' : 'false'));
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', dark ? '#08131F' : '#0F2640');
+}
+function setThemeChoice(choice) {
+  try { localStorage.setItem(THEME_KEY, choice); } catch (e) {}
+  applyTheme();
+}
+
+// ── Add to home screen ──────────────────────────────────────────────────
+// Android / desktop Chrome and Edge hand us an install prompt; iPhone and
+// iPad don't, so there the button opens short instructions instead. The
+// button only shows when installing is actually possible and Trothen
+// isn't already installed.
+let DEFERRED_INSTALL = null;
+function isStandalone() { return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true; }
+function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function refreshInstallButtons() {
+  const can = !isStandalone() && (!!DEFERRED_INSTALL || isIOS());
+  document.documentElement.classList.toggle('can-install', can);
+}
+async function installTrothen() {
+  if (DEFERRED_INSTALL) {
+    DEFERRED_INSTALL.prompt();
+    try { await DEFERRED_INSTALL.userChoice; } catch (e) {}
+    DEFERRED_INSTALL = null;
+    refreshInstallButtons();
+  } else if (isIOS()) {
+    document.getElementById('install-help').hidden = false;
+  }
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); DEFERRED_INSTALL = e; refreshInstallButtons(); });
+window.addEventListener('appinstalled', () => { DEFERRED_INSTALL = null; refreshInstallButtons(); showToast(t('install_done')); });
+
+function setupV62() {
+  applyTheme();
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq.addEventListener) mq.addEventListener('change', applyTheme); else if (mq.addListener) mq.addListener(applyTheme);
+  }
+  refreshInstallButtons();
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { const z = document.querySelector('.qv-zoom'); if (z) { z.remove(); return; } closeProQuickView(); const h = document.getElementById('install-help'); if (h) h.hidden = true; }
+    if (e.key === 'Tab') {
+      const ov = document.getElementById('qv-overlay');
+      if (ov && !ov.hidden) {
+        const f = Array.from(ov.querySelectorAll('button, a[href], [tabindex]:not([tabindex="-1"])')).filter(el => el.offsetParent);
+        if (!f.length) return;
+        if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+      }
+    }
+  });
+}
+
 (async function initApp() {
   document.documentElement.dir = I18N[CURRENT_LANG].rtl ? 'rtl' : 'ltr';
   document.documentElement.lang = CURRENT_LANG;
@@ -13968,6 +14437,7 @@ function setupReveals() {
   setupHomepageV57();
   setupAllScreenSizes();
   setupReveals();
+  setupV62();
   initChatBubbleDrag();
   initChatBubbleModalGuard();
   await checkBackend();
@@ -13975,6 +14445,7 @@ function setupReveals() {
     await Promise.all([loadProviders(), loadCategories(), loadGeoData(), loadPlatformStats(), loadSupportContact(), loadFooterInfo(), loadHomepageContent(), loadHomepageImages(), loadPopularProjects()]);
     renderProviders(PROVIDERS);
     renderHomeCategories();
+    loadShowcase();
     console.log('%cTrothen API connected — live data enabled.', 'color:#1D5FA8;font-weight:bold;');
   } else {
     console.log('%cTrothen API not detected — running on demo data. Start the backend (npm start in /trothen-backend) for live data.', 'color:var(--gold);');

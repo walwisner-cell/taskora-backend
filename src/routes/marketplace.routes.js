@@ -433,6 +433,36 @@ router.get('/homepage-images', async (req, res) => {
 // one). Public, no auth — this is what powers the real "Advertise Here"
 // banner slide on the homepage. Returns { ad: null } when nothing is live
 // for this city, so the frontend falls back to the generic pitch slide.
+// GET /api/showcase — real reviews and real work photos for the front
+// page. Only from providers who are verified and have a profile photo
+// (the same rule as the public directory). Reviewer names are shortened
+// to first name + last initial. Each list comes back empty until there's
+// enough real material to fill it (3 reviews, 4 photos), so the front
+// page never shows a half-empty wall.
+function showcaseShortName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'A customer';
+  return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.` : parts[0];
+}
+router.get('/showcase', async (req, res) => {
+  const pros = await db.filter('users', u => u.role === 'provider' && u.verified && u.profilePhotoUrl);
+  const byId = new Map(pros.map(p => [p.id, p]));
+  const proInfo = p => ({ id: p.id, name: p.name, category: p.category, role: p.providerRole || null, profilePhotoUrl: p.profilePhotoUrl || null, initials: p.initials || null, color: p.color || null });
+  const newestFirst = (a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+
+  let reviews = (await db.filter('reviews', r => byId.has(r.providerId) && Number(r.stars) >= 4 && typeof r.text === 'string' && r.text.trim().length >= 12))
+    .sort(newestFirst).slice(0, 24)
+    .map(r => ({ id: r.id, stars: Number(r.stars), text: r.text.trim().slice(0, 280), authorName: showcaseShortName(r.authorName), createdAt: r.createdAt, provider: proInfo(byId.get(r.providerId)) }));
+  if (reviews.length < 3) reviews = [];
+
+  let photos = (await db.filter('portfolioPhotos', ph => byId.has(ph.providerId) && /\.(jpe?g|png|webp|gif)$/i.test(ph.url || '')))
+    .sort(newestFirst).slice(0, 24)
+    .map(ph => ({ id: ph.id, url: ph.url, provider: proInfo(byId.get(ph.providerId)) }));
+  if (photos.length < 4) photos = [];
+
+  res.json({ reviews, photos });
+});
+
 router.get('/live-ads', async (req, res) => {
   const city = req.query.city || null;
   const liveAds = await db.filter('advertisingInquiries', a => a.isLive === true);
