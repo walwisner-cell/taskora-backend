@@ -1043,7 +1043,7 @@
   .checks-inner { max-width:1160px; margin:0 auto; padding:64px 28px; display:grid; grid-template-columns:minmax(0,.8fr) minmax(0,2fr); gap:48px; }
   .checks-title { font-size:clamp(26px,3vw,34px); color:var(--navy); line-height:1.12; max-width:12ch; margin:0; }
   .checks-list { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:1fr 1fr; gap:30px 40px; }
-  .checks-list li { display:flex; gap:14px; align-items:flex-start; }
+  .checks-list > li { display:flex; gap:14px; align-items:flex-start; }
   .checks-list strong { display:block; font-size:17px; color:var(--navy); margin-bottom:4px; font-weight:600; }
   .checks-list p { margin:0; font-size:15px; color:var(--slate); line-height:1.55; }
   .checks-icon { width:40px; height:40px; border-radius:var(--r-control); background:#fff; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; color:var(--teal); flex-shrink:0; }
@@ -2006,6 +2006,174 @@
   html.dark .hero .hero-locales { background-color:#132B45; color:#fff; }
   @media (max-width:700px) { .hero .hero-locales { font-size:14.5px; } .hero-locales .loc-chip { padding:4px 11px; } }
   @media (prefers-reduced-motion: reduce) { .hero-locales .live-dot { animation:none; } }
+
+  /* v67: the strip moves. It glides sideways like a news ticker, the
+     "live" dot sends out a ring, and each country chip lights up in
+     turn. Nothing flashes faster than once every couple of seconds, so
+     it stays safe for people sensitive to flashing light. */
+  .hero .hero-locales.is-ticker { text-align:left; -webkit-mask-image:linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); mask-image:linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); }
+  .hero-locales.is-ticker .hero-locales-track { display:inline-flex; flex-wrap:nowrap; white-space:nowrap; animation:heroLocalesScroll var(--loc-dur, 30s) linear infinite; will-change:transform; }
+  .hero-locales.is-ticker:hover .hero-locales-track { animation-play-state:paused; }
+  .hero-locales-track .loc-set { gap:12px; margin:0 14px; }
+  .hero-locales .loc-sep { width:6px; height:6px; border-radius:50%; background:var(--signal); opacity:.7; margin:0 6px; }
+  .hero-locales .live-dot { width:10px; height:10px; animation:v67Live 1.6s ease-out infinite; }
+  @keyframes v67Live { 0% { box-shadow:0 0 0 0 rgba(61,220,132,.75); transform:scale(1); } 40% { transform:scale(1.25); } 100% { box-shadow:0 0 0 12px rgba(61,220,132,0); transform:scale(1); } }
+  .hero-locales .loc-chip { position:relative; overflow:hidden; animation:v67Chip var(--chip-cycle, 4s) ease-in-out var(--chip-delay, 0s) infinite; }
+  .hero-locales .loc-chip::after { content:''; position:absolute; top:0; bottom:0; width:40%; left:-60%; background:linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent); transform:skewX(-20deg); animation:v67Sweep var(--chip-cycle, 4s) ease-in-out var(--chip-delay, 0s) infinite; }
+  @keyframes v67Chip {
+    0%, 55%, 100% { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.22); color:#fff; box-shadow:none; }
+    15%, 35% { background:var(--signal); border-color:var(--signal); color:var(--ink); box-shadow:0 0 18px rgba(242,194,48,.55); }
+  }
+  @keyframes v67Sweep { 0% { left:-60%; } 30%, 100% { left:130%; } }
+  .hero-locales .loc-more { animation:v67More 2.4s ease-in-out infinite; }
+  @keyframes v67More { 0%, 100% { opacity:1; } 50% { opacity:.45; } }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-locales.is-ticker .hero-locales-track, .hero-locales .loc-chip, .hero-locales .loc-chip::after, .hero-locales .loc-more, .hero-locales .live-dot { animation:none !important; }
+  }
+
+  /* v68: no sideways movement. The strip stays still and the countries
+     flash: each chip switches between bright yellow and navy about once a
+     second, the chips alternating with each other like warning lights, and
+     the green dot blinks. About one flash per second stays well under the
+     three-per-second limit considered safe for people sensitive to
+     flashing light. */
+  .hero .hero-locales.is-flash { text-align:center; -webkit-mask-image:none; mask-image:none; }
+  .hero-locales.is-flash .hero-locales-track { display:flex; justify-content:center; flex-wrap:wrap; white-space:normal; animation:none !important; transform:none; padding:14px 16px; }
+  .hero-locales.is-flash .loc-set { flex-wrap:wrap; justify-content:center; row-gap:8px; margin:0; }
+  .hero-locales.is-flash .loc-chip { animation:v68Flash 1.2s steps(1, end) infinite; }
+  .hero-locales.is-flash .loc-chip::after { display:none; }
+  .hero-locales.is-flash .loc-chip:nth-of-type(even) { animation-delay:-.6s; }
+  @keyframes v68Flash {
+    0%   { background:var(--signal); border-color:var(--signal); color:var(--ink); box-shadow:0 0 16px rgba(242,194,48,.7); }
+    50%  { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.3); color:#fff; box-shadow:none; }
+  }
+  .hero-locales.is-flash .live-dot { animation:v68Blink 1.2s steps(1, end) infinite; }
+  @keyframes v68Blink { 0% { opacity:1; box-shadow:0 0 10px 3px rgba(61,220,132,.8); } 50% { opacity:.25; box-shadow:none; } }
+  .hero-locales.is-flash .loc-more { animation:none; }
+  .hero-locales.is-flash .loc-sep { display:none; }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-locales.is-flash .loc-chip, .hero-locales.is-flash .live-dot { animation:none !important; }
+  }
+
+  /* v70 "Before a pro can take your job": four cards in a row on paper,
+     each with its own colour, a large drawn icon, and an "Every time"
+     tag, instead of plain text floating on white. */
+  #screen-home .checks { background-color:#E8EFF7; background-image:var(--grain-light), linear-gradient(180deg, #E4ECF6, #EFF3F8); border-top:1px solid #E3E8EE; border-bottom:1px solid #E3E8EE; }
+  #screen-home .checks-inner { display:block; padding-top:64px; padding-bottom:68px; }
+  .checks-head { display:flex; align-items:flex-end; justify-content:space-between; gap:28px; margin-bottom:30px; flex-wrap:wrap; }
+  #screen-home .checks-title { max-width:none; font-size:clamp(28px, 3.4vw, 40px); margin:0; }
+  .checks-sub { margin:0; max-width:46ch; font-size:17px; color:var(--slate); line-height:1.55; }
+  #screen-home .checks-list { grid-template-columns:repeat(4, 1fr); gap:18px; }
+  #screen-home .checks-list > li { --c-tint:#E6EEF7; --c-ink:#1D5FA8; flex-direction:column; gap:0; background:#fff; border:1px solid #D4DCE5; border-top:4px solid var(--c-ink); border-radius:var(--r-card); padding:22px 20px 24px; box-shadow:0 1px 0 rgba(15,38,64,.04), 0 10px 26px rgba(15,38,64,.07); transition:transform .2s ease, box-shadow .2s ease; }
+  #screen-home .checks-list > li[data-check="1"] { --c-tint:#FCEFC4; --c-ink:#7A5600; }
+  #screen-home .checks-list > li[data-check="2"] { --c-tint:#DCF1E6; --c-ink:#1F7A55; }
+  #screen-home .checks-list > li[data-check="3"] { --c-tint:#E3E8EF; --c-ink:#0F2640; }
+  #screen-home .checks-list > li:hover { transform:translateY(-4px); box-shadow:0 18px 36px rgba(15,38,64,.13); }
+  #screen-home .checks-icon { width:56px; height:56px; border-radius:14px; border:none; background:var(--c-tint); color:var(--c-ink); margin-bottom:18px; transition:transform .25s cubic-bezier(.3,.7,.3,1.3); }
+  #screen-home .checks-icon svg { width:28px; height:28px; }
+  #screen-home .checks-list > li:hover .checks-icon { transform:scale(1.08) rotate(-4deg); }
+  .checks-tag { display:inline-flex; align-items:center; gap:5px; font-size:12.5px; font-weight:700; color:var(--success); background:rgba(31,122,85,.1); border-radius:999px; padding:3px 10px; margin-bottom:10px; }
+  .checks-tag::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  #screen-home .checks-list strong { font-size:19px; margin-bottom:6px; }
+  #screen-home .checks-list p { font-size:15.5px; }
+  @media (max-width:1080px) { #screen-home .checks-list { grid-template-columns:repeat(2, 1fr); } }
+  @media (max-width:700px) {
+    #screen-home .checks-inner { padding-top:44px; padding-bottom:48px; }
+    #screen-home .checks-list { grid-template-columns:1fr; gap:12px; }
+    #screen-home .checks-list > li { flex-direction:row; gap:16px; padding:18px 16px; }
+    #screen-home .checks-icon { width:48px; height:48px; margin-bottom:0; flex-shrink:0; }
+    .checks-sub { font-size:16px; }
+  }
+  html.dark #screen-home .checks { background-color:#0B1A2B; background-image:var(--grain); border-color:#1F3650; }
+  html.dark #screen-home .checks-list > li { background:#12263D; border-color:#24405E; border-top-color:var(--c-ink); }
+  html.dark #screen-home .checks-list > li[data-check="3"] { --c-ink:#7FB2EC; --c-tint:#1B3553; }
+  html.dark .checks-sub { color:#B7C7D8; }
+  html.dark .checks-tag { color:#5FD39A; background:rgba(95,211,154,.12); }
+
+  /* v71 interactive checks */
+  .check-card { cursor:pointer; position:relative; outline:none; }
+  .check-card:focus-visible { box-shadow:0 0 0 3px rgba(29,95,168,.35), 0 10px 26px rgba(15,38,64,.07) !important; }
+  .checks-more { display:inline-flex; align-items:center; gap:6px; margin-top:14px; font-size:14.5px; font-weight:700; color:var(--c-ink, var(--teal)); }
+  .checks-more::after { content:''; width:7px; height:7px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(45deg) translateY(-2px); transition:transform .25s ease; }
+  .check-card.is-open .checks-more::after { transform:rotate(-135deg) translateY(-1px); }
+  #screen-home .checks-list.has-open .check-card:not(.is-open) { opacity:.72; }
+  #screen-home .checks-list .check-card.is-open { transform:translateY(-6px); box-shadow:0 20px 40px rgba(15,38,64,.16); border-color:var(--c-ink); }
+  #screen-home .checks-list .check-card.is-open::after { content:''; position:absolute; left:50%; bottom:-11px; width:18px; height:18px; background:#fff; border-right:1px solid var(--c-ink); border-bottom:1px solid var(--c-ink); transform:translateX(-50%) rotate(45deg); }
+
+  .checks-panel { margin-top:22px; background:#fff; border:1px solid #D4DCE5; border-radius:14px; box-shadow:0 18px 40px rgba(15,38,64,.12); overflow:hidden; }
+  .checks-panel.is-open { animation:v71Open .4s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes v71Open { from { opacity:0; transform:translateY(-10px) scale(.985); } to { opacity:1; transform:none; } }
+  .cp-inner { position:relative; display:grid; grid-template-columns:260px 1fr; gap:34px; padding:30px 34px; align-items:center; }
+  .cp-art { background:var(--paper); background-image:var(--grain-light); border-radius:12px; padding:18px; display:flex; align-items:center; justify-content:center; }
+  .cp-text h3 { font-size:26px; color:var(--navy); margin:0 0 14px; }
+  .cp-steps { list-style:none; margin:0; padding:0; display:grid; gap:12px; }
+  .cp-steps li { display:flex; gap:14px; align-items:flex-start; opacity:0; animation:v71Step .45s cubic-bezier(.2,.7,.2,1) forwards; }
+  .cp-steps li:nth-child(2) { animation-delay:.12s; } .cp-steps li:nth-child(3) { animation-delay:.24s; }
+  @keyframes v71Step { from { opacity:0; transform:translateX(-10px); } to { opacity:1; transform:none; } }
+  .cp-steps span { flex-shrink:0; width:30px; height:30px; border-radius:50%; background:var(--navy); color:#fff; font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; margin-top:1px; }
+  .cp-steps p { margin:0; font-size:16.5px; line-height:1.55; color:var(--text); }
+  .cp-note { margin:14px 0 0; font-size:14.5px; color:#6B4E00; background:#FCEFC4; border-radius:8px; padding:8px 12px; display:inline-block; }
+  .cp-close { position:absolute; top:12px; right:12px; width:38px; height:38px; border-radius:50%; border:1px solid var(--border); background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .cp-close svg { width:16px; height:16px; stroke:var(--text); stroke-width:2; fill:none; stroke-linecap:round; }
+  .cp-close:hover { background:var(--offwhite); }
+
+  /* The drawings */
+  .ca { width:100%; max-width:220px; height:auto; overflow:visible; }
+  .ca .ca-card { fill:#fff; stroke:#0F2640; stroke-width:2.5; }
+  .ca .ca-soft { fill:#E6EEF7; }
+  .ca .ca-line { fill:none; stroke:#0F2640; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+  .ca .ca-soft-line { fill:none; stroke:#9AA6B2; stroke-width:1.5; stroke-dasharray:4 4; }
+  .ca-id .ca-scan { fill:rgba(242,194,48,.75); animation:v71Scan 2.2s ease-in-out infinite; }
+  @keyframes v71Scan { 0% { transform:translateY(0); } 50% { transform:translateY(84px); } 100% { transform:translateY(0); } }
+  .ca-id .ca-okbg { fill:#1F7A55; transform-origin:158px 104px; animation:v71Pop 2.2s ease-in-out infinite; }
+  .ca-id .ca-ok { fill:none; stroke:#fff; stroke-width:3.5; stroke-linecap:round; stroke-linejoin:round; transform-origin:158px 104px; animation:v71Pop 2.2s ease-in-out infinite; }
+  @keyframes v71Pop { 0%, 40% { transform:scale(0); } 55% { transform:scale(1.2); } 65%, 90% { transform:scale(1); } 100% { transform:scale(0); } }
+  .ca-doc .ca-write { stroke-dasharray:70; animation:v71Write 3s ease-in-out infinite; }
+  .ca-doc .ca-sign { fill:none; stroke:#1D5FA8; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:90; animation:v71Sign 3s ease-in-out infinite; }
+  @keyframes v71Write { 0% { stroke-dashoffset:70; } 35%, 100% { stroke-dashoffset:0; } }
+  @keyframes v71Sign { 0%, 40% { stroke-dashoffset:90; } 75%, 100% { stroke-dashoffset:0; } }
+  .ca-lock .ca-slot { fill:#0F2640; }
+  .ca-lock .ca-coin { animation:v71Coin 2.6s cubic-bezier(.5,0,.6,1) infinite; }
+  .ca-lock .ca-coinbody { fill:#F2C230; stroke:#7A5600; stroke-width:2; }
+  .ca-lock .ca-coinmark { fill:none; stroke:#7A5600; stroke-width:2; stroke-linecap:round; }
+  @keyframes v71Coin { 0% { transform:translateY(0); opacity:1; } 45% { transform:translateY(36px); opacity:1; } 55%, 100% { transform:translateY(44px); opacity:0; } }
+  .ca-lock .ca-shackle { animation:v71Shackle 2.6s ease-in-out infinite; }
+  @keyframes v71Shackle { 0%, 50% { transform:translateY(-8px); } 65%, 100% { transform:translateY(0); } }
+  .ca-lock .ca-keyhole { fill:#1F7A55; }
+  .ca-shield .ca-card { fill:#EEF4FB; }
+  .ca-shield .ca-ring { fill:none; stroke:rgba(15,38,64,.18); stroke-width:1.5; }
+  .ca-shield .ca-sweep { transform-origin:100px 72px; animation:v71Sweep 3s linear infinite; }
+  .ca-shield .ca-beam { fill:rgba(29,95,168,.22); }
+  @keyframes v71Sweep { to { transform:rotate(360deg); } }
+  .ca-shield .ca-dot { fill:#1F7A55; }
+  .ca-shield .ca-flag { fill:#B3423A; animation:v71Flag 1.5s ease-in-out infinite; }
+  @keyframes v71Flag { 0%, 100% { opacity:1; } 50% { opacity:.25; } }
+
+  @media (max-width:900px) { .cp-inner { grid-template-columns:200px 1fr; gap:22px; padding:24px; } }
+  @media (max-width:700px) {
+    .checks-panel { margin-top:0; }
+    .cp-inner { grid-template-columns:1fr; gap:16px; padding:20px 16px 18px; }
+    .cp-art { padding:12px; }
+    .ca { max-width:170px; }
+    .cp-text h3 { font-size:21px; padding-right:40px; }
+    .cp-steps p { font-size:15.5px; }
+    #screen-home .checks-list .check-card.is-open { transform:none; }
+    #screen-home .checks-list .check-card.is-open::after { display:none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .checks-panel.is-open, .cp-steps li, .ca * { animation:none !important; opacity:1 !important; }
+    .ca-id .ca-okbg, .ca-id .ca-ok { transform:scale(1); }
+  }
+  html.dark .checks-panel, html.dark #screen-home .checks-list .check-card.is-open::after { background:#12263D; border-color:#24405E; }
+  html.dark .cp-text h3 { color:#fff; }
+  html.dark .cp-steps p { color:#E6EDF5; }
+  html.dark .cp-art { background-color:#0B1A2B; background-image:var(--grain); }
+  html.dark .cp-close { background:#12263D; border-color:#24405E; }
+  html.dark .cp-close svg { stroke:#fff; }
+
+  /* Steps inside the panel never pick up the card styling */
+  #screen-home .checks-list .cp-steps li { background:none; border:none; border-radius:0; padding:0; box-shadow:none; flex-direction:row; transform:none; }
+  #screen-home .checks-panel { list-style:none; }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
@@ -2115,13 +2283,17 @@
   <!-- WHAT WE CHECK -->
   <section class="checks">
     <div class="checks-inner">
-      <h2 class="checks-title" data-i18n="checks_title">Before a pro can take your job</h2>
+      <div class="checks-head">
+        <h2 class="checks-title" data-i18n="checks_title">Before a pro can take your job</h2>
+        <p class="checks-sub" data-i18n="checks_sub">Four things Trothen does on every pro and every booking, so you're not taking anyone's word for it.</p>
+      </div>
       <ul class="checks-list">
-        <li><span class="checks-icon" data-icon="id"></span><div><strong data-i18n="check1_t">Their ID is checked</strong><p data-i18n="check1_d">A person on our team reviews a government ID for every pro before they appear in search.</p></div></li>
-        <li><span class="checks-icon" data-icon="doc"></span><div><strong data-i18n="check2_t">The job is written down</strong><p data-i18n="check2_d">Each booking comes with a short agreement: what's being done, when, and for how much.</p></div></li>
-        <li><span class="checks-icon" data-icon="lock"></span><div><strong data-i18n="check3_t">Your money waits</strong><p data-i18n="check3_d">You pay Trothen, not the pro. It's released when you mark the job complete.</p></div></li>
-        <li><span class="checks-icon" data-icon="shield"></span><div><strong data-i18n="check4_t">Every job is screened</strong><p data-i18n="check4_d">We look for signs of fraud on each booking and pause anything that doesn't add up.</p></div></li>
+        <li class="check-card" data-check="0" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="id"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check1_t">Their ID is checked</strong><p data-i18n="check1_d">A person on our team reviews a government ID for every pro before they appear in search.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
+        <li class="check-card" data-check="1" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="doc"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check2_t">The job is written down</strong><p data-i18n="check2_d">Each booking comes with a short agreement: what's being done, when, and for how much.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
+        <li class="check-card" data-check="2" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="lock"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check3_t">Your money waits</strong><p data-i18n="check3_d">You pay Trothen, not the pro. It's released when you mark the job complete.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
+        <li class="check-card" data-check="3" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="shield"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check4_t">Every job is screened</strong><p data-i18n="check4_d">We look for signs of fraud on each booking and flag anything that doesn't add up for a person to review.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
       </ul>
+      <div class="checks-panel" id="checks-panel" role="region" aria-live="polite" hidden></div>
     </div>
   </section>
 
@@ -4228,7 +4400,7 @@ const I18N = {
     check3_t: "Your money waits",
     check3_d: "You pay Trothen, not the pro. It's released when you mark the job complete.",
     check4_t: "Every job is screened",
-    check4_d: "We look for signs of fraud on each booking and pause anything that doesn't add up.",
+    check4_d: "We look for signs of fraud on each booking and flag anything that doesn't add up for a person to review.",
     popular_title: "Popular right now",
     popular_sub: "Ranked by how many checked pros are ready to take the work",
     cats_title: "Every kind of work on Trothen",
@@ -4304,6 +4476,24 @@ const I18N = {
     trust_2fa: "Two-step sign-in turned on",
     loc_live: "Live now in",
     loc_more: "More countries coming soon",
+    checks_sub: "Four things Trothen does on every pro and every booking, so you're not taking anyone's word for it.",
+    checks_tag: "Every time",
+    checks_more: "See how it works",
+    checks_less: "Hide",
+    checks_close: "Close",
+    check1_s1: "The pro uploads a government ID accepted in their country, such as a driver's license, passport or national ID card.",
+    check1_s2: "We check the file is a genuine image or PDF, and compare the name on the ID with the name on their account.",
+    check1_s3: "A person on our team looks at the ID and approves or rejects it, usually within 48 hours. Only then can the pro appear in search.",
+    check2_s1: "When you book, Trothen writes down the job, the date and the price you agreed.",
+    check2_s2: "You and the pro both see the same agreement before any work starts.",
+    check2_s3: "It stays in your bookings, and you can download it as a PDF any time.",
+    check3_s1: "When the pro accepts your job, you pay Trothen, not the pro.",
+    check3_s2: "The money is held while the work is done.",
+    check3_s3: "When you mark the job complete, the pro is paid. If something's wrong, open a dispute instead and a person on our team reviews it.",
+    check3_note: "During early access, payments are in test mode and no real money moves.",
+    check4_s1: "Every booking is checked for warning signs, such as a brand-new account with an unusually high price, or the same identity on more than one account.",
+    check4_s2: "Anything that doesn't add up is flagged. For the most serious signs, that account's new bookings are paused straight away.",
+    check4_s3: "A person on our team reviews every flag and decides what happens next.",
   },
   es: {
     lang_name: 'Español',
@@ -4362,7 +4552,7 @@ const I18N = {
     check3_t: "Tu dinero espera",
     check3_d: "Pagas a Trothen, no al profesional. Se libera cuando marcas el trabajo como completado.",
     check4_t: "Revisamos cada trabajo",
-    check4_d: "Buscamos señales de fraude en cada reserva y detenemos lo que no cuadra.",
+    check4_d: "Buscamos señales de fraude en cada reserva y marcamos lo que no cuadra para que lo revise una persona.",
     popular_title: "Lo más popular ahora",
     popular_sub: "Según cuántos profesionales verificados están listos para el trabajo",
     cats_title: "Todos los tipos de trabajo en Trothen",
@@ -4438,6 +4628,24 @@ const I18N = {
     trust_2fa: "Verificación en dos pasos activada",
     loc_live: "Ya disponible en",
     loc_more: "Pronto en más países",
+    checks_sub: "Cuatro cosas que Trothen hace con cada profesional y cada reserva, para que no tengas que fiarte de la palabra de nadie.",
+    checks_tag: "Siempre",
+    checks_more: "Ver cómo funciona",
+    checks_less: "Ocultar",
+    checks_close: "Cerrar",
+    check1_s1: "El profesional sube un documento oficial aceptado en su país, como licencia de conducir, pasaporte o documento nacional.",
+    check1_s2: "Comprobamos que el archivo sea una imagen o PDF genuino y comparamos el nombre del documento con el de su cuenta.",
+    check1_s3: "Una persona de nuestro equipo revisa el documento y lo aprueba o rechaza, normalmente en 48 horas. Solo entonces aparece en la búsqueda.",
+    check2_s1: "Al reservar, Trothen deja por escrito el trabajo, la fecha y el precio acordado.",
+    check2_s2: "Tú y el profesional ven el mismo acuerdo antes de empezar.",
+    check2_s3: "Queda en tus reservas y puedes descargarlo en PDF cuando quieras.",
+    check3_s1: "Cuando el profesional acepta tu trabajo, pagas a Trothen, no al profesional.",
+    check3_s2: "El dinero queda retenido mientras se hace el trabajo.",
+    check3_s3: "Cuando marcas el trabajo como completado, se paga al profesional. Si algo va mal, abre una disputa y una persona de nuestro equipo la revisa.",
+    check3_note: "Durante el acceso anticipado, los pagos están en modo de prueba y no se mueve dinero real.",
+    check4_s1: "Cada reserva se revisa en busca de señales de alerta, como una cuenta nueva con un precio inusualmente alto o la misma identidad en varias cuentas.",
+    check4_s2: "Lo que no cuadra se marca. Ante las señales más graves, las nuevas reservas de esa cuenta se detienen de inmediato.",
+    check4_s3: "Una persona de nuestro equipo revisa cada alerta y decide qué pasa después.",
   },
   fr: {
     lang_name: 'Français',
@@ -13605,20 +13813,18 @@ async function loadHomepageContent() {
 // one line it sits still in the middle; only a long list scrolls (and is
 // then duplicated once so the loop has no seam).
 let HERO_LOCALES = null;
+// "Live now in": sits still in the middle of the band; the country chips
+// flash (see .is-flash in the stylesheet).
 function renderHeroLocales(countries) {
   HERO_LOCALES = countries;
   const bar = document.getElementById('hero-locales');
   const track = document.getElementById('hero-locales-track');
   if (!bar || !track) return;
-  const set = `<span class="loc-set"><span class="loc-label"><i class="live-dot" aria-hidden="true"></i>${escapeHtml(t('loc_live'))}</span>${countries.map(c => `<span class="loc-chip">${escapeHtml(c)}</span>`).join('')}<span class="loc-more">${escapeHtml(t('loc_more'))}</span></span>`;
   bar.hidden = false;
-  bar.classList.add('is-static');
-  track.innerHTML = set;
-  requestAnimationFrame(() => {
-    const fits = countries.length <= 4 || track.scrollWidth <= bar.clientWidth - 24;
-    bar.classList.toggle('is-static', fits);
-    track.innerHTML = fits ? set : set + set.replace('<span class="loc-set">', '<span class="loc-set" aria-hidden="true">');
-  });
+  bar.classList.remove('is-ticker', 'is-static');
+  bar.classList.add('is-flash');
+  const chips = countries.map(c => `<span class="loc-chip">${escapeHtml(c)}</span>`).join('');
+  track.innerHTML = `<span class="loc-set"><span class="loc-label"><i class="live-dot" aria-hidden="true"></i>${escapeHtml(t('loc_live'))}</span>${chips}</span>`;
 }
 window.addEventListener('resize', () => { if (HERO_LOCALES) renderHeroLocales(HERO_LOCALES); });
 
@@ -14789,6 +14995,102 @@ function setupPublicPages() {
   setupDirectoryChips();
 }
 
+/* ══════════════════════ v71: "BEFORE A PRO CAN TAKE YOUR JOB", INTERACTIVE ══════════════════════ */
+// Tapping a check card opens a panel under it that shows how that check
+// actually works, in three steps, next to a small animated drawing. One
+// panel is open at a time; tapping the same card again closes it. Works
+// with a mouse, a finger, or the keyboard (Enter / Space).
+const CHECK_ART = [
+  // 0: an ID card with a scanning line and a tick
+  `<svg viewBox="0 0 200 140" class="ca ca-id" aria-hidden="true">
+    <rect x="20" y="22" width="160" height="100" rx="12" class="ca-card"/>
+    <rect x="36" y="42" width="44" height="54" rx="6" class="ca-soft"/>
+    <circle cx="58" cy="62" r="10" class="ca-line"/><path d="M42 92c4-10 10-14 16-14s12 4 16 14" class="ca-line"/>
+    <path d="M96 50h66M96 66h52M96 82h60" class="ca-line ca-text"/>
+    <rect x="24" y="30" width="152" height="6" rx="3" class="ca-scan"/>
+    <circle cx="158" cy="104" r="16" class="ca-okbg"/><path d="M150 104l6 6 11-12" class="ca-ok"/>
+  </svg>`,
+  // 1: an agreement being written and signed
+  `<svg viewBox="0 0 200 140" class="ca ca-doc" aria-hidden="true">
+    <path d="M56 14h70l24 24v92H56z" class="ca-card"/><path d="M126 14v24h24" class="ca-line"/>
+    <path d="M70 50h56M70 64h64M70 78h48" class="ca-line ca-write"/>
+    <path d="M72 108c8-12 14 6 20-4s10 8 18-2 8 4 14 0" class="ca-sign"/>
+    <path d="M70 118h64" class="ca-soft-line"/>
+  </svg>`,
+  // 2: money dropping into a lockbox that locks
+  `<svg viewBox="0 0 200 140" class="ca ca-lock" aria-hidden="true">
+    <rect x="50" y="62" width="100" height="64" rx="10" class="ca-card"/>
+    <path d="M80 62V48a20 20 0 0 1 40 0v14" class="ca-line ca-shackle"/>
+    <rect x="86" y="54" width="28" height="6" rx="3" class="ca-slot"/>
+    <g class="ca-coin"><circle cx="100" cy="20" r="11" class="ca-coinbody"/><path d="M100 14v12M96 17h6a3 3 0 0 1 0 6h-6" class="ca-coinmark"/></g>
+    <circle cx="100" cy="92" r="7" class="ca-keyhole"/><path d="M100 96v12" class="ca-line"/>
+  </svg>`,
+  // 3: a shield with a sweeping scan and a flagged dot
+  `<svg viewBox="0 0 200 140" class="ca ca-shield" aria-hidden="true">
+    <path d="M100 14l56 20v34c0 30-24 52-56 60-32-8-56-30-56-60V34z" class="ca-card"/>
+    <g class="ca-sweep"><path d="M100 72L100 30A42 42 0 0 1 136 52z" class="ca-beam"/></g>
+    <circle cx="100" cy="72" r="42" class="ca-ring"/><circle cx="100" cy="72" r="24" class="ca-ring"/>
+    <circle cx="124" cy="58" r="5" class="ca-flag"/><circle cx="82" cy="90" r="4" class="ca-dot"/><circle cx="112" cy="96" r="4" class="ca-dot"/>
+  </svg>`,
+];
+let OPEN_CHECK = -1;
+function checksPanelHTML(i) {
+  const n = i + 1;
+  return `<div class="cp-inner" data-check="${i}">
+    <div class="cp-art">${CHECK_ART[i]}</div>
+    <div class="cp-text">
+      <h3>${escapeHtml(t('check' + n + '_t'))}</h3>
+      <ol class="cp-steps">
+        <li><span>1</span><p>${escapeHtml(t('check' + n + '_s1'))}</p></li>
+        <li><span>2</span><p>${escapeHtml(t('check' + n + '_s2'))}</p></li>
+        <li><span>3</span><p>${escapeHtml(t('check' + n + '_s3'))}</p></li>
+      </ol>
+      ${i === 2 ? `<p class="cp-note">${escapeHtml(t('check3_note'))}</p>` : ''}
+    </div>
+    <button type="button" class="cp-close" onclick="toggleCheck(${i})" aria-label="${escapeHtml(t('checks_close'))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>`;
+}
+function toggleCheck(i) {
+  const panel = document.getElementById('checks-panel');
+  const list = document.querySelector('#screen-home .checks-list');
+  if (!panel || !list) return;
+  const cards = list.querySelectorAll('.check-card');
+  const closing = OPEN_CHECK === i;
+  OPEN_CHECK = closing ? -1 : i;
+  cards.forEach((c, k) => {
+    c.classList.toggle('is-open', k === OPEN_CHECK);
+    c.setAttribute('aria-expanded', k === OPEN_CHECK ? 'true' : 'false');
+    const more = c.querySelector('.checks-more');
+    if (more) more.textContent = t(k === OPEN_CHECK ? 'checks_less' : 'checks_more');
+  });
+  list.classList.toggle('has-open', OPEN_CHECK >= 0);
+  if (closing) { panel.classList.remove('is-open'); panel.hidden = true; return; }
+  // On a phone the panel opens right under the card that was tapped; on
+  // wider screens it opens under the whole row.
+  if (window.innerWidth <= 700) cards[i].after(panel); else list.after(panel);
+  panel.innerHTML = checksPanelHTML(i);
+  panel.hidden = false;
+  panel.classList.remove('is-open'); void panel.offsetWidth; panel.classList.add('is-open');
+  if (window.innerWidth <= 700) {
+    const r = panel.getBoundingClientRect();
+    if (r.bottom > window.innerHeight) panel.scrollIntoView({ behavior: V57_REDUCED_MOTION ? 'auto' : 'smooth', block: 'nearest' });
+  }
+}
+function setupInteractiveChecks() {
+  const list = document.querySelector('#screen-home .checks-list');
+  if (!list) return;
+  list.querySelectorAll('.check-card').forEach((card, i) => {
+    card.addEventListener('click', () => toggleCheck(i));
+    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCheck(i); } });
+  });
+  window.addEventListener('resize', () => {
+    const panel = document.getElementById('checks-panel');
+    if (!panel || OPEN_CHECK < 0) return;
+    const cards = list.querySelectorAll('.check-card');
+    if (window.innerWidth <= 700) cards[OPEN_CHECK].after(panel); else list.after(panel);
+  });
+}
+
 (async function initApp() {
   document.documentElement.dir = I18N[CURRENT_LANG].rtl ? 'rtl' : 'ltr';
   document.documentElement.lang = CURRENT_LANG;
@@ -14811,6 +15113,7 @@ function setupPublicPages() {
   setupReveals();
   setupV62();
   setupPublicPages();
+  setupInteractiveChecks();
   initChatBubbleDrag();
   initChatBubbleModalGuard();
   await checkBackend();
