@@ -2358,8 +2358,8 @@
   <div class="section section-pros" id="providers-section">
     <div class="section-header">
       <div>
-        <h2 class="section-title" id="providers-title">Top Rated Pros</h2>
-        <div class="section-sub" id="providers-sub">Ranked by rating, distance &amp; fit</div>
+        <h2 class="section-title" id="providers-title" data-i18n-soft="pros_title">Top Rated Pros</h2>
+        <div class="section-sub" id="providers-sub" data-i18n-soft="pros_sub">Ranked by rating, distance &amp; fit</div>
         <div id="providers-scope-note" style="display:none;font-size:13px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:6px;padding:8px 12px;margin-top:8px;max-width:480px;"></div>
       </div>
       <a class="see-all" onclick="goDirectory()" data-i18n="pros_all">See every pro</a>
@@ -2483,12 +2483,12 @@
     <div class="pricing-inner" style="max-width:760px;">
       <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
       <div class="pricing-eyebrow">Careers</div>
-      <div class="pricing-title" style="font-size:32px;">Help build the trust layer for local services</div>
+      <div class="pricing-title" style="font-size:32px;" data-i18n="careers_title">Help build the trust layer for local services</div>
       <div style="font-size:15px;line-height:1.8;color:var(--slate);margin-top:24px;margin-bottom:28px;">
-        <p>We're a small, early-stage team — we don't have a long list of open roles posted yet, but we're always glad to hear from people who care about this problem. If you're excited about identity verification, marketplace trust & safety, or building for underserved markets across the US, Nigeria, and Ghana, we'd like to hear from you.</p>
+        <p data-i18n="careers_body">We're a small, early-stage team — we don't have a long list of open roles posted yet, but we're always glad to hear from people who care about this problem. If you're excited about identity verification, marketplace trust & safety, or building for underserved markets across the US, Nigeria, and Ghana, we'd like to hear from you.</p>
       </div>
       <div class="panel" style="text-align:left;">
-        <div class="panel-title">Get in touch about opportunities</div>
+        <div class="panel-title" data-i18n="careers_form_title">Get in touch about opportunities</div>
         <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" type="text" id="careers-name"/></div>
         <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="careers-email"/></div>
         <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" type="tel" id="careers-phone" placeholder="A real number we can reach you at"/></div>
@@ -2501,7 +2501,7 @@
           <button class="btn-sm btn-sm-outline" onclick="document.getElementById('careers-resume').click()" type="button">Choose PDF</button>
           <span id="careers-resume-name" style="font-size:13px;color:var(--slate);margin-left:8px;">No file chosen</span>
         </div>
-        <button class="pricing-cta" onclick="submitCareersInquiry()">Send</button>
+        <button class="pricing-cta" onclick="submitCareersInquiry()" data-i18n="careers_btn">Send</button>
       </div>
     </div>
   </div>
@@ -2519,8 +2519,8 @@
     <div class="pricing-inner" style="max-width:640px;">
       <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
       <div class="pricing-eyebrow">Contact Us</div>
-      <div class="pricing-title" style="font-size:32px;">We're glad to help</div>
-      <div style="font-size:14px;line-height:1.7;color:var(--slate);margin-top:16px;margin-bottom:24px;">For account-specific issues (a booking, a dispute, verification), signing in and using the in-app support chat gets you help fastest. For everything else, use the form below.</div>
+      <div class="pricing-title" style="font-size:32px;" data-i18n="contact_title">We're glad to help</div>
+      <div style="font-size:14px;line-height:1.7;color:var(--slate);margin-top:16px;margin-bottom:24px;" data-i18n="contact_intro">For account-specific issues (a booking, a dispute, verification), signing in and using the in-app support chat gets you help fastest. For everything else, use the form below.</div>
       <div class="panel" id="contact-direct-info" style="display:none;margin-bottom:16px;"></div>
       <div class="panel" id="contact-form-panel">
         <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" type="text" id="contact-name"/></div>
@@ -2528,7 +2528,7 @@
         <div class="form-group"><label class="form-label">Subject</label><input class="form-input" type="text" id="contact-subject"/></div>
         <div class="form-group"><label class="form-label">City (optional)</label><input class="form-input" type="text" id="contact-city" placeholder="e.g. Atlanta — helps route this to the right team faster"/></div>
         <div class="form-group"><label class="form-label">Message</label><textarea class="form-input" id="contact-message" rows="5" style="resize:vertical;"></textarea></div>
-        <button class="pricing-cta" onclick="submitContactForm()">Send Message</button>
+        <button class="pricing-cta" onclick="submitContactForm()" data-i18n="contact_btn">Send Message</button>
       </div>
     </div>
   </div>
@@ -2995,66 +2995,66 @@
     <div class="pricing-inner">
       <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
       <div class="pricing-head">
-        <div class="pricing-eyebrow">Provider Plans</div>
-        <div class="pricing-title">Get matched more. Keep more of what you earn.</div>
-        <div class="pricing-sub">Every provider starts on Starter. You're moved up automatically as you complete real jobs and build a real track record — there's no way to pay or click your way to a higher tier.</div>
+        <div class="pricing-eyebrow" data-i18n="plans_eyebrow">Provider Plans</div>
+        <div class="pricing-title" data-i18n="plans_title">Get matched more. Keep more of what you earn.</div>
+        <div class="pricing-sub" data-i18n="plans_sub">Every provider starts on Starter. You're moved up automatically as you complete real jobs and build a real track record — there's no way to pay or click your way to a higher tier.</div>
         <div style="margin-top:16px;display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap;">
-          <label class="form-label" style="margin:0;">Show pricing for</label>
+          <label class="form-label" style="margin:0;" data-i18n="plans_country">Show pricing for</label>
           <select class="form-input" id="pricing-country-select" style="width:auto;padding:6px 10px;font-size:14px;" onchange="loadPricingPage(this.value)"></select>
         </div>
       </div>
       <div class="pricing-grid">
         <div class="pricing-card">
-          <div class="pricing-plan-name">Starter</div>
-          <div class="pricing-plan-desc">Where every provider begins</div>
+          <div class="pricing-plan-name" data-i18n="plan1_name">Starter</div>
+          <div class="pricing-plan-desc" data-i18n="plan1_desc">Where every provider begins</div>
           <div class="pricing-price" id="pricing-price-starter">$15<span>/month</span></div>
           <div class="pricing-feat-list">
-            <div class="pricing-feat">Smart job matching</div>
-            <div class="pricing-feat">Identity verification & badge</div>
-            <div class="pricing-feat">Escrow-protected payouts</div>
-            <div class="pricing-feat">13% commission per job</div>
-            <div class="pricing-feat">Standard placement in search</div>
+            <div class="pricing-feat" data-i18n="plan1_f1">Smart job matching</div>
+            <div class="pricing-feat" data-i18n="plan1_f2">Identity verification & badge</div>
+            <div class="pricing-feat" data-i18n="plan1_f3">Escrow-protected payouts</div>
+            <div class="pricing-feat" data-i18n="plan1_f4">13% commission per job</div>
+            <div class="pricing-feat" data-i18n="plan1_f5">Standard placement in search</div>
           </div>
-          <button class="pricing-cta" onclick="selectPlan('starter')">Get Started</button>
+          <button class="pricing-cta" onclick="selectPlan('starter')" data-i18n="plan1_btn">Get Started</button>
         </div>
         <div class="pricing-card">
-          <div class="pricing-plan-name">Pro</div>
-          <div class="pricing-plan-desc">Unlocked automatically — 50 completed jobs, 4.7+ rating, under 5% cancellation</div>
+          <div class="pricing-plan-name" data-i18n="plan2_name">Pro</div>
+          <div class="pricing-plan-desc" data-i18n="plan2_desc">Unlocked automatically — 50 completed jobs, 4.7+ rating, under 5% cancellation</div>
           <div class="pricing-price" id="pricing-price-pro">$20<span>/month</span></div>
           <div class="pricing-feat-list">
-            <div class="pricing-feat">Everything in Starter</div>
-            <div class="pricing-feat">Priority placement in matching</div>
-            <div class="pricing-feat">12% commission per job</div>
-            <div class="pricing-feat">Portfolio & review boosts</div>
-            <div class="pricing-feat">Same-day payout option</div>
+            <div class="pricing-feat" data-i18n="plan2_f1">Everything in Starter</div>
+            <div class="pricing-feat" data-i18n="plan2_f2">Priority placement in matching</div>
+            <div class="pricing-feat" data-i18n="plan2_f3">12% commission per job</div>
+            <div class="pricing-feat" data-i18n="plan2_f4">Portfolio & review boosts</div>
+            <div class="pricing-feat" data-i18n="plan2_f5">Same-day payout option</div>
           </div>
-          <div style="text-align:center;font-size:13px;color:var(--slate);padding:12px 8px;background:var(--offwhite);border-radius:8px;">🔒 Reached automatically once you qualify — track your progress on your dashboard.</div>
+          <div style="text-align:center;font-size:13px;color:var(--slate);padding:12px 8px;background:var(--offwhite);border-radius:8px;" data-i18n="plan2_note">🔒 Reached automatically once you qualify — track your progress on your dashboard.</div>
         </div>
         <div class="pricing-card featured">
-          <div class="pricing-plan-badge">Most Popular</div>
-          <div class="pricing-plan-name">Super Pro</div>
-          <div class="pricing-plan-desc">500 completed jobs, 4.85+ rating, 12 months active — reviewed by our team, not automatic</div>
+          <div class="pricing-plan-badge" data-i18n="plan3_badge">Most Popular</div>
+          <div class="pricing-plan-name" data-i18n="plan3_name">Super Pro</div>
+          <div class="pricing-plan-desc" data-i18n="plan3_desc">500 completed jobs, 4.85+ rating, 12 months active — reviewed by our team, not automatic</div>
           <div class="pricing-price" id="pricing-price-superpro">$27<span>/month</span></div>
           <div class="pricing-feat-list">
-            <div class="pricing-feat">Everything in Pro</div>
-            <div class="pricing-feat">Top placement in your zip code / community</div>
-            <div class="pricing-feat">10% commission per job</div>
-            <div class="pricing-feat">List in multiple categories</div>
-            <div class="pricing-feat">Dedicated support line</div>
+            <div class="pricing-feat" data-i18n="plan3_f1">Everything in Pro</div>
+            <div class="pricing-feat" data-i18n="plan3_f2">Top placement in your zip code / community</div>
+            <div class="pricing-feat" data-i18n="plan3_f3">10% commission per job</div>
+            <div class="pricing-feat" data-i18n="plan3_f4">List in multiple categories</div>
+            <div class="pricing-feat" data-i18n="plan3_f5">Dedicated support line</div>
           </div>
-          <div style="text-align:center;font-size:13px;color:var(--slate);padding:12px 8px;background:var(--offwhite);border-radius:8px;">🔒 Once you qualify, our team personally reviews and confirms it — this tier is never automatic.</div>
+          <div style="text-align:center;font-size:13px;color:var(--slate);padding:12px 8px;background:var(--offwhite);border-radius:8px;" data-i18n="plan3_note">🔒 Once you qualify, our team personally reviews and confirms it — this tier is never automatic.</div>
         </div>
         <div class="pricing-card">
-          <div class="pricing-plan-name">Custom</div>
-          <div class="pricing-plan-desc">For businesses, teams & institutions</div>
-          <div class="pricing-price">Let's talk</div>
+          <div class="pricing-plan-name" data-i18n="plan4_name">Custom</div>
+          <div class="pricing-plan-desc" data-i18n="plan4_desc">For businesses, teams & institutions</div>
+          <div class="pricing-price" data-i18n="plan4_price">Let's talk</div>
           <div class="pricing-feat-list">
-            <div class="pricing-feat">Multi-seat provider accounts</div>
-            <div class="pricing-feat">Centralized billing & reporting</div>
-            <div class="pricing-feat">Dedicated account manager</div>
-            <div class="pricing-feat">Volume commission discounts</div>
+            <div class="pricing-feat" data-i18n="plan4_f1">Multi-seat provider accounts</div>
+            <div class="pricing-feat" data-i18n="plan4_f2">Centralized billing & reporting</div>
+            <div class="pricing-feat" data-i18n="plan4_f3">Dedicated account manager</div>
+            <div class="pricing-feat" data-i18n="plan4_f4">Volume commission discounts</div>
           </div>
-          <button class="pricing-cta" onclick="openSalesInquiryForm()">Contact Sales</button>
+          <button class="pricing-cta" onclick="openSalesInquiryForm()" data-i18n="plan4_btn">Contact Sales</button>
         </div>
       </div>
     </div>
@@ -4118,11 +4118,18 @@ function renderHomepageFAQ() {
   list.innerHTML = HOMEPAGE_FAQ_ITEMS.map((item, i) => `
     <div class="faq-item" id="faq-item-${i}">
       <div class="faq-question" onclick="toggleFAQItem(${i})">
-        <span>${escapeHtml(item.question)}</span>
+        <span>${escapeHtml(t('faq_q' + (i + 1)))}</span>
         <span class="faq-chevron">▾</span>
       </div>
-      <div class="faq-answer"><div class="faq-answer-inner">${answerSupportQuestion(item.lookup)}</div></div>
+      <div class="faq-answer"><div class="faq-answer-inner">${faqAnswerHTML(item, i)}</div></div>
     </div>`).join('');
+}
+
+// v74: the super admin can write a homepage-only answer (Admin → Settings →
+// Front page wording). Left blank, the answer is the support chat's own.
+function faqAnswerHTML(item, i) {
+  const own = (CURRENT_LANG === 'en' && typeof CONTENT_OVERRIDES !== 'undefined' && CONTENT_OVERRIDES['faq_a' + (i + 1)]) || '';
+  return own ? escapeHtml(own) : answerSupportQuestion(item.lookup);
 }
 
 function toggleFAQItem(i) {
@@ -4508,6 +4515,65 @@ const I18N = {
     check4_s1: "Every booking is checked for warning signs, such as a brand-new account with an unusually high price, or the same identity on more than one account.",
     check4_s2: "Anything that doesn't add up is flagged. For the most serious signs, that account's new bookings are paused straight away.",
     check4_s3: "A person on our team reviews every flag and decides what happens next.",
+    // v74: text that used to be fixed in the page, now editable from Admin.
+    pros_title: "Top Rated Pros",
+    pros_sub: "Ranked by rating, distance & fit",
+    plans_eyebrow: "Provider Plans",
+    plans_title: "Get matched more. Keep more of what you earn.",
+    plans_sub: "Every provider starts on Starter. You're moved up automatically as you complete real jobs and build a real track record — there's no way to pay or click your way to a higher tier.",
+    plans_country: "Show pricing for",
+    plan1_name: "Starter",
+    plan1_desc: "Where every provider begins",
+    plan1_f1: "Smart job matching",
+    plan1_f2: "Identity verification & badge",
+    plan1_f3: "Escrow-protected payouts",
+    plan1_f4: "13% commission per job",
+    plan1_f5: "Standard placement in search",
+    plan2_name: "Pro",
+    plan2_desc: "Unlocked automatically — 50 completed jobs, 4.7+ rating, under 5% cancellation",
+    plan2_f1: "Everything in Starter",
+    plan2_f2: "Priority placement in matching",
+    plan2_f3: "12% commission per job",
+    plan2_f4: "Portfolio & review boosts",
+    plan2_f5: "Same-day payout option",
+    plan3_name: "Super Pro",
+    plan3_desc: "500 completed jobs, 4.85+ rating, 12 months active — reviewed by our team, not automatic",
+    plan3_f1: "Everything in Pro",
+    plan3_f2: "Top placement in your zip code / community",
+    plan3_f3: "10% commission per job",
+    plan3_f4: "List in multiple categories",
+    plan3_f5: "Dedicated support line",
+    plan4_name: "Custom",
+    plan4_desc: "For businesses, teams & institutions",
+    plan4_f1: "Multi-seat provider accounts",
+    plan4_f2: "Centralized billing & reporting",
+    plan4_f3: "Dedicated account manager",
+    plan4_f4: "Volume commission discounts",
+    plan2_note: "🔒 Reached automatically once you qualify — track your progress on your dashboard.",
+    plan3_note: "🔒 Once you qualify, our team personally reviews and confirms it — this tier is never automatic.",
+    plan3_badge: "Most Popular",
+    plan1_btn: "Get Started",
+    plan4_price: "Let's talk",
+    plan4_btn: "Contact Sales",
+    careers_title: "Help build the trust layer for local services",
+    careers_body: "We're a small, early-stage team — we don't have a long list of open roles posted yet, but we're always glad to hear from people who care about this problem. If you're excited about identity verification, marketplace trust & safety, or building for underserved markets across the US, Nigeria, and Ghana, we'd like to hear from you.",
+    careers_form_title: "Get in touch about opportunities",
+    careers_btn: "Send",
+    contact_title: "We're glad to help",
+    contact_intro: "For account-specific issues (a booking, a dispute, verification), signing in and using the in-app support chat gets you help fastest. For everything else, use the form below.",
+    contact_btn: "Send Message",
+    faq_q1: "How does escrow actually protect me?",
+    faq_a1: "",
+    faq_q2: "How are pros verified?",
+    faq_a2: "",
+    faq_q3: "What if something goes wrong with a job?",
+    faq_a3: "",
+    faq_q4: "How does matching work?",
+    faq_a4: "",
+    faq_q5: "What are the pricing plans?",
+    faq_a5: "",
+    faq_q6: "How do I become a pro on Trothen?",
+    faq_a6: "",
   },
   es: {
     lang_name: 'Español',
@@ -4783,6 +4849,14 @@ function applyTranslations() {
   });
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+  });
+  // v74: headings the page rewrites itself (search results). Only touched
+  // while they still show the default wording.
+  document.querySelectorAll('[data-i18n-soft]').forEach(el => {
+    const key = el.getAttribute('data-i18n-soft');
+    const shown = el.textContent;
+    if (el._softShown !== undefined ? shown !== el._softShown : shown !== I18N.en[key]) return;
+    el.textContent = el._softShown = t(key);
   });
 }
 
@@ -10771,7 +10845,7 @@ Liberia</textarea></div>
       <button class="btn-sm btn-sm-primary" onclick="saveHomepageContent()">Save</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Front page wording</div>
-      <div class="we-intro">Every other piece of text on the front page: the search box, the job ticket, the four checks and their "how it works" steps, section headings, the closing boxes and the footer line. Each box shows what visitors see now. Change what you like and press Save; it's live straight away. <strong>Reset</strong> puts one box back to the built-in text. These are the English words; visitors who pick Spanish still see the built-in Spanish.</div>
+      <div class="we-intro">Every other piece of text on the front page (the search box, the job ticket, the four checks and their "how it works" steps, section headings, the questions, the closing boxes, the menu and footer links), plus the Provider Plans, Careers and Contact pages, the trust list on each pro's profile and the pro quick-view. Each box shows what visitors see now. Change what you like and press Save; it's live straight away. <strong>Reset</strong> puts one box back to the built-in text. These are the English words; visitors who pick Spanish still see the built-in Spanish.</div>
       <div id="wording-editor"><div class="ver-note">Loading…</div></div>
       <div class="we-actions"><button class="btn-sm btn-sm-primary" onclick="saveWording()">Save wording</button><button class="btn-sm btn-sm-outline" onclick="resetAllWording()">Reset everything to built-in</button></div>
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
@@ -15087,7 +15161,7 @@ function setupInteractiveChecks() {
 // Text the super admin changed in Admin → Settings → Front page wording.
 // English only: other languages keep their built-in translations.
 let CONTENT_OVERRIDES = {};
-const EDITABLE_CONTENT_GROUPS = [{"title": "Search box", "keys": [{"key": "composer_what", "label": "Words before the first box"}, {"key": "composer_where", "label": "Word before the city box"}, {"key": "composer_go", "label": "Search button"}, {"key": "search_placeholder", "label": "Grey hint in the first box"}, {"key": "search_city_placeholder", "label": "Grey hint in the city box"}, {"key": "hero_often", "label": "Words before the shortcut links"}]}, {"title": "Job ticket (top of the page)", "keys": [{"key": "ticket_title", "label": "Ticket heading"}, {"key": "ticket_s1", "label": "Step 1 name"}, {"key": "ticket_s2", "label": "Step 2 name"}, {"key": "ticket_s3", "label": "Step 3 name"}, {"key": "ticket_s4", "label": "Step 4 name"}, {"key": "ticket_status_1", "label": "Status chip at step 1"}, {"key": "ticket_status_2", "label": "Status chip at step 2"}, {"key": "ticket_status_3", "label": "Status chip at step 3"}, {"key": "ticket_status_4", "label": "Status chip at step 4"}, {"key": "ticket_f_job", "label": "Row label: the job"}, {"key": "ticket_f_pro", "label": "Row label: pro"}, {"key": "ticket_f_terms", "label": "Row label: price and scope"}, {"key": "ticket_f_pay", "label": "Row label: payment"}, {"key": "ticket_f_status", "label": "Row label: status"}, {"key": "ticket_v_job", "label": "Example job"}, {"key": "ticket_v_pro", "label": "Pro row value"}, {"key": "ticket_v_terms", "label": "Price row value"}, {"key": "ticket_v_pay", "label": "Payment row value"}, {"key": "ticket_v_status", "label": "Status row value"}, {"key": "ticket_n1", "label": "Explanation at step 1"}, {"key": "ticket_n2", "label": "Explanation at step 2"}, {"key": "ticket_n3", "label": "Explanation at step 3"}, {"key": "ticket_n4", "label": "Explanation at step 4"}, {"key": "ticket_stamp", "label": "Stamp at the last step"}, {"key": "ticket_next", "label": "\"Next step\" button"}, {"key": "ticket_again", "label": "\"Start over\" button"}, {"key": "ticket_post", "label": "\"Post a job\" button"}]}, {"title": "\"Live now in\" strip", "keys": [{"key": "loc_live", "label": "Words before the countries"}]}, {"title": "Numbers band", "keys": [{"key": "stat_pros", "label": "Under the number of pros"}, {"key": "stat_rating", "label": "Under the rating"}, {"key": "stat_jobs", "label": "Under jobs completed"}, {"key": "stat_fee", "label": "Under the booking fee"}]}, {"title": "Before a pro can take your job", "keys": [{"key": "checks_title", "label": "Section heading"}, {"key": "checks_sub", "label": "Line beside the heading"}, {"key": "checks_tag", "label": "Small green tag on each card"}, {"key": "checks_more", "label": "\"See how it works\" link"}, {"key": "checks_less", "label": "\"Hide\" link"}, {"key": "check1_t", "label": "Card 1 title"}, {"key": "check1_d", "label": "Card 1 text"}, {"key": "check1_s1", "label": "Card 1, step 1"}, {"key": "check1_s2", "label": "Card 1, step 2"}, {"key": "check1_s3", "label": "Card 1, step 3"}, {"key": "check2_t", "label": "Card 2 title"}, {"key": "check2_d", "label": "Card 2 text"}, {"key": "check2_s1", "label": "Card 2, step 1"}, {"key": "check2_s2", "label": "Card 2, step 2"}, {"key": "check2_s3", "label": "Card 2, step 3"}, {"key": "check3_t", "label": "Card 3 title"}, {"key": "check3_d", "label": "Card 3 text"}, {"key": "check3_s1", "label": "Card 3, step 1"}, {"key": "check3_s2", "label": "Card 3, step 2"}, {"key": "check3_s3", "label": "Card 3, step 3"}, {"key": "check3_note", "label": "Card 3, yellow note"}, {"key": "check4_t", "label": "Card 4 title"}, {"key": "check4_d", "label": "Card 4 text"}, {"key": "check4_s1", "label": "Card 4, step 1"}, {"key": "check4_s2", "label": "Card 4, step 2"}, {"key": "check4_s3", "label": "Card 4, step 3"}]}, {"title": "Popular right now", "keys": [{"key": "popular_title", "label": "Section heading"}, {"key": "popular_sub", "label": "Line under the heading"}, {"key": "popular_from", "label": "Word before the price"}, {"key": "popular_pro_one", "label": "After the count, for 1 pro"}, {"key": "popular_pro_many", "label": "After the count, for several pros"}, {"key": "popular_see", "label": "Link on each card"}]}, {"title": "Recent work", "keys": [{"key": "work_title", "label": "Section heading"}, {"key": "work_sub", "label": "Line under the heading"}]}, {"title": "Every kind of work", "keys": [{"key": "cats_title", "label": "Section heading"}, {"key": "cats_all", "label": "Link to all categories"}]}, {"title": "Top pros", "keys": [{"key": "pros_all", "label": "Link to every pro"}]}, {"title": "What customers say", "keys": [{"key": "reviews_title", "label": "Section heading"}, {"key": "reviews_sub", "label": "Line under the heading"}, {"key": "reviews_hired", "label": "Word before the pro's name"}]}, {"title": "Common questions", "keys": [{"key": "faq_title", "label": "Section heading"}, {"key": "faq_sub", "label": "Line under the heading"}]}, {"title": "Closing boxes", "keys": [{"key": "cta_hire_t", "label": "Left box heading"}, {"key": "cta_hire_d", "label": "Left box text"}, {"key": "cta_pro_t", "label": "Right box heading"}, {"key": "cta_pro_d", "label": "Right box text"}]}, {"title": "Footer", "keys": [{"key": "footer_line", "label": "Line under the logo"}]}];
+const EDITABLE_CONTENT_GROUPS = [{"title":"Search box","keys":[{"key":"composer_what","label":"Words before the first box"},{"key":"composer_where","label":"Word before the city box"},{"key":"composer_go","label":"Search button"},{"key":"search_placeholder","label":"Grey hint in the first box"},{"key":"search_city_placeholder","label":"Grey hint in the city box"},{"key":"hero_often","label":"Words before the shortcut links"},{"key":"composer_hint","label":"Heading over the suggestions list"},{"key":"chips_all","label":"\"Show all kinds of work\" link"},{"key":"chips_fewer","label":"\"Show fewer\" link"}]},{"title":"Job ticket (top of the page)","keys":[{"key":"ticket_title","label":"Ticket heading"},{"key":"ticket_s1","label":"Step 1 name"},{"key":"ticket_s2","label":"Step 2 name"},{"key":"ticket_s3","label":"Step 3 name"},{"key":"ticket_s4","label":"Step 4 name"},{"key":"ticket_status_1","label":"Status chip at step 1"},{"key":"ticket_status_2","label":"Status chip at step 2"},{"key":"ticket_status_3","label":"Status chip at step 3"},{"key":"ticket_status_4","label":"Status chip at step 4"},{"key":"ticket_f_job","label":"Row label: the job"},{"key":"ticket_f_pro","label":"Row label: pro"},{"key":"ticket_f_terms","label":"Row label: price and scope"},{"key":"ticket_f_pay","label":"Row label: payment"},{"key":"ticket_f_status","label":"Row label: status"},{"key":"ticket_v_job","label":"Example job"},{"key":"ticket_v_pro","label":"Pro row value"},{"key":"ticket_v_terms","label":"Price row value"},{"key":"ticket_v_pay","label":"Payment row value"},{"key":"ticket_v_status","label":"Status row value"},{"key":"ticket_n1","label":"Explanation at step 1"},{"key":"ticket_n2","label":"Explanation at step 2"},{"key":"ticket_n3","label":"Explanation at step 3"},{"key":"ticket_n4","label":"Explanation at step 4"},{"key":"ticket_stamp","label":"Stamp at the last step"},{"key":"ticket_next","label":"\"Next step\" button"},{"key":"ticket_again","label":"\"Start over\" button"},{"key":"ticket_post","label":"\"Post a job\" button"}]},{"title":"\"Live now in\" strip","keys":[{"key":"loc_live","label":"Words before the countries"}]},{"title":"Numbers band","keys":[{"key":"stat_pros","label":"Under the number of pros"},{"key":"stat_rating","label":"Under the rating"},{"key":"stat_jobs","label":"Under jobs completed"},{"key":"stat_fee","label":"Under the booking fee"}]},{"title":"Before a pro can take your job","keys":[{"key":"checks_title","label":"Section heading"},{"key":"checks_sub","label":"Line beside the heading"},{"key":"checks_tag","label":"Small green tag on each card"},{"key":"checks_more","label":"\"See how it works\" link"},{"key":"checks_less","label":"\"Hide\" link"},{"key":"check1_t","label":"Card 1 title"},{"key":"check1_d","label":"Card 1 text"},{"key":"check1_s1","label":"Card 1, step 1"},{"key":"check1_s2","label":"Card 1, step 2"},{"key":"check1_s3","label":"Card 1, step 3"},{"key":"check2_t","label":"Card 2 title"},{"key":"check2_d","label":"Card 2 text"},{"key":"check2_s1","label":"Card 2, step 1"},{"key":"check2_s2","label":"Card 2, step 2"},{"key":"check2_s3","label":"Card 2, step 3"},{"key":"check3_t","label":"Card 3 title"},{"key":"check3_d","label":"Card 3 text"},{"key":"check3_s1","label":"Card 3, step 1"},{"key":"check3_s2","label":"Card 3, step 2"},{"key":"check3_s3","label":"Card 3, step 3"},{"key":"check3_note","label":"Card 3, yellow note"},{"key":"check4_t","label":"Card 4 title"},{"key":"check4_d","label":"Card 4 text"},{"key":"check4_s1","label":"Card 4, step 1"},{"key":"check4_s2","label":"Card 4, step 2"},{"key":"check4_s3","label":"Card 4, step 3"},{"key":"checks_close","label":"\"Close\" button on the open panel"}]},{"title":"Popular right now","keys":[{"key":"popular_title","label":"Section heading"},{"key":"popular_sub","label":"Line under the heading"},{"key":"popular_from","label":"Word before the price"},{"key":"popular_pro_one","label":"After the count, for 1 pro"},{"key":"popular_pro_many","label":"After the count, for several pros"},{"key":"popular_see","label":"Link on each card"}]},{"title":"Recent work","keys":[{"key":"work_title","label":"Section heading"},{"key":"work_sub","label":"Line under the heading"}]},{"title":"Every kind of work","keys":[{"key":"cats_title","label":"Section heading"},{"key":"cats_all","label":"Link to all categories"},{"key":"cats_count_one","label":"After the count, for 1 kind"},{"key":"cats_count_many","label":"After the count, for several kinds"},{"key":"cat_none","label":"Shown when a kind has no pros"},{"key":"cat_empty","label":"Message for an empty category"},{"key":"pro_one","label":"Word for 1 pro"},{"key":"pro_many","label":"Word for several pros"}]},{"title":"Top pros","keys":[{"key":"pros_title","label":"Section heading (before a search)"},{"key":"pros_sub","label":"Line under the heading (before a search)"},{"key":"pros_all","label":"Link to every pro"}]},{"title":"What customers say","keys":[{"key":"reviews_title","label":"Section heading"},{"key":"reviews_sub","label":"Line under the heading"},{"key":"reviews_hired","label":"Word before the pro's name"}]},{"title":"Common questions","keys":[{"key":"faq_title","label":"Section heading"},{"key":"faq_sub","label":"Line under the heading"},{"key":"faq_q1","label":"Question 1"},{"key":"faq_a1","label":"Answer 1","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q2","label":"Question 2"},{"key":"faq_a2","label":"Answer 2","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q3","label":"Question 3"},{"key":"faq_a3","label":"Answer 3","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q4","label":"Question 4"},{"key":"faq_a4","label":"Answer 4","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q5","label":"Question 5"},{"key":"faq_a5","label":"Answer 5","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q6","label":"Question 6"},{"key":"faq_a6","label":"Answer 6","long":true,"hint":"Blank = the same answer the support chat gives"}]},{"title":"Closing boxes","keys":[{"key":"cta_hire_t","label":"Left box heading"},{"key":"cta_hire_d","label":"Left box text"},{"key":"cta_pro_t","label":"Right box heading"},{"key":"cta_pro_d","label":"Right box text"}]},{"title":"Menu and footer","keys":[{"key":"nav_browse","label":"Menu: browse link"},{"key":"nav_become_pro","label":"Menu: \"Become a Pro\" button"},{"key":"nav_menu","label":"Menu button (phones)"},{"key":"footer_line","label":"Line under the logo"},{"key":"footer_about","label":"Footer link: About"},{"key":"footer_careers","label":"Footer link: Careers"},{"key":"footer_contact","label":"Footer link: Contact"},{"key":"footer_terms","label":"Footer link: Terms"}]},{"title":"Trust list on a pro's profile","keys":[{"key":"trust_id","label":"Line 1: ID"},{"key":"trust_contract","label":"Line 2: agreement"},{"key":"trust_payment","label":"Line 3: payment"},{"key":"trust_fraud","label":"Line 4: fraud screening"},{"key":"trust_2fa","label":"Line 5: two-step sign-in (only shown when it's on)"}]},{"title":"Pro quick-view","keys":[{"key":"qv_id_checked","label":"\"ID checked\" badge"},{"key":"qv_new","label":"Badge for a new pro"},{"key":"qv_jobs","label":"After the number of jobs"},{"key":"qv_from","label":"Under the price (fixed-price pros)"},{"key":"qv_per_hour","label":"Under the price (hourly pros)"},{"key":"qv_score","label":"Label: score"},{"key":"qv_within","label":"Label: travel distance"},{"key":"qv_work","label":"Heading: their work"},{"key":"qv_reviews","label":"Heading: reviews"},{"key":"qv_no_reviews","label":"Shown when there are no reviews"},{"key":"qv_customer","label":"Name for an unnamed reviewer"},{"key":"qv_not_taking","label":"Shown when the pro is not taking bookings"},{"key":"qv_book","label":"\"Book\" button"},{"key":"qv_full","label":"\"Full profile\" button"},{"key":"qv_error","label":"Message when it can't load"}]},{"title":"Provider Plans page","keys":[{"key":"plans_eyebrow","label":"Small heading above the title"},{"key":"plans_title","label":"Page title"},{"key":"plans_sub","label":"Line under the title"},{"key":"plans_country","label":"Words before the country picker"},{"key":"plan1_name","label":"Starter: plan name"},{"key":"plan1_desc","label":"Starter: line under the name"},{"key":"plan1_f1","label":"Starter: tick 1"},{"key":"plan1_f2","label":"Starter: tick 2"},{"key":"plan1_f3","label":"Starter: tick 3"},{"key":"plan1_f4","label":"Starter: tick 4"},{"key":"plan1_f5","label":"Starter: tick 5"},{"key":"plan2_name","label":"Pro: plan name"},{"key":"plan2_desc","label":"Pro: line under the name"},{"key":"plan2_f1","label":"Pro: tick 1"},{"key":"plan2_f2","label":"Pro: tick 2"},{"key":"plan2_f3","label":"Pro: tick 3"},{"key":"plan2_f4","label":"Pro: tick 4"},{"key":"plan2_f5","label":"Pro: tick 5"},{"key":"plan3_name","label":"Super Pro: plan name"},{"key":"plan3_desc","label":"Super Pro: line under the name"},{"key":"plan3_f1","label":"Super Pro: tick 1"},{"key":"plan3_f2","label":"Super Pro: tick 2"},{"key":"plan3_f3","label":"Super Pro: tick 3"},{"key":"plan3_f4","label":"Super Pro: tick 4"},{"key":"plan3_f5","label":"Super Pro: tick 5"},{"key":"plan4_name","label":"Custom: plan name"},{"key":"plan4_desc","label":"Custom: line under the name"},{"key":"plan4_f1","label":"Custom: tick 1"},{"key":"plan4_f2","label":"Custom: tick 2"},{"key":"plan4_f3","label":"Custom: tick 3"},{"key":"plan4_f4","label":"Custom: tick 4"},{"key":"plan2_note","label":"Pro: grey note at the bottom"},{"key":"plan3_note","label":"Super Pro: grey note at the bottom"},{"key":"plan3_badge","label":"Super Pro: badge"},{"key":"plan1_btn","label":"Starter: button"},{"key":"plan4_price","label":"Custom: price line"},{"key":"plan4_btn","label":"Custom: button"}]},{"title":"Careers page","keys":[{"key":"careers_title","label":"Page title"},{"key":"careers_body","label":"Paragraph"},{"key":"careers_form_title","label":"Heading over the form"},{"key":"careers_btn","label":"Send button"}]},{"title":"Contact page","keys":[{"key":"contact_title","label":"Page title"},{"key":"contact_intro","label":"Paragraph"},{"key":"contact_btn","label":"Send button"}]},{"title":"\"Add to your phone\" prompt","keys":[{"key":"install_btn","label":"Button in the footer"},{"key":"install_done","label":"Message once it's added"},{"key":"install_ios_title","label":"iPhone steps: heading"},{"key":"install_ios_1","label":"iPhone step 1"},{"key":"install_ios_2","label":"iPhone step 2"},{"key":"install_ios_3","label":"iPhone step 3"},{"key":"install_ok","label":"Close button"}]}];
 async function loadContentOverrides() {
   if (!BACKEND_AVAILABLE) return;
   try {
@@ -15111,6 +15185,11 @@ function refreshAfterWordingChange() {
   document.querySelectorAll('.check-card').forEach((c, k) => { const m = c.querySelector('.checks-more'); if (m) m.textContent = t(k === OPEN_CHECK ? 'checks_less' : 'checks_more'); });
   if (typeof HERO_LOCALES !== 'undefined' && HERO_LOCALES) renderHeroLocales(HERO_LOCALES);
   if (typeof loadPopularProjects === 'function') loadPopularProjects();
+  if (typeof renderHomepageFAQ === 'function') {
+    const open = [...document.querySelectorAll('#homepage-faq-list .faq-item.open')].map(el => el.id);
+    renderHomepageFAQ();
+    open.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('open'); });
+  }
 }
 function builtInEnglish(key) { return (I18N.en && I18N.en[key]) || ''; }
 
@@ -15129,10 +15208,10 @@ async function loadWordingEditor() {
       <div class="we-fields">${g.keys.map(k => {
         const def = builtInEnglish(k.key);
         const val = current[k.key] || def;
-        const long = def.length > 70;
+        const long = k.long || def.length > 70;
         return `<label class="we-field${current[k.key] ? ' is-changed' : ''}">
           <span class="we-label">${escapeHtml(k.label)}${current[k.key] ? '<b>changed</b>' : ''}</span>
-          ${long ? `<textarea class="form-input" rows="3" data-key="${k.key}" oninput="markWordingChanged(this)">${escapeHtml(val)}</textarea>` : `<input class="form-input" data-key="${k.key}" value="${escapeHtml(val)}" oninput="markWordingChanged(this)"/>`}
+          ${long ? `<textarea class="form-input" rows="3" data-key="${k.key}"${k.hint ? ` placeholder="${escapeHtml(k.hint)}"` : ''} oninput="markWordingChanged(this)">${escapeHtml(val)}</textarea>` : `<input class="form-input" data-key="${k.key}" value="${escapeHtml(val)}" oninput="markWordingChanged(this)"/>`}
           <button type="button" class="we-reset" onclick="resetWordingField('${k.key}')" title="Put back the built-in wording">Reset</button>
         </label>`;
       }).join('')}</div>
