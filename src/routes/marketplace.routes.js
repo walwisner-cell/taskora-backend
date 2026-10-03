@@ -418,14 +418,28 @@ router.get('/platform-handbook', async (req, res) => {
   res.json({ url: (await getSetting('platformHandbookUrl')) || null });
 });
 
+// v76: the built-in terms carry a "Last updated: [set this date...]" note
+// meant for the admin. Until a real date is typed in, that line is left
+// out of what visitors see rather than shown to them as is.
+const withoutDatePlaceholder = (text) => String(text || '').replace(/^Last updated: \[[^\]]*\]\s*\n+/m, '');
+// v77: the built-in terms say how long ID files are kept. The number comes
+// from the live setting, so the terms and the system can't drift apart.
+const withRetention = async (text) => {
+  const { getSetting } = require('../platform-settings');
+  const days = Number(await getSetting('idDocumentRetentionDays'));
+  const sentence = days > 0
+    ? `The files are deleted ${days} days after your check is approved, rejected or replaced by a newer upload.`
+    : 'The files are kept until Trothen deletes them.';
+  return String(text || '').replace(/\{\{ID_RETENTION_SENTENCE\}\}/g, sentence);
+};
 router.get('/terms-of-service-customer-content', async (req, res) => {
   const { getSetting } = require('../platform-settings');
-  res.json({ content: await getSetting('termsOfServiceCustomerContent') });
+  res.json({ content: await withRetention(withoutDatePlaceholder(await getSetting('termsOfServiceCustomerContent'))) });
 });
 
 router.get('/terms-of-service-provider-content', async (req, res) => {
   const { getSetting } = require('../platform-settings');
-  res.json({ content: await getSetting('termsOfServiceProviderContent') });
+  res.json({ content: await withRetention(withoutDatePlaceholder(await getSetting('termsOfServiceProviderContent'))) });
 });
 
 // GET /api/homepage-images — public, no auth: the real uploaded photo (if
@@ -784,7 +798,11 @@ async function weeklyMatchCountsForProviders(providerIds) {
 router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
   const customer = await db.find('users', u => u.id === req.user.sub);
   if (!customer || customer.verified !== true) {
-    return res.status(403).json({ error: 'Your account is still pending admin approval — you\'ll be able to post a job once it\'s approved.' });
+    // v75: say what's actually needed. "code" lets the page open the
+    // verify-now prompt instead of only showing a message.
+    const openId = customer && await db.find('verifications', v => v.userId === customer.id && ['pending', 'review_required'].includes(v.status));
+    if (openId) return res.status(403).json({ error: 'Your ID is being reviewed. You\'ll be able to post a job as soon as it\'s approved, usually within 48 hours.' });
+    return res.status(403).json({ code: 'VERIFY_IDENTITY', error: 'Please verify your identity first. Upload a government ID in the Verification section, and you can post a job once it\'s been reviewed.' });
   }
   if (customer.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to post a job again shortly. Contact support if you need this resolved sooner.' });
@@ -1261,7 +1279,11 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
 router.post('/contracts', requireAuth, requireRole('customer'), async (req, res) => {
   const customer = await db.find('users', u => u.id === req.user.sub);
   if (!customer || customer.verified !== true) {
-    return res.status(403).json({ error: 'Your account is still pending admin approval — you\'ll be able to book a pro once it\'s approved.' });
+    // v75: say what's actually needed. "code" lets the page open the
+    // verify-now prompt instead of only showing a message.
+    const openId = customer && await db.find('verifications', v => v.userId === customer.id && ['pending', 'review_required'].includes(v.status));
+    if (openId) return res.status(403).json({ error: 'Your ID is being reviewed. You\'ll be able to book a pro as soon as it\'s approved, usually within 48 hours.' });
+    return res.status(403).json({ code: 'VERIFY_IDENTITY', error: 'Please verify your identity first. Upload a government ID in the Verification section, and you can book a pro once it\'s been reviewed.' });
   }
   if (customer.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to book again shortly. Contact support if you need this resolved sooner.' });

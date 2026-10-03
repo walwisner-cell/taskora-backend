@@ -442,7 +442,7 @@ router.post('/notifications/:id/read', requireAuth, async (req, res) => {
 // GET /api/verification/mine
 router.get('/verification/mine', requireAuth, async (req, res) => {
   const records = await db.filter('verifications', v => v.userId === req.user.sub);
-  res.json({ verifications: records });
+  res.json({ verifications: records.map(({ documentFilename, selfieFilename, ...rest }) => rest) });
 });
 
 // GET /api/verification/doc-types — the real, country-aware list of
@@ -458,10 +458,15 @@ const verificationDocStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, require('../uploads').PRIVATE_UPLOADS_DIR),
   filename: (req, file, cb) => {
     const ext = file.mimetype === 'application/pdf' ? '.pdf' : (path.extname(file.originalname).toLowerCase() || '.jpg');
-    cb(null, `verdoc_${req.user.sub}_${nanoid(16)}${ext}`);
+    // v77: the face photo is stored beside the ID under its own prefix.
+    cb(null, `${file.fieldname === 'selfie' ? 'versel' : 'verdoc'}_${req.user.sub}_${nanoid(16)}${ext}`);
   },
 });
 const verificationDocFileFilter = (req, file, cb) => {
+  if (file.fieldname === 'selfie') {
+    if (!['image/jpeg', 'image/png'].includes(file.mimetype)) return cb(new Error('The photo of your face must be a JPEG or PNG image'));
+    return cb(null, true);
+  }
   const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
   if (!allowed.includes(file.mimetype)) return cb(new Error('Document must be a JPEG, PNG, or PDF file'));
   cb(null, true);
@@ -477,8 +482,11 @@ const uploadVerificationDoc = multer({ storage: verificationDocStorage, fileFilt
 // accepted-ID list — item 7/8's country-aware requirement), and the legal
 // name as printed on the ID for name matching (item 7).
 router.post('/verification/submit', requireAuth, (req, res, next) => {
-  uploadVerificationDoc.single('document')(req, res, (err) => {
+  uploadVerificationDoc.fields([{ name: 'document', maxCount: 1 }, { name: 'selfie', maxCount: 1 }])(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message || 'Document upload failed' });
+    // v77: two files now. The rest of this route reads the ID as req.file.
+    req.selfieFile = (req.files && req.files.selfie && req.files.selfie[0]) || null;
+    req.file = (req.files && req.files.document && req.files.document[0]) || null;
     next();
   });
 }, async (req, res) => {
@@ -487,8 +495,17 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
   const { idDocTypesForCountry } = require('../geo-data');
   const { namesLikelyMatch } = require('../validators');
 
-  if (!req.file) return res.status(400).json({ error: 'A document file is required' });
-  const cleanup = () => { try { fs.unlinkSync(path.join(PRIVATE_UPLOADS_DIR, req.file.filename)); } catch (e) {} };
+  const cleanup = () => {
+    for (const f of [req.file, req.selfieFile]) { if (f) { try { fs.unlinkSync(path.join(PRIVATE_UPLOADS_DIR, f.filename)); } catch (e) {} } }
+  };
+  if (!req.file) { cleanup(); return res.status(400).json({ error: 'A document file is required' }); }
+  // v77: a photo of the person's face is required with every ID, so the
+  // reviewer can check the person submitting is the person on the document.
+  if (!req.selfieFile) { cleanup(); return res.status(400).json({ error: 'Please add a photo of your face as well. We compare it with the photo on your ID.' }); }
+  if (!verifyImageMagicBytes(path.join(PRIVATE_UPLOADS_DIR, req.selfieFile.filename), req.selfieFile.mimetype)) {
+    cleanup();
+    return res.status(400).json({ error: 'The photo of your face doesn\'t look like a real JPEG or PNG image. Please take it again.' });
+  }
 
   // At most 5 submissions a day per account. Real people rarely need more
   // than two tries; someone cycling through many different IDs is a
@@ -536,6 +553,7 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
     idLegalName: idLegalName.trim(),
     nameMatch,
     documentFilename: req.file.filename,
+    selfieFilename: req.selfieFile.filename,
     // item 12: a real Pending → Approved/Rejected/Review Required
     // pipeline, not a single vague "in review" bucket. A name that
     // doesn't clearly match gets routed to review_required automatically
@@ -572,7 +590,9 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
     }
   }
 
-  res.status(201).json({ verification: record });
+  // v77: file names stay on the server; the person only needs the status.
+  const { documentFilename, selfieFilename, ...safeRecord } = record;
+  res.status(201).json({ verification: safeRecord });
 });
 
 // GET /api/verification/start — whether real, live ID verification

@@ -313,7 +313,23 @@ router.get('/users/all', async (req, res) => {
   // the endpoint the original gap was caught in; the masking itself now
   // lives at the source so every other endpoint that returns a person's
   // record is covered too, not just this one.
-  res.json({ users: users.map(u => publicAdmin(u)) });
+  // v75: how each person came to be "Verified", so nobody has to guess.
+  const approvedRecords = await db.filter('verifications', v => v.status === 'approved');
+  const latestApproved = new Map();
+  for (const v of approvedRecords) {
+    const prev = latestApproved.get(v.userId);
+    if (!prev || String(v.reviewedAt || '') > String(prev.reviewedAt || '')) latestApproved.set(v.userId, v);
+  }
+  const adminNames = new Map((await db.filter('users', u => u.role === 'admin')).map(a => [a.id, a.name]));
+  const howVerified = (u) => {
+    if (u.verified !== true) return {};
+    const rec = latestApproved.get(u.id);
+    if (rec && (rec.source === 'persona' || rec.reviewedBy === 'persona')) return { verifiedVia: 'persona', verifiedAt: rec.reviewedAt || null };
+    if (rec) return { verifiedVia: 'id_review', verifiedByName: adminNames.get(rec.reviewedBy) || null, verifiedAt: rec.reviewedAt || null };
+    if (u.approvedBy) return { verifiedVia: 'account_approval', verifiedByName: adminNames.get(u.approvedBy) || null, verifiedAt: u.approvedAt || null };
+    return { verifiedVia: 'unknown' };
+  };
+  res.json({ users: users.map(u => ({ ...publicAdmin(u), ...howVerified(u) })) });
 });
 
 // Masks all but the first character of the local part and keeps the
@@ -626,18 +642,20 @@ router.post('/users/:id/decide', requireDepartment(['verification', 'customer_se
   // from an ID that was actually reviewed — an approved document in the
   // Verification Queue, or an automated Persona check. Approving the
   // account alone lets them in, but doesn't put the badge on.
-  // Customers are unchanged: approving a customer's account is what lets
-  // them post jobs, as before.
+  // v75: customers follow the same rule. Approving the account no longer
+  // marks a customer "Verified" on its own; only a reviewed ID does.
   let verifiedValue = decision === 'approve';
   let providerNeedsId = false;
-  if (decision === 'approve' && target.role === 'provider') {
+  if (decision === 'approve' && (target.role === 'provider' || target.role === 'customer')) {
     const approvedId = await db.find('verifications', v => v.userId === target.id && v.status === 'approved');
     verifiedValue = !!approvedId;
     providerNeedsId = !approvedId;
   }
   const updated = await db.update('users', req.params.id, { verified: verifiedValue, status: decision === 'approve' ? 'approved' : 'rejected', rejectionReason: finalRejectionReason, approvedBy: decision === 'approve' ? req.user.sub : null, approvedAt: decision === 'approve' ? new Date().toISOString() : null });
   const approveMessage = providerNeedsId
-    ? 'Your account has been approved. Next, verify your identity in the Verification section, so customers see "ID checked" and you appear in search.'
+    ? (target.role === 'customer'
+        ? 'Your account has been approved. Next, verify your identity in the Verification section. You can post a job or book a pro once your ID has been reviewed.'
+        : 'Your account has been approved. Next, verify your identity in the Verification section, so customers see "ID checked" and you appear in search.')
     : target.role === 'provider' && !target.profilePhotoUrl
       ? 'Your account has been approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
       : 'Your account has been approved.';
@@ -690,10 +708,68 @@ router.get('/verification-queue', requireDepartment(['verification']), async (re
   const queue = [];
   for (const v of open) {
     const user = await db.find('users', u => u.id === v.userId);
-    const entry = { ...v, userName: user ? user.name : 'Unknown', accountName: user ? user.name : null, role: user ? user.role : null, country: user ? user.country : '', city: user ? user.city : null, hasDocument: !!v.documentFilename };
+    const { documentFilename, selfieFilename, ...vSafe } = v;
+    const entry = { ...vSafe, userName: user ? user.name : 'Unknown', accountName: user ? user.name : null, role: user ? user.role : null, country: user ? user.country : '', city: user ? user.city : null, hasDocument: !!v.documentFilename, hasSelfie: !!v.selfieFilename };
     if (!region || entry.city === region) queue.push(entry);
   }
-  res.json({ queue });
+  // v77: tell the reviewer how files are being kept, so a storage problem
+  // or the retention period is visible on the page, not buried in logs.
+  const { getSetting } = require('../platform-settings');
+  res.json({
+    queue,
+    storage: { persistent: !!process.env.PRIVATE_UPLOADS_DIR },
+    retentionDays: Number(await getSetting('idDocumentRetentionDays')) || 0,
+    automatedCheckConnected: require('../persona-verification').isPersonaConfigured ? !!require('../persona-verification').isPersonaConfigured() : false,
+  });
+});
+
+// PATCH /api/admin/settings/id-retention  { days } — super admin only.
+// 0 keeps files until deleted by hand; otherwise 7 to 3650 days.
+router.patch('/settings/id-retention', requireSuperAdmin, async (req, res) => {
+  const days = Number((req.body || {}).days);
+  if (!Number.isInteger(days) || days < 0 || (days > 0 && days < 7) || days > 3650) {
+    return res.status(400).json({ error: 'Enter 0 to keep files, or a whole number of days from 7 to 3650' });
+  }
+  const { setSetting } = require('../platform-settings');
+  await setSetting('idDocumentRetentionDays', days);
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'id_retention_update', String(days));
+  res.json({ ok: true, retentionDays: days });
+});
+
+// POST /api/admin/verification-gaps-ask-all — v77: one message to every
+// person marked verified with no reviewed ID and none waiting. Nobody's
+// badge is removed by this.
+router.post('/verification-gaps-ask-all', requireDepartment(['verification']), async (req, res) => {
+  const region = await myRegion(req);
+  const approvedIds = new Set((await db.filter('verifications', v => v.status === 'approved')).map(v => v.userId));
+  const openIds = new Set((await db.filter('verifications', v => ['pending', 'review_required'].includes(v.status))).map(v => v.userId));
+  const people = await db.filter('users', u => (u.role === 'provider' || u.role === 'customer') && u.verified === true && !approvedIds.has(u.id) && !openIds.has(u.id) && (!region || u.city === region));
+  for (const p of people) {
+    await notify(p.id, '🪪', p.role === 'customer'
+      ? 'Please verify your identity in the Verification section, so your "Verified" status is backed by a reviewed ID.'
+      : 'Please verify your identity in the Verification section, so the "ID checked" badge on your profile is backed by a reviewed ID.', null, { section: 'verification' });
+  }
+  res.json({ ok: true, asked: people.length });
+});
+
+// GET /api/admin/verification/:id/selfie — v77: the face photo sent with
+// the ID. Same rules as the document below: verification team only, own
+// city only, every look recorded, never cached.
+router.get('/verification/:id/selfie', requireDepartment(['verification']), async (req, res) => {
+  const record = await db.find('verifications', v => v.id === req.params.id);
+  if (!record || !record.selfieFilename) return res.status(404).json({ error: 'No face photo on record' });
+  const region = await myRegion(req);
+  const user = await db.find('users', u => u.id === record.userId);
+  if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  const { PRIVATE_UPLOADS_DIR } = require('../uploads');
+  const filePath = require('path').join(PRIVATE_UPLOADS_DIR, require('path').basename(record.selfieFilename));
+  if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'The photo file is missing on disk' });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'verification_selfie', record.id);
+  res.set('Cache-Control', 'no-store, private');
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.sendFile(filePath);
 });
 
 // GET /api/admin/verification-gaps — providers who carry the verified
@@ -704,8 +780,8 @@ router.get('/verification-gaps', requireDepartment(['verification']), async (req
   const region = await myRegion(req);
   const approvedIds = new Set((await db.filter('verifications', v => v.status === 'approved')).map(v => v.userId));
   const openIds = new Set((await db.filter('verifications', v => ['pending', 'review_required'].includes(v.status))).map(v => v.userId));
-  const gaps = (await db.filter('users', u => u.role === 'provider' && u.verified === true && !approvedIds.has(u.id) && (!region || u.city === region)))
-    .map(u => ({ id: u.id, name: u.name, city: u.city || null, country: u.country || null, idSubmitted: openIds.has(u.id) }));
+  const gaps = (await db.filter('users', u => (u.role === 'provider' || u.role === 'customer') && u.verified === true && !approvedIds.has(u.id) && (!region || u.city === region)))
+    .map(u => ({ id: u.id, name: u.name, role: u.role, city: u.city || null, country: u.country || null, idSubmitted: openIds.has(u.id) }));
   res.json({ gaps });
 });
 
@@ -714,14 +790,19 @@ router.post('/verification-gaps/:userId', requireDepartment(['verification']), a
   const { action } = req.body || {};
   if (!['request', 'remove_badge'].includes(action)) return res.status(400).json({ error: 'action must be request or remove_badge' });
   const region = await myRegion(req);
-  const target = await db.find('users', u => u.id === req.params.userId && u.role === 'provider');
-  if (!target) return res.status(404).json({ error: 'Provider not found' });
+  const target = await db.find('users', u => u.id === req.params.userId && (u.role === 'provider' || u.role === 'customer'));
+  if (!target) return res.status(404).json({ error: 'Person not found' });
   if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  const isCustomer = target.role === 'customer';
   if (action === 'remove_badge') {
     await db.update('users', target.id, { verified: false });
-    await notify(target.id, '🪪', 'To keep your "ID checked" badge and stay in search, please verify your identity in the Verification section. It only takes a few minutes.', null, { section: 'verification' });
+    await notify(target.id, '🪪', isCustomer
+      ? 'Before your next booking, please verify your identity in the Verification section. It only takes a few minutes.'
+      : 'To keep your "ID checked" badge and stay in search, please verify your identity in the Verification section. It only takes a few minutes.', null, { section: 'verification' });
   } else {
-    await notify(target.id, '🪪', 'Please verify your identity in the Verification section, so the "ID checked" badge on your profile is backed by a reviewed ID.', null, { section: 'verification' });
+    await notify(target.id, '🪪', isCustomer
+      ? 'Please verify your identity in the Verification section, so your "Verified" status is backed by a reviewed ID.'
+      : 'Please verify your identity in the Verification section, so the "ID checked" badge on your profile is backed by a reviewed ID.', null, { section: 'verification' });
   }
   const { logAccess } = require('../access-log');
   await logAccess(req, `verification_gap_${action}`, target.id);

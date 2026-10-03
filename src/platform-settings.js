@@ -124,7 +124,13 @@ Trothen provides the Platform "as is." To the maximum extent permitted by law, T
 
 Trothen may update these Terms from time to time. If a change is material, you'll be asked to review and accept the updated Terms before continuing to use the Platform.
 
-# 12. Contact
+# 12. Identity Checks and Your ID Document
+
+Before your first booking, we ask for a photo of a government-issued ID and a photo of your face. A person on the Trothen team compares the two and checks the name against your account. If we use an automated identity service instead, it does the same comparison and reports the result to us.
+
+Your ID and face photo are stored privately. They are never shown to other users. Only Trothen staff who review identity checks can open them, and every time one is opened it is recorded. {{ID_RETENTION_SENTENCE}} We keep a record that the check happened: the type of document, the name on it, the decision, and who made it.
+
+# 13. Contact
 
 Questions about these Terms: support@trothen.io`,
 
@@ -184,9 +190,19 @@ Trothen provides the Platform "as is." To the maximum extent permitted by law, T
 
 Trothen may update these Terms from time to time. If a change is material, you'll be asked to review and accept the updated Terms before continuing to use the Platform.
 
-# 13. Contact
+# 13. Identity Checks and Your ID Document
+
+Before you appear in search or accept work, we ask for a photo of a government-issued ID and a photo of your face. A person on the Trothen team compares the two and checks the name against your account. If we use an automated identity service instead, it does the same comparison and reports the result to us.
+
+Your ID and face photo are stored privately. They are never shown to other users. Only Trothen staff who review identity checks can open them, and every time one is opened it is recorded. {{ID_RETENTION_SENTENCE}} We keep a record that the check happened: the type of document, the name on it, the decision, and who made it.
+
+# 14. Contact
 
 Questions about these Terms: support@trothen.io`,
+
+  // v77: how many days an uploaded ID and selfie are kept after a decision
+  // (approved, rejected or replaced). 0 = keep until deleted by hand.
+  idDocumentRetentionDays: 90,
 
   // The homepage's actual on-screen copy — hero headline/subheadline, the
   // rotating word in the hero, and the mission section. Editable in

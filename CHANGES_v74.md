@@ -46,6 +46,9 @@ It all lives in the same place: **Admin → Settings → Front page wording** (s
 - Refused as expected: an unknown text name, text with < or >, and a save with no admin sign-in.
 - No script errors in the browser.
 
+
+> Note: the byte counts and deploy steps below are from when this version was made. Later versions changed some of the same files. Use the table and steps in CHANGES_v77.md.
+
 ## Files changed (complete replacements)
 | File | Bytes |
 |---|---|
@@ -53,7 +56,7 @@ It all lives in the same place: **Admin → Settings → Front page wording** (s
 | src\platform-settings.js | 19826 |
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v74-files.zip.
+1. Unzip trothen-v77-files.zip.
 2. Copy the two files over the old ones in my repo folder, keeping the folders:
    ```
    copy /Y public\index.html "C:\path\to\trothen-backend\public\index.html"

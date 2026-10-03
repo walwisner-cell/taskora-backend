@@ -788,7 +788,7 @@ router.get('/me', requireAuth, async (req, res) => {
 // their next visit, rather than being grandfathered into terms they never
 // actually saw. Keep this in sync with CURRENT_TERMS_VERSION on the
 // frontend (public/index.html) — both must agree for the gate to work.
-const CURRENT_TERMS_VERSION = 'v1-2026';
+const CURRENT_TERMS_VERSION = 'v2-2026'; // v76: new tick-box agreement, and customers now need a reviewed ID
 
 // POST /api/auth/accept-terms — records genuine, deliberate consent: a
 // real timestamp and the exact version being agreed to, not an implied
@@ -796,18 +796,19 @@ const CURRENT_TERMS_VERSION = 'v1-2026';
 // what actually lets the business prove consent happened, the same way a
 // real company needs to be able to.
 router.post('/accept-terms', requireAuth, async (req, res) => {
-  const { version, viewedFullTerms } = req.body || {};
+  const { version, viewedFullTerms, acknowledgedAll } = req.body || {};
   if (version !== CURRENT_TERMS_VERSION) {
     return res.status(400).json({ error: 'This isn\'t the current version of the agreement — please refresh and try again.' });
   }
-  // A purely client-side "did they open it" check is trivially bypassed
-  // with dev tools — this has real legal weight, so the server refuses
-  // to record acceptance unless the request itself explicitly claims the
-  // full Terms of Service was actually opened first.
-  if (viewedFullTerms !== true) {
-    return res.status(400).json({ error: 'You need to open the full Terms of Service before you can agree.' });
+  // v76: agreement is a tick box per promise plus one for the full Terms
+  // of Service, which are linked right beside that box. The server refuses
+  // to record acceptance unless the request says every box was ticked.
+  // Opening the full terms is no longer forced; whether they did is still
+  // recorded, honestly, alongside the time and version.
+  if (acknowledgedAll !== true) {
+    return res.status(400).json({ error: 'Please check every box before you continue.' });
   }
-  await db.update('users', req.user.sub, { termsAcceptedAt: new Date().toISOString(), termsVersion: version, termsViewedFull: true });
+  await db.update('users', req.user.sub, { termsAcceptedAt: new Date().toISOString(), termsVersion: version, termsViewedFull: viewedFullTerms === true });
   res.json({ ok: true, termsVersion: version });
 });
 

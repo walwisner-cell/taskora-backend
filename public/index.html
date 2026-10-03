@@ -3179,6 +3179,9 @@ async function apiFetch(method, path, body) {
     if (data && data.code === 'MUST_CHANGE_PASSWORD' && path !== '/auth/change-password' && path !== '/auth/me') {
       showForcePasswordChangeScreen();
     }
+    if (data && data.code === 'VERIFY_IDENTITY' && typeof showVerificationOnboardingPrompt === 'function' && AUTH.user && !document.getElementById('verification-onboarding-prompt')) {
+      showVerificationOnboardingPrompt();
+    }
     throw Object.assign(new Error((data && data.error) || 'Request failed'), { status: res.status, data });
   }
   return data;
@@ -3426,6 +3429,7 @@ async function submitGoogleSignup() {
     });
     AUTH.token = data.token; AUTH.user = data.user;
     saveAuthSession(data.token);
+    JUST_COMPLETED_SIGNUP = true; // v75: Google signups get the verify-now prompt too
     exitGoogleFlow();
     if (data.categoryApprovalStatus === 'pending') {
       showToast(`Account created! Your category "${data.user.category}" is pending a quick admin review (within 24 hours) — you can use your account right away in the meantime.`);
@@ -5989,7 +5993,7 @@ async function goDashboard(role) {
 // terms change) makes every existing user see the gate again on their
 // next visit, rather than silently staying agreed to terms they never
 // saw.
-const CURRENT_TERMS_VERSION = 'v1-2026';
+const CURRENT_TERMS_VERSION = 'v2-2026'; // v76: new tick-box agreement, and customers now need a reviewed ID
 
 // A real, deliberate consent gate — not a pre-checked box, not something
 // implied by using the app. Shown once per version, to every customer and
@@ -6006,121 +6010,127 @@ let TERMS_GATE_VIEWED = false;
 
 function checkTermsGate(role) {
   if (!BACKEND_AVAILABLE || !AUTH.user) return;
-  if (AUTH.user.termsVersion === CURRENT_TERMS_VERSION) return; // already agreed to the current version — nothing to show
+  if (AUTH.user.termsVersion === CURRENT_TERMS_VERSION) { maybePromptVerification(); return; } // already agreed — v75: remind about ID if it's still missing
+  if (document.getElementById('terms-gate-overlay')) return;
   TERMS_GATE_VIEWED = false;
 
+  // v76: one tick box per promise, then one for the full terms. Nothing is
+  // locked or hidden: the button itself says how many boxes are left.
+  // The wording matches what the system really does (ID check, written
+  // agreement, payment held until the job is marked complete).
   const isProvider = role === 'provider';
-  const title = isProvider ? 'Trothen Community Standards' : 'Before You Continue';
+  const banner = document.getElementById('test-mode-banner');
+  const testMode = !!(banner && banner.style.display !== 'none' && /simulated|real card|test mode/i.test(banner.textContent || ''));
+  const title = isProvider ? 'Before you start taking jobs' : 'Before you book';
   const intro = isProvider
-    ? `You're an independent contractor using Trothen to find work — not an employee. You choose which jobs to accept, when to work, and how the work gets done. Nothing here changes that.`
-    : `A quick, plain-language summary of what Trothen promises you, and what we ask of you in return.`;
-  const standards = [
-    ['Keep what you promised', isProvider ? 'Show up for the window you accepted, or say so early if you can\'t.' : 'Be there for the window you booked, or say so early if plans change.'],
-    ['Be honest', isProvider ? 'Describe your work accurately. If a job needs a licensed trade or is bigger than described, stop and tell the customer — that cancellation never counts against you.' : 'Describe the job accurately, including anything difficult about it, and rate honestly on what actually happened.'],
-    ['Be safe', isProvider ? 'Never work impaired or endangered. Stop and report if a job becomes unsafe — no job is worth an injury.' : 'Disclose hazards before a job — pets, structural issues, chemicals — so your pro can work safely.'],
-    ['Treat people with respect', isProvider ? 'No harassment, discrimination, or unwanted contact. Never enter a space you weren\'t invited into.' : 'Providers are independent professionals running their own businesses — not staff, and not yours to direct beyond what the job describes.'],
-    ['Keep it on the platform', 'Arrange and pay for work through Trothen. Off the platform there is no payment protection and no insurance, for either side.'],
+    ? 'Here is what we ask of every pro on Trothen, and what you can expect from us. Check each box to agree.'
+    : 'Here is what we ask of every customer on Trothen, and what you can expect from us. Check each box to agree.';
+  const promises = isProvider ? [
+    ['I am who I say I am', 'I\'m 18 or older and the name on my account is my own. A person on the Trothen team reviews my government ID before I appear in search. I won\'t let anyone else work under my account.'],
+    ['I\'ll be honest about my work', 'I\'ll describe my skills and any license truthfully. If a job turns out bigger than described, or needs a licensed trade I don\'t hold, I\'ll stop and tell the customer. Cancelling for that reason never counts against me.'],
+    ['I\'ll keep my word', 'Each booking comes with a short written agreement: what\'s being done, when, and for how much. I\'ll show up for the time I accepted, or say so early if I can\'t.'],
+    ['I\'ll treat everyone with respect and work safely', 'No harassment and no discrimination, whatever someone\'s race, religion, gender, age, disability or background. I won\'t go into any space I wasn\'t invited into, and I\'ll stop and report a job that becomes unsafe.'],
+    ['I\'ll keep bookings and payment on Trothen', 'The customer pays Trothen, and it\'s released to me when they mark the job complete, less the commission shown on my dashboard. If there\'s a disagreement, a person on the Trothen team reviews it. Work arranged off Trothen has none of this.' + (testMode ? ' Trothen is in early access: payments are in test mode right now and no real money moves yet.' : '')],
+    ['I work for myself', 'I\'m an independent contractor, not an employee of Trothen. I choose which jobs to take and how to do them, and my taxes, insurance and business costs are my own.'],
+  ] : [
+    ['I am who I say I am', 'I\'m 18 or older and the name on my account is my own. A person on the Trothen team reviews my government ID before my first booking.'],
+    ['I\'ll be honest about the job', 'I\'ll describe the work accurately, including anything difficult or risky about it (pets, wiring, chemicals, damage), and I\'ll leave reviews based on what really happened.'],
+    ['I\'ll keep my word', 'Each booking comes with a short written agreement: what\'s being done, when, and for how much. I\'ll be there at the time I booked, or say so early if plans change.'],
+    ['I\'ll treat everyone with respect', 'No harassment and no discrimination, whatever someone\'s race, religion, gender, age, disability or background. Pros run their own businesses; they aren\'t my staff, and I won\'t ask for work outside what we agreed.'],
+    ['I\'ll keep bookings and payment on Trothen', 'I pay Trothen, not the pro, and the money is held until I mark the job complete. If something goes wrong, I won\'t mark it complete; I\'ll raise it and a person on the Trothen team will review it. Work arranged off Trothen has none of this.' + (testMode ? ' Trothen is in early access: payments are in test mode right now and no real money moves yet.' : '')],
   ];
-  const providerFinePrint = isProvider
-    ? `<div style="font-size:13px;color:var(--muted);margin-top:16px;line-height:1.6;">Providers are independent contractors, not employees, agents, partners, or joint venturers of Trothen. Nothing here creates an employment relationship. You're responsible for your own taxes, insurance, and business expenses.</div>`
-    : `<div style="font-size:13px;color:var(--muted);margin-top:16px;line-height:1.6;">Trothen operates a marketplace connecting customers with independent contractors. Trothen does not perform the services and does not employ the people who do them.</div>`;
+  const finePrint = isProvider
+    ? 'Trothen is a marketplace. It connects customers with independent pros; it doesn\'t employ you and isn\'t a party to the work itself.'
+    : 'Trothen is a marketplace. It connects you with independent pros; it doesn\'t do the work itself and doesn\'t employ the people who do.';
+  const row = (i, label, detail) => `
+            <label class="tg-row" for="tg-box-${i}">
+              <input type="checkbox" class="tg-box" id="tg-box-${i}" onchange="updateTermsAgreeButton()"/>
+              <span><strong>${escapeHtml(label)}</strong><span class="tg-detail">${escapeHtml(detail)}</span></span>
+            </label>`;
 
   const modalHtml = `
     <div class="modal-overlay open" id="terms-gate-overlay" style="z-index:5000;">
-      <div class="modal" style="max-width:520px;" onclick="event.stopPropagation()">
+      <style>
+        #terms-gate-overlay .tg-row { display:flex; gap:12px; align-items:flex-start; padding:12px; margin-bottom:8px; border:1.5px solid var(--border); border-radius:10px; cursor:pointer; background:var(--white, #fff); transition:border-color .15s ease, background .15s ease; }
+        #terms-gate-overlay .tg-row:hover { border-color:var(--navy); }
+        #terms-gate-overlay .tg-row.is-ticked { border-color:#2E8C6F; background:rgba(46,140,111,.08); }
+        #terms-gate-overlay .tg-box { width:20px; height:20px; margin:1px 0 0; flex-shrink:0; accent-color:#256B54; cursor:pointer; }
+        #terms-gate-overlay .tg-row strong { display:block; font-size:14.5px; color:var(--navy); }
+        #terms-gate-overlay .tg-detail { display:block; font-size:13.5px; line-height:1.5; color:var(--text); margin-top:3px; }
+        #terms-gate-overlay .tg-link { background:none; border:none; padding:0; color:var(--teal); font-weight:600; font-size:13.5px; text-decoration:underline; cursor:pointer; }
+        #terms-gate-overlay .tg-fine { font-size:13px; color:var(--slate); line-height:1.55; margin:14px 2px 0; }
+        #terms-gate-overlay .tg-left { font-size:13px; color:var(--slate); margin-right:auto; align-self:center; }
+        #terms-gate-overlay .modal { display:flex; flex-direction:column; max-height:calc(100vh - 32px); max-height:calc(100dvh - 32px); overflow:hidden; }
+        #terms-gate-overlay .modal-header { flex-shrink:0; }
+        #terms-gate-overlay .modal-body { overflow-y:auto; flex:1 1 auto; min-height:0; }
+        #terms-gate-overlay .modal-footer { flex-shrink:0; position:static; padding-top:14px; border-top:1px solid var(--border); align-items:center; }
+        html.dark #terms-gate-overlay .modal-footer { background:transparent; }
+        html.dark #terms-gate-overlay .tg-row { background:transparent; }
+        html.dark #terms-gate-overlay .tg-row strong { color:#fff; }
+      </style>
+      <div class="modal" style="max-width:560px;" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title">
         <div class="modal-header">
-          <h3>${title}</h3>
+          <h3 id="terms-gate-title">${title}</h3>
           <p>${intro}</p>
         </div>
         <div class="modal-body" id="terms-gate-summary-view">
-          ${standards.map(([label, detail]) => `
-            <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
-              <span style="color:var(--teal);font-weight:700;flex-shrink:0;">✓</span>
-              <div><div style="font-weight:600;font-size:13.5px;color:var(--navy);">${label}</div><div style="font-size:13.5px;color:var(--text);margin-top:2px;line-height:1.5;">${detail}</div></div>
-            </div>`).join('')}
-          ${providerFinePrint}
-          <div style="display:flex;align-items:center;gap:8px;margin-top:20px;font-size:12.5px;font-weight:700;letter-spacing:.4px;color:var(--slate);text-transform:uppercase;">
-            <span id="terms-step-1-badge" style="width:20px;height:20px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12.5px;">1</span>
-            <span>Read the full terms</span>
-            <span style="flex:1;height:1px;background:var(--border);"></span>
-            <span id="terms-step-2-badge" style="width:20px;height:20px;border-radius:50%;background:var(--border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12.5px;">2</span>
-            <span>Agree</span>
-          </div>
-          <button id="terms-read-btn" onclick="openFullTermsInGate('${role}')" style="width:100%;margin-top:10px;padding:12px;background:var(--offwhite);border:1.5px solid var(--navy);border-radius:8px;font-weight:600;font-size:13.5px;color:var(--navy);cursor:pointer;text-align:left;display:flex;align-items:center;justify-content:space-between;transition:all .15s ease;">
-            <span>📄 Read the full Terms of Service</span>
-            <span style="color:var(--navy);font-weight:700;">→</span>
-          </button>
-          <label id="terms-checkbox-label" style="display:flex;align-items:flex-start;gap:10px;margin-top:16px;cursor:not-allowed;font-size:14px;opacity:.5;">
-            <input type="checkbox" id="terms-gate-checkbox" disabled onchange="updateTermsAgreeButton()" style="margin-top:2px;"/>
-            <span>I have read and agree to these standards and the full Terms of Service.</span>
+          ${promises.map(([label, detail], i) => row(i, label, detail)).join('')}
+          <label class="tg-row" for="terms-gate-checkbox">
+            <input type="checkbox" class="tg-box" id="terms-gate-checkbox" onchange="updateTermsAgreeButton()"/>
+            <span><strong>I agree to the Trothen Terms of Service</strong><span class="tg-detail">The full terms cover fees, cancellations, what can't be booked on Trothen, and how accounts can be suspended. <button type="button" class="tg-link" onclick="event.preventDefault();openFullTermsInGate('${role}')">Read the full terms</button></span></span>
           </label>
-          <div id="terms-gate-hint" style="font-size:13px;color:var(--slate);margin-top:8px;">↑ Open the full Terms of Service first — this unlocks once you have.</div>
+          <div class="tg-fine">${finePrint}</div>
         </div>
         <div class="modal-body" id="terms-gate-full-view" style="display:none;">
-          <button onclick="closeFullTermsInGate()" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;padding:0;margin-bottom:14px;">← Back to Agreement</button>
+          <button onclick="closeFullTermsInGate()" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;padding:0;margin-bottom:14px;">← Back to the checkboxes</button>
           <div id="terms-gate-full-content" style="font-size:14px;color:var(--text);">Loading…</div>
         </div>
-        <div class="modal-footer">
-          <button class="confirm-btn" id="terms-gate-agree-btn" disabled onclick="submitTermsAgreement()">I Agree — Continue</button>
+        <div class="modal-footer" style="display:flex;gap:12px;flex-wrap:wrap;">
+          <span class="tg-left" id="terms-gate-left" aria-live="polite"></span>
+          <button class="confirm-btn" id="terms-gate-agree-btn" disabled onclick="submitTermsAgreement()">Agree and continue</button>
         </div>
       </div>
     </div>`;
   document.body.insertAdjacentHTML('beforeend', modalHtml);
+  updateTermsAgreeButton();
 }
 
 async function openFullTermsInGate(role) {
   TERMS_GATE_VIEWED = true;
   document.getElementById('terms-gate-summary-view').style.display = 'none';
   document.getElementById('terms-gate-full-view').style.display = 'block';
+  const footer = document.querySelector('#terms-gate-overlay .modal-footer');
+  if (footer) footer.style.display = 'none';
   const contentEl = document.getElementById('terms-gate-full-content');
   try {
     const { content } = await apiFetch('GET', `/terms-of-service-${role}-content`);
     contentEl.innerHTML = renderFormattedContent(content);
-  } catch (e) { contentEl.innerHTML = '<p>Could not load the Terms of Service — please try again.</p>'; }
-  updateTermsAgreeButton();
+  } catch (e) { contentEl.innerHTML = '<p>The Terms of Service couldn\'t load. Please go back and try again.</p>'; }
 }
 
 function closeFullTermsInGate() {
   document.getElementById('terms-gate-full-view').style.display = 'none';
   document.getElementById('terms-gate-summary-view').style.display = 'block';
+  const footer = document.querySelector('#terms-gate-overlay .modal-footer');
+  if (footer) footer.style.display = 'flex';
+  updateTermsAgreeButton();
 }
 
-// The Agree button — and the checkbox itself — genuinely require the full
-// Terms of Service to have been opened first. This isn't cosmetic: it's
-// checked here, again, independent of whatever the UI shows, since this
-// has real legal weight and needs to actually be true, not just appear
-// true.
+// v76: the button is live only when every box is ticked, and until then
+// the line beside it says how many are left. The server checks again.
+function termsGateAllTicked() {
+  const boxes = [...document.querySelectorAll('#terms-gate-overlay .tg-box')];
+  return boxes.length > 0 && boxes.every(b => b.checked);
+}
 function updateTermsAgreeButton() {
-  const checkbox = document.getElementById('terms-gate-checkbox');
-  const checkboxLabel = document.getElementById('terms-checkbox-label');
-  const hint = document.getElementById('terms-gate-hint');
+  const boxes = [...document.querySelectorAll('#terms-gate-overlay .tg-box')];
   const btn = document.getElementById('terms-gate-agree-btn');
-  const step1Badge = document.getElementById('terms-step-1-badge');
-  const step2Badge = document.getElementById('terms-step-2-badge');
-  const readBtn = document.getElementById('terms-read-btn');
-  if (!TERMS_GATE_VIEWED) {
-    checkbox.checked = false;
-    checkbox.disabled = true;
-    checkboxLabel.style.cursor = 'not-allowed';
-    checkboxLabel.style.opacity = '.5';
-    hint.style.display = 'block';
-    btn.disabled = true;
-    return;
-  }
-  // Step 1 genuinely complete — reflect that clearly rather than leaving
-  // the button looking identical to its unclicked state.
-  step1Badge.style.background = '#2E8C6F';
-  step1Badge.innerHTML = '✓';
-  step2Badge.style.background = 'var(--navy)';
-  step2Badge.style.color = '#fff';
-  readBtn.style.borderColor = '#2E8C6F';
-  readBtn.style.background = '#EAF4EF';
-  readBtn.querySelector('span').innerHTML = '✓ Terms of Service opened';
-  checkbox.disabled = false;
-  checkboxLabel.style.cursor = 'pointer';
-  checkboxLabel.style.opacity = '1';
-  hint.style.display = 'none';
-  btn.disabled = !checkbox.checked;
+  const leftEl = document.getElementById('terms-gate-left');
+  if (!btn) return;
+  boxes.forEach(b => { const r = b.closest('.tg-row'); if (r) r.classList.toggle('is-ticked', b.checked); });
+  const left = boxes.filter(b => !b.checked).length;
+  btn.disabled = left > 0;
+  if (leftEl) leftEl.textContent = left === 0 ? 'All checked. You can continue.' : left === boxes.length ? `Check all ${boxes.length} boxes to continue` : `${left} box${left === 1 ? '' : 'es'} left to check`;
 }
 
 async function submitTermsAgreement() {
@@ -6128,19 +6138,18 @@ async function submitTermsAgreement() {
   btn.disabled = true;
   btn.innerHTML = '<span class="btn-spinner" style="border-top-color:#fff;"></span>Saving…';
   try {
-    await apiFetch('POST', '/auth/accept-terms', { version: CURRENT_TERMS_VERSION, viewedFullTerms: TERMS_GATE_VIEWED });
+    if (!termsGateAllTicked()) { updateTermsAgreeButton(); btn.textContent = 'Agree and continue'; return showToast('Please check every box first'); }
+    await apiFetch('POST', '/auth/accept-terms', { version: CURRENT_TERMS_VERSION, acknowledgedAll: true, viewedFullTerms: TERMS_GATE_VIEWED });
     AUTH.user.termsVersion = CURRENT_TERMS_VERSION;
     const overlay = document.getElementById('terms-gate-overlay');
     if (overlay) overlay.remove();
-    showToast('Thanks — you\'re all set.');
-    if (JUST_COMPLETED_SIGNUP) {
-      JUST_COMPLETED_SIGNUP = false; // one-time — never fires again for this account after this
-      if (!AUTH.user.verified) showVerificationOnboardingPrompt();
-    }
+    showToast('Thanks, you\'re all set.');
+    JUST_COMPLETED_SIGNUP = false;
+    maybePromptVerification(); // v75: asks on every sign-in until an ID is submitted, not only once at signup
   } catch (e) {
-    showToast(e.message || 'Could not save your agreement — please try again');
+    showToast(e.message || 'Your agreement couldn\'t be saved. Please try again.');
     btn.disabled = false;
-    btn.textContent = 'I Agree — Continue';
+    btn.textContent = 'Agree and continue';
   }
 }
 
@@ -6151,13 +6160,31 @@ async function submitTermsAgreement() {
 // isn't ready right this second still has a real account and can still
 // browse; the 24-hour reminder scheduler is the real safety net for
 // anyone who dismisses this and doesn't come back to it themselves.
+// v75: the prompt used to appear exactly once, at signup. Anyone who
+// closed it (or signed up with Google, or was approved by an admin without
+// an ID) was never asked again. Now it appears once per browser session at
+// sign-in for any customer or provider who isn't verified and has no ID
+// waiting for review.
+async function maybePromptVerification() {
+  const u = AUTH.user;
+  if (!BACKEND_AVAILABLE || !u || u.verified || (u.role !== 'customer' && u.role !== 'provider')) return;
+  try { if (sessionStorage.getItem('trothen_verify_prompted') === u.id) return; } catch (e) { /* private mode: just ask */ }
+  try {
+    const { verifications } = await apiFetch('GET', '/verification/mine');
+    if (verifications.some(v => v.status === 'pending' || v.status === 'review_required')) return; // already submitted, waiting on us
+  } catch (e) { return; }
+  if (!AUTH.user || AUTH.user.id !== u.id || document.getElementById('verification-onboarding-prompt') || document.getElementById('terms-gate-overlay')) return;
+  try { sessionStorage.setItem('trothen_verify_prompted', u.id); } catch (e) { /* fine */ }
+  showVerificationOnboardingPrompt();
+}
+
 function showVerificationOnboardingPrompt() {
   const role = AUTH.user.role;
   const isProvider = role === 'provider';
   const title = isProvider ? 'One last step to become a Pro' : 'Verify your identity';
   const body = isProvider
     ? `You're almost there — customers only ever book verified pros. Upload a government ID now and you'll typically be approved within a day, sometimes sooner.`
-    : `Verifying your identity unlocks booking a pro directly. It only takes a couple of minutes, and your document stays private — only your review is ever visible to anyone else.`;
+    : `You'll need this before you can post a job or book a pro. It takes a couple of minutes: upload a government ID and a person on our team reviews it. Your document stays private.`;
   const modalHtml = `
     <div class="modal-overlay open" id="verification-onboarding-prompt" style="z-index:4500;">
       <div class="modal" style="max-width:440px;" onclick="event.stopPropagation()">
@@ -6178,7 +6205,7 @@ function showVerificationOnboardingPrompt() {
 function startVerificationFromPrompt(role) {
   document.getElementById('verification-onboarding-prompt').remove();
   if (role === 'provider') selectProviderSection('verification');
-  else selectCustomerSection('verification');
+  else goToCustomerDashboard('verification'); // v75: customers sit on the homepage after sign-in, so open their dashboard first
 }
 
 /* ══════════════════════ SHARED DASHBOARD HELPERS ══════════════════════ */
@@ -6252,7 +6279,9 @@ function verificationHTML(role, status) {
       <span>Submit Documents</span><span>Under Review</span><span>Verified</span>
     </div>
     ${verified
-      ? `<div class="badge badge-success" style="font-size:14px;padding:8px 16px;">✓ Identity Verified — government ID confirmed</div>`
+      ? (VERIFIED_WITHOUT_ID
+          ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;white-space:normal;text-align:left;">Account approved by our team. No ID has been reviewed for this account yet.</div>`
+          : `<div class="badge badge-success" style="font-size:14px;padding:8px 16px;">✓ Identity Verified — government ID confirmed</div>`)
       : inReview
         ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;">⏳ Submitted — awaiting review</div>`
         : `<div id="verification-action-area">
@@ -6262,9 +6291,15 @@ function verificationHTML(role, status) {
             <div class="form-group"><label class="form-label">Full Legal Name (exactly as printed on the document)</label>
               <input class="form-input" id="verification-legal-name-input" placeholder="e.g. Marcus T. Johnson"/>
             </div>
-            <div class="form-group"><label class="form-label">Upload Government-Issued ID</label>
+            <div class="form-group"><label class="form-label">1. A photo of your government-issued ID</label>
               <input class="form-input" type="file" id="verification-doc-file-input" accept="image/jpeg,image/png,application/pdf"/>
+              <div class="ver-note" style="margin-top:6px;">The whole document, flat, with every corner showing and nothing covered. JPEG, PNG or PDF.</div>
             </div>
+            <div class="form-group"><label class="form-label">2. A photo of your face</label>
+              <input class="form-input" type="file" id="verification-selfie-file-input" accept="image/jpeg,image/png" capture="user"/>
+              <div class="ver-note" style="margin-top:6px;">Take it now, in good light, looking at the camera, with no hat or sunglasses. A person on our team compares it with the photo on your ID.</div>
+            </div>
+            <div class="ver-note" style="margin:0 0 14px;">Both photos are stored privately and are never shown to other users. Only the Trothen staff who review identity checks can open them.</div>
             <button class="btn-sm btn-sm-primary" onclick="submitVerification('${role}')">Submit for Review</button>
           </div>`}
   </div>
@@ -6373,12 +6408,15 @@ async function submitVerification(role) {
   const idLegalName = document.getElementById('verification-legal-name-input').value.trim();
   const fileInput = document.getElementById('verification-doc-file-input');
   if (!idLegalName) return showToast('Enter your full legal name exactly as printed on the document');
-  if (!fileInput.files || !fileInput.files[0]) return showToast('Choose a file to upload');
+  if (!fileInput.files || !fileInput.files[0]) return showToast('Add a photo of your ID');
+  const selfieInput = document.getElementById('verification-selfie-file-input');
+  if (!selfieInput || !selfieInput.files || !selfieInput.files[0]) return showToast('Add a photo of your face as well');
 
   const formData = new FormData();
   formData.append('docType', docType);
   formData.append('idLegalName', idLegalName);
   formData.append('document', fileInput.files[0]);
+  formData.append('selfie', selfieInput.files[0]);
 
   try {
     const res = await fetch(`${API_BASE}/verification/submit`, {
@@ -6388,7 +6426,7 @@ async function submitVerification(role) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Could not submit for review');
-    showToast('Submitted — an admin will review it shortly');
+    showToast('Submitted. A person on our team will review it, usually within 48 hours.');
     if (role === 'customer') { await loadCustomerData(); selectCustomerSection('verification'); }
     else { await loadProviderData(); selectProviderSection('verification'); }
   } catch (e) { showToast(e.message || 'Could not submit for review'); }
@@ -6758,14 +6796,20 @@ const FALLBACK_PAYMENT_METHODS = [];
 
 let customerData = { bookings: [], notifications: [], verificationStatus: 'none', paymentMethods: [] };
 
+let VERIFIED_WITHOUT_ID = false;
 async function computeVerificationStatus() {
   if (!AUTH.user) return 'verified'; // fallback/demo mode
-  if (AUTH.user.verified) return 'verified';
   try {
     const { verifications } = await apiFetch('GET', '/verification/mine');
-    if (verifications.some(v => v.status === 'in review')) return 'in review';
+    // v75: "verified" with no approved ID on file means an admin approved
+    // the account itself. The screen says so instead of claiming an ID.
+    VERIFIED_WITHOUT_ID = !!AUTH.user.verified && !verifications.some(v => v.status === 'approved');
+    if (AUTH.user.verified) return 'verified';
+    // v75: the server calls a waiting submission "pending" or
+    // "review_required"; this used to look for "in review" and never matched.
+    if (verifications.some(v => v.status === 'pending' || v.status === 'review_required')) return 'in review';
     return 'none';
-  } catch (e) { return 'none'; }
+  } catch (e) { return AUTH.user.verified ? 'verified' : 'none'; }
 }
 
 async function loadCustomerData() {
@@ -10134,7 +10178,8 @@ async function loadAdminData() {
   if (stats) adminData.stats = stats;
   if (pending) adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
   if (allPeople) adminData.people = allPeople.users.map(u => ({ ...u, role: u.role[0].toUpperCase() + u.role.slice(1), active: u.active !== false }));
-  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, role: v.role, doc: v.docType, country: v.country, city: v.city, status: v.status, reviewDeadline: v.reviewDeadline, idLegalName: v.idLegalName || null, nameMatch: v.nameMatch, hasDocument: !!v.hasDocument, source: v.source || 'upload', createdAt: v.createdAt }));
+  if (verQueue) adminData.verificationMeta = { storage: verQueue.storage || null, retentionDays: verQueue.retentionDays, automatedCheckConnected: !!verQueue.automatedCheckConnected };
+  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, role: v.role, doc: v.docType, country: v.country, city: v.city, status: v.status, reviewDeadline: v.reviewDeadline, idLegalName: v.idLegalName || null, nameMatch: v.nameMatch, hasDocument: !!v.hasDocument, hasSelfie: !!v.hasSelfie, source: v.source || 'upload', createdAt: v.createdAt }));
   if (disputes) adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
   if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active, responseWindowOverrideHours: c.responseWindowOverrideHours }));
   if (countries) adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
@@ -10292,8 +10337,10 @@ const ADMIN_SECTIONS = {
   verification: () => `
     <div class="dash-header"><div><div class="dash-title">Verification Queue</div><div class="dash-sub">ID, BVN/NIN, and passport submissions awaiting review</div></div></div>
     <div class="panel">${verificationQueueTable()}</div>
+    ${verificationKeepingPanelHTML()}
     <div class="panel">
-      <div class="panel-title">"ID checked" with no reviewed ID <small>providers showing the badge without an approved ID on file</small></div>
+      <div class="panel-title">"Verified" with no reviewed ID <small>customers and providers marked verified without an approved ID on file</small></div>
+      <div style="margin:-4px 0 10px;"><button class="btn-sm btn-sm-outline" onclick="askAllVerificationGaps()">Ask everyone on this list for their ID</button></div>
       <div id="verification-gaps-panel"><div style="color:var(--slate);font-size:13.5px;padding:12px 0;">Loading…</div></div>
     </div>
     <div class="panel">
@@ -12533,6 +12580,19 @@ async function approveProviderTier(userId, plan) {
   } catch (e) { showToast(e.message || 'Could not update this provider\'s tier'); }
 }
 
+// v75: under the Verified badge, how it happened and who did it.
+function verifiedHowHTML(u) {
+  if (!u.verified || !u.verifiedVia) return '';
+  const when = u.verifiedAt ? ', ' + escapeHtml(String(u.verifiedAt).slice(0, 10)) : '';
+  const who = u.verifiedByName ? ' by ' + escapeHtml(u.verifiedByName) : '';
+  const text = u.verifiedVia === 'id_review' ? `ID reviewed${who}${when}`
+    : u.verifiedVia === 'persona' ? `Automated ID check${when}`
+    : u.verifiedVia === 'account_approval' ? `Account approved${who}${when}. No ID on file`
+    : 'No ID on file, and no record of who approved';
+  const warn = u.verifiedVia === 'account_approval' || u.verifiedVia === 'unknown';
+  return `<div style="font-size:11.5px;line-height:1.35;margin-top:4px;max-width:170px;color:${warn ? '#8C6423' : 'var(--slate)'};">${text}</div>`;
+}
+
 function peopleTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No customers or providers found${AUTH.user && !AUTH.user.isSuperAdmin ? ' in your city yet' : ''}.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>Category</th><th>Tier</th><th>City</th><th>Country</th><th>Joined</th><th>Verified</th><th>Status</th><th>Action</th></tr></thead><tbody>
@@ -12545,7 +12605,7 @@ function peopleTable(list) {
     <td>${escapeHtml(u.city) || '—'}</td>
     <td>${escapeHtml(u.country) || '—'}</td>
     <td style="font-size:13px;color:var(--slate);">${u.createdAt ? escapeHtml(u.createdAt.slice(0, 10)) : '—'}</td>
-    <td>${u.verified ? statusBadge('verified') : statusBadge('unverified')}</td>
+    <td>${u.verified ? statusBadge('verified') : statusBadge('unverified')}${verifiedHowHTML(u)}</td>
     <td>${u.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
     <td class="row-actions">
       <button class="btn-sm btn-sm-outline" onclick="openPersonDetail('${u.id}')">View</button>
@@ -12743,9 +12803,61 @@ function usersTable(list, sectionKey) {
   </tbody></table></div>`;
 }
 
+// v77: how ID files are stored and for how long, on the page itself.
+function verificationKeepingPanelHTML() {
+  const m = adminData.verificationMeta;
+  if (!m) return '';
+  const isSuper = AUTH.user && AUTH.user.isSuperAdmin;
+  const days = Number(m.retentionDays) || 0;
+  const storageLine = m.storage && m.storage.persistent
+    ? '<div class="ver-note">Storage: ID files are saved to the permanent disk.</div>'
+    : '<div style="background:#FBEAE8;border:1px solid #E3B4AE;color:#8A2D25;border-radius:8px;padding:10px 12px;font-size:13.5px;margin-bottom:10px;"><strong>ID files are not on the permanent disk.</strong> PRIVATE_UPLOADS_DIR is not set on the server, so uploaded IDs are lost every time the site is redeployed. Set it in Render to a folder on the disk (for example /var/data/private-uploads).</div>';
+  const autoLine = m.automatedCheckConnected
+    ? '<div class="ver-note">Automated ID and face check (Persona): connected.</div>'
+    : '<div class="ver-note">Automated ID and face check (Persona): not connected. Every ID is checked by a person using the uploaded ID and face photo.</div>';
+  const keepLine = days > 0
+    ? `ID and face photos are deleted <strong>${days} days</strong> after a decision (approved, rejected or replaced). The record of the check is kept.`
+    : 'ID and face photos are kept until someone deletes them. No automatic deletion is set.';
+  return `<div class="panel">
+    <div class="panel-title">How ID files are kept</div>
+    ${storageLine}
+    <div style="font-size:14px;color:var(--text);margin:8px 0;">${keepLine}</div>
+    ${isSuper ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0;">
+      <label class="form-label" style="margin:0;" for="id-retention-days">Delete files after</label>
+      <input class="form-input" id="id-retention-days" type="number" min="0" max="3650" value="${days}" style="width:100px;"/>
+      <span style="font-size:14px;color:var(--slate);">days (0 = keep)</span>
+      <button class="btn-sm btn-sm-primary" onclick="saveIdRetention()">Save</button>
+    </div>` : ''}
+    ${autoLine}
+  </div>`;
+}
+async function saveIdRetention() {
+  const days = Number(document.getElementById('id-retention-days').value);
+  if (!Number.isInteger(days) || days < 0) return showToast('Enter a whole number of days, or 0 to keep files');
+  const current = Number(adminData.verificationMeta && adminData.verificationMeta.retentionDays) || 0;
+  if (days > 0 && (current === 0 || days < current)) {
+    const ok = await confirmDialog(`Delete ID and face photos ${days} days after a decision? Files already older than that are deleted within a day and can't be brought back. The record of each check is kept.`, { confirmLabel: 'Save', danger: true });
+    if (!ok) return;
+  }
+  try {
+    const res = await apiFetch('PATCH', '/admin/settings/id-retention', { days });
+    adminData.verificationMeta.retentionDays = res.retentionDays;
+    showToast(res.retentionDays > 0 ? `Saved. Files are deleted ${res.retentionDays} days after a decision.` : 'Saved. Files are kept until deleted by hand.');
+    selectAdminSection('verification');
+  } catch (e) { showToast(e.message || 'Could not save'); }
+}
+async function askAllVerificationGaps() {
+  const ok = await confirmDialog('Send everyone on this list a message asking them to verify their ID? Nobody\'s badge is removed.', { confirmLabel: 'Send' });
+  if (!ok) return;
+  try {
+    const { asked } = await apiFetch('POST', '/admin/verification-gaps-ask-all');
+    showToast(asked ? `Asked ${asked} ${asked === 1 ? 'person' : 'people'} to verify their ID` : 'Nobody to ask. Everyone has an ID on file or waiting.');
+  } catch (e) { showToast(e.message || 'Could not send'); }
+}
+
 function verificationQueueTable() {
   if (!adminData.verificationQueue.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">Verification queue is empty.</div>`;
-  return `<div class="ver-howto">Open the ID, check that it's a real document, that it isn't expired, that the photo and details are readable, and that the name on it matches the account. Then approve or reject with a reason the applicant will see.</div>
+  return `<div class="ver-howto">Open the ID and the face photo side by side. Check that the ID is a real document, that it isn't expired, that the photo and details are readable, that the name on it matches the account, and that the face photo shows the same person as the ID. Then approve, or reject with a reason the applicant will see. If there's no face photo, or you can't tell, reject and ask for a clearer one.</div>
   <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Name on the ID</th><th>Document</th><th>Submitted</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${adminData.verificationQueue.map(v => {
     // Real 48-hour review SLA: only ever shown for items still open.
@@ -12755,7 +12867,7 @@ function verificationQueueTable() {
       : v.nameMatch === false ? '<span class="badge badge-danger">Doesn\'t match account</span>' : '';
     const docCell = v.source === 'persona'
       ? `${escapeHtml(v.doc)}<div class="ver-note">Checked by Persona. See this person in your Persona dashboard.</div>`
-      : `${escapeHtml(v.doc)}${v.hasDocument ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}')">View ID</button></div>` : '<div class="ver-note">No file on record</div>'}`;
+      : `${escapeHtml(v.doc)}${v.hasDocument ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}')">View ID</button></div>` : '<div class="ver-note">No file on record</div>'}${v.hasSelfie ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}','selfie')">View face photo</button></div>` : '<div class="ver-note" style="color:#8C6423;">No face photo (sent before it was required)</div>'}`;
     return `<tr>
       <td><strong>${escapeHtml(v.name)}</strong><div class="ver-note">${escapeHtml([v.role ? v.role[0].toUpperCase() + v.role.slice(1) : '', v.city, v.country].filter(Boolean).join(' · '))}</div></td>
       <td>${v.idLegalName ? escapeHtml(v.idLegalName) : '<span class="ver-note">Not given</span>'}<div style="margin-top:4px;">${match}</div></td>
@@ -12771,10 +12883,10 @@ function verificationQueueTable() {
 // Opens a submitted ID in a new tab. The file is fetched with the admin's
 // own sign-in (it's never publicly reachable), and every view is recorded
 // on the server in the access log.
-async function viewVerificationDocument(id) {
+async function viewVerificationDocument(id, kind) {
   const win = window.open('', '_blank');
   try {
-    const res = await fetch(API_BASE + '/admin/verification/' + encodeURIComponent(id) + '/document', { headers: { Authorization: 'Bearer ' + AUTH.token } });
+    const res = await fetch(API_BASE + '/admin/verification/' + encodeURIComponent(id) + (kind === 'selfie' ? '/selfie' : '/document'), { headers: { Authorization: 'Bearer ' + AUTH.token } });
     if (!res.ok) { let msg = 'Could not open the document'; try { msg = (await res.json()).error || msg; } catch (e) {} throw new Error(msg); }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -12792,16 +12904,16 @@ async function loadVerificationGaps() {
   if (!box || !BACKEND_AVAILABLE) return;
   try {
     const { gaps } = await apiFetch('GET', '/admin/verification-gaps');
-    if (!gaps.length) { box.innerHTML = '<div style="color:var(--slate);font-size:14px;padding:12px 0;">Every provider showing "ID checked" has a reviewed ID on file.</div>'; return; }
-    box.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Where</th><th>ID submitted?</th><th>Action</th></tr></thead><tbody>
-      ${gaps.map(g => `<tr><td><strong>${escapeHtml(g.name)}</strong></td><td>${escapeHtml([g.city, g.country].filter(Boolean).join(', ') || '—')}</td><td>${g.idSubmitted ? '<span class="badge badge-pending">Waiting in the queue above</span>' : '<span class="badge badge-neutral">Not yet</span>'}</td>
+    if (!gaps.length) { box.innerHTML = '<div style="color:var(--slate);font-size:14px;padding:12px 0;">Everyone marked verified has a reviewed ID on file.</div>'; return; }
+    box.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Role</th><th>Where</th><th>ID submitted?</th><th>Action</th></tr></thead><tbody>
+      ${gaps.map(g => `<tr><td><strong>${escapeHtml(g.name)}</strong></td><td>${g.role === 'customer' ? 'Customer' : 'Provider'}</td><td>${escapeHtml([g.city, g.country].filter(Boolean).join(', ') || '—')}</td><td>${g.idSubmitted ? '<span class="badge badge-pending">Waiting in the queue above</span>' : '<span class="badge badge-neutral">Not yet</span>'}</td>
       <td class="row-actions"><button class="btn-sm btn-sm-ghost" onclick="verificationGapAction('${escapeHtml(g.id)}','request')">Ask for ID</button><button class="btn-sm btn-sm-outline" onclick="verificationGapAction('${escapeHtml(g.id)}','remove_badge')">Remove badge until checked</button></td></tr>`).join('')}
     </tbody></table></div>`;
   } catch (e) { box.innerHTML = ''; }
 }
 async function verificationGapAction(userId, action) {
   if (action === 'remove_badge') {
-    const ok = await confirmDialog('Take the "ID checked" badge off this provider until their ID is reviewed? They will be hidden from search until then, and we\'ll message them asking for their ID.', { confirmLabel: 'Remove badge' });
+    const ok = await confirmDialog('Take "Verified" off this account until their ID is reviewed? A provider is hidden from search until then; a customer can\'t post a job or book. We\'ll message them asking for their ID.', { confirmLabel: 'Remove badge' });
     if (!ok) return;
   }
   try {
@@ -13296,7 +13408,7 @@ async function completeAuthAndResumeIntent(role) {
   if (OPEN_VERIFICATION_AFTER_AUTH) {
     OPEN_VERIFICATION_AFTER_AUTH = false;
     if (role === 'provider') selectProviderSection('verification');
-    else if (role === 'customer') selectCustomerSection('verification');
+    else if (role === 'customer') goToCustomerDashboard('verification'); // v75: same fix for the email link
   }
 }
 let OPEN_VERIFICATION_AFTER_AUTH = false;

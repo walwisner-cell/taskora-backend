@@ -274,6 +274,12 @@ seedIfEmpty()
     setTimeout(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, 23000);
     setInterval(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
 
+    // v77: delete ID files once they're past the retention period (see
+    // src/id-retention-scheduler.js). Shortly after boot, then daily.
+    const { sweepIdDocumentRetention } = require('./src/id-retention-scheduler');
+    setTimeout(() => { sweepIdDocumentRetention().catch(e => console.error('[id-retention] Unexpected error during scheduled sweep:', e)); }, 26000);
+    setInterval(() => { sweepIdDocumentRetention().catch(e => console.error('[id-retention] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+
     // Scheduled announcement sweep (see src/announcement-scheduler.js) —
     // checked every 5 minutes, same cadence as the booking-response sweep,
     // since a scheduled announcement is genuinely time-sensitive (an
