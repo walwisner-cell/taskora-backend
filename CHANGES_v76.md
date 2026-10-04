@@ -43,7 +43,7 @@ I can't honestly promise that. What I did this round: rebuilt this screen, re-ra
 - After agreeing: screen closes, doesn't come back on reload, and an unverified customer goes straight to the "verify your identity" prompt.
 
 
-> Note: the byte counts and deploy steps below are from when this version was made. Later versions changed some of the same files. Use the table and steps in CHANGES_v83.md.
+> Note: the byte counts and deploy steps below are from when this version was made. Later versions changed some of the same files. Use the table and steps in CHANGES_v85.md.
 
 ## Files changed (complete replacements; this zip also includes v74 and v75)
 | File | Bytes |
@@ -55,7 +55,7 @@ I can't honestly promise that. What I did this round: rebuilt this screen, re-ra
 | src\routes\auth.routes.js | 72257 |
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v83-files.zip.
+1. Unzip trothen-v85-files.zip.
 2. From the unzipped folder:
    ```
    copy /Y public\index.html "C:\path\to\trothen-backend\public\index.html"

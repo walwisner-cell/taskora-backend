@@ -49,7 +49,7 @@ The same panel shows whether ID files are on the permanent disk (a red warning i
 - "Ask everyone" sent the messages. No script errors. 0 known dependency vulnerabilities.
 
 
-> Note: the byte counts and deploy steps below are from when this version was made. Later versions changed some of the same files. Use the table and steps in CHANGES_v83.md.
+> Note: the byte counts and deploy steps below are from when this version was made. Later versions changed some of the same files. Use the table and steps in CHANGES_v85.md.
 
 ## Files (complete replacements; one file is new). This zip includes v74, v75 and v76.
 | File | Bytes |
@@ -66,7 +66,7 @@ The same panel shows whether ID files are on the permanent disk (a red warning i
 server.js is the one in the top folder of the repo, next to package.json. src\id-retention-scheduler.js is new.
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v83-files.zip.
+1. Unzip trothen-v85-files.zip.
 2. From the unzipped folder:
    ```
    copy /Y server.js "C:\path\to\trothen-backend\server.js"

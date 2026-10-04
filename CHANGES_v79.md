@@ -24,7 +24,7 @@ One kind of real address was being turned away: addresses with accented letters 
 - Started a real sign-up on the server with josé@correo.es and someone@newdomain.africa: both accepted. "first last@gmail.com" refused.
 
 
-> Note: the byte counts and deploy steps below are from when this version was made. Use the table and steps in CHANGES_v83.md.
+> Note: the byte counts and deploy steps below are from when this version was made. Use the table and steps in CHANGES_v85.md.
 
 ## Files (complete replacements; this zip includes v74 to v78)
 | File | Bytes |
@@ -44,7 +44,7 @@ One kind of real address was being turned away: addresses with accented letters 
 Only src\validators.js changed in this version. The rest are unchanged from v78.
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v83-files.zip.
+1. Unzip trothen-v85-files.zip.
 2. From the unzipped folder (replace the path with my repo folder):
    ```
    set REPO=C:\path\to\trothen-backend

@@ -74,7 +74,7 @@ Once a day the server copies every data file into a dated folder and keeps the n
 4. Admin → Verification should now say "Extra encryption: on".
 
 
-> Note: the byte counts and deploy steps below are from when this version was made. Use the table and steps in CHANGES_v83.md.
+> Note: the byte counts and deploy steps below are from when this version was made. Use the table and steps in CHANGES_v85.md.
 
 ## Files (complete replacements; this zip includes v74 to v81)
 | File | Bytes |
@@ -98,7 +98,7 @@ Once a day the server copies every data file into a dated folder and keeps the n
 Changed in this version: server.js, public\index.html, src\routes\auth.routes.js, src\routes\misc.routes.js, src\routes\admin.routes.js. New: src\file-crypto.js, src\backup-scheduler.js.
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v83-files.zip.
+1. Unzip trothen-v85-files.zip.
 2. From the unzipped folder (replace the path with my repo folder):
    ```
    set REPO=C:\path\to\trothen-backend

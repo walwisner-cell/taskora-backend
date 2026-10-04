@@ -380,7 +380,9 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   // being marketing copy. A provider attached to a Custom-plan
   // organization uses that org's negotiated rate instead — the "volume
   // commission discount" promised on the Custom pricing card.
-  const organization = provider.organizationId ? await db.find('organizations', o => o.id === provider.organizationId) : null;
+  // v84: a suspended organization's negotiated rate no longer applies. Its
+  // pros pay the normal rate for their plan until it is active again.
+  const organization = provider.organizationId ? await db.find('organizations', o => o.id === provider.organizationId && o.status !== 'suspended') : null;
   let commissionRate = effectiveCommissionRate(provider, organization);
   // A top-scorer free-commission credit (see
   // src/top-scorer-promotion-scheduler.js) is consumed here, on an actual

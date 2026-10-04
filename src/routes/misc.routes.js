@@ -223,6 +223,17 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
   // twice for essentially one thing. Real ad platforms (Etsy, Amazon
   // Seller) all cap this at one active promotion per seller for exactly
   // this reason.
+  // v84: only ID-checked pros can advertise, and a link has to be a normal
+  // web address. A link used to be stored as typed, including ones that
+  // run code when clicked; the page already refused to open those, and the
+  // admin approval step already checked, but it shouldn't be stored at all.
+  if (provider.verified !== true) {
+    return res.status(403).json({ code: 'VERIFY_IDENTITY', error: 'Please verify your identity first. Ads are only for pros whose ID has been reviewed.' });
+  }
+  const linkTyped = String(displayLink || '').trim();
+  if (linkTyped && (!/^https?:\/\/[^\s<>"']+$/i.test(linkTyped) || linkTyped.length > 300)) {
+    return res.status(400).json({ error: 'The link must be a web address starting with http:// or https://' });
+  }
   const existingActive = await db.find('advertisingInquiries', a => a.providerId === provider.id && (a.isLive === true || a.status === 'new'));
   if (existingActive) {
     return res.status(409).json({ error: existingActive.isLive ? 'You already have a live ad running — take it down first if you want to submit a new one.' : 'You already have an ad pending review — please wait for that one before submitting another.' });

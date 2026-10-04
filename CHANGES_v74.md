@@ -47,7 +47,7 @@ It all lives in the same place: **Admin → Settings → Front page wording** (s
 - No script errors in the browser.
 
 
-> Note: the byte counts and deploy steps below are from when this version was made. Later versions changed some of the same files. Use the table and steps in CHANGES_v83.md.
+> Note: the byte counts and deploy steps below are from when this version was made. Later versions changed some of the same files. Use the table and steps in CHANGES_v85.md.
 
 ## Files changed (complete replacements)
 | File | Bytes |
@@ -56,7 +56,7 @@ It all lives in the same place: **Admin → Settings → Front page wording** (s
 | src\platform-settings.js | 19826 |
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v83-files.zip.
+1. Unzip trothen-v85-files.zip.
 2. Copy the two files over the old ones in my repo folder, keeping the folders:
    ```
    copy /Y public\index.html "C:\path\to\trothen-backend\public\index.html"

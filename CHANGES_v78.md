@@ -57,7 +57,7 @@ Have the charging in place now, so that when real payments begin it can be switc
 - Plans page, pro panel and admin panel checked in a real browser. No script errors.
 
 
-> Note: the deploy steps below are from when this version was made. v79 adds one more file. Use the table and steps in CHANGES_v83.md.
+> Note: the deploy steps below are from when this version was made. v79 adds one more file. Use the table and steps in CHANGES_v85.md.
 
 ## Files (complete replacements; this zip includes v74 to v77)
 | File | Bytes |
@@ -76,7 +76,7 @@ Have the charging in place now, so that when real payments begin it can be switc
 New files: src\plan-billing.js (this version) and src\id-retention-scheduler.js (v77). server.js is the one in the top folder, next to package.json.
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v83-files.zip.
+1. Unzip trothen-v85-files.zip.
 2. From the unzipped folder (replace the path with my repo folder):
    ```
    set REPO=C:\path\to\trothen-backend

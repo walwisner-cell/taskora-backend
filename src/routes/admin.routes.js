@@ -880,6 +880,44 @@ router.get('/verification/:id/selfie', requireDepartment(['verification']), asyn
   sendPrivateIdFile(res, record.selfieFilename);
 });
 
+// GET /api/admin/verification-history — v85: checks that have already been
+// decided, newest first, so a reviewer can look back at the documents for
+// as long as the files are kept. Same people can see it as the queue, and
+// a city admin only sees their own city.
+router.get('/verification-history', requireDepartment(['verification']), async (req, res) => {
+  const region = await myRegion(req);
+  const decided = (await db.filter('verifications', v => ['approved', 'rejected', 'superseded'].includes(v.status)))
+    .sort((a, b) => String(b.reviewedAt || b.createdAt || '').localeCompare(String(a.reviewedAt || a.createdAt || '')));
+  const users = new Map((await db.all('users')).map(u => [u.id, u]));
+  const { getSetting } = require('../platform-settings');
+  const retentionDays = Number(await getSetting('idDocumentRetentionDays')) || 0;
+  const history = [];
+  for (const v of decided) {
+    const user = users.get(v.userId);
+    if (region && (!user || user.city !== region)) continue;
+    const reviewer = v.reviewedBy && v.reviewedBy !== 'persona' ? users.get(v.reviewedBy) : null;
+    const decidedAt = v.reviewedAt || v.createdAt || null;
+    history.push({
+      id: v.id,
+      userName: user ? user.name : 'Unknown',
+      role: user ? user.role : null,
+      city: user ? user.city : null,
+      docType: v.docType || null,
+      idLegalName: v.idLegalName || null,
+      status: v.status,
+      rejectionReason: v.rejectionReason || null,
+      decidedAt,
+      reviewedByName: v.reviewedBy === 'persona' || v.source === 'persona' ? 'Automated check' : (reviewer ? reviewer.name : null),
+      hasDocument: !!v.documentFilename, hasBack: !!v.backFilename, hasSelfie: !!v.selfieFilename,
+      filesDeletedAt: v.filesDeletedAt || null,
+      filesDeleteOn: (retentionDays > 0 && decidedAt && (v.documentFilename || v.selfieFilename || v.backFilename))
+        ? new Date(new Date(decidedAt).getTime() + retentionDays * 86400000).toISOString().slice(0, 10) : null,
+    });
+    if (history.length >= 200) break;
+  }
+  res.json({ history });
+});
+
 // GET /api/admin/verification-gaps — providers who carry the verified
 // badge but have no approved ID on file (for example, approved through
 // account approval before v64). Listed so a reviewer can ask them for an
@@ -1222,7 +1260,13 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   // silently changes for a request that doesn't specify one) or refund
   // the customer.
   const { decision, note } = req.body || {};
-  const outcome = decision === 'refund_customer' ? 'refund_customer' : 'release_to_provider';
+  // v84: the decision has to be spelled out. It used to be that anything
+  // other than "refund_customer" (a typo, or nothing at all) quietly
+  // released the money to the pro.
+  if (!['refund_customer', 'release_to_provider'].includes(decision)) {
+    return res.status(400).json({ error: 'Choose a decision: refund the customer, or release the payment to the pro' });
+  }
+  const outcome = decision;
   // Item: Joseph asked for a real way for the dispute team to explain a
   // decision to the people it actually affects — both parties previously
   // only ever got a fixed, generic line regardless of what the dispute
@@ -1232,6 +1276,21 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
     return res.status(400).json({ error: 'A note explaining the resolution is required — both parties will see it' });
   }
   const trimmedNote = note.trim();
+
+  // v84: a dispute is decided once. Before this, a resolved dispute could
+  // be resolved again the other way, and again, moving the payment each
+  // time: a customer could be refunded after the pro had already been
+  // paid, so the same money was given out twice.
+  if (['resolved', 'closed', 'rejected'].includes(dispute.status)) {
+    return res.status(409).json({ error: `This dispute is already ${dispute.status}. A super admin has to reopen it before it can be decided again.` });
+  }
+  const escrowNow = await db.find('escrowTransactions', e => e.contractId === dispute.contractId);
+  if (outcome === 'refund_customer' && escrowNow && (escrowNow.payoutId || escrowNow.materialsAdvancePayoutId)) {
+    return res.status(409).json({ error: 'The pro has already been paid out for this booking, so the system can\'t refund it. This one has to be settled by hand: recover the money from the pro or refund the customer from Trothen\'s own funds, and record what was done in a note.' });
+  }
+  if (outcome === 'release_to_provider' && escrowNow && escrowNow.status === 'refunded') {
+    return res.status(409).json({ error: 'This payment has already been refunded to the customer, so it can\'t be released to the pro.' });
+  }
 
   const updated = await db.update('disputes', dispute.id, { status: 'resolved', resolvedAt: new Date().toISOString(), resolution: outcome });
   const resolvingAdmin = await me(req);
@@ -1246,6 +1305,19 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   });
   const escrow = await db.find('escrowTransactions', e => e.contractId === updated.contractId);
   const contract = await db.find('contracts', c => c.id === updated.contractId);
+
+  // v84: the booking itself is closed out too. It used to stay "disputed"
+  // for good after the dispute was settled.
+  if (contract && contract.status === 'disputed') {
+    if (outcome === 'refund_customer') {
+      await db.update('contracts', contract.id, { status: 'cancelled', cancelledByRole: 'dispute', cancelledAt: new Date().toISOString(), cancelReason: 'Refunded after a dispute' });
+    } else {
+      await db.update('contracts', contract.id, { status: 'completed', completedAt: new Date().toISOString(), completedVia: 'dispute' });
+      const pro = await db.find('users', u => u.id === contract.providerId);
+      if (pro) await db.update('users', pro.id, { jobs: (pro.jobs || 0) + 1 });
+      try { await require('../commission').checkAndAdvanceProviderTier(contract.providerId); } catch (e) { /* never block a resolution on this */ }
+    }
+  }
 
   if (outcome === 'refund_customer') {
     const wasRefunded = escrow && escrow.status === 'refunded';
@@ -1308,6 +1380,16 @@ router.post('/disputes/:id/action', requireSuperAdmin, async (req, res) => {
   if (action === 'reopen' && dispute.status === 'open') {
     return res.status(400).json({ error: 'This dispute is already open' });
   }
+  // v84: reopening has to put the money back where a fresh decision can be
+  // made safely. That's only possible while the payment is still inside
+  // Trothen: released to the pro's balance but not yet cashed out. If it
+  // was refunded, or the pro has been paid, the money has left and the
+  // dispute can't be reopened here.
+  const escrowForAction = await db.find('escrowTransactions', e => e.contractId === dispute.contractId);
+  if (action === 'reopen' && dispute.status === 'resolved' && escrowForAction) {
+    if (escrowForAction.status === 'refunded') return res.status(409).json({ error: 'The customer has already been refunded, so this dispute can\'t be reopened.' });
+    if (escrowForAction.payoutId || escrowForAction.materialsAdvancePayoutId) return res.status(409).json({ error: 'The pro has already been paid out for this booking, so this dispute can\'t be reopened here. Settle it by hand and record it in a note.' });
+  }
   if (action !== 'reopen' && dispute.status !== 'open') {
     return res.status(400).json({ error: `This dispute is already ${dispute.status} — reopen it first if it needs further action` });
   }
@@ -1317,6 +1399,23 @@ router.post('/disputes/:id/action', requireSuperAdmin, async (req, res) => {
     status: statusByAction[action],
     ...(action === 'reopen' ? { resolvedAt: null, resolution: null } : {}),
   });
+
+  // v84: keep the booking and its payment in step with the dispute.
+  if (contract) {
+    if (action === 'reopen') {
+      // back to frozen, so it can be decided again
+      if (escrowForAction && escrowForAction.status === 'released') await db.update('escrowTransactions', escrowForAction.id, { status: 'held' });
+      if (contract.status === 'completed' && contract.completedVia === 'dispute') {
+        const pro = await db.find('users', u => u.id === contract.providerId);
+        if (pro && (pro.jobs || 0) > 0) await db.update('users', pro.id, { jobs: pro.jobs - 1 });
+      }
+      await db.update('contracts', contract.id, { status: 'disputed', completedVia: null });
+    } else if ((action === 'reject' || action === 'close') && contract.status === 'disputed') {
+      // not upheld, or closed without a decision: the booking carries on as
+      // it was, with the payment still held, instead of staying frozen forever.
+      await db.update('contracts', contract.id, { status: 'active' });
+    }
+  }
 
   await db.insert('disputeAuditLog', {
     id: `dal_${nanoid(10)}`,
@@ -2798,6 +2897,14 @@ router.post('/promotions', async (req, res) => {
   if (audience && !['customers', 'providers', 'both'].includes(audience)) {
     return res.status(400).json({ error: 'audience must be customers, providers, or both' });
   }
+  // v84: the picture has to be one uploaded here, and the end date a real
+  // date that hasn't passed.
+  if (imageUrl && !/^\/uploads\/[A-Za-z0-9._-]+$/.test(String(imageUrl))) {
+    return res.status(400).json({ error: 'Use the upload button to add a promotion image' });
+  }
+  if (expiresAt && (Number.isNaN(new Date(expiresAt).getTime()) || new Date(expiresAt).getTime() < Date.now())) {
+    return res.status(400).json({ error: 'The end date must be a real date in the future' });
+  }
 
   const promo = {
     id: `promo_${nanoid(10)}`,
@@ -3371,15 +3478,43 @@ router.patch('/organizations/:id', requireSuperAdminOrDepartment('sales'), async
     }
     patch.commissionRate = commissionRate;
   }
-  if (seatLimit !== undefined) patch.seatLimit = seatLimit === null ? null : parseInt(seatLimit, 10);
-  if (accountManagerId !== undefined) patch.accountManagerId = accountManagerId;
-  if (billingContactName !== undefined) patch.billingContactName = billingContactName;
-  if (billingContactEmail !== undefined) patch.billingContactEmail = billingContactEmail;
+  // v84: each of these is checked now. A seat limit of "lots" used to be
+  // saved as "no limit", and -5 was saved as -5.
+  if (seatLimit !== undefined) {
+    if (seatLimit !== null && (!Number.isInteger(seatLimit) || seatLimit < 1 || seatLimit > 10000)) {
+      return res.status(400).json({ error: 'Seat limit must be a whole number from 1 to 10,000, or empty for no limit' });
+    }
+    if (seatLimit !== null) {
+      const seatsNow = (await db.filter('users', u => u.role === 'provider' && u.organizationId === org.id)).length;
+      if (seatLimit < seatsNow) return res.status(400).json({ error: `This organization already has ${seatsNow} seats in use. Remove some first, or set the limit to at least ${seatsNow}.` });
+    }
+    patch.seatLimit = seatLimit;
+  }
+  if (accountManagerId !== undefined) {
+    if (accountManagerId !== null && !(await db.find('users', u => u.id === accountManagerId && u.role === 'admin'))) {
+      return res.status(400).json({ error: 'The account manager must be an admin account' });
+    }
+    patch.accountManagerId = accountManagerId;
+  }
+  if (billingContactName !== undefined) {
+    if (billingContactName !== null && !isNonEmptyString(billingContactName, { min: 2, max: 120 })) return res.status(400).json({ error: 'Enter the billing contact\'s name (2 to 120 characters)' });
+    patch.billingContactName = billingContactName === null ? null : billingContactName.trim();
+  }
+  if (billingContactEmail !== undefined) {
+    if (billingContactEmail !== null && !isValidEmail(billingContactEmail)) return res.status(400).json({ error: 'Enter a valid billing email address' });
+    patch.billingContactEmail = billingContactEmail === null ? null : billingContactEmail.trim();
+  }
   if (status !== undefined) {
     if (!['active', 'suspended'].includes(status)) return res.status(400).json({ error: 'status must be active or suspended' });
     patch.status = status;
   }
   const updated = await db.update('organizations', org.id, patch);
+  // v84: a change to an organization's commission rate or status affects
+  // money, so it's written to the access log.
+  if ('commissionRate' in patch || 'status' in patch) {
+    const { logAccess } = require('../access-log');
+    await logAccess(req, 'organization_update', `${org.id} ${JSON.stringify({ commissionRate: patch.commissionRate, status: patch.status })}`);
+  }
   res.json({ organization: updated });
 });
 

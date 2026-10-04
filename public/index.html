@@ -3204,6 +3204,15 @@ async function apiFetch(method, path, body) {
 // their notification bell — a real account-takeover path, not a cosmetic
 // issue. Use this around any interpolated value that came from user
 // input, anywhere it's inserted via innerHTML rather than textContent.
+// v84: for putting a value inside an inline click handler, e.g.
+// onclick="doThing(${jsArg(name)})". It writes the value as a quoted,
+// fully escaped piece of text, so an apostrophe, a quote mark, a backslash
+// or a backtick in it can't end the text early and run as code. The older
+// way (escaping apostrophes by hand) could be broken out of.
+function jsArg(value) {
+  return escapeHtml(JSON.stringify(String(value === null || value === undefined ? '' : value)).replace(/</g, '\\u003c').replace(/\u2028|\u2029/g, ''));
+}
+
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
@@ -3932,7 +3941,7 @@ async function loadGeoData() {
   const select = document.getElementById('auth-country');
   if (select) {
     const current = select.value;
-    select.innerHTML = GEO_DATA.countries.map(c => `<option value="${c}">${c}</option>`).join('');
+    select.innerHTML = GEO_DATA.countries.map(c => `<option value="${escapeHtml(c)}">${c}</option>`).join('');
     // Default to United States if nothing was already chosen, since it's
     // the most common case — but preserve whatever was already selected if
     // this is a refresh rather than a first load.
@@ -3946,7 +3955,7 @@ function populateAuthStates() {
   const states = (GEO_DATA.statesByCountry && GEO_DATA.statesByCountry[country]) || ['Nationwide'];
   const stateSelect = document.getElementById('auth-state');
   if (stateSelect) {
-    stateSelect.innerHTML = `<option value="" disabled selected>Select a state / region</option>` + states.map(s => `<option value="${s}">${s}</option>`).join('');
+    stateSelect.innerHTML = `<option value="" disabled selected>Select a state / region</option>` + states.map(s => `<option value="${escapeHtml(s)}">${s}</option>`).join('');
   }
   // Some countries genuinely have no formal postal code system — for
   // those, the field becomes optional rather than pretending a format
@@ -3975,7 +3984,7 @@ function populateSettingsCountry(prefix) {
   if (!select) return;
   const countries = (GEO_DATA.countries && GEO_DATA.countries.length) ? GEO_DATA.countries : FALLBACK_GEO.countries;
   const current = (AUTH.user && AUTH.user.country) || 'United States';
-  select.innerHTML = countries.map(c => `<option value="${c}" ${c === current ? 'selected' : ''}>${c}</option>`).join('');
+  select.innerHTML = countries.map(c => `<option value="${escapeHtml(c)}" ${c === current ? 'selected' : ''}>${c}</option>`).join('');
   populateSettingsStates(prefix);
 }
 
@@ -3986,7 +3995,7 @@ function populateSettingsStates(prefix) {
   const country = countrySelect.value;
   const states = (GEO_DATA.statesByCountry && GEO_DATA.statesByCountry[country]) || ['Nationwide'];
   const current = (AUTH.user && AUTH.user.state) || '';
-  stateSelect.innerHTML = states.map(s => `<option value="${s}" ${s === current ? 'selected' : ''}>${s}</option>`).join('');
+  stateSelect.innerHTML = states.map(s => `<option value="${escapeHtml(s)}" ${s === current ? 'selected' : ''}>${s}</option>`).join('');
 }
 
 async function saveCustomerLocation() {
@@ -4039,7 +4048,7 @@ function populateSettingsCategory() {
   const current = (AUTH.user && AUTH.user.category) || '';
   const catNames = (CATEGORIES && CATEGORIES.length) ? CATEGORIES.map(c => c.name) : [];
   const isListed = catNames.includes(current);
-  select.innerHTML = catNames.map(c => `<option value="${c}" ${c === current ? 'selected' : ''}>${c}</option>`).join('')
+  select.innerHTML = catNames.map(c => `<option value="${escapeHtml(c)}" ${c === current ? 'selected' : ''}>${c}</option>`).join('')
     + `<option value="__other__" ${!isListed ? 'selected' : ''}>Other (not listed — describe below)</option>`;
   const customGroup = document.getElementById('set-prov-custom-category-group');
   const customInput = document.getElementById('set-prov-custom-category');
@@ -4169,7 +4178,7 @@ function goDirectory(category) {
   document.getElementById('directory-search').value = '';
   const chips = ['All', ...CATEGORIES.map(c => c.name)];
   document.getElementById('directory-chips').innerHTML = chips.map(c =>
-    `<button class="directory-chip ${c === directoryCategoryFilter ? 'active' : ''}" onclick="setDirectoryCategory('${c.replace(/'/g, "\\'")}')">${escapeHtml(c === 'All' ? t('directory_all') : translateCategoryName(c))}</button>`
+    `<button class="directory-chip ${c === directoryCategoryFilter ? 'active' : ''}" onclick="setDirectoryCategory(${jsArg(c)})">${escapeHtml(c === 'All' ? t('directory_all') : translateCategoryName(c))}</button>`
   ).join('');
   renderDirectory();
   window.scrollTo(0, 0);
@@ -5113,7 +5122,7 @@ async function loadPricingPage(country) {
   if (select && !select.dataset.populated) {
     const countries = (GEO_DATA.countries && GEO_DATA.countries.length) ? GEO_DATA.countries : FALLBACK_GEO.countries;
     const defaultCountry = country || (AUTH.user && AUTH.user.country) || 'United States';
-    select.innerHTML = countries.map(c => `<option value="${c}" ${c === defaultCountry ? 'selected' : ''}>${c}</option>`).join('');
+    select.innerHTML = countries.map(c => `<option value="${escapeHtml(c)}" ${c === defaultCountry ? 'selected' : ''}>${c}</option>`).join('');
     select.dataset.populated = 'true';
     country = defaultCountry;
   }
@@ -6528,7 +6537,7 @@ async function loadVerificationOptions() {
     if (!target || !data.configured) return; // navigated away, or Persona isn't connected — leave manual flow as-is
     target.innerHTML = `
       <div style="font-size:14px;color:var(--slate);margin-bottom:14px;">Verify your identity in about 2 minutes — takes a photo of your ID and a quick selfie, and confirms automatically.</div>
-      <button class="btn-sm btn-sm-primary" onclick="window.location.href='${data.hostedFlowUrl.replace(/'/g, "\\'")}'">🪪 Verify My Identity Now</button>
+      <button class="btn-sm btn-sm-primary" onclick="window.location.href=${jsArg(data.hostedFlowUrl)}">🪪 Verify My Identity Now</button>
     `;
   } catch (e) { /* leave the manual flow in place — this is a nice-to-have upgrade, not a hard dependency */ }
 }
@@ -6640,7 +6649,7 @@ function weeklyEarningsChartData(payouts) {
 
 function barChart(data, opts = {}) {
   const max = Math.max(...data.map(d => d.val), 1);
-  return `<div class="bar-chart">${data.map((d, i) => `<div class="bar-col ${opts.clickable ? 'bar-col-clickable' : ''}" style="--bar-i:${i};" data-category="${escapeHtml(d.category || '')}" ${opts.clickable ? `onclick="filterReportsByCategory('${escapeHtml(d.category || '').replace(/'/g, "\\'")}', this)"` : ''} onmouseenter="showBarTooltip(this, '${escapeHtml(d.fullLabel || d.label).replace(/'/g, "\\'")}')" onmouseleave="hideBarTooltip()"><div class="bar-fill" style="--bar-target-height:${Math.max(6, d.val / max * 100)}px"></div><div class="bar-label">${escapeHtml(d.label)}</div></div>`).join('')}</div>`;
+  return `<div class="bar-chart">${data.map((d, i) => `<div class="bar-col ${opts.clickable ? 'bar-col-clickable' : ''}" style="--bar-i:${i};" data-category="${escapeHtml(d.category || '')}" ${opts.clickable ? `onclick="filterReportsByCategory(${jsArg(d.category || '')}, this)"` : ''} onmouseenter="showBarTooltip(this, ${jsArg(d.fullLabel || d.label)})" onmouseleave="hideBarTooltip()"><div class="bar-fill" style="--bar-target-height:${Math.max(6, d.val / max * 100)}px"></div><div class="bar-label">${escapeHtml(d.label)}</div></div>`).join('')}</div>`;
 }
 
 // A real floating tooltip, not the browser's native title attribute (which
@@ -6685,7 +6694,7 @@ function filterReportsByCategory(category, el) {
 
   const filterNote = document.getElementById('reports-filter-note');
   if (filterNote) filterNote.innerHTML = reportsySelectedCategory
-    ? `Showing <strong>${escapeHtml(reportsySelectedCategory)}</strong> only — <a href="#" onclick="filterReportsByCategory('${escapeHtml(reportsySelectedCategory).replace(/'/g, "\\'")}');return false;" style="color:var(--teal);">Clear filter</a>`
+    ? `Showing <strong>${escapeHtml(reportsySelectedCategory)}</strong> only — <a href="#" onclick="filterReportsByCategory(${jsArg(reportsySelectedCategory)});return false;" style="color:var(--teal);">Clear filter</a>`
     : '';
 }
 
@@ -7422,7 +7431,7 @@ async function openAdvertiseForm() {
       cities = data.cities || [];
     } catch (e) { console.warn('Could not load cities for ad targeting', e); }
   }
-  const cityOptionsHtml = cities.map(c => `<option value="${c.name}">${c.name}, ${c.country}</option>`).join('');
+  const cityOptionsHtml = cities.map(c => `<option value="${escapeHtml(c.name)}">${c.name}, ${c.country}</option>`).join('');
 
   const modalHtml = `
     <div class="modal-overlay open" id="advertise-modal-overlay" onclick="if(event.target===this)document.getElementById('advertise-modal-overlay').remove()">
@@ -8546,7 +8555,7 @@ async function runAIMatch() {
       ${pool.map(p => `
         <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;">
           ${p.profilePhotoUrl
-            ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
+            ? `<img src="${p.profilePhotoUrl}" alt="${escapeHtml(p.name)}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
             : `<div style="width:44px;height:44px;border-radius:50%;background:${p.color};color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:600;flex-shrink:0;">${p.initials}</div>`}
           <div style="flex:1;">
             <div style="font-weight:600;font-size:13.5px;color:var(--navy);">${escapeHtml(p.name)} <span class="badge badge-success" style="margin-left:4px;">${escapeHtml(p.score)}% match</span></div>
@@ -9229,7 +9238,7 @@ async function saveHomepageContent() {
 
 function homepageImageUploadRowHTML(slot, label, currentUrl) {
   return `<div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border);">
-    ${currentUrl ? `<img src="${currentUrl}" alt="${label}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;"/>` : `<div style="width:64px;height:64px;border-radius:8px;background:var(--offwhite);display:flex;align-items:center;justify-content:center;color:var(--slate);font-size:12.5px;text-align:center;flex-shrink:0;">No photo</div>`}
+    ${currentUrl ? `<img src="${currentUrl}" alt="${escapeHtml(label)}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;"/>` : `<div style="width:64px;height:64px;border-radius:8px;background:var(--offwhite);display:flex;align-items:center;justify-content:center;color:var(--slate);font-size:12.5px;text-align:center;flex-shrink:0;">No photo</div>`}
     <div style="flex:1;">
       <div style="font-weight:600;font-size:14px;color:var(--navy);margin-bottom:6px;">${label}</div>
       <input type="file" accept="image/jpeg,image/png,image/webp" id="hc-image-${slot}" style="font-size:13px;"/>
@@ -9277,7 +9286,7 @@ async function removeHomepageImage(slot) {
 function categoryImageUploadRowHTML(category, currentUrl) {
   return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
     ${currentUrl
-      ? `<img src="${currentUrl}" alt="${category.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;"/>`
+      ? `<img src="${currentUrl}" alt="${escapeHtml(category.name)}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;"/>`
       : `<div style="width:40px;height:40px;border-radius:6px;background:var(--offwhite);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${category.icon || '🛠️'}</div>`}
     <div style="flex:1;font-size:14px;font-weight:600;color:var(--navy);">${escapeHtml(category.name)}</div>
     <input type="file" accept="image/jpeg,image/png,image/webp" id="ci-image-${category.id}" style="font-size:12.5px;max-width:150px;"/>
@@ -9508,7 +9517,7 @@ function adminTransactionsTableHTML(transactions) {
     <td>$${t.amount}</td>
     <td>${t.materialsAdvanceAmount ? `$${t.materialsAdvanceAmount}` : '—'}</td>
     <td>${t.escrowStatus}${t.paidOut ? ' (paid out)' : ''}</td>
-    <td title="${t.commissionRate != null ? Math.round(t.commissionRate * 100) + '% of amount — estimate; only final once paid out' : ''}">${t.estCommission != null ? `$${t.estCommission.toFixed(2)}` : '—'}</td>
+    <td title="${escapeHtml(t.commissionRate != null ? Math.round(t.commissionRate * 100) + '% of amount — estimate; only final once paid out' : '')}">${t.estCommission != null ? `$${t.estCommission.toFixed(2)}` : '—'}</td>
     <td>${statusBadge(t.status)}</td>
     <td><button class="btn-sm btn-sm-outline" onclick="downloadFileWithAuth('${API_BASE}/contracts/${t.contractId}/pdf', 'Trothen-Contract-${t.bookingNumber}.pdf')">📄 PDF</button></td>
   </tr>`).join('')}
@@ -9637,7 +9646,7 @@ function openJobPhotoViewer(photoUrls) {
         <div class="modal-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;">
           ${photoUrls.map(url => isVideoUrl(url)
             ? `<video src="${escapeHtml(url)}" controls style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;background:#000;"></video>`
-            : `<img src="${escapeHtml(url)}" alt="Job photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;" onclick="window.open('${escapeHtml(url)}','_blank')"/>`
+            : `<img src="${escapeHtml(url)}" alt="Job photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;" onclick="window.open(${jsArg(url)},'_blank')"/>`
           ).join('')}
         </div>
       </div>
@@ -9956,7 +9965,7 @@ function cancelProviderContract(contractId) {
         <div class="modal-body">
           ${reasons.map(([val, label], i) => `
             <label style="display:flex;align-items:center;gap:10px;padding:9px 0;cursor:pointer;font-size:13.5px;">
-              <input type="radio" name="cancel-reason" value="${val}" ${i === 0 ? 'checked' : ''}/>
+              <input type="radio" name="cancel-reason" value="${escapeHtml(val)}" ${i === 0 ? 'checked' : ''}/>
               <span>${label}</span>
             </label>`).join('')}
           <div style="font-size:13px;color:var(--muted);margin-top:10px;line-height:1.5;">Cancelling because a job wasn't as described, became unsafe, needs a different trade, or requires a license you don't hold never counts against your standing — that's a system rule, not a judgment call.</div>
@@ -10448,6 +10457,10 @@ const ADMIN_SECTIONS = {
   verification: () => `
     <div class="dash-header"><div><div class="dash-title">Verification Queue</div><div class="dash-sub">ID, BVN/NIN, and passport submissions awaiting review</div></div></div>
     <div class="panel">${verificationQueueTable()}</div>
+    <div class="panel">
+      <div class="panel-title">Past checks <small>IDs already approved or rejected. Documents can be opened until their files are deleted</small></div>
+      <div id="verification-history-panel"><div class="ver-note">Loading…</div></div>
+    </div>
     ${verificationKeepingPanelHTML()}
     <div class="panel">
       <div class="panel-title">"Verified" with no reviewed ID <small>customers and providers marked verified without an approved ID on file</small></div>
@@ -10836,7 +10849,7 @@ Liberia</textarea></div>
         <td>${escapeHtml(i.subject)}</td>
         <td style="max-width:280px;white-space:normal;font-size:13px;color:var(--slate);">${escapeHtml((i.message || '').slice(0, 200))}${(i.message || '').length > 200 ? '…' : ''}</td>
         <td><select class="form-input" style="padding:4px 8px;font-size:13px;" onchange="updateContactSubmissionStatus('${i.id}', this.value)">
-          ${['new', 'read', 'resolved'].map(s => `<option value="${s}" ${i.status === s ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}
+          ${['new', 'read', 'resolved'].map(s => `<option value="${escapeHtml(s)}" ${i.status === s ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}
         </select></td>
         <td style="white-space:nowrap;font-size:13px;color:var(--slate);">${timeAgo(i.createdAt)}</td>
       </tr>`).join('')}
@@ -10865,7 +10878,7 @@ Liberia</textarea></div>
         <td style="max-width:260px;white-space:normal;font-size:13px;color:var(--slate);">${escapeHtml((i.coverLetter || '').slice(0, 160))}${(i.coverLetter || '').length > 160 ? '…' : ''}</td>
         <td>${i.resumeUrl ? `<a href="${i.resumeUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);">📄 View PDF</a>` : '<span style="color:var(--muted);">None</span>'}</td>
         <td><select class="form-input" style="padding:4px 8px;font-size:13px;" onchange="updateCareersInquiryStatus('${i.id}', this.value)">
-          ${['new', 'reviewed', 'contacted', 'rejected'].map(s => `<option value="${s}" ${i.status === s ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}
+          ${['new', 'reviewed', 'contacted', 'rejected'].map(s => `<option value="${escapeHtml(s)}" ${i.status === s ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}
         </select></td>
         <td style="white-space:nowrap;font-size:13px;color:var(--slate);">${timeAgo(i.createdAt)}</td>
       </tr>`).join('')}
@@ -10905,7 +10918,7 @@ Liberia</textarea></div>
     const orgs = adminData.organizations || [];
     const activeOrgs = orgs.filter(o => o.status === 'active');
     const totalSeats = orgs.reduce((s, o) => s + (o.seatCount || 0), 0);
-    const totalMRR = activeOrgs.reduce((s, o) => s + (o.agreedPrice || 0), 0);
+    const totalMRR = activeOrgs.reduce((s, o) => s + (Number(o.agreedPrice) || 0), 0); // v84: always a number, whatever is stored
     const ratedOrgs = orgs.filter(o => o.commissionRate != null);
     const avgRate = ratedOrgs.length ? (ratedOrgs.reduce((s, o) => s + o.commissionRate, 0) / ratedOrgs.length * 100).toFixed(1) : null;
     return `
@@ -11023,7 +11036,7 @@ Liberia</textarea></div>
       <div class="form-group"><label class="form-label">Company Name</label><input class="form-input" type="text" id="footer-company-name" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.companyName) || '')}"/></div>
       <div class="form-group"><label class="form-label">Location</label><input class="form-input" type="text" id="footer-location" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.location) || '')}" placeholder="e.g. Philadelphia, PA"/></div>
       <div class="form-group"><label class="form-label">Support Email</label><input class="form-input" type="email" id="footer-support-email" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.supportEmail) || '')}"/></div>
-      <div class="form-group"><label class="form-label">Copyright Year</label><input class="form-input" type="number" id="footer-copyright-year" value="${(adminData.footerInfo && adminData.footerInfo.copyrightYear) || new Date().getFullYear()}" style="max-width:120px;"/></div>
+      <div class="form-group"><label class="form-label">Copyright Year</label><input class="form-input" type="number" id="footer-copyright-year" value="${escapeHtml((adminData.footerInfo && adminData.footerInfo.copyrightYear) || new Date().getFullYear())}" style="max-width:120px;"/></div>
       <div style="font-size:13px;color:var(--slate);margin-bottom:10px;">Preview: © ${(adminData.footerInfo && adminData.footerInfo.copyrightYear) || ''} ${escapeHtml((adminData.footerInfo && adminData.footerInfo.companyName) || '')} · ${escapeHtml((adminData.footerInfo && adminData.footerInfo.location) || '')} · ${escapeHtml((adminData.footerInfo && adminData.footerInfo.supportEmail) || '')}</div>
       <button class="btn-sm btn-sm-primary" onclick="saveFooterInfo()">Save Footer</button>
     </div>
@@ -11209,7 +11222,7 @@ async function loadPlanBillingPanel() {
     <div style="font-size:14px;line-height:1.9;"><div><strong>Lock 1, server:</strong> ${lock1}</div><div><strong>Lock 2, this switch:</strong> ${lock2}</div></div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0;">
       <label class="form-label" style="margin:0;" for="plan-billing-notice">Notice before the first invoice</label>
-      <input class="form-input" id="plan-billing-notice" type="number" min="14" max="180" value="${s.noticeDays}" style="width:90px;" ${s.on ? 'disabled' : ''}/>
+      <input class="form-input" id="plan-billing-notice" type="number" min="14" max="180" value="${escapeHtml(s.noticeDays)}" style="width:90px;" ${s.on ? 'disabled' : ''}/>
       <span style="font-size:14px;color:var(--slate);">days</span>
       ${s.on ? '<button class="btn-sm btn-sm-outline" onclick="setPlanBilling(false)">Switch off</button>' : `<button class="btn-sm btn-sm-primary" onclick="setPlanBilling(true)" ${s.envEnabled ? '' : 'disabled title="Locked on the server" style="opacity:.45;cursor:not-allowed;"'}>Switch on</button>`}
     </div>
@@ -11256,7 +11269,7 @@ function regionalPricingSectionHTML() {
       ${pp.plans.map(p => `<tr>
         <td style="font-weight:600;">${p.label}</td>
         <td>$${p.usdBase}</td>
-        <td><input class="form-input" type="number" min="0" step="0.01" id="price-override-${p.plan}" value="${p.localPrice}" style="width:120px;padding:6px 8px;"/> ${p.currencyCode}</td>
+        <td><input class="form-input" type="number" min="0" step="0.01" id="price-override-${p.plan}" value="${escapeHtml(p.localPrice)}" style="width:120px;padding:6px 8px;"/> ${p.currencyCode}</td>
         <td>≈ $${p.usdEquivalent}</td>
         <td>${p.isOverride ? '<span class="badge badge-warn">Your override</span>' : '<span class="badge badge-neutral">Auto-converted</span>'}</td>
         <td class="row-actions">
@@ -11304,7 +11317,7 @@ function superAdminPricingSectionHTML() {
       ${pp.usdBase.map(b => `<tr>
         <td style="font-weight:600;">${PLAN_LABELS_CLIENT[b.plan] || b.plan}</td>
         <td>$${b.usdPrice}</td>
-        <td><input class="form-input" type="number" min="0" step="0.01" id="base-price-${b.plan}" placeholder="${b.usdPrice}" style="width:120px;padding:6px 8px;"/></td>
+        <td><input class="form-input" type="number" min="0" step="0.01" id="base-price-${b.plan}" placeholder="${escapeHtml(b.usdPrice)}" style="width:120px;padding:6px 8px;"/></td>
         <td><button class="btn-sm btn-sm-primary" onclick="saveBasePricing('${b.plan}')">Save</button></td>
       </tr>`).join('')}
       </tbody></table></div>
@@ -11317,7 +11330,7 @@ function superAdminPricingSectionHTML() {
         ${['plus', 'pro', 'elite'].map(tier => { const t = (adminData.membershipPricing || []).find(x => x.tier === tier); return t ? `<tr>
           <td style="font-weight:600;">${t.label}</td>
           <td>$${t.usdPrice}</td>
-          <td><input class="form-input" type="number" min="0" step="0.01" id="membership-price-${tier}" placeholder="${t.usdPrice}" style="width:120px;padding:6px 8px;"/></td>
+          <td><input class="form-input" type="number" min="0" step="0.01" id="membership-price-${tier}" placeholder="${escapeHtml(t.usdPrice)}" style="width:120px;padding:6px 8px;"/></td>
           <td><button class="btn-sm btn-sm-primary" onclick="saveMembershipPricing('${tier}')">Save</button></td>
         </tr>` : ''; }).join('')}
         </tbody></table></div>`
@@ -11327,8 +11340,8 @@ function superAdminPricingSectionHTML() {
       <div style="background:var(--offwhite);border-radius:10px;padding:14px;margin-bottom:14px;">
         <div class="form-label" style="margin-bottom:8px;">Set a price for a country</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-          <div><label class="form-label" style="font-size:12.5px;">Country</label><select class="form-input" id="new-override-country" style="width:180px;padding:6px 8px;">${(GEO_DATA.countries || []).map(c => `<option value="${c}">${c}</option>`).join('')}</select></div>
-          <div><label class="form-label" style="font-size:12.5px;">Plan</label><select class="form-input" id="new-override-plan" style="width:130px;padding:6px 8px;">${Object.keys(PLAN_LABELS_CLIENT).map(k => `<option value="${k}">${PLAN_LABELS_CLIENT[k] || k}</option>`).join('')}</select></div>
+          <div><label class="form-label" style="font-size:12.5px;">Country</label><select class="form-input" id="new-override-country" style="width:180px;padding:6px 8px;">${(GEO_DATA.countries || []).map(c => `<option value="${escapeHtml(c)}">${c}</option>`).join('')}</select></div>
+          <div><label class="form-label" style="font-size:12.5px;">Plan</label><select class="form-input" id="new-override-plan" style="width:130px;padding:6px 8px;">${Object.keys(PLAN_LABELS_CLIENT).map(k => `<option value="${escapeHtml(k)}">${PLAN_LABELS_CLIENT[k] || k}</option>`).join('')}</select></div>
           <div><label class="form-label" style="font-size:12.5px;">Local Price</label><input class="form-input" type="number" min="0" step="0.01" id="new-override-price" style="width:110px;padding:6px 8px;" placeholder="0.00"/></div>
           <button class="btn-sm btn-sm-primary" onclick="saveNewCountryOverride()">Set Price</button>
         </div>
@@ -11423,7 +11436,7 @@ function exchangeRatesTableHTML(rates) {
   ${editable.map(r => `<tr>
     <td style="font-weight:600;">${r.currencyCode}</td>
     <td>${escapeHtml(r.rateToUsd)}</td>
-    <td><input class="form-input" type="number" min="0.0001" step="0.0001" id="rate-${r.currencyCode}" placeholder="${r.rateToUsd}" style="width:120px;padding:6px 8px;"/></td>
+    <td><input class="form-input" type="number" min="0.0001" step="0.0001" id="rate-${r.currencyCode}" placeholder="${escapeHtml(r.rateToUsd)}" style="width:120px;padding:6px 8px;"/></td>
     <td>${RATE_SOURCE_BADGE[r.source] || RATE_SOURCE_BADGE.default}</td>
     <td style="font-size:13px;color:var(--slate);">${r.updatedAt ? new Date(r.updatedAt).toLocaleString() : '—'}</td>
     <td class="row-actions">
@@ -11488,18 +11501,18 @@ function salesInquiriesTableHTML(list) {
       <div>${escapeHtml(i.contactName)}</div>
       <div style="font-size:13px;color:var(--slate);display:flex;align-items:center;gap:6px;">
         <span>${escapeHtml(i.email)}</span>
-        <button class="btn-sm btn-sm-outline" style="padding:2px 7px;font-size:12.5px;" title="Copy email address" onclick="copyToClipboard('${escapeHtml(i.email).replace(/'/g, "\\'")}', this)">Copy</button>
+        <button class="btn-sm btn-sm-outline" style="padding:2px 7px;font-size:12.5px;" title="Copy email address" onclick="copyToClipboard(${jsArg(i.email)}, this)">Copy</button>
       </div>
     </td>
     <td style="font-size:13px;color:var(--slate);">${escapeHtml(i.teamSize) || '—'}</td>
     <td style="max-width:220px;font-size:13.5px;word-break:break-word;overflow-wrap:break-word;">${escapeHtml(i.message)}</td>
     <td>${adInquiryStatusBadge(i.status)}</td>
-    <td style="font-size:13.5px;">${i.agreedPrice != null ? `$${i.agreedPrice} ${escapeHtml(i.agreedCurrency) || 'USD'}` : '<span style="color:var(--slate);">Not set</span>'}</td>
+    <td style="font-size:13.5px;">${i.agreedPrice != null ? `$${escapeHtml(i.agreedPrice)} ${escapeHtml(i.agreedCurrency) || 'USD'}` : '<span style="color:var(--slate);">Not set</span>'}</td>
     <td class="row-actions">
       <button class="btn-sm btn-sm-outline" data-mailto-email="${escapeHtml(i.email)}" data-mailto-company="${escapeHtml(i.companyName)}" onclick="replyByEmail(this.dataset.mailtoEmail, this.dataset.mailtoCompany)">Reply</button>
       ${i.status !== 'contacted' ? `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'contacted')">Mark Contacted</button>` : ''}
       ${i.status !== 'closed' ? `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'closed')">Close</button>` : `<button class="btn-sm btn-sm-outline" onclick="updateSalesInquiryStatus('${i.id}', 'new')">Reopen</button>`}
-      <button class="btn-sm btn-sm-primary" data-deal-id="${i.id}" data-deal-company="${escapeHtml(i.companyName)}" data-deal-price="${i.agreedPrice ?? ''}" data-deal-currency="${escapeHtml(i.agreedCurrency) || 'USD'}" data-deal-notes="${escapeHtml(i.internalNotes || '')}"
+      <button class="btn-sm btn-sm-primary" data-deal-id="${i.id}" data-deal-company="${escapeHtml(i.companyName)}" data-deal-price="${escapeHtml(i.agreedPrice ?? '')}" data-deal-currency="${escapeHtml(i.agreedCurrency) || 'USD'}" data-deal-notes="${escapeHtml(i.internalNotes || '')}"
         onclick="openDealNotesForm(this.dataset.dealId, this.dataset.dealCompany, this.dataset.dealPrice, this.dataset.dealCurrency, this.dataset.dealNotes)">Deal Notes</button>
       ${i.convertedToOrgId
         ? `<button class="btn-sm btn-sm-outline" onclick="selectAdminSection('organizations')">View Organization</button>`
@@ -11761,7 +11774,7 @@ async function previewDataCleanup() {
           <span>${escapeHtml(a.name)} (${escapeHtml(a.email)}) — ${a.role}</span>
         </label>`).join('')}
       </div>
-      <div class="form-group"><label class="form-label">Type <code>${expectedPhrase}</code> to confirm</label><input class="form-input" id="cleanup-confirm-input" placeholder="${expectedPhrase}"/></div>
+      <div class="form-group"><label class="form-label">Type <code>${expectedPhrase}</code> to confirm</label><input class="form-input" id="cleanup-confirm-input" placeholder="${escapeHtml(expectedPhrase)}"/></div>
       <button class="btn-sm" style="background:#C1554D;color:#fff;" id="cleanup-execute-btn" onclick="executeDataCleanup()">Permanently delete these ${result.accountsEligible.length} test accounts</button>`;
   } catch (e) { target.innerHTML = `<div style="color:#C1554D;font-size:13.5px;">${escapeHtml(e.message || 'Could not load preview')}</div>`; }
 }
@@ -12114,7 +12127,7 @@ function openDealNotesForm(id, companyName, price, currency, notes) {
           <p>A shared record of what was actually agreed — this doesn't provision anything automatically.</p>
         </div>
         <div class="modal-body">
-          <div class="form-group"><label class="form-label">Agreed Price <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="number" min="0" step="0.01" id="deal-price" value="${price || ''}" placeholder="e.g. 15"/></div>
+          <div class="form-group"><label class="form-label">Agreed Price <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="number" min="0" step="0.01" id="deal-price" value="${escapeHtml(price || '')}" placeholder="e.g. 15"/></div>
           <div class="form-group"><label class="form-label">Currency</label><input class="form-input" id="deal-currency" value="${escapeHtml(currency || 'USD')}" placeholder="USD"/></div>
           <div class="form-group"><label class="form-label">Internal Notes</label><textarea class="form-input" id="deal-notes" rows="5" style="resize:vertical;" placeholder="What was discussed, agreed terms, next steps, who talked to them, etc.">${notes || ''}</textarea></div>
         </div>
@@ -12159,7 +12172,7 @@ function openConvertToOrgForm(inquiryId, companyName, teamSize) {
         </div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Commission Rate <span style="color:var(--slate);font-weight:400;">(decimal, e.g. 0.04 for 4% — the volume discount)</span></label><input class="form-input" type="number" min="0" max="1" step="0.001" id="conv-commission" placeholder="e.g. 0.04"/></div>
-          <div class="form-group"><label class="form-label">Seat Limit <span style="color:var(--slate);font-weight:400;">(optional — blank = unlimited)</span></label><input class="form-input" type="number" min="1" id="conv-seat-limit" value="${(teamSize && parseInt(teamSize, 10)) || ''}" placeholder="e.g. 40"/></div>
+          <div class="form-group"><label class="form-label">Seat Limit <span style="color:var(--slate);font-weight:400;">(optional — blank = unlimited)</span></label><input class="form-input" type="number" min="1" id="conv-seat-limit" value="${escapeHtml((teamSize && parseInt(teamSize, 10)) || '')}" placeholder="e.g. 40"/></div>
         </div>
         <div class="modal-footer">
           <button class="confirm-btn" onclick="submitConvertToOrg('${inquiryId}')">Create Organization</button>
@@ -12196,7 +12209,7 @@ function organizationsListHTML(orgs) {
   ${orgs.map(o => `<tr>
     <td style="font-weight:600;">${escapeHtml(o.name)}</td>
     <td>${o.seatCount}${o.seatLimit ? ` / ${o.seatLimit}` : ''}</td>
-    <td>${o.agreedPrice != null ? `$${o.agreedPrice} ${o.agreedCurrency || 'USD'}/mo` : '—'}</td>
+    <td>${o.agreedPrice != null ? `$${escapeHtml(o.agreedPrice)} ${escapeHtml(o.agreedCurrency || 'USD')}/mo` : '—'}</td>
     <td>${o.commissionRate != null ? `${(o.commissionRate * 100).toFixed(1)}%` : '<span style="color:var(--slate);">Plan default</span>'}</td>
     <td>${escapeHtml(o.accountManagerName || '—')}</td>
     <td style="font-size:13px;color:var(--slate);">${(o.createdAt || '').slice(0, 10)}</td>
@@ -12242,7 +12255,7 @@ function renderOrgDetailModal(detail) {
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('org-detail-modal-overlay').remove()">✕</button>
           <h3>${escapeHtml(o.name)}</h3>
-          <p>${o.status === 'active' ? 'Active' : 'Suspended'} · Account manager: ${escapeHtml(o.accountManagerName || '—')} · Agreed at $${o.agreedPrice} ${escapeHtml(o.agreedCurrency)}/mo · Created ${(o.createdAt || '').slice(0, 10)}</p>
+          <p>${o.status === 'active' ? 'Active' : 'Suspended'} · Account manager: ${escapeHtml(o.accountManagerName || '—')} · Agreed at $${escapeHtml(o.agreedPrice)} ${escapeHtml(o.agreedCurrency)}/mo · Created ${escapeHtml((o.createdAt || '').slice(0, 10))}</p>
         </div>
         <div class="modal-body" style="max-height:60vh;overflow-y:auto;">
 
@@ -12256,7 +12269,7 @@ function renderOrgDetailModal(detail) {
           </div>
 
           <div style="display:flex;justify-content:space-between;gap:16px;background:var(--offwhite);border-radius:8px;padding:10px 14px;margin-bottom:18px;font-size:13.5px;">
-            <div><strong>Billing Contact:</strong> ${o.billingContactName || '—'} ${o.billingContactEmail ? `<span style="color:var(--slate);">(${o.billingContactEmail})</span>` : ''}</div>
+            <div><strong>Billing Contact:</strong> ${escapeHtml(o.billingContactName || '—')} ${o.billingContactEmail ? `<span style="color:var(--slate);">(${escapeHtml(o.billingContactEmail)})</span>` : ''}</div>
             ${o.salesInquiryId ? `<div style="color:var(--slate);">From lead: ${o.salesInquiryId}</div>` : ''}
           </div>
 
@@ -12358,8 +12371,8 @@ function editOrgSettings(orgId, commissionRate, seatLimit, status) {
           <h3>Edit Organization Settings</h3>
         </div>
         <div class="modal-body">
-          <div class="form-group"><label class="form-label">Commission Rate <span style="color:var(--slate);font-weight:400;">(decimal, blank = follow plan default)</span></label><input class="form-input" type="number" min="0" max="1" step="0.001" id="edit-org-commission" value="${commissionRate ?? ''}"/></div>
-          <div class="form-group"><label class="form-label">Seat Limit <span style="color:var(--slate);font-weight:400;">(blank = unlimited)</span></label><input class="form-input" type="number" min="1" id="edit-org-seat-limit" value="${seatLimit ?? ''}"/></div>
+          <div class="form-group"><label class="form-label">Commission Rate <span style="color:var(--slate);font-weight:400;">(decimal, blank = follow plan default)</span></label><input class="form-input" type="number" min="0" max="1" step="0.001" id="edit-org-commission" value="${escapeHtml(commissionRate ?? '')}"/></div>
+          <div class="form-group"><label class="form-label">Seat Limit <span style="color:var(--slate);font-weight:400;">(blank = unlimited)</span></label><input class="form-input" type="number" min="1" id="edit-org-seat-limit" value="${escapeHtml(seatLimit ?? '')}"/></div>
           <div class="form-group"><label class="form-label">Status</label>
             <select class="form-input" id="edit-org-status">
               <option value="active" ${status === 'active' ? 'selected' : ''}>Active</option>
@@ -12397,7 +12410,7 @@ function openNewLocationForm() {
   const countrySelect = document.getElementById('loc-country');
   const countries = (GEO_DATA.countries && GEO_DATA.countries.length) ? GEO_DATA.countries : FALLBACK_GEO.countries;
   const current = 'United States';
-  countrySelect.innerHTML = countries.map(c => `<option value="${c}" ${c === current ? 'selected' : ''}>${c}</option>`).join('');
+  countrySelect.innerHTML = countries.map(c => `<option value="${escapeHtml(c)}" ${c === current ? 'selected' : ''}>${c}</option>`).join('');
 }
 
 function handleLocDepartmentChange(department) {
@@ -12574,7 +12587,7 @@ function categoryResponseWindowCell(c, isSuper) {
     return hasOverride ? `${c.responseWindowOverrideHours}h override` : `<span style="color:var(--slate);">Default tiers</span>`;
   }
   return `<div style="display:flex;align-items:center;gap:6px;">
-    <input class="form-input" type="number" min="0.25" max="168" step="0.25" id="cat-window-${c.id}" placeholder="Default" value="${hasOverride ? c.responseWindowOverrideHours : ''}" style="width:80px;padding:5px 8px;font-size:13px;"/>
+    <input class="form-input" type="number" min="0.25" max="168" step="0.25" id="cat-window-${c.id}" placeholder="Default" value="${escapeHtml(hasOverride ? c.responseWindowOverrideHours : '')}" style="width:80px;padding:5px 8px;font-size:13px;"/>
     <button class="btn-sm btn-sm-outline" style="padding:4px 8px;font-size:12.5px;" onclick="saveCategoryResponseWindow('${c.id}')">Save</button>
     ${hasOverride ? `<button class="btn-sm btn-sm-outline" style="padding:4px 8px;font-size:12.5px;" onclick="clearCategoryResponseWindow('${c.id}')">Clear</button>` : ''}
   </div>`;
@@ -12840,7 +12853,7 @@ async function loadAccountClosuresPanel() {
   const old = document.getElementById('account-closures-panel'); if (old) old.remove();
   const badge = (s) => s === 'erased' ? '<span class="badge badge-neutral">Details erased</span>' : s === 'reopened' ? '<span class="badge badge-success">Reopened</span>' : '<span class="badge badge-warn">Closed, details still held</span>';
   const rows = d.closures.map(c => `<tr><td><strong>${escapeHtml(c.name)}</strong>${c.email ? `<div class="ver-note">${escapeHtml(c.email)}</div>` : ''}</td><td>${escapeHtml(c.role === 'provider' ? 'Pro' : 'Customer')}</td><td>${escapeHtml(String(c.requestedAt).slice(0, 10))}<div class="ver-note">${c.daysSinceClosed} day${c.daysSinceClosed === 1 ? '' : 's'} ago</div></td><td>${escapeHtml(c.reason || '—')}</td><td>${badge(c.status)}</td>
-    <td class="row-actions">${c.status === 'closed' ? `<button class="btn-sm btn-sm-outline" onclick="reopenClosedAccount('${escapeHtml(c.id)}')">Reopen</button><button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="eraseClosedAccount('${escapeHtml(c.id)}', '${escapeHtml(String(c.name).replace(/'/g, ''))}')">Erase details</button>` : '—'}</td></tr>`).join('');
+    <td class="row-actions">${c.status === 'closed' ? `<button class="btn-sm btn-sm-outline" onclick="reopenClosedAccount('${escapeHtml(c.id)}')">Reopen</button><button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="eraseClosedAccount(${jsArg(c.id)}, ${jsArg(c.name)})">Erase details</button>` : '—'}</td></tr>`).join('');
   main.insertAdjacentHTML('beforeend', `<div class="panel" id="account-closures-panel">
     <div class="panel-title">Accounts closed by their owners <small>${d.closures.filter(c => c.status === 'closed').length} waiting for a decision</small></div>
     <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:10px;">A closed account can't sign in and isn't shown anywhere. <strong>Erase details</strong> permanently removes the person's name, contact details, photos and ID files. Their bookings, payments, reviews and disputes stay on record, shown as "Closed account". Nothing is erased automatically; how long to wait is a decision for me and the attorney.</div>
@@ -12925,7 +12938,7 @@ function peopleTable(list) {
     <td>${u.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
     <td class="row-actions">
       <button class="btn-sm btn-sm-outline" onclick="openPersonDetail('${u.id}')">View</button>
-      ${(AUTH.user && AUTH.user.isSuperAdmin && !u.isSuperAdmin && u.id !== AUTH.user.id) ? `<button class="btn-sm btn-sm-ghost" onclick="issueTempPassword('${u.id}', '${escapeHtml(String(u.name || '').replace(/'/g, ''))}')">Reset password</button>` : ''}
+      ${(AUTH.user && AUTH.user.isSuperAdmin && !u.isSuperAdmin && u.id !== AUTH.user.id) ? `<button class="btn-sm btn-sm-ghost" onclick="issueTempPassword(${jsArg(u.id)}, ${jsArg(u.name || '')})">Reset password</button>` : ''}
       ${u.active
         ? `<button class="btn-sm btn-sm-outline" onclick="toggleUserActive('${u.id}', false)">Suspend</button>`
         : `<button class="btn-sm btn-sm-primary" onclick="toggleUserActive('${u.id}', true)">Reactivate</button>`}
@@ -13144,7 +13157,7 @@ function verificationKeepingPanelHTML() {
     <div style="font-size:14px;color:var(--text);margin:8px 0;">${keepLine}</div>
     ${isSuper ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0;">
       <label class="form-label" style="margin:0;" for="id-retention-days">Delete files after</label>
-      <input class="form-input" id="id-retention-days" type="number" min="0" max="3650" value="${days}" style="width:100px;"/>
+      <input class="form-input" id="id-retention-days" type="number" min="0" max="3650" value="${escapeHtml(days)}" style="width:100px;"/>
       <span style="font-size:14px;color:var(--slate);">days (0 = keep)</span>
       <button class="btn-sm btn-sm-primary" onclick="saveIdRetention()">Save</button>
     </div>` : ''}
@@ -13177,7 +13190,7 @@ async function askAllVerificationGaps() {
 }
 
 function verificationQueueTable() {
-  if (!adminData.verificationQueue.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">Verification queue is empty.</div>`;
+  if (!adminData.verificationQueue.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">Nothing is waiting for review. When someone submits an ID it appears here with a View documents button. IDs already decided are under Past checks below.</div>`;
   return `<div class="ver-howto">Open the ID (front, and back if there is one) and the face photo side by side. Check that the ID is a real document, that it isn't expired, that the photo and details are readable, that the name on it matches the account, and that the face photo shows the same person as the ID. Then approve, or reject with a reason the applicant will see. If there's no face photo, or you can't tell, reject and ask for a clearer one.</div>
   <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Name on the ID</th><th>Document</th><th>Submitted</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${adminData.verificationQueue.map(v => {
@@ -13188,7 +13201,7 @@ function verificationQueueTable() {
       : v.nameMatch === false ? '<span class="badge badge-danger">Doesn\'t match account</span>' : '';
     const docCell = v.source === 'persona'
       ? `${escapeHtml(v.doc)}<div class="ver-note">Checked by Persona. See this person in your Persona dashboard.</div>`
-      : `${escapeHtml(v.doc)}${v.hasDocument ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}')">View ID</button></div>` : '<div class="ver-note">No file on record</div>'}${v.hasBack ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}','back')">View back of ID</button></div>` : ''}${v.hasSelfie ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}','selfie')">View face photo</button></div>` : '<div class="ver-note" style="color:#8C6423;">No face photo (sent before it was required)</div>'}`;
+      : `${escapeHtml(v.doc)}${v.hasDocument ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}')">View documents</button></div>` : '<div class="ver-note">No file on record</div>'}${v.hasBack ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}','back')">View back of ID</button></div>` : ''}${v.hasSelfie ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}','selfie')">View face photo</button></div>` : '<div class="ver-note" style="color:#8C6423;">No face photo (sent before it was required)</div>'}`;
     return `<tr>
       <td><strong>${escapeHtml(v.name)}</strong><div class="ver-note">${escapeHtml([v.role ? v.role[0].toUpperCase() + v.role.slice(1) : '', v.city, v.country].filter(Boolean).join(' · '))}</div></td>
       <td>${v.idLegalName ? escapeHtml(v.idLegalName) : '<span class="ver-note">Not given</span>'}<div style="margin-top:4px;">${match}</div></td>
@@ -13204,19 +13217,91 @@ function verificationQueueTable() {
 // Opens a submitted ID in a new tab. The file is fetched with the admin's
 // own sign-in (it's never publicly reachable), and every view is recorded
 // on the server in the access log.
+// v85: documents open inside the page, side by side, instead of in a
+// pop-up tab that browsers often block. One window shows the front of the
+// ID, the back (if there is one) and the face photo together, which is
+// what a reviewer needs to compare. Each file opened is written to the
+// access log by the server, as before.
+let ID_VIEWER_URLS = [];
+function closeIdViewer() {
+  const o = document.getElementById('id-viewer-overlay'); if (o) o.remove();
+  ID_VIEWER_URLS.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) {} });
+  ID_VIEWER_URLS = [];
+}
 async function viewVerificationDocument(id, kind) {
-  const win = window.open('', '_blank');
-  try {
-    const res = await fetch(API_BASE + '/admin/verification/' + encodeURIComponent(id) + (kind === 'selfie' ? '/selfie' : kind === 'back' ? '/back' : '/document'), { headers: { Authorization: 'Bearer ' + AUTH.token } });
-    if (!res.ok) { let msg = 'Could not open the document'; try { msg = (await res.json()).error || msg; } catch (e) {} throw new Error(msg); }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    if (win) win.location.href = url; else window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  } catch (e) {
-    if (win) win.close();
-    showToast(e.message || 'Could not open the document');
-  }
+  closeIdViewer();
+  const parts = [['document', 'Front of ID'], ['back', 'Back of ID'], ['selfie', 'Face photo']];
+  document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="id-viewer-overlay" style="z-index:5300;" onclick="if(event.target===this)closeIdViewer()">
+    <div class="modal" style="max-width:min(1180px,96vw);width:96vw;max-height:94vh;display:flex;flex-direction:column;" role="dialog" aria-modal="true" aria-label="Identity documents">
+      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-shrink:0;">
+        <div><h3 style="margin:0;">Identity documents</h3><p style="margin:4px 0 0;">Compare the face photo with the photo on the ID. Click a picture to see it full size. Every file opened here is recorded in the access log.</p></div>
+        <button class="modal-close" onclick="closeIdViewer()" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="id-viewer-body" style="overflow:auto;flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start;">
+        ${parts.map(([k, label]) => `<div id="id-viewer-${k}" style="border:1px solid var(--border);border-radius:10px;padding:10px;${k === kind || (!kind && k === 'document') ? 'outline:2px solid var(--teal);' : ''}">
+          <div style="font-weight:600;font-size:14px;margin-bottom:8px;">${label}</div>
+          <div class="ver-note" data-slot>Loading…</div>
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>`);
+  await Promise.all(parts.map(async ([k]) => {
+    const box = document.getElementById('id-viewer-' + k);
+    if (!box) return;
+    const slot = box.querySelector('[data-slot]');
+    try {
+      const res = await fetch(API_BASE + '/admin/verification/' + encodeURIComponent(id) + '/' + k, { headers: { Authorization: 'Bearer ' + AUTH.token } });
+      if (res.status === 404) {
+        if (k === 'back') { box.remove(); return; } // most IDs have no back; don't show an empty box
+        let why = 'Not on file.'; try { why = (await res.json()).error || why; } catch (e) {}
+        slot.textContent = k === 'selfie' ? 'No face photo on file. It may have been sent before face photos were required, or the files have been deleted.' : why;
+        return;
+      }
+      if (!res.ok) { let msg = 'Could not open this file.'; try { msg = (await res.json()).error || msg; } catch (e) {} slot.textContent = msg; return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob); ID_VIEWER_URLS.push(url);
+      const isPdf = (res.headers.get('content-type') || blob.type || '').includes('pdf');
+      slot.className = '';
+      slot.innerHTML = isPdf
+        ? `<iframe src="${url}" title="PDF document" style="width:100%;height:62vh;border:0;border-radius:6px;background:#fff;"></iframe><div style="margin-top:6px;"><a href="${url}" target="_blank" rel="noopener" class="tg-link" style="font-size:13px;">Open the PDF in a new tab</a></div>`
+        : `<a href="${url}" target="_blank" rel="noopener" title="Open full size"><img src="${url}" alt="" style="width:100%;max-height:68vh;object-fit:contain;border-radius:6px;background:var(--offwhite);display:block;"/></a>`;
+    } catch (e) { slot.textContent = 'Could not open this file. Check your connection and try again.'; }
+  }));
+}
+
+// v85: Admin → Verification Queue → "Past checks". Decisions already made,
+// with the same View button, for as long as the files are kept.
+async function loadVerificationHistory() {
+  const box = document.getElementById('verification-history-panel');
+  if (!box || !BACKEND_AVAILABLE) return;
+  let history;
+  try { history = (await apiFetch('GET', '/admin/verification-history')).history; }
+  catch (e) { box.innerHTML = '<div class="ver-note">Could not load past checks.</div>'; return; }
+  if (!history.length) { box.innerHTML = '<div style="color:var(--slate);font-size:14px;padding:12px 0;">No ID has been approved or rejected yet.</div>'; return; }
+  window.__verHistory = history;
+  renderVerificationHistory('');
+}
+function renderVerificationHistory(filter) {
+  const box = document.getElementById('verification-history-rows');
+  const host = document.getElementById('verification-history-panel');
+  if (!host) return;
+  const f = String(filter || '').trim().toLowerCase();
+  const list = (window.__verHistory || []).filter(h => !f || String(h.userName || '').toLowerCase().includes(f) || String(h.idLegalName || '').toLowerCase().includes(f));
+  const badge = (s) => s === 'approved' ? '<span class="badge badge-success">Approved</span>' : s === 'rejected' ? '<span class="badge badge-danger">Rejected</span>' : '<span class="badge badge-neutral">Replaced by a newer upload</span>';
+  const rows = list.map(h => {
+    const hasFiles = h.hasDocument || h.hasBack || h.hasSelfie;
+    const files = hasFiles
+      ? `<button class="btn-sm btn-sm-outline" onclick="viewVerificationDocument(${jsArg(h.id)})">View documents</button>${h.filesDeleteOn ? `<div class="ver-note" style="margin-top:4px;">Files deleted on ${escapeHtml(h.filesDeleteOn)}</div>` : ''}`
+      : `<div class="ver-note">${h.filesDeletedAt ? 'Files deleted ' + escapeHtml(String(h.filesDeletedAt).slice(0, 10)) : 'No files on record'}</div>`;
+    return `<tr><td><strong>${escapeHtml(h.userName)}</strong><div class="ver-note">${h.role === 'provider' ? 'Pro' : 'Customer'}${h.city ? ' · ' + escapeHtml(h.city) : ''}</div></td>
+      <td>${escapeHtml(h.docType || '—')}<div class="ver-note">${escapeHtml(h.idLegalName || '')}</div></td>
+      <td>${badge(h.status)}${h.rejectionReason ? `<div class="ver-note" style="margin-top:4px;max-width:220px;">${escapeHtml(h.rejectionReason)}</div>` : ''}</td>
+      <td>${escapeHtml(String(h.decidedAt || '').slice(0, 10))}<div class="ver-note">${escapeHtml(h.reviewedByName || '')}</div></td>
+      <td>${files}</td></tr>`;
+  }).join('');
+  const table = rows ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Person</th><th>Document</th><th>Decision</th><th>Decided</th><th>Files</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="ver-note" style="padding:10px 0;">No one matches that name.</div>';
+  if (box) { box.innerHTML = table; return; }
+  host.innerHTML = `<input class="form-input" type="search" placeholder="Search by name" aria-label="Search past checks by name" style="max-width:280px;margin-bottom:10px;" oninput="renderVerificationHistory(this.value)"/><div id="verification-history-rows">${table}</div>`;
 }
 
 // Providers who carry the "ID checked" badge with no reviewed ID on file.
@@ -13269,7 +13354,7 @@ function fraudFlagsTableHTML(flags) {
   return `
     ${open.length ? `<div style="font-size:13px;color:var(--slate);font-weight:600;margin-bottom:8px;">${open.length} open</div>` : ''}
     <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Type</th><th>Severity</th><th>Account</th><th>Details</th><th>Flagged</th><th>Status</th><th>Action</th></tr></thead><tbody>
-    ${flags.map(f => `<tr><td>${FRAUD_TYPE_LABELS[f.type] || f.type}</td><td>${f.severity==='high' ? '<span class="badge badge-danger">High</span>' : '<span class="badge badge-warn">Medium</span>'}</td><td>${f.userName || '—'}${f.relatedUserName ? ` ↔ ${f.relatedUserName}` : ''}</td><td style="max-width:280px;">${f.details}</td><td>${new Date(f.createdAt).toLocaleDateString()}</td><td>${f.status === 'open' ? '<span class="badge badge-pending">Open</span>' : statusBadge(f.status)}</td>
+    ${flags.map(f => `<tr><td>${escapeHtml(FRAUD_TYPE_LABELS[f.type] || f.type)}</td><td>${f.severity==='high' ? '<span class="badge badge-danger">High</span>' : '<span class="badge badge-warn">Medium</span>'}</td><td>${escapeHtml(f.userName || '—')}${f.relatedUserName ? ` ↔ ${escapeHtml(f.relatedUserName)}` : ''}</td><td style="max-width:280px;">${escapeHtml(f.details)}</td><td>${new Date(f.createdAt).toLocaleDateString()}</td><td>${f.status === 'open' ? '<span class="badge badge-pending">Open</span>' : statusBadge(f.status)}</td>
     <td class="row-actions">${f.status === 'open' ? `<button class="btn-sm btn-sm-outline" onclick="resolveFraudFlag('${f.id}','reviewed')">Mark Reviewed</button> <button class="btn-sm btn-sm-ghost" onclick="resolveFraudFlag('${f.id}','dismissed')">Dismiss</button>` : '—'}</td></tr>`).join('')}
     </tbody></table></div>`;
 }
@@ -13307,7 +13392,7 @@ async function viewDispute(id) {
       const { evidence } = await apiFetch('GET', `/disputes/${id}/evidence`);
       evidenceHTML = `<div class="form-label" style="margin:14px 0 8px;">Evidence ${evidence.length ? `(${evidence.length})` : ''}</div>` +
         (evidence.length
-          ? `<div style="font-size:13.5px;line-height:2;">${evidence.map(e => `<div>📎 <a href="${API_BASE}/disputes/${id}/evidence/${e.id}/file" target="_blank" rel="noopener" onclick="event.preventDefault();downloadDisputeEvidence('${id}','${e.id}','${e.originalName.replace(/'/g, "\\'")}')" style="color:var(--navy);">${escapeHtml(e.originalName)}</a> <span style="color:var(--muted);">— uploaded by ${escapeHtml(e.uploadedByName)}</span></div>`).join('')}</div>`
+          ? `<div style="font-size:13.5px;line-height:2;">${evidence.map(e => `<div>📎 <a href="${API_BASE}/disputes/${id}/evidence/${e.id}/file" target="_blank" rel="noopener" onclick="event.preventDefault();downloadDisputeEvidence('${id}','${e.id}',${jsArg(e.originalName)})" style="color:var(--navy);">${escapeHtml(e.originalName)}</a> <span style="color:var(--muted);">— uploaded by ${escapeHtml(e.uploadedByName)}</span></div>`).join('')}</div>`
           : `<div style="font-size:13.5px;color:var(--slate);">No evidence uploaded for this dispute.</div>`);
     } catch (e) { /* not permitted or none yet */ }
   }
@@ -13373,7 +13458,7 @@ function selectAdminSection(key) {
   renderDashNav('admin-nav', getAdminNavItems(), key, 'selectAdminSection');
   renderSectionSafely('admin-main', key, () => ADMIN_SECTIONS[key]());
   if (key === 'providerscores') loadProviderScoresPanel();
-  if (key === 'verification') { loadGuarantorsReviewPanel(); loadVerificationGaps(); }
+  if (key === 'verification') { loadGuarantorsReviewPanel(); loadVerificationGaps(); loadVerificationHistory(); }
   if (key === 'people') loadAccountClosuresPanel();
   if (key === 'pricing') loadPlanBillingPanel();
   if (key === 'settings') { loadWordingEditor(); loadBackupsPanel(); }
@@ -13410,7 +13495,7 @@ function stars(n) {
 // dimensions and its font size (initials scale down for smaller avatars).
 function avatarHTML(p, sizePx, extraStyle = '') {
   if (p.profilePhotoUrl) {
-    return `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:${sizePx}px;height:${sizePx}px;border-radius:50%;object-fit:cover;display:block;flex-shrink:0;${extraStyle}"/>`;
+    return `<img src="${p.profilePhotoUrl}" alt="${escapeHtml(p.name)}" style="width:${sizePx}px;height:${sizePx}px;border-radius:50%;object-fit:cover;display:block;flex-shrink:0;${extraStyle}"/>`;
   }
   const fontSize = Math.round(sizePx * 0.36);
   return `<div style="width:${sizePx}px;height:${sizePx}px;border-radius:50%;background:${p.color};color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:600;font-size:${fontSize}px;flex-shrink:0;${extraStyle}">${p.initials}</div>`;

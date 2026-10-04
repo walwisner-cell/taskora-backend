@@ -65,6 +65,9 @@ Versions v74 to v83 are ten rounds of changes and, as far as I know, none of the
 - Evidence: stored scrambled when a key is set; the other party downloaded it identical to the original.
 - Sign-in pause: still in force after restarting the server; the stored record contains no email address.
 
+
+> Note: the byte counts and deploy steps below are from when this version was made. Use the table and steps in CHANGES_v85.md.
+
 ## Files (complete replacements; this zip includes v74 to v82)
 | File | Bytes |
 |---|---|
@@ -89,7 +92,7 @@ Versions v74 to v83 are ten rounds of changes and, as far as I know, none of the
 Changed in this version: public\index.html, src\auth.js, src\routes\auth.routes.js, src\routes\admin.routes.js, src\routes\marketplace.routes.js. New: src\account-privacy.js.
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v83-files.zip.
+1. Unzip trothen-v85-files.zip.
 2. From the unzipped folder (replace the path with my repo folder):
    ```
    set REPO=C:\path\to\trothen-backend
