@@ -24,20 +24,20 @@ async function sweepIdDocumentRetention() {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const due = await db.filter('verifications', v =>
     DECIDED.includes(v.status) &&
-    (v.documentFilename || v.selfieFilename) &&
+    (v.documentFilename || v.selfieFilename || v.backFilename) &&
     String(v.reviewedAt || v.createdAt || '') !== '' &&
     String(v.reviewedAt || v.createdAt) <= cutoff
   );
 
   let deleted = 0;
   for (const v of due) {
-    for (const name of [v.documentFilename, v.selfieFilename]) {
+    for (const name of [v.documentFilename, v.selfieFilename, v.backFilename]) {
       if (!name) continue;
       // Only ever a plain file name inside the private folder.
       const safe = path.basename(String(name));
       try { fs.unlinkSync(path.join(PRIVATE_UPLOADS_DIR, safe)); } catch (e) { /* already gone is fine */ }
     }
-    await db.update('verifications', v.id, { documentFilename: null, selfieFilename: null, filesDeletedAt: new Date().toISOString() });
+    await db.update('verifications', v.id, { documentFilename: null, selfieFilename: null, backFilename: null, filesDeletedAt: new Date().toISOString() });
     deleted += 1;
   }
   if (deleted > 0) console.log(`[id-retention] Deleted the uploaded files for ${deleted} decided verification${deleted === 1 ? '' : 's'} older than ${days} days. The records are kept.`);

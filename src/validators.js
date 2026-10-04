@@ -11,7 +11,11 @@
 // the way to a full RFC 5322 grammar (which rejects some real-world
 // addresses people actually use). Combined with a practical max length
 // (RFC 5321 caps a full email address at 254 characters).
-const EMAIL_RE = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+// v79: also accepts addresses written in other alphabets or with accented
+// letters (josé@correo.es, user@münchen.de). Any provider and any domain
+// ending were already accepted; this was the one kind of real address
+// being turned away. \p{L} is "any letter", \p{N} is "any digit".
+const EMAIL_RE = /^[\p{L}\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?)+$/u;
 
 function isValidEmail(email) {
   if (typeof email !== 'string') return false;

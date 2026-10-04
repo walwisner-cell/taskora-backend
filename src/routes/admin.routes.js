@@ -708,8 +708,8 @@ router.get('/verification-queue', requireDepartment(['verification']), async (re
   const queue = [];
   for (const v of open) {
     const user = await db.find('users', u => u.id === v.userId);
-    const { documentFilename, selfieFilename, ...vSafe } = v;
-    const entry = { ...vSafe, userName: user ? user.name : 'Unknown', accountName: user ? user.name : null, role: user ? user.role : null, country: user ? user.country : '', city: user ? user.city : null, hasDocument: !!v.documentFilename, hasSelfie: !!v.selfieFilename };
+    const { documentFilename, selfieFilename, backFilename, ...vSafe } = v;
+    const entry = { ...vSafe, userName: user ? user.name : 'Unknown', accountName: user ? user.name : null, role: user ? user.role : null, country: user ? user.country : '', city: user ? user.city : null, hasDocument: !!v.documentFilename, hasSelfie: !!v.selfieFilename, hasBack: !!v.backFilename };
     if (!region || entry.city === region) queue.push(entry);
   }
   // v77: tell the reviewer how files are being kept, so a storage problem
@@ -717,10 +717,87 @@ router.get('/verification-queue', requireDepartment(['verification']), async (re
   const { getSetting } = require('../platform-settings');
   res.json({
     queue,
-    storage: { persistent: !!process.env.PRIVATE_UPLOADS_DIR },
+    storage: { persistent: !!process.env.PRIVATE_UPLOADS_DIR, encrypted: require('../file-crypto').isEnabled() },
     retentionDays: Number(await getSetting('idDocumentRetentionDays')) || 0,
     automatedCheckConnected: require('../persona-verification').isPersonaConfigured ? !!require('../persona-verification').isPersonaConfigured() : false,
   });
+});
+
+// ── v83: accounts closed by their owners ───────────────────────────────
+// GET /api/admin/account-closures — super admin.
+router.get('/account-closures', requireSuperAdmin, async (req, res) => {
+  let list = [];
+  try { list = await db.all('accountClosures'); } catch (e) { list = []; }
+  const users = new Map((await db.all('users')).map(u => [u.id, u]));
+  res.json({
+    closures: list.sort((a, b) => String(b.requestedAt).localeCompare(String(a.requestedAt))).map(c => {
+      const u = users.get(c.userId);
+      return { ...c, name: u ? u.name : 'Unknown', email: u && !u.erased ? u.email : null, daysSinceClosed: Math.floor((Date.now() - new Date(c.requestedAt).getTime()) / 86400000) };
+    }),
+  });
+});
+// POST /api/admin/account-closures/:id/reopen — super admin. Only before erasing.
+router.post('/account-closures/:id/reopen', requireSuperAdmin, async (req, res) => {
+  const c = await db.find('accountClosures', x => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Not found' });
+  if (c.status !== 'closed') return res.status(409).json({ error: 'This account\'s details have already been erased. It can\'t be reopened.' });
+  await db.update('users', c.userId, { active: true, closedAt: null, closedByOwner: false });
+  await db.update('accountClosures', c.id, { status: 'reopened', reopenedAt: new Date().toISOString(), reopenedBy: req.user.sub });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'account_reopened', c.userId);
+  res.json({ ok: true });
+});
+// POST /api/admin/account-closures/:id/erase — super admin. Permanent.
+router.post('/account-closures/:id/erase', requireSuperAdmin, async (req, res) => {
+  const c = await db.find('accountClosures', x => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Not found' });
+  if (c.status !== 'closed') return res.status(409).json({ error: c.status === 'erased' ? 'Already erased' : 'This account was reopened' });
+  const result = await require('../account-privacy').eraseAccount(c, req.user.sub);
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'account_erased', c.userId);
+  res.json({ ok: true });
+});
+
+// GET /api/admin/backups — v82, super admin: the nightly data copies.
+router.get('/backups', requireSuperAdmin, async (req, res) => {
+  const b = require('../backup-scheduler');
+  res.json({ applies: b.backupsApply(), keepDays: b.KEEP_DAYS, backups: b.backupsApply() ? b.listBackups() : [] });
+});
+// POST /api/admin/backups/run — v82, super admin: take a copy right now
+// (for example just before a risky change).
+router.post('/backups/run', requireSuperAdmin, async (req, res) => {
+  const b = require('../backup-scheduler');
+  if (!b.backupsApply()) return res.status(400).json({ error: 'Backups here only apply to the file store' });
+  try {
+    const result = b.runBackup();
+    const { logAccess } = require('../access-log');
+    await logAccess(req, 'backup_run', result.day);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ error: 'The backup failed: ' + e.message }); }
+});
+
+// POST /api/admin/users/:id/temp-password — v81, super admin only.
+// The way back in for someone who has forgotten their password while
+// reset-by-email isn't connected. Makes a one-time password, shows it to
+// the super admin once, signs the person out everywhere, and makes them
+// choose a new password the next time they sign in. Written to the access
+// log. The super admin should give it to the person only after confirming
+// who they are (for example by calling the phone number on the account).
+router.post('/users/:id/temp-password', requireSuperAdmin, async (req, res) => {
+  const target = await db.find('users', u => u.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.id === req.user.sub) return res.status(400).json({ error: 'Use Change Password in your own settings for your own account' });
+  if (target.isSuperAdmin) return res.status(403).json({ error: 'A super admin\'s password can\'t be reset from here' });
+  const { hashPassword } = require('../auth');
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const bytes = require('crypto').randomBytes(14);
+  const tempPassword = Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+  await db.update('users', target.id, { passwordHash: hashPassword(tempPassword), mustChangePassword: true, tokenVersion: (target.tokenVersion || 0) + 1 });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'temp_password_issued', target.id);
+  await notify(target.id, '🔐', 'Your password was reset by the Trothen team. If you didn\'t ask for this, contact support straight away.', null, { section: 'settings' });
+  res.json({ ok: true, tempPassword });
 });
 
 // PATCH /api/admin/settings/id-retention  { days } — super admin only.
@@ -753,6 +830,42 @@ router.post('/verification-gaps-ask-all', requireDepartment(['verification']), a
   res.json({ ok: true, asked: people.length });
 });
 
+// v82: every ID file is opened through this one place. It decrypts when
+// the file was stored encrypted, sets the right type from the file's own
+// first bytes (never the stored name), and keeps it out of every cache.
+function sendPrivateIdFile(res, filename) {
+  const pathMod = require('path');
+  const { PRIVATE_UPLOADS_DIR } = require('../uploads');
+  const filePath = pathMod.join(PRIVATE_UPLOADS_DIR, pathMod.basename(String(filename)));
+  if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'The file is missing on disk' });
+  let buf;
+  try { buf = require('../file-crypto').readPossiblyEncrypted(filePath); }
+  catch (e) { return res.status(500).json({ error: e.message }); }
+  const head = buf.subarray(0, 12);
+  const type = head.subarray(0, 4).toString('latin1') === '%PDF' ? 'application/pdf'
+    : (head[0] === 0x89 && head[1] === 0x50) ? 'image/png'
+    : (head[0] === 0xFF && head[1] === 0xD8) ? 'image/jpeg'
+    : (head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') ? 'image/webp'
+    : 'application/octet-stream';
+  res.set('Cache-Control', 'no-store, private');
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Content-Type', type);
+  res.send(buf);
+}
+
+// GET /api/admin/verification/:id/back — v80: the back of the ID, when
+// one was sent. Same rules as the front and the face photo.
+router.get('/verification/:id/back', requireDepartment(['verification']), async (req, res) => {
+  const record = await db.find('verifications', v => v.id === req.params.id);
+  if (!record || !record.backFilename) return res.status(404).json({ error: 'No back of ID on record' });
+  const region = await myRegion(req);
+  const user = await db.find('users', u => u.id === record.userId);
+  if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'verification_document_back', record.id);
+  sendPrivateIdFile(res, record.backFilename);
+});
+
 // GET /api/admin/verification/:id/selfie — v77: the face photo sent with
 // the ID. Same rules as the document below: verification team only, own
 // city only, every look recorded, never cached.
@@ -762,14 +875,9 @@ router.get('/verification/:id/selfie', requireDepartment(['verification']), asyn
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
   if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
-  const { PRIVATE_UPLOADS_DIR } = require('../uploads');
-  const filePath = require('path').join(PRIVATE_UPLOADS_DIR, require('path').basename(record.selfieFilename));
-  if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'The photo file is missing on disk' });
   const { logAccess } = require('../access-log');
   await logAccess(req, 'verification_selfie', record.id);
-  res.set('Cache-Control', 'no-store, private');
-  res.set('X-Content-Type-Options', 'nosniff');
-  res.sendFile(filePath);
+  sendPrivateIdFile(res, record.selfieFilename);
 });
 
 // GET /api/admin/verification-gaps — providers who carry the verified
@@ -824,16 +932,11 @@ router.get('/verification/:id/document', requireDepartment(['verification']), as
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
   if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
-  const { PRIVATE_UPLOADS_DIR } = require('../uploads');
-  const filePath = require('path').join(PRIVATE_UPLOADS_DIR, record.documentFilename);
-  if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'Document file is missing on disk' });
   // Every look at someone's ID is recorded (who, when, which record), and
   // the file is never kept in the browser's or any proxy's cache.
   const { logAccess } = require('../access-log');
   await logAccess(req, 'verification_document', record.id);
-  res.set('Cache-Control', 'no-store, private');
-  res.set('X-Content-Type-Options', 'nosniff');
-  res.sendFile(filePath);
+  sendPrivateIdFile(res, record.documentFilename);
 });
 
 // POST /api/admin/verification/:id/decide  { decision: 'approve' | 'reject', rejectionReason? }
@@ -2870,6 +2973,87 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
 // /exchange-rates) the full rate table. A regional admin gets just their
 // own country's current effective pricing — base plus their own override
 // if they've set one — so they can decide whether to set or change it.
+// ── v78: provider monthly plan fee (see src/plan-billing.js) ───────────
+// GET /api/admin/plan-billing — super admin: the two locks, what a month
+// would bill right now, and the invoices so far.
+router.get('/plan-billing', requireSuperAdmin, async (req, res) => {
+  const planBilling = require('../plan-billing');
+  const state = await planBilling.getState();
+  const all = await db.all('planInvoices');
+  const sum = (list, f) => Math.round(list.reduce((s, i) => s + f(i), 0) * 100) / 100;
+  const names = new Map((await db.filter('users', u => u.role === 'provider')).map(u => [u.id, u.name]));
+  res.json({
+    state,
+    preview: await planBilling.preview(),
+    totals: {
+      invoices: all.length,
+      billedUsd: sum(all.filter(i => i.status !== 'waived'), i => i.amountUsd),
+      collectedUsd: sum(all, i => i.paidUsd || 0),
+      outstandingUsd: sum(all.filter(i => i.status === 'open'), i => i.amountUsd - (i.paidUsd || 0)),
+    },
+    recent: all.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50)
+      .map(i => ({ id: i.id, providerName: names.get(i.providerId) || 'Unknown', plan: i.plan, period: i.period, amountUsd: i.amountUsd, paidUsd: i.paidUsd || 0, status: i.status })),
+  });
+});
+
+// PATCH /api/admin/plan-billing  { on?, noticeDays? } — super admin.
+// Switching ON is refused unless PLAN_BILLING_ENABLED=true is set on the
+// server. Switching on starts the notice period and tells every billable
+// provider. Switching off stops new invoices and stops taking fees from
+// payouts; nothing already recorded is deleted.
+router.patch('/plan-billing', requireSuperAdmin, async (req, res) => {
+  const planBilling = require('../plan-billing');
+  const { getSetting, setSetting } = require('../platform-settings');
+  const current = { on: false, startedAt: null, noticeDays: 30, ...((await getSetting('planBilling')) || {}) };
+  const body = req.body || {};
+  const next = { ...current };
+  if ('noticeDays' in body) {
+    const n = Number(body.noticeDays);
+    if (!Number.isInteger(n) || n < 14 || n > 180) return res.status(400).json({ error: 'The notice period must be a whole number of days from 14 to 180' });
+    if (current.on && n !== current.noticeDays) return res.status(400).json({ error: 'The notice period can\'t be changed while billing is switched on. Switch it off first.' });
+    next.noticeDays = n;
+  }
+  let justStarted = false;
+  if ('on' in body) {
+    if (typeof body.on !== 'boolean') return res.status(400).json({ error: 'on must be true or false' });
+    if (body.on && !planBilling.envEnabled()) {
+      return res.status(400).json({ error: 'Plan billing is locked. Set PLAN_BILLING_ENABLED to true in the server environment (Render) first. Do that only once real payments are live.' });
+    }
+    if (body.on && !current.on) { next.startedAt = new Date().toISOString(); justStarted = true; }
+    if (!body.on) next.startedAt = null;
+    next.on = body.on;
+  }
+  await setSetting('planBilling', next);
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'plan_billing_update', JSON.stringify({ on: next.on, noticeDays: next.noticeDays }));
+  let told = 0;
+  if (justStarted) {
+    const rows = await planBilling.pricingRows();
+    const begins = new Date(Date.now() + next.noticeDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    for (const p of await db.filter('users', planBilling.isBillable)) {
+      const pr = planBilling.priceFor(p, rows);
+      if (!(pr.amountUsd > 0)) continue;
+      const shown = pr.currencyCode === 'USD' ? `$${pr.amountUsd}` : `${pr.currencySymbol}${pr.localPrice} (about $${pr.amountUsd})`;
+      await notify(p.id, '🧾', `From ${begins}, your Trothen plan fee of ${shown} a month starts. Nothing is charged to a card: it comes out of your payouts, and never more than half of one payout.`, null, { section: 'earnings' });
+      told += 1;
+    }
+  }
+  res.json({ ok: true, state: await planBilling.getState(), providersTold: told });
+});
+
+// POST /api/admin/plan-billing/invoices/:id/waive — super admin: forgive
+// what's still owed on one invoice. Anything already collected stays.
+router.post('/plan-billing/invoices/:id/waive', requireSuperAdmin, async (req, res) => {
+  const inv = await db.find('planInvoices', i => i.id === req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  if (inv.status !== 'open') return res.status(409).json({ error: `This invoice is already ${inv.status}` });
+  await db.update('planInvoices', inv.id, { status: 'waived', waivedBy: req.user.sub, waivedAt: new Date().toISOString() });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'plan_invoice_waive', inv.id);
+  await notify(inv.providerId, '🧾', `Your plan fee for ${inv.period} was waived by the Trothen team.`, null, { section: 'earnings' });
+  res.json({ ok: true });
+});
+
 router.get('/plan-pricing', async (req, res) => {
   const m = await me(req);
   if (!m.isSuperAdmin && m.adminDepartment) {

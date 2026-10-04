@@ -3057,6 +3057,7 @@
           <button class="pricing-cta" onclick="openSalesInquiryForm()" data-i18n="plan4_btn">Contact Sales</button>
         </div>
       </div>
+      <div class="pricing-sub" id="plans-fee-note" data-i18n="plans_fee_off" style="margin-top:22px;text-align:center;">The monthly fee isn't being charged during early access. When it starts, every pro gets notice first.</div>
     </div>
   </div>
 </div>
@@ -3178,6 +3179,10 @@ async function apiFetch(method, path, body) {
   if (!res.ok) {
     if (data && data.code === 'MUST_CHANGE_PASSWORD' && path !== '/auth/change-password' && path !== '/auth/me') {
       showForcePasswordChangeScreen();
+    }
+    if (data && data.code === 'ACCEPT_TERMS' && AUTH.user && typeof checkTermsGate === 'function') {
+      AUTH.user.termsVersion = null; // v81: the server says this account hasn't agreed to the current terms
+      checkTermsGate(AUTH.user.role);
     }
     if (data && data.code === 'VERIFY_IDENTITY' && typeof showVerificationOnboardingPrompt === 'function' && AUTH.user && !document.getElementById('verification-onboarding-prompt')) {
       showVerificationOnboardingPrompt();
@@ -4520,6 +4525,8 @@ const I18N = {
     check4_s2: "Anything that doesn't add up is flagged. For the most serious signs, that account's new bookings are paused straight away.",
     check4_s3: "A person on our team reviews every flag and decides what happens next.",
     // v74: text that used to be fixed in the page, now editable from Admin.
+    plans_fee_off: "The monthly fee isn't being charged during early access. When it starts, every pro gets notice first.",
+    plans_fee_on: "The monthly fee is never charged to a card. It comes out of your payouts, and never more than half of one payout.",
     pros_title: "Top Rated Pros",
     pros_sub: "Ranked by rating, distance & fit",
     plans_eyebrow: "Provider Plans",
@@ -4531,20 +4538,20 @@ const I18N = {
     plan1_f1: "Smart job matching",
     plan1_f2: "Identity verification & badge",
     plan1_f3: "Escrow-protected payouts",
-    plan1_f4: "13% commission per job",
+    plan1_f4: "{starter_commission}% commission per job",
     plan1_f5: "Standard placement in search",
     plan2_name: "Pro",
     plan2_desc: "Unlocked automatically — 50 completed jobs, 4.7+ rating, under 5% cancellation",
     plan2_f1: "Everything in Starter",
     plan2_f2: "Priority placement in matching",
-    plan2_f3: "12% commission per job",
+    plan2_f3: "{pro_commission}% commission per job",
     plan2_f4: "Portfolio & review boosts",
     plan2_f5: "Same-day payout option",
     plan3_name: "Super Pro",
     plan3_desc: "500 completed jobs, 4.85+ rating, 12 months active — reviewed by our team, not automatic",
     plan3_f1: "Everything in Pro",
     plan3_f2: "Top placement in your zip code / community",
-    plan3_f3: "10% commission per job",
+    plan3_f3: "{superpro_commission}% commission per job",
     plan3_f4: "List in multiple categories",
     plan3_f5: "Dedicated support line",
     plan4_name: "Custom",
@@ -4806,10 +4813,19 @@ if (!['en', 'es'].includes(CURRENT_LANG)) CURRENT_LANG = 'en';
 // missing translation should never show blank or throw — worst case, it
 // shows the key name, which is at least visibly a "needs translating"
 // signal rather than a broken-looking gap.
+// v78: the real commission for each plan. These start as the same numbers
+// the server uses and are refreshed from the server when the Plans page
+// opens. Text can carry {starter_commission}, {pro_commission} or
+// {superpro_commission} and the real number is filled in.
+var PLAN_COMMISSION = { starter: 13, pro: 12, superpro: 10 };
+var PLAN_BILLING_PUBLIC = { active: false, beginsAt: null };
+function fillPlanTokens(text) {
+  return String(text).indexOf('{') === -1 ? text : String(text).replace(/\{(starter|pro|superpro)_commission\}/g, (m, p) => PLAN_COMMISSION[p]);
+}
 function t(key) {
   // English wording the super admin changed in Admin → Settings wins.
-  if (CURRENT_LANG === 'en' && typeof CONTENT_OVERRIDES !== 'undefined' && CONTENT_OVERRIDES[key]) return CONTENT_OVERRIDES[key];
-  return (I18N[CURRENT_LANG] && I18N[CURRENT_LANG][key]) || I18N.en[key] || key;
+  if (CURRENT_LANG === 'en' && typeof CONTENT_OVERRIDES !== 'undefined' && CONTENT_OVERRIDES[key]) return fillPlanTokens(CONTENT_OVERRIDES[key]);
+  return fillPlanTokens((I18N[CURRENT_LANG] && I18N[CURRENT_LANG][key]) || I18N.en[key] || key);
 }
 
 function setLanguage(lang) {
@@ -5105,7 +5121,13 @@ async function loadPricingPage(country) {
   if (!BACKEND_AVAILABLE) return; // leave the static fallback prices showing
 
   try {
-    const { plans } = await apiFetch('GET', `/plan-pricing?country=${encodeURIComponent(country)}`);
+    const { plans, billing } = await apiFetch('GET', `/plan-pricing?country=${encodeURIComponent(country)}`);
+    // v78: real commission numbers, and whether the fee is charged yet.
+    for (const p of plans) if (typeof p.commissionPercent === 'number') PLAN_COMMISSION[p.plan] = p.commissionPercent;
+    PLAN_BILLING_PUBLIC = billing || PLAN_BILLING_PUBLIC;
+    const feeNote = document.getElementById('plans-fee-note');
+    if (feeNote) feeNote.setAttribute('data-i18n', PLAN_BILLING_PUBLIC.active ? 'plans_fee_on' : 'plans_fee_off');
+    applyTranslations();
     for (const p of plans) {
       const el = document.getElementById(`pricing-price-${p.plan}`);
       if (!el) continue;
@@ -5690,6 +5712,8 @@ async function submitForgotPassword() {
   try {
     const data = await apiFetch('POST', '/auth/forgot-password', { email });
     showToast(data.message);
+    // v81: on the live site a reset token is never sent back to this page.
+    if (data.emailUnavailable) { document.getElementById('forgot-test-mode-panel').style.display = 'none'; return; }
     if (data.testMode && data.resetToken) {
       lastTestResetToken = data.resetToken;
       document.getElementById('forgot-test-mode-panel').style.display = 'block';
@@ -6291,16 +6315,23 @@ function verificationHTML(role, status) {
             <div class="form-group"><label class="form-label">Full Legal Name (exactly as printed on the document)</label>
               <input class="form-input" id="verification-legal-name-input" placeholder="e.g. Marcus T. Johnson"/>
             </div>
-            <div class="form-group"><label class="form-label">1. A photo of your government-issued ID</label>
-              <input class="form-input" type="file" id="verification-doc-file-input" accept="image/jpeg,image/png,application/pdf"/>
-              <div class="ver-note" style="margin-top:6px;">The whole document, flat, with every corner showing and nothing covered. JPEG, PNG or PDF.</div>
+            <div class="form-group"><label class="form-label">1. The front of your government-issued ID</label>
+              <input class="form-input" type="file" id="verification-doc-file-input" accept="image/*,application/pdf" onchange="showVerificationPick(this, 'ver-pick-front')"/>
+              <div id="ver-pick-front"></div>
+              <div class="ver-note" style="margin-top:6px;">The whole document, flat, with all four corners showing, nothing covered, and no glare. A photo or a PDF. On a phone you can take the photo right here.</div>
             </div>
-            <div class="form-group"><label class="form-label">2. A photo of your face</label>
-              <input class="form-input" type="file" id="verification-selfie-file-input" accept="image/jpeg,image/png" capture="user"/>
+            <div class="form-group"><label class="form-label">2. The back of your ID <span style="font-weight:400;color:var(--slate);">(if it has one)</span></label>
+              <input class="form-input" type="file" id="verification-back-file-input" accept="image/*,application/pdf" onchange="showVerificationPick(this, 'ver-pick-back')"/>
+              <div id="ver-pick-back"></div>
+              <div class="ver-note" style="margin-top:6px;">For a driver's license or ID card, add the back as well. Skip this for a passport.</div>
+            </div>
+            <div class="form-group"><label class="form-label">3. A photo of your face</label>
+              <input class="form-input" type="file" id="verification-selfie-file-input" accept="image/*" capture="user" onchange="showVerificationPick(this, 'ver-pick-selfie')"/>
+              <div id="ver-pick-selfie"></div>
               <div class="ver-note" style="margin-top:6px;">Take it now, in good light, looking at the camera, with no hat or sunglasses. A person on our team compares it with the photo on your ID.</div>
             </div>
-            <div class="ver-note" style="margin:0 0 14px;">Both photos are stored privately and are never shown to other users. Only the Trothen staff who review identity checks can open them.</div>
-            <button class="btn-sm btn-sm-primary" onclick="submitVerification('${role}')">Submit for Review</button>
+            <div class="ver-note" style="margin:0 0 14px;">These are stored privately and are never shown to other users. Only the Trothen staff who review identity checks can open them. Check each preview is sharp enough to read before you send.</div>
+            <button class="btn-sm btn-sm-primary" id="verification-submit-btn" onclick="submitVerification('${role}')">Submit for Review</button>
           </div>`}
   </div>
   ${role === 'provider' ? `<div class="panel"><div class="panel-title">Additional Trust Checks</div>
@@ -6399,6 +6430,23 @@ async function saveGuarantors() {
 // getting a real 400 back. Now sends a real FormData request matching
 // exactly what POST /verification/submit (src/routes/misc.routes.js)
 // actually expects.
+// v80: show what was picked, so a blurry or cut-off photo is caught
+// before it's sent instead of two days later by a reviewer.
+function showVerificationPick(input, slotId) {
+  const slot = document.getElementById(slotId);
+  if (!slot) return;
+  const file = input.files && input.files[0];
+  if (!file) { slot.innerHTML = ''; return; }
+  const mb = (file.size / (1024 * 1024)).toFixed(1);
+  const isPdf = file.type === 'application/pdf';
+  const url = isPdf ? '' : URL.createObjectURL(file);
+  slot.innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:8px;">
+    ${isPdf ? '<div style="width:64px;height:48px;display:flex;align-items:center;justify-content:center;background:var(--offwhite);border-radius:6px;font-size:12px;font-weight:700;">PDF</div>'
+            : `<img src="${url}" alt="Preview of the photo you picked" style="width:96px;height:72px;object-fit:cover;border-radius:6px;background:var(--offwhite);" onerror="this.outerHTML='<div style=&quot;width:96px;font-size:12px;color:#8A2D25;&quot;>No preview. This format may not be accepted.</div>'"/>`}
+    <div style="font-size:13px;line-height:1.4;min-width:0;"><div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(file.name || 'Photo')}</div><div style="color:var(--slate);">${mb} MB${(!isPdf && file.size > 1.2 * 1024 * 1024) ? ' · it will be shrunk before sending' : ''}</div></div>
+  </div>`;
+}
+
 async function submitVerification(role) {
   if (!BACKEND_AVAILABLE) {
     showToast('Submitted for review (demo mode — no backend detected)');
@@ -6412,13 +6460,24 @@ async function submitVerification(role) {
   const selfieInput = document.getElementById('verification-selfie-file-input');
   if (!selfieInput || !selfieInput.files || !selfieInput.files[0]) return showToast('Add a photo of your face as well');
 
-  const formData = new FormData();
-  formData.append('docType', docType);
-  formData.append('idLegalName', idLegalName);
-  formData.append('document', fileInput.files[0]);
-  formData.append('selfie', selfieInput.files[0]);
+  const backInput = document.getElementById('verification-back-file-input');
+  const btn = document.getElementById('verification-submit-btn');
+  if (btn && btn.disabled) return; // already sending
+  const setBusy = (text) => { if (btn) { btn.disabled = !!text; btn.textContent = text || 'Submit for Review'; } };
 
   try {
+    // v80: shrink the photos first, then send. The button says what's happening.
+    setBusy('Preparing your photos…');
+    const idFile = await prepareImageForUpload(fileInput.files[0], { maxSide: 2600, quality: 0.9 });
+    const backFile = backInput && backInput.files && backInput.files[0] ? await prepareImageForUpload(backInput.files[0], { maxSide: 2600, quality: 0.9 }) : null;
+    const selfieFile = await prepareImageForUpload(selfieInput.files[0], { maxSide: 1600, quality: 0.88 });
+    const formData = new FormData();
+    formData.append('docType', docType);
+    formData.append('idLegalName', idLegalName);
+    formData.append('document', idFile);
+    if (backFile) formData.append('documentBack', backFile);
+    formData.append('selfie', selfieFile);
+    setBusy('Uploading…');
     const res = await fetch(`${API_BASE}/verification/submit`, {
       method: 'POST',
       headers: AUTH.token ? { Authorization: `Bearer ${AUTH.token}` } : {},
@@ -6429,7 +6488,10 @@ async function submitVerification(role) {
     showToast('Submitted. A person on our team will review it, usually within 48 hours.');
     if (role === 'customer') { await loadCustomerData(); selectCustomerSection('verification'); }
     else { await loadProviderData(); selectProviderSection('verification'); }
-  } catch (e) { showToast(e.message || 'Could not submit for review'); }
+  } catch (e) {
+    setBusy('');
+    showToast(e && e.message === 'Failed to fetch' ? 'The upload didn\'t go through. Check your connection and try again.' : (e.message || 'Could not submit for review'));
+  }
 }
 
 // Checks whether real, live ID verification (Persona) is actually
@@ -6692,10 +6754,10 @@ function categoryPerformanceTableHTML(rows) {
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Jobs Booked</th><th>GMV</th><th>Avg Job Value</th><th>Providers</th><th>Avg Rating</th></tr></thead><tbody>
   ${rows.map(c => `<tr>
     <td style="font-weight:600;">${escapeHtml(c.category)}</td>
-    <td>${c.jobsBooked}</td>
+    <td>${escapeHtml(c.jobsBooked)}</td>
     <td>$${c.gmv.toLocaleString()}</td>
     <td>$${c.avgJobValue.toLocaleString()}</td>
-    <td>${c.providerCount}</td>
+    <td>${escapeHtml(c.providerCount)}</td>
     <td>${c.avgRating != null ? `★ ${c.avgRating}` : '—'}</td>
   </tr>`).join('')}
   </tbody></table></div>`;
@@ -6708,8 +6770,8 @@ function topProvidersTableHTML(rows) {
     <td style="font-weight:600;">${escapeHtml(p.name)}</td>
     <td>${escapeHtml(p.category) || '—'}</td>
     <td>${escapeHtml(p.city) || '—'}</td>
-    <td>${p.jobsCompleted}</td>
-    <td>${p.jobsBooked}</td>
+    <td>${escapeHtml(p.jobsCompleted)}</td>
+    <td>${escapeHtml(p.jobsBooked)}</td>
     <td>$${p.gmv.toLocaleString()}</td>
     <td>${p.rating ? `★ ${p.rating}` : '—'}</td>
   </tr>`).join('')}
@@ -6862,7 +6924,7 @@ function paymentHistoryTableHTML(payments) {
   ${payments.map(p => `
     <tr style="cursor:pointer;" onclick="togglePaymentBreakdown('${p.contractId}')">
       <td><span id="payment-caret-${p.contractId}">▸</span></td>
-      <td>${p.date}</td><td>${escapeHtml(p.providerName)}</td><td>${escapeHtml(p.service)}</td><td>${p.bookingNumber}</td><td>$${p.amount}${p.paidCurrency && p.paidCurrency !== 'USD' && p.paidAmountLocal ? ` <span style="color:var(--muted);font-size:12.5px;">(${p.paidAmountLocal} ${p.paidCurrency})</span>` : ''}</td><td>${statusBadge(p.status)}</td>
+      <td>${escapeHtml(p.date)}</td><td>${escapeHtml(p.providerName)}</td><td>${escapeHtml(p.service)}</td><td>${escapeHtml(p.bookingNumber)}</td><td>$${p.amount}${p.paidCurrency && p.paidCurrency !== 'USD' && p.paidAmountLocal ? ` <span style="color:var(--muted);font-size:12.5px;">(${p.paidAmountLocal} ${p.paidCurrency})</span>` : ''}</td><td>${statusBadge(p.status)}</td>
     </tr>
     <tr id="payment-breakdown-${p.contractId}" style="display:none;">
       <td colspan="7" style="background:var(--offwhite);padding:0;">
@@ -6878,7 +6940,7 @@ function paymentHistoryTableHTML(payments) {
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:13px;">
-            <div><span style="color:var(--muted);">Provider:</span> ${p.providerName}${p.providerEmail ? ` · ${p.providerEmail}` : ''}${p.providerPhone ? ` · ${p.providerPhone}` : ''}</div>
+            <div><span style="color:var(--muted);">Provider:</span> ${escapeHtml(p.providerName)}${p.providerEmail ? ` · ${escapeHtml(p.providerEmail)}` : ''}${p.providerPhone ? ` · ${escapeHtml(p.providerPhone)}` : ''}</div>
             <div><span style="color:var(--muted);">Scheduled:</span> ${p.jobDate || '—'}${p.jobTime ? ` · ${p.jobTime}` : ''}</div>
             <div style="grid-column:1/-1;"><span style="color:var(--muted);">Address:</span> ${p.address || '—'}</div>
           </div>
@@ -7020,7 +7082,7 @@ async function removePaymentMethod(id) {
 function bookingsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No bookings yet — post a job or book a pro to get started.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Pro</th><th>Service</th><th>Date</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${escapeHtml(b.pro)}</td><td>${escapeHtml(b.service)}${addressLinkHTML(b.address)}</td><td>${b.date}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
+  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${escapeHtml(b.pro)}</td><td>${escapeHtml(b.service)}${addressLinkHTML(b.address)}</td><td>${escapeHtml(b.date)}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -7165,7 +7227,7 @@ async function submitDispute(contractId) {
           <p>A photo, screenshot, or receipt helps our team resolve this faster.</p>
         </div>
         <div class="modal-body">
-          <input type="file" id="dispute-evidence-file" accept="image/jpeg,image/png,application/pdf"/>
+          <input type="file" id="dispute-evidence-file" accept="image/*,application/pdf"/>
           <div id="dispute-evidence-list" style="margin-top:12px;font-size:13.5px;color:var(--slate);"></div>
         </div>
         <div class="modal-footer">
@@ -7178,12 +7240,61 @@ async function submitDispute(contractId) {
   } catch (e) { showToast(e.message || 'Could not submit dispute'); }
 }
 
+// v80: every photo is prepared in the browser before it's sent.
+// A photo straight off a phone is often 5 to 15MB. That's slow on a mobile
+// connection and used to be refused outright as "too large". This turns
+// the photo the right way up, shrinks it so its longest side is at most
+// `maxSide` pixels, and saves it as JPEG (usually well under 1.5MB), which
+// is still easily sharp enough to read an ID. PDFs, videos and GIFs are
+// sent as they are. A photo the browser can't open (HEIC on most
+// browsers) gets a plain message saying what to do.
+async function prepareImageForUpload(file, opts) {
+  const { maxSide = 2400, quality = 0.88, skipUnder = 1.2 * 1024 * 1024 } = opts || {};
+  if (!file) return file;
+  const name = file.name || 'photo';
+  const looksHeic = /heic|heif/i.test(file.type || '') || /\.hei[cf]$/i.test(name);
+  const isImage = /^image\//.test(file.type || '') || looksHeic;
+  if (!isImage || file.type === 'image/gif') return file;
+  if (!looksHeic && file.size <= skipUnder && (file.type === 'image/jpeg' || file.type === 'image/png')) return file;
+  const cantOpen = new Error(looksHeic
+    ? 'That photo is in HEIC format, which this browser can\'t open. Take the photo again from this page, or save it as JPEG first.'
+    : 'That photo couldn\'t be opened. Try taking it again.');
+  let source = null, w = 0, h = 0;
+  try {
+    if (typeof createImageBitmap === 'function') {
+      try { source = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) { source = await createImageBitmap(file); }
+      w = source.width; h = source.height;
+    }
+  } catch (e) { source = null; }
+  if (!source) {
+    const url = URL.createObjectURL(file);
+    try {
+      source = await new Promise((resolve, reject) => { const im = new Image(); im.onload = () => resolve(im); im.onerror = reject; im.src = url; });
+      w = source.naturalWidth; h = source.naturalHeight;
+    } catch (e) { URL.revokeObjectURL(url); throw cantOpen; }
+    URL.revokeObjectURL(url);
+  }
+  if (!w || !h) throw cantOpen;
+  const scale = Math.min(1, maxSide / Math.max(w, h));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(w * scale)); canvas.height = Math.max(1, Math.round(h * scale));
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); // a see-through PNG would otherwise turn black as JPEG
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  if (source.close) source.close();
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+  if (!blob) throw cantOpen;
+  // Never send something bigger than what we were given.
+  if (blob.size >= file.size && (file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp')) return file;
+  return new File([blob], name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+}
+
 async function uploadDisputeEvidence(disputeId) {
   const input = document.getElementById('dispute-evidence-file');
   if (!input.files || !input.files[0]) return showToast('Choose a file first');
   const formData = new FormData();
-  formData.append('file', input.files[0]);
   try {
+    formData.append('file', await prepareImageForUpload(input.files[0], { maxSide: 2600, quality: 0.9 }));
     const res = await fetch(`${API_BASE}/disputes/${disputeId}/evidence`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${AUTH.token}` },
@@ -7617,9 +7728,9 @@ const CUSTOMER_SECTIONS = {
     <div class="panel"><div class="panel-title">Profile</div>
       <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="set-cust-name" value="${escapeHtml((AUTH.user && AUTH.user.name) || '')}"/></div>
       <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-cust-email" value="${escapeHtml((AUTH.user && AUTH.user.email) || '')}"/></div>
-      <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="set-cust-phone" value="${(AUTH.user && AUTH.user.phone) || '+1 (404) 555-0148'}"/></div>
-      <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="set-cust-address" value="${(AUTH.user && AUTH.user.address) || ''}"/></div>
-      <div class="form-group"><label class="form-label">Zip / Postal Code</label><input class="form-input" id="set-cust-zip" value="${(AUTH.user && AUTH.user.zipCode) || ''}"/></div>
+      <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="set-cust-phone" value="${escapeHtml((AUTH.user && AUTH.user.phone) || '+1 (404) 555-0148')}"/></div>
+      <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="set-cust-address" value="${escapeHtml((AUTH.user && AUTH.user.address) || '')}"/></div>
+      <div class="form-group"><label class="form-label">Zip / Postal Code</label><input class="form-input" id="set-cust-zip" value="${escapeHtml((AUTH.user && AUTH.user.zipCode) || '')}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveCustomerSettings()">Save Changes</button>
     </div>
     <div class="panel"><div class="panel-title">Location</div>
@@ -7631,7 +7742,7 @@ const CUSTOMER_SECTIONS = {
         <select class="form-input form-select" id="set-cust-state"></select>
       </div>
       <div class="form-group"><label class="form-label">City</label>
-        <input class="form-input" type="text" id="set-cust-city" value="${(AUTH.user && AUTH.user.city) || ''}"/>
+        <input class="form-input" type="text" id="set-cust-city" value="${escapeHtml((AUTH.user && AUTH.user.city) || '')}"/>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveCustomerLocation()">Save Location</button>
     </div>
@@ -7654,7 +7765,7 @@ const CUSTOMER_SECTIONS = {
               <div style="font-weight:700;color:var(--navy);">${cfg.label}</div>
               <div style="font-size:18px;font-weight:800;margin:4px 0;">$${cfg.price}<span style="font-size:12.5px;font-weight:400;color:var(--slate);">/mo</span></div>
               ${localLine}
-              <div style="font-size:12.5px;color:var(--slate);margin:4px 0 8px;">${cfg.description}</div>
+              <div style="font-size:12.5px;color:var(--slate);margin:4px 0 8px;">${escapeHtml(cfg.description)}</div>
               <button class="btn-sm ${isCurrent ? 'btn-sm-outline' : 'btn-sm-primary'}" style="width:100%;" ${isCurrent ? 'disabled' : ''} onclick="subscribeMembership('${tier}')">${isCurrent ? 'Current Plan' : 'Subscribe'}</button>
             </div>`;
           }).join('')}
@@ -8088,7 +8199,7 @@ function selectCustomerSection(key) {
   renderDashNav('customer-nav', CUSTOMER_NAV_ITEMS, key, 'selectCustomerSection');
   renderSectionSafely('customer-main', key, () => CUSTOMER_SECTIONS[key]());
   if (key === 'messages') loadMessageThread();
-  if (key === 'settings') { populateSettingsCountry('cust'); loadReferralPanel(); loadLoyaltyPointsPanel(); loadHandbookLink(); }
+  if (key === 'settings') { populateSettingsCountry('cust'); loadReferralPanel(); loadLoyaltyPointsPanel(); loadHandbookLink(); loadMyDataPanel('customer-main'); }
   if (key === 'verification') loadVerificationOptions();
   if (key === 'overview') loadPromotionsBanner('customer-promotions-banner');
   if (key === 'favorites') loadFavoritesPanel();
@@ -8274,15 +8385,14 @@ async function handleJobPhotoSelect(event, prefix) {
     const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
     const isVideo = allowedVideoTypes.includes(file.type);
     if (!isVideo && !allowedImageTypes.includes(file.type)) { showToast(`${file.name} isn't a supported type — JPEG, PNG, WEBP, GIF images or MP4, MOV, WEBM videos only`); continue; }
-    const maxSize = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
-    if (file.size > maxSize) { showToast(`${file.name} is too large — ${isVideo ? '50MB' : '5MB'} max`); continue; }
+    if (isVideo && file.size > 50 * 1024 * 1024) { showToast(`${file.name} is too large. Videos can be up to 50MB.`); continue; }
     const placeholder = { url: null, uploading: true, previewSrc: URL.createObjectURL(file), isVideo };
     existing.push(placeholder);
     renderJobPhotoPreviews(prefix);
     if (!BACKEND_AVAILABLE) { placeholder.uploading = false; placeholder.url = placeholder.previewSrc; renderJobPhotoPreviews(prefix); continue; }
     try {
       const formData = new FormData();
-      formData.append('photo', file);
+      formData.append('photo', isVideo ? file : await prepareImageForUpload(file)); // v80: photos are shrunk first
       const res = await fetch(API_BASE + '/job-photos/upload', {
         method: 'POST',
         headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
@@ -8439,7 +8549,7 @@ async function runAIMatch() {
             ? `<img src="${p.profilePhotoUrl}" alt="${p.name}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
             : `<div style="width:44px;height:44px;border-radius:50%;background:${p.color};color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:600;flex-shrink:0;">${p.initials}</div>`}
           <div style="flex:1;">
-            <div style="font-weight:600;font-size:13.5px;color:var(--navy);">${p.name} <span class="badge badge-success" style="margin-left:4px;">${p.score}% match</span></div>
+            <div style="font-weight:600;font-size:13.5px;color:var(--navy);">${escapeHtml(p.name)} <span class="badge badge-success" style="margin-left:4px;">${escapeHtml(p.score)}% match</span></div>
             <div style="font-size:13px;color:var(--slate);">${p.role} · $${p.price}/hr · ★ ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           </div>
           <button class="btn-sm btn-sm-primary" onclick="closePostJobModal();openBooking('${p.id}');">Book</button>
@@ -8665,7 +8775,7 @@ const PROVIDER_SECTIONS = {
         ondrop="event.preventDefault();this.style.borderColor='var(--border)';selectPortfolioPhoto(event.dataTransfer.files[0]);">
         📷 Upload Portfolio Photo <span style="color:var(--muted);font-weight:400;">— or drag and drop</span>
       </label>
-      <input type="file" id="portfolio-file-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none;" onchange="selectPortfolioPhoto(this.files[0])"/>
+      <input type="file" id="portfolio-file-input" accept="image/*" style="display:none;" onchange="selectPortfolioPhoto(this.files[0])"/>
       <div style="font-size:13px;color:var(--muted);margin-top:8px;">A real photo of your actual completed work — customers judge you by these. Not a screenshot, logo, or stock photo. JPEG, PNG, WEBP, or GIF · up to 5MB · up to 12 photos.</div>
       <div id="portfolio-grid-wrap" style="margin-top:16px;">${portfolioGridHTML(providerData.portfolioPhotos || [])}</div>
     </div>`,
@@ -8676,7 +8786,7 @@ const PROVIDER_SECTIONS = {
       <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
         <div id="prov-profile-photo-preview">${avatarHTML({ profilePhotoUrl: (AUTH.user && AUTH.user.profilePhotoUrl), initials: (AUTH.user && AUTH.user.initials) || '?', color: (AUTH.user && AUTH.user.color) || 'var(--navy)', name: (AUTH.user && AUTH.user.name) || '' }, 72)}</div>
         <div>
-          <input type="file" id="prov-photo-file-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none;" onchange="uploadProfilePhoto(this.files[0])"/>
+          <input type="file" id="prov-photo-file-input" accept="image/*" style="display:none;" onchange="uploadProfilePhoto(this.files[0])"/>
           <button class="btn-sm btn-sm-primary" onclick="document.getElementById('prov-photo-file-input').click()">Upload Photo</button>
           ${AUTH.user && AUTH.user.profilePhotoUrl ? `<button class="btn-sm btn-sm-outline" onclick="removeProfilePhoto()">Remove</button>` : ''}
           <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">This is what customers see on your card, search results, and profile — a real, identifiable photo builds a lot more trust than initials.</div>
@@ -8697,7 +8807,7 @@ const PROVIDER_SECTIONS = {
         <select class="form-input form-select" id="set-prov-state"></select>
       </div>
       <div class="form-group"><label class="form-label">City</label>
-        <input class="form-input" type="text" id="set-prov-city" value="${(AUTH.user && AUTH.user.city) || ''}"/>
+        <input class="form-input" type="text" id="set-prov-city" value="${escapeHtml((AUTH.user && AUTH.user.city) || '')}"/>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveProviderLocation()">Save Location</button>
     </div>
@@ -8716,9 +8826,9 @@ const PROVIDER_SECTIONS = {
     <div class="panel"><div class="panel-title">License & Insurance</div>
       <div style="font-size:13px;color:var(--slate);margin-bottom:14px;">If your category requires a license or insurance, keep the expiry date current here — customers and Trothen can see your standing, and it helps you avoid an awkward surprise mid-job. This is informational only right now; it doesn't block you from accepting work.</div>
       ${licenseInsuranceStatusHTML(AUTH.user && AUTH.user.licenseExpiryDate, 'License')}
-      <div class="form-group"><label class="form-label">License Expiry Date</label><input class="form-input" type="date" id="set-prov-license-expiry" value="${(AUTH.user && AUTH.user.licenseExpiryDate) || ''}"/></div>
+      <div class="form-group"><label class="form-label">License Expiry Date</label><input class="form-input" type="date" id="set-prov-license-expiry" value="${escapeHtml((AUTH.user && AUTH.user.licenseExpiryDate) || '')}"/></div>
       ${licenseInsuranceStatusHTML(AUTH.user && AUTH.user.insuranceExpiryDate, 'Insurance')}
-      <div class="form-group"><label class="form-label">Insurance Expiry Date</label><input class="form-input" type="date" id="set-prov-insurance-expiry" value="${(AUTH.user && AUTH.user.insuranceExpiryDate) || ''}"/></div>
+      <div class="form-group"><label class="form-label">Insurance Expiry Date</label><input class="form-input" type="date" id="set-prov-insurance-expiry" value="${escapeHtml((AUTH.user && AUTH.user.insuranceExpiryDate) || '')}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveLicenseInsurance()">Save Dates</button>
     </div>
     <div class="panel"><div class="panel-title">Service Location <small style="font-weight:400;color:var(--slate);">optional</small></div>
@@ -8730,7 +8840,7 @@ const PROVIDER_SECTIONS = {
         <label class="form-label">How far will you travel for a job?</label>
         <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">Only takes effect once you and a customer have both shared real locations — leave blank to be shown regardless of distance.</div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <input class="form-input" type="number" min="1" max="500" style="max-width:120px;" id="set-prov-service-radius" placeholder="e.g. 25" value="${(AUTH.user && AUTH.user.serviceRadiusMiles) || ''}"/>
+          <input class="form-input" type="number" min="1" max="500" style="max-width:120px;" id="set-prov-service-radius" placeholder="e.g. 25" value="${escapeHtml((AUTH.user && AUTH.user.serviceRadiusMiles) || '')}"/>
           <span style="font-size:13.5px;color:var(--slate);">miles</span>
           <button class="btn-sm btn-sm-primary" onclick="saveServiceRadius()">Save</button>
         </div>
@@ -8738,8 +8848,8 @@ const PROVIDER_SECTIONS = {
     </div>
     <div class="panel"><div class="panel-title">Business Profile <small style="font-weight:400;color:var(--slate);">optional</small></div>
       <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">If you operate as a registered business rather than as an individual, add your business details here — this appears on your public profile alongside your name.</div>
-      <div class="form-group"><label class="form-label">Business Name</label><input class="form-input" type="text" id="set-prov-business-name" value="${(AUTH.user && AUTH.user.businessName) || ''}" placeholder="e.g. Marcus T. Plumbing LLC"/></div>
-      <div class="form-group"><label class="form-label">Business Registration Number</label><input class="form-input" type="text" id="set-prov-business-reg" value="${(AUTH.user && AUTH.user.businessRegistrationNumber) || ''}" placeholder="e.g. state or national registration ID"/></div>
+      <div class="form-group"><label class="form-label">Business Name</label><input class="form-input" type="text" id="set-prov-business-name" value="${escapeHtml((AUTH.user && AUTH.user.businessName) || '')}" placeholder="e.g. Marcus T. Plumbing LLC"/></div>
+      <div class="form-group"><label class="form-label">Business Registration Number</label><input class="form-input" type="text" id="set-prov-business-reg" value="${escapeHtml((AUTH.user && AUTH.user.businessRegistrationNumber) || '')}" placeholder="e.g. state or national registration ID"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveBusinessProfile()">Save Business Profile</button>
     </div>
     ${phoneVerificationPanelHTML()}
@@ -8773,7 +8883,7 @@ const PROVIDER_SECTIONS = {
       </div>
       <div class="form-group" id="pricing-hourly-rate-group" style="display:${(!AUTH.user || AUTH.user.pricingModel === 'hourly' || !AUTH.user.pricingModel || AUTH.user.pricingModel === 'both') ? 'block' : 'none'};">
         <label class="form-label">Hourly Rate ($)</label>
-        <input class="form-input" type="number" min="1" id="set-prov-price" value="${(AUTH.user && AUTH.user.price) || 50}"/>
+        <input class="form-input" type="number" min="1" id="set-prov-price" value="${escapeHtml((AUTH.user && AUTH.user.price) || 50)}"/>
       </div>
       <div id="pricing-negotiable-note" style="display:${(AUTH.user && (AUTH.user.pricingModel === 'negotiable' || AUTH.user.pricingModel === 'both')) ? 'block' : 'none'};font-size:13px;color:var(--slate);margin-bottom:10px;">${AUTH.user && AUTH.user.pricingModel === 'both' ? 'A customer can either book you at your hourly rate, or propose their own offer — your choice which to accept.' : 'Customers will propose an offer when booking you, instead of a fixed hourly total.'}</div>
       <button class="btn-sm btn-sm-primary" onclick="savePricingModel()">Save Pricing</button>
@@ -9169,7 +9279,7 @@ function categoryImageUploadRowHTML(category, currentUrl) {
     ${currentUrl
       ? `<img src="${currentUrl}" alt="${category.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;"/>`
       : `<div style="width:40px;height:40px;border-radius:6px;background:var(--offwhite);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${category.icon || '🛠️'}</div>`}
-    <div style="flex:1;font-size:14px;font-weight:600;color:var(--navy);">${category.name}</div>
+    <div style="flex:1;font-size:14px;font-weight:600;color:var(--navy);">${escapeHtml(category.name)}</div>
     <input type="file" accept="image/jpeg,image/png,image/webp" id="ci-image-${category.id}" style="font-size:12.5px;max-width:150px;"/>
     <button class="btn-sm btn-sm-primary" style="padding:4px 10px;font-size:12.5px;" onclick="uploadCategoryImage('${category.id}')">Upload</button>
     ${currentUrl ? `<button class="btn-sm btn-sm-outline" style="padding:4px 10px;font-size:12.5px;" onclick="removeCategoryImage('${category.id}')">Remove</button>` : ''}
@@ -9288,7 +9398,7 @@ function payoutHistoryTableHTML(payouts) {
     ${payouts.map(p => `
       <tr style="cursor:pointer;" onclick="togglePayoutBreakdown('${p.id}')">
         <td><span id="payout-caret-${p.id}">▸</span></td>
-        <td>${p.id}</td><td>${p.date}</td><td>$${p.grossAmount ?? p.amount}</td><td>${p.commissionAmount ? `$${p.commissionAmount} (${Math.round((p.commissionRate||0)*100)}%)` : '—'}</td><td>$${p.amount}</td><td>${p.method}</td><td>${statusBadge(p.status)}</td>
+        <td>${escapeHtml(p.id)}</td><td>${escapeHtml(p.date)}</td><td>$${p.grossAmount ?? p.amount}</td><td>${p.commissionAmount ? `$${p.commissionAmount} (${Math.round((p.commissionRate||0)*100)}%)` : '—'}</td><td>$${p.amount}</td><td>${escapeHtml(p.method)}</td><td>${statusBadge(p.status)}</td>
       </tr>
       <tr id="payout-breakdown-${p.id}" style="display:none;">
         <td colspan="8" style="background:var(--offwhite);padding:0;">
@@ -9390,10 +9500,10 @@ function adminTransactionsTableHTML(transactions) {
   if (!transactions.length) return '<div style="color:var(--slate);font-size:14px;padding:12px 0;">No transactions in this range.</div>';
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Customer</th><th>Provider</th><th>Category</th><th>Service</th><th>Amount</th><th>Materials Adv.</th><th>Escrow</th><th>Est. Commission</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${transactions.map(t => `<tr>
-    <td>${t.date}</td>
+    <td>${escapeHtml(t.date)}</td>
     <td>${escapeHtml(t.customerName)}</td>
     <td>${escapeHtml(t.providerName)}</td>
-    <td>${t.category || '—'}</td>
+    <td>${escapeHtml(t.category || '—')}</td>
     <td>${escapeHtml(t.service)}</td>
     <td>$${t.amount}</td>
     <td>${t.materialsAdvanceAmount ? `$${t.materialsAdvanceAmount}` : '—'}</td>
@@ -9418,9 +9528,9 @@ function financialByRegionTableHTML(data) {
   ${regions.map(r => {
     const volume = r.held + r.released;
     const pct = totalVolume > 0 ? ((volume / totalVolume) * 100).toFixed(1) : '0.0';
-    return `<tr><td>${r.region}</td><td>${r.country}</td><td>$${r.held.toLocaleString()}</td><td>$${r.released.toLocaleString()}</td><td>$${r.commissionRevenue.toLocaleString()}</td><td>$${(r.serviceFeeRevenue || 0).toLocaleString()}</td><td>${r.transactionCount}</td><td>$${(r.avgTransaction || 0).toLocaleString()}</td><td>${pct}%</td></tr>`;
+    return `<tr><td>${escapeHtml(r.region)}</td><td>${escapeHtml(r.country)}</td><td>$${r.held.toLocaleString()}</td><td>$${r.released.toLocaleString()}</td><td>$${r.commissionRevenue.toLocaleString()}</td><td>$${(r.serviceFeeRevenue || 0).toLocaleString()}</td><td>${escapeHtml(r.transactionCount)}</td><td>$${(r.avgTransaction || 0).toLocaleString()}</td><td>${pct}%</td></tr>`;
   }).join('')}
-  <tr style="font-weight:700;background:var(--offwhite);"><td colspan="2">Total — All Regions</td><td>$${total.held.toLocaleString()}</td><td>$${total.released.toLocaleString()}</td><td>$${total.commissionRevenue.toLocaleString()}</td><td>$${(total.serviceFeeRevenue || 0).toLocaleString()}</td><td>${total.transactionCount}</td><td>$${(total.avgTransaction || 0).toLocaleString()}</td><td>100.0%</td></tr>
+  <tr style="font-weight:700;background:var(--offwhite);"><td colspan="2">Total — All Regions</td><td>$${total.held.toLocaleString()}</td><td>$${total.released.toLocaleString()}</td><td>$${total.commissionRevenue.toLocaleString()}</td><td>$${(total.serviceFeeRevenue || 0).toLocaleString()}</td><td>${escapeHtml(total.transactionCount)}</td><td>$${(total.avgTransaction || 0).toLocaleString()}</td><td>100.0%</td></tr>
   </tbody></table></div>`;
 }
 
@@ -9538,7 +9648,7 @@ function openJobPhotoViewer(photoUrls) {
 function matchesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No pending matches right now.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Budget</th><th>Match Score</th><th>Distance</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}${m.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(m.materialsOnHand)}</div>` : ''}${m.materialsCost != null ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">💵 Materials budget: $${m.materialsCost}</div>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${m.distance}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
+  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}${m.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(m.materialsOnHand)}</div>` : ''}${m.materialsCost != null ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">💵 Materials budget: $${m.materialsCost}</div>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${escapeHtml(m.distance)}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
   <td class="row-actions">${m.status === 'interested'
     ? `<button class="btn-sm btn-sm-outline" onclick="messageCustomerAboutJob('${m.customerId}','${m.jobId}')">💬 Message</button>`
     : `<button class="btn-sm btn-sm-primary" onclick="respondToMatch('${m.id}','accept')">I'm Interested</button><button class="btn-sm btn-sm-outline" onclick="respondToMatch('${m.id}','decline')">Decline</button>`
@@ -9880,8 +9990,9 @@ function selectProviderSection(key) {
   renderDashNav('provider-nav', navItems, key, 'selectProviderSection');
   renderSectionSafely('provider-main', key, () => PROVIDER_SECTIONS[key]());
   if (key === 'messages') loadMessageThread();
-  if (key === 'settings') { populateSettingsCountry('prov'); populateSettingsCategory(); loadReferralPanel(); loadHandbookLink(); }
+  if (key === 'settings') { populateSettingsCountry('prov'); populateSettingsCategory(); loadReferralPanel(); loadHandbookLink(); loadMyDataPanel('provider-main'); }
   if (key === 'verification') loadVerificationOptions();
+  if (key === 'earnings') loadPlanFeePanel();
   if (key === 'overview') { loadProviderScorePanel(); loadPromotionsBanner('provider-promotions-banner'); }
 }
 
@@ -9910,9 +10021,9 @@ function portfolioGridHTML(photos) {
 // saved as a portfolio photo.
 function selectPortfolioPhoto(file) {
   if (!file) return;
-  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-  if (!allowed.includes(file.type)) return showToast('Only JPEG, PNG, WEBP, or GIF images are allowed');
-  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large — 5MB max');
+  // v80: any photo is fine here. It's shrunk and saved as JPEG before it's
+  // sent (see prepareImageForUpload), so size is no longer a reason to refuse.
+  if (!/^image\//.test(file.type || '')) return showToast('Please choose a photo');
   const reader = new FileReader();
   reader.onload = () => showPortfolioPhotoPreview(reader.result, file);
   reader.readAsDataURL(file);
@@ -9954,11 +10065,11 @@ async function confirmPortfolioPhotoUpload() {
 async function uploadPortfolioPhoto(file) {
   if (!file) return;
   if (!BACKEND_AVAILABLE) return showToast('Photo uploaded (demo mode — no backend detected)');
-  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large — 5MB max');
 
   const formData = new FormData();
-  formData.append('photo', file);
   try {
+    showToast('Uploading your photo…');
+    formData.append('photo', await prepareImageForUpload(file)); // v80: shrunk first, so a phone photo is never "too large"
     const res = await fetch(API_BASE + '/portfolio/upload', {
       method: 'POST',
       headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
@@ -9990,11 +10101,11 @@ async function deletePortfolioPhoto(id) {
 async function uploadProfilePhoto(file) {
   if (!file) return;
   if (!BACKEND_AVAILABLE) return showToast('Profile photo updated (demo mode — no backend detected)');
-  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large — 5MB max');
 
   const formData = new FormData();
-  formData.append('photo', file);
   try {
+    showToast('Uploading your photo…');
+    formData.append('photo', await prepareImageForUpload(file, { maxSide: 1200 })); // v80
     const res = await fetch(API_BASE + '/profile-photo/upload', {
       method: 'POST',
       headers: AUTH.token ? { 'Authorization': 'Bearer ' + AUTH.token } : {},
@@ -10179,7 +10290,7 @@ async function loadAdminData() {
   if (pending) adminData.pendingUsers = pending.users.map(u => ({ id: u.id, name: u.name, role: u.role[0].toUpperCase() + u.role.slice(1), country: u.country, city: u.city, submitted: (u.createdAt || '').slice(0, 10), status: 'pending' }));
   if (allPeople) adminData.people = allPeople.users.map(u => ({ ...u, role: u.role[0].toUpperCase() + u.role.slice(1), active: u.active !== false }));
   if (verQueue) adminData.verificationMeta = { storage: verQueue.storage || null, retentionDays: verQueue.retentionDays, automatedCheckConnected: !!verQueue.automatedCheckConnected };
-  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, role: v.role, doc: v.docType, country: v.country, city: v.city, status: v.status, reviewDeadline: v.reviewDeadline, idLegalName: v.idLegalName || null, nameMatch: v.nameMatch, hasDocument: !!v.hasDocument, hasSelfie: !!v.hasSelfie, source: v.source || 'upload', createdAt: v.createdAt }));
+  if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, role: v.role, doc: v.docType, country: v.country, city: v.city, status: v.status, reviewDeadline: v.reviewDeadline, idLegalName: v.idLegalName || null, nameMatch: v.nameMatch, hasDocument: !!v.hasDocument, hasSelfie: !!v.hasSelfie, hasBack: !!v.hasBack, source: v.source || 'upload', createdAt: v.createdAt }));
   if (disputes) adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
   if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active, responseWindowOverrideHours: c.responseWindowOverrideHours }));
   if (countries) adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
@@ -10549,12 +10660,12 @@ const ADMIN_SECTIONS = {
     </div>` : ''}
     <div class="panel"><div class="panel-title">Service Categories <small style="font-weight:400;color:var(--slate);">${adminData.categories.length} total</small></div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Response Window</th><th>Active</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
-      ${adminData.categories.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${c.pros}</td><td>${categoryResponseWindowCell(c, isSuper)}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${escapeHtml(c.name)}" onclick="deleteCategory(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
+      ${adminData.categories.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.pros)}</td><td>${categoryResponseWindowCell(c, isSuper)}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${escapeHtml(c.name)}" onclick="deleteCategory(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
       </tbody></table></div>
     </div>
     <div class="panel"><div class="panel-title">Countries <small style="font-weight:400;color:var(--slate);">${adminData.countries.length} total</small></div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Country</th><th>Live</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
-      ${adminData.countries.map(c => `<tr><td>${c.name}</td><td>${cntCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteCountry(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
+      ${adminData.countries.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${cntCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteCountry(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
       </tbody></table></div>
     </div>`;
   },
@@ -10615,7 +10726,7 @@ const ADMIN_SECTIONS = {
       <div class="panel-title">Top Referrers</div>
       ${!data.topReferrers.length ? `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No referral activity yet.</div>` : `
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Role</th><th>Referral Code</th><th>People Referred</th></tr></thead><tbody>
-      ${data.topReferrers.map(r => `<tr><td>${escapeHtml(r.referrerName)}</td><td>${escapeHtml(r.referrerRole || '—')}</td><td><code>${escapeHtml(r.referralCode || '—')}</code></td><td>${r.totalReferred}</td></tr>`).join('')}
+      ${data.topReferrers.map(r => `<tr><td>${escapeHtml(r.referrerName)}</td><td>${escapeHtml(r.referrerRole || '—')}</td><td><code>${escapeHtml(r.referralCode || '—')}</code></td><td>${escapeHtml(r.totalReferred)}</td></tr>`).join('')}
       </tbody></table></div>`}
     </div>
     <div class="panel">
@@ -10816,8 +10927,8 @@ Liberia</textarea></div>
   settings: () => `
     <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Your admin account ${BACKEND_AVAILABLE ? '<span class="badge badge-success" style="margin-left:6px;">Saved to your account</span>' : ''}</div></div></div>
     <div class="panel"><div class="panel-title">Profile</div>
-      <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="set-admin-name" value="${(AUTH.user && AUTH.user.name) || ''}"/></div>
-      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-admin-email" value="${(AUTH.user && AUTH.user.email) || ''}"/></div>
+      <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="set-admin-name" value="${escapeHtml((AUTH.user && AUTH.user.name) || '')}"/></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-admin-email" value="${escapeHtml((AUTH.user && AUTH.user.email) || '')}"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveAdminSettings()">Save Changes</button>
     </div>
     ${twoFactorPanelHTML(true)}
@@ -10831,9 +10942,9 @@ Liberia</textarea></div>
     <div class="panel"><div class="panel-title">Support Chat Contact Info — ${escapeHtml(AUTH.user.region || 'Your City')}</div>
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Your own city's real WhatsApp and phone number for the support chat's "Chat with us" / "Call" links — customers and providers in ${escapeHtml(AUTH.user.region || 'your city')} see this number instead of the platform-wide one. ${adminData.supportContact && adminData.supportContact.usingPlatformFallback ? "You haven't set your own yet, so visitors here currently reach the platform-wide number below." : (adminData.supportContact && adminData.supportContact.isPlaceholder ? '<strong style="color:var(--danger,#B23A3A);">That platform-wide number is still the placeholder demo number — set your own real one below.</strong>' : 'This is your real, live number.')}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">WhatsApp Number <span style="color:var(--slate);font-weight:400;">(digits only, country code, e.g. 15551234567)</span></label><input class="form-input" id="regional-support-whatsapp" value="${adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? adminData.supportContact.whatsapp : ''}" placeholder="15551234567"/></div>
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Phone Number Shown to Visitors</label><input class="form-input" id="regional-support-phone-display" value="${adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? adminData.supportContact.phoneDisplay : ''}" placeholder="+1 (555) 123-4567"/></div>
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Support Email <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="email" id="regional-support-email" value="${adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? (adminData.supportContact.email || '') : ''}" placeholder="support@yourcity.trothenpro.com"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">WhatsApp Number <span style="color:var(--slate);font-weight:400;">(digits only, country code, e.g. 15551234567)</span></label><input class="form-input" id="regional-support-whatsapp" value="${escapeHtml(adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? adminData.supportContact.whatsapp : '')}" placeholder="15551234567"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Phone Number Shown to Visitors</label><input class="form-input" id="regional-support-phone-display" value="${escapeHtml(adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? adminData.supportContact.phoneDisplay : '')}" placeholder="+1 (555) 123-4567"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Support Email <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="email" id="regional-support-email" value="${escapeHtml(adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? (adminData.supportContact.email || '') : '')}" placeholder="support@yourcity.trothenpro.com"/></div>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn-sm btn-sm-primary" onclick="saveRegionalSupportContact()">Save</button>
@@ -10845,9 +10956,9 @@ Liberia</textarea></div>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Provider Booking Confirmation Window</div>
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">How long a provider has to accept or decline a new booking before it's automatically cancelled and the customer refunded — scaled by how soon the job actually is, not one flat number. A category can override this entirely in Categories & Countries. Changes apply to every new booking made after you save — doesn't affect bookings already pending.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px;">
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job within 24h</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-within24h" value="${adminData.bookingWindowTiers ? adminData.bookingWindowTiers.within24h : 1}"/></div>
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job within 2–7 days</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-within7d" value="${adminData.bookingWindowTiers ? adminData.bookingWindowTiers.within7d : 4}"/></div>
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job beyond 7 days</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-beyond7d" value="${adminData.bookingWindowTiers ? adminData.bookingWindowTiers.beyond7d : 24}"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job within 24h</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-within24h" value="${escapeHtml(adminData.bookingWindowTiers ? adminData.bookingWindowTiers.within24h : 1)}"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job within 2–7 days</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-within7d" value="${escapeHtml(adminData.bookingWindowTiers ? adminData.bookingWindowTiers.within7d : 4)}"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job beyond 7 days</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-beyond7d" value="${escapeHtml(adminData.bookingWindowTiers ? adminData.bookingWindowTiers.beyond7d : 24)}"/></div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveBookingWindow()">Save</button>
       <div style="font-size:12.5px;color:var(--slate);margin-top:8px;">Defaults: 1h / 4h / 24h. The deadline is also always automatically capped at the job's own start time, however these are set — a provider can never "confirm" a job after it was supposed to already start.</div>
@@ -10855,9 +10966,9 @@ Liberia</textarea></div>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Support Chat Contact Info</div>
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">The real WhatsApp and phone number behind the homepage support chat's "Chat with us" / "Call" links. ${adminData.supportContact && adminData.supportContact.isPlaceholder ? '<strong style="color:var(--danger,#B23A3A);">These are still the placeholder demo numbers — visitors clicking them right now will not reach you.</strong>' : 'These are your real, live numbers.'}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">WhatsApp Number <span style="color:var(--slate);font-weight:400;">(digits only, country code, e.g. 15551234567)</span></label><input class="form-input" id="support-whatsapp" value="${adminData.supportContact ? adminData.supportContact.whatsapp : ''}" placeholder="15551234567"/></div>
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Phone Number Shown to Visitors</label><input class="form-input" id="support-phone-display" value="${adminData.supportContact ? adminData.supportContact.phoneDisplay : ''}" placeholder="+1 (555) 123-4567"/></div>
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Support Email <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="email" id="support-email" value="${adminData.supportContact ? (adminData.supportContact.email || '') : ''}" placeholder="support@trothenpro.com"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">WhatsApp Number <span style="color:var(--slate);font-weight:400;">(digits only, country code, e.g. 15551234567)</span></label><input class="form-input" id="support-whatsapp" value="${escapeHtml(adminData.supportContact ? adminData.supportContact.whatsapp : '')}" placeholder="15551234567"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Phone Number Shown to Visitors</label><input class="form-input" id="support-phone-display" value="${escapeHtml(adminData.supportContact ? adminData.supportContact.phoneDisplay : '')}" placeholder="+1 (555) 123-4567"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Support Email <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="email" id="support-email" value="${escapeHtml(adminData.supportContact ? (adminData.supportContact.email || '') : '')}" placeholder="support@trothenpro.com"/></div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveSupportContact()">Save</button>
       <div style="background:var(--offwhite);border-radius:10px;padding:14px;margin-top:16px;">
@@ -10879,12 +10990,12 @@ Liberia</textarea></div>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Homepage Content</div>
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">The actual on-screen copy for the homepage hero and mission section. Changes go live immediately for every visitor — no deploy needed.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px;">
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Hero Prefix</label><input class="form-input" id="hc-hero-prefix" value="${adminData.homepageContent ? adminData.homepageContent.heroPrefix : ''}" placeholder="Find Trusted Local"/></div>
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Rotating Words <span style="color:var(--slate);font-weight:400;">(comma-separated)</span></label><input class="form-input" id="hc-hero-words" value="${adminData.homepageContent ? adminData.homepageContent.heroRotatingWords.join(', ') : ''}" placeholder="Pros, Plumbers, Cleaners"/></div>
-        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Hero Suffix</label><input class="form-input" id="hc-hero-suffix" value="${adminData.homepageContent ? adminData.homepageContent.heroSuffix : ''}" placeholder="Instantly"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Hero Prefix</label><input class="form-input" id="hc-hero-prefix" value="${escapeHtml(adminData.homepageContent ? adminData.homepageContent.heroPrefix : '')}" placeholder="Find Trusted Local"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Rotating Words <span style="color:var(--slate);font-weight:400;">(comma-separated)</span></label><input class="form-input" id="hc-hero-words" value="${escapeHtml(adminData.homepageContent ? adminData.homepageContent.heroRotatingWords.join(', ') : '')}" placeholder="Pros, Plumbers, Cleaners"/></div>
+        <div class="form-group" style="margin-bottom:0;"><label class="form-label">Hero Suffix</label><input class="form-input" id="hc-hero-suffix" value="${escapeHtml(adminData.homepageContent ? adminData.homepageContent.heroSuffix : '')}" placeholder="Instantly"/></div>
       </div>
       <div class="form-group"><label class="form-label">Hero Subheadline</label><textarea class="form-input" id="hc-hero-subheadline" rows="2" style="resize:vertical;">${adminData.homepageContent ? adminData.homepageContent.heroSubheadline : ''}</textarea></div>
-      <div class="form-group"><label class="form-label">Mission Headline</label><input class="form-input" id="hc-mission-headline" value="${adminData.homepageContent ? adminData.homepageContent.missionHeadline : ''}"/></div>
+      <div class="form-group"><label class="form-label">Mission Headline</label><input class="form-input" id="hc-mission-headline" value="${escapeHtml(adminData.homepageContent ? adminData.homepageContent.missionHeadline : '')}"/></div>
       <div class="form-group"><label class="form-label">Mission Body</label><textarea class="form-input" id="hc-mission-body" rows="4" style="resize:vertical;">${adminData.homepageContent ? adminData.homepageContent.missionBody : ''}</textarea></div>
       <div class="form-group"><label class="form-label">Featured Countries</label>
         <div style="font-size:13.5px;color:var(--slate);background:var(--offwhite);border-radius:8px;padding:10px 12px;">This line is genuinely connected to <strong>Admin → Locations & Countries</strong> now, not a separate field here — it always shows whichever countries are actually toggled "live" there. To change what shows on the homepage, toggle a country's status on that screen instead.</div>
@@ -10951,7 +11062,7 @@ Liberia</textarea></div>
 function citiesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No cities configured yet.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>City</th><th>Country</th><th>Admin</th><th>Users</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
-  ${list.map(c => `<tr><td>${c.name}</td><td>${c.country}</td><td>${c.adminName || '—'}<div style="font-size:12.5px;color:var(--slate)">${c.adminEmail || ''}</div></td><td>${c.userCount ?? '—'}</td><td>${statusBadge(c.adminActive === false ? 'suspended' : 'active')}</td>
+  ${list.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.country)}</td><td>${escapeHtml(c.adminName || '—')}<div style="font-size:12.5px;color:var(--slate)">${escapeHtml(c.adminEmail || '')}</div></td><td>${c.userCount ?? '—'}</td><td>${statusBadge(c.adminActive === false ? 'suspended' : 'active')}</td>
   ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${c.adminId}')">${c.adminActive === false ? 'Reactivate' : 'Suspend'}</button> <button class="btn-sm btn-sm-outline" data-admin-id="${c.adminId}" data-admin-name="${(c.adminName || 'this admin').replace(/"/g, '&quot;')}" data-city-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteSubAdmin(this.dataset.adminId, this.dataset.adminName, this.dataset.cityName)">Delete</button></td>` : ''}</tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -11053,6 +11164,83 @@ async function takeDownAd(id) {
     await loadAdminData();
     selectAdminSection('advertising');
   } catch (e) { showToast(e.message || 'Could not take down ad'); }
+}
+
+// ── v78: MONTHLY PLAN FEE ──────────────────────────────────────────────
+const money = (n) => '$' + Number(n || 0).toFixed(2);
+// Provider → Earnings: what my plan fee is and whether it's charged yet.
+async function loadPlanFeePanel() {
+  const main = document.getElementById('provider-main');
+  if (!main || !BACKEND_AVAILABLE) return;
+  let d; try { d = await apiFetch('GET', '/plan-billing/mine'); } catch (e) { return; }
+  const old = document.getElementById('plan-fee-panel'); if (old) old.remove();
+  const price = d.price.currencyCode === 'USD' ? `$${d.price.amountUsd}` : `${escapeHtml(d.price.currencySymbol)}${Number(d.price.localPrice).toLocaleString()} (about $${d.price.amountUsd})`;
+  const planName = PLAN_LABELS_CLIENT[d.price.plan] || 'Starter';
+  let status;
+  if (d.inOrganization) status = 'Your account is part of an organization, so you don\'t pay a plan fee yourself.';
+  else if (!d.active) status = `Your plan is ${planName}, listed at ${price} a month. <strong>This fee isn't being charged yet.</strong> You'll get notice before it starts.`;
+  else if (d.beginsAt && new Date(d.beginsAt) > new Date()) status = `Your plan is ${planName}, ${price} a month. <strong>The fee starts on ${escapeHtml(d.beginsAt.slice(0, 10))}.</strong> It's never charged to a card: it comes out of your payouts, and never more than ${d.maxShareOfPayoutPercent}% of one payout.`;
+  else status = `Your plan is ${planName}, ${price} a month. It's never charged to a card: it comes out of your payouts, and never more than ${d.maxShareOfPayoutPercent}% of one payout. ${d.outstandingUsd > 0 ? `<strong>${money(d.outstandingUsd)} will come out of your next payouts.</strong>` : 'Nothing is owed right now.'}`;
+  const rows = d.invoices.map(i => `<tr><td>${escapeHtml(i.period)}</td><td>${escapeHtml(PLAN_LABELS_CLIENT[i.plan] || i.plan)}</td><td>${money(i.amountUsd)}</td><td>${money(i.paidUsd)}</td><td>${i.status === 'paid' ? '<span class="badge badge-success">Paid</span>' : i.status === 'waived' ? '<span class="badge badge-neutral">Waived</span>' : '<span class="badge badge-warn">Open</span>'}</td></tr>`).join('');
+  main.insertAdjacentHTML('beforeend', `<div class="panel" id="plan-fee-panel"><div class="panel-title">Monthly plan fee</div>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);">${status}</div>
+    ${rows ? `<div class="data-table-wrap" style="margin-top:12px;"><table class="data-table"><thead><tr><th>Month</th><th>Plan</th><th>Fee</th><th>Taken so far</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+  </div>`);
+}
+
+// Admin → Plans & Pricing (super admin): the switch, a preview, the invoices.
+async function loadPlanBillingPanel() {
+  const main = document.getElementById('admin-main');
+  if (!main || !BACKEND_AVAILABLE || !(AUTH.user && AUTH.user.isSuperAdmin)) return;
+  let d; try { d = await apiFetch('GET', '/admin/plan-billing'); } catch (e) { return; }
+  const old = document.getElementById('plan-billing-panel'); if (old) old.remove();
+  const s = d.state, pv = d.preview;
+  const lock1 = s.envEnabled
+    ? '<span class="badge badge-success">Open</span> PLAN_BILLING_ENABLED is set to true on the server.'
+    : '<span class="badge badge-neutral">Locked</span> PLAN_BILLING_ENABLED is not set to true on the server. Set it in Render only once real payments are live.';
+  const lock2 = s.on
+    ? `<span class="badge badge-success">On</span> Switched on ${escapeHtml(String(s.startedAt).slice(0, 10))}. ${s.active ? (new Date(s.beginsAt) > new Date() ? `First invoices on or after <strong>${escapeHtml(s.beginsAt.slice(0, 10))}</strong>.` : 'Invoices are being created each month.') : 'Not running, because the server lock is closed.'}`
+    : '<span class="badge badge-neutral">Off</span> No invoices are created and nothing is taken from payouts.';
+  const planRow = (k) => `<tr><td>${PLAN_LABELS_CLIENT[k]}</td><td>${pv.byPlan[k].count}</td><td>${money(pv.byPlan[k].usd)}</td></tr>`;
+  const invRows = d.recent.map(i => `<tr><td>${escapeHtml(i.providerName)}</td><td>${escapeHtml(i.period)}</td><td>${escapeHtml(PLAN_LABELS_CLIENT[i.plan] || i.plan)}</td><td>${money(i.amountUsd)}</td><td>${money(i.paidUsd)}</td><td>${i.status === 'paid' ? '<span class="badge badge-success">Paid</span>' : i.status === 'waived' ? '<span class="badge badge-neutral">Waived</span>' : '<span class="badge badge-warn">Open</span>'}</td><td class="row-actions">${i.status === 'open' ? `<button class="btn-sm btn-sm-ghost" onclick="waivePlanInvoice('${escapeHtml(i.id)}')">Waive</button>` : '—'}</td></tr>`).join('');
+  main.insertAdjacentHTML('beforeend', `<div class="panel" id="plan-billing-panel">
+    <div class="panel-title">Charging the monthly plan fee <small>built and ready, off until real payments are live</small></div>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;">The prices above are shown to pros on the Provider Plans page. This is the part that actually collects them. A pro is never charged on a card: once a month they get an invoice, and it comes out of their own payouts (never more than half of one payout; the rest carries over). Pros inside an organization, and pros who aren't ID-checked yet, aren't billed.</div>
+    <div style="font-size:14px;line-height:1.9;"><div><strong>Lock 1, server:</strong> ${lock1}</div><div><strong>Lock 2, this switch:</strong> ${lock2}</div></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0;">
+      <label class="form-label" style="margin:0;" for="plan-billing-notice">Notice before the first invoice</label>
+      <input class="form-input" id="plan-billing-notice" type="number" min="14" max="180" value="${s.noticeDays}" style="width:90px;" ${s.on ? 'disabled' : ''}/>
+      <span style="font-size:14px;color:var(--slate);">days</span>
+      ${s.on ? '<button class="btn-sm btn-sm-outline" onclick="setPlanBilling(false)">Switch off</button>' : `<button class="btn-sm btn-sm-primary" onclick="setPlanBilling(true)" ${s.envEnabled ? '' : 'disabled title="Locked on the server" style="opacity:.45;cursor:not-allowed;"'}>Switch on</button>`}
+    </div>
+    <div class="panel-title" style="margin-top:8px;">If billing ran today</div>
+    <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Plan</th><th>Pros who would be billed</th><th>Per month (USD)</th></tr></thead><tbody>${planRow('starter')}${planRow('pro')}${planRow('superpro')}<tr><td><strong>Total</strong></td><td><strong>${pv.providers}</strong></td><td><strong>${money(pv.totalUsd)}</strong></td></tr></tbody></table></div>
+    <div class="panel-title" style="margin-top:16px;">Invoices so far</div>
+    <div style="font-size:14px;color:var(--slate);margin-bottom:8px;">${d.totals.invoices} invoices · billed ${money(d.totals.billedUsd)} · taken from payouts ${money(d.totals.collectedUsd)} · still open ${money(d.totals.outstandingUsd)}</div>
+    ${invRows ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Pro</th><th>Month</th><th>Plan</th><th>Fee</th><th>Taken</th><th>Status</th><th>Action</th></tr></thead><tbody>${invRows}</tbody></table></div>` : '<div class="ver-note">No invoices yet.</div>'}
+  </div>`);
+}
+async function setPlanBilling(on) {
+  const noticeEl = document.getElementById('plan-billing-notice');
+  const noticeDays = Number(noticeEl && noticeEl.value);
+  if (on) {
+    const ok = await confirmDialog(`Switch on the monthly plan fee? Every billable pro is told now, and the first invoices are created ${noticeDays} days from today. Only do this once real payments are live and the provider terms mention the fee.`, { confirmLabel: 'Switch on', danger: true });
+    if (!ok) return;
+  } else {
+    const ok = await confirmDialog('Switch off the monthly plan fee? No new invoices are created and nothing more is taken from payouts. Invoices already recorded stay as they are.', { confirmLabel: 'Switch off' });
+    if (!ok) return;
+  }
+  try {
+    const res = await apiFetch('PATCH', '/admin/plan-billing', on ? { on: true, noticeDays } : { on: false });
+    showToast(on ? `Switched on. ${res.providersTold} pro${res.providersTold === 1 ? '' : 's'} told.` : 'Switched off.');
+    loadPlanBillingPanel();
+  } catch (e) { showToast(e.message || 'Could not change plan billing'); }
+}
+async function waivePlanInvoice(id) {
+  const ok = await confirmDialog('Waive what\'s still owed on this invoice? The pro is told. Anything already taken stays.', { confirmLabel: 'Waive' });
+  if (!ok) return;
+  try { await apiFetch('POST', '/admin/plan-billing/invoices/' + encodeURIComponent(id) + '/waive'); showToast('Invoice waived'); loadPlanBillingPanel(); }
+  catch (e) { showToast(e.message || 'Could not waive'); }
 }
 
 // ── PLANS & PRICING ─────────────────────────────────────────────────────
@@ -11160,7 +11348,7 @@ function superAdminPricingSectionHTML() {
 function planPricingOverridesTableHTML(overrides) {
   if (!overrides.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No country has set a custom price yet — every country follows the global USD base.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Country</th><th>Plan</th><th>Local Price</th><th>Currency</th><th>Updated</th><th>Action</th></tr></thead><tbody>
-  ${overrides.map(o => `<tr><td>${o.country}</td><td>${PLAN_LABELS_CLIENT[o.plan] || o.plan}</td><td>${o.localPrice}</td><td>${o.currencyCode}</td><td>${(o.updatedAt || '').slice(0, 10)}</td>
+  ${overrides.map(o => `<tr><td>${escapeHtml(o.country)}</td><td>${PLAN_LABELS_CLIENT[o.plan] || o.plan}</td><td>${escapeHtml(o.localPrice)}</td><td>${escapeHtml(o.currencyCode)}</td><td>${(o.updatedAt || '').slice(0, 10)}</td>
   <td class="row-actions"><button class="btn-sm btn-sm-outline" data-country="${o.country.replace(/"/g, '&quot;')}" data-plan="${o.plan}" onclick="clearAnyPricingOverride(this.dataset.country, this.dataset.plan)">Clear</button></td></tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -11234,7 +11422,7 @@ function exchangeRatesTableHTML(rates) {
   return `<div class="data-table-wrap" style="max-height:420px;overflow-y:auto;"><table class="data-table"><thead><tr><th>Currency</th><th>Rate (units per $1 USD)</th><th>New Rate</th><th>Source</th><th>Last Updated</th><th>Action</th></tr></thead><tbody>
   ${editable.map(r => `<tr>
     <td style="font-weight:600;">${r.currencyCode}</td>
-    <td>${r.rateToUsd}</td>
+    <td>${escapeHtml(r.rateToUsd)}</td>
     <td><input class="form-input" type="number" min="0.0001" step="0.0001" id="rate-${r.currencyCode}" placeholder="${r.rateToUsd}" style="width:120px;padding:6px 8px;"/></td>
     <td>${RATE_SOURCE_BADGE[r.source] || RATE_SOURCE_BADGE.default}</td>
     <td style="font-size:13px;color:var(--slate);">${r.updatedAt ? new Date(r.updatedAt).toLocaleString() : '—'}</td>
@@ -11687,7 +11875,7 @@ async function loadDataCleanupLogPanel() {
     const { log } = await apiFetch('GET', '/admin/data-cleanup/audit-log');
     if (!log.length) { target.innerHTML = `<div style="color:var(--slate);font-size:13.5px;padding:12px 0;">No cleanup runs yet.</div>`; return; }
     target.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Country</th><th>Accounts removed</th><th>By</th><th>When</th></tr></thead><tbody>
-      ${log.map(l => `<tr><td>${escapeHtml(l.country)}</td><td>${l.counts.accounts}</td><td>${escapeHtml(l.actorName)}</td><td>${new Date(l.createdAt).toLocaleString()}</td></tr>`).join('')}
+      ${log.map(l => `<tr><td>${escapeHtml(l.country)}</td><td>${escapeHtml(l.counts.accounts)}</td><td>${escapeHtml(l.actorName)}</td><td>${new Date(l.createdAt).toLocaleString()}</td></tr>`).join('')}
       </tbody></table></div>`;
   } catch (e) { target.textContent = 'Could not load cleanup history.'; }
 }
@@ -11927,7 +12115,7 @@ function openDealNotesForm(id, companyName, price, currency, notes) {
         </div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Agreed Price <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="number" min="0" step="0.01" id="deal-price" value="${price || ''}" placeholder="e.g. 15"/></div>
-          <div class="form-group"><label class="form-label">Currency</label><input class="form-input" id="deal-currency" value="${currency || 'USD'}" placeholder="USD"/></div>
+          <div class="form-group"><label class="form-label">Currency</label><input class="form-input" id="deal-currency" value="${escapeHtml(currency || 'USD')}" placeholder="USD"/></div>
           <div class="form-group"><label class="form-label">Internal Notes</label><textarea class="form-input" id="deal-notes" rows="5" style="resize:vertical;" placeholder="What was discussed, agreed terms, next steps, who talked to them, etc.">${notes || ''}</textarea></div>
         </div>
         <div class="modal-footer">
@@ -12010,7 +12198,7 @@ function organizationsListHTML(orgs) {
     <td>${o.seatCount}${o.seatLimit ? ` / ${o.seatLimit}` : ''}</td>
     <td>${o.agreedPrice != null ? `$${o.agreedPrice} ${o.agreedCurrency || 'USD'}/mo` : '—'}</td>
     <td>${o.commissionRate != null ? `${(o.commissionRate * 100).toFixed(1)}%` : '<span style="color:var(--slate);">Plan default</span>'}</td>
-    <td>${o.accountManagerName || '—'}</td>
+    <td>${escapeHtml(o.accountManagerName || '—')}</td>
     <td style="font-size:13px;color:var(--slate);">${(o.createdAt || '').slice(0, 10)}</td>
     <td>${o.status === 'active' ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
     <td><button class="btn-sm btn-sm-primary" onclick="openOrgDetail('${o.id}')">View</button></td>
@@ -12580,6 +12768,134 @@ async function approveProviderTier(userId, plan) {
   } catch (e) { showToast(e.message || 'Could not update this provider\'s tier'); }
 }
 
+// ── v83: MY DATA, AND CLOSING MY ACCOUNT ───────────────────────────────
+function loadMyDataPanel(mainId) {
+  const main = document.getElementById(mainId);
+  if (!main || !BACKEND_AVAILABLE || !AUTH.user) return;
+  const old = document.getElementById('my-data-panel'); if (old) old.remove();
+  main.insertAdjacentHTML('beforeend', `<div class="panel" id="my-data-panel">
+    <div class="panel-title">Your data and your account</div>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;">You can download a copy of everything Trothen holds about your account: your profile, bookings, payments, messages, reviews and identity-check records.</div>
+    <button class="btn-sm btn-sm-outline" id="my-data-download-btn" onclick="downloadMyData()">Download my data</button>
+    <div style="border-top:1px solid var(--border);margin:18px 0 14px;"></div>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;"><strong>Close my account.</strong> Your account stops working straight away and you're signed out everywhere. Records of past bookings and payments are kept, because the other person in each one has a right to them and money records have to be kept. Your personal details are then removed by our team.</div>
+    <button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="startCloseAccount()">Close my account</button>
+  </div>`);
+}
+async function downloadMyData() {
+  const btn = document.getElementById('my-data-download-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Preparing…'; }
+  try {
+    const res = await fetch(API_BASE + '/auth/me/export', { headers: { Authorization: 'Bearer ' + AUTH.token } });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Could not prepare your data'); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'trothen-my-data-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showToast('Your data has been downloaded');
+  } catch (e) { showToast(e.message || 'Could not prepare your data'); }
+  if (btn) { btn.disabled = false; btn.textContent = 'Download my data'; }
+}
+async function startCloseAccount() {
+  let blockers = [];
+  try { blockers = (await apiFetch('GET', '/auth/me/close-account/check')).blockers || []; } catch (e) { return showToast(e.message || 'Could not check your account'); }
+  const usesGoogle = !!(AUTH.user && AUTH.user.googleId);
+  const body = blockers.length
+    ? `<p style="margin:0 0 10px;">Your account can't be closed just yet:</p><ul style="margin:0 0 4px 18px;line-height:1.6;">${blockers.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>`
+    : `<p style="margin:0 0 12px;line-height:1.6;">This closes your account now. You'll be signed out everywhere and won't be able to sign back in. If you change your mind, contact support before your details are removed.</p>
+       <div class="form-group"><label class="form-label">${usesGoogle ? 'Your password, or type CLOSE' : 'Your password'}</label><input class="form-input" type="${usesGoogle ? 'text' : 'password'}" id="close-account-password" autocomplete="current-password"/></div>
+       <div class="form-group" style="margin-bottom:0;"><label class="form-label">Why are you leaving? <span style="font-weight:400;color:var(--slate);">(optional)</span></label><textarea class="form-input" id="close-account-reason" rows="2" maxlength="500"></textarea></div>`;
+  document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="close-account-overlay" style="z-index:5200;"><div class="modal" style="max-width:460px;" role="dialog" aria-modal="true">
+    <div class="modal-header"><h3>Close my account</h3></div>
+    <div class="modal-body" style="font-size:14px;">${body}</div>
+    <div class="modal-footer" style="display:flex;gap:10px;">
+      <button class="btn-sm btn-sm-outline" style="flex:1;" onclick="document.getElementById('close-account-overlay').remove()">${blockers.length ? 'OK' : 'Keep my account'}</button>
+      ${blockers.length ? '' : '<button class="confirm-btn" style="flex:1;background:#A5352B;" id="close-account-confirm-btn" onclick="confirmCloseAccount()">Close my account</button>'}
+    </div></div></div>`);
+}
+async function confirmCloseAccount() {
+  const entry = document.getElementById('close-account-password').value;
+  const reason = document.getElementById('close-account-reason').value;
+  if (!entry) return showToast('Enter your password to confirm');
+  const btn = document.getElementById('close-account-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Closing…';
+  try {
+    await apiFetch('POST', '/auth/me/close-account', { password: entry, confirm: entry, reason });
+    document.getElementById('close-account-overlay').remove();
+    showToast('Your account has been closed.');
+    setTimeout(() => { try { clearAuthSession(); } catch (e) {} location.href = '/'; }, 1500);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Close my account';
+    showToast(e.message || 'Could not close your account');
+  }
+}
+
+// Admin → People (super admin): accounts their owners closed.
+async function loadAccountClosuresPanel() {
+  const main = document.getElementById('admin-main');
+  if (!main || !BACKEND_AVAILABLE || !(AUTH.user && AUTH.user.isSuperAdmin)) return;
+  let d; try { d = await apiFetch('GET', '/admin/account-closures'); } catch (e) { return; }
+  const old = document.getElementById('account-closures-panel'); if (old) old.remove();
+  const badge = (s) => s === 'erased' ? '<span class="badge badge-neutral">Details erased</span>' : s === 'reopened' ? '<span class="badge badge-success">Reopened</span>' : '<span class="badge badge-warn">Closed, details still held</span>';
+  const rows = d.closures.map(c => `<tr><td><strong>${escapeHtml(c.name)}</strong>${c.email ? `<div class="ver-note">${escapeHtml(c.email)}</div>` : ''}</td><td>${escapeHtml(c.role === 'provider' ? 'Pro' : 'Customer')}</td><td>${escapeHtml(String(c.requestedAt).slice(0, 10))}<div class="ver-note">${c.daysSinceClosed} day${c.daysSinceClosed === 1 ? '' : 's'} ago</div></td><td>${escapeHtml(c.reason || '—')}</td><td>${badge(c.status)}</td>
+    <td class="row-actions">${c.status === 'closed' ? `<button class="btn-sm btn-sm-outline" onclick="reopenClosedAccount('${escapeHtml(c.id)}')">Reopen</button><button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="eraseClosedAccount('${escapeHtml(c.id)}', '${escapeHtml(String(c.name).replace(/'/g, ''))}')">Erase details</button>` : '—'}</td></tr>`).join('');
+  main.insertAdjacentHTML('beforeend', `<div class="panel" id="account-closures-panel">
+    <div class="panel-title">Accounts closed by their owners <small>${d.closures.filter(c => c.status === 'closed').length} waiting for a decision</small></div>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:10px;">A closed account can't sign in and isn't shown anywhere. <strong>Erase details</strong> permanently removes the person's name, contact details, photos and ID files. Their bookings, payments, reviews and disputes stay on record, shown as "Closed account". Nothing is erased automatically; how long to wait is a decision for me and the attorney.</div>
+    ${rows ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Person</th><th>Type</th><th>Closed</th><th>Reason given</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="ver-note">No one has closed their account.</div>'}
+  </div>`);
+}
+async function reopenClosedAccount(id) {
+  const ok = await confirmDialog('Reopen this account? The person will be able to sign in again.', { confirmLabel: 'Reopen' });
+  if (!ok) return;
+  try { await apiFetch('POST', '/admin/account-closures/' + encodeURIComponent(id) + '/reopen'); showToast('Account reopened'); loadAccountClosuresPanel(); }
+  catch (e) { showToast(e.message || 'Could not reopen'); }
+}
+async function eraseClosedAccount(id, name) {
+  const ok = await confirmDialog(`Erase the personal details of ${name}? Their name, email, phone, address, photos and ID files are removed for good and the account can never be reopened. Records of their bookings and payments are kept.`, { confirmLabel: 'Erase for good', danger: true });
+  if (!ok) return;
+  try { await apiFetch('POST', '/admin/account-closures/' + encodeURIComponent(id) + '/erase'); showToast('Personal details erased'); loadAccountClosuresPanel(); }
+  catch (e) { showToast(e.message || 'Could not erase'); }
+}
+
+// v82: Admin → Settings (super admin): the nightly data copies.
+async function loadBackupsPanel() {
+  const main = document.getElementById('admin-main');
+  if (!main || !BACKEND_AVAILABLE || !(AUTH.user && AUTH.user.isSuperAdmin)) return;
+  let d; try { d = await apiFetch('GET', '/admin/backups'); } catch (e) { return; }
+  const old = document.getElementById('backups-panel'); if (old) old.remove();
+  if (!d.applies) return;
+  const latest = d.backups[0];
+  const rows = d.backups.map(b => `<tr><td>${escapeHtml(b.day)}</td><td>${b.files}</td><td>${Math.max(1, Math.round(b.bytes / 1024)).toLocaleString()} KB</td></tr>`).join('');
+  main.insertAdjacentHTML('beforeend', `<div class="panel" id="backups-panel">
+    <div class="panel-title">Data backups <small>a copy of the records, taken every night</small></div>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:10px;">${latest ? `Latest copy: <strong>${escapeHtml(latest.day)}</strong>. The newest ${d.keepDays} days are kept.` : 'No copy has been taken yet. The first one is made about a minute after the server starts.'} These copies sit on the same disk as the data, so they protect against a bad change or a mistake, not against losing the disk. Uploaded photos and ID files are not included.</div>
+    <button class="btn-sm btn-sm-outline" onclick="runBackupNow()">Take a copy now</button>
+    ${rows ? `<div class="data-table-wrap" style="margin-top:12px;"><table class="data-table"><thead><tr><th>Day</th><th>Files</th><th>Size</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+  </div>`);
+}
+async function runBackupNow() {
+  try { const r = await apiFetch('POST', '/admin/backups/run'); showToast(`Copied ${r.files} data files`); loadBackupsPanel(); }
+  catch (e) { showToast(e.message || 'The backup failed'); }
+}
+
+// v81: super admin gives someone a one-time password. For when a person
+// can't get in and reset-by-email isn't connected.
+async function issueTempPassword(userId, name) {
+  const ok = await confirmDialog(`Reset the password for ${name}? Only do this after you've confirmed it's really them (for example, by calling the phone number on their account). They'll be signed out everywhere and must choose a new password at their next sign-in.`, { confirmLabel: 'Reset password', danger: true });
+  if (!ok) return;
+  try {
+    const { tempPassword } = await apiFetch('POST', '/admin/users/' + encodeURIComponent(userId) + '/temp-password');
+    document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="temp-password-overlay" style="z-index:5200;"><div class="modal" style="max-width:440px;" role="dialog" aria-modal="true">
+      <div class="modal-header"><h3>One-time password for ${escapeHtml(name)}</h3><p>This is shown once. Give it to them directly, by phone or in person. Don't send it in a message other people can read.</p></div>
+      <div class="modal-body"><div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:20px;letter-spacing:.06em;padding:14px;border:1.5px solid var(--border);border-radius:10px;text-align:center;user-select:all;word-break:break-all;">${escapeHtml(tempPassword)}</div></div>
+      <div class="modal-footer"><button class="confirm-btn" onclick="document.getElementById('temp-password-overlay').remove()">I've given it to them</button></div>
+    </div></div>`);
+  } catch (e) { showToast(e.message || 'Could not reset the password'); }
+}
+
 // v75: under the Verified badge, how it happened and who did it.
 function verifiedHowHTML(u) {
   if (!u.verified || !u.verifiedVia) return '';
@@ -12609,6 +12925,7 @@ function peopleTable(list) {
     <td>${u.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Suspended</span>'}</td>
     <td class="row-actions">
       <button class="btn-sm btn-sm-outline" onclick="openPersonDetail('${u.id}')">View</button>
+      ${(AUTH.user && AUTH.user.isSuperAdmin && !u.isSuperAdmin && u.id !== AUTH.user.id) ? `<button class="btn-sm btn-sm-ghost" onclick="issueTempPassword('${u.id}', '${escapeHtml(String(u.name || '').replace(/'/g, ''))}')">Reset password</button>` : ''}
       ${u.active
         ? `<button class="btn-sm btn-sm-outline" onclick="toggleUserActive('${u.id}', false)">Suspend</button>`
         : `<button class="btn-sm btn-sm-primary" onclick="toggleUserActive('${u.id}', true)">Reactivate</button>`}
@@ -12798,7 +13115,7 @@ async function decideCommissionRate(providerId, decision) {
 function usersTable(list, sectionKey) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No pending approvals.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>User</th><th>Role</th><th>City</th><th>Country</th><th>Submitted</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(u => `<tr><td>${escapeHtml(u.name)}</td><td>${u.role}</td><td>${escapeHtml(u.city) || '—'}</td><td>${escapeHtml(u.country)}</td><td>${u.submitted}</td><td>${statusBadge(u.status)}</td>
+  ${list.map(u => `<tr><td>${escapeHtml(u.name)}</td><td>${escapeHtml(u.role)}</td><td>${escapeHtml(u.city) || '—'}</td><td>${escapeHtml(u.country)}</td><td>${escapeHtml(u.submitted)}</td><td>${statusBadge(u.status)}</td>
   <td class="row-actions">${u.status==='pending' ? `<button class="btn-sm btn-sm-primary" onclick="adminDecide('users','${u.id}','approve','${sectionKey}')">Approve</button><button class="btn-sm btn-sm-outline" onclick="adminDecide('users','${u.id}','reject','${sectionKey}')">Reject</button>` : '—'}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -12812,6 +13129,9 @@ function verificationKeepingPanelHTML() {
   const storageLine = m.storage && m.storage.persistent
     ? '<div class="ver-note">Storage: ID files are saved to the permanent disk.</div>'
     : '<div style="background:#FBEAE8;border:1px solid #E3B4AE;color:#8A2D25;border-radius:8px;padding:10px 12px;font-size:13.5px;margin-bottom:10px;"><strong>ID files are not on the permanent disk.</strong> PRIVATE_UPLOADS_DIR is not set on the server, so uploaded IDs are lost every time the site is redeployed. Set it in Render to a folder on the disk (for example /var/data/private-uploads).</div>';
+  const encLine = m.storage && m.storage.encrypted
+    ? '<div class="ver-note">Extra encryption: on. New ID files are scrambled on the disk and only unscrambled when a reviewer opens one.</div>'
+    : '<div class="ver-note">Extra encryption: off. To switch it on, set ID_FILE_ENCRYPTION_KEY on the server (see CHANGES_v82.md). Files rely on the hosting disk\'s own protection until then.</div>';
   const autoLine = m.automatedCheckConnected
     ? '<div class="ver-note">Automated ID and face check (Persona): connected.</div>'
     : '<div class="ver-note">Automated ID and face check (Persona): not connected. Every ID is checked by a person using the uploaded ID and face photo.</div>';
@@ -12828,6 +13148,7 @@ function verificationKeepingPanelHTML() {
       <span style="font-size:14px;color:var(--slate);">days (0 = keep)</span>
       <button class="btn-sm btn-sm-primary" onclick="saveIdRetention()">Save</button>
     </div>` : ''}
+    ${encLine}
     ${autoLine}
   </div>`;
 }
@@ -12857,7 +13178,7 @@ async function askAllVerificationGaps() {
 
 function verificationQueueTable() {
   if (!adminData.verificationQueue.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">Verification queue is empty.</div>`;
-  return `<div class="ver-howto">Open the ID and the face photo side by side. Check that the ID is a real document, that it isn't expired, that the photo and details are readable, that the name on it matches the account, and that the face photo shows the same person as the ID. Then approve, or reject with a reason the applicant will see. If there's no face photo, or you can't tell, reject and ask for a clearer one.</div>
+  return `<div class="ver-howto">Open the ID (front, and back if there is one) and the face photo side by side. Check that the ID is a real document, that it isn't expired, that the photo and details are readable, that the name on it matches the account, and that the face photo shows the same person as the ID. Then approve, or reject with a reason the applicant will see. If there's no face photo, or you can't tell, reject and ask for a clearer one.</div>
   <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Name on the ID</th><th>Document</th><th>Submitted</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${adminData.verificationQueue.map(v => {
     // Real 48-hour review SLA: only ever shown for items still open.
@@ -12867,7 +13188,7 @@ function verificationQueueTable() {
       : v.nameMatch === false ? '<span class="badge badge-danger">Doesn\'t match account</span>' : '';
     const docCell = v.source === 'persona'
       ? `${escapeHtml(v.doc)}<div class="ver-note">Checked by Persona. See this person in your Persona dashboard.</div>`
-      : `${escapeHtml(v.doc)}${v.hasDocument ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}')">View ID</button></div>` : '<div class="ver-note">No file on record</div>'}${v.hasSelfie ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}','selfie')">View face photo</button></div>` : '<div class="ver-note" style="color:#8C6423;">No face photo (sent before it was required)</div>'}`;
+      : `${escapeHtml(v.doc)}${v.hasDocument ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}')">View ID</button></div>` : '<div class="ver-note">No file on record</div>'}${v.hasBack ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}','back')">View back of ID</button></div>` : ''}${v.hasSelfie ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="viewVerificationDocument('${escapeHtml(v.id)}','selfie')">View face photo</button></div>` : '<div class="ver-note" style="color:#8C6423;">No face photo (sent before it was required)</div>'}`;
     return `<tr>
       <td><strong>${escapeHtml(v.name)}</strong><div class="ver-note">${escapeHtml([v.role ? v.role[0].toUpperCase() + v.role.slice(1) : '', v.city, v.country].filter(Boolean).join(' · '))}</div></td>
       <td>${v.idLegalName ? escapeHtml(v.idLegalName) : '<span class="ver-note">Not given</span>'}<div style="margin-top:4px;">${match}</div></td>
@@ -12886,7 +13207,7 @@ function verificationQueueTable() {
 async function viewVerificationDocument(id, kind) {
   const win = window.open('', '_blank');
   try {
-    const res = await fetch(API_BASE + '/admin/verification/' + encodeURIComponent(id) + (kind === 'selfie' ? '/selfie' : '/document'), { headers: { Authorization: 'Bearer ' + AUTH.token } });
+    const res = await fetch(API_BASE + '/admin/verification/' + encodeURIComponent(id) + (kind === 'selfie' ? '/selfie' : kind === 'back' ? '/back' : '/document'), { headers: { Authorization: 'Bearer ' + AUTH.token } });
     if (!res.ok) { let msg = 'Could not open the document'; try { msg = (await res.json()).error || msg; } catch (e) {} throw new Error(msg); }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -12926,7 +13247,7 @@ async function verificationGapAction(userId, action) {
 function disputesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No disputes.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Dispute</th><th>Parties</th><th>Reason</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(d => `<tr style="cursor:pointer" onclick="viewDispute('${d.id}')"><td>${d.id}</td><td>${escapeHtml(d.parties)}</td><td>${escapeHtml(d.reason)}</td><td>$${d.amount}</td><td>${statusBadge(d.status)}</td>
+  ${list.map(d => `<tr style="cursor:pointer" onclick="viewDispute('${d.id}')"><td>${escapeHtml(d.id)}</td><td>${escapeHtml(d.parties)}</td><td>${escapeHtml(d.reason)}</td><td>$${d.amount}</td><td>${statusBadge(d.status)}</td>
   <td class="row-actions"><button class="btn-sm btn-sm-ghost" onclick="event.stopPropagation();viewDispute('${d.id}')">${d.status === 'open' ? 'Resolve' : 'View'}</button></td></tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -13053,7 +13374,9 @@ function selectAdminSection(key) {
   renderSectionSafely('admin-main', key, () => ADMIN_SECTIONS[key]());
   if (key === 'providerscores') loadProviderScoresPanel();
   if (key === 'verification') { loadGuarantorsReviewPanel(); loadVerificationGaps(); }
-  if (key === 'settings') loadWordingEditor();
+  if (key === 'people') loadAccountClosuresPanel();
+  if (key === 'pricing') loadPlanBillingPanel();
+  if (key === 'settings') { loadWordingEditor(); loadBackupsPanel(); }
   if (key === 'promotions') loadAdminPromotionsPanel();
   if (key === 'announcements') loadAnnouncementsPanel();
   if (key === 'datacleanup') loadDataCleanupLogPanel();
@@ -14067,7 +14390,7 @@ const SUPPORT_FAQ = [
   { keywords: ['dispute', 'problem', 'complaint', 'refund', 'bad job', 'not happy'], answer: "If something's wrong with a job, don't mark it complete — that releases escrow. Instead, message your pro first to try to resolve it, and if that doesn't work, our Finance & Dispute team can step in to review and resolve it fairly." },
   { keywords: ['pay', 'payment', 'card', 'billing'], answer: "You can add a payment method in Customer → Payments. Right now this runs in test mode (no real charges) while we finalize our payment processor — you can use any test card number to try the flow." },
   { keywords: ['become a pro', 'sign up as provider', 'join as provider', 'provider account'], answer: "Click \"Become a Pro\" at the top of the page, or choose \"Provider\" when you sign up. You'll need your category, skills, and location — new providers start unverified until an admin approves their documents." },
-  { keywords: ['price', 'pricing', 'plan', 'cost', 'subscription', 'fee'], answer: "Trothen has three provider tiers: Starter ($15/mo, 13% commission), Pro ($20/mo, 12% commission — reached automatically once you qualify), and Super Pro ($27/mo, 10% commission — reviewed by our team once you qualify). Check the Pricing page for the full breakdown." },
+  { keywords: ['price', 'pricing', 'plan', 'cost', 'subscription', 'fee'], get answer() { return `Trothen has three plans for pros. Starter takes ${PLAN_COMMISSION.starter}% commission on each job. Pro takes ${PLAN_COMMISSION.pro}% and is reached automatically once you qualify. Super Pro takes ${PLAN_COMMISSION.superpro}% and is confirmed by our team once you qualify. Each plan also has a monthly price, which depends on your country: the Provider Plans page shows yours. ${PLAN_BILLING_PUBLIC.active ? 'The monthly fee comes out of your payouts, never a card.' : 'The monthly fee isn\'t being charged during early access.'} Customers don't pay to join.`; } },
   { keywords: ['categor', 'service', 'what can i book', 'what do you offer'], answer: "Trothen covers Plumbing, Cleaning, Tutoring, Electrical, Moving, Painting, Landscaping, Fitness, Pick & Drop, and more — browse them all from \"See all categories\" on the homepage." },
   { keywords: ['match', 'ai match', 'how does matching work', 'algorithm'], answer: "When you post a job, our matching engine ranks verified pros in your category and community by rating, experience, and proximity (we prioritize pros in your exact zip code first). You'll see the top matches with a fit score." },
   { keywords: ['community', 'zip', 'postal', 'location match'], answer: "We use your zip/postal code to find pros right in your community first, before widening to your broader city — this tends to mean faster response times and pros who already know the area." },
@@ -15273,7 +15596,7 @@ function setupInteractiveChecks() {
 // Text the super admin changed in Admin → Settings → Front page wording.
 // English only: other languages keep their built-in translations.
 let CONTENT_OVERRIDES = {};
-const EDITABLE_CONTENT_GROUPS = [{"title":"Search box","keys":[{"key":"composer_what","label":"Words before the first box"},{"key":"composer_where","label":"Word before the city box"},{"key":"composer_go","label":"Search button"},{"key":"search_placeholder","label":"Grey hint in the first box"},{"key":"search_city_placeholder","label":"Grey hint in the city box"},{"key":"hero_often","label":"Words before the shortcut links"},{"key":"composer_hint","label":"Heading over the suggestions list"},{"key":"chips_all","label":"\"Show all kinds of work\" link"},{"key":"chips_fewer","label":"\"Show fewer\" link"}]},{"title":"Job ticket (top of the page)","keys":[{"key":"ticket_title","label":"Ticket heading"},{"key":"ticket_s1","label":"Step 1 name"},{"key":"ticket_s2","label":"Step 2 name"},{"key":"ticket_s3","label":"Step 3 name"},{"key":"ticket_s4","label":"Step 4 name"},{"key":"ticket_status_1","label":"Status chip at step 1"},{"key":"ticket_status_2","label":"Status chip at step 2"},{"key":"ticket_status_3","label":"Status chip at step 3"},{"key":"ticket_status_4","label":"Status chip at step 4"},{"key":"ticket_f_job","label":"Row label: the job"},{"key":"ticket_f_pro","label":"Row label: pro"},{"key":"ticket_f_terms","label":"Row label: price and scope"},{"key":"ticket_f_pay","label":"Row label: payment"},{"key":"ticket_f_status","label":"Row label: status"},{"key":"ticket_v_job","label":"Example job"},{"key":"ticket_v_pro","label":"Pro row value"},{"key":"ticket_v_terms","label":"Price row value"},{"key":"ticket_v_pay","label":"Payment row value"},{"key":"ticket_v_status","label":"Status row value"},{"key":"ticket_n1","label":"Explanation at step 1"},{"key":"ticket_n2","label":"Explanation at step 2"},{"key":"ticket_n3","label":"Explanation at step 3"},{"key":"ticket_n4","label":"Explanation at step 4"},{"key":"ticket_stamp","label":"Stamp at the last step"},{"key":"ticket_next","label":"\"Next step\" button"},{"key":"ticket_again","label":"\"Start over\" button"},{"key":"ticket_post","label":"\"Post a job\" button"}]},{"title":"\"Live now in\" strip","keys":[{"key":"loc_live","label":"Words before the countries"}]},{"title":"Numbers band","keys":[{"key":"stat_pros","label":"Under the number of pros"},{"key":"stat_rating","label":"Under the rating"},{"key":"stat_jobs","label":"Under jobs completed"},{"key":"stat_fee","label":"Under the booking fee"}]},{"title":"Before a pro can take your job","keys":[{"key":"checks_title","label":"Section heading"},{"key":"checks_sub","label":"Line beside the heading"},{"key":"checks_tag","label":"Small green tag on each card"},{"key":"checks_more","label":"\"See how it works\" link"},{"key":"checks_less","label":"\"Hide\" link"},{"key":"check1_t","label":"Card 1 title"},{"key":"check1_d","label":"Card 1 text"},{"key":"check1_s1","label":"Card 1, step 1"},{"key":"check1_s2","label":"Card 1, step 2"},{"key":"check1_s3","label":"Card 1, step 3"},{"key":"check2_t","label":"Card 2 title"},{"key":"check2_d","label":"Card 2 text"},{"key":"check2_s1","label":"Card 2, step 1"},{"key":"check2_s2","label":"Card 2, step 2"},{"key":"check2_s3","label":"Card 2, step 3"},{"key":"check3_t","label":"Card 3 title"},{"key":"check3_d","label":"Card 3 text"},{"key":"check3_s1","label":"Card 3, step 1"},{"key":"check3_s2","label":"Card 3, step 2"},{"key":"check3_s3","label":"Card 3, step 3"},{"key":"check3_note","label":"Card 3, yellow note"},{"key":"check4_t","label":"Card 4 title"},{"key":"check4_d","label":"Card 4 text"},{"key":"check4_s1","label":"Card 4, step 1"},{"key":"check4_s2","label":"Card 4, step 2"},{"key":"check4_s3","label":"Card 4, step 3"},{"key":"checks_close","label":"\"Close\" button on the open panel"}]},{"title":"Popular right now","keys":[{"key":"popular_title","label":"Section heading"},{"key":"popular_sub","label":"Line under the heading"},{"key":"popular_from","label":"Word before the price"},{"key":"popular_pro_one","label":"After the count, for 1 pro"},{"key":"popular_pro_many","label":"After the count, for several pros"},{"key":"popular_see","label":"Link on each card"}]},{"title":"Recent work","keys":[{"key":"work_title","label":"Section heading"},{"key":"work_sub","label":"Line under the heading"}]},{"title":"Every kind of work","keys":[{"key":"cats_title","label":"Section heading"},{"key":"cats_all","label":"Link to all categories"},{"key":"cats_count_one","label":"After the count, for 1 kind"},{"key":"cats_count_many","label":"After the count, for several kinds"},{"key":"cat_none","label":"Shown when a kind has no pros"},{"key":"cat_empty","label":"Message for an empty category"},{"key":"pro_one","label":"Word for 1 pro"},{"key":"pro_many","label":"Word for several pros"}]},{"title":"Top pros","keys":[{"key":"pros_title","label":"Section heading (before a search)"},{"key":"pros_sub","label":"Line under the heading (before a search)"},{"key":"pros_all","label":"Link to every pro"}]},{"title":"What customers say","keys":[{"key":"reviews_title","label":"Section heading"},{"key":"reviews_sub","label":"Line under the heading"},{"key":"reviews_hired","label":"Word before the pro's name"}]},{"title":"Common questions","keys":[{"key":"faq_title","label":"Section heading"},{"key":"faq_sub","label":"Line under the heading"},{"key":"faq_q1","label":"Question 1"},{"key":"faq_a1","label":"Answer 1","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q2","label":"Question 2"},{"key":"faq_a2","label":"Answer 2","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q3","label":"Question 3"},{"key":"faq_a3","label":"Answer 3","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q4","label":"Question 4"},{"key":"faq_a4","label":"Answer 4","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q5","label":"Question 5"},{"key":"faq_a5","label":"Answer 5","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q6","label":"Question 6"},{"key":"faq_a6","label":"Answer 6","long":true,"hint":"Blank = the same answer the support chat gives"}]},{"title":"Closing boxes","keys":[{"key":"cta_hire_t","label":"Left box heading"},{"key":"cta_hire_d","label":"Left box text"},{"key":"cta_pro_t","label":"Right box heading"},{"key":"cta_pro_d","label":"Right box text"}]},{"title":"Menu and footer","keys":[{"key":"nav_browse","label":"Menu: browse link"},{"key":"nav_become_pro","label":"Menu: \"Become a Pro\" button"},{"key":"nav_menu","label":"Menu button (phones)"},{"key":"footer_line","label":"Line under the logo"},{"key":"footer_about","label":"Footer link: About"},{"key":"footer_careers","label":"Footer link: Careers"},{"key":"footer_contact","label":"Footer link: Contact"},{"key":"footer_terms","label":"Footer link: Terms"}]},{"title":"Trust list on a pro's profile","keys":[{"key":"trust_id","label":"Line 1: ID"},{"key":"trust_contract","label":"Line 2: agreement"},{"key":"trust_payment","label":"Line 3: payment"},{"key":"trust_fraud","label":"Line 4: fraud screening"},{"key":"trust_2fa","label":"Line 5: two-step sign-in (only shown when it's on)"}]},{"title":"Pro quick-view","keys":[{"key":"qv_id_checked","label":"\"ID checked\" badge"},{"key":"qv_new","label":"Badge for a new pro"},{"key":"qv_jobs","label":"After the number of jobs"},{"key":"qv_from","label":"Under the price (fixed-price pros)"},{"key":"qv_per_hour","label":"Under the price (hourly pros)"},{"key":"qv_score","label":"Label: score"},{"key":"qv_within","label":"Label: travel distance"},{"key":"qv_work","label":"Heading: their work"},{"key":"qv_reviews","label":"Heading: reviews"},{"key":"qv_no_reviews","label":"Shown when there are no reviews"},{"key":"qv_customer","label":"Name for an unnamed reviewer"},{"key":"qv_not_taking","label":"Shown when the pro is not taking bookings"},{"key":"qv_book","label":"\"Book\" button"},{"key":"qv_full","label":"\"Full profile\" button"},{"key":"qv_error","label":"Message when it can't load"}]},{"title":"Provider Plans page","keys":[{"key":"plans_eyebrow","label":"Small heading above the title"},{"key":"plans_title","label":"Page title"},{"key":"plans_sub","label":"Line under the title"},{"key":"plans_country","label":"Words before the country picker"},{"key":"plan1_name","label":"Starter: plan name"},{"key":"plan1_desc","label":"Starter: line under the name"},{"key":"plan1_f1","label":"Starter: tick 1"},{"key":"plan1_f2","label":"Starter: tick 2"},{"key":"plan1_f3","label":"Starter: tick 3"},{"key":"plan1_f4","label":"Starter: tick 4"},{"key":"plan1_f5","label":"Starter: tick 5"},{"key":"plan2_name","label":"Pro: plan name"},{"key":"plan2_desc","label":"Pro: line under the name"},{"key":"plan2_f1","label":"Pro: tick 1"},{"key":"plan2_f2","label":"Pro: tick 2"},{"key":"plan2_f3","label":"Pro: tick 3"},{"key":"plan2_f4","label":"Pro: tick 4"},{"key":"plan2_f5","label":"Pro: tick 5"},{"key":"plan3_name","label":"Super Pro: plan name"},{"key":"plan3_desc","label":"Super Pro: line under the name"},{"key":"plan3_f1","label":"Super Pro: tick 1"},{"key":"plan3_f2","label":"Super Pro: tick 2"},{"key":"plan3_f3","label":"Super Pro: tick 3"},{"key":"plan3_f4","label":"Super Pro: tick 4"},{"key":"plan3_f5","label":"Super Pro: tick 5"},{"key":"plan4_name","label":"Custom: plan name"},{"key":"plan4_desc","label":"Custom: line under the name"},{"key":"plan4_f1","label":"Custom: tick 1"},{"key":"plan4_f2","label":"Custom: tick 2"},{"key":"plan4_f3","label":"Custom: tick 3"},{"key":"plan4_f4","label":"Custom: tick 4"},{"key":"plan2_note","label":"Pro: grey note at the bottom"},{"key":"plan3_note","label":"Super Pro: grey note at the bottom"},{"key":"plan3_badge","label":"Super Pro: badge"},{"key":"plan1_btn","label":"Starter: button"},{"key":"plan4_price","label":"Custom: price line"},{"key":"plan4_btn","label":"Custom: button"}]},{"title":"Careers page","keys":[{"key":"careers_title","label":"Page title"},{"key":"careers_body","label":"Paragraph"},{"key":"careers_form_title","label":"Heading over the form"},{"key":"careers_btn","label":"Send button"}]},{"title":"Contact page","keys":[{"key":"contact_title","label":"Page title"},{"key":"contact_intro","label":"Paragraph"},{"key":"contact_btn","label":"Send button"}]},{"title":"\"Add to your phone\" prompt","keys":[{"key":"install_btn","label":"Button in the footer"},{"key":"install_done","label":"Message once it's added"},{"key":"install_ios_title","label":"iPhone steps: heading"},{"key":"install_ios_1","label":"iPhone step 1"},{"key":"install_ios_2","label":"iPhone step 2"},{"key":"install_ios_3","label":"iPhone step 3"},{"key":"install_ok","label":"Close button"}]}];
+const EDITABLE_CONTENT_GROUPS = [{"title":"Search box","keys":[{"key":"composer_what","label":"Words before the first box"},{"key":"composer_where","label":"Word before the city box"},{"key":"composer_go","label":"Search button"},{"key":"search_placeholder","label":"Grey hint in the first box"},{"key":"search_city_placeholder","label":"Grey hint in the city box"},{"key":"hero_often","label":"Words before the shortcut links"},{"key":"composer_hint","label":"Heading over the suggestions list"},{"key":"chips_all","label":"\"Show all kinds of work\" link"},{"key":"chips_fewer","label":"\"Show fewer\" link"}]},{"title":"Job ticket (top of the page)","keys":[{"key":"ticket_title","label":"Ticket heading"},{"key":"ticket_s1","label":"Step 1 name"},{"key":"ticket_s2","label":"Step 2 name"},{"key":"ticket_s3","label":"Step 3 name"},{"key":"ticket_s4","label":"Step 4 name"},{"key":"ticket_status_1","label":"Status chip at step 1"},{"key":"ticket_status_2","label":"Status chip at step 2"},{"key":"ticket_status_3","label":"Status chip at step 3"},{"key":"ticket_status_4","label":"Status chip at step 4"},{"key":"ticket_f_job","label":"Row label: the job"},{"key":"ticket_f_pro","label":"Row label: pro"},{"key":"ticket_f_terms","label":"Row label: price and scope"},{"key":"ticket_f_pay","label":"Row label: payment"},{"key":"ticket_f_status","label":"Row label: status"},{"key":"ticket_v_job","label":"Example job"},{"key":"ticket_v_pro","label":"Pro row value"},{"key":"ticket_v_terms","label":"Price row value"},{"key":"ticket_v_pay","label":"Payment row value"},{"key":"ticket_v_status","label":"Status row value"},{"key":"ticket_n1","label":"Explanation at step 1"},{"key":"ticket_n2","label":"Explanation at step 2"},{"key":"ticket_n3","label":"Explanation at step 3"},{"key":"ticket_n4","label":"Explanation at step 4"},{"key":"ticket_stamp","label":"Stamp at the last step"},{"key":"ticket_next","label":"\"Next step\" button"},{"key":"ticket_again","label":"\"Start over\" button"},{"key":"ticket_post","label":"\"Post a job\" button"}]},{"title":"\"Live now in\" strip","keys":[{"key":"loc_live","label":"Words before the countries"}]},{"title":"Numbers band","keys":[{"key":"stat_pros","label":"Under the number of pros"},{"key":"stat_rating","label":"Under the rating"},{"key":"stat_jobs","label":"Under jobs completed"},{"key":"stat_fee","label":"Under the booking fee"}]},{"title":"Before a pro can take your job","keys":[{"key":"checks_title","label":"Section heading"},{"key":"checks_sub","label":"Line beside the heading"},{"key":"checks_tag","label":"Small green tag on each card"},{"key":"checks_more","label":"\"See how it works\" link"},{"key":"checks_less","label":"\"Hide\" link"},{"key":"check1_t","label":"Card 1 title"},{"key":"check1_d","label":"Card 1 text"},{"key":"check1_s1","label":"Card 1, step 1"},{"key":"check1_s2","label":"Card 1, step 2"},{"key":"check1_s3","label":"Card 1, step 3"},{"key":"check2_t","label":"Card 2 title"},{"key":"check2_d","label":"Card 2 text"},{"key":"check2_s1","label":"Card 2, step 1"},{"key":"check2_s2","label":"Card 2, step 2"},{"key":"check2_s3","label":"Card 2, step 3"},{"key":"check3_t","label":"Card 3 title"},{"key":"check3_d","label":"Card 3 text"},{"key":"check3_s1","label":"Card 3, step 1"},{"key":"check3_s2","label":"Card 3, step 2"},{"key":"check3_s3","label":"Card 3, step 3"},{"key":"check3_note","label":"Card 3, yellow note"},{"key":"check4_t","label":"Card 4 title"},{"key":"check4_d","label":"Card 4 text"},{"key":"check4_s1","label":"Card 4, step 1"},{"key":"check4_s2","label":"Card 4, step 2"},{"key":"check4_s3","label":"Card 4, step 3"},{"key":"checks_close","label":"\"Close\" button on the open panel"}]},{"title":"Popular right now","keys":[{"key":"popular_title","label":"Section heading"},{"key":"popular_sub","label":"Line under the heading"},{"key":"popular_from","label":"Word before the price"},{"key":"popular_pro_one","label":"After the count, for 1 pro"},{"key":"popular_pro_many","label":"After the count, for several pros"},{"key":"popular_see","label":"Link on each card"}]},{"title":"Recent work","keys":[{"key":"work_title","label":"Section heading"},{"key":"work_sub","label":"Line under the heading"}]},{"title":"Every kind of work","keys":[{"key":"cats_title","label":"Section heading"},{"key":"cats_all","label":"Link to all categories"},{"key":"cats_count_one","label":"After the count, for 1 kind"},{"key":"cats_count_many","label":"After the count, for several kinds"},{"key":"cat_none","label":"Shown when a kind has no pros"},{"key":"cat_empty","label":"Message for an empty category"},{"key":"pro_one","label":"Word for 1 pro"},{"key":"pro_many","label":"Word for several pros"}]},{"title":"Top pros","keys":[{"key":"pros_title","label":"Section heading (before a search)"},{"key":"pros_sub","label":"Line under the heading (before a search)"},{"key":"pros_all","label":"Link to every pro"}]},{"title":"What customers say","keys":[{"key":"reviews_title","label":"Section heading"},{"key":"reviews_sub","label":"Line under the heading"},{"key":"reviews_hired","label":"Word before the pro's name"}]},{"title":"Common questions","keys":[{"key":"faq_title","label":"Section heading"},{"key":"faq_sub","label":"Line under the heading"},{"key":"faq_q1","label":"Question 1"},{"key":"faq_a1","label":"Answer 1","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q2","label":"Question 2"},{"key":"faq_a2","label":"Answer 2","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q3","label":"Question 3"},{"key":"faq_a3","label":"Answer 3","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q4","label":"Question 4"},{"key":"faq_a4","label":"Answer 4","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q5","label":"Question 5"},{"key":"faq_a5","label":"Answer 5","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q6","label":"Question 6"},{"key":"faq_a6","label":"Answer 6","long":true,"hint":"Blank = the same answer the support chat gives"}]},{"title":"Closing boxes","keys":[{"key":"cta_hire_t","label":"Left box heading"},{"key":"cta_hire_d","label":"Left box text"},{"key":"cta_pro_t","label":"Right box heading"},{"key":"cta_pro_d","label":"Right box text"}]},{"title":"Menu and footer","keys":[{"key":"nav_browse","label":"Menu: browse link"},{"key":"nav_become_pro","label":"Menu: \"Become a Pro\" button"},{"key":"nav_menu","label":"Menu button (phones)"},{"key":"footer_line","label":"Line under the logo"},{"key":"footer_about","label":"Footer link: About"},{"key":"footer_careers","label":"Footer link: Careers"},{"key":"footer_contact","label":"Footer link: Contact"},{"key":"footer_terms","label":"Footer link: Terms"}]},{"title":"Trust list on a pro's profile","keys":[{"key":"trust_id","label":"Line 1: ID"},{"key":"trust_contract","label":"Line 2: agreement"},{"key":"trust_payment","label":"Line 3: payment"},{"key":"trust_fraud","label":"Line 4: fraud screening"},{"key":"trust_2fa","label":"Line 5: two-step sign-in (only shown when it's on)"}]},{"title":"Pro quick-view","keys":[{"key":"qv_id_checked","label":"\"ID checked\" badge"},{"key":"qv_new","label":"Badge for a new pro"},{"key":"qv_jobs","label":"After the number of jobs"},{"key":"qv_from","label":"Under the price (fixed-price pros)"},{"key":"qv_per_hour","label":"Under the price (hourly pros)"},{"key":"qv_score","label":"Label: score"},{"key":"qv_within","label":"Label: travel distance"},{"key":"qv_work","label":"Heading: their work"},{"key":"qv_reviews","label":"Heading: reviews"},{"key":"qv_no_reviews","label":"Shown when there are no reviews"},{"key":"qv_customer","label":"Name for an unnamed reviewer"},{"key":"qv_not_taking","label":"Shown when the pro is not taking bookings"},{"key":"qv_book","label":"\"Book\" button"},{"key":"qv_full","label":"\"Full profile\" button"},{"key":"qv_error","label":"Message when it can't load"}]},{"title":"Provider Plans page","keys":[{"key":"plans_eyebrow","label":"Small heading above the title"},{"key":"plans_title","label":"Page title"},{"key":"plans_sub","label":"Line under the title"},{"key":"plans_country","label":"Words before the country picker"},{"key":"plan1_name","label":"Starter: plan name"},{"key":"plan1_desc","label":"Starter: line under the name"},{"key":"plan1_f1","label":"Starter: tick 1"},{"key":"plan1_f2","label":"Starter: tick 2"},{"key":"plan1_f3","label":"Starter: tick 3"},{"key":"plan1_f4","label":"Starter: tick 4 (keep the {…_commission} part to show the real rate)"},{"key":"plan1_f5","label":"Starter: tick 5"},{"key":"plan2_name","label":"Pro: plan name"},{"key":"plan2_desc","label":"Pro: line under the name"},{"key":"plan2_f1","label":"Pro: tick 1"},{"key":"plan2_f2","label":"Pro: tick 2"},{"key":"plan2_f3","label":"Pro: tick 3 (keep the {…_commission} part to show the real rate)"},{"key":"plan2_f4","label":"Pro: tick 4"},{"key":"plan2_f5","label":"Pro: tick 5"},{"key":"plan3_name","label":"Super Pro: plan name"},{"key":"plan3_desc","label":"Super Pro: line under the name"},{"key":"plan3_f1","label":"Super Pro: tick 1"},{"key":"plan3_f2","label":"Super Pro: tick 2"},{"key":"plan3_f3","label":"Super Pro: tick 3 (keep the {…_commission} part to show the real rate)"},{"key":"plan3_f4","label":"Super Pro: tick 4"},{"key":"plan3_f5","label":"Super Pro: tick 5"},{"key":"plan4_name","label":"Custom: plan name"},{"key":"plan4_desc","label":"Custom: line under the name"},{"key":"plan4_f1","label":"Custom: tick 1"},{"key":"plan4_f2","label":"Custom: tick 2"},{"key":"plan4_f3","label":"Custom: tick 3"},{"key":"plan4_f4","label":"Custom: tick 4"},{"key":"plan2_note","label":"Pro: grey note at the bottom"},{"key":"plan3_note","label":"Super Pro: grey note at the bottom"},{"key":"plan3_badge","label":"Super Pro: badge"},{"key":"plan1_btn","label":"Starter: button"},{"key":"plan4_price","label":"Custom: price line"},{"key":"plan4_btn","label":"Custom: button"},{"key":"plans_fee_off","label":"Note under the cards while the fee is NOT charged"},{"key":"plans_fee_on","label":"Note under the cards once the fee is charged"}]},{"title":"Careers page","keys":[{"key":"careers_title","label":"Page title"},{"key":"careers_body","label":"Paragraph"},{"key":"careers_form_title","label":"Heading over the form"},{"key":"careers_btn","label":"Send button"}]},{"title":"Contact page","keys":[{"key":"contact_title","label":"Page title"},{"key":"contact_intro","label":"Paragraph"},{"key":"contact_btn","label":"Send button"}]},{"title":"\"Add to your phone\" prompt","keys":[{"key":"install_btn","label":"Button in the footer"},{"key":"install_done","label":"Message once it's added"},{"key":"install_ios_title","label":"iPhone steps: heading"},{"key":"install_ios_1","label":"iPhone step 1"},{"key":"install_ios_2","label":"iPhone step 2"},{"key":"install_ios_3","label":"iPhone step 3"},{"key":"install_ok","label":"Close button"}]}];
 async function loadContentOverrides() {
   if (!BACKEND_AVAILABLE) return;
   try {

@@ -37,7 +37,14 @@ const supportChatLimiter = rateLimit({
 // anonymous visitor should be able to reach out), but genuinely stored and
 // genuinely alerts the team — not just a toast that pretends to send
 // something.
-router.post('/contact', async (req, res) => {
+// v81: the four public forms (contact, careers, advertising, sales) had no
+// limit, so a script could fill the admin inbox. 6 an hour per connection,
+// shared across all four.
+const publicFormLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 6, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'You\'ve sent several messages in a short time. Please try again in an hour.' },
+});
+router.post('/contact', publicFormLimiter, async (req, res) => {
   const { name, email, subject, message, city } = req.body || {};
   const errors = validate([
     ['name', isNonEmptyString(name, { min: 2, max: 100 }), 'Enter your name'],
@@ -98,7 +105,7 @@ const resumeFileFilter = (req, file, cb) => {
 };
 const uploadResume = multer({ storage: resumeStorage, fileFilter: resumeFileFilter, limits: { fileSize: 8 * 1024 * 1024 } });
 
-router.post('/careers-inquiry', (req, res, next) => {
+router.post('/careers-inquiry', publicFormLimiter, (req, res, next) => {
   uploadResume.single('resume')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message === 'Resume must be a PDF file' ? err.message : 'Resume upload failed — must be a PDF under 8MB' });
     next();
@@ -265,7 +272,7 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
   res.json({ submission });
 });
 
-router.post('/advertising-inquiry', async (req, res) => {
+router.post('/advertising-inquiry', publicFormLimiter, async (req, res) => {
   const { companyName, contactName, email, phone, message, targetCity } = req.body || {};
   const errors = validate([
     ['companyName', isNonEmptyString(companyName, { min: 2, max: 150 }), 'Enter your company name'],
@@ -322,7 +329,7 @@ router.post('/advertising-inquiry', async (req, res) => {
 // Kept in its own table (not merged with advertisingInquiries) since this
 // is a distinct funnel — organizations interested in the platform itself,
 // not media partners — that a sales team would want to work separately.
-router.post('/sales-inquiry', async (req, res) => {
+router.post('/sales-inquiry', publicFormLimiter, async (req, res) => {
   const { companyName, contactName, email, teamSize, message } = req.body || {};
   const errors = validate([
     ['companyName', isNonEmptyString(companyName, { min: 2, max: 150 }), 'Enter your company name'],
@@ -442,7 +449,7 @@ router.post('/notifications/:id/read', requireAuth, async (req, res) => {
 // GET /api/verification/mine
 router.get('/verification/mine', requireAuth, async (req, res) => {
   const records = await db.filter('verifications', v => v.userId === req.user.sub);
-  res.json({ verifications: records.map(({ documentFilename, selfieFilename, ...rest }) => rest) });
+  res.json({ verifications: records.map(({ documentFilename, selfieFilename, backFilename, ...rest }) => rest) });
 });
 
 // GET /api/verification/doc-types — the real, country-aware list of
@@ -459,19 +466,28 @@ const verificationDocStorage = multer.diskStorage({
   filename: (req, file, cb) => {
     const ext = file.mimetype === 'application/pdf' ? '.pdf' : (path.extname(file.originalname).toLowerCase() || '.jpg');
     // v77: the face photo is stored beside the ID under its own prefix.
-    cb(null, `${file.fieldname === 'selfie' ? 'versel' : 'verdoc'}_${req.user.sub}_${nanoid(16)}${ext}`);
+    cb(null, `${file.fieldname === 'selfie' ? 'versel' : file.fieldname === 'documentBack' ? 'verback' : 'verdoc'}_${req.user.sub}_${nanoid(16)}${ext}`);
   },
 });
 const verificationDocFileFilter = (req, file, cb) => {
+  // v80: WEBP accepted too. HEIC (some phones' own format) can't be opened
+  // in a reviewer's browser, so it's refused with a message that says what
+  // to do instead of a bare "wrong type".
+  const heic = /heic|heif/i.test(file.mimetype || '') || /\.hei[cf]$/i.test(file.originalname || '');
+  const heicHelp = 'That photo is in HEIC format, which we can\'t open. Take the photo again from this page, or save it as JPEG first.';
   if (file.fieldname === 'selfie') {
-    if (!['image/jpeg', 'image/png'].includes(file.mimetype)) return cb(new Error('The photo of your face must be a JPEG or PNG image'));
+    if (heic) return cb(new Error(heicHelp));
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) return cb(new Error('The photo of your face must be a JPEG, PNG or WEBP image'));
     return cb(null, true);
   }
-  const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
-  if (!allowed.includes(file.mimetype)) return cb(new Error('Document must be a JPEG, PNG, or PDF file'));
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  if (heic) return cb(new Error(heicHelp));
+  if (!allowed.includes(file.mimetype)) return cb(new Error('Your ID must be a JPEG, PNG or WEBP photo, or a PDF'));
   cb(null, true);
 };
-const uploadVerificationDoc = multer({ storage: verificationDocStorage, fileFilter: verificationDocFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+// v80: 15MB per file. The page shrinks photos before sending, so this is
+// only the ceiling for a browser that couldn't.
+const uploadVerificationDoc = multer({ storage: verificationDocStorage, fileFilter: verificationDocFileFilter, limits: { fileSize: 15 * 1024 * 1024 } });
 
 // POST /api/verification/submit — real document upload for manual review.
 // Previously this only accepted a text label like "Government ID" with no
@@ -482,9 +498,14 @@ const uploadVerificationDoc = multer({ storage: verificationDocStorage, fileFilt
 // accepted-ID list — item 7/8's country-aware requirement), and the legal
 // name as printed on the ID for name matching (item 7).
 router.post('/verification/submit', requireAuth, (req, res, next) => {
-  uploadVerificationDoc.fields([{ name: 'document', maxCount: 1 }, { name: 'selfie', maxCount: 1 }])(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message || 'Document upload failed' });
+  uploadVerificationDoc.fields([{ name: 'document', maxCount: 1 }, { name: 'documentBack', maxCount: 1 }, { name: 'selfie', maxCount: 1 }])(req, res, (err) => {
+    if (err) {
+      const tooBig = err.code === 'LIMIT_FILE_SIZE';
+      return res.status(400).json({ error: tooBig ? 'One of those files is too big. Each file can be up to 15MB. Try taking the photo again, a little further back.' : (err.message || 'Document upload failed') });
+    }
     // v77: two files now. The rest of this route reads the ID as req.file.
+    // v80: an optional third, the back of the ID.
+    req.backFile = (req.files && req.files.documentBack && req.files.documentBack[0]) || null;
     req.selfieFile = (req.files && req.files.selfie && req.files.selfie[0]) || null;
     req.file = (req.files && req.files.document && req.files.document[0]) || null;
     next();
@@ -496,7 +517,7 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
   const { namesLikelyMatch } = require('../validators');
 
   const cleanup = () => {
-    for (const f of [req.file, req.selfieFile]) { if (f) { try { fs.unlinkSync(path.join(PRIVATE_UPLOADS_DIR, f.filename)); } catch (e) {} } }
+    for (const f of [req.file, req.selfieFile, req.backFile]) { if (f) { try { fs.unlinkSync(path.join(PRIVATE_UPLOADS_DIR, f.filename)); } catch (e) {} } }
   };
   if (!req.file) { cleanup(); return res.status(400).json({ error: 'A document file is required' }); }
   // v77: a photo of the person's face is required with every ID, so the
@@ -504,7 +525,13 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
   if (!req.selfieFile) { cleanup(); return res.status(400).json({ error: 'Please add a photo of your face as well. We compare it with the photo on your ID.' }); }
   if (!verifyImageMagicBytes(path.join(PRIVATE_UPLOADS_DIR, req.selfieFile.filename), req.selfieFile.mimetype)) {
     cleanup();
-    return res.status(400).json({ error: 'The photo of your face doesn\'t look like a real JPEG or PNG image. Please take it again.' });
+    return res.status(400).json({ error: 'The photo of your face doesn\'t look like a real photo file. Please take it again.' });
+  }
+  if (req.backFile) {
+    const backOk = req.backFile.mimetype === 'application/pdf'
+      ? verifyPdfMagicBytes(path.join(PRIVATE_UPLOADS_DIR, req.backFile.filename))
+      : verifyImageMagicBytes(path.join(PRIVATE_UPLOADS_DIR, req.backFile.filename), req.backFile.mimetype);
+    if (!backOk) { cleanup(); return res.status(400).json({ error: 'The back of your ID doesn\'t look like a real photo or PDF. Please add it again.' }); }
   }
 
   // At most 5 submissions a day per account. Real people rarely need more
@@ -554,6 +581,15 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
     nameMatch,
     documentFilename: req.file.filename,
     selfieFilename: req.selfieFile.filename,
+    backFilename: req.backFile ? req.backFile.filename : null,
+    // v82: true when the three files were encrypted before being stored
+    // (only happens when ID_FILE_ENCRYPTION_KEY is set on the server).
+    encrypted: (() => {
+      const fc = require('../file-crypto');
+      if (!fc.isEnabled()) return false;
+      for (const f of [req.file, req.selfieFile, req.backFile]) if (f) fc.encryptFileInPlace(path.join(PRIVATE_UPLOADS_DIR, f.filename));
+      return true;
+    })(),
     // item 12: a real Pending → Approved/Rejected/Review Required
     // pipeline, not a single vague "in review" bucket. A name that
     // doesn't clearly match gets routed to review_required automatically
@@ -591,7 +627,7 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
   }
 
   // v77: file names stay on the server; the person only needs the status.
-  const { documentFilename, selfieFilename, ...safeRecord } = record;
+  const { documentFilename, selfieFilename, backFilename, ...safeRecord } = record;
   res.status(201).json({ verification: safeRecord });
 });
 

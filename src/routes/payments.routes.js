@@ -259,7 +259,7 @@ router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res
 // POST /api/payouts/request — provider requests payout of released escrow
 const { effectiveCommissionRate } = require('../commission');
 
-router.post('/payouts/request', requireAuth, requireRole('provider'), async (req, res) => {
+router.post('/payouts/request', requireAuth, requireRole('provider'), require('../terms').requireCurrentTerms, async (req, res) => {
   const requestingProvider = await db.find('users', u => u.id === req.user.sub);
   if (requestingProvider && requestingProvider.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — payouts will resume once this clears, usually within a couple hours. Contact support if you need this resolved sooner.' });
@@ -391,7 +391,12 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   const usedFreeCommissionCredit = (provider.freeCommissionCredits || 0) > 0;
   if (usedFreeCommissionCredit) commissionRate = 0;
   const commissionAmount = Math.round(grossAmount * commissionRate * 100) / 100;
-  const netAmount = Math.round((grossAmount - commissionAmount + totalTips) * 100) / 100;
+  let netAmount = Math.round((grossAmount - commissionAmount + totalTips) * 100) / 100;
+  // v78: open monthly plan fees come out here, oldest first, and never
+  // more than half of this payout. Returns 0 while plan billing is off.
+  const planBilling = require('../plan-billing');
+  const planFee = await planBilling.planDeduction(provider.id, netAmount);
+  netAmount = Math.round((netAmount - planFee.amount) * 100) / 100;
 
   // The contract/escrow ledger is always denominated in USD — that stays
   // the canonical accounting currency regardless of payout choice, so
@@ -431,7 +436,9 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     grossAmount,
     commissionRate,
     commissionAmount,
-    amount: netAmount, // canonical USD amount actually paid out, after commission
+    amount: netAmount, // canonical USD amount actually paid out, after commission (and any plan fee)
+    planFeeAmount: planFee.amount,
+    planFeeItems: planFee.items,
     payoutCurrency: wantsLocal ? currency.code : 'USD',
     payoutAmountLocal,
     exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
@@ -441,6 +448,7 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     createdAt: new Date().toISOString(),
   };
   await db.insert('payouts', payout);
+  if (planFee.amount > 0) await planBilling.applyDeduction(planFee.items, payout.id);
 
   const { checkPayoutVelocity } = require('../fraud-detection');
   await checkPayoutVelocity(req.user.sub);
@@ -461,10 +469,29 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
 
   const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
   const tipNote = totalTips > 0 ? ` (includes $${totalTips} in tips — no commission taken on those)` : '';
+  const planFeeNote = planFee.amount > 0 ? ` $${planFee.amount} in plan fees was taken from this payout.` : '';
   const creditNote = usedFreeCommissionCredit ? ' 🏆 Used your top-scorer free-commission credit — 0% commission on this payout!' : '';
-  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned)${tipNote}${creditNote} — processing.`, 'payoutAlerts', { section: 'earnings' });
+  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned)${tipNote}${planFeeNote}${creditNote} — processing.`, 'payoutAlerts', { section: 'earnings' });
   res.status(201).json({ payout });
 }
+
+// GET /api/plan-billing/mine — v78: a provider's own plan fee: whether it
+// is being charged yet, what it is, what's owed, and past invoices.
+router.get('/plan-billing/mine', requireAuth, requireRole('provider'), async (req, res) => {
+  const planBilling = require('../plan-billing');
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const state = await planBilling.getState();
+  const price = planBilling.priceFor(me, await planBilling.pricingRows());
+  const invoices = (await db.filter('planInvoices', i => i.providerId === me.id))
+    .sort((a, b) => String(b.period).localeCompare(String(a.period))).slice(0, 24)
+    .map(i => ({ id: i.id, period: i.period, plan: i.plan, amountUsd: i.amountUsd, localPrice: i.localPrice, currencyCode: i.currencyCode, currencySymbol: i.currencySymbol, paidUsd: i.paidUsd || 0, status: i.status }));
+  res.json({
+    active: state.active, beginsAt: state.active ? state.beginsAt : null,
+    billable: planBilling.isBillable(me), inOrganization: !!me.organizationId,
+    price, outstandingUsd: await planBilling.outstandingUsd(me.id), invoices,
+    maxShareOfPayoutPercent: planBilling.MAX_SHARE_OF_PAYOUT * 100,
+  });
+});
 
 // POST /api/contracts/:id/complete — customer confirms job done -> release escrow
 // POST /api/contracts/:id/on-my-way — a provider marks that they've left

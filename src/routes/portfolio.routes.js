@@ -10,7 +10,14 @@ const { UPLOADS_DIR, verifyImageMagicBytes, verifyVideoMagicBytes } = require('.
 const router = express.Router();
 
 const MAX_PHOTOS_PER_PROVIDER = 12;
-const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+// v80: 12MB. A photo straight off a modern phone is often 5 to 12MB, and
+// the old 5MB limit turned those away. The page now shrinks photos before
+// sending; this is the ceiling for a browser that couldn't.
+const MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024;
+const uploadErrorMessage = (err, limitMb) => err && err.code === 'LIMIT_FILE_SIZE'
+  ? `That file is too big. The limit is ${limitMb}MB.`
+  : /heic|heif/i.test((err && err.message) || '') ? 'That photo is in HEIC format, which we can\'t use. Save it as JPEG first, or take a new photo.'
+  : ((err && err.message) || 'Upload failed');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
@@ -71,7 +78,7 @@ const uploadJobPhoto = multer({ storage: jobPhotoStorage, fileFilter: jobMediaFi
 // to also be a file-upload request.
 router.post('/job-photos/upload', requireAuth, requireRole('customer'), (req, res) => {
   uploadJobPhoto.single('photo')(req, res, async (err) => {
-    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (err) return res.status(400).json({ error: uploadErrorMessage(err, 50) });
     if (!req.file) return res.status(400).json({ error: 'No photo was provided' });
 
     if (!fs.existsSync(req.file.path)) {
@@ -101,7 +108,7 @@ router.get('/portfolio/mine', requireAuth, requireRole('provider'), async (req, 
 router.post('/portfolio/upload', requireAuth, requireRole('provider'), (req, res) => {
   upload.single('photo')(req, res, async (err) => {
     if (err) {
-      return res.status(400).json({ error: err.message || 'Upload failed' });
+      return res.status(400).json({ error: uploadErrorMessage(err, 12) });
     }
     if (!req.file) return res.status(400).json({ error: 'No photo file was provided' });
 
@@ -174,7 +181,7 @@ router.delete('/portfolio/:id', requireAuth, requireRole('provider'), async (req
 // old file), rather than accumulating like the portfolio does.
 router.post('/profile-photo/upload', requireAuth, (req, res) => {
   upload.single('photo')(req, res, async (err) => {
-    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (err) return res.status(400).json({ error: uploadErrorMessage(err, 12) });
     if (!req.file) return res.status(400).json({ error: 'No photo file was provided' });
 
     if (!fs.existsSync(req.file.path)) {

@@ -328,8 +328,13 @@ router.get('/plan-pricing', async (req, res) => {
     db.all('planPricingOverrides'),
     db.all('exchangeRates'),
   ]);
-  const plans = effectivePlanPricing(country, { baseRows, overrideRows, rateRows });
-  res.json({ country, plans });
+  // v78: the real commission for each plan (the same numbers payouts use)
+  // and whether the monthly fee is actually being charged yet.
+  const { commissionRateForPlan } = require('../commission');
+  const plans = effectivePlanPricing(country, { baseRows, overrideRows, rateRows })
+    .map(p => ({ ...p, commissionPercent: Math.round(commissionRateForPlan(p.plan) * 1000) / 10 }));
+  const billing = await require('../plan-billing').getState();
+  res.json({ country, plans, billing: { active: billing.active, beginsAt: billing.active ? billing.beginsAt : null } });
 });
 
 // GET /api/support-contact — public, no auth: the real WhatsApp/phone
@@ -795,7 +800,8 @@ async function weeklyMatchCountsForProviders(providerIds) {
 }
 
 // POST /api/jobs — customer posts a job, triggers AI matching immediately
-router.post('/jobs', requireAuth, requireRole('customer'), async (req, res) => {
+const { requireCurrentTerms } = require('../terms'); // v81: agreement checked on the server too
+router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
   const customer = await db.find('users', u => u.id === req.user.sub);
   if (!customer || customer.verified !== true) {
     // v75: say what's actually needed. "code" lets the page open the
@@ -1049,7 +1055,7 @@ function hasValidLicense(provider) {
 // and available" — it notifies the customer and shows up in their list of
 // responses, but the job isn't filled until the customer actually hires
 // someone via POST /jobs/:id/select-provider below.
-router.post('/matches/:id/respond', requireAuth, requireRole('provider'), async (req, res) => {
+router.post('/matches/:id/respond', requireAuth, requireRole('provider'), requireCurrentTerms, async (req, res) => {
   const { decision, coverLetter } = req.body || {};
   const match = await db.find('matches', m => m.id === req.params.id && m.providerId === req.user.sub);
   if (!match) return res.status(404).json({ error: 'Match not found' });
@@ -1276,7 +1282,7 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
 // ---- Contracts / bookings ----------------------------------------------------
 
 // POST /api/contracts — direct booking of a specific provider (skips matching)
-router.post('/contracts', requireAuth, requireRole('customer'), async (req, res) => {
+router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
   const customer = await db.find('users', u => u.id === req.user.sub);
   if (!customer || customer.verified !== true) {
     // v75: say what's actually needed. "code" lets the page open the
@@ -1451,7 +1457,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), async (req, res)
 // is already funded (see POST /contracts above) — accepting just confirms
 // a human on the provider's side actually agreed to do the job; declining
 // refunds it, same as a cancellation.
-router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider'), async (req, res) => {
+router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider'), requireCurrentTerms, async (req, res) => {
   if (contractStatusLocks.has(req.params.id)) {
     return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
   }
@@ -1977,7 +1983,11 @@ router.post('/disputes/:id/evidence', requireAuth, (req, res, next) => {
   if (!bytesValid) { cleanup(); return res.status(400).json({ error: "That file doesn't look like a genuine document of the type it claims to be — please re-upload" }); }
 
   const uploader = await db.find('users', u => u.id === req.user.sub);
+  // v83: evidence gets the same optional encryption as ID files.
+  const evidenceEncrypted = require('../file-crypto').isEnabled()
+    ? require('../file-crypto').encryptFileInPlace(path.join(PRIVATE_UPLOADS_DIR, req.file.filename)) : false;
   const record = {
+    encrypted: evidenceEncrypted,
     id: `dpev_${nanoid(10)}`,
     disputeId: dispute.id,
     uploadedBy: req.user.sub,
@@ -2021,9 +2031,18 @@ router.get('/disputes/:id/evidence/:evidenceId/file', requireAuth, async (req, r
   const record = await db.find('disputeEvidence', e => e.id === req.params.evidenceId && e.disputeId === dispute.id);
   if (!record) return res.status(404).json({ error: 'Evidence not found' });
   const { PRIVATE_UPLOADS_DIR } = require('../uploads');
-  const filePath = path.join(PRIVATE_UPLOADS_DIR, record.filename);
+  const filePath = path.join(PRIVATE_UPLOADS_DIR, path.basename(String(record.filename)));
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File is missing on disk' });
-  res.sendFile(filePath);
+  // v83: decrypted if it was stored encrypted; never cached; type taken
+  // from what was recorded at upload, limited to the three allowed kinds.
+  let buf;
+  try { buf = require('../file-crypto').readPossiblyEncrypted(filePath); }
+  catch (e) { return res.status(500).json({ error: e.message }); }
+  const type = ['image/jpeg', 'image/png', 'application/pdf'].includes(record.mimeType) ? record.mimeType : 'application/octet-stream';
+  res.set('Cache-Control', 'no-store, private');
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Content-Type', type);
+  res.send(buf);
 });
 
 module.exports = router;

@@ -125,6 +125,7 @@ async function requireAuth(req, res, next) {
     const db = require('./db');
     const current = await db.find('users', u => u.id === payload.sub);
     if (!current || current.active === false) {
+      if (current && current.closedByOwner) return res.status(403).json({ error: 'This account was closed at its owner\'s request.' });
       return res.status(403).json({ error: 'This account has been suspended. Contact support for details.' });
     }
     // A password change bumps tokenVersion — any token signed before that

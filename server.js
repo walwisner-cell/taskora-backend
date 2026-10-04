@@ -65,8 +65,33 @@ app.set('trust proxy', 1);
 // break the entire page. The real defense against injected content is
 // the output-escaping fix already in place; this is additional
 // defense-in-depth for the rest, not a replacement for that.
+// v82: a content security policy is now on. The page keeps its code
+// inside one file, so inline scripts have to stay allowed; what this adds
+// is a fixed list of the ONLY outside places the page may load code,
+// styles, fonts or frames from (Google sign-in and Google Fonts), no
+// plugins, no being framed by another site, and no sending forms
+// elsewhere. Set CSP_REPORT_ONLY=true on the server to make the browser
+// report problems without blocking, if something ever needs diagnosing.
+const cspDirectives = {
+  defaultSrc: ["'self'"],
+  scriptSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com'],
+  scriptSrcAttr: ["'unsafe-inline'"],
+  styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://accounts.google.com'],
+  fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
+  imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+  mediaSrc: ["'self'", 'blob:', 'data:'],
+  connectSrc: ["'self'", 'https://accounts.google.com'],
+  frameSrc: ["'self'", 'blob:', 'https://accounts.google.com'],
+  workerSrc: ["'self'"],
+  manifestSrc: ["'self'"],
+  objectSrc: ["'none'"],
+  baseUri: ["'self'"],
+  formAction: ["'self'"],
+  frameAncestors: ["'self'"],
+  upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+};
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: { useDefaults: false, directives: cspDirectives, reportOnly: process.env.CSP_REPORT_ONLY === 'true' },
   // Helmet's default Cross-Origin-Opener-Policy (same-origin) severs
   // window.opener between this page and any popup IT opens — which
   // silently breaks Google Sign-In's popup flow, since Google's own
@@ -273,6 +298,34 @@ seedIfEmpty()
     const { sweepDocumentUploadReminders } = require('./src/document-upload-reminder-scheduler');
     setTimeout(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, 23000);
     setInterval(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+
+    // v82: nightly copy of the data files (see src/backup-scheduler.js).
+    // A minute after boot if today's copy doesn't exist yet, then daily.
+    const backups = require('./src/backup-scheduler');
+    if (backups.backupsApply()) {
+      const safeBackup = () => { try { backups.runBackup(); } catch (e) { console.error('[backup] failed:', e.message); } };
+      setTimeout(() => { const today = new Date().toISOString().slice(0, 10); if (!backups.listBackups().some(b => b.day === today)) safeBackup(); }, 60000);
+      setInterval(safeBackup, ONE_DAY_MS);
+    }
+
+    // v81: sign-ups that were started and never finished are removed once
+    // they've expired (they used to stay on disk for good). Hourly.
+    const sweepExpiredSignups = async () => {
+      const db = require('./src/db');
+      const now = new Date().toISOString();
+      const stale = await db.filter('pendingRegistrations', p => p.expiresAt && p.expiresAt < now);
+      for (const p of stale) await db.remove('pendingRegistrations', p.id);
+      if (stale.length) console.log(`[signup] Removed ${stale.length} expired unfinished sign-up${stale.length === 1 ? '' : 's'}.`);
+    };
+    setTimeout(() => { sweepExpiredSignups().catch(e => console.error('[signup] sweep failed:', e)); }, 31000);
+    setInterval(() => { sweepExpiredSignups().catch(e => console.error('[signup] sweep failed:', e)); }, 60 * 60 * 1000);
+
+    // v78: monthly provider plan invoices (see src/plan-billing.js). Does
+    // nothing unless billing is switched on. Shortly after boot, then daily;
+    // it only ever creates one invoice per provider per month.
+    const { sweepPlanInvoices } = require('./src/plan-billing');
+    setTimeout(() => { sweepPlanInvoices().catch(e => console.error('[plan-billing] Unexpected error during scheduled sweep:', e)); }, 29000);
+    setInterval(() => { sweepPlanInvoices().catch(e => console.error('[plan-billing] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
 
     // v77: delete ID files once they're past the retention period (see
     // src/id-retention-scheduler.js). Shortly after boot, then daily.

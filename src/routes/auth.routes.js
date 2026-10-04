@@ -102,7 +102,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
-    ['password', isValidPassword(password), 'Password must be 8-72 characters'],
+    ['password', isValidPassword(password), 'Choose a password of 8 to 72 characters that isn\'t a common one (like "password123")'],
     ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
     ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
@@ -162,7 +162,9 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
 
   const pending = {
     id: `preg_${nanoid(12)}`,
-    payload: { name: name.trim(), email: email.trim(), password, role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category, skills, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null },
+    // v81: the password is hashed right here. It used to sit in this waiting
+    // record as typed until the code was entered (and forever if it never was).
+    payload: { name: name.trim(), email: email.trim(), passwordHash: hashPassword(password), role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category, skills, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null },
     emailCodeHash: hashResetToken(emailCode),
     phoneVerified: false,
     emailVerified: false,
@@ -286,7 +288,7 @@ async function completeSignupVerify(req, res, pending) {
     phoneVerified: false, // phone is no longer verified as part of signup — see /send-phone-otp and /verify-phone-otp for how someone can verify it later, e.g. for 2FA
     initials: trimmedName.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
     verified: false,
-    passwordHash: hashPassword(payload.password),
+    passwordHash: payload.passwordHash || hashPassword(payload.password), // v81: already hashed at sign-up start
     referralCode: await generateUniqueReferralCode(),
     referredByUserId: payload.referredByUserId || null,
     createdAt: new Date().toISOString(),
@@ -394,11 +396,19 @@ async function completeSignupVerify(req, res, pending) {
 // POST /api/auth/signup/resend — regenerate both codes for an in-progress
 // registration (e.g. the 15-minute window is about to run out, or the codes
 // were dismissed accidentally).
-router.post('/signup/resend', async (req, res) => {
+// v81: limited. Each call sends an email, and there was no limit at all, so
+// one sign-up could be used to flood somebody's inbox and run up the email
+// bill. Now: the shared code limiter, at least 30 seconds between sends,
+// and 5 resends per sign-up.
+router.post('/signup/resend', otpLimiter, async (req, res) => {
   const { pendingId } = req.body || {};
   if (!isNonEmptyString(pendingId)) return res.status(400).json({ error: 'pendingId is required' });
   const pending = await db.find('pendingRegistrations', p => p.id === pendingId);
   if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found — please start again' });
+  if ((pending.resendCount || 0) >= 5) return res.status(429).json({ error: 'That\'s the most codes we can send for one sign-up. Please start again.' });
+  if (pending.lastResendAt && Date.now() - new Date(pending.lastResendAt).getTime() < 30 * 1000) {
+    return res.status(429).json({ error: 'Please wait 30 seconds before asking for another code.' });
+  }
 
   const { isEmailConfigured, sendEmail } = require('../delivery');
   const emailCode = generateSixDigitCode();
@@ -406,6 +416,8 @@ router.post('/signup/resend', async (req, res) => {
   await db.update('pendingRegistrations', pending.id, {
     emailCodeHash: hashResetToken(emailCode),
     expiresAt: new Date(Date.now() + REGISTRATION_TTL_MS).toISOString(),
+    resendCount: (pending.resendCount || 0) + 1,
+    lastResendAt: new Date().toISOString(),
   });
 
   const emailDelivered = isEmailConfigured()
@@ -435,6 +447,7 @@ router.post('/signup/resend', async (req, res) => {
 // security-relevant logic — one real implementation, two entry points.
 async function issueSessionOrRequire2FA(user, req, res) {
   if (user.active === false) {
+    if (user.closedByOwner) return res.status(403).json({ error: 'This account was closed at its owner\'s request. Contact Trothen support if you\'d like it reopened.' });
     return res.status(403).json({ error: 'This account has been suspended. Contact a super admin for access.' });
   }
   if (user.status === 'rejected') {
@@ -486,13 +499,73 @@ async function issueSessionOrRequire2FA(user, req, res) {
   return res.json({ token, user: publicUser(user) });
 }
 
+// v82: wrong-password counting per ACCOUNT, on top of the per-connection
+// limit above. The old limit only counted tries from one connection, so
+// someone guessing from many connections was never slowed. Now 8 wrong
+// passwords for the same email inside 15 minutes pauses sign-in for that
+// email for 15 minutes, whoever is trying and from wherever. It's counted
+// the same way for emails that have no account, so the message doesn't
+// reveal which emails exist. Kept in memory: a restart clears it.
+const LOGIN_FAIL_LIMIT = 8;
+const LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
+const loginFailures = new Map(); // email -> { count, firstAt, lockedUntil }
+// v83: a pause that's in force is also written to the data store (under a
+// one-way hash of the email, never the email itself), so restarting the
+// server doesn't quietly lift it.
+const lockId = (emailKey) => 'lk_' + require('crypto').createHash('sha256').update(emailKey).digest('hex').slice(0, 32);
+async function persistLock(emailKey, lockedUntil) {
+  try {
+    const id = lockId(emailKey);
+    const existing = await db.find('loginLockouts', l => l.id === id);
+    if (existing) await db.update('loginLockouts', id, { lockedUntil });
+    else await db.insert('loginLockouts', { id, lockedUntil });
+  } catch (e) { /* the in-memory pause still applies */ }
+}
+async function storedLock(emailKey) {
+  try {
+    const rec = await db.find('loginLockouts', l => l.id === lockId(emailKey));
+    if (!rec) return null;
+    if (rec.lockedUntil > Date.now()) return rec;
+    await db.remove('loginLockouts', rec.id);
+  } catch (e) { /* fall through */ }
+  return null;
+}
+function loginLockState(emailKey) {
+  const s = loginFailures.get(emailKey);
+  if (!s) return null;
+  const now = Date.now();
+  if (s.lockedUntil && s.lockedUntil > now) return s;
+  if (s.lockedUntil && s.lockedUntil <= now) { loginFailures.delete(emailKey); return null; }
+  if (now - s.firstAt > LOGIN_FAIL_WINDOW_MS) { loginFailures.delete(emailKey); return null; }
+  return s;
+}
+setInterval(() => { for (const k of loginFailures.keys()) loginLockState(k); }, 10 * 60 * 1000).unref();
+const LOCKED_MESSAGE = 'Too many wrong passwords for this account. Sign-in is paused for 15 minutes. If you\'ve forgotten your password, use "Forgot password" or contact support.';
+
 router.post('/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
-  const user = await db.find('users', u => u.email.toLowerCase() === (email || '').toLowerCase());
+  const emailKey = String(email).trim().toLowerCase().slice(0, 254);
+  const state = loginLockState(emailKey);
+  if ((state && state.lockedUntil) || (!state && await storedLock(emailKey))) return res.status(429).json({ error: LOCKED_MESSAGE });
+  const user = await db.find('users', u => u.email.toLowerCase() === emailKey);
   if (!user || !verifyPassword(password, user.passwordHash)) {
+    const s = state || { count: 0, firstAt: Date.now(), lockedUntil: null };
+    s.count += 1;
+    if (s.count >= LOGIN_FAIL_LIMIT) {
+      s.lockedUntil = Date.now() + LOGIN_FAIL_WINDOW_MS;
+      loginFailures.set(emailKey, s);
+      await persistLock(emailKey, s.lockedUntil);
+      if (user) {
+        // Tell the real owner, in the app and by email when email is connected.
+        try { await require('../notify').notify(user.id, '🔐', 'Someone entered the wrong password for your account several times, so sign-in was paused for 15 minutes. If that wasn\'t you, change your password.', null, { section: 'settings' }); } catch (e) { /* never block sign-in handling on a notice */ }
+      }
+      return res.status(429).json({ error: LOCKED_MESSAGE });
+    }
+    loginFailures.set(emailKey, s);
     return res.status(401).json({ error: 'Invalid email or password' });
   }
+  loginFailures.delete(emailKey);
   // The demo password is written in this app's source code. On the real
   // server, anyone signing in with it must set their own password before
   // they can do anything else (requireAuth enforces mustChangePassword).
@@ -788,7 +861,7 @@ router.get('/me', requireAuth, async (req, res) => {
 // their next visit, rather than being grandfathered into terms they never
 // actually saw. Keep this in sync with CURRENT_TERMS_VERSION on the
 // frontend (public/index.html) — both must agree for the gate to work.
-const CURRENT_TERMS_VERSION = 'v2-2026'; // v76: new tick-box agreement, and customers now need a reviewed ID
+const { CURRENT_TERMS_VERSION } = require('../terms'); // v81: one shared definition, see src/terms.js
 
 // POST /api/auth/accept-terms — records genuine, deliberate consent: a
 // real timestamp and the exact version being agreed to, not an implied
@@ -810,6 +883,48 @@ router.post('/accept-terms', requireAuth, async (req, res) => {
   }
   await db.update('users', req.user.sub, { termsAcceptedAt: new Date().toISOString(), termsVersion: version, termsViewedFull: viewedFullTerms === true });
   res.json({ ok: true, termsVersion: version });
+});
+
+// ── v83: a person's own data, and leaving (see src/account-privacy.js) ──
+const privacyLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 6, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'You\'ve done that several times in the last hour. Please try again later.' },
+});
+
+// GET /api/auth/me/export — everything Trothen holds about me, as one file.
+router.get('/me/export', requireAuth, privacyLimiter, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me || me.role === 'admin') return res.status(400).json({ error: 'Data downloads are for customer and pro accounts' });
+  const data = await require('../account-privacy').buildExport(me.id);
+  res.set('Cache-Control', 'no-store, private');
+  res.set('Content-Disposition', `attachment; filename="trothen-my-data-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.type('application/json').send(JSON.stringify(data, null, 2));
+});
+
+// GET /api/auth/me/close-account/check — can I close right now, and if not, why.
+router.get('/me/close-account/check', requireAuth, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me || me.role === 'admin') return res.status(400).json({ error: 'Staff accounts are closed by a super admin' });
+  res.json({ blockers: await require('../account-privacy').closureBlockers(me) });
+});
+
+// POST /api/auth/me/close-account { password, reason? } — closes my own
+// account. Needs my password again. Refused while a booking, held payment,
+// dispute, posted job or unpaid earnings is still open.
+router.post('/me/close-account', requireAuth, privacyLimiter, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me || me.role === 'admin') return res.status(400).json({ error: 'Staff accounts are closed by a super admin' });
+  const { password, reason, confirm } = req.body || {};
+  // People who only ever sign in with Google have no password to type, so
+  // they confirm by typing CLOSE instead.
+  const passwordOk = !!password && verifyPassword(String(password), me.passwordHash);
+  const googleOk = !!me.googleId && String(confirm || '').trim().toUpperCase() === 'CLOSE';
+  if (!passwordOk && !googleOk) return res.status(401).json({ error: me.googleId ? 'Enter your password, or type CLOSE to confirm' : 'That password isn\'t right' });
+  const privacy = require('../account-privacy');
+  const blockers = await privacy.closureBlockers(me);
+  if (blockers.length) return res.status(409).json({ error: blockers[0], blockers });
+  await privacy.closeAccount(me, reason);
+  res.json({ ok: true });
 });
 
 router.patch('/me', requireAuth, async (req, res) => {
@@ -1050,6 +1165,10 @@ function isRateLimited(email) {
 // POST /api/auth/forgot-password — always responds the same way whether or
 // not the email exists, so this endpoint can't be used to discover which
 // emails have accounts.
+const RESET_BY_EMAIL_OFF = {
+  testMode: false, emailUnavailable: true,
+  message: 'Password reset by email isn\'t switched on yet. Please contact Trothen support and we\'ll help you get back in.',
+};
 router.post('/forgot-password', otpLimiter, async (req, res) => {
   const { email } = req.body || {};
   if (!isValidEmail(email)) return res.status(400).json({ error: 'Enter a valid email address' });
@@ -1091,6 +1210,7 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
     if (require('../delivery').isEmailConfigured()) {
       return res.json({ ...genericResponse, testMode: false });
     }
+    if (require('../go-live').isProduction()) return res.json({ ...genericResponse, ...RESET_BY_EMAIL_OFF });
     console.log(`[TEST MODE] Password reset requested for an email with no account (${normalized}) — no token was actually issued.`);
     return res.json({
       ...genericResponse,
@@ -1102,6 +1222,16 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
 
   // Invalidate any previous outstanding reset tokens for this user before
   // issuing a new one, so only the most recent link works.
+  // v81: on the live site with no email service connected, this route used
+  // to send the working reset token back to whoever asked. That let anyone
+  // take over any account, a super admin's included, just by typing its
+  // email address. Now nothing is issued: the person is told to contact
+  // support, and a super admin can set a temporary password from Admin.
+  // (On a developer's own machine the on-screen token still works.)
+  if (!require('../delivery').isEmailConfigured() && require('../go-live').isProduction()) {
+    return res.json({ ...genericResponse, ...RESET_BY_EMAIL_OFF });
+  }
+
   const outstanding = await db.filter('passwordResets', r => r.userId === user.id && !r.used);
   for (const r of outstanding) {
     await db.update('passwordResets', r.id, { used: true });
@@ -1153,7 +1283,7 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
 router.post('/reset-password', otpLimiter, async (req, res) => {
   const { token, newPassword } = req.body || {};
   if (!isNonEmptyString(token)) return res.status(400).json({ error: 'Reset token is required' });
-  if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'New password must be 8-72 characters' });
+  if (!isValidPassword(newPassword)) return res.status(400).json({ error: 'Choose a password of 8 to 72 characters that isn\'t a common one (like "password123")' });
 
   const tokenHash = hashResetToken(token);
   const record = await db.find('passwordResets', r => r.tokenHash === tokenHash);
