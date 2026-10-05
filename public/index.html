@@ -2431,10 +2431,11 @@
         <a onclick="showCareersPage()" data-i18n="footer_careers">Careers</a>
         <a onclick="showContactPage()" data-i18n="footer_contact">Contact Us</a>
         <a onclick="showTermsPage()" data-i18n="footer_terms">Terms of Service</a>
+        <a onclick="showPrivacyPolicy()">Privacy Policy</a>
         <a onclick="showPricing()" data-i18n="nav_become_pro">Become a Pro</a>
       </nav>
     </div>
-    <div class="footer-base"><div class="footer-text">© 2026 Trothen Tech Group · Atlanta, GA · support@trothen.io</div></div>
+    <div class="footer-base"><div class="footer-text">© Trothen</div></div>
   </footer>
 </div>
 
@@ -2450,7 +2451,7 @@
   </div>
   <footer class="footer">
     <div class="footer-inner">
-      <div class="footer-text">© 2026 Trothen Tech Group · Atlanta, GA · support@trothen.io</div>
+      <div class="footer-text">© Trothen</div>
     </div>
   </footer>
 </div>
@@ -2472,7 +2473,7 @@
   </div>
   <footer class="footer">
     <div class="footer-inner">
-      <div class="footer-text">© 2026 Trothen Tech Group · Atlanta, GA · support@trothen.io</div>
+      <div class="footer-text">© Trothen</div>
     </div>
   </footer>
 </div>
@@ -2507,7 +2508,7 @@
   </div>
   <footer class="footer">
     <div class="footer-inner">
-      <div class="footer-text">© 2026 Trothen Tech Group · Atlanta, GA · support@trothen.io</div>
+      <div class="footer-text">© Trothen</div>
     </div>
   </footer>
 </div>
@@ -2534,7 +2535,7 @@
   </div>
   <footer class="footer">
     <div class="footer-inner">
-      <div class="footer-text">© 2026 Trothen Tech Group · Atlanta, GA · support@trothen.io</div>
+      <div class="footer-text">© Trothen</div>
     </div>
   </footer>
 </div>
@@ -2583,9 +2584,10 @@
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Address</label>
-        <input class="form-input" type="text" placeholder="Your address in Atlanta, GA" id="job-address"/>
+        <label class="form-label">Address <small style="font-weight:400;color:var(--slate);">if there is one</small></label>
+        <input class="form-input" type="text" placeholder="Street address, if the place has one" id="job-address"/>
       </div>
+      <div id="book-where-slot"></div>
       <div id="booking-photo-upload-container"></div>
       <div class="form-group">
         <label class="form-label">Materials Advance <small style="font-weight:400;color:var(--slate);">optional</small></label>
@@ -3516,6 +3518,7 @@ async function loadProviders() {
         profilePhotoUrl: p.profilePhotoUrl || null,
         acceptingBookings: p.acceptingBookings !== false,
         trustScore: p.trustScore != null ? p.trustScore : null,
+        isNewPro: p.isNewPro === true, // v91: fewer than five completed jobs
         twoFactorEnabled: p.twoFactorEnabled === true,
       }));
     }
@@ -3684,6 +3687,467 @@ function categoryIcon(name) {
 // desktop, and opens the Google Maps app directly on a phone that has
 // it installed). Returns an empty string if there's no address to show,
 // so callers can just drop this inline without an extra existence check.
+// ── v92: LOCATION THAT WORKS WHERE GPS IS WEAK AND ADDRESSES DON'T EXIST ──
+// One place that asks the phone where it is, used by every feature.
+// The old way asked once and gave up after 8 to 10 seconds, which often
+// isn't long enough for a phone to find satellites, especially on a cheap
+// phone or under a zinc roof. This one:
+//   - keeps listening for up to maxWaitMs and keeps the BEST fix it hears;
+//   - stops early as soon as the fix is within goodEnoughM metres;
+//   - if GPS gives nothing at all, makes one last try using mobile masts
+//     and Wi-Fi, which is rougher but usually works indoors;
+//   - always reports how accurate the fix is, so a rough one isn't
+//     mistaken for an exact one.
+// Returns { latitude, longitude, accuracyM } or { error: 'denied' |
+// 'unavailable' | 'unsupported' }.
+function getBestLocation(opts) {
+  const { goodEnoughM = 50, maxWaitMs = 25000, onProgress } = opts || {};
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve({ error: 'unsupported' });
+    let best = null, done = false, watchId = null, timer = null;
+    const finish = (r) => { if (done) return; done = true; if (watchId != null) { try { navigator.geolocation.clearWatch(watchId); } catch (e) {} } clearTimeout(timer); resolve(r); };
+    const take = (pos) => {
+      const fix = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracyM: Math.max(1, Math.round(pos.coords.accuracy || 0)) };
+      if (!best || fix.accuracyM < best.accuracyM) best = fix;
+      if (onProgress) { try { onProgress(best); } catch (e) {} }
+      if (best.accuracyM <= goodEnoughM) finish(best);
+    };
+    timer = setTimeout(() => {
+      if (best) return finish(best);
+      navigator.geolocation.getCurrentPosition(
+        (p) => { take(p); finish(best); },
+        (err) => finish({ error: err && err.code === 1 ? 'denied' : 'unavailable' }),
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+      );
+    }, maxWaitMs);
+    try {
+      watchId = navigator.geolocation.watchPosition(take, (err) => { if (err && err.code === 1) finish({ error: 'denied' }); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: maxWaitMs });
+    } catch (e) { finish({ error: 'unavailable' }); }
+  });
+}
+// v96: miles where people use miles (the US, Liberia, the UK), kilometres
+// everywhere else, going by the signed-in person's country.
+function distLabel(miles) {
+  if (miles == null || !Number.isFinite(Number(miles))) return '';
+  const country = (AUTH.user && AUTH.user.country) || '';
+  const usesMiles = !country || ['United States', 'Liberia', 'United Kingdom', 'Myanmar'].includes(country);
+  if (usesMiles) return Number(miles).toFixed(1).replace(/\.0$/, '') + ' mi';
+  const km = Number(miles) * 1.609344;
+  return (km < 10 ? km.toFixed(1).replace(/\.0$/, '') : Math.round(km)) + ' km';
+}
+function describeAccuracy(m) {
+  if (m == null) return '';
+  if (m <= 30) return `accurate to about ${m} m`;
+  if (m <= 150) return `within about ${m} m`;
+  if (m < 1000) return `rough: within about ${Math.round(m / 50) * 50} m`;
+  return `very rough: within about ${(m / 1000).toFixed(1)} km`;
+}
+function locationErrorMessage(code) {
+  return code === 'denied' ? 'Location is switched off for this site. Allow it in your browser or phone settings, then try again.'
+    : code === 'unsupported' ? 'This browser can\'t share location.'
+    : 'Your phone couldn\'t find its location. Step outside or near a window, make sure Location is on, and try again.';
+}
+
+// Plus Codes: a short code for any spot on earth, made from GPS
+// coordinates with plain arithmetic (no internet needed). Google Maps
+// understands them, so "8FW4VWC8+R9" can be read out over the phone or
+// sent by text where there is no street address.
+const PLUS_ALPHABET = '23456789CFGHJMPQRVWX';
+function plusCodeFor(lat, lng) {
+  let a = Math.floor((Math.min(Math.max(lat, -90), 90 - 1e-9) + 90) * 8000);
+  let b = Math.floor(((((lng + 180) % 360) + 360) % 360) * 8000);
+  let code = '';
+  for (let i = 0; i < 5; i++) { code = PLUS_ALPHABET[a % 20] + PLUS_ALPHABET[b % 20] + code; a = Math.floor(a / 20); b = Math.floor(b / 20); }
+  return code.slice(0, 8) + '+' + code.slice(8);
+}
+function decodePlusCode(text) {
+  const m = String(text || '').toUpperCase().match(/([23456789CFGHJMPQRVWX]{8})\+([23456789CFGHJMPQRVWX]{2})/);
+  if (!m) return null;
+  const d = (m[1] + m[2]).split('').map(ch => PLUS_ALPHABET.indexOf(ch));
+  let a = 0, b = 0;
+  for (let i = 0; i < 10; i += 2) { a = a * 20 + d[i]; b = b * 20 + d[i + 1]; }
+  return { latitude: (a + 0.5) / 8000 - 90, longitude: (b + 0.5) / 8000 - 180 };
+}
+// For when GPS won't work: accepts "6.3156, -10.8074", a full Plus Code,
+// or a Google Maps link that has the coordinates in it.
+function parseTypedLocation(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  const plus = decodePlusCode(t);
+  if (plus) return plus;
+  const m = t.match(/(-?\d{1,2}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)/) ;
+  if (m) {
+    const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+    if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0)) return { latitude: lat, longitude: lng };
+  }
+  return null;
+}
+
+// ── v93: LIVE TRIP ─────────────────────────────────────────────────────
+// PRO SIDE. From "On my way" to "Arrived" the pro's phone sends its
+// position to the server. A web page can only do this while it is open
+// and the screen is on, so the page also asks the phone to stay awake,
+// and shows a bar so the pro always knows sharing is on.
+const LIVE_TRIP = { contractId: null, watchId: null, lastSentAt: 0, lastSent: null, wakeLock: null, timer: null, latest: null };
+function metresBetween(a, b) {
+  if (!a || !b) return Infinity;
+  const toRad = (x) => x * Math.PI / 180, R = 6371000;
+  const dLat = toRad(b.latitude - a.latitude), dLng = toRad(b.longitude - a.longitude);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+async function sendLivePoint(force) {
+  const p = LIVE_TRIP.latest;
+  if (!p || !LIVE_TRIP.contractId) return;
+  const now = Date.now();
+  // Not more than once every 8 seconds; and at least every 30 seconds
+  // even when standing still, so the customer can see it's still live.
+  const moved = metresBetween(LIVE_TRIP.lastSent, p);
+  if (!force && now - LIVE_TRIP.lastSentAt < 8000) return;
+  if (!force && moved < 15 && now - LIVE_TRIP.lastSentAt < 30000) return;
+  LIVE_TRIP.lastSentAt = now; LIVE_TRIP.lastSent = p;
+  try { await apiFetch('POST', `/contracts/${LIVE_TRIP.contractId}/live-location`, p); renderLiveTripBar(); }
+  catch (e) { if (e && e.data && e.data.code === 'TRIP_CLOSED') stopLiveTrip(); }
+}
+function renderLiveTripBar(note) {
+  let bar = document.getElementById('live-trip-bar');
+  if (!LIVE_TRIP.contractId) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    document.body.insertAdjacentHTML('beforeend', '<div id="live-trip-bar" role="status" style="position:fixed;left:12px;right:12px;bottom:12px;z-index:4000;max-width:560px;margin:0 auto;background:#0F2640;color:#fff;border-radius:12px;padding:10px 14px;font-size:13.5px;line-height:1.45;box-shadow:0 10px 30px rgba(0,0,0,.3);display:flex;gap:10px;align-items:center;"></div>');
+    bar = document.getElementById('live-trip-bar');
+  }
+  const p = LIVE_TRIP.latest;
+  bar.innerHTML = `<span style="width:10px;height:10px;border-radius:50%;background:#3DDC97;flex-shrink:0;"></span>
+    <span style="flex:1;">${note ? escapeHtml(note) : 'Sharing your location with your customer until you tap Arrived.'}${p && p.accuracyM ? ' (' + describeAccuracy(p.accuracyM) + ')' : ''} Keep this page open.</span>
+    <button class="btn-sm" style="background:#fff;color:#0F2640;border:none;" onclick="openTripTracking(LIVE_TRIP.contractId)">Map</button>`;
+}
+async function startLiveTrip(contractId) {
+  if (!navigator.geolocation) return;
+  if (LIVE_TRIP.contractId === contractId && LIVE_TRIP.watchId != null) return;
+  stopLiveTrip();
+  LIVE_TRIP.contractId = contractId;
+  try { if (navigator.wakeLock && navigator.wakeLock.request) LIVE_TRIP.wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { /* not supported or refused: carry on */ }
+  try {
+    LIVE_TRIP.watchId = navigator.geolocation.watchPosition(
+      (pos) => { LIVE_TRIP.latest = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracyM: Math.max(1, Math.round(pos.coords.accuracy || 0)) }; sendLivePoint(false); },
+      (err) => { renderLiveTripBar(err && err.code === 1 ? 'Location is switched off, so your customer can\'t see you. Allow location for this site.' : 'Looking for your location…'); },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 }
+    );
+  } catch (e) { /* leave the bar up; the timer keeps trying to send */ }
+  LIVE_TRIP.timer = setInterval(() => sendLivePoint(false), 10000);
+  renderLiveTripBar();
+}
+function stopLiveTrip() {
+  if (LIVE_TRIP.watchId != null) { try { navigator.geolocation.clearWatch(LIVE_TRIP.watchId); } catch (e) {} }
+  if (LIVE_TRIP.timer) clearInterval(LIVE_TRIP.timer);
+  if (LIVE_TRIP.wakeLock) { try { LIVE_TRIP.wakeLock.release(); } catch (e) {} }
+  Object.assign(LIVE_TRIP, { contractId: null, watchId: null, lastSentAt: 0, lastSent: null, wakeLock: null, timer: null, latest: null });
+  renderLiveTripBar();
+}
+function resumeLiveTripIfAny(contracts) {
+  if (!AUTH.user || AUTH.user.role !== 'provider') return;
+  const open = (contracts || []).find(c => c.status === 'active' && c.onMyWayAt && !c.arrivedAt && (Date.now() - new Date(c.onMyWayAt).getTime()) < 6 * 60 * 60 * 1000);
+  if (open) startLiveTrip(open.id); else if (LIVE_TRIP.contractId) stopLiveTrip();
+}
+// The phone drops the "stay awake" request whenever the page is hidden; ask again when it comes back.
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && LIVE_TRIP.contractId) {
+    try { if (navigator.wakeLock && navigator.wakeLock.request) LIVE_TRIP.wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+    sendLivePoint(true);
+  }
+});
+
+// BOTH SIDES. The trip window: a map with the pro and the job, how far
+// apart they are, and how fresh the pro's position is. It refreshes every
+// 8 seconds while it's open.
+const TRIP_VIEW = { contractId: null, timer: null, map: null, proMarker: null, jobMarker: null, accCircle: null, fitted: false };
+let LEAFLET_LOADING = null;
+function loadLeaflet() {
+  if (window.L && window.L.map) return Promise.resolve(true);
+  if (!LEAFLET_LOADING) {
+    LEAFLET_LOADING = new Promise((resolve) => {
+      const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/leaflet/leaflet.css'; document.head.appendChild(css);
+      const js = document.createElement('script'); js.src = '/vendor/leaflet/leaflet.js';
+      js.onload = () => resolve(true); js.onerror = () => { LEAFLET_LOADING = null; resolve(false); };
+      document.head.appendChild(js);
+    });
+  }
+  return LEAFLET_LOADING;
+}
+function closeTripTracking() {
+  if (TRIP_VIEW.timer) clearInterval(TRIP_VIEW.timer);
+  if (TRIP_VIEW.map) { try { TRIP_VIEW.map.remove(); } catch (e) {} }
+  Object.assign(TRIP_VIEW, { contractId: null, timer: null, map: null, proMarker: null, jobMarker: null, accCircle: null, fitted: false });
+  const o = document.getElementById('trip-overlay'); if (o) o.remove();
+}
+function ago(seconds) {
+  if (seconds == null) return '';
+  if (seconds < 10) return 'just now';
+  if (seconds < 60) return seconds + ' seconds ago';
+  const m = Math.round(seconds / 60);
+  return m + ' minute' + (m === 1 ? '' : 's') + ' ago';
+}
+async function openTripTracking(contractId) {
+  closeTripTracking();
+  TRIP_VIEW.contractId = contractId;
+  document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="trip-overlay" style="z-index:5300;" onclick="if(event.target===this)closeTripTracking()">
+    <div class="modal" style="max-width:min(760px,96vw);width:96vw;max-height:94vh;display:flex;flex-direction:column;" role="dialog" aria-modal="true" aria-label="Trip">
+      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-shrink:0;">
+        <div><h3 style="margin:0;" id="trip-title">Trip</h3><p style="margin:4px 0 0;" id="trip-sub">Loading…</p></div>
+        <button class="modal-close" onclick="closeTripTracking()" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" style="overflow:auto;flex:1 1 auto;min-height:0;">
+        <div id="trip-headline" style="font-size:22px;font-weight:800;color:var(--navy);line-height:1.25;"></div>
+        <div id="trip-fresh" style="font-size:13.5px;margin-top:4px;color:var(--slate);" aria-live="polite"></div>
+        <div id="trip-map" style="height:min(48vh,380px);border-radius:10px;margin-top:12px;background:var(--offwhite);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--slate);font-size:13.5px;">Loading the map…</div>
+        <div id="trip-links" style="margin-top:10px;font-size:13.5px;line-height:1.7;"></div>
+        <div class="ver-note" style="margin-top:8px;">Distance is a straight line, not the road. The position only updates while the pro's Trothen page is open on their phone.</div>
+      </div>
+    </div></div>`);
+  await refreshTripTracking();
+  TRIP_VIEW.timer = setInterval(refreshTripTracking, 8000);
+}
+async function refreshTripTracking() {
+  const id = TRIP_VIEW.contractId;
+  if (!id || !document.getElementById('trip-overlay')) return;
+  let d;
+  try { d = await apiFetch('GET', `/contracts/${id}/tracking`); }
+  catch (e) { const f = document.getElementById('trip-fresh'); if (f) f.textContent = 'Couldn\'t refresh just now. Trying again…'; return; }
+  if (TRIP_VIEW.contractId !== id) return;
+  const iAmPro = AUTH.user && AUTH.user.role === 'provider';
+  const set = (elId, html) => { const el = document.getElementById(elId); if (el) el.innerHTML = html; };
+  set('trip-title', escapeHtml(iAmPro ? 'Trip to ' + d.customerName : d.proName + ' is coming'));
+  set('trip-sub', escapeHtml(d.service || ''));
+  const dist = d.distanceMiles != null ? `${d.distanceMiles < 0.1 ? Math.round(d.distanceMiles * 5280 / 10) * 10 + ' feet' : d.distanceMiles.toFixed(1) + ' miles'} (${d.distanceKm < 1 ? Math.round(d.distanceKm * 1000 / 10) * 10 + ' m' : d.distanceKm.toFixed(1) + ' km'})` : null;
+  let headline = '', fresh = '';
+  if (d.phase === 'arrived') { headline = iAmPro ? 'You\'ve arrived' : escapeHtml(d.proName) + ' has arrived'; fresh = 'Live location sharing has stopped.'; }
+  else if (d.phase === 'not_started') { headline = iAmPro ? 'Tap "On My Way" when you set off' : 'Your pro hasn\'t set off yet'; fresh = iAmPro ? '' : 'You\'ll be able to follow them here once they tap "On my way".'; }
+  else if (d.phase === 'ended') { headline = 'This trip is no longer live'; }
+  else if (!d.proLocation) { headline = iAmPro ? 'Finding your location…' : escapeHtml(d.proName) + ' is on the way'; fresh = iAmPro ? 'Make sure Location is on and this page stays open.' : 'Waiting for their phone to send a position.'; }
+  else {
+    headline = dist ? (iAmPro ? dist + ' to go' : dist + ' away') : (iAmPro ? 'You\'re on the way' : escapeHtml(d.proName) + ' is on the way');
+    const stale = d.secondsSinceUpdate > 90;
+    fresh = `<span style="color:${stale ? '#8C6423' : 'var(--slate)'};">${iAmPro ? 'Your position was last sent ' : 'Position updated '}${ago(d.secondsSinceUpdate)}${d.proLocation.accuracyM ? ' · ' + describeAccuracy(d.proLocation.accuracyM) : ''}.${stale ? (iAmPro ? ' Keep this page open with the screen on.' : ' Their phone may be locked or out of signal. This is their last known position.') : ''}</span>`;
+    if (!d.jobLocation) fresh += '<div style="margin-top:4px;">No distance: this booking has no location pin.</div>';
+  }
+  set('trip-headline', headline); set('trip-fresh', fresh);
+  const links = [];
+  const mapsUrl = (p) => `https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}`;
+  if (d.jobLocation) links.push(`<div><strong>Job location:</strong> ${plusCodeFor(d.jobLocation.latitude, d.jobLocation.longitude)} · <a href="${iAmPro ? 'https://www.google.com/maps/dir/?api=1&destination=' + d.jobLocation.latitude + ',' + d.jobLocation.longitude : mapsUrl(d.jobLocation)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">${iAmPro ? 'Get directions in Google Maps' : 'Open in Maps'}</a>${d.landmark ? '<div style="color:var(--slate);">' + escapeHtml(d.landmark) + '</div>' : ''}</div>`);
+  else if (d.landmark) links.push(`<div><strong>Job location:</strong> ${escapeHtml(d.landmark)}</div>`);
+  if (d.proLocation && !iAmPro) links.push(`<div><strong>${escapeHtml(d.proName)}:</strong> <a href="${mapsUrl(d.proLocation)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">Open their position in Maps</a></div>`);
+  set('trip-links', links.join(''));
+  drawTripMap(d);
+}
+async function drawTripMap(d) {
+  const box = document.getElementById('trip-map');
+  if (!box) return;
+  const pts = [d.proLocation, d.jobLocation].filter(Boolean);
+  if (!pts.length) { if (!TRIP_VIEW.map) box.textContent = 'The map appears once there is a position to show.'; return; }
+  const ok = await loadLeaflet();
+  if (!ok || !document.getElementById('trip-map')) { if (!TRIP_VIEW.map) box.textContent = 'The map couldn\'t load. Use the links below.'; return; }
+  if (!TRIP_VIEW.map) {
+    box.textContent = ''; box.style.display = 'block';
+    TRIP_VIEW.map = L.map(box, { zoomControl: true, attributionControl: true }).setView([pts[0].latitude, pts[0].longitude], 14);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(TRIP_VIEW.map);
+    try { TRIP_VIEW.map.attributionControl.setPrefix('Leaflet'); } catch (e) {}
+  }
+  const dot = (color, label) => L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: `<div title="${label}" style="width:22px;height:22px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.45);"></div>` });
+  if (d.jobLocation) {
+    const ll = [d.jobLocation.latitude, d.jobLocation.longitude];
+    if (!TRIP_VIEW.jobMarker) TRIP_VIEW.jobMarker = L.marker(ll, { icon: dot('#C0392B', 'Job location') }).addTo(TRIP_VIEW.map).bindTooltip('Job', { permanent: true, direction: 'top', offset: [0, -10] });
+    else TRIP_VIEW.jobMarker.setLatLng(ll);
+  }
+  if (d.proLocation) {
+    const ll = [d.proLocation.latitude, d.proLocation.longitude];
+    if (!TRIP_VIEW.proMarker) TRIP_VIEW.proMarker = L.marker(ll, { icon: dot('#1F5FBF', 'Pro') }).addTo(TRIP_VIEW.map).bindTooltip('Pro', { permanent: true, direction: 'top', offset: [0, -10] });
+    else TRIP_VIEW.proMarker.setLatLng(ll);
+    const r = d.proLocation.accuracyM || 0;
+    if (r > 30) { if (!TRIP_VIEW.accCircle) TRIP_VIEW.accCircle = L.circle(ll, { radius: r, color: '#1F5FBF', weight: 1, fillOpacity: 0.08 }).addTo(TRIP_VIEW.map); else { TRIP_VIEW.accCircle.setLatLng(ll); TRIP_VIEW.accCircle.setRadius(r); } }
+    else if (TRIP_VIEW.accCircle) { TRIP_VIEW.map.removeLayer(TRIP_VIEW.accCircle); TRIP_VIEW.accCircle = null; }
+  } else if (TRIP_VIEW.proMarker) { TRIP_VIEW.map.removeLayer(TRIP_VIEW.proMarker); TRIP_VIEW.proMarker = null; if (TRIP_VIEW.accCircle) { TRIP_VIEW.map.removeLayer(TRIP_VIEW.accCircle); TRIP_VIEW.accCircle = null; } }
+  // Frame both points the first time, and again if the pro drifts out of view.
+  const bounds = L.latLngBounds(pts.map(p => [p.latitude, p.longitude]));
+  if (!TRIP_VIEW.fitted || !TRIP_VIEW.map.getBounds().contains(bounds)) {
+    if (pts.length > 1) TRIP_VIEW.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 }); else TRIP_VIEW.map.setView([pts[0].latitude, pts[0].longitude], 16);
+    TRIP_VIEW.fitted = true;
+  }
+  setTimeout(() => { if (TRIP_VIEW.map) TRIP_VIEW.map.invalidateSize(); }, 50);
+}
+
+// The "Where is the job?" block used in Post a Job and in Book a Pro.
+const JOB_PIN = {};
+function locationPickerHTML(prefix) {
+  return `
+  <div class="form-group" id="${prefix}-where">
+    <label class="form-label">Where is the job?</label>
+    <div class="ver-note" style="margin-bottom:8px;">No street address? If you are at the place now, pin it. If you aren't, or Location is switched off on your phone, choose the spot on a map instead. Your pro gets a map link straight to it. Only the pro you hire sees it. <a onclick="showPrivacyPolicy()" style="color:var(--teal);text-decoration:underline;cursor:pointer;">How we use your location</a></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button type="button" class="btn-sm btn-sm-outline" id="${prefix}-pin-btn" onclick="pinJobLocation('${prefix}')">Pin my current location</button>
+      <button type="button" class="btn-sm btn-sm-outline" onclick="openMapPicker('${prefix}')">Choose on a map</button>
+    </div>
+    <div id="${prefix}-pin-status" style="font-size:13.5px;margin-top:8px;" aria-live="polite"></div>
+    <details style="margin-top:8px;">
+      <summary style="font-size:13.5px;cursor:pointer;color:var(--teal);">GPS not working, or you're not there now? Type the location instead</summary>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <input class="form-input" type="text" id="${prefix}-typed-loc" placeholder="6.3156, -10.8074  or  6CRF858V+62  or a Google Maps link" style="flex:1;min-width:220px;"/>
+        <button type="button" class="btn-sm btn-sm-outline" onclick="useTypedJobLocation('${prefix}')">Use this</button>
+      </div>
+      <div class="ver-note" style="margin-top:6px;">In Google Maps, press and hold on the spot, then copy the numbers or the Plus Code it shows.</div>
+    </details>
+    <label class="form-label" style="margin-top:12px;" for="${prefix}-landmark">Landmark or directions</label>
+    <input class="form-input" type="text" id="${prefix}-landmark" maxlength="200" placeholder="e.g. Blue gate behind the Total station, ELWA Junction"/>
+  </div>`;
+}
+function renderJobPin(prefix) {
+  const el = document.getElementById(prefix + '-pin-status');
+  if (!el) return;
+  const pin = JOB_PIN[prefix];
+  if (!pin) { el.innerHTML = ''; return; }
+  const rough = pin.accuracyM != null && pin.accuracyM > 150;
+  el.innerHTML = `<div style="padding:9px 11px;border-radius:8px;border:1px solid ${rough ? '#E9D6A8' : '#BFE3D2'};background:${rough ? '#FBF3E4' : '#EEF8F3'};">
+    <strong>${rough ? 'Rough location pinned' : 'Location pinned'}</strong>${pin.accuracyM != null ? ' · ' + describeAccuracy(pin.accuracyM) : (pin.source === 'map' ? ' · chosen on the map' : '')}
+    <div style="margin-top:3px;">Plus Code: <strong>${plusCodeFor(pin.latitude, pin.longitude)}</strong> · <a href="https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);text-decoration:underline;">Check it on the map</a></div>
+    ${rough ? '<div style="margin-top:4px;">That is not exact. Step outside and pin again, or add a clear landmark below so your pro can find you.</div>' : ''}
+    <button type="button" style="margin-top:4px;background:none;border:none;padding:0;color:var(--teal);font-size:13px;text-decoration:underline;cursor:pointer;" onclick="openMapPicker('${prefix}')">Adjust on the map</button> · <button type="button" style="margin-top:4px;background:none;border:none;padding:0;color:var(--teal);font-size:13px;text-decoration:underline;cursor:pointer;" onclick="JOB_PIN['${prefix}']=null;renderJobPin('${prefix}')">Remove pin</button>
+  </div>`;
+}
+async function pinJobLocation(prefix) {
+  const btn = document.getElementById(prefix + '-pin-btn');
+  const el = document.getElementById(prefix + '-pin-status');
+  if (btn) { btn.disabled = true; btn.textContent = 'Finding your location…'; }
+  if (el) el.textContent = 'This can take up to half a minute. Stay where the job is, outside if you can.';
+  const r = await getBestLocation({ goodEnoughM: 30, maxWaitMs: 25000, onProgress: (b) => { if (el) el.textContent = 'Getting closer: ' + describeAccuracy(b.accuracyM) + '…'; } });
+  if (btn) { btn.disabled = false; btn.textContent = 'Pin my current location'; }
+  if (r.error) { if (el) el.textContent = locationErrorMessage(r.error) + ' You can also type the location or just describe a landmark below.'; return; }
+  JOB_PIN[prefix] = { latitude: r.latitude, longitude: r.longitude, accuracyM: r.accuracyM, source: 'gps' };
+  renderJobPin(prefix);
+}
+function useTypedJobLocation(prefix) {
+  const input = document.getElementById(prefix + '-typed-loc');
+  const loc = parseTypedLocation(input && input.value);
+  if (!loc) return showToast('That doesn\'t look like coordinates or a full Plus Code. Example: 6.3156, -10.8074');
+  JOB_PIN[prefix] = { latitude: loc.latitude, longitude: loc.longitude, accuracyM: null, source: 'typed' };
+  renderJobPin(prefix);
+}
+// v94: CHOOSE ON A MAP. Works with Location switched off, and when the
+// customer isn't at the job site. The map moves under a pin fixed in the
+// middle (easier on a phone than dragging a pin): slide the map until the
+// pin sits on the right building, then press "Use this spot".
+const MAP_PICK = { prefix: null, map: null };
+const COUNTRY_START = { // where the map opens when nothing better is known: [lat, lng, zoom]
+  'Liberia': [6.3156, -10.8074, 12], 'Nigeria': [6.5244, 3.3792, 11], 'Ghana': [5.6037, -0.1870, 12], 'United States': [39.5, -98.35, 4],
+};
+function closeMapPicker() {
+  if (MAP_PICK.map) { try { MAP_PICK.map.remove(); } catch (e) {} }
+  MAP_PICK.map = null; MAP_PICK.prefix = null;
+  const o = document.getElementById('map-pick-overlay'); if (o) o.remove();
+}
+function updateMapPickReadout() {
+  const el = document.getElementById('map-pick-readout');
+  if (!el || !MAP_PICK.map) return;
+  const c = MAP_PICK.map.getCenter(), z = MAP_PICK.map.getZoom();
+  el.innerHTML = z < 16
+    ? '<span style="color:#8C6423;">Zoom in closer (the + button, or pinch) until you can see the building or the yard.</span>'
+    : `Pin is at <strong>${plusCodeFor(c.lat, c.lng)}</strong>`;
+  const btn = document.getElementById('map-pick-use');
+  if (btn) btn.disabled = z < 16; // close enough to tell one building from the next
+}
+async function openMapPicker(prefix) {
+  closeMapPicker();
+  MAP_PICK.prefix = prefix;
+  document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="map-pick-overlay" style="z-index:5350;">
+    <div class="modal" style="max-width:min(760px,96vw);width:96vw;max-height:96vh;display:flex;flex-direction:column;" role="dialog" aria-modal="true" aria-label="Choose the job location on a map">
+      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-shrink:0;">
+        <div><h3 style="margin:0;">Where is the job?</h3><p style="margin:4px 0 0;">Slide the map until the pin sits on the right spot, then press "Use this spot".</p></div>
+        <button class="modal-close" onclick="closeMapPicker()" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" style="overflow:auto;flex:1 1 auto;min-height:0;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input class="form-input" type="search" id="map-pick-q" placeholder="Search a town, area or landmark, e.g. Paynesville" style="flex:1;min-width:200px;" onkeydown="if(event.key==='Enter'){event.preventDefault();searchMapPlace()}"/>
+          <button type="button" class="btn-sm btn-sm-outline" onclick="searchMapPlace()">Search</button>
+          <button type="button" class="btn-sm btn-sm-outline" id="map-pick-findme" onclick="mapPickFindMe()">Find me</button>
+        </div>
+        <div id="map-pick-results" style="margin-top:6px;font-size:13.5px;"></div>
+        <div style="position:relative;margin-top:10px;">
+          <div id="map-pick-map" style="height:min(52vh,420px);border-radius:10px;background:var(--offwhite);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--slate);font-size:13.5px;">Loading the map…</div>
+          <div aria-hidden="true" style="position:absolute;left:50%;top:50%;width:0;height:0;z-index:500;pointer-events:none;">
+            <div style="position:absolute;left:-13px;top:-34px;width:26px;height:26px;border-radius:50% 50% 50% 0;background:#C0392B;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45);"></div>
+            <div style="position:absolute;left:-3px;top:-3px;width:6px;height:6px;border-radius:50%;background:rgba(0,0,0,.45);"></div>
+          </div>
+        </div>
+        <div id="map-pick-readout" style="margin-top:8px;font-size:13.5px;" aria-live="polite"></div>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:10px;flex-shrink:0;">
+        <button class="btn-sm btn-sm-outline" style="flex:1;" onclick="closeMapPicker()">Cancel</button>
+        <button class="confirm-btn" style="flex:2;" id="map-pick-use" onclick="confirmMapPick()" disabled>Use this spot</button>
+      </div>
+    </div></div>`);
+  const ok = await loadLeaflet();
+  const box = document.getElementById('map-pick-map');
+  if (!box) return;
+  if (!ok) { box.textContent = 'The map couldn\'t load. Close this and type the location or describe a landmark instead.'; return; }
+  const u = AUTH.user || {};
+  const existing = JOB_PIN[prefix];
+  let start = existing ? [existing.latitude, existing.longitude, 17]
+    : (typeof MY_REAL_LOCATION !== 'undefined' && MY_REAL_LOCATION) ? [MY_REAL_LOCATION.lat, MY_REAL_LOCATION.lng, 16]
+    : (typeof u.latitude === 'number' && typeof u.longitude === 'number') ? [u.latitude, u.longitude, 15]
+    : (COUNTRY_START[u.country] || [6.3156, -10.8074, 5]);
+  box.textContent = ''; box.style.display = 'block';
+  MAP_PICK.map = L.map(box, { zoomControl: true }).setView([start[0], start[1]], start[2]);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(MAP_PICK.map);
+  try { MAP_PICK.map.attributionControl.setPrefix('Leaflet'); } catch (e) {}
+  MAP_PICK.map.on('move zoom', updateMapPickReadout);
+  setTimeout(() => { if (MAP_PICK.map) { MAP_PICK.map.invalidateSize(); updateMapPickReadout(); } }, 60);
+  // With nothing better to go on, jump to the customer's own city.
+  if (!existing && start[2] < 14 && u.city) searchMapPlace(u.city, true);
+}
+async function searchMapPlace(text, quiet) {
+  const q = (text != null ? String(text) : (document.getElementById('map-pick-q') || {}).value || '').trim();
+  const out = document.getElementById('map-pick-results');
+  if (q.length < 2) { if (!quiet) showToast('Type a place name to search'); return; }
+  if (out && !quiet) out.textContent = 'Searching…';
+  try {
+    const { places } = await apiFetch('GET', '/geo/place-search?q=' + encodeURIComponent(q));
+    if (!MAP_PICK.map) return;
+    if (!places.length) { if (out && !quiet) out.textContent = 'Nothing found by that name. Try a nearby town, or move the map by hand.'; return; }
+    // A search only gets you to the right area. The person still has to zoom in and place the pin.
+    MAP_PICK.map.setView([places[0].latitude, places[0].longitude], quiet ? 13 : 15);
+    if (out && !quiet) out.innerHTML = places.map(p => `<button type="button" style="display:block;text-align:left;background:none;border:none;padding:3px 0;color:var(--teal);text-decoration:underline;cursor:pointer;font-size:13.5px;" onclick="MAP_PICK.map && MAP_PICK.map.setView([${p.latitude}, ${p.longitude}], 16)">${escapeHtml(p.name)}</button>`).join('');
+  } catch (e) { if (out && !quiet) out.textContent = e.message || 'Place search isn\'t available right now. You can still move the map by hand.'; }
+}
+async function mapPickFindMe() {
+  const btn = document.getElementById('map-pick-findme');
+  if (btn) { btn.disabled = true; btn.textContent = 'Finding…'; }
+  const r = await getBestLocation({ goodEnoughM: 60, maxWaitMs: 15000 });
+  if (btn) { btn.disabled = false; btn.textContent = 'Find me'; }
+  if (r.error) return showToast(locationErrorMessage(r.error) + ' You can still move the map by hand.');
+  if (MAP_PICK.map) MAP_PICK.map.setView([r.latitude, r.longitude], 17);
+}
+function confirmMapPick() {
+  if (!MAP_PICK.map || !MAP_PICK.prefix) return;
+  if (MAP_PICK.map.getZoom() < 16) return showToast('Zoom in closer first, so the pin is on the right building');
+  const c = MAP_PICK.map.getCenter(), prefix = MAP_PICK.prefix;
+  JOB_PIN[prefix] = { latitude: Math.round(c.lat * 1e6) / 1e6, longitude: Math.round(c.lng * 1e6) / 1e6, accuracyM: null, source: 'map' };
+  closeMapPicker();
+  renderJobPin(prefix);
+}
+
+function readJobWhere(prefix) {
+  const lm = document.getElementById(prefix + '-landmark');
+  return { jobLocation: JOB_PIN[prefix] || null, landmark: lm && lm.value.trim() ? lm.value.trim() : null };
+}
+// How a booking's location is shown to the customer and to the hired pro.
+function whereHTML(c) {
+  if (!c) return '';
+  const pin = c.jobLocation;
+  if (!pin || typeof pin.latitude !== 'number') return addressLinkHTML(c.address);
+  const url = `https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}`;
+  const rough = pin.accuracyM != null && pin.accuracyM > 150;
+  const lm = c.landmark || (c.address && c.address !== 'Location pinned on the map' ? c.address : '');
+  return `<div style="font-size:13px;margin-top:4px;line-height:1.5;"><a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;white-space:nowrap;">Open in Maps</a> · <span title="Plus Code: works in Google Maps, even offline">${plusCodeFor(pin.latitude, pin.longitude)}</span>${rough ? ` <span style="color:#8C6423;">(${describeAccuracy(pin.accuracyM)})</span>` : ''}${lm ? `<div style="color:var(--slate);">${escapeHtml(lm)}</div>` : ''}</div>`;
+}
+
 function addressLinkHTML(address) {
   if (!address) return '';
   const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
@@ -4959,6 +5423,7 @@ function navbarHTML(active) {
         <div class="account-menu-item" onclick="closeAccountMenu();toggleSupportChat()">💬 Get Help</div>
         <div class="account-menu-divider"></div>
         <div class="account-menu-item" onclick="closeAccountMenu();showTermsPageModal('${active === 'provider' ? 'provider' : 'customer'}')">📄 Terms of Service</div>
+        <div class="account-menu-item" onclick="closeAccountMenu();showPrivacyPolicy()">Privacy Policy</div>
         <div class="account-menu-item" onclick="closeAccountMenu();showAboutPageModal()">ℹ️ About Us</div>
         <div class="account-menu-divider"></div>
         <div class="account-menu-item danger" onclick="closeAccountMenu();logout()">🚪 Sign Out</div>
@@ -5204,6 +5669,32 @@ async function showAboutPageModal() {
     body.innerHTML = renderFormattedContent(content);
   } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
 }
+
+// v94: the Privacy Policy, shown in a window from the footer, the account
+// menu, the agreement screen and the location picker. /privacy opens it too.
+async function showPrivacyPolicy() {
+  const old = document.getElementById('privacy-modal-overlay'); if (old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay open" id="privacy-modal-overlay" style="z-index:5400;" onclick="if(event.target===this)this.remove()">
+      <div class="modal" style="max-width:720px;max-height:92vh;display:flex;flex-direction:column;" role="dialog" aria-modal="true" aria-label="Privacy Policy">
+        <div class="modal-header" style="flex-shrink:0;">
+          <button class="modal-close" onclick="document.getElementById('privacy-modal-overlay').remove()" aria-label="Close">✕</button>
+          <h3>Privacy Policy</h3>
+          <p>What we collect, why, who sees it, and your choices</p>
+        </div>
+        <div class="modal-body" id="privacy-modal-body" style="overflow:auto;flex:1 1 auto;min-height:0;font-size:14.5px;line-height:1.65;"><p style="color:var(--slate);">Loading…</p></div>
+      </div>
+    </div>`);
+  const body = document.getElementById('privacy-modal-body');
+  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable right now.</p>'; return; }
+  try {
+    const { content } = await apiFetch('GET', '/privacy-policy-content');
+    body.innerHTML = renderFormattedContent(content);
+  } catch (e) { body.innerHTML = '<p>The Privacy Policy couldn\'t load. Please try again.</p>'; }
+}
+window.addEventListener('load', () => {
+  if (/^\/privacy\/?$/i.test(location.pathname) || /[?&]privacy(=|&|$)/i.test(location.search)) setTimeout(showPrivacyPolicy, 800);
+});
 
 async function showTermsPageModal(preferredRole) {
   const role = preferredRole || (AUTH.user && AUTH.user.role === 'provider' ? 'provider' : 'customer');
@@ -5470,6 +5961,7 @@ function goHome() {
 // so it must NOT clear auth state itself — only an explicit "Sign Out"
 // action should do that.
 async function logout() {
+  try { stopLiveTrip(); closeTripTracking(); } catch (e) { /* v93: never leave location sharing running after sign-out */ }
   stopIdleTimer();
   stopMessagePolling();
   // Real server-side sign-out (see POST /auth/logout) — best-effort: if
@@ -6117,7 +6609,7 @@ function checkTermsGate(role) {
           ${promises.map(([label, detail], i) => row(i, label, detail)).join('')}
           <label class="tg-row" for="terms-gate-checkbox">
             <input type="checkbox" class="tg-box" id="terms-gate-checkbox" onchange="updateTermsAgreeButton()"/>
-            <span><strong>I agree to the Trothen Terms of Service</strong><span class="tg-detail">The full terms cover fees, cancellations, what can't be booked on Trothen, and how accounts can be suspended. <button type="button" class="tg-link" onclick="event.preventDefault();openFullTermsInGate('${role}')">Read the full terms</button></span></span>
+            <span><strong>I agree to the Trothen Terms of Service</strong><span class="tg-detail">The full terms cover fees, cancellations, what can't be booked on Trothen, and how accounts can be suspended. <button type="button" class="tg-link" onclick="event.preventDefault();openFullTermsInGate('${role}')">Read the full terms</button> Our <button type="button" class="tg-link" onclick="event.preventDefault();showPrivacyPolicy()">Privacy Policy</button> explains how we use your information, including your ID and your location.</span></span>
           </label>
           <div class="tg-fine">${finePrint}</div>
         </div>
@@ -6895,7 +7387,7 @@ async function loadCustomerData() {
   try {
     const { contracts } = await apiFetch('GET', '/contracts/mine');
     customerData.bookings = contracts.map(c => ({
-      id: c.id, bookingNumber: c.bookingNumber, pro: c.providerName, providerId: c.providerId, service: c.service, address: c.address, date: c.signedAt || (c.createdAt || '').slice(0, 10),
+      id: c.id, bookingNumber: c.bookingNumber, pro: c.providerName, providerId: c.providerId, service: c.service, address: c.address, jobLocation: c.jobLocation || null, landmark: c.landmark || null, date: c.signedAt || (c.createdAt || '').slice(0, 10),
       escrow: c.escrow && c.escrow.status === 'held' ? c.escrow.amount : 0, status: c.status, amount: c.amount, serviceFee: c.serviceFee || 0, reviewed: c.reviewed, providerResponseDeadline: c.providerResponseDeadline,
       onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt, createdAt: c.createdAt,
     })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -7098,7 +7590,7 @@ async function removePaymentMethod(id) {
 function bookingsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No bookings yet — post a job or book a pro to get started.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Pro</th><th>Service</th><th>Date</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${escapeHtml(b.pro)}</td><td>${escapeHtml(b.service)}${addressLinkHTML(b.address)}</td><td>${escapeHtml(b.date)}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
+  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${escapeHtml(b.pro)}</td><td>${escapeHtml(b.service)}${whereHTML(b)}</td><td>${escapeHtml(b.date)}</td><td>${b.escrow ? '$' + b.escrow : '—'}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -7107,12 +7599,15 @@ function bookingsTable(list) {
 // tracking map. Shown right under the booking status once either stamp
 // exists.
 function gpsStatusNote(b) {
+  // v93: while the pro is on the way, the customer gets a button to watch them come.
+  const track = (b.onMyWayAt && !b.arrivedAt && b.status === 'active')
+    ? `<div style="margin-top:6px;"><button class="btn-sm btn-sm-primary" onclick="openTripTracking(${jsArg(b.id)})">Track your pro</button></div>` : '';
   if (!b.onMyWayAt && !b.arrivedAt) return '';
   const fmt = (iso) => new Date(iso).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
   const parts = [];
   if (b.onMyWayAt) parts.push(`🚗 On the way — ${fmt(b.onMyWayAt)}`);
   if (b.arrivedAt) parts.push(`📍 Arrived — ${fmt(b.arrivedAt)}`);
-  return `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">${parts.join(' · ')}</div>`;
+  return `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">${parts.join(' · ')}</div>${track}`;
 }
 
 // Shown under the status badge while a booking is awaiting a provider's
@@ -8082,10 +8577,15 @@ async function loadProviderScorePanel() {
       responseTime: 'Responding to Jobs', backgroundCheck: 'Background Check', cancellationRate: 'Cancellation Rate',
       customerTrustRating: 'Customer Trust Rating',
     };
+    // v91: until five jobs are done, the number is provisional and says so.
+    const newNote = data.isNew
+      ? `<div style="background:#EEF4FB;border:1px solid #C9DBF0;border-radius:8px;padding:10px 12px;font-size:13.5px;line-height:1.55;margin-bottom:12px;"><strong>You're new on Trothen.</strong> This number is provisional: most of it is a clean start, not a track record yet. Customers see "New on Trothen" on your profile instead of a score. After ${data.jobsUntilScored} more completed job${data.jobsUntilScored === 1 ? '' : 's'} it becomes your real score and shows on your profile. Until then you can be sent up to 10 new job matches a week.</div>`
+      : '';
     body.innerHTML = `
+      ${newNote}
       <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px;">
         <div style="font-size:32px;font-weight:800;color:var(--navy);">${data.total}</div>
-        <div style="color:var(--slate);">/ 100</div>
+        <div style="color:var(--slate);">/ 100${data.isNew ? ' · provisional' : ''}</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;">
         ${Object.keys(data.weights).map(key => `<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--slate);">${COMPONENT_LABELS[key]}</span><span style="font-weight:600;color:var(--navy);">${data.breakdown[key]}/${data.weights[key]}</span></div>`).join('')}
@@ -8252,7 +8752,7 @@ async function viewProviderProfile(id) {
       <div class="profile-meta-row">
         <div class="profile-meta-item">★ ${p.rating ? Number(p.rating).toFixed(1) : 'No'} rating</div>
         <div class="profile-meta-item">📋 ${escapeHtml(p.jobs)} jobs completed</div>
-        ${p.trustScore != null ? `<div class="profile-meta-item" title="Trothen Score — a real, computed measure of this provider's reliability and track record">🛡️ ${p.trustScore}/99 Trothen Score</div>` : ''}
+        ${p.isNewPro ? `<div class="profile-meta-item" title="This pro's ID has been checked. They get a Trothen Score after their first five completed jobs.">New on Trothen</div>` : (p.trustScore != null ? `<div class="profile-meta-item" title="Trothen Score: a computed measure of this pro's reliability and track record">🛡️ ${p.trustScore}/100 Trothen Score</div>` : '')}
         ${AUTH.user && AUTH.user.role === 'customer' ? `<button class="btn-sm btn-sm-outline" id="profile-favorite-btn" onclick="toggleFavoriteProvider('${p.id}', false)">🤍 Save</button>` : ''}
       </div>
     </div>`;
@@ -8355,6 +8855,7 @@ function postJobFormHTML() {
     <label class="form-label">Budget Range</label>
     <input class="form-input" type="text" placeholder="e.g. $80–150" id="pj-budget"/>
   </div>
+  ${locationPickerHTML('pj')}
   ${jobPhotoUploadHTML('pj')}`;
 }
 
@@ -8470,6 +8971,7 @@ function getUploadedJobPhotoUrls(prefix) {
 
 function openPostJobModal() {
   JOB_PHOTO_STATE.pj = [];
+  JOB_PIN.pj = null; // v92: start each new job without an old pin
   document.getElementById('postjob-body').innerHTML = postJobFormHTML();
   const footer = document.querySelector('#postjob-modal .modal-footer');
   footer.innerHTML = `<button class="confirm-btn" onclick="runAIMatch()">🤖 Find My Matches</button>`;
@@ -8516,7 +9018,7 @@ async function runAIMatch() {
   let matchScope = 'city';
   if (BACKEND_AVAILABLE && AUTH.token && AUTH.user && AUTH.user.role === 'customer') {
     try {
-      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, materialsOnHand, materialsCost, budget, payCurrency: 'local', photoUrls });
+      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, materialsOnHand, materialsCost, budget, payCurrency: 'local', photoUrls, ...readJobWhere('pj') });
       realCallSucceeded = true;
       isKnownCategory = result.isKnownCategory !== false;
       matchScope = result.matchScope || 'city';
@@ -8614,12 +9116,13 @@ async function loadProviderData() {
     providerData.matches = matches.map(m => ({
       id: m.id, customerId: m.customerId, jobId: m.jobId, status: m.status,
       customer: m.customerName || 'Customer', service: m.job ? m.job.description : 'Service request',
-      budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: (Math.round(Math.random() * 40) / 10) + ' mi',
+      budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: m.distanceMiles != null ? distLabel(m.distanceMiles) : (m.jobHasPin ? 'Share your location to see' : '—'), // v92: this used to be a random number
       photoUrls: (m.job && m.job.photoUrls) || [],
       materialsOnHand: (m.job && m.job.materialsOnHand) || null,
       materialsCost: (m.job && m.job.materialsCost) != null ? m.job.materialsCost : null,
     }));
-    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, address: c.address, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt, materialsOnHand: c.materialsOnHand, createdAt: c.createdAt })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    resumeLiveTripIfAny(contracts); // v93
+    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, address: c.address, jobLocation: c.jobLocation || null, landmark: c.landmark || null, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt, materialsOnHand: c.materialsOnHand, createdAt: c.createdAt })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     providerData.payouts = payouts;
     providerData.portfolioPhotos = photos;
   } catch (e) { console.warn('Could not load provider data', e); showToast('Could not load your dashboard data — please refresh'); }
@@ -8674,7 +9177,7 @@ const PROVIDER_SECTIONS = {
     const jobAccessBanner = jobAccess && jobAccess.cap === 0
       ? `<div class="panel" style="background:#FBEAEA;border:1px solid #D98C8C;"><div style="font-size:13.5px;color:var(--navy);">New job matches are paused while your Trust Score is under review. Completing your existing contracts well is the fastest way back — <a onclick="selectProviderSection('overview')" style="color:var(--gold);cursor:pointer;">see your Trust Score breakdown</a>.</div></div>`
       : jobAccess && jobAccess.cap != null
-      ? `<div class="panel" style="background:var(--offwhite);"><div style="font-size:13.5px;color:var(--navy);">New job matches this week: <strong>${jobAccess.used} of ${jobAccess.cap}</strong> — this scales up automatically as your Trust Score improves.</div></div>`
+      ? `<div class="panel" style="background:var(--offwhite);"><div style="font-size:13.5px;color:var(--navy);">New job matches this week: <strong>${jobAccess.used} of ${jobAccess.cap}</strong> — ${jobAccess.isNew ? 'this is the starter allowance for new pros. After five completed jobs it follows your Trothen Score.' : 'this scales up automatically as your Trothen Score improves.'}</div></div>`
       : '';
     // A real, computed number — not decorative — so this only ever shows
     // when there's genuinely money sitting unclaimed, and disappears the
@@ -9738,13 +10241,13 @@ function contractsTable(list) {
       const gpsButtons = !c.onMyWayAt
         ? `<button class="btn-sm btn-sm-outline" onclick="markContractOnMyWay('${c.id}')">🚗 On My Way</button> `
         : !c.arrivedAt
-          ? `<button class="btn-sm btn-sm-outline" onclick="markContractArrived('${c.id}')">📍 Arrived</button> `
+          ? `<button class="btn-sm btn-sm-primary" onclick="openTripTracking('${c.id}')">Trip map</button> <button class="btn-sm btn-sm-outline" onclick="markContractArrived('${c.id}')">📍 Arrived</button> `
           : `<span style="font-size:12.5px;color:var(--slate);margin-right:6px;">🚗 On the way · 📍 Arrived</span>`;
       actions = `${gpsButtons}<button class="btn-sm btn-sm-outline" onclick="openScopeChangeRequestForm('${c.id}')">➕ Request Additional Payment</button> <button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>`;
     } else if (c.status === 'expired') {
       actions = `<span style="font-size:13px;color:var(--slate);">You didn't respond in time — automatically cancelled</span>`;
     }
-    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${addressLinkHTML(c.address)}${c.photoUrls && c.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(c.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${c.photoUrls.length} file${c.photoUrls.length===1?'':'s'}</a>` : ''}${c.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(c.materialsOnHand)}</div>` : ''}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
+    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${whereHTML(c)}${c.photoUrls && c.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(c.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${c.photoUrls.length} file${c.photoUrls.length===1?'':'s'}</a>` : ''}${c.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(c.materialsOnHand)}</div>` : ''}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
   }).join('')}
   </tbody></table></div>`;
 }
@@ -9836,15 +10339,11 @@ async function respondToOffer(contractId, decision) {
 // declined permission or an unsupported browser just means the status
 // update goes through without a coordinate attached, same as the rest of
 // this app's honest-degradation pattern elsewhere).
-function getOneTimeLocation() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
-    navigator.geolocation.getCurrentPosition(
-      (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
-  });
+// v92: uses the patient helper above. Still optional: if the phone can't
+// find itself, the pro's "on my way" / "arrived" tap goes through anyway.
+async function getOneTimeLocation() {
+  const r = await getBestLocation({ goodEnoughM: 150, maxWaitMs: 12000 });
+  return r.error ? null : { latitude: r.latitude, longitude: r.longitude, accuracyM: r.accuracyM };
 }
 
 async function viewScopeChangeRequests(contractId) {
@@ -9935,12 +10434,18 @@ async function submitScopeChangeRequest(contractId) {
 
 async function markContractOnMyWay(contractId) {
   if (!BACKEND_AVAILABLE) return showToast('Marked on the way (demo mode)');
+  // v93: the pro agrees to share their live position for this trip.
+  const ok = await confirmDialog('Tell the customer you\'re on the way? Your live location will be shared with this customer, and only this customer, until you tap Arrived. Keep this page open on your phone so they can see you coming.', { confirmLabel: 'I\'m on my way' });
+  if (!ok) return;
+  showToast('Finding your location…');
   const location = await getOneTimeLocation();
   try {
     await apiFetch('POST', `/contracts/${contractId}/on-my-way`, location || {});
     showToast('Customer notified you\'re on the way');
+    startLiveTrip(contractId);
     await loadProviderData();
     selectProviderSection('contracts');
+    openTripTracking(contractId);
   } catch (e) { showToast(e.message || 'Could not update status'); }
 }
 
@@ -9949,6 +10454,7 @@ async function markContractArrived(contractId) {
   const location = await getOneTimeLocation();
   try {
     await apiFetch('POST', `/contracts/${contractId}/arrived`, location || {});
+    stopLiveTrip();
     showToast('Customer notified you\'ve arrived');
     await loadProviderData();
     selectProviderSection('contracts');
@@ -10404,6 +10910,44 @@ async function adminDecide(listName, id, decision, sectionKey) {
     await loadAdminData();
     selectAdminSection(sectionKey);
   } catch (e) { showToast(e.message || 'Could not update'); }
+}
+
+// v96: split a disputed payment: part back to the customer, the rest to the pro.
+function openSplitDispute(id, amountText) {
+  const total = parseFloat(String(amountText || '').replace(/[^0-9.]/g, '')) || 0;
+  const old = document.getElementById('split-dispute-overlay'); if (old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="split-dispute-overlay" style="z-index:5300;"><div class="modal" style="max-width:460px;" role="dialog" aria-modal="true">
+    <div class="modal-header"><h3>Split the payment</h3><p>${total ? 'The held payment is $' + total.toFixed(2) + '.' : ''} Enter how much goes back to the customer. The rest is released to the pro.</p></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label" for="split-refund">Refund to the customer ($)</label>
+        <input class="form-input" type="number" id="split-refund" min="0.01" step="0.01" ${total ? 'max="' + (total - 0.01).toFixed(2) + '"' : ''} oninput="updateSplitPreview(${total})"/></div>
+      <div id="split-preview" class="ver-note" style="margin:-4px 0 12px;"></div>
+      <div class="form-group" style="margin-bottom:0;"><label class="form-label" for="split-note">Note both sides will see</label>
+        <textarea class="form-input" id="split-note" rows="3" maxlength="500" placeholder="Why the payment is being split this way"></textarea></div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:10px;">
+      <button class="btn-sm btn-sm-outline" style="flex:1;" onclick="document.getElementById('split-dispute-overlay').remove()">Cancel</button>
+      <button class="confirm-btn" style="flex:1;" id="split-confirm-btn" onclick="confirmSplitDispute(${jsArg(id)})">Split the payment</button>
+    </div></div></div>`);
+}
+function updateSplitPreview(total) {
+  const el = document.getElementById('split-preview'); if (!el) return;
+  const x = parseFloat(document.getElementById('split-refund').value);
+  if (!total || !Number.isFinite(x) || x <= 0) { el.textContent = ''; return; }
+  el.textContent = x >= total ? 'That is the whole payment. Use "Refund Customer" for a full refund.' : `Customer gets $${x.toFixed(2)} back. Pro gets $${(total - x).toFixed(2)}, before commission.`;
+}
+async function confirmSplitDispute(id) {
+  const refundAmount = parseFloat(document.getElementById('split-refund').value);
+  const note = document.getElementById('split-note').value.trim();
+  if (!Number.isFinite(refundAmount) || refundAmount <= 0) return showToast('Enter the amount to refund to the customer');
+  if (note.length < 3) return showToast('Add a short note explaining the split');
+  const btn = document.getElementById('split-confirm-btn'); btn.disabled = true;
+  try {
+    await apiFetch('POST', `/admin/disputes/${id}/resolve`, { decision: 'split', refundAmount, note });
+    document.getElementById('split-dispute-overlay').remove();
+    showToast('Dispute resolved with a split');
+    await loadAdminData(); selectAdminSection('disputes');
+  } catch (e) { btn.disabled = false; showToast(e.message || 'Could not split this payment'); }
 }
 
 async function resolveDispute(id, decision) {
@@ -11568,9 +12112,11 @@ async function loadProviderScoresPanel() {
         <td>${escapeHtml(p.name)}</td>
         <td>${escapeHtml(p.city || '—')}</td>
         <td>${escapeHtml(p.category || '—')}</td>
-        <td><strong style="color:${p.trustScore >= 70 ? 'var(--success,#2E8C6F)' : p.trustScore >= 40 ? 'var(--gold,#B08A3E)' : '#C1554D'};">${p.trustScore}/99</strong></td>
+        <td>${p.isNew ? `<span class="badge badge-neutral">New</span><div class="ver-note" style="margin-top:3px;">provisional ${p.trustScore}/100</div>` : `<strong style="color:${p.trustScore >= 70 ? 'var(--success,#2E8C6F)' : p.trustScore >= 40 ? 'var(--gold,#B08A3E)' : '#C1554D'};">${p.trustScore}/100</strong>`}</td>
         <td>${p.onHold
           ? `<span class="badge badge-warn">On hold${p.holdUntil ? ' until ' + new Date(p.holdUntil).toLocaleDateString() : ''}</span>`
+          : p.isNew
+            ? '<span class="badge badge-neutral">New: fewer than 5 jobs, starter allowance</span>'
           : p.trustScore <= 40
             ? `<span class="badge" style="background:#FDECEA;color:#C1554D;">New matches paused (automatic)</span>`
             : p.recommendedAction
@@ -12902,6 +13448,44 @@ async function eraseClosedAccount(id, name) {
   catch (e) { showToast(e.message || 'Could not erase'); }
 }
 
+// v94: Admin → Settings: edit the Privacy Policy (super admin and customer service).
+async function loadPrivacyEditor() {
+  const main = document.getElementById('admin-main');
+  if (!main || !BACKEND_AVAILABLE) return;
+  let d; try { d = await apiFetch('GET', '/admin/settings/privacy-policy'); } catch (e) { return; }
+  const old = document.getElementById('privacy-editor-panel'); if (old) old.remove();
+  main.insertAdjacentHTML('beforeend', `<div class="panel" id="privacy-editor-panel">
+    <div class="panel-title">Privacy Policy <small>shown from the footer, the account menu, the agreement screen and at /privacy</small></div>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:10px;">This is the built-in policy unless I've changed it. It was written to match what the system does, and an attorney should review it before launch. Start a line with "# " to make a heading. Two markers are filled in automatically when it is shown: <code>{{ID_RETENTION_SENTENCE}}</code> (how long ID files are kept) and <code>{{SUPPORT_EMAIL}}</code> (the support email from Settings).</div>
+    <div id="contact-check-box" style="margin-bottom:10px;"></div>
+    <textarea class="form-input" id="settings-privacy-policy" rows="16" style="resize:vertical;font-family:ui-monospace,monospace;font-size:13.5px;">${escapeHtml(d.content || '')}</textarea>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn-sm btn-sm-primary" onclick="savePrivacyPolicy()">Save Privacy Policy</button>
+      <button class="btn-sm btn-sm-outline" onclick="showPrivacyPolicy()">See it as visitors do</button>
+    </div>
+  </div>`);
+  loadContactCheck();
+}
+// v95: what visitors are told to write to, and whether it looks right.
+async function loadContactCheck() {
+  const box = document.getElementById('contact-check-box');
+  if (!box) return;
+  let d; try { d = await apiFetch('GET', '/admin/settings/contact-check'); } catch (e) { return; }
+  const tone = (l) => l === 'problem' ? 'background:#FBEAE8;border:1px solid #E3B4AE;color:#8A2D25;' : 'background:#FBF3E4;border:1px solid #E9D6A8;color:#5C4A12;';
+  box.innerHTML = `<div style="font-size:14px;line-height:1.6;padding:10px 12px;border:1px solid var(--border);border-radius:8px;">
+    <div><strong>Contact address visitors see:</strong> ${d.email ? escapeHtml(d.email) : '<em>none set</em>'}</div>
+    <div class="ver-note" style="margin-top:2px;">One address, used in ${d.usedIn.map(escapeHtml).join(', ')}. Change it in the Footer settings above (Support email).</div>
+    <div class="ver-note" style="margin-top:2px;">ID files: ${d.retentionDays > 0 ? 'deleted ' + d.retentionDays + ' days after a decision' : 'kept until deleted by hand'}. Change it in Verification Queue → How ID files are kept.</div>
+    ${d.advice.map(a => `<div style="margin-top:8px;padding:8px 10px;border-radius:8px;font-size:13.5px;${tone(a.level)}">${escapeHtml(a.text)}</div>`).join('')}
+  </div>`;
+}
+async function savePrivacyPolicy() {
+  const content = document.getElementById('settings-privacy-policy').value.trim();
+  if (content.length < 10) return showToast('Enter some real content first');
+  try { await apiFetch('PATCH', '/admin/settings/privacy-policy', { content }); showToast('Privacy Policy updated. Live now.'); }
+  catch (e) { showToast(e.message || 'Could not save this'); }
+}
+
 // v82: Admin → Settings (super admin): the nightly data copies.
 async function loadBackupsPanel() {
   const main = document.getElementById('admin-main');
@@ -13178,7 +13762,7 @@ function verificationKeepingPanelHTML() {
     ? '<div class="ver-note">Automated ID and face check (Persona): connected.</div>'
     : '<div class="ver-note">Automated ID and face check (Persona): not connected. Every ID is checked by a person using the uploaded ID and face photo.</div>';
   const keepLine = days > 0
-    ? `ID and face photos are deleted <strong>${days} days</strong> after a decision (approved, rejected or replaced). The record of the check is kept.`
+    ? `ID and face photos are deleted <strong>${days} days</strong> after a decision (approved, rejected or replaced). The record of the check is kept. Files are held longer, automatically, while the person has an open dispute, an open fraud review, or an account on hold.`
     : 'ID and face photos are kept until someone deletes them. No automatic deletion is set.';
   return `<div class="panel">
     <div class="panel-title">How ID files are kept</div>
@@ -13320,7 +13904,7 @@ function renderVerificationHistory(filter) {
   const rows = list.map(h => {
     const hasFiles = h.hasDocument || h.hasBack || h.hasSelfie;
     const files = hasFiles
-      ? `<button class="btn-sm btn-sm-outline" onclick="viewVerificationDocument(${jsArg(h.id)})">View documents</button>${h.filesDeleteOn ? `<div class="ver-note" style="margin-top:4px;">Files deleted on ${escapeHtml(h.filesDeleteOn)}</div>` : ''}`
+      ? `<button class="btn-sm btn-sm-outline" onclick="viewVerificationDocument(${jsArg(h.id)})">View documents</button>${h.filesHeldReason ? `<div class="ver-note" style="margin-top:4px;color:#8C6423;">Files held: ${escapeHtml(h.filesHeldReason)}</div>` : (h.filesDeleteOn ? `<div class="ver-note" style="margin-top:4px;">Files deleted on ${escapeHtml(h.filesDeleteOn)}</div>` : '')}`
       : `<div class="ver-note">${h.filesDeletedAt ? 'Files deleted ' + escapeHtml(String(h.filesDeletedAt).slice(0, 10)) : 'No files on record'}</div>`;
     return `<tr><td><strong>${escapeHtml(h.userName)}</strong><div class="ver-note">${h.role === 'provider' ? 'Pro' : 'Customer'}${h.city ? ' · ' + escapeHtml(h.city) : ''}</div></td>
       <td>${escapeHtml(h.docType || '—')}<div class="ver-note">${escapeHtml(h.idLegalName || '')}</div></td>
@@ -13441,9 +14025,12 @@ async function viewDispute(id) {
     ${auditLogHTML}`;
 
   const isSuperAdmin = AUTH.user && AUTH.user.isSuperAdmin;
-  const isOpen = d.status === 'open';
+  // v96: any dispute that hasn't been decided can be decided. This used to
+  // show the buttons only for "open", so one marked "in review" or
+  // "escalated" had no way to be resolved from this window.
+  const isOpen = !['resolved', 'closed', 'rejected'].includes(d.status);
   const resolveButtons = isOpen
-    ? `<button class="confirm-btn" onclick="resolveDispute('${d.id}','release_to_provider');closeDisputeModal();">Release Escrow to Provider</button><button class="btn-sm btn-sm-outline" onclick="resolveDispute('${d.id}','refund_customer');closeDisputeModal();">Refund Customer Instead</button>`
+    ? `<button class="confirm-btn" onclick="resolveDispute('${d.id}','release_to_provider');closeDisputeModal();">Release Escrow to Provider</button><button class="btn-sm btn-sm-outline" onclick="resolveDispute('${d.id}','refund_customer');closeDisputeModal();">Refund Customer Instead</button><button class="btn-sm btn-sm-outline" onclick="closeDisputeModal();openSplitDispute(${jsArg(d.id)}, ${jsArg(d.amount)})">Split Between Them</button>`
     : '';
   // Item 14: the super-admin-only action set — request info, escalate,
   // reject, close, and (only from a settled state) reopen. Every one of
@@ -13490,7 +14077,7 @@ function selectAdminSection(key) {
   if (key === 'verification') { loadGuarantorsReviewPanel(); loadVerificationGaps(); loadVerificationHistory(); }
   if (key === 'people') loadAccountClosuresPanel();
   if (key === 'pricing') loadPlanBillingPanel();
-  if (key === 'settings') { loadWordingEditor(); loadBackupsPanel(); }
+  if (key === 'settings') { loadWordingEditor(); loadBackupsPanel(); loadPrivacyEditor(); }
   if (key === 'promotions') loadAdminPromotionsPanel();
   if (key === 'announcements') loadAnnouncementsPanel();
   if (key === 'datacleanup') loadDataCleanupLogPanel();
@@ -13548,8 +14135,8 @@ function providerCardsHTML(list) {
         <div class="provider-meta">
           <div class="meta-chip"><span class="star">★</span> ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           <div class="meta-chip">${uiIcon('jobs')} ${escapeHtml(p.jobs)} jobs</div>
-          <div class="meta-chip">${uiIcon('pin')} ${p.distanceMiles != null ? `${p.distanceMiles} mi away` : ([escapeHtml(p.city), escapeHtml(p.country)].filter(Boolean).join(', ') || 'Location not set')}</div>
-          ${p.trustScore != null ? `<div class="meta-chip" title="Trothen Score: a computed measure of this pro's reliability and track record">${uiIcon('score')} ${p.trustScore}/99</div>` : ''}
+          <div class="meta-chip">${uiIcon('pin')} ${p.distanceMiles != null ? `${distLabel(p.distanceMiles)} away` : ([escapeHtml(p.city), escapeHtml(p.country)].filter(Boolean).join(', ') || 'Location not set')}</div>
+          ${p.isNewPro ? `<div class="meta-chip" title="ID checked. This pro gets a Trothen Score after their first five completed jobs.">New on Trothen</div>` : (p.trustScore != null ? `<div class="meta-chip" title="Trothen Score: a computed measure of this pro's reliability and track record">${uiIcon('score')} ${p.trustScore}/100</div>` : '')}
         </div>
         <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
         <div class="provider-footer">
@@ -13593,25 +14180,16 @@ async function saveServiceRadius() {
 }
 
 async function shareProviderLocation() {
-  if (!navigator.geolocation) return showToast('Your browser doesn\'t support sharing location');
-  navigator.geolocation.getCurrentPosition(
-    async (position) => {
-      if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
-      try {
-        const { user } = await apiFetch('PATCH', '/auth/me', { latitude: position.coords.latitude, longitude: position.coords.longitude });
-        AUTH.user = user;
-        showToast('Your real location is now shared — nearby customers will see actual distance to you');
-        selectProviderSection('settings');
-      } catch (e) { showToast(e.message || 'Could not save your location'); }
-    },
-    (error) => {
-      const message = error.code === error.PERMISSION_DENIED
-        ? 'Location permission was declined'
-        : 'Could not get your location right now';
-      showToast(message);
-    },
-    { enableHighAccuracy: true, timeout: 10000 }
-  );
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  showToast('Finding your location. This can take up to 20 seconds…');
+  const r = await getBestLocation({ goodEnoughM: 100, maxWaitMs: 20000 });
+  if (r.error) return showToast(locationErrorMessage(r.error));
+  try {
+    const { user } = await apiFetch('PATCH', '/auth/me', { latitude: r.latitude, longitude: r.longitude });
+    AUTH.user = user;
+    showToast(`Location saved (${describeAccuracy(r.accuracyM)}). Nearby customers will see the real distance to you.`);
+    selectProviderSection('settings');
+  } catch (e) { showToast(e.message || 'Could not save your location'); }
 }
 
 async function clearProviderLocation() {
@@ -13624,35 +14202,25 @@ async function clearProviderLocation() {
   } catch (e) { showToast(e.message || 'Could not remove your location'); }
 }
 
-function useMyLocation() {
-  if (!navigator.geolocation) {
-    return showToast('Your browser doesn\'t support location — try typing your city instead');
-  }
+async function useMyLocation() {
   const btn = document.getElementById('use-location-btn');
   const originalHTML = btn.innerHTML;
   btn.innerHTML = uiIcon('wait');
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      MY_REAL_LOCATION = { lat: position.coords.latitude, lng: position.coords.longitude };
-      btn.innerHTML = uiIcon('check');
-      document.getElementById('search-location-input').value = 'Current location';
-      document.getElementById('search-location-input').readOnly = true;
-      showToast('Using your real location — pros will be sorted by actual distance');
-      handleSearchClick();
-    },
-    (error) => {
-      btn.innerHTML = originalHTML;
-      const message = error.code === error.PERMISSION_DENIED
-        ? 'Location permission was declined — you can still search by typing your city'
-        : 'Could not get your location right now — try typing your city instead';
-      showToast(message);
-    },
-    { enableHighAccuracy: true, timeout: 10000 }
-  );
+  // For searching, a rough fix is fine (which part of town), so this
+  // settles quickly instead of waiting for a perfect one.
+  const r = await getBestLocation({ goodEnoughM: 500, maxWaitMs: 12000 });
+  if (r.error) {
+    btn.innerHTML = originalHTML;
+    return showToast(locationErrorMessage(r.error) + ' You can still search by typing your city.');
+  }
+  MY_REAL_LOCATION = { lat: r.latitude, lng: r.longitude };
+  btn.innerHTML = uiIcon('check');
+  document.getElementById('search-location-input').value = 'Current location';
+  document.getElementById('search-location-input').readOnly = true;
+  showToast('Using your location. Pros are sorted by real distance.');
+  handleSearchClick();
 }
 
-// Lets someone go back to typing a city manually after having used real
-// location — clears the stored coordinates and unlocks the text field.
 function clearMyLocation() {
   MY_REAL_LOCATION = null;
   const input = document.getElementById('search-location-input');
@@ -13921,6 +14489,9 @@ async function openBooking(id) {
   const isNegotiable = currentPro.pricingModel === 'negotiable';
 
   JOB_PHOTO_STATE.booking = [];
+  // v92: fresh "Where is the job?" block each time the booking form opens.
+  JOB_PIN.book = null;
+  { const slot = document.getElementById('book-where-slot'); if (slot) slot.innerHTML = locationPickerHTML('book'); }
   document.getElementById('booking-photo-upload-container').innerHTML = jobPhotoUploadHTML('booking');
 
   document.getElementById('modal-pro-name').textContent = 'Book ' + currentPro.name;
@@ -14071,7 +14642,8 @@ async function confirmBooking() {
   if (!desc || desc.length < 3) return showToast('Describe the job in at least 3 characters');
   if (!date) return showToast('Pick a date for the job');
   if (!time) return showToast('Pick a time for the job');
-  if (!addr || addr.length < 5) return showToast('Enter a valid address');
+  const bookWhere = readJobWhere('book'); // v92: a pin or a landmark is enough where there is no street address
+  if ((!addr || addr.length < 5) && !bookWhere.jobLocation && !(bookWhere.landmark && bookWhere.landmark.length >= 5)) return showToast('Tell your pro where the job is: pin the location, describe a landmark, or type an address');
 
   // A booking has to belong to a real signed-in customer — never silently
   // create a session behind the scenes. If nobody's signed in (or they're
@@ -14105,7 +14677,7 @@ async function confirmBooking() {
   if (BACKEND_AVAILABLE) {
     try {
       const { contract } = await apiFetch('POST', '/contracts', {
-        providerId: currentPro.id, service: desc, date, time, address: addr, amount: total, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked, materialsOnHand: document.getElementById('job-materials-on-hand')?.value.trim() || undefined,
+        providerId: currentPro.id, service: desc, date, time, address: addr, ...bookWhere, amount: total, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked, materialsOnHand: document.getElementById('job-materials-on-hand')?.value.trim() || undefined,
       });
       contractId = contract.bookingNumber || contract.id;
       isPendingOffer = contract.status === 'pending_agreement';
@@ -14345,6 +14917,11 @@ async function loadSupportContact() {
 // once the real backend value loads" approach already used for support
 // contact info and homepage copy.
 let FOOTER_INFO = null;
+// v95: the support chat names the same address as the footer, Terms and Privacy Policy.
+function supportEmailLineHTML() {
+  const e = FOOTER_INFO && FOOTER_INFO.supportEmail ? String(FOOTER_INFO.supportEmail).trim() : '';
+  return e ? '<br/><br/>Or email ' + escapeHtml(e) + '.' : '';
+}
 function footerLine() {
   if (!FOOTER_INFO) return null;
   return `© ${FOOTER_INFO.copyrightYear} ${FOOTER_INFO.companyName} · ${FOOTER_INFO.location} · ${FOOTER_INFO.supportEmail}`;
@@ -14526,7 +15103,7 @@ const SUPPORT_FAQ = [
   { keywords: ['match', 'ai match', 'how does matching work', 'algorithm'], answer: "When you post a job, our matching engine ranks verified pros in your category and community by rating, experience, and proximity (we prioritize pros in your exact zip code first). You'll see the top matches with a fit score." },
   { keywords: ['community', 'zip', 'postal', 'location match'], answer: "We use your zip/postal code to find pros right in your community first, before widening to your broader city — this tends to mean faster response times and pros who already know the area." },
   { keywords: ['phone verif', 'otp', 'verify my phone', 'text code'], answer: "You don't need to verify your phone to create an account — just your email. If you'd like to verify your phone later (useful for two-factor login), you can do that any time from Settings." },
-  { keywords: ['human', 'agent', 'real person', 'support team', 'talk to someone', 'whatsapp', 'call'], answer: "Of course — reach a real person any time:" + supportContactHTML() + "<br/><br/>Or email support@trothen.io." },
+  { keywords: ['human', 'agent', 'real person', 'support team', 'talk to someone', 'whatsapp', 'call'], answer: "Of course — reach a real person any time:" + supportContactHTML() + supportEmailLineHTML() },
   { keywords: ['hi', 'hello', 'hey'], answer: "Hi! I'm Trothen's AI assistant, not a person. Ask me about escrow, verification, disputes, payments, pricing, or how matching works — or ask for a real person any time." },
 ];
 
@@ -14687,7 +15264,7 @@ function toggleSupportChat() {
 // buried behind having to guess the right keyword first.
 function requestHumanSupport() {
   appendSupportMessage('user', 'Talk to a real person');
-  appendSupportMessage('bot', "Of course — reach a real person any time:" + supportContactHTML() + "<br/><br/>Or email support@trothen.io.");
+  appendSupportMessage('bot', "Of course — reach a real person any time:" + supportContactHTML() + supportEmailLineHTML());
 }
 
 // If the bubble has been dragged somewhere other than its default corner,
@@ -15591,6 +16168,7 @@ function siteFooterHTML() {
         <a onclick="showCareersPage()" data-i18n="footer_careers">${escapeHtml(t('footer_careers'))}</a>
         <a onclick="showContactPage()" data-i18n="footer_contact">${escapeHtml(t('footer_contact'))}</a>
         <a onclick="showTermsPage()" data-i18n="footer_terms">${escapeHtml(t('footer_terms'))}</a>
+        <a onclick="showPrivacyPolicy()">Privacy Policy</a>
         <a onclick="showPricing()" data-i18n="nav_become_pro">${escapeHtml(t('nav_become_pro'))}</a>
       </nav>
     </div>

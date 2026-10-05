@@ -271,6 +271,9 @@ seedIfEmpty()
       } catch (e) { console.error('[countries] Could not check the core countries at startup:', e.message); }
     })();
 
+    // v95: load the one support email, so PDF footers have it from the first request.
+    require('./src/platform-settings').publicSupportEmail().catch(() => {});
+
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
     setTimeout(() => { refreshLiveExchangeRates().catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, 5000);
     setInterval(() => { refreshLiveExchangeRates().catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, ONE_DAY_MS);
@@ -320,6 +323,12 @@ seedIfEmpty()
     const { sweepDocumentUploadReminders } = require('./src/document-upload-reminder-scheduler');
     setTimeout(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, 23000);
     setInterval(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+
+    // v96: remove exact job locations once they're no longer needed (see
+    // src/location-retention-scheduler.js). Shortly after boot, then daily.
+    const { sweepLocationRetention } = require('./src/location-retention-scheduler');
+    setTimeout(() => { sweepLocationRetention().catch(e => console.error('[location-retention] sweep failed:', e)); }, 34000);
+    setInterval(() => { sweepLocationRetention().catch(e => console.error('[location-retention] sweep failed:', e)); }, ONE_DAY_MS);
 
     // v82: nightly copy of the data files (see src/backup-scheduler.js).
     // A minute after boot if today's copy doesn't exist yet, then daily.

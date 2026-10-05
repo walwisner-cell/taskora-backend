@@ -188,7 +188,16 @@ async function computeProviderScore(providerId) {
   const rawTotal = identityVerification + documentVerification + jobsCompleted + arrivedOnTime + repeatedCustomers + responseTime + backgroundCheck + cancellationRate + customerTrustRating;
   const total = Math.max(0, Math.min(99, Math.round(rawTotal)));
 
+  // v91: a pro is "new" until they have completed NEW_PRO_JOBS jobs. Until
+  // then the number above is provisional: most of it is benefit of the
+  // doubt, not a track record. Callers use this to show "New on Trothen"
+  // instead of a number, to give a fixed starter allowance of job matches,
+  // and to hold back score rewards and low-score alerts.
+  const isNew = completed.length < NEW_PRO_JOBS;
   return {
+    isNew,
+    completedJobs: completed.length,
+    jobsUntilScored: Math.max(0, NEW_PRO_JOBS - completed.length),
     total,
     breakdown: {
       identityVerification: Math.round(identityVerification * 10) / 10,
@@ -269,12 +278,20 @@ const WEEKLY_JOB_ACCESS_TIERS = [
 // reasonable, generous-but-real benefit of the doubt, consistent with
 // how every new-provider component elsewhere in this file already
 // defaults to full credit rather than a harsh zero.
-const NEW_PROVIDER_WEEKLY_CAP = 15;
+// v91: how a new pro is treated (the usual practice on marketplaces).
+//   - "New" lasts until NEW_PRO_JOBS jobs are completed.
+//   - While new, a pro gets a fixed starter allowance of job matches each
+//     week (NEW_PROVIDER_WEEKLY_CAP), whatever their provisional number
+//     says. Enough to get started and reach five jobs quickly, small
+//     enough that an unproven account can't take on a flood of customers.
+//   - After that, the weekly allowance follows the score tiers above.
+const NEW_PRO_JOBS = 5;
+const NEW_PROVIDER_WEEKLY_CAP = 10;
 
-function weeklyJobAccessCapForScore(score) {
-  if (score == null) return NEW_PROVIDER_WEEKLY_CAP;
+function weeklyJobAccessCapForScore(score, isNew) {
+  if (score == null || isNew) return NEW_PROVIDER_WEEKLY_CAP;
   const tier = WEEKLY_JOB_ACCESS_TIERS.find(t => score >= t.min);
   return tier ? tier.cap : 0;
 }
 
-module.exports = { computeProviderScore, recommendedActionForScore, MEANINGFUL_JOB_COUNT, WEEKLY_JOB_ACCESS_TIERS, NEW_PROVIDER_WEEKLY_CAP, weeklyJobAccessCapForScore };
+module.exports = { NEW_PRO_JOBS, computeProviderScore, recommendedActionForScore, MEANINGFUL_JOB_COUNT, WEEKLY_JOB_ACCESS_TIERS, NEW_PROVIDER_WEEKLY_CAP, weeklyJobAccessCapForScore };

@@ -52,9 +52,7 @@ async function sweepExpiringDocuments() {
     );
 
     const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
-    const regionalAdmins = provider.city
-      ? await db.filter('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === provider.city)
-      : [];
+    const regionalAdmins = await require('./admin-scope').regionalAdminsFor({ city: provider.city, country: provider.country }); // v96
     for (const admin of [...superAdmins, ...regionalAdmins]) {
       await notify(
         admin.id, '📄',

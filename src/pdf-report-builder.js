@@ -138,7 +138,7 @@ function createReportDoc({ res, filename, title, subtitle, docId, verificationSe
         `Page ${i - pageRange.start + 1} of ${pageRange.count}`,
         PAGE_WIDTH - MARGIN - 90, footerY + 8, { width: 90, align: 'right' }
       );
-      doc.fillColor(GOLD).fontSize(7.5).font('Helvetica-Bold').text('support@trothen.io', MARGIN, footerY + 26);
+      doc.fillColor(GOLD).fontSize(7.5).font('Helvetica-Bold').text(require('./platform-settings').supportEmailCached(), MARGIN, footerY + 26); // v95: the one support email from Settings
     }
     doc.end();
   }

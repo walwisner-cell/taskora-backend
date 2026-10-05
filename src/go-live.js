@@ -183,6 +183,17 @@ async function readinessReport(requestingUser) {
   try { googleOk = require('./google-auth').isGoogleSignInConfigured(); } catch (e) {}
   const usingPostgres = !!process.env.DATABASE_URL;
 
+  // v96: facts for the newer checks.
+  const ps = require('./platform-settings');
+  const supportEmail = await ps.publicSupportEmail();
+  const siteHost = process.env.APP_URL ? String(process.env.APP_URL).replace(/^https?:\/\//, '').replace(/\/.*$/, '') : '';
+  const supportNotes = ps.supportEmailAdvice(supportEmail, siteHost);
+  const supportOk = !!supportEmail && !supportNotes.some(n => n.level === 'problem');
+  let backupLatest = null, backupFresh = false;
+  try { const b = require('./backup-scheduler'); const list = b.backupsApply() ? b.listBackups() : []; backupLatest = list[0] ? list[0].day : null; backupFresh = !!backupLatest && (Date.now() - new Date(backupLatest + 'T00:00:00Z').getTime()) < 2.5 * 24 * 60 * 60 * 1000; } catch (e) { /* leave as not found */ }
+  let idEncrypted = false; try { idEncrypted = require('./file-crypto').isEnabled(); } catch (e) {}
+  let personaOk = false; try { personaOk = !!require('./persona-verification').isPersonaConfigured(); } catch (e) {}
+  let planBilling = { active: false }; try { planBilling = await require('./plan-billing').getState(); } catch (e) {}
   const item = (key, label, ok, detail, severity = 'required') => ({ key, label, ok: !!ok, detail, severity });
   const items = [
     item('real_superadmin', 'A real super admin account exists (not the demo one)', realSuperAdmins.length > 0,
@@ -213,6 +224,20 @@ async function readinessReport(requestingUser) {
     item('google', 'Google Sign-In is connected', googleOk, 'Optional.', 'optional'),
     item('push', 'Background push notifications are set up', !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY),
       'Optional — in-app notifications work without it.', 'optional'),
+    // v96: the newer safeguards, so this one page shows everything that
+    // stands between today and launch.
+    item('support_email', 'A working support email is set, on my own domain', supportOk,
+      supportEmail ? (supportNotes.length ? `${supportEmail}: ${supportNotes.map(n => n.text).join(' ')}` : supportEmail) : 'Not set. Add it in Settings → Footer. The Terms and Privacy Policy show this address.'),
+    item('privacy_policy', 'The Privacy Policy has been reviewed by an attorney', false,
+      'A built-in policy is live at /privacy and editable in Settings. It was written to match the system and still needs a legal review.', 'business'),
+    item('backups', 'A data backup was taken in the last two days', backupFresh,
+      backupLatest ? `Latest copy: ${backupLatest}. Copies are on the same disk; keep one elsewhere too.` : 'No backup found yet. One is taken about a minute after the server starts, then daily.', 'recommended'),
+    item('id_encryption', 'Extra encryption for ID files is switched on', idEncrypted,
+      idEncrypted ? 'On' : 'Off. Set ID_FILE_ENCRYPTION_KEY on the server (see CHANGES_v82.md) and keep a copy of the key somewhere safe.', 'recommended'),
+    item('id_checks', 'Automated ID and face checks are connected (Persona)', personaOk,
+      personaOk ? 'Connected' : 'Optional. Without it, a person compares each ID with the face photo.', 'optional'),
+    item('plan_fee', 'Monthly plan fee', true,
+      planBilling.active ? 'Switched ON. Pros are invoiced monthly from their payouts.' : 'Switched off (as it should be until real payments are live).', 'optional'),
     item('payments', 'Real payments are connected', false,
       'Not yet — every payment and payout is simulated. Real people can sign up, verify and be found, but no real money can move through Trothen until payment processing is built and approved.', 'business'),
   ];

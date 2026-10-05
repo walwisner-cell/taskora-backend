@@ -110,6 +110,18 @@ async function eraseAccount(closure, adminId) {
   for (const coll of ['paymentMethods', 'pushSubscriptions', 'notifications', 'favorites']) {
     for (const r of (await safeAll(coll)).filter(r => r.userId === user.id || r.customerId === user.id)) { try { await db.remove(coll, r.id); } catch (e) { /* skip */ } }
   }
+  // v96: where they live. The job pin, landmark and address on their own
+  // jobs and bookings are their home; the booking record stays, the
+  // location does not. (A pro's bookings keep the customer's location:
+  // that belongs to the customer, not to the pro being erased.)
+  if (user.role === 'customer') {
+    for (const c of (await safeAll('contracts')).filter(c => c.customerId === user.id)) {
+      await db.update('contracts', c.id, { jobLocation: null, landmark: null, address: null, liveLocation: null, onMyWayLocation: null, arrivedLocation: null });
+    }
+    for (const j of (await safeAll('jobs')).filter(j => j.customerId === user.id)) {
+      await db.update('jobs', j.id, { jobLocation: null, landmark: null });
+    }
+  }
   // The profile itself: every personal field blanked. The id stays, so
   // bookings, payments, reviews and disputes still point at "a closed account".
   const keep = { id: user.id, role: user.role, createdAt: user.createdAt, closedAt: user.closedAt, country: user.country };

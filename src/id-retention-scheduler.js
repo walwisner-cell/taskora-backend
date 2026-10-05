@@ -29,8 +29,12 @@ async function sweepIdDocumentRetention() {
     String(v.reviewedAt || v.createdAt) <= cutoff
   );
 
-  let deleted = 0;
+  // v95: files are HELD, not deleted, while something involving the
+  // account is still open, because the ID may be needed to settle it.
+  const held = await accountsOnRetentionHold();
+  let deleted = 0, heldBack = 0;
   for (const v of due) {
+    if (held.has(v.userId)) { heldBack += 1; continue; }
     for (const name of [v.documentFilename, v.selfieFilename, v.backFilename]) {
       if (!name) continue;
       // Only ever a plain file name inside the private folder.
@@ -41,7 +45,30 @@ async function sweepIdDocumentRetention() {
     deleted += 1;
   }
   if (deleted > 0) console.log(`[id-retention] Deleted the uploaded files for ${deleted} decided verification${deleted === 1 ? '' : 's'} older than ${days} days. The records are kept.`);
-  return { deleted };
+  if (heldBack > 0) console.log(`[id-retention] Kept the files for ${heldBack} verification${heldBack === 1 ? '' : 's'} past the retention period because a dispute or fraud review is open.`);
+  return { deleted, heldBack };
 }
 
-module.exports = { sweepIdDocumentRetention };
+// Accounts whose ID files must not be deleted yet, with the reason:
+//   - a party to a dispute that hasn't been resolved, closed or rejected
+//   - an open fraud flag naming the account
+//   - the account is on hold
+async function accountsOnRetentionHold() {
+  const reasons = new Map();
+  const safe = async (c) => { try { return await db.all(c); } catch (e) { return []; } };
+  const contracts = new Map((await safe('contracts')).map(c => [c.id, c]));
+  for (const d of await safe('disputes')) {
+    if (['resolved', 'closed', 'rejected'].includes(d.status)) continue;
+    const c = contracts.get(d.contractId);
+    if (c) { reasons.set(c.customerId, 'open dispute'); reasons.set(c.providerId, 'open dispute'); }
+  }
+  for (const f of await safe('fraudFlags')) {
+    if (f.status !== 'open') continue;
+    if (f.userId) reasons.set(f.userId, 'open fraud review');
+    if (f.relatedUserId) reasons.set(f.relatedUserId, 'open fraud review');
+  }
+  for (const u of await db.filter('users', u => u.onHold === true)) reasons.set(u.id, 'account on hold');
+  return reasons;
+}
+
+module.exports = { sweepIdDocumentRetention, accountsOnRetentionHold };

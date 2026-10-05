@@ -72,9 +72,7 @@ router.post('/contact', publicFormLimiter, async (req, res) => {
   // team — plus every super admin, always, as the guaranteed fallback
   // for anything unrouted or urgent.
   const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
-  const regionalAdmins = submission.city
-    ? await db.filter('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === submission.city)
-    : [];
+  const regionalAdmins = submission.city ? await require('../admin-scope').regionalAdminsFor({ city: submission.city, country: submission.country }) : []; // v96: country-wide admins too
   const recipients = [...superAdmins, ...regionalAdmins];
   for (const admin of recipients) {
     await notify(admin.id, '✉️', `New contact form message from ${submission.name}${submission.city ? ` (${submission.city})` : ''}: "${submission.subject}"`, null, { section: 'contact-submissions' });
@@ -151,10 +149,10 @@ router.post('/careers-inquiry', publicFormLimiter, (req, res, next) => {
   // every super admin, so an application never just goes nowhere.
   let recipients = [];
   if (submission.city) {
-    const regionalManager = await db.find('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === submission.city);
+    const regionalManagers = await require('../admin-scope').regionalAdminsFor({ city: submission.city, country: submission.country }); // v96
     const cityHr = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'hr' && u.regionScoped && u.city === submission.city);
     const globalHr = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'hr' && !u.regionScoped);
-    recipients = [regionalManager, ...cityHr, ...globalHr].filter(Boolean);
+    recipients = [...regionalManagers, ...cityHr, ...globalHr].filter(Boolean);
   } else {
     recipients = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'hr');
   }
@@ -272,9 +270,7 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
   await db.insert('advertisingInquiries', submission);
 
   const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
-  const regionalAdmins = city
-    ? await db.filter('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === city)
-    : [];
+  const regionalAdmins = city ? await require('../admin-scope').regionalAdminsFor({ city }) : []; // v96: country-wide admins too
   const toNotify = [...superAdmins, ...regionalAdmins];
   for (const admin of toNotify) {
     await notify(admin.id, '📣', `${provider.name} (an existing provider) submitted a self-serve ad, already paid ($${price}) — just needs a quick content review${city ? ` for ${city}` : ' (platform-wide)'}`, null, { section: 'advertising' });
@@ -321,9 +317,7 @@ router.post('/advertising-inquiry', publicFormLimiter, async (req, res) => {
   // a platform-wide (city: null) inquiry only reaches super admins, since
   // only they can approve one.
   const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
-  const regionalAdmins = city
-    ? await db.filter('users', u => u.role === 'admin' && !u.isSuperAdmin && !u.adminDepartment && u.city === city)
-    : [];
+  const regionalAdmins = city ? await require('../admin-scope').regionalAdminsFor({ city }) : []; // v96: country-wide admins too
   const toNotify = [...superAdmins, ...regionalAdmins];
   for (const admin of toNotify) {
     await notify(admin.id, '📣', `New advertising inquiry from ${submission.companyName} (${submission.contactName})${city ? ` — targeting ${city}` : ' — platform-wide'}`, null, { section: 'advertising' });

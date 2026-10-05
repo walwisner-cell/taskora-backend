@@ -516,6 +516,8 @@ router.post('/contracts/:id/on-my-way', requireAuth, requireRole('provider'), as
   const updated = await db.update('contracts', contract.id, {
     onMyWayAt: new Date().toISOString(),
     onMyWayLocation: hasValidCoords ? { latitude, longitude } : null,
+    // v93: the first point of the live trip (see /live-location below)
+    liveLocation: hasValidCoords ? { latitude, longitude, accuracyM: Number.isFinite(Number(req.body.accuracyM)) ? Math.round(Number(req.body.accuracyM)) : null, at: new Date().toISOString() } : null,
   });
 
   const provider = await db.find('users', u => u.id === req.user.sub);
@@ -528,6 +530,77 @@ router.post('/contracts/:id/on-my-way', requireAuth, requireRole('provider'), as
 // (plus an optional coordinate each) give both sides a real, honest
 // pickup/drop-off record without building a full live-tracking system
 // this kind of marketplace doesn't really need.
+// ── v93: LIVE TRIP TRACKING ────────────────────────────────────────────
+// Between a pro tapping "On my way" and tapping "Arrived", their phone
+// sends its position every few seconds and the customer can watch them
+// come, with the distance left. This is the same idea as a ride app, with
+// three honest differences because Trothen is a web page, not an
+// installed app:
+//   - The pro's phone only sends while the Trothen page is open and the
+//     screen is on. The page asks the phone to stay awake, but if the pro
+//     switches apps or locks the phone, updates stop until they come back.
+//     The customer is shown how old the last position is.
+//   - Distance is a straight line, not a road route.
+//   - Nothing is sent before "On my way" or after "Arrived".
+// Who can see it: only the customer and the pro on that one booking.
+// The live position is wiped on arrival, and ignored after 6 hours.
+const LIVE_TRIP_MAX_MS = 6 * 60 * 60 * 1000;
+const liveLocationLimiter = require('express-rate-limit')({
+  windowMs: 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Location updates are arriving too quickly.' },
+});
+
+// POST /api/contracts/:id/live-location  { latitude, longitude, accuracyM }
+router.post('/contracts/:id/live-location', requireAuth, requireRole('provider'), liveLocationLimiter, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const tripOpen = contract.status === 'active' && contract.onMyWayAt && !contract.arrivedAt
+    && (Date.now() - new Date(contract.onMyWayAt).getTime()) < LIVE_TRIP_MAX_MS;
+  if (!tripOpen) return res.status(409).json({ code: 'TRIP_CLOSED', error: 'This trip isn\'t in progress, so your location isn\'t being shared.' });
+  const { latitude, longitude, accuracyM } = req.body || {};
+  const { isValidCoordinate } = require('../geo-distance');
+  if (!isValidCoordinate(latitude, longitude) || (latitude === 0 && longitude === 0)) return res.status(400).json({ error: 'That isn\'t a valid position' });
+  const acc = Number(accuracyM);
+  await db.update('contracts', contract.id, {
+    liveLocation: {
+      latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6,
+      accuracyM: Number.isFinite(acc) && acc > 0 && acc < 100000 ? Math.round(acc) : null,
+      at: new Date().toISOString(),
+    },
+  });
+  res.json({ ok: true });
+});
+
+// GET /api/contracts/:id/tracking — for the customer and the pro on this booking.
+router.get('/contracts/:id/tracking', requireAuth, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  const { distanceInMiles, isValidCoordinate } = require('../geo-distance');
+  const pro = await db.find('users', u => u.id === contract.providerId);
+  const customer = await db.find('users', u => u.id === contract.customerId);
+  const tripOpen = contract.status === 'active' && !!contract.onMyWayAt && !contract.arrivedAt
+    && (Date.now() - new Date(contract.onMyWayAt).getTime()) < LIVE_TRIP_MAX_MS;
+  const phase = contract.arrivedAt ? 'arrived' : tripOpen ? 'on_the_way' : (contract.onMyWayAt ? 'ended' : 'not_started');
+  const live = tripOpen && contract.liveLocation && isValidCoordinate(contract.liveLocation.latitude, contract.liveLocation.longitude) ? contract.liveLocation : null;
+  const job = contract.jobLocation && isValidCoordinate(contract.jobLocation.latitude, contract.jobLocation.longitude) ? contract.jobLocation : null;
+  const miles = live && job ? distanceInMiles(live.latitude, live.longitude, job.latitude, job.longitude) : null;
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    phase,
+    proName: pro ? pro.name : 'Your pro',
+    customerName: customer ? customer.name : 'Customer',
+    service: contract.service,
+    onMyWayAt: contract.onMyWayAt || null,
+    arrivedAt: contract.arrivedAt || null,
+    proLocation: live ? { latitude: live.latitude, longitude: live.longitude, accuracyM: live.accuracyM } : null,
+    secondsSinceUpdate: live ? Math.max(0, Math.round((Date.now() - new Date(live.at).getTime()) / 1000)) : null,
+    jobLocation: job ? { latitude: job.latitude, longitude: job.longitude, accuracyM: job.accuracyM } : null,
+    landmark: contract.landmark || null,
+    distanceMiles: miles != null ? Math.round(miles * 100) / 100 : null,
+    distanceKm: miles != null ? Math.round(miles * 1.609344 * 100) / 100 : null,
+  });
+});
+
 router.post('/contracts/:id/arrived', requireAuth, requireRole('provider'), async (req, res) => {
   const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
@@ -540,6 +613,7 @@ router.post('/contracts/:id/arrived', requireAuth, requireRole('provider'), asyn
   const updated = await db.update('contracts', contract.id, {
     arrivedAt: new Date().toISOString(),
     arrivedLocation: hasValidCoords ? { latitude, longitude } : null,
+    liveLocation: null, // v93: the trip is over, so the live position is wiped
   });
 
   if (hasValidCoords) {

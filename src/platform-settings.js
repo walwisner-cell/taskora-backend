@@ -94,7 +94,7 @@ You must be at least 18 years old and able to form a binding contract to use Tro
 - **Be honest** — describe the job accurately, including anything difficult about it, and rate honestly on what actually happened.
 - **Be safe** — disclose hazards before a job (pets, structural issues, chemicals) so your Provider can work safely.
 - **Treat people with respect** — Providers are independent professionals running their own businesses, not staff, and not yours to direct beyond what the job describes.
-- **Keep it on the platform** — arrange and pay for work through Trothen. Off the platform, there is no payment protection and no insurance, for either side.
+- **Keep it on the platform** — arrange and pay for work through Trothen. Off the platform, there is no payment protection, for either side.
 
 # 5. Payment, Fees, and Escrow
 
@@ -132,7 +132,7 @@ Your ID and face photo are stored privately. They are never shown to other users
 
 # 13. Contact
 
-Questions about these Terms: support@trothen.io`,
+Questions about these Terms: {{SUPPORT_EMAIL}}`,
 
   termsOfServiceProviderContent: `Trothen Terms of Service — Providers
 
@@ -160,7 +160,7 @@ You must be at least 18 years old and able to form a binding contract to use Tro
 - **Be honest** — describe your work accurately. If a job needs a licensed trade or is bigger than described, stop and tell the Customer.
 - **Be safe** — never work impaired or endangered. Stop and report if a job becomes unsafe — no job is worth an injury.
 - **Treat people with respect** — no harassment, discrimination, or unwanted contact. Never enter a space you weren't invited into.
-- **Keep it on the platform** — arrange and get paid for work through Trothen. Off the platform, there is no payment protection and no insurance, for either side.
+- **Keep it on the platform** — arrange and get paid for work through Trothen. Off the platform, there is no payment protection, for either side.
 
 # 6. Commission and Payment
 
@@ -198,11 +198,122 @@ Your ID and face photo are stored privately. They are never shown to other users
 
 # 14. Contact
 
-Questions about these Terms: support@trothen.io`,
+Questions about these Terms: {{SUPPORT_EMAIL}}`,
+
+  // v94: the built-in Privacy Policy. It describes what the system really
+  // does, in plain words. It is editable in Admin → Settings, and an
+  // attorney should review it before launch. {{ID_RETENTION_SENTENCE}} and
+  // {{SUPPORT_EMAIL}} are filled in from live settings when it is shown.
+  privacyPolicyContent: `Trothen Privacy Policy
+
+Last updated: 5 October 2026
+
+# 1. What This Covers
+
+This policy explains what information Trothen collects when you use the site as a customer or as a pro, why we collect it, who can see it, how long we keep it, and the choices you have. We have tried to write it so you can read it once and understand it.
+
+# 2. What We Collect
+
+Account details. Your name, email address, phone number, country, state or region, city, address and postal code, and a password. Your password is stored in a scrambled form that nobody at Trothen can read. If you sign in with Google, we receive your name and email address from Google.
+
+Identity check. To confirm who you are, we ask for a photo or PDF of a government ID (front, and back if it has one), the name printed on it, and a photo of your face. A person on the Trothen team compares them.
+
+Guarantors (pros only, optional). If you name people who can vouch for you, we store their names and phone numbers and may call them. Please tell them first.
+
+Jobs and bookings. What you ask for or agree to do, the price, dates and times, photos or videos you attach, the written agreement for each booking, reviews, and any dispute and the evidence either side uploads.
+
+Location. See section 3.
+
+Payments. Trothen is in early access and payments are in test mode, so no real money moves yet. We record the amounts for each booking. For a saved card we keep only the brand, the last four digits and the expiry date. We never store a full card number or security code.
+
+Messages and support. Messages you exchange with the other person on a booking, and what you write to our support team or type into the support chat.
+
+Technical information. The date and time of your sign-ins, the kind of device or browser, and your internet address, which we use to protect accounts and stop abuse. The site keeps a sign-in token and your language choice in your browser's storage. We do not use advertising trackers.
+
+# 3. Location
+
+We only use your location when you choose to share it.
+
+Job location. When you post a job or book a pro, you can pin where the job is (often your home) and add a landmark. Only the pro you hire, and Trothen staff who need it, can see the exact spot. Pros who are only matched to your job see a rounded distance, not the spot.
+
+Searching. If you press the location button when searching, your position is used to sort pros by distance. It is not saved to your account.
+
+A pro's base location. A pro can share where they are based so customers see a real distance. A pro can remove it at any time in Settings.
+
+Live trip. When a pro taps "On my way", their position is shared with that one customer until they tap "Arrived". It is not shared before or after, and the live position is deleted on arrival. We keep the point where the pro said they set off and the point where they said they arrived, to help settle disputes and detect fraud.
+
+Maps. When a map is shown, the map pictures come from OpenStreetMap, and links can open Google Maps. Those services receive your internet address and the area of the map you are viewing, as with any website.
+
+You can switch location off for this site in your browser or phone settings. You can then type a location, choose it on a map, or describe a landmark instead.
+
+# 4. Why We Use It
+
+To create and protect your account. To check identity, so people can trust who they are dealing with. To match customers with pros and let them agree, carry out and pay for a job. To help a pro find the job. To settle disputes fairly. To detect and prevent fraud and abuse. To send you messages about your bookings and your account. To meet legal obligations.
+
+We do not sell your personal information.
+
+# 5. Who Can See Your Information
+
+Other users. A pro's public profile shows their name, photo, city, skills, reviews and score. A customer and a pro on the same booking see each other's name and what is needed to do the job, including the job location. Your ID, your face photo and your contact details are never shown to other users by Trothen.
+
+Trothen staff. Only staff who need the information for their job can see it. ID documents and face photos can be opened only by the staff who review identity checks, and every time one is opened it is recorded.
+
+Companies that help us run the service, each only when that service is switched on and only for its purpose: our hosting provider, which stores the data in the United States; an email delivery service; a text message service; Google, if you choose to sign in with Google; an identity verification service, if we use automated checks; OpenStreetMap for map pictures; a mobile money partner, where mobile money payments are offered; and, if our AI support assistant is switched on, the questions you type into the support chat are sent to an AI provider to produce an answer.
+
+Authorities. We may disclose information when the law requires it, or to protect someone's safety.
+
+# 6. How Long We Keep It
+
+ID documents and face photos. {{ID_RETENTION_SENTENCE}} If a dispute or a fraud review involving your account is open at that time, the files are kept until it is closed. We keep a record that the check happened: the type of document, the name on it, the decision, and who made it.
+
+Live trip position. Deleted when the pro arrives.
+
+Job location. The exact pin, and the points where the pro said they set off and arrived, are removed 90 days after a booking ends, unless a dispute on it is still open. For a job post that never became a booking, the pin and landmark are removed after 30 days.
+
+Sign-ups that are started and not finished. Deleted within about an hour.
+
+Your account and its records. Kept while your account is open. If you close your account, it stops working at once. Trothen then removes your name, contact details, photos and ID files. Records of bookings, payments, reviews and disputes are kept, without your personal details, because the other person involved has a right to their record and because the law requires financial records to be kept.
+
+# 7. Your Choices
+
+Download your data. In Settings, "Download my data" gives you a file with what Trothen holds about your account.
+
+Close your account. In Settings, "Close my account". You cannot close it while a booking, a held payment or a dispute is still open.
+
+Correct your details. You can edit your profile in Settings.
+
+Location and notifications. You can switch these off in your browser or phone settings.
+
+Depending on where you live, you may have further rights under your local data protection law, such as the right to object or to complain to your data protection authority. Contact us and we will help.
+
+# 8. Security
+
+Passwords are scrambled. ID files are kept in a private area, are not served to the public, and can be encrypted on our disk. Every request is checked so that people can reach only their own bookings, messages and files. Sign-in is paused after repeated wrong passwords. No system is perfectly secure, and we cannot promise that information will never be accessed wrongly, but we work to prevent it and will tell you if a breach affects you.
+
+# 9. Age
+
+Trothen is for people aged 18 or over. We do not knowingly collect information from anyone under 18.
+
+# 10. Where Your Information Is Stored
+
+Our servers are in the United States. If you use Trothen from another country, your information is transferred to and stored in the United States.
+
+# 11. Changes to This Policy
+
+If we change this policy in a way that matters, we will tell you on the site before the change takes effect.
+
+# 12. Contact
+
+Questions about this policy, or a request about your own information: {{SUPPORT_EMAIL}}. We aim to reply within 30 days.`,
 
   // v77: how many days an uploaded ID and selfie are kept after a decision
   // (approved, rejected or replaced). 0 = keep until deleted by hand.
-  idDocumentRetentionDays: 90,
+  // v95: 30 days is the default. An ID photo is only needed long enough to
+  // answer a question about the decision; the usual practice is to keep
+  // such documents for the shortest time that does the job. Files are
+  // held longer automatically while a dispute or a fraud review involving
+  // the account is open (see src/id-retention-scheduler.js).
+  idDocumentRetentionDays: 30,
 
   // v78: the provider monthly plan fee. Off until the super admin switches
   // it on AND PLAN_BILLING_ENABLED=true is set on the server. See
@@ -279,4 +390,35 @@ function computeResponseWindowHours({ now, jobDateTime, tiers, categoryOverrideH
   return Math.round(hours * 100) / 100;
 }
 
-module.exports = { getSetting, setSetting, computeResponseWindowHours, DEFAULTS, EDITABLE_CONTENT_KEYS };
+// v95: ONE support email for everything a visitor reads: the footer, the
+// Terms of Service, the Privacy Policy, PDFs and the support chat. It is
+// the address in Admin → Settings → Footer. (Before this, the footer read
+// that setting, the Privacy Policy read a different one, and the Terms,
+// PDFs and chat each had an address typed into the code.)
+// If the footer address is blank, the support-contact email is used.
+let supportEmailCache = '';
+async function publicSupportEmail() {
+  const footer = (await getSetting('footerInfo')) || {};
+  const contact = (await getSetting('supportContact')) || {};
+  supportEmailCache = String(footer.supportEmail || '').trim() || String(contact.email || '').trim();
+  return supportEmailCache;
+}
+// For code that can't wait (PDF page footers). Kept fresh by the function above.
+function supportEmailCached() { return supportEmailCache; }
+// Advice shown to the super admin about the address, never to visitors.
+function supportEmailAdvice(email, siteHost) {
+  const notes = [];
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) { notes.push({ level: 'problem', text: 'No support email is set. The Privacy Policy and Terms tell people to use the Contact Us page instead.' }); return notes; }
+  const domain = e.split('@')[1] || '';
+  const host = String(siteHost || '').toLowerCase().replace(/^www\./, '').replace(/:\d+$/, '');
+  if (/^(gmail|yahoo|ymail|outlook|hotmail|live|icloud|aol|proton|protonmail)\./.test(domain)) {
+    notes.push({ level: 'advice', text: 'This is a personal-style mailbox. A business address on your own domain (for example support@' + (host && !/localhost|onrender/.test(host) ? host : 'yourdomain.com') + ') looks more trustworthy and is less likely to be treated as spam.' });
+  } else if (host && !/localhost|onrender\.com$|^\d+\.\d+\.\d+\.\d+$/.test(host) && domain !== host && !host.endsWith('.' + domain) && !domain.endsWith('.' + host)) {
+    notes.push({ level: 'problem', text: 'This address is on ' + domain + ', but the site is ' + host + '. Check that this mailbox really exists and that someone reads it. If it bounces, nobody can reach you about their data.' });
+  }
+  if (/^(no-?reply|donotreply|do-not-reply)@/.test(e)) notes.push({ level: 'problem', text: 'A no-reply address can\'t be used here. People must be able to write to it.' });
+  return notes;
+}
+
+module.exports = { getSetting, setSetting, computeResponseWindowHours, DEFAULTS, EDITABLE_CONTENT_KEYS, publicSupportEmail, supportEmailCached, supportEmailAdvice };

@@ -204,7 +204,10 @@ function publicProvider(u) {
     businessName: u.businessName || null,
     acceptingBookings: u.acceptingBookings !== false,
     serviceRadiusMiles: u.serviceRadiusMiles != null ? u.serviceRadiusMiles : null,
-    trustScore: u.trustScore != null ? u.trustScore : null,
+    // v91: a new pro (fewer than five completed jobs) is shown as "New on
+    // Trothen", not as a number, so the number is not sent to the public.
+    trustScore: (u.trustScore != null && u.trustScoreProvisional !== true) ? u.trustScore : null,
+    isNewPro: u.trustScoreProvisional === true || u.trustScore == null,
     // Only a yes/no, so a profile can say "two-step sign-in turned on" truthfully.
     twoFactorEnabled: u.twoFactorEnabled === true,
   };
@@ -362,6 +365,7 @@ router.get('/support-contact', async (req, res) => {
 // is admin.routes.js's PATCH /admin/settings/footer (super admin only).
 router.get('/footer', async (req, res) => {
   const { getSetting } = require('../platform-settings');
+  require('../platform-settings').publicSupportEmail().catch(() => {}); // v95: keeps the address used in PDF footers fresh
   res.json({ footer: await getSetting('footerInfo') });
 });
 
@@ -437,14 +441,82 @@ const withRetention = async (text) => {
     : 'The files are kept until Trothen deletes them.';
   return String(text || '').replace(/\{\{ID_RETENTION_SENTENCE\}\}/g, sentence);
 };
+// v95: the Terms and the Privacy Policy both show the ONE support email
+// from Settings. With no address set, they point to the Contact Us page.
+const withSupportEmail = async (text) => {
+  const email = await require('../platform-settings').publicSupportEmail();
+  return String(text || '').replace(/\{\{SUPPORT_EMAIL\}\}/g, email || 'use the Contact Us page on this site');
+};
+
+// GET /api/privacy-policy-content — v94: public. The retention period and
+// the support email are filled in from live settings, so the policy can't
+// say something different from what the system does.
+router.get('/privacy-policy-content', async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ content: await withSupportEmail(await withRetention(await getSetting('privacyPolicyContent'))) });
+});
+
+// GET /api/geo/place-search?q=Paynesville — v94: find a town, area or
+// landmark by name so the "Choose on a map" picker can jump there. It asks
+// OpenStreetMap's free search service from the server (not from the
+// visitor's browser), one question a second at most, and remembers answers
+// for a day, which is what that service asks of the sites that use it.
+// If the service can't be reached, the picker still works: the person
+// just moves the map by hand.
+const PLACE_SEARCH_URL = process.env.PLACE_SEARCH_URL || 'https://nominatim.openstreetmap.org/search';
+const placeCache = new Map();
+let placeQueue = Promise.resolve();
+let lastPlaceCallAt = 0;
+const placeSearchLimiter = require('express-rate-limit')({
+  windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many searches in a row. Wait a moment, or move the map by hand.' },
+});
+router.get('/geo/place-search', requireAuth, placeSearchLimiter, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2 || q.length > 80) return res.status(400).json({ error: 'Type at least 2 letters of a place name' });
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const country = me && me.country ? me.country : '';
+  const key = (q + '|' + country).toLowerCase();
+  const hit = placeCache.get(key);
+  if (hit && Date.now() - hit.at < 24 * 60 * 60 * 1000) return res.json({ places: hit.places, cached: true });
+  const run = async () => {
+    const wait = 1100 - (Date.now() - lastPlaceCallAt);
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    lastPlaceCallAt = Date.now();
+    const url = PLACE_SEARCH_URL + '?format=jsonv2&limit=5&q=' + encodeURIComponent(country ? q + ', ' + country : q);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 7000);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'Trothen/1.0 (trothenpro.com; job location picker)', 'Accept-Language': 'en' } });
+      if (!r.ok) throw new Error('search service answered ' + r.status);
+      const rows = await r.json();
+      return (Array.isArray(rows) ? rows : []).map(x => ({
+        name: String(x.display_name || x.name || '').slice(0, 140),
+        latitude: Math.round(parseFloat(x.lat) * 1e6) / 1e6,
+        longitude: Math.round(parseFloat(x.lon) * 1e6) / 1e6,
+      })).filter(x => x.name && Number.isFinite(x.latitude) && Number.isFinite(x.longitude)).slice(0, 5);
+    } finally { clearTimeout(timer); }
+  };
+  try {
+    const job = placeQueue.then(run, run);
+    placeQueue = job.catch(() => {});
+    const places = await job;
+    if (placeCache.size > 2000) placeCache.clear();
+    placeCache.set(key, { at: Date.now(), places });
+    res.json({ places });
+  } catch (e) {
+    res.status(502).json({ error: 'Place search isn\'t available right now. You can still move the map by hand.' });
+  }
+});
+
 router.get('/terms-of-service-customer-content', async (req, res) => {
   const { getSetting } = require('../platform-settings');
-  res.json({ content: await withRetention(withoutDatePlaceholder(await getSetting('termsOfServiceCustomerContent'))) });
+  res.json({ content: await withSupportEmail(await withRetention(withoutDatePlaceholder(await getSetting('termsOfServiceCustomerContent')))) });
 });
 
 router.get('/terms-of-service-provider-content', async (req, res) => {
   const { getSetting } = require('../platform-settings');
-  res.json({ content: await withRetention(withoutDatePlaceholder(await getSetting('termsOfServiceProviderContent'))) });
+  res.json({ content: await withSupportEmail(await withRetention(withoutDatePlaceholder(await getSetting('termsOfServiceProviderContent')))) });
 });
 
 // GET /api/homepage-images — public, no auth: the real uploaded photo (if
@@ -801,6 +873,41 @@ async function weeklyMatchCountsForProviders(providerIds) {
 
 // POST /api/jobs — customer posts a job, triggers AI matching immediately
 const { requireCurrentTerms } = require('../terms'); // v81: agreement checked on the server too
+
+// v92: where the job is, for places without street addresses.
+// A job or booking can carry a GPS pin taken on the customer's phone at
+// the job site, plus a landmark in their own words ("blue gate behind the
+// Total station"). In much of Liberia there is no street address to type,
+// so until now a pro had nothing to navigate by.
+//   - The pin is { latitude, longitude, accuracyM }. accuracyM is how many
+//     metres the phone said it could be off by; it is kept so nobody
+//     treats a rough fix as exact.
+//   - The exact pin and landmark are only given to the pro who is HIRED.
+//     Pros who are merely matched to a job see a rounded distance, not
+//     the spot.
+function readJobLocation(body) {
+  const out = { jobLocation: null, landmark: null, error: null };
+  const loc = body && body.jobLocation;
+  if (loc !== undefined && loc !== null) {
+    const { isValidCoordinate } = require('../geo-distance');
+    if (typeof loc !== 'object' || !isValidCoordinate(loc.latitude, loc.longitude)) { out.error = 'The location pin isn\'t a valid position. Please pin it again.'; return out; }
+    if (loc.latitude === 0 && loc.longitude === 0) { out.error = 'The location pin isn\'t a valid position. Please pin it again.'; return out; }
+    const acc = Number(loc.accuracyM);
+    out.jobLocation = {
+      latitude: Math.round(loc.latitude * 1e6) / 1e6,
+      longitude: Math.round(loc.longitude * 1e6) / 1e6,
+      accuracyM: Number.isFinite(acc) && acc > 0 && acc < 100000 ? Math.round(acc) : null,
+      source: ['gps', 'typed', 'map'].includes(loc.source) ? loc.source : 'gps', // v94: 'map' = chosen on the map picker
+      capturedAt: new Date().toISOString(),
+    };
+  }
+  const lm = body && body.landmark;
+  if (lm !== undefined && lm !== null && String(lm).trim() !== '') {
+    if (typeof lm !== 'string' || lm.trim().length > 200) { out.error = 'The landmark note must be under 200 characters'; return out; }
+    out.landmark = lm.trim();
+  }
+  return out;
+}
 router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
   const customer = await db.find('users', u => u.id === req.user.sub);
   if (!customer || customer.verified !== true) {
@@ -814,6 +921,8 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to post a job again shortly. Contact support if you need this resolved sooner.' });
   }
   const { category, description, materialsOnHand, materialsCost, budget, payCurrency, photoUrls } = req.body || {};
+  const jobWhere = readJobLocation(req.body); // v92
+  if (jobWhere.error) return res.status(400).json({ error: jobWhere.error });
   const errors = validate([
     ['category', isNonEmptyString(category, { min: 2, max: 60 }), 'Category is required'],
     ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
@@ -854,6 +963,8 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
     // set at the moment they post, not re-asked for later.
     payCurrency: payCurrency === 'local' ? 'local' : 'usd',
     photoUrls: validPhotoUrls,
+    jobLocation: jobWhere.jobLocation, // v92: GPS pin of the job site, if the customer gave one
+    landmark: jobWhere.landmark,
     status: 'open',
     createdAt: new Date().toISOString(),
   };
@@ -891,7 +1002,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   // handler already follows the same lazy-require pattern.
   const { weeklyJobAccessCapForScore } = require('../provider-score');
   const allInCategory = inCategoryUnfiltered.filter(u => {
-    const cap = weeklyJobAccessCapForScore(u.trustScore);
+    const cap = weeklyJobAccessCapForScore(u.trustScore, u.trustScoreProvisional === true);
     if (cap === 0) return false; // suspended — 0-19 band
     if (cap === null) return true; // unlimited — 90+ band
     return (weeklyCounts.get(u.id) || 0) < cap;
@@ -928,7 +1039,9 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
     // toward the more reliable provider. A provider with no trust score
     // computed yet (brand new account, before the first daily sweep runs)
     // is unaffected — this term is simply zero, not treated as a penalty.
-    const trustBoost = p.trustScore != null ? Math.round((Math.min(p.trustScore, 99) / 99) * 6) : 0;
+    // v91: a new pro gets a middle placement boost (3 of 6): not buried,
+    // but not ranked above pros with a proven high score either.
+    const trustBoost = p.trustScoreProvisional === true ? 3 : (p.trustScore != null ? Math.round((Math.min(p.trustScore, 99) / 99) * 6) : 0);
     const score = Math.min(99, Math.round(70 + p.rating * 4 + Math.min(p.jobs, 300) / 30 + communityBoost + trustBoost + jitter));
     return { provider: p, score, sameCommunity };
   }).sort((a, b) => b.score - a.score);
@@ -981,10 +1094,23 @@ router.post('/jobs/:id/cancel', requireAuth, requireRole('customer'), async (req
 // selected once the customer hires someone).
 router.get('/matches/mine', requireAuth, requireRole('provider'), async (req, res) => {
   const matches = await db.filter('matches', m => m.providerId === req.user.sub && ['pending', 'interested'].includes(m.status));
+  const meProvider = await db.find('users', u => u.id === req.user.sub);
   const withJob = await Promise.all(matches.map(async m => {
     const customer = await db.find('users', u => u.id === m.customerId);
-    const job = await db.find('jobs', j => j.id === m.jobId);
-    return { ...m, job, customerName: customer ? customer.name : 'Customer' };
+    const fullJob = await db.find('jobs', j => j.id === m.jobId);
+    // v92: a matched pro is not given the exact pin or the landmark, only
+    // how far away the job is (rounded), worked out from their own shared
+    // location. They get the spot itself once the customer hires them.
+    let job = fullJob, distanceMiles = null, hasPin = false;
+    if (fullJob) {
+      const { jobLocation, landmark, ...rest } = fullJob;
+      job = rest; hasPin = !!jobLocation;
+      const { distanceInMiles, isValidCoordinate } = require('../geo-distance');
+      if (jobLocation && meProvider && isValidCoordinate(meProvider.latitude, meProvider.longitude)) {
+        distanceMiles = Math.max(0.5, Math.round(distanceInMiles(meProvider.latitude, meProvider.longitude, jobLocation.latitude, jobLocation.longitude) * 2) / 2);
+      }
+    }
+    return { ...m, job, distanceMiles, jobHasPin: hasPin, customerName: customer ? customer.name : 'Customer' };
   }));
   res.json({ matches: withJob });
 });
@@ -1181,6 +1307,9 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
     providerId,
     jobId: job.id,
     service: job.description,
+    jobLocation: job.jobLocation || null, // v92: now the hired pro can see where to go
+    landmark: job.landmark || null,
+    address: job.landmark || null,
     amount: finalAmount,
     serviceFee: computeServiceFee(finalAmount),
     status: 'pending_provider_confirmation',
@@ -1294,7 +1423,14 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   if (customer.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to book again shortly. Contact support if you need this resolved sooner.' });
   }
-  const { providerId, service, date, time, address, amount, payCurrency, materialsAdvance, photoUrls, isOffer, useLoyaltyPoints, materialsOnHand } = req.body || {};
+  const { providerId, service, date, time, amount, payCurrency, materialsAdvance, photoUrls, isOffer, useLoyaltyPoints, materialsOnHand } = req.body || {};
+  // v92: a street address is no longer the only way to say where the job
+  // is. A GPS pin or a landmark is enough, because many places have no
+  // street address. At least one of the three is still required.
+  const bookWhere = readJobLocation(req.body);
+  if (bookWhere.error) return res.status(400).json({ error: bookWhere.error });
+  let address = typeof (req.body || {}).address === 'string' ? req.body.address : '';
+  if (address.trim().length < 5 && (bookWhere.landmark || bookWhere.jobLocation)) address = bookWhere.landmark || 'Location pinned on the map';
   if (materialsOnHand && !isNonEmptyString(materialsOnHand, { max: 300 })) {
     return res.status(400).json({ error: 'What you already have must be under 300 characters' });
   }
@@ -1304,7 +1440,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     ['service', typeof service !== 'string' || looksLikeRealText(service), 'Please describe the job in real words so we can match you correctly'],
     ['date', isNonEmptyString(date), 'Pick a date for the job'],
     ['time', isNonEmptyString(time), 'Pick a time for the job'],
-    ['address', isNonEmptyString(address, { min: 5, max: 200 }), 'Enter a valid address'],
+    ['address', isNonEmptyString(address, { min: 5, max: 200 }), 'Tell the pro where the job is: pin the location, describe a landmark, or type an address'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
   const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
@@ -1389,6 +1525,8 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     providerId,
     service: service.trim(),
     date, time, address: address.trim(),
+    jobLocation: bookWhere.jobLocation, // v92
+    landmark: bookWhere.landmark,
     amount: finalContractAmount,
     serviceFee: canRedeemPoints ? 0 : realServiceFee,
     loyaltyPointsRedeemed: canRedeemPoints ? POINTS_FOR_FREE_BOOKING : 0,
@@ -1704,6 +1842,16 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   row('Service Requested', contract.service);
   if (contract.date) row('Scheduled Date & Time', `${contract.date}${contract.time ? '  ·  ' + contract.time : ''}`);
   if (contract.address) row('Service Address', contract.address);
+  // v96: for places with no street address, the agreement names the spot.
+  if (contract.landmark && contract.landmark !== contract.address) row('Landmark', contract.landmark);
+  if (contract.jobLocation && typeof contract.jobLocation.latitude === 'number') {
+    const A = '23456789CFGHJMPQRVWX';
+    let a = Math.floor((Math.min(Math.max(contract.jobLocation.latitude, -90), 90 - 1e-9) + 90) * 8000);
+    let b = Math.floor(((((contract.jobLocation.longitude + 180) % 360) + 360) % 360) * 8000);
+    let code = '';
+    for (let i = 0; i < 5; i++) { code = A[a % 20] + A[b % 20] + code; a = Math.floor(a / 20); b = Math.floor(b / 20); }
+    row('Location pin', `Plus Code ${code.slice(0, 8)}+${code.slice(8)}  (${contract.jobLocation.latitude}, ${contract.jobLocation.longitude})`);
+  }
   twoColumnRow('Agreed Amount (USD)', `$${contract.amount}`, 'Contract Signed', contract.signedAt || new Date(contract.createdAt).toLocaleDateString());
 
   sectionHeader('Escrow & Payment');
@@ -1810,7 +1958,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
       `Page ${i - pageRange.start + 1} of ${pageRange.count}`,
       pageWidth - margin - 90, footerY + 8, { width: 90, align: 'right' }
     );
-    doc.fillColor(gold).fontSize(7.5).font('Helvetica-Bold').text('support@trothen.io', margin, footerY + 26);
+    doc.fillColor(gold).fontSize(7.5).font('Helvetica-Bold').text(require('../platform-settings').supportEmailCached(), margin, footerY + 26); // v95
   }
 
   doc.end();

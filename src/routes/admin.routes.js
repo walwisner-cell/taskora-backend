@@ -477,7 +477,8 @@ router.get('/providers/leaderboard', async (req, res) => {
       trustScore: p.trustScore, plan: p.plan, rating: p.rating, jobs: p.jobs,
       trustScoreUpdatedAt: p.trustScoreUpdatedAt,
       onHold: p.onHold, holdUntil: p.holdUntil,
-      recommendedAction: recommendedActionForScore(p.trustScore),
+      isNew: p.trustScoreProvisional === true, // v91: fewer than five completed jobs; number is provisional
+      recommendedAction: p.trustScoreProvisional === true ? null : recommendedActionForScore(p.trustScore),
     })),
   });
 });
@@ -942,6 +943,7 @@ router.get('/verification-history', requireDepartment(['verification']), async (
   const users = new Map((await db.all('users')).map(u => [u.id, u]));
   const { getSetting } = require('../platform-settings');
   const retentionDays = Number(await getSetting('idDocumentRetentionDays')) || 0;
+  const onHold = await require('../id-retention-scheduler').accountsOnRetentionHold(); // v95
   const history = [];
   for (const v of decided) {
     const user = users.get(v.userId);
@@ -961,7 +963,8 @@ router.get('/verification-history', requireDepartment(['verification']), async (
       reviewedByName: v.reviewedBy === 'persona' || v.source === 'persona' ? 'Automated check' : (reviewer ? reviewer.name : null),
       hasDocument: !!v.documentFilename, hasBack: !!v.backFilename, hasSelfie: !!v.selfieFilename,
       filesDeletedAt: v.filesDeletedAt || null,
-      filesDeleteOn: (retentionDays > 0 && decidedAt && (v.documentFilename || v.selfieFilename || v.backFilename))
+      filesHeldReason: (v.documentFilename || v.selfieFilename || v.backFilename) ? (onHold.get(v.userId) || null) : null, // v95: kept past the period while this is open
+      filesDeleteOn: (retentionDays > 0 && decidedAt && (v.documentFilename || v.selfieFilename || v.backFilename) && !onHold.has(v.userId))
         ? new Date(new Date(decidedAt).getTime() + retentionDays * 86400000).toISOString().slice(0, 10) : null,
     });
     if (history.length >= 200) break;
@@ -1314,8 +1317,10 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   // v84: the decision has to be spelled out. It used to be that anything
   // other than "refund_customer" (a typo, or nothing at all) quietly
   // released the money to the pro.
-  if (!['refund_customer', 'release_to_provider'].includes(decision)) {
-    return res.status(400).json({ error: 'Choose a decision: refund the customer, or release the payment to the pro' });
+  // v96: a third outcome, "split": part goes back to the customer and the
+  // rest is released to the pro.
+  if (!['refund_customer', 'release_to_provider', 'split'].includes(decision)) {
+    return res.status(400).json({ error: 'Choose a decision: refund the customer, release the payment to the pro, or split it' });
   }
   const outcome = decision;
   // Item: Joseph asked for a real way for the dispute team to explain a
@@ -1342,6 +1347,20 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   if (outcome === 'release_to_provider' && escrowNow && escrowNow.status === 'refunded') {
     return res.status(409).json({ error: 'This payment has already been refunded to the customer, so it can\'t be released to the pro.' });
   }
+  // v96: split. Only possible while the whole payment is still held, so
+  // the two parts always add up to exactly what the customer paid.
+  let splitRefund = 0;
+  if (outcome === 'split') {
+    if (!escrowNow) return res.status(409).json({ error: 'There is no payment on this booking to split.' });
+    if (escrowNow.status !== 'held' || escrowNow.payoutId || escrowNow.materialsAdvancePayoutId) {
+      return res.status(409).json({ error: 'A split is only possible while the whole payment is still held. Part of this one has already been released, refunded or paid out.' });
+    }
+    const amt = Number((req.body || {}).refundAmount);
+    splitRefund = Math.round(amt * 100) / 100;
+    if (!Number.isFinite(amt) || splitRefund <= 0 || splitRefund >= escrowNow.amount) {
+      return res.status(400).json({ error: `Enter how much to refund to the customer: more than 0 and less than the full $${escrowNow.amount}. For all or nothing, use Refund or Release instead.` });
+    }
+  }
 
   const updated = await db.update('disputes', dispute.id, { status: 'resolved', resolvedAt: new Date().toISOString(), resolution: outcome });
   const resolvingAdmin = await me(req);
@@ -1349,7 +1368,7 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
     id: `dal_${nanoid(10)}`,
     disputeId: dispute.id,
     action: 'resolve',
-    note: `${outcome === 'refund_customer' ? 'Resolved: refunded the customer' : 'Resolved: released escrow to the provider'} — ${trimmedNote}`,
+    note: `${outcome === 'refund_customer' ? 'Resolved: refunded the customer' : outcome === 'split' ? `Resolved: split. $${splitRefund} refunded to the customer, the rest released to the provider` : 'Resolved: released escrow to the provider'} — ${trimmedNote}`,
     actorId: resolvingAdmin ? resolvingAdmin.id : null,
     actorName: resolvingAdmin ? resolvingAdmin.name : 'Unknown admin',
     createdAt: new Date().toISOString(),
@@ -1368,6 +1387,21 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
       if (pro) await db.update('users', pro.id, { jobs: (pro.jobs || 0) + 1 });
       try { await require('../commission').checkAndAdvanceProviderTier(contract.providerId); } catch (e) { /* never block a resolution on this */ }
     }
+  }
+
+  if (outcome === 'split') {
+    const released = Math.round((escrow.amount - splitRefund) * 100) / 100;
+    // The payment record now carries the part released to the pro (so
+    // commission and the payout are worked out on that part only), and
+    // remembers the original amount and the part refunded.
+    await db.update('escrowTransactions', escrow.id, { status: 'released', originalAmount: escrow.amount, refundedAmount: splitRefund, amount: released, splitByDisputeId: dispute.id });
+    await db.update('disputes', dispute.id, { refundedAmount: splitRefund, releasedAmount: released });
+    if (contract) {
+      await db.update('contracts', contract.id, { refundedAmount: splitRefund });
+      await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved with a split: $${splitRefund} is refunded to you and $${released} goes to your pro. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved with a split: $${released} is released to you and $${splitRefund} is refunded to the customer. ${trimmedNote}`, 'bookingUpdates', { section: 'earnings' });
+    }
+    return res.json({ dispute: { ...updated, refundedAmount: splitRefund, releasedAmount: released } });
   }
 
   if (outcome === 'refund_customer') {
@@ -1455,7 +1489,12 @@ router.post('/disputes/:id/action', requireSuperAdmin, async (req, res) => {
   if (contract) {
     if (action === 'reopen') {
       // back to frozen, so it can be decided again
-      if (escrowForAction && escrowForAction.status === 'released') await db.update('escrowTransactions', escrowForAction.id, { status: 'held' });
+      if (escrowForAction && escrowForAction.status === 'released') {
+        // v96: if it had been split, the full original amount goes back on hold.
+        const restore = escrowForAction.originalAmount != null ? { amount: escrowForAction.originalAmount, originalAmount: null, refundedAmount: null, splitByDisputeId: null } : {};
+        await db.update('escrowTransactions', escrowForAction.id, { status: 'held', ...restore });
+        if (escrowForAction.originalAmount != null) await db.update('contracts', contract.id, { refundedAmount: null });
+      }
       if (contract.status === 'completed' && contract.completedVia === 'dispute') {
         const pro = await db.find('users', u => u.id === contract.providerId);
         if (pro && (pro.jobs || 0) > 0) await db.update('users', pro.id, { jobs: pro.jobs - 1 });
@@ -2096,7 +2135,39 @@ router.patch('/settings/footer', requireSuperAdmin, async (req, res) => {
   const footer = { companyName: companyName.trim(), location: location.trim(), supportEmail: supportEmail.trim(), copyrightYear: year };
   const { setSetting } = require('../platform-settings');
   await setSetting('footerInfo', footer);
+  require('../platform-settings').publicSupportEmail().catch(() => {}); // v95
   res.json({ ok: true, footer });
+});
+
+// GET /api/admin/settings/contact-check — v95: the one support email that
+// visitors see, where it is used, and advice about it.
+router.get('/settings/contact-check', requireSuperAdminOrCustomerService, async (req, res) => {
+  const ps = require('../platform-settings');
+  const email = await ps.publicSupportEmail();
+  const host = (process.env.APP_URL ? String(process.env.APP_URL).replace(/^https?:\/\//, '').replace(/\/.*$/, '') : req.get('host')) || '';
+  res.json({
+    email,
+    advice: ps.supportEmailAdvice(email, host),
+    usedIn: ['the footer of every page', 'the Terms of Service', 'the Privacy Policy', 'PDF reports and agreements', 'the support chat'],
+    retentionDays: Number(await ps.getSetting('idDocumentRetentionDays')) || 0,
+  });
+});
+
+// v94: the Privacy Policy, editable like the Terms of Service.
+router.get('/settings/privacy-policy', requireSuperAdminOrCustomerService, async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ content: await getSetting('privacyPolicyContent') });
+});
+router.patch('/settings/privacy-policy', requireSuperAdminOrCustomerService, async (req, res) => {
+  const { content } = req.body || {};
+  if (!isNonEmptyString(content, { min: 10, max: 50000 })) {
+    return res.status(400).json({ error: 'Enter some content (up to 50,000 characters)' });
+  }
+  const { setSetting } = require('../platform-settings');
+  await setSetting('privacyPolicyContent', content.trim());
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'privacy_policy_update', String(content.trim().length));
+  res.json({ ok: true, content: content.trim() });
 });
 
 router.get('/settings/terms-of-service-customer', requireSuperAdminOrCustomerService, async (req, res) => {
