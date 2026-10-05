@@ -37,7 +37,7 @@ Requiring a government ID from every customer before their first booking is the 
 - No script errors.
 
 
-> Note: the byte counts and deploy steps below are from when this version was made. Later versions changed some of the same files. Use the table and steps in CHANGES_v85.md.
+> Note: the byte counts and deploy steps below are from when this version was made. Later versions changed some of the same files. Use the table and steps in CHANGES_v86.md.
 
 ## Files changed (complete replacements; this zip also includes v74)
 | File | Bytes |
@@ -48,7 +48,7 @@ Requiring a government ID from every customer before their first booking is the 
 | src\routes\marketplace.routes.js | 119842 |
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v85-files.zip.
+1. Unzip trothen-v86-files.zip.
 2. From the unzipped folder, copy the files over the old ones, keeping the folders:
    ```
    copy /Y public\index.html "C:\path\to\trothen-backend\public\index.html"

@@ -61,7 +61,7 @@ async function sweepProviderScores() {
     // before, since it's a genuine re-earned milestone each time.
     if (result.total >= 90 && (previousScore == null || previousScore < 90)) {
       await db.update('users', provider.id, { freeCommissionCredits: (provider.freeCommissionCredits || 0) + 2 });
-      await notify(provider.id, '🏆', `Your Trust Score reached ${result.total}/99 — you've earned 2 commission-free jobs, applied automatically to your next payouts.`, null, { section: 'earnings' });
+      await notify(provider.id, '🏆', `Your Trothen Score reached ${result.total}/100 — you've earned 2 commission-free jobs, applied automatically to your next payouts.`, null, { section: 'earnings' });
     }
 
     const action = recommendedActionForScore(result.total);
@@ -76,7 +76,7 @@ async function sweepProviderScores() {
     const verificationAdmins = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'verification');
     const recipients = [...superAdmins, ...regionalAdmins, ...verificationAdmins];
     for (const admin of recipients) {
-      await notify(admin.id, '⚠️', `${provider.name}'s trust score dropped to ${result.total}/99 — recommended: ${action.label}.`, null, { section: 'people' });
+      await notify(admin.id, '⚠️', `${provider.name}'s Trothen Score dropped to ${result.total}/100 — recommended: ${action.label}.`, null, { section: 'people' });
     }
     flagged += 1;
   }

@@ -62,7 +62,7 @@ I did not go through every screen and route. Not checked this round: the dispute
 - Checked the Forgot password message and the Reset password dialog in a real browser. No script errors.
 
 
-> Note: the byte counts and deploy steps below are from when this version was made. Use the table and steps in CHANGES_v85.md.
+> Note: the byte counts and deploy steps below are from when this version was made. Use the table and steps in CHANGES_v86.md.
 
 ## Files (complete replacements; this zip includes v74 to v80)
 | File | Bytes |
@@ -84,7 +84,7 @@ I did not go through every screen and route. Not checked this round: the dispute
 Changed in this version: server.js, public\index.html, src\routes\auth.routes.js, src\routes\misc.routes.js, src\routes\admin.routes.js, src\routes\marketplace.routes.js, src\routes\payments.routes.js. New: src\terms.js.
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v85-files.zip.
+1. Unzip trothen-v86-files.zip.
 2. From the unzipped folder (replace the path with my repo folder):
    ```
    set REPO=C:\path\to\trothen-backend

@@ -928,7 +928,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
     // toward the more reliable provider. A provider with no trust score
     // computed yet (brand new account, before the first daily sweep runs)
     // is unaffected — this term is simply zero, not treated as a penalty.
-    const trustBoost = p.trustScore != null ? Math.round((p.trustScore / 99) * 6) : 0;
+    const trustBoost = p.trustScore != null ? Math.round((Math.min(p.trustScore, 99) / 99) * 6) : 0;
     const score = Math.min(99, Math.round(70 + p.rating * 4 + Math.min(p.jobs, 300) / 30 + communityBoost + trustBoost + jitter));
     return { provider: p, score, sameCommunity };
   }).sort((a, b) => b.score - a.score);

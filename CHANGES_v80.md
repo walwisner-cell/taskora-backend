@@ -73,7 +73,7 @@ The real problem: a photo taken with a modern phone camera is often 5 to 15MB, a
 - No script errors.
 
 
-> Note: the byte counts and deploy steps below are from when this version was made. Use the table and steps in CHANGES_v85.md.
+> Note: the byte counts and deploy steps below are from when this version was made. Use the table and steps in CHANGES_v86.md.
 
 ## Files (complete replacements; this zip includes v74 to v79)
 | File | Bytes |
@@ -94,7 +94,7 @@ The real problem: a photo taken with a modern phone camera is often 5 to 15MB, a
 Changed in this version: public\index.html, src\routes\misc.routes.js, src\routes\admin.routes.js, src\routes\portfolio.routes.js, src\id-retention-scheduler.js.
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v85-files.zip.
+1. Unzip trothen-v86-files.zip.
 2. From the unzipped folder (replace the path with my repo folder):
    ```
    set REPO=C:\path\to\trothen-backend

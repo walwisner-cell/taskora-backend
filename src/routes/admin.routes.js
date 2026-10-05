@@ -48,12 +48,63 @@ async function me(req) {
 // set: sales leads are about custom multi-seat organization deals, which
 // aren't really a per-city concept the way disputes or verification
 // queues are.
+// v90: a regional admin can now cover a WHOLE COUNTRY instead of one city.
+//
+// Why: city scope compares the admin's city with the exact city text each
+// person typed when they signed up. "Monrovia", "monrovia", "Paynesville"
+// and "Monrovia City" are all different strings, so an admin "for
+// Monrovia" could open their dashboard and see almost nobody. Country
+// comes from a fixed list, so country scope can't miss people that way.
+//
+// An admin record carries adminScope: 'country' or 'city' (missing means
+// 'city', so every admin created before this behaves exactly as before).
+// For a country-wide admin, myRegion() returns a CountryScope: it prints
+// as the country's name wherever a label is needed, and inRegion() below
+// knows to compare countries. For a city admin it still returns the plain
+// city text. Every "is this person mine?" check goes through inRegion().
+class CountryScope extends String {
+  constructor(country) { super(country); this.country = country; }
+}
+const sameText = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+function inRegion(region, person) {
+  if (!region) return true;           // super admin / global role: everyone
+  if (!person) return false;
+  if (region instanceof CountryScope) return sameText(person.country, region.country);
+  return sameText(person.city, region); // v90: capital letters and stray spaces no longer make a city miss
+}
+// An ad belongs to a city admin when it targets their city, and to a
+// country admin when the pro who placed it is in their country.
+function adInRegion(region, ad, pro) {
+  if (!region) return true;
+  if (region instanceof CountryScope) return !!pro && sameText(pro.country, region.country);
+  return sameText(ad.targetCity, region);
+}
+// For records that only carry a city typed by a member of the public
+// (contact messages, job applications): a country-wide admin gets the
+// ones with no city, the ones that name their country, and the ones whose
+// city is a city known in their country. A city admin gets their city.
+async function adminCovers(m, item) {
+  if (!m || m.isSuperAdmin) return true;
+  if (m.adminScope === 'country' && m.country) {
+    if (item.country) return sameText(item.country, m.country);
+    if (!item.city) return true;
+    const known = new Set([
+      ...(await db.filter('cities', c => sameText(c.country, m.country))).map(c => String(c.name || '').trim().toLowerCase()),
+      ...(await db.filter('users', u => sameText(u.country, m.country) && u.city)).map(u => String(u.city).trim().toLowerCase()),
+    ]);
+    return known.has(String(item.city).trim().toLowerCase());
+  }
+  return sameText(item.city, m.city);
+}
+function regionWord(region) { return region instanceof CountryScope ? 'country' : 'city'; }
+
 async function myRegion(req) {
   const m = await me(req);
   if (!m) return null;
   if (m.isSuperAdmin) return null;
-  if (!m.adminDepartment) return m.region; // plain regional admin — unchanged, always scoped
-  if (m.adminDepartment !== 'sales' && m.regionScoped) return m.city;
+  const scoped = () => (m.adminScope === 'country' && m.country) ? new CountryScope(m.country) : (m.region || m.city);
+  if (!m.adminDepartment) return scoped(); // plain regional admin — always scoped
+  if (m.adminDepartment !== 'sales' && m.regionScoped) return scoped();
   return null;
 }
 
@@ -127,11 +178,11 @@ function requireSuperAdminOrCustomerService(req, res, next) {
 // up front instead of two individual database round-trips per dispute —
 // harmless today on the small JSON-file store, but a real, meaningful
 // difference once this runs against actual Postgres at scale.
-async function disputeCity(dispute, contractById, customerById) {
+async function disputeCustomer(dispute, contractById, customerById) {
   const contract = contractById ? contractById.get(dispute.contractId) : await db.find('contracts', c => c.id === dispute.contractId);
   if (!contract) return null;
   const customer = customerById ? customerById.get(contract.customerId) : await db.find('users', u => u.id === contract.customerId);
-  return customer ? customer.city : null;
+  return customer || null;
 }
 
 function publicAdmin(u, options = {}) {
@@ -158,7 +209,7 @@ function publicAdmin(u, options = {}) {
 // GET /api/admin/stats
 router.get('/stats', async (req, res) => {
   const region = await myRegion(req);
-  const users = (await db.all('users')).filter(u => !region || u.city === region);
+  const users = (await db.all('users')).filter(u => !region || inRegion(region, u));
   const allContracts = await db.all('contracts');
   const allCustomersForStats = await db.filter('users', u => u.role === 'customer');
   const customerByIdForStats = new Map(allCustomersForStats.map(c => [c.id, c]));
@@ -166,13 +217,13 @@ router.get('/stats', async (req, res) => {
   const allDisputes = await db.all('disputes');
   const disputes = [];
   for (const d of allDisputes) {
-    if (!region || (await disputeCity(d, contractByIdForStats, customerByIdForStats)) === region) disputes.push(d);
+    if (!region || inRegion(region, await disputeCustomer(d, contractByIdForStats, customerByIdForStats))) disputes.push(d);
   }
   const contracts = [];
   for (const c of allContracts) {
     if (!region) { contracts.push(c); continue; }
     const customer = customerByIdForStats.get(c.customerId);
-    if (customer && customer.city === region) contracts.push(c);
+    if (customer && inRegion(region, customer)) contracts.push(c);
   }
   const pendingUsers = users.filter(u => u.role !== 'admin' && u.verified === false).length;
   const gmv = contracts.reduce((s, c) => s + (c.amount || 0), 0);
@@ -210,9 +261,9 @@ router.get('/reports/analytics', async (req, res) => {
   // regional admin's reports should reflect their own city's activity,
   // not the whole platform's.
   const contracts = region
-    ? allContracts.filter(c => { const cust = customerById.get(c.customerId); return cust && cust.city === region; })
+    ? allContracts.filter(c => { const cust = customerById.get(c.customerId); return cust && inRegion(region, cust); })
     : allContracts;
-  const providers = region ? allProviders.filter(p => p.city === region) : allProviders;
+  const providers = region ? allProviders.filter(p => inRegion(region, p)) : allProviders;
 
   // ── Category performance: REAL demand (bookings), not provider supply ──
   const catStats = new Map(); // category -> { jobsBooked, gmv, ratings: [] }
@@ -290,7 +341,7 @@ router.get('/reports/analytics', async (req, res) => {
 // GET /api/admin/users/pending
 router.get('/users/pending', async (req, res) => {
   const region = await myRegion(req);
-  const pending = (await db.filter('users', u => u.role !== 'admin' && u.verified === false && u.status !== 'approved' && u.status !== 'rejected' && (!region || u.city === region)))
+  const pending = (await db.filter('users', u => u.role !== 'admin' && u.verified === false && u.status !== 'approved' && u.status !== 'rejected' && (!region || inRegion(region, u))))
     .map(publicAdmin);
   res.json({ users: pending });
 });
@@ -306,7 +357,7 @@ router.get('/users/all', async (req, res) => {
   const region = await myRegion(req);
   const { role } = req.query;
   let users = await db.filter('users', u => u.role === 'customer' || u.role === 'provider');
-  if (region) users = users.filter(u => u.city === region);
+  if (region) users = users.filter(u => inRegion(region, u));
   if (role && ['customer', 'provider'].includes(role)) users = users.filter(u => u.role === role);
   // publicAdmin() masks contact info by default for any customer/provider
   // record — see its definition above for the full reasoning. This was
@@ -371,7 +422,7 @@ router.get('/users/:id/contact', async (req, res) => {
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.id && (u.role === 'customer' || u.role === 'provider'));
   if (!target) return res.status(404).json({ error: 'Person not found' });
-  if (region && target.city !== region) return res.status(403).json({ error: 'That person is outside your assigned city' });
+  if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That person is outside the area you manage' });
   const { logAccess } = require('../access-log');
   await logAccess(req, 'contact_info_reveal', target.id);
   res.json({ email: target.email, phone: target.phone, address: [target.address, target.zipCode].filter(Boolean).join(', ') || null });
@@ -403,7 +454,7 @@ router.get('/providers/:id/score', async (req, res) => {
   const region = await myRegion(req);
   const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
-  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  if (region && !inRegion(region, provider)) return res.status(403).json({ error: 'That provider is outside the area you manage' });
   const { computeProviderScore, recommendedActionForScore } = require('../provider-score');
   const result = await computeProviderScore(provider.id);
   res.json({ ...result, recommendedAction: recommendedActionForScore(result.total) });
@@ -418,7 +469,7 @@ router.get('/providers/leaderboard', async (req, res) => {
   const region = await myRegion(req);
   const { recommendedActionForScore } = require('../provider-score');
   let providers = await db.filter('users', u => u.role === 'provider' && u.trustScore != null);
-  if (region) providers = providers.filter(p => p.city === region);
+  if (region) providers = providers.filter(p => inRegion(region, p));
   providers.sort((a, b) => (b.trustScore || 0) - (a.trustScore || 0));
   res.json({
     providers: providers.map(p => ({
@@ -446,7 +497,7 @@ router.post('/providers/:id/hold', async (req, res) => {
   const region = await myRegion(req);
   const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
-  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  if (region && !inRegion(region, provider)) return res.status(403).json({ error: 'That provider is outside the area you manage' });
 
   const { months, reason } = req.body || {};
   if (typeof months !== 'number' || months <= 0 || months > 24) {
@@ -479,7 +530,7 @@ router.patch('/users/:id/status', async (req, res) => {
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.id && (u.role === 'customer' || u.role === 'provider'));
   if (!target) return res.status(404).json({ error: 'User not found' });
-  if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That user is outside the area you manage' });
   const updated = await db.update('users', target.id, { active });
   await notify(target.id, active ? '✅' : '⛔', active ? 'Your account has been reactivated.' : 'Your account has been suspended. Contact support for details.', null, { section: 'settings' });
 
@@ -527,7 +578,7 @@ router.post('/providers/:id/propose-commission-rate', async (req, res) => {
   const region = await myRegion(req);
   const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
-  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  if (region && !inRegion(region, provider)) return res.status(403).json({ error: 'That provider is outside the area you manage' });
   if (provider.commissionRateOverrideStatus === 'pending') {
     return res.status(400).json({ error: 'This provider already has a proposal awaiting approval' });
   }
@@ -598,7 +649,7 @@ router.patch('/users/:id/hold', async (req, res) => {
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.id && (u.role === 'customer' || u.role === 'provider'));
   if (!target) return res.status(404).json({ error: 'User not found' });
-  if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That user is outside the area you manage' });
   const updated = await db.update('users', target.id, {
     onHold,
     holdReason: onHold ? (reason || 'Placed on hold by an admin') : null,
@@ -636,7 +687,7 @@ router.post('/users/:id/decide', requireDepartment(['verification', 'customer_se
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
-  if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That user is outside the area you manage' });
   const finalRejectionReason = decision === 'reject' ? rejectionReason.trim() : null;
   // A provider's "ID checked" badge (the `verified` flag) now comes only
   // from an ID that was actually reviewed — an approved document in the
@@ -671,7 +722,7 @@ router.post('/users/:id/decide', requireDepartment(['verification', 'customer_se
 router.get('/providers-with-guarantors', requireDepartment(['verification']), async (req, res) => {
   const region = await myRegion(req);
   let providers = await db.filter('users', u => u.role === 'provider' && u.guarantors && u.guarantors.length > 0);
-  if (region) providers = providers.filter(p => p.city === region);
+  if (region) providers = providers.filter(p => inRegion(region, p));
   res.json({ providers: providers.map(p => ({ id: p.id, name: p.name, city: p.city, category: p.category, guarantors: p.guarantors })) });
 });
 
@@ -683,7 +734,7 @@ router.patch('/providers/:id/guarantors/:index', requireDepartment(['verificatio
   const region = await myRegion(req);
   const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
-  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  if (region && !inRegion(region, provider)) return res.status(403).json({ error: 'That provider is outside the area you manage' });
   const idx = parseInt(req.params.index, 10);
   const guarantors = provider.guarantors || [];
   if (!Number.isInteger(idx) || idx < 0 || idx >= guarantors.length) {
@@ -710,7 +761,7 @@ router.get('/verification-queue', requireDepartment(['verification']), async (re
     const user = await db.find('users', u => u.id === v.userId);
     const { documentFilename, selfieFilename, backFilename, ...vSafe } = v;
     const entry = { ...vSafe, userName: user ? user.name : 'Unknown', accountName: user ? user.name : null, role: user ? user.role : null, country: user ? user.country : '', city: user ? user.city : null, hasDocument: !!v.documentFilename, hasSelfie: !!v.selfieFilename, hasBack: !!v.backFilename };
-    if (!region || entry.city === region) queue.push(entry);
+    if (!region || inRegion(region, entry)) queue.push(entry);
   }
   // v77: tell the reviewer how files are being kept, so a storage problem
   // or the retention period is visible on the page, not buried in logs.
@@ -821,7 +872,7 @@ router.post('/verification-gaps-ask-all', requireDepartment(['verification']), a
   const region = await myRegion(req);
   const approvedIds = new Set((await db.filter('verifications', v => v.status === 'approved')).map(v => v.userId));
   const openIds = new Set((await db.filter('verifications', v => ['pending', 'review_required'].includes(v.status))).map(v => v.userId));
-  const people = await db.filter('users', u => (u.role === 'provider' || u.role === 'customer') && u.verified === true && !approvedIds.has(u.id) && !openIds.has(u.id) && (!region || u.city === region));
+  const people = await db.filter('users', u => (u.role === 'provider' || u.role === 'customer') && u.verified === true && !approvedIds.has(u.id) && !openIds.has(u.id) && (!region || inRegion(region, u)));
   for (const p of people) {
     await notify(p.id, '🪪', p.role === 'customer'
       ? 'Please verify your identity in the Verification section, so your "Verified" status is backed by a reviewed ID.'
@@ -860,7 +911,7 @@ router.get('/verification/:id/back', requireDepartment(['verification']), async 
   if (!record || !record.backFilename) return res.status(404).json({ error: 'No back of ID on record' });
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
-  if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && (!user || !inRegion(region, user))) return res.status(403).json({ error: 'That user is outside the area you manage' });
   const { logAccess } = require('../access-log');
   await logAccess(req, 'verification_document_back', record.id);
   sendPrivateIdFile(res, record.backFilename);
@@ -874,7 +925,7 @@ router.get('/verification/:id/selfie', requireDepartment(['verification']), asyn
   if (!record || !record.selfieFilename) return res.status(404).json({ error: 'No face photo on record' });
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
-  if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && (!user || !inRegion(region, user))) return res.status(403).json({ error: 'That user is outside the area you manage' });
   const { logAccess } = require('../access-log');
   await logAccess(req, 'verification_selfie', record.id);
   sendPrivateIdFile(res, record.selfieFilename);
@@ -894,7 +945,7 @@ router.get('/verification-history', requireDepartment(['verification']), async (
   const history = [];
   for (const v of decided) {
     const user = users.get(v.userId);
-    if (region && (!user || user.city !== region)) continue;
+    if (region && (!user || !inRegion(region, user))) continue;
     const reviewer = v.reviewedBy && v.reviewedBy !== 'persona' ? users.get(v.reviewedBy) : null;
     const decidedAt = v.reviewedAt || v.createdAt || null;
     history.push({
@@ -926,7 +977,7 @@ router.get('/verification-gaps', requireDepartment(['verification']), async (req
   const region = await myRegion(req);
   const approvedIds = new Set((await db.filter('verifications', v => v.status === 'approved')).map(v => v.userId));
   const openIds = new Set((await db.filter('verifications', v => ['pending', 'review_required'].includes(v.status))).map(v => v.userId));
-  const gaps = (await db.filter('users', u => (u.role === 'provider' || u.role === 'customer') && u.verified === true && !approvedIds.has(u.id) && (!region || u.city === region)))
+  const gaps = (await db.filter('users', u => (u.role === 'provider' || u.role === 'customer') && u.verified === true && !approvedIds.has(u.id) && (!region || inRegion(region, u))))
     .map(u => ({ id: u.id, name: u.name, role: u.role, city: u.city || null, country: u.country || null, idSubmitted: openIds.has(u.id) }));
   res.json({ gaps });
 });
@@ -938,7 +989,7 @@ router.post('/verification-gaps/:userId', requireDepartment(['verification']), a
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.userId && (u.role === 'provider' || u.role === 'customer'));
   if (!target) return res.status(404).json({ error: 'Person not found' });
-  if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That user is outside the area you manage' });
   const isCustomer = target.role === 'customer';
   if (action === 'remove_badge') {
     await db.update('users', target.id, { verified: false });
@@ -969,7 +1020,7 @@ router.get('/verification/:id/document', requireDepartment(['verification']), as
   if (!record || !record.documentFilename) return res.status(404).json({ error: 'Document not found' });
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
-  if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && (!user || !inRegion(region, user))) return res.status(403).json({ error: 'That user is outside the area you manage' });
   // Every look at someone's ID is recorded (who, when, which record), and
   // the file is never kept in the browser's or any proxy's cache.
   const { logAccess } = require('../access-log');
@@ -994,7 +1045,7 @@ router.post('/verification/:id/decide', requireDepartment(['verification']), asy
   }
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
-  if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && (!user || !inRegion(region, user))) return res.status(403).json({ error: 'That user is outside the area you manage' });
   if (user && user.id === req.user.sub) return res.status(403).json({ error: 'You can\'t review your own verification' });
   const status = decision === 'approve' ? 'approved' : 'rejected';
   const finalRejectionReason = decision === 'reject' ? rejectionReason.trim() : null;
@@ -1023,7 +1074,7 @@ router.get('/disputes', requireDepartment(['disputes', 'customer_service', 'lega
   for (const d of all) {
     if (from && (d.createdAt || '').slice(0, 10) < from) continue;
     if (to && (d.createdAt || '').slice(0, 10) > to) continue;
-    if (!region || (await disputeCity(d, contractByIdForDisputes, customerByIdForDisputes)) === region) disputes.push(d);
+    if (!region || inRegion(region, await disputeCustomer(d, contractByIdForDisputes, customerByIdForDisputes))) disputes.push(d);
   }
   res.json({ disputes });
 });
@@ -1075,7 +1126,7 @@ router.get('/disputes/pdf', requireDepartment(['disputes', 'customer_service', '
   for (const d of all) {
     if (from && (d.createdAt || '').slice(0, 10) < from) continue;
     if (to && (d.createdAt || '').slice(0, 10) > to) continue;
-    if (!region || (await disputeCity(d, contractByIdForDisputesPdf, customerByIdForDisputesPdf)) === region) disputes.push(d);
+    if (!region || inRegion(region, await disputeCustomer(d, contractByIdForDisputesPdf, customerByIdForDisputesPdf))) disputes.push(d);
   }
   disputes.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
@@ -1132,7 +1183,7 @@ router.get('/transactions', requireDepartment(['financial', 'accountant', 'contr
   }));
   const orgsById = new Map((await db.all('organizations')).map(o => [o.id, o]));
 
-  const scoped = region ? rows.filter(r => r.customer && r.customer.city === region) : rows;
+  const scoped = region ? rows.filter(r => r.customer && inRegion(region, r.customer)) : rows;
   const transactions = scoped.map(({ c, customer, provider, escrow }) => {
     const materialsAdvanceAmount = (escrow && escrow.materialsAdvanceAmount) || 0;
     // Real commission is only recorded on the payout itself, once it's
@@ -1183,7 +1234,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'c
     const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
     return { c, customer, provider, escrow };
   }));
-  const scoped = (region ? rows.filter(r => r.customer && r.customer.city === region) : rows)
+  const scoped = (region ? rows.filter(r => r.customer && inRegion(region, r.customer)) : rows)
     .sort((a, b) => new Date(a.c.createdAt) - new Date(b.c.createdAt));
 
   const me_ = await me(req);
@@ -1198,7 +1249,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'c
   if (from) payoutsInScope = payoutsInScope.filter(p => (p.date || '').slice(0, 10) >= from);
   if (to) payoutsInScope = payoutsInScope.filter(p => (p.date || '').slice(0, 10) <= to);
   if (region) {
-    const regionalProviderIds = new Set((await db.filter('users', u => u.role === 'provider' && u.city === region)).map(u => u.id));
+    const regionalProviderIds = new Set((await db.filter('users', u => u.role === 'provider' && inRegion(region, u))).map(u => u.id));
     payoutsInScope = payoutsInScope.filter(p => regionalProviderIds.has(p.providerId));
   }
   const payoutsCommissionInScope = payoutsInScope.reduce((s, p) => s + (p.commissionAmount || 0), 0);
@@ -1249,7 +1300,7 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   const region = await myRegion(req);
   const dispute = await db.find('disputes', d => d.id === req.params.id);
   if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
-  if (region && (await disputeCity(dispute)) !== region) return res.status(403).json({ error: 'That dispute is outside your assigned city' });
+  if (region && !inRegion(region, await disputeCustomer(dispute))) return res.status(403).json({ error: 'That dispute is outside the area you manage' });
 
   // Previously this only ever had one outcome: release escrow to the
   // provider, no matter what the dispute was actually about. If a
@@ -1450,7 +1501,7 @@ router.get('/disputes/:id/audit-log', requireDepartment(['disputes', 'customer_s
   const region = await myRegion(req);
   const dispute = await db.find('disputes', d => d.id === req.params.id);
   if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
-  if (region && (await disputeCity(dispute)) !== region) return res.status(403).json({ error: 'That dispute is outside your assigned city' });
+  if (region && !inRegion(region, await disputeCustomer(dispute))) return res.status(403).json({ error: 'That dispute is outside the area you manage' });
   const log = (await db.filter('disputeAuditLog', l => l.disputeId === dispute.id)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   res.json({ log });
 });
@@ -2501,7 +2552,7 @@ router.get('/cities', requireSuperAdmin, async (req, res) => {
   const cities = await Promise.all(allCities.map(async c => {
     const admin = await db.find('users', u => u.id === c.adminId);
     const userCount = (await db.filter('users', u => u.city === c.name && u.role !== 'admin')).length;
-    return { ...c, adminName: admin ? admin.name : null, adminEmail: admin ? admin.email : null, adminActive: admin ? admin.active !== false : null, userCount };
+    return { ...c, adminName: admin ? admin.name : null, adminEmail: admin ? admin.email : null, adminActive: admin ? admin.active !== false : null, adminScope: admin && admin.adminScope === 'country' ? 'country' : 'city', userCount };
   }));
   res.json({ cities });
 });
@@ -2535,7 +2586,8 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
   if (!m.isSuperAdmin && m.adminDepartment !== 'customer_service') {
     return res.status(403).json({ error: 'Only a super admin or the customer service team can add new employees.' });
   }
-  const { name, email, password, city, country, department, regionScoped } = req.body || {};
+  const { name, email, password, city, country, department, regionScoped, scope } = req.body || {};
+  if (scope !== undefined && !['country', 'city'].includes(scope)) return res.status(400).json({ error: 'scope must be country or city' });
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
@@ -2559,6 +2611,7 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
     name: name.trim(), email: email.trim(), city, country,
     role: 'admin',
     region: city,
+    adminScope: scope === 'country' ? 'country' : 'city', // v90: whole country, or just the city above
     isSuperAdmin: false,
     adminDepartment: department || null,
     active: true,
@@ -2595,6 +2648,12 @@ router.patch('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
   if ('active' in (req.body || {})) {
     if (typeof req.body.active !== 'boolean') return res.status(400).json({ error: 'active must be true or false' });
     patch.active = req.body.active;
+  }
+  // v90: switch an existing admin between one city and the whole country.
+  if ('scope' in (req.body || {})) {
+    if (!['country', 'city'].includes(req.body.scope)) return res.status(400).json({ error: 'scope must be country or city' });
+    if (req.body.scope === 'country' && !target.country) return res.status(400).json({ error: 'This admin has no country on their account. Set one first.' });
+    patch.adminScope = req.body.scope;
   }
   if ('city' in (req.body || {})) {
     if (!isNonEmptyString(req.body.city, { min: 2, max: 100 })) return res.status(400).json({ error: 'Enter a valid city' });
@@ -2674,7 +2733,9 @@ router.get('/contact-submissions', async (req, res) => {
   if (!m) return res.status(403).json({ error: 'Not authorized' });
   let submissions = (await db.all('contactSubmissions')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   if (!m.isSuperAdmin) {
-    submissions = submissions.filter(s => !s.city || s.city === m.city);
+    const kept = [];
+    for (const sub of submissions) if (!sub.city || await adminCovers(m, sub)) kept.push(sub);
+    submissions = kept;
   }
   res.json({ submissions });
 });
@@ -2691,8 +2752,8 @@ router.patch('/contact-submissions/:id/status', async (req, res) => {
   }
   const target = await db.find('contactSubmissions', s => s.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'Submission not found' });
-  if (!m.isSuperAdmin && target.city && target.city !== m.city) {
-    return res.status(403).json({ error: 'That submission is outside your assigned city' });
+  if (!m.isSuperAdmin && target.city && !(await adminCovers(m, target))) {
+    return res.status(403).json({ error: 'That submission is outside the area you manage' });
   }
   const updated = await db.update('contactSubmissions', target.id, { status });
   res.json({ submission: updated });
@@ -2712,7 +2773,9 @@ router.get('/careers-inquiries', async (req, res) => {
   }
   let inquiries = (await db.all('careersInquiries')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   if (isPlainRegionalManager || isRegionalHr) {
-    inquiries = inquiries.filter(i => i.city === m.city);
+    const keptInq = [];
+    for (const inq of inquiries) if (await adminCovers(m, inq)) keptInq.push(inq);
+    inquiries = keptInq;
   }
   res.json({ inquiries });
 });
@@ -2734,8 +2797,8 @@ router.patch('/careers-inquiries/:id/status', async (req, res) => {
   }
   const target = await db.find('careersInquiries', i => i.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'Application not found' });
-  if ((isPlainRegionalManager || isRegionalHr) && target.city !== m.city) {
-    return res.status(403).json({ error: 'That application is outside your assigned city' });
+  if ((isPlainRegionalManager || isRegionalHr) && !(await adminCovers(m, target))) {
+    return res.status(403).json({ error: 'That application is outside the area you manage' });
   }
   const updated = await db.update('careersInquiries', target.id, { status });
   res.json({ inquiry: updated });
@@ -2802,7 +2865,7 @@ router.get('/promotions', async (req, res) => {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   let promos = (await db.all('promotions')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  if (!m.isSuperAdmin) promos = promos.filter(p => !p.region || p.region === m.city);
+  if (!m.isSuperAdmin) promos = promos.filter(p => !p.region || sameText(p.region, m.city) || (m.adminScope === 'country' && sameText(p.region, m.country)));
   res.json({ promotions: promos });
 });
 
@@ -2912,7 +2975,7 @@ router.post('/promotions', async (req, res) => {
     message: message.trim(),
     imageUrl: imageUrl || null,
     createdBy: m.id,
-    region: m.isSuperAdmin ? (region || null) : m.city,
+    region: m.isSuperAdmin ? (region || null) : (m.adminScope === 'country' && m.country ? m.country : m.city), // v90: a country-wide admin's promotion reaches their whole country
     audience: audience || 'both',
     active: true,
     expiresAt: expiresAt || null,
@@ -3009,7 +3072,10 @@ router.get('/advertising-inquiries', async (req, res) => {
   }
   const region = await myRegion(req); // null for a super admin
   let inquiries = await db.all('advertisingInquiries');
-  if (region) inquiries = inquiries.filter(i => i.targetCity === region);
+  if (region) {
+    const prosById = new Map((await db.filter('users', u => u.role === 'provider')).map(u => [u.id, u]));
+    inquiries = inquiries.filter(i => adInRegion(region, i, prosById.get(i.providerId)));
+  }
   inquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json({ inquiries });
 });
@@ -3027,7 +3093,7 @@ router.patch('/advertising-inquiries/:id/status', async (req, res) => {
   if (!m.isSuperAdmin) {
     if (m.adminDepartment) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
     const region = await myRegion(req);
-    if (target.targetCity !== region) return res.status(403).json({ error: 'This inquiry targets a different city than the one you manage.' });
+    if (!adInRegion(region, target, target.providerId ? await db.find('users', u => u.id === target.providerId) : null)) return res.status(403).json({ error: 'This inquiry targets a different place than the one you manage.' });
   }
   const updated = await db.update('advertisingInquiries', target.id, { status });
   res.json({ inquiry: updated });
@@ -3049,7 +3115,7 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
     if (m.adminDepartment) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
     const region = await myRegion(req);
     if (!target.targetCity) return res.status(403).json({ error: 'Platform-wide ads can only be approved by a super admin.' });
-    if (target.targetCity !== region) return res.status(403).json({ error: 'This inquiry targets a different city than the one you manage.' });
+    if (!adInRegion(region, target, target.providerId ? await db.find('users', u => u.id === target.providerId) : null)) return res.status(403).json({ error: 'This inquiry targets a different place than the one you manage.' });
   }
   if (isLive && (typeof price !== 'number' || price < 0)) return res.status(400).json({ error: 'Enter a valid price to go live' });
 

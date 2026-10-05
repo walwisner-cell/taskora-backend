@@ -249,6 +249,28 @@ seedIfEmpty()
     // blocks server startup or crashes the process if the provider is
     // briefly unreachable (falls back to whatever rates already exist).
     const { refreshLiveExchangeRates } = require('./src/fx-scheduler');
+    // v86: the four core markets are always live. They are what the
+    // homepage's "Live now in" strip shows and where people can sign up.
+    // If one of them is found switched off when the server starts (a slip
+    // of the toggle in Admin → Categories & Countries, or a tool that reset
+    // the list), it is switched back on and the fact is logged. Before
+    // this, that correction only ran when someone pressed the Sync button.
+    // Other countries are never touched here.
+    (async () => {
+      try {
+        const db = require('./src/db');
+        const { nanoid } = require('nanoid');
+        const CORE = ['United States', 'Nigeria', 'Ghana', 'Liberia'];
+        const fixed = [];
+        for (const name of CORE) {
+          const c = await db.find('countries', x => x.name === name);
+          if (!c) { await db.insert('countries', { id: `cty_${nanoid(8)}`, name, status: 'live' }); fixed.push(name + ' (added)'); }
+          else if (c.status !== 'live') { await db.update('countries', c.id, { status: 'live' }); fixed.push(name); }
+        }
+        if (fixed.length) console.log(`[countries] Switched back to live at startup: ${fixed.join(', ')}.`);
+      } catch (e) { console.error('[countries] Could not check the core countries at startup:', e.message); }
+    })();
+
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
     setTimeout(() => { refreshLiveExchangeRates().catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, 5000);
     setInterval(() => { refreshLiveExchangeRates().catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, ONE_DAY_MS);

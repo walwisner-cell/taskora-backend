@@ -903,6 +903,9 @@ router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res
   // works this way; this was the one that didn't, which meant a regional
   // admin could see platform-wide totals well beyond their own city.
   const region = (!me.isSuperAdmin && !me.adminDepartment) ? me.region : null;
+  // v90: a regional admin may cover a whole country instead of one city.
+  const sameTxt = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
+  const mine = (person) => (me.adminScope === 'country' && me.country) ? sameTxt(person.country, me.country) : sameTxt(person.city, region);
 
   let all = await db.all('escrowTransactions');
   let payouts = await db.all('payouts');
@@ -913,10 +916,10 @@ router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res
     const regionalContractIds = new Set();
     for (const c of contracts) {
       const customer = customerById.get(c.customerId);
-      if (customer && customer.city === region) regionalContractIds.add(c.id);
+      if (customer && mine(customer)) regionalContractIds.add(c.id);
     }
     all = all.filter(e => regionalContractIds.has(e.contractId));
-    const regionalProviderIds = new Set((await db.filter('users', u => u.role === 'provider' && u.city === region)).map(u => u.id));
+    const regionalProviderIds = new Set((await db.filter('users', u => u.role === 'provider' && mine(u))).map(u => u.id));
     payouts = payouts.filter(p => regionalProviderIds.has(p.providerId));
   }
 
@@ -952,6 +955,9 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
   // regardless of which city they actually administer. A super admin or
   // an unscoped financial/legal admin still sees every region unchanged.
   const region = (!me.isSuperAdmin && !me.adminDepartment) ? me.region : null;
+  // v90: a regional admin may cover a whole country instead of one city.
+  const sameTxt = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
+  const mine = (person) => (me.adminScope === 'country' && me.country) ? sameTxt(person.country, me.country) : sameTxt(person.city, region);
 
   // Optional date range, applied the same way the Platform Transactions
   // panel applies it (against the contract's createdAt for escrow, and the
@@ -1019,7 +1025,7 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
 
   let regions = Array.from(byRegion.values()).sort((a, b) => (b.held + b.released) - (a.held + a.released));
   if (region) {
-    regions = regions.filter(r => r.region === region);
+    regions = regions.filter(r => (me.adminScope === 'country' && me.country) ? sameTxt(r.country, me.country) : sameTxt(r.region, region));
   }
   const total = regions.reduce((acc, r) => ({
     held: acc.held + r.held,
@@ -1052,7 +1058,11 @@ router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (re
     const provider = userById.get(c.providerId);
     const customer = userById.get(c.customerId);
     if (!provider || !customer) continue;
-    if (region && provider.city !== region) continue; // regional admins only ever see their own city's real activity
+    if (region) { // regional admins only ever see their own area's real activity (v90: a city, or their whole country)
+      const same = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
+      const covered = (requestingAdmin.adminScope === 'country' && requestingAdmin.country) ? same(provider.country, requestingAdmin.country) : same(provider.city, region);
+      if (!covered) continue;
+    }
     if (city && provider.city !== city) continue;
     if (country && provider.country !== country) continue;
     if (category && provider.category !== category) continue;

@@ -40,6 +40,9 @@ It now says that new submissions appear there with a View documents button, and 
 - A city admin can see Past checks; an HR admin and a customer can't.
 - Nothing blocked by the security policy. No script errors.
 
+
+> Note: the byte counts and deploy steps below are from when this version was made. Use the table and steps in CHANGES_v86.md.
+
 ## Files (complete replacements; this zip includes v74 to v84)
 | File | Bytes |
 |---|---|
@@ -64,7 +67,7 @@ It now says that new submissions appear there with a View documents button, and 
 Changed in this version: public\index.html and src\routes\admin.routes.js.
 
 ## Deploy (cmd.exe, not PowerShell)
-1. Unzip trothen-v85-files.zip.
+1. Unzip trothen-v86-files.zip.
 2. From the unzipped folder (replace the path with my repo folder):
    ```
    set REPO=C:\path\to\trothen-backend

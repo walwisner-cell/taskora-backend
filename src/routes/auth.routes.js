@@ -470,21 +470,28 @@ async function issueSessionOrRequire2FA(user, req, res) {
 
     const { isSmsConfigured, isEmailConfigured, sendSms, sendEmail } = require('../delivery');
     let delivered = false;
+    let sentVia = null;
     if (isSmsConfigured() && user.phone) {
       delivered = (await sendSms(user.phone, `Your Trothen sign-in code is ${code}. It expires in 10 minutes.`)).sent;
+      if (delivered) sentVia = 'text';
     }
     if (!delivered && isEmailConfigured()) {
       delivered = (await sendEmail(user.email, 'Your Trothen sign-in code', `Your sign-in code is ${code}. It expires in 10 minutes.`)).sent;
+      if (delivered) sentVia = 'email';
     }
+    // v89: say where the code went (partly hidden), so someone signing in
+    // for the first time knows which inbox or phone to look at.
+    const maskEmail = (e) => String(e || '').replace(/^(.)[^@]*@/, (m, a) => a + '•••@');
+    const maskPhone = (ph) => String(ph || '').replace(/.(?=.{3})/g, '•');
     if (delivered) {
-      return res.json({ requires2FA: true, pendingLoginId: pendingLogin.id, testMode: false });
+      return res.json({ requires2FA: true, pendingLoginId: pendingLogin.id, testMode: false, sentVia, sentTo: sentVia === 'text' ? maskPhone(user.phone) : maskEmail(user.email) });
     }
     // A provider is connected but the send failed. Handing the code back
     // to whoever just typed the password would make two-factor protect
     // nothing, so the sign-in stops here instead.
     if (isEmailConfigured() || (isSmsConfigured() && user.phone)) {
       await db.remove('pendingLogins', pendingLogin.id);
-      return res.status(502).json({ error: "We couldn't send your code just now. Please wait a minute and try again." });
+      return res.status(502).json({ error: `We couldn't send your sign-in code to ${maskEmail(user.email)}. Check that this email address is real and can receive mail, then try again. If it still doesn't arrive, ask the super admin to check the email address on your account.` });
     }
     return res.json({
       requires2FA: true,

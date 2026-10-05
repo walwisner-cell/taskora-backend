@@ -828,7 +828,7 @@ router.get('/promotions/mine', requireAuth, async (req, res) => {
   const all = await db.filter('promotions', p =>
     p.active &&
     (p.audience === audienceKey || p.audience === 'both') &&
-    (!p.region || p.region === (me && me.city)) &&
+    (!p.region || p.region === (me && me.city) || p.region === (me && me.country)) && // v90: a promotion can target a city or a whole country
     (!p.expiresAt || new Date(p.expiresAt) > now)
   );
   res.json({ promotions: all.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) });

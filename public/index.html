@@ -2204,7 +2204,7 @@
 <body>
 
 <div id="test-mode-banner" style="background:#FBF3E4;color:var(--navy);text-align:center;font-size:13.5px;font-weight:500;padding:9px 40px;position:relative;z-index:500;line-height:1.5;border-bottom:1px solid #E9D6A8;">
-  <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--gold);color:#fff;font-size:11.5px;font-weight:800;vertical-align:-3px;margin-right:6px;">!</span><span id="test-mode-banner-short"><strong>Early access:</strong> payments are simulated. <strong>Don't enter real card details.</strong></span><span id="test-mode-banner-text"><strong>Early access</strong> — accounts and ID verification are real, but payments aren't live yet: every payment and payout is simulated and no real money moves. <strong>Don't enter real card details.</strong></span>
+  <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--gold);color:#fff;font-size:11.5px;font-weight:800;vertical-align:-3px;margin-right:6px;">!</span><span id="test-mode-banner-short"><strong>Early access:</strong> payments are simulated.</span><span id="test-mode-banner-text"><strong>Early access</strong> — accounts and ID verification are real, but payments aren't live yet: every payment and payout is simulated and no real money moves.</span>
   <span onclick="document.getElementById('test-mode-banner').style.display='none'" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-weight:700;padding:3px 7px;border-radius:5px;color:var(--slate);opacity:.7;transition:opacity .15s ease,background .15s ease;" onmouseover="this.style.opacity=1;this.style.background='rgba(18,22,31,.06)'" onmouseout="this.style.opacity=.7;this.style.background='transparent'">✕</span>
 </div>
 
@@ -2309,7 +2309,7 @@
       <ul class="checks-list">
         <li class="check-card" data-check="0" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="id"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check1_t">Their ID is checked</strong><p data-i18n="check1_d">A person on our team reviews a government ID for every pro before they appear in search.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
         <li class="check-card" data-check="1" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="doc"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check2_t">The job is written down</strong><p data-i18n="check2_d">Each booking comes with a short agreement: what's being done, when, and for how much.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
-        <li class="check-card" data-check="2" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="lock"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check3_t">Your money waits</strong><p data-i18n="check3_d">You pay Trothen, not the pro. It's released when you mark the job complete.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
+        <li class="check-card" data-check="2" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="lock"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check3_t">Your money waits</strong><p data-i18n="check3_d">You pay your pro through Trothen. The payment is held in escrow and released when you mark the job complete.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
         <li class="check-card" data-check="3" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="shield"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check4_t">Every job is screened</strong><p data-i18n="check4_d">We look for signs of fraud on each booking and flag anything that doesn't add up for a person to review.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
       </ul>
       <div class="checks-panel" id="checks-panel" role="region" aria-live="polite" hidden></div>
@@ -2825,7 +2825,7 @@
             <div class="password-strength-bar-seg" id="strength-seg-2"></div>
             <div class="password-strength-bar-seg" id="strength-seg-3"></div>
           </div>
-          <div class="password-strength-label" id="password-strength-label">9+ characters, 6+ numbers, 2+ letters, 1+ symbol</div>
+          <div class="password-strength-label" id="password-strength-label">8 or more characters, not a common password</div>
         </div>
       </div>
       <div class="auth-foot" id="auth-forgot-link" style="text-align:right;margin-top:-10px;margin-bottom:14px;"><a onclick="showForgotPassword()" data-i18n="auth_forgot">Forgot password?</a></div>
@@ -2851,7 +2851,7 @@
       </div>
       <div id="login-2fa-view" style="display:none">
         <div class="auth-card-title">Enter your two-factor code</div>
-        <div class="auth-card-sub">Your password was correct — since two-factor authentication is on for this account, enter the code to finish signing in.</div>
+        <div class="auth-card-sub" id="login-2fa-sub">Your password was correct. To finish signing in, enter the 6-digit code we sent you.</div>
         <div id="login-2fa-test-banner" style="display:none;margin:16px 0;padding:12px 14px;background:var(--offwhite);border:1px dashed var(--gold);border-radius:10px;font-size:13.5px;">
           <span class="badge badge-warn" style="margin-right:6px;">TEST MODE</span>No SMS/email provider is connected yet — your code: <strong id="login-2fa-code-display"></strong>
         </div>
@@ -2923,14 +2923,14 @@
     <div style="display:flex;flex-direction:column;align-items:center;">
       <div class="auth-card">
         <div class="auth-card-title">Set your password</div>
-        <div class="auth-card-sub">This account was created with a starting password. Choose a new one only you know before continuing.</div>
+        <div class="auth-card-sub">This account was created with a starting password. Type that starting password once more, then choose a new one only you know. The new one needs 8 or more characters and must be different from the starting one.</div>
         <div class="form-group">
           <label class="form-label">Current (Starting) Password</label>
           <input class="form-input" type="password" id="force-pw-current" autocomplete="current-password" placeholder="The password you were given"/>
         </div>
         <div class="form-group">
           <label class="form-label">New Password</label>
-          <input class="form-input" type="password" id="force-pw-new" autocomplete="new-password" placeholder="At least 9 characters, 6+ numbers, 2+ letters, 1+ symbol"/>
+          <input class="form-input" type="password" id="force-pw-new" autocomplete="new-password" placeholder="8 or more characters, not a common password"/>
         </div>
         <div class="form-group">
           <label class="form-label">Confirm New Password</label>
@@ -3012,7 +3012,6 @@
             <div class="pricing-feat" data-i18n="plan1_f1">Smart job matching</div>
             <div class="pricing-feat" data-i18n="plan1_f2">Identity verification & badge</div>
             <div class="pricing-feat" data-i18n="plan1_f3">Escrow-protected payouts</div>
-            <div class="pricing-feat" data-i18n="plan1_f4">13% commission per job</div>
             <div class="pricing-feat" data-i18n="plan1_f5">Standard placement in search</div>
           </div>
           <button class="pricing-cta" onclick="selectPlan('starter')" data-i18n="plan1_btn">Get Started</button>
@@ -3024,7 +3023,6 @@
           <div class="pricing-feat-list">
             <div class="pricing-feat" data-i18n="plan2_f1">Everything in Starter</div>
             <div class="pricing-feat" data-i18n="plan2_f2">Priority placement in matching</div>
-            <div class="pricing-feat" data-i18n="plan2_f3">12% commission per job</div>
             <div class="pricing-feat" data-i18n="plan2_f4">Portfolio & review boosts</div>
             <div class="pricing-feat" data-i18n="plan2_f5">Same-day payout option</div>
           </div>
@@ -3038,7 +3036,6 @@
           <div class="pricing-feat-list">
             <div class="pricing-feat" data-i18n="plan3_f1">Everything in Pro</div>
             <div class="pricing-feat" data-i18n="plan3_f2">Top placement in your zip code / community</div>
-            <div class="pricing-feat" data-i18n="plan3_f3">10% commission per job</div>
             <div class="pricing-feat" data-i18n="plan3_f4">List in multiple categories</div>
             <div class="pricing-feat" data-i18n="plan3_f5">Dedicated support line</div>
           </div>
@@ -3363,6 +3360,7 @@ async function onGoogleCredentialResponse(response) {
       pendingLoginId = e.data.pendingLoginId;
       document.getElementById('auth-main-form').style.display = 'none';
       document.getElementById('login-2fa-view').style.display = 'block';
+      describeLoginCodeDestination(e.data);
       if (e.data.testMode) {
         document.getElementById('login-2fa-test-banner').style.display = 'block';
         document.getElementById('login-2fa-code-display').textContent = e.data.code;
@@ -4422,7 +4420,7 @@ const I18N = {
     ticket_v_status: "Complete, pro paid",
     ticket_n1: "Tell us the job and where it is. You'll see nearby pros whose ID we've checked, with their rates and reviews.",
     ticket_n2: "Pick a pro. Trothen writes down the price, the work and the date, so you both agree to the same thing.",
-    ticket_n3: "You pay Trothen, not the pro, and the money waits while the work gets done. During early access, payments are in test mode.",
+    ticket_n3: "You pay your pro through Trothen. The payment is held in escrow while the work gets done. During early access, payments are in test mode.",
     ticket_n4: "You mark the job complete and the pro gets paid. If something isn't right, don't mark it complete. Our dispute team will step in.",
     ticket_next: "Next step",
     ticket_again: "Start over",
@@ -4437,7 +4435,7 @@ const I18N = {
     check2_t: "The job is written down",
     check2_d: "Each booking comes with a short agreement: what's being done, when, and for how much.",
     check3_t: "Your money waits",
-    check3_d: "You pay Trothen, not the pro. It's released when you mark the job complete.",
+    check3_d: "You pay your pro through Trothen. The payment is held in escrow and released when you mark the job complete.",
     check4_t: "Every job is screened",
     check4_d: "We look for signs of fraud on each booking and flag anything that doesn't add up for a person to review.",
     popular_title: "Popular right now",
@@ -4526,7 +4524,7 @@ const I18N = {
     check2_s1: "When you book, Trothen writes down the job, the date and the price you agreed.",
     check2_s2: "You and the pro both see the same agreement before any work starts.",
     check2_s3: "It stays in your bookings, and you can download it as a PDF any time.",
-    check3_s1: "When the pro accepts your job, you pay Trothen, not the pro.",
+    check3_s1: "When the pro accepts your job, you pay them through Trothen and the payment goes into escrow.",
     check3_s2: "The money is held while the work is done.",
     check3_s3: "When you mark the job complete, the pro is paid. If something's wrong, open a dispute instead and a person on our team reviews it.",
     check3_note: "During early access, payments are in test mode and no real money moves.",
@@ -5862,6 +5860,7 @@ async function mockAuth() {
         pendingLoginId = result.pendingLoginId;
         document.getElementById('auth-main-form').style.display = 'none';
         document.getElementById('login-2fa-view').style.display = 'block';
+        describeLoginCodeDestination(result);
         if (result.testMode) {
           document.getElementById('login-2fa-test-banner').style.display = 'block';
           document.getElementById('login-2fa-code-display').textContent = result.code;
@@ -5958,6 +5957,14 @@ function cancelSignupVerification() {
   document.getElementById('signup-verify-view').style.display = 'none';
   document.getElementById('auth-main-form').style.display = 'block';
   document.getElementById('signup-verify-email-code').value = '';
+}
+
+// v89: tells the person which inbox or phone their sign-in code went to.
+function describeLoginCodeDestination(result) {
+  const el = document.getElementById('login-2fa-sub');
+  if (!el || !result) return;
+  if (result.testMode) el.textContent = 'Your password was correct. To finish signing in, type the 6-digit code shown below.';
+  else if (result.sentTo) el.textContent = `Your password was correct. We sent a 6-digit code by ${result.sentVia === 'text' ? 'text message' : 'email'} to ${result.sentTo}. ${result.sentVia === 'text' ? '' : 'If you don\'t see it in a minute, check your spam or junk folder. '}Type it here to finish signing in.`;
 }
 
 async function submitLogin2FA() {
@@ -6063,14 +6070,14 @@ function checkTermsGate(role) {
     ['I\'ll be honest about my work', 'I\'ll describe my skills and any license truthfully. If a job turns out bigger than described, or needs a licensed trade I don\'t hold, I\'ll stop and tell the customer. Cancelling for that reason never counts against me.'],
     ['I\'ll keep my word', 'Each booking comes with a short written agreement: what\'s being done, when, and for how much. I\'ll show up for the time I accepted, or say so early if I can\'t.'],
     ['I\'ll treat everyone with respect and work safely', 'No harassment and no discrimination, whatever someone\'s race, religion, gender, age, disability or background. I won\'t go into any space I wasn\'t invited into, and I\'ll stop and report a job that becomes unsafe.'],
-    ['I\'ll keep bookings and payment on Trothen', 'The customer pays Trothen, and it\'s released to me when they mark the job complete, less the commission shown on my dashboard. If there\'s a disagreement, a person on the Trothen team reviews it. Work arranged off Trothen has none of this.' + (testMode ? ' Trothen is in early access: payments are in test mode right now and no real money moves yet.' : '')],
+    ['I\'ll keep bookings and payment on Trothen', 'The customer pays me through Trothen. The payment is held in escrow and released to me when they mark the job complete, less the commission shown on my dashboard. If there\'s a disagreement, a person on the Trothen team reviews it. Work arranged off Trothen has none of this.' + (testMode ? ' Trothen is in early access: payments are in test mode right now and no real money moves yet.' : '')],
     ['I work for myself', 'I\'m an independent contractor, not an employee of Trothen. I choose which jobs to take and how to do them, and my taxes, insurance and business costs are my own.'],
   ] : [
     ['I am who I say I am', 'I\'m 18 or older and the name on my account is my own. A person on the Trothen team reviews my government ID before my first booking.'],
     ['I\'ll be honest about the job', 'I\'ll describe the work accurately, including anything difficult or risky about it (pets, wiring, chemicals, damage), and I\'ll leave reviews based on what really happened.'],
     ['I\'ll keep my word', 'Each booking comes with a short written agreement: what\'s being done, when, and for how much. I\'ll be there at the time I booked, or say so early if plans change.'],
     ['I\'ll treat everyone with respect', 'No harassment and no discrimination, whatever someone\'s race, religion, gender, age, disability or background. Pros run their own businesses; they aren\'t my staff, and I won\'t ask for work outside what we agreed.'],
-    ['I\'ll keep bookings and payment on Trothen', 'I pay Trothen, not the pro, and the money is held until I mark the job complete. If something goes wrong, I won\'t mark it complete; I\'ll raise it and a person on the Trothen team will review it. Work arranged off Trothen has none of this.' + (testMode ? ' Trothen is in early access: payments are in test mode right now and no real money moves yet.' : '')],
+    ['I\'ll keep bookings and payment on Trothen', 'I pay my pro through Trothen. The payment is held in escrow until I mark the job complete. If something goes wrong, I won\'t mark it complete; I\'ll raise it and a person on the Trothen team will review it. Work arranged off Trothen has none of this.' + (testMode ? ' Trothen is in early access: payments are in test mode right now and no real money moves yet.' : '')],
   ];
   const finePrint = isProvider
     ? 'Trothen is a marketplace. It connects customers with independent pros; it doesn\'t employ you and isn\'t a party to the work itself.'
@@ -7688,6 +7695,7 @@ const CUSTOMER_SECTIONS = {
     <div class="dash-header"><div><div class="dash-title">Payments</div><div class="dash-sub">Payment methods & escrow history</div></div><button class="btn-sm btn-sm-primary" onclick="openAddPaymentMethodForm()">+ Add Payment Method</button></div>
     <div class="panel" id="add-payment-panel" style="display:none;">
       <div class="panel-title">Add Payment Method <span class="badge badge-warn" style="margin-left:8px;">TEST MODE — no real charges</span></div>
+      <div style="background:#FBF3E4;border:1px solid #E9D6A8;border-radius:8px;padding:10px 12px;font-size:13.5px;line-height:1.5;margin-bottom:12px;">Payments are in test mode. Please don't type a real debit or credit card number here. Use the sample number 4242 4242 4242 4242. (This is about bank cards only. Your ID is handled under Verification.)</div>
       <div style="font-size:13px;color:var(--slate);margin-bottom:14px;">This is a sandbox for testing the booking flow — nothing is ever really charged. A real payment processor gets wired in before this goes live.</div>
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;" id="pm-type-tabs">
         <button class="btn-sm btn-sm-primary" id="pm-tab-card" onclick="selectPaymentMethodType('card')">💳 Card</button>
@@ -7768,11 +7776,14 @@ const CUSTOMER_SECTIONS = {
           ${['plus', 'pro', 'elite'].map(tier => {
             const cfg = MEMBERSHIP_TIER_INFO[tier];
             const local = customerData.membershipTiersLocal && customerData.membershipTiersLocal[tier];
-            const localLine = local && local.currencyCode !== 'USD' ? `<div style="font-size:12.5px;color:var(--gold);font-weight:600;">≈ ${local.currencySymbol}${local.priceLocal} ${local.currencyCode}/mo</div>` : '';
+            // v89: outside the US the price is shown in the customer's own currency first, with the dollar amount underneath.
+            const showLocal = !!(local && local.currencyCode && local.currencyCode !== 'USD' && local.priceLocal != null);
+            const mainPrice = showLocal ? `${escapeHtml(local.currencySymbol || '')}${Math.round(Number(local.priceLocal)).toLocaleString()}` : `$${cfg.price}`;
+            const localLine = showLocal ? `<div style="font-size:12.5px;color:var(--slate);">${escapeHtml(local.currencyCode)} · about $${cfg.price}</div>` : '';
             const isCurrent = AUTH.user && AUTH.user.membershipTier === tier;
             return `<div style="border:1px solid ${isCurrent ? 'var(--navy)' : 'var(--border)'};border-radius:10px;padding:12px;text-align:center;">
               <div style="font-weight:700;color:var(--navy);">${cfg.label}</div>
-              <div style="font-size:18px;font-weight:800;margin:4px 0;">$${cfg.price}<span style="font-size:12.5px;font-weight:400;color:var(--slate);">/mo</span></div>
+              <div style="font-size:18px;font-weight:800;margin:4px 0;">${mainPrice}<span style="font-size:12.5px;font-weight:400;color:var(--slate);">/mo</span></div>
               ${localLine}
               <div style="font-size:12.5px;color:var(--slate);margin:4px 0 8px;">${escapeHtml(cfg.description)}</div>
               <button class="btn-sm ${isCurrent ? 'btn-sm-outline' : 'btn-sm-primary'}" style="width:100%;" ${isCurrent ? 'disabled' : ''} onclick="subscribeMembership('${tier}')">${isCurrent ? 'Current Plan' : 'Subscribe'}</button>
@@ -7809,12 +7820,12 @@ async function updateNotifPref(key, checked) {
 
 function phoneVerificationPanelHTML() {
   const verified = AUTH.user && AUTH.user.phoneVerified;
-  return `<div class="panel"><div class="panel-title">Phone Verification ${verified ? '<span class="badge badge-success" style="margin-left:8px;">✓ Verified</span>' : '<span class="badge badge-warn" style="margin-left:8px;">Not Verified</span>'}</div>
+  return `<div class="panel"><div class="panel-title">Confirm your phone number ${verified ? '<span class="badge badge-success" style="margin-left:8px;">✓ Confirmed</span>' : '<span class="badge badge-warn" style="margin-left:8px;">Not confirmed yet</span>'}</div>
     ${verified
-      ? `<div style="font-size:13.5px;color:var(--slate);">Your phone number is verified.</div>`
-      : `<div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Verify your phone so we can reach you by text about bookings and sign-in codes.</div>
+      ? `<div style="font-size:13.5px;color:var(--slate);">Your phone number is confirmed.</div>`
+      : `<div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">We text a 6-digit code to the number on your account and you type it here. That proves the number is really yours, so booking updates and sign-in codes reach you and nobody else. It takes a minute. (This is separate from the ID check, which our team does.)</div>
          <div id="phone-otp-step-1">
-           <button class="btn-sm btn-sm-primary" onclick="sendPhoneOtp()">Send Verification Code</button>
+           <button class="btn-sm btn-sm-primary" onclick="sendPhoneOtp()">Text me the code</button>
          </div>
          <div id="phone-otp-step-2" style="display:none;margin-top:14px;">
            <div id="phone-otp-test-banner" style="display:none;margin-bottom:12px;padding:12px 14px;background:var(--offwhite);border:1px dashed var(--gold);border-radius:10px;font-size:13.5px;">
@@ -8074,7 +8085,7 @@ async function loadProviderScorePanel() {
     body.innerHTML = `
       <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px;">
         <div style="font-size:32px;font-weight:800;color:var(--navy);">${data.total}</div>
-        <div style="color:var(--slate);">/ 99</div>
+        <div style="color:var(--slate);">/ 100</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;">
         ${Object.keys(data.weights).map(key => `<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:var(--slate);">${COMPONENT_LABELS[key]}</span><span style="font-weight:600;color:var(--navy);">${data.breakdown[key]}/${data.weights[key]}</span></div>`).join('')}
@@ -10423,7 +10434,7 @@ const ADMIN_SECTIONS = {
     const region = adminData.stats.region || 'All Locations';
     const isSuper = AUTH.user && AUTH.user.isSuperAdmin;
     return `
-    <div class="dash-header"><div><div class="dash-title">${isSuper ? 'Global Overview' : 'Region Overview'} — ${region}</div><div class="dash-sub">${isSuper ? 'Platform health across every city Trothen operates in' : 'Platform health across your assigned city'} ${BACKEND_AVAILABLE ? '<span class="badge badge-success" style="margin-left:6px;">Live data</span>' : ''}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">${isSuper ? 'Global Overview' : 'Region Overview'} — ${region}</div><div class="dash-sub">${isSuper ? 'Platform health across every city Trothen operates in' : 'Platform health across the area you manage'} ${BACKEND_AVAILABLE ? '<span class="badge badge-success" style="margin-left:6px;">Live data</span>' : ''}</div></div></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Users</div><div class="stat-card-val">${adminData.stats.totalUsers.toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-card-label">Pending Approvals</div><div class="stat-card-val">${adminData.stats.pendingApprovals}</div></div>
@@ -10694,6 +10705,13 @@ const ADMIN_SECTIONS = {
         <select class="form-input form-select" id="loc-country"></select>
       </div>
       <div class="form-group"><label class="form-label">City</label><input class="form-input" id="loc-city" placeholder="e.g. Monrovia"/><div style="font-size:12.5px;color:var(--muted);margin-top:5px;">Still required even for a functional-team member (their base location for contact purposes) — it just won't restrict what they can see if a department is selected below.</div></div>
+      <div class="form-group"><label class="form-label">This admin covers</label>
+        <select class="form-input form-select" id="loc-scope">
+          <option value="country" selected>The whole country chosen above (recommended)</option>
+          <option value="city">Only the one city entered above</option>
+        </select>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:5px;">Whole country: they see every customer and pro in that country. One city: they only see people whose city is spelled exactly like the city above, so anyone who typed it differently is missed.</div>
+      </div>
       <div class="form-group"><label class="form-label">Role</label>
         <select class="form-input form-select" id="loc-department" onchange="handleLocDepartmentChange(this.value)">
           <option value="">Regional Admin — full access, scoped to this one city</option>
@@ -10711,7 +10729,7 @@ const ADMIN_SECTIONS = {
         <div id="loc-region-scoped-row" style="display:none;margin-top:8px;">
           <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;">
             <input type="checkbox" id="loc-region-scoped"/>
-            Scope this role to just the city entered above, instead of every city
+            Limit this role to the area chosen in "This admin covers" above, instead of everywhere
           </label>
         </div>
       </div>
@@ -11074,10 +11092,20 @@ Liberia</textarea></div>
 
 function citiesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No cities configured yet.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>City</th><th>Country</th><th>Admin</th><th>Users</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
-  ${list.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.country)}</td><td>${escapeHtml(c.adminName || '—')}<div style="font-size:12.5px;color:var(--slate)">${escapeHtml(c.adminEmail || '')}</div></td><td>${c.userCount ?? '—'}</td><td>${statusBadge(c.adminActive === false ? 'suspended' : 'active')}</td>
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>City</th><th>Country</th><th>Admin</th><th>Covers</th><th>Users</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
+  ${list.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.country)}</td><td>${escapeHtml(c.adminName || '—')}<div style="font-size:12.5px;color:var(--slate)">${escapeHtml(c.adminEmail || '')}</div></td><td>${c.adminId ? (c.adminScope === 'country' ? `All of ${escapeHtml(c.country || '')}` : `${escapeHtml(c.name)} only`) : '—'}${c.adminId && AUTH.user && AUTH.user.isSuperAdmin ? `<div><button class="btn-sm btn-sm-ghost" style="margin-top:4px;" onclick="setAdminScope(${jsArg(c.adminId)}, ${jsArg(c.adminScope === 'country' ? 'city' : 'country')})">${c.adminScope === 'country' ? 'Limit to this city' : 'Make country-wide'}</button></div>` : ''}</td><td>${c.userCount ?? '—'}</td><td>${statusBadge(c.adminActive === false ? 'suspended' : 'active')}</td>
   ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="toggleSubAdminActive('${c.adminId}')">${c.adminActive === false ? 'Reactivate' : 'Suspend'}</button> <button class="btn-sm btn-sm-outline" data-admin-id="${c.adminId}" data-admin-name="${(c.adminName || 'this admin').replace(/"/g, '&quot;')}" data-city-name="${c.name.replace(/"/g, '&quot;')}" onclick="deleteSubAdmin(this.dataset.adminId, this.dataset.adminName, this.dataset.cityName)">Delete</button></td>` : ''}</tr>`).join('')}
   </tbody></table></div>`;
+}
+
+// v90: switch a regional admin between one city and their whole country.
+async function setAdminScope(adminId, scope) {
+  const ok = await confirmDialog(scope === 'country'
+    ? 'Make this admin country-wide? They will see and manage every customer and pro in their country, not just one city.'
+    : 'Limit this admin to their one city? They will only see people whose city is spelled exactly like theirs.', { confirmLabel: scope === 'country' ? 'Make country-wide' : 'Limit to city' });
+  if (!ok) return;
+  try { await apiFetch('PATCH', '/admin/sub-admins/' + encodeURIComponent(adminId), { scope }); showToast('Saved'); await loadAdminData(); selectAdminSection('locations'); }
+  catch (e) { showToast(e.message || 'Could not change this'); }
 }
 
 const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disputes Team', financial: 'Financial Team', accountant: 'Accountant', controller: 'Controller', customer_service: 'Customer Service', legal: 'Legal', sales: 'Sales Team', hr: 'HR Team' };
@@ -11086,7 +11114,7 @@ function functionalAdminsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No functional team members yet — create one above with a Role other than "Regional Admin".</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Team</th><th>Scope</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
   ${list.map(a => `<tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.email)}</td><td>${DEPARTMENT_LABELS[a.adminDepartment] || a.adminDepartment}</td>
-  <td>${a.regionScoped ? `Just ${escapeHtml(a.city || 'their city')}` : `<span style="color:#8a5a00;">Global — every city</span>`}</td>
+  <td>${a.regionScoped ? (a.adminScope === 'country' ? `All of ${escapeHtml(a.country || 'their country')}` : `Just ${escapeHtml(a.city || 'their city')}`) : `<span style="color:#8a5a00;">Global — every city</span>`}</td>
   <td>${statusBadge(a.active === false ? 'suspended' : 'active')}</td>
   ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions">
     <button class="btn-sm btn-sm-outline" onclick="toggleSubAdminRegionScope('${a.id}', ${!a.regionScoped})">${a.regionScoped ? 'Make Global' : `Scope to ${escapeHtml(a.city || 'their city')}`}</button>
@@ -11603,7 +11631,7 @@ async function openProviderScoreBreakdown(providerId, providerName) {
     const target = document.getElementById('score-breakdown-body');
     if (!target) return;
     target.innerHTML = `
-      <div style="font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;">${r.total}/99</div>
+      <div style="font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;">${r.total}/100</div>
       ${r.recommendedAction ? `<div class="badge" style="background:#FBF3E3;color:#8A6A2A;white-space:normal;margin-bottom:14px;">${escapeHtml(r.recommendedAction.label)}</div>` : '<div class="badge badge-success" style="margin-bottom:14px;">Good standing</div>'}
       ${rows}`;
   } catch (e) {
@@ -12440,6 +12468,7 @@ async function createLocationAdmin() {
   const country = document.getElementById('loc-country').value;
   const department = document.getElementById('loc-department').value || null;
   const regionScoped = document.getElementById('loc-region-scoped').checked;
+  const scope = (document.getElementById('loc-scope') || {}).value === 'city' ? 'city' : 'country';
   if (!name || !email || !password || !city || !country) return showToast('Please fill in every field');
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
@@ -12456,8 +12485,8 @@ async function createLocationAdmin() {
   }
   if (!BACKEND_AVAILABLE) return showToast(`${city} admin created (demo mode — no backend detected)`);
   try {
-    const { admin } = await apiFetch('POST', '/admin/sub-admins', { name, email, password, city, country, department, regionScoped: department && department !== 'sales' ? regionScoped : false });
-    showToast(department ? `${admin.name} is now on the ${department} team${regionScoped && department !== 'sales' ? ` (scoped to ${city})` : ' (global)'}` : `${admin.name} is now the admin for ${city}, ${country}`);
+    const { admin } = await apiFetch('POST', '/admin/sub-admins', { name, email, password, city, country, department, scope, regionScoped: department && department !== 'sales' ? regionScoped : false });
+    showToast(department ? `${admin.name} is now on the ${department} team${regionScoped && department !== 'sales' ? ` (scoped to ${scope === 'country' ? country : city})` : ' (global)'}` : `${admin.name} is now the admin for ${scope === 'country' ? 'all of ' + country : city + ', ' + country}`);
     await loadAdminData();
     selectAdminSection('locations');
   } catch (e) { showToast(e.message || 'Could not create admin'); }
@@ -14339,8 +14368,25 @@ let HERO_ROTATING_WORDS = ['pros', 'plumbers', 'cleaners', 'tutors', 'electricia
 let heroRotationTimer = null;
 async function loadHomepageContent() {
   if (!BACKEND_AVAILABLE) return;
+  // v86: the "Live now in" strip is drawn FIRST and on its own. It used to
+  // be the last step of this function, so if the homepage request failed,
+  // or anything earlier in here stumbled, the strip silently stayed
+  // hidden. Now it has its own request path and a fallback: the list of
+  // countries open for sign-up (which is the same "live" list).
+  let content = null;
+  try { content = await apiFetch('GET', '/homepage-content'); }
+  catch (e) { console.warn('Could not load homepage content, using defaults.', e); }
   try {
-    const content = await apiFetch('GET', '/homepage-content');
+    let live = content && Array.isArray(content.featuredCountries) ? content.featuredCountries : [];
+    if (!live.length) {
+      const geo = await apiFetch('GET', '/geo');
+      live = (geo && Array.isArray(geo.countries)) ? geo.countries : [];
+    }
+    if (live.length) renderHeroLocales(live);
+    else console.warn('"Live now in" strip is hidden: no country is marked live in Admin → Categories & Countries.');
+  } catch (e) { console.warn('Could not draw the "Live now in" strip.', e); }
+  if (!content) return;
+  try {
     const prefixEl = document.getElementById('hero-prefix');
     const suffixEl = document.getElementById('hero-suffix');
     const subheadEl = document.getElementById('hero-subheadline');
@@ -14789,7 +14835,7 @@ async function loadSystemStatusBanner() {
       document.getElementById('test-mode-banner').style.display = 'none';
       return;
     }
-    const warn = st.cardPaymentsLive ? '' : ' <strong>Don\'t enter real card details.</strong>';
+    const warn = ''; // v89: the card warning now sits on the payment form itself, where a card is typed, so it isn't mistaken for an ID card
     el.innerHTML = '<strong>Early access</strong> — accounts and ID verification are real. ' + parts.map(escapeHtml).join(' ') + warn;
   } catch (e) { /* keep the safe default wording */ }
 }
@@ -15204,7 +15250,7 @@ function syncBannerShortText() {
   if (!full || !short) return;
   const cardWarning = /real card/i.test(full.textContent);
   short.innerHTML = cardWarning
-    ? "<strong>" + escapeHtml(t('banner_short_title')) + "</strong> " + escapeHtml(t('banner_short_body')) + " <strong>" + escapeHtml(t('banner_short_card')) + "</strong>"
+    ? "<strong>" + escapeHtml(t('banner_short_title')) + "</strong> " + escapeHtml(t('banner_short_body'))
     : "<strong>" + escapeHtml(t('banner_short_title')) + "</strong> " + escapeHtml(t('banner_short_generic'));
 }
 function setupAllScreenSizes() {
@@ -15681,7 +15727,7 @@ function setupInteractiveChecks() {
 // Text the super admin changed in Admin → Settings → Front page wording.
 // English only: other languages keep their built-in translations.
 let CONTENT_OVERRIDES = {};
-const EDITABLE_CONTENT_GROUPS = [{"title":"Search box","keys":[{"key":"composer_what","label":"Words before the first box"},{"key":"composer_where","label":"Word before the city box"},{"key":"composer_go","label":"Search button"},{"key":"search_placeholder","label":"Grey hint in the first box"},{"key":"search_city_placeholder","label":"Grey hint in the city box"},{"key":"hero_often","label":"Words before the shortcut links"},{"key":"composer_hint","label":"Heading over the suggestions list"},{"key":"chips_all","label":"\"Show all kinds of work\" link"},{"key":"chips_fewer","label":"\"Show fewer\" link"}]},{"title":"Job ticket (top of the page)","keys":[{"key":"ticket_title","label":"Ticket heading"},{"key":"ticket_s1","label":"Step 1 name"},{"key":"ticket_s2","label":"Step 2 name"},{"key":"ticket_s3","label":"Step 3 name"},{"key":"ticket_s4","label":"Step 4 name"},{"key":"ticket_status_1","label":"Status chip at step 1"},{"key":"ticket_status_2","label":"Status chip at step 2"},{"key":"ticket_status_3","label":"Status chip at step 3"},{"key":"ticket_status_4","label":"Status chip at step 4"},{"key":"ticket_f_job","label":"Row label: the job"},{"key":"ticket_f_pro","label":"Row label: pro"},{"key":"ticket_f_terms","label":"Row label: price and scope"},{"key":"ticket_f_pay","label":"Row label: payment"},{"key":"ticket_f_status","label":"Row label: status"},{"key":"ticket_v_job","label":"Example job"},{"key":"ticket_v_pro","label":"Pro row value"},{"key":"ticket_v_terms","label":"Price row value"},{"key":"ticket_v_pay","label":"Payment row value"},{"key":"ticket_v_status","label":"Status row value"},{"key":"ticket_n1","label":"Explanation at step 1"},{"key":"ticket_n2","label":"Explanation at step 2"},{"key":"ticket_n3","label":"Explanation at step 3"},{"key":"ticket_n4","label":"Explanation at step 4"},{"key":"ticket_stamp","label":"Stamp at the last step"},{"key":"ticket_next","label":"\"Next step\" button"},{"key":"ticket_again","label":"\"Start over\" button"},{"key":"ticket_post","label":"\"Post a job\" button"}]},{"title":"\"Live now in\" strip","keys":[{"key":"loc_live","label":"Words before the countries"}]},{"title":"Numbers band","keys":[{"key":"stat_pros","label":"Under the number of pros"},{"key":"stat_rating","label":"Under the rating"},{"key":"stat_jobs","label":"Under jobs completed"},{"key":"stat_fee","label":"Under the booking fee"}]},{"title":"Before a pro can take your job","keys":[{"key":"checks_title","label":"Section heading"},{"key":"checks_sub","label":"Line beside the heading"},{"key":"checks_tag","label":"Small green tag on each card"},{"key":"checks_more","label":"\"See how it works\" link"},{"key":"checks_less","label":"\"Hide\" link"},{"key":"check1_t","label":"Card 1 title"},{"key":"check1_d","label":"Card 1 text"},{"key":"check1_s1","label":"Card 1, step 1"},{"key":"check1_s2","label":"Card 1, step 2"},{"key":"check1_s3","label":"Card 1, step 3"},{"key":"check2_t","label":"Card 2 title"},{"key":"check2_d","label":"Card 2 text"},{"key":"check2_s1","label":"Card 2, step 1"},{"key":"check2_s2","label":"Card 2, step 2"},{"key":"check2_s3","label":"Card 2, step 3"},{"key":"check3_t","label":"Card 3 title"},{"key":"check3_d","label":"Card 3 text"},{"key":"check3_s1","label":"Card 3, step 1"},{"key":"check3_s2","label":"Card 3, step 2"},{"key":"check3_s3","label":"Card 3, step 3"},{"key":"check3_note","label":"Card 3, yellow note"},{"key":"check4_t","label":"Card 4 title"},{"key":"check4_d","label":"Card 4 text"},{"key":"check4_s1","label":"Card 4, step 1"},{"key":"check4_s2","label":"Card 4, step 2"},{"key":"check4_s3","label":"Card 4, step 3"},{"key":"checks_close","label":"\"Close\" button on the open panel"}]},{"title":"Popular right now","keys":[{"key":"popular_title","label":"Section heading"},{"key":"popular_sub","label":"Line under the heading"},{"key":"popular_from","label":"Word before the price"},{"key":"popular_pro_one","label":"After the count, for 1 pro"},{"key":"popular_pro_many","label":"After the count, for several pros"},{"key":"popular_see","label":"Link on each card"}]},{"title":"Recent work","keys":[{"key":"work_title","label":"Section heading"},{"key":"work_sub","label":"Line under the heading"}]},{"title":"Every kind of work","keys":[{"key":"cats_title","label":"Section heading"},{"key":"cats_all","label":"Link to all categories"},{"key":"cats_count_one","label":"After the count, for 1 kind"},{"key":"cats_count_many","label":"After the count, for several kinds"},{"key":"cat_none","label":"Shown when a kind has no pros"},{"key":"cat_empty","label":"Message for an empty category"},{"key":"pro_one","label":"Word for 1 pro"},{"key":"pro_many","label":"Word for several pros"}]},{"title":"Top pros","keys":[{"key":"pros_title","label":"Section heading (before a search)"},{"key":"pros_sub","label":"Line under the heading (before a search)"},{"key":"pros_all","label":"Link to every pro"}]},{"title":"What customers say","keys":[{"key":"reviews_title","label":"Section heading"},{"key":"reviews_sub","label":"Line under the heading"},{"key":"reviews_hired","label":"Word before the pro's name"}]},{"title":"Common questions","keys":[{"key":"faq_title","label":"Section heading"},{"key":"faq_sub","label":"Line under the heading"},{"key":"faq_q1","label":"Question 1"},{"key":"faq_a1","label":"Answer 1","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q2","label":"Question 2"},{"key":"faq_a2","label":"Answer 2","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q3","label":"Question 3"},{"key":"faq_a3","label":"Answer 3","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q4","label":"Question 4"},{"key":"faq_a4","label":"Answer 4","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q5","label":"Question 5"},{"key":"faq_a5","label":"Answer 5","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q6","label":"Question 6"},{"key":"faq_a6","label":"Answer 6","long":true,"hint":"Blank = the same answer the support chat gives"}]},{"title":"Closing boxes","keys":[{"key":"cta_hire_t","label":"Left box heading"},{"key":"cta_hire_d","label":"Left box text"},{"key":"cta_pro_t","label":"Right box heading"},{"key":"cta_pro_d","label":"Right box text"}]},{"title":"Menu and footer","keys":[{"key":"nav_browse","label":"Menu: browse link"},{"key":"nav_become_pro","label":"Menu: \"Become a Pro\" button"},{"key":"nav_menu","label":"Menu button (phones)"},{"key":"footer_line","label":"Line under the logo"},{"key":"footer_about","label":"Footer link: About"},{"key":"footer_careers","label":"Footer link: Careers"},{"key":"footer_contact","label":"Footer link: Contact"},{"key":"footer_terms","label":"Footer link: Terms"}]},{"title":"Trust list on a pro's profile","keys":[{"key":"trust_id","label":"Line 1: ID"},{"key":"trust_contract","label":"Line 2: agreement"},{"key":"trust_payment","label":"Line 3: payment"},{"key":"trust_fraud","label":"Line 4: fraud screening"},{"key":"trust_2fa","label":"Line 5: two-step sign-in (only shown when it's on)"}]},{"title":"Pro quick-view","keys":[{"key":"qv_id_checked","label":"\"ID checked\" badge"},{"key":"qv_new","label":"Badge for a new pro"},{"key":"qv_jobs","label":"After the number of jobs"},{"key":"qv_from","label":"Under the price (fixed-price pros)"},{"key":"qv_per_hour","label":"Under the price (hourly pros)"},{"key":"qv_score","label":"Label: score"},{"key":"qv_within","label":"Label: travel distance"},{"key":"qv_work","label":"Heading: their work"},{"key":"qv_reviews","label":"Heading: reviews"},{"key":"qv_no_reviews","label":"Shown when there are no reviews"},{"key":"qv_customer","label":"Name for an unnamed reviewer"},{"key":"qv_not_taking","label":"Shown when the pro is not taking bookings"},{"key":"qv_book","label":"\"Book\" button"},{"key":"qv_full","label":"\"Full profile\" button"},{"key":"qv_error","label":"Message when it can't load"}]},{"title":"Provider Plans page","keys":[{"key":"plans_eyebrow","label":"Small heading above the title"},{"key":"plans_title","label":"Page title"},{"key":"plans_sub","label":"Line under the title"},{"key":"plans_country","label":"Words before the country picker"},{"key":"plan1_name","label":"Starter: plan name"},{"key":"plan1_desc","label":"Starter: line under the name"},{"key":"plan1_f1","label":"Starter: tick 1"},{"key":"plan1_f2","label":"Starter: tick 2"},{"key":"plan1_f3","label":"Starter: tick 3"},{"key":"plan1_f4","label":"Starter: tick 4 (keep the {…_commission} part to show the real rate)"},{"key":"plan1_f5","label":"Starter: tick 5"},{"key":"plan2_name","label":"Pro: plan name"},{"key":"plan2_desc","label":"Pro: line under the name"},{"key":"plan2_f1","label":"Pro: tick 1"},{"key":"plan2_f2","label":"Pro: tick 2"},{"key":"plan2_f3","label":"Pro: tick 3 (keep the {…_commission} part to show the real rate)"},{"key":"plan2_f4","label":"Pro: tick 4"},{"key":"plan2_f5","label":"Pro: tick 5"},{"key":"plan3_name","label":"Super Pro: plan name"},{"key":"plan3_desc","label":"Super Pro: line under the name"},{"key":"plan3_f1","label":"Super Pro: tick 1"},{"key":"plan3_f2","label":"Super Pro: tick 2"},{"key":"plan3_f3","label":"Super Pro: tick 3 (keep the {…_commission} part to show the real rate)"},{"key":"plan3_f4","label":"Super Pro: tick 4"},{"key":"plan3_f5","label":"Super Pro: tick 5"},{"key":"plan4_name","label":"Custom: plan name"},{"key":"plan4_desc","label":"Custom: line under the name"},{"key":"plan4_f1","label":"Custom: tick 1"},{"key":"plan4_f2","label":"Custom: tick 2"},{"key":"plan4_f3","label":"Custom: tick 3"},{"key":"plan4_f4","label":"Custom: tick 4"},{"key":"plan2_note","label":"Pro: grey note at the bottom"},{"key":"plan3_note","label":"Super Pro: grey note at the bottom"},{"key":"plan3_badge","label":"Super Pro: badge"},{"key":"plan1_btn","label":"Starter: button"},{"key":"plan4_price","label":"Custom: price line"},{"key":"plan4_btn","label":"Custom: button"},{"key":"plans_fee_off","label":"Note under the cards while the fee is NOT charged"},{"key":"plans_fee_on","label":"Note under the cards once the fee is charged"}]},{"title":"Careers page","keys":[{"key":"careers_title","label":"Page title"},{"key":"careers_body","label":"Paragraph"},{"key":"careers_form_title","label":"Heading over the form"},{"key":"careers_btn","label":"Send button"}]},{"title":"Contact page","keys":[{"key":"contact_title","label":"Page title"},{"key":"contact_intro","label":"Paragraph"},{"key":"contact_btn","label":"Send button"}]},{"title":"\"Add to your phone\" prompt","keys":[{"key":"install_btn","label":"Button in the footer"},{"key":"install_done","label":"Message once it's added"},{"key":"install_ios_title","label":"iPhone steps: heading"},{"key":"install_ios_1","label":"iPhone step 1"},{"key":"install_ios_2","label":"iPhone step 2"},{"key":"install_ios_3","label":"iPhone step 3"},{"key":"install_ok","label":"Close button"}]}];
+const EDITABLE_CONTENT_GROUPS = [{"title":"Search box","keys":[{"key":"composer_what","label":"Words before the first box"},{"key":"composer_where","label":"Word before the city box"},{"key":"composer_go","label":"Search button"},{"key":"search_placeholder","label":"Grey hint in the first box"},{"key":"search_city_placeholder","label":"Grey hint in the city box"},{"key":"hero_often","label":"Words before the shortcut links"},{"key":"composer_hint","label":"Heading over the suggestions list"},{"key":"chips_all","label":"\"Show all kinds of work\" link"},{"key":"chips_fewer","label":"\"Show fewer\" link"}]},{"title":"Job ticket (top of the page)","keys":[{"key":"ticket_title","label":"Ticket heading"},{"key":"ticket_s1","label":"Step 1 name"},{"key":"ticket_s2","label":"Step 2 name"},{"key":"ticket_s3","label":"Step 3 name"},{"key":"ticket_s4","label":"Step 4 name"},{"key":"ticket_status_1","label":"Status chip at step 1"},{"key":"ticket_status_2","label":"Status chip at step 2"},{"key":"ticket_status_3","label":"Status chip at step 3"},{"key":"ticket_status_4","label":"Status chip at step 4"},{"key":"ticket_f_job","label":"Row label: the job"},{"key":"ticket_f_pro","label":"Row label: pro"},{"key":"ticket_f_terms","label":"Row label: price and scope"},{"key":"ticket_f_pay","label":"Row label: payment"},{"key":"ticket_f_status","label":"Row label: status"},{"key":"ticket_v_job","label":"Example job"},{"key":"ticket_v_pro","label":"Pro row value"},{"key":"ticket_v_terms","label":"Price row value"},{"key":"ticket_v_pay","label":"Payment row value"},{"key":"ticket_v_status","label":"Status row value"},{"key":"ticket_n1","label":"Explanation at step 1"},{"key":"ticket_n2","label":"Explanation at step 2"},{"key":"ticket_n3","label":"Explanation at step 3"},{"key":"ticket_n4","label":"Explanation at step 4"},{"key":"ticket_stamp","label":"Stamp at the last step"},{"key":"ticket_next","label":"\"Next step\" button"},{"key":"ticket_again","label":"\"Start over\" button"},{"key":"ticket_post","label":"\"Post a job\" button"}]},{"title":"\"Live now in\" strip","keys":[{"key":"loc_live","label":"Words before the countries"}]},{"title":"Numbers band","keys":[{"key":"stat_pros","label":"Under the number of pros"},{"key":"stat_rating","label":"Under the rating"},{"key":"stat_jobs","label":"Under jobs completed"},{"key":"stat_fee","label":"Under the booking fee"}]},{"title":"Before a pro can take your job","keys":[{"key":"checks_title","label":"Section heading"},{"key":"checks_sub","label":"Line beside the heading"},{"key":"checks_tag","label":"Small green tag on each card"},{"key":"checks_more","label":"\"See how it works\" link"},{"key":"checks_less","label":"\"Hide\" link"},{"key":"check1_t","label":"Card 1 title"},{"key":"check1_d","label":"Card 1 text"},{"key":"check1_s1","label":"Card 1, step 1"},{"key":"check1_s2","label":"Card 1, step 2"},{"key":"check1_s3","label":"Card 1, step 3"},{"key":"check2_t","label":"Card 2 title"},{"key":"check2_d","label":"Card 2 text"},{"key":"check2_s1","label":"Card 2, step 1"},{"key":"check2_s2","label":"Card 2, step 2"},{"key":"check2_s3","label":"Card 2, step 3"},{"key":"check3_t","label":"Card 3 title"},{"key":"check3_d","label":"Card 3 text"},{"key":"check3_s1","label":"Card 3, step 1"},{"key":"check3_s2","label":"Card 3, step 2"},{"key":"check3_s3","label":"Card 3, step 3"},{"key":"check3_note","label":"Card 3, yellow note"},{"key":"check4_t","label":"Card 4 title"},{"key":"check4_d","label":"Card 4 text"},{"key":"check4_s1","label":"Card 4, step 1"},{"key":"check4_s2","label":"Card 4, step 2"},{"key":"check4_s3","label":"Card 4, step 3"},{"key":"checks_close","label":"\"Close\" button on the open panel"}]},{"title":"Popular right now","keys":[{"key":"popular_title","label":"Section heading"},{"key":"popular_sub","label":"Line under the heading"},{"key":"popular_from","label":"Word before the price"},{"key":"popular_pro_one","label":"After the count, for 1 pro"},{"key":"popular_pro_many","label":"After the count, for several pros"},{"key":"popular_see","label":"Link on each card"}]},{"title":"Recent work","keys":[{"key":"work_title","label":"Section heading"},{"key":"work_sub","label":"Line under the heading"}]},{"title":"Every kind of work","keys":[{"key":"cats_title","label":"Section heading"},{"key":"cats_all","label":"Link to all categories"},{"key":"cats_count_one","label":"After the count, for 1 kind"},{"key":"cats_count_many","label":"After the count, for several kinds"},{"key":"cat_none","label":"Shown when a kind has no pros"},{"key":"cat_empty","label":"Message for an empty category"},{"key":"pro_one","label":"Word for 1 pro"},{"key":"pro_many","label":"Word for several pros"}]},{"title":"Top pros","keys":[{"key":"pros_title","label":"Section heading (before a search)"},{"key":"pros_sub","label":"Line under the heading (before a search)"},{"key":"pros_all","label":"Link to every pro"}]},{"title":"What customers say","keys":[{"key":"reviews_title","label":"Section heading"},{"key":"reviews_sub","label":"Line under the heading"},{"key":"reviews_hired","label":"Word before the pro's name"}]},{"title":"Common questions","keys":[{"key":"faq_title","label":"Section heading"},{"key":"faq_sub","label":"Line under the heading"},{"key":"faq_q1","label":"Question 1"},{"key":"faq_a1","label":"Answer 1","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q2","label":"Question 2"},{"key":"faq_a2","label":"Answer 2","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q3","label":"Question 3"},{"key":"faq_a3","label":"Answer 3","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q4","label":"Question 4"},{"key":"faq_a4","label":"Answer 4","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q5","label":"Question 5"},{"key":"faq_a5","label":"Answer 5","long":true,"hint":"Blank = the same answer the support chat gives"},{"key":"faq_q6","label":"Question 6"},{"key":"faq_a6","label":"Answer 6","long":true,"hint":"Blank = the same answer the support chat gives"}]},{"title":"Closing boxes","keys":[{"key":"cta_hire_t","label":"Left box heading"},{"key":"cta_hire_d","label":"Left box text"},{"key":"cta_pro_t","label":"Right box heading"},{"key":"cta_pro_d","label":"Right box text"}]},{"title":"Menu and footer","keys":[{"key":"nav_browse","label":"Menu: browse link"},{"key":"nav_become_pro","label":"Menu: \"Become a Pro\" button"},{"key":"nav_menu","label":"Menu button (phones)"},{"key":"footer_line","label":"Line under the logo"},{"key":"footer_about","label":"Footer link: About"},{"key":"footer_careers","label":"Footer link: Careers"},{"key":"footer_contact","label":"Footer link: Contact"},{"key":"footer_terms","label":"Footer link: Terms"}]},{"title":"Trust list on a pro's profile","keys":[{"key":"trust_id","label":"Line 1: ID"},{"key":"trust_contract","label":"Line 2: agreement"},{"key":"trust_payment","label":"Line 3: payment"},{"key":"trust_fraud","label":"Line 4: fraud screening"},{"key":"trust_2fa","label":"Line 5: two-step sign-in (only shown when it's on)"}]},{"title":"Pro quick-view","keys":[{"key":"qv_id_checked","label":"\"ID checked\" badge"},{"key":"qv_new","label":"Badge for a new pro"},{"key":"qv_jobs","label":"After the number of jobs"},{"key":"qv_from","label":"Under the price (fixed-price pros)"},{"key":"qv_per_hour","label":"Under the price (hourly pros)"},{"key":"qv_score","label":"Label: score"},{"key":"qv_within","label":"Label: travel distance"},{"key":"qv_work","label":"Heading: their work"},{"key":"qv_reviews","label":"Heading: reviews"},{"key":"qv_no_reviews","label":"Shown when there are no reviews"},{"key":"qv_customer","label":"Name for an unnamed reviewer"},{"key":"qv_not_taking","label":"Shown when the pro is not taking bookings"},{"key":"qv_book","label":"\"Book\" button"},{"key":"qv_full","label":"\"Full profile\" button"},{"key":"qv_error","label":"Message when it can't load"}]},{"title":"Provider Plans page","keys":[{"key":"plans_eyebrow","label":"Small heading above the title"},{"key":"plans_title","label":"Page title"},{"key":"plans_sub","label":"Line under the title"},{"key":"plans_country","label":"Words before the country picker"},{"key":"plan1_name","label":"Starter: plan name"},{"key":"plan1_desc","label":"Starter: line under the name"},{"key":"plan1_f1","label":"Starter: tick 1"},{"key":"plan1_f2","label":"Starter: tick 2"},{"key":"plan1_f3","label":"Starter: tick 3"},{"key":"plan1_f5","label":"Starter: tick 5"},{"key":"plan2_name","label":"Pro: plan name"},{"key":"plan2_desc","label":"Pro: line under the name"},{"key":"plan2_f1","label":"Pro: tick 1"},{"key":"plan2_f2","label":"Pro: tick 2"},{"key":"plan2_f4","label":"Pro: tick 4"},{"key":"plan2_f5","label":"Pro: tick 5"},{"key":"plan3_name","label":"Super Pro: plan name"},{"key":"plan3_desc","label":"Super Pro: line under the name"},{"key":"plan3_f1","label":"Super Pro: tick 1"},{"key":"plan3_f2","label":"Super Pro: tick 2"},{"key":"plan3_f4","label":"Super Pro: tick 4"},{"key":"plan3_f5","label":"Super Pro: tick 5"},{"key":"plan4_name","label":"Custom: plan name"},{"key":"plan4_desc","label":"Custom: line under the name"},{"key":"plan4_f1","label":"Custom: tick 1"},{"key":"plan4_f2","label":"Custom: tick 2"},{"key":"plan4_f3","label":"Custom: tick 3"},{"key":"plan4_f4","label":"Custom: tick 4"},{"key":"plan2_note","label":"Pro: grey note at the bottom"},{"key":"plan3_note","label":"Super Pro: grey note at the bottom"},{"key":"plan3_badge","label":"Super Pro: badge"},{"key":"plan1_btn","label":"Starter: button"},{"key":"plan4_price","label":"Custom: price line"},{"key":"plan4_btn","label":"Custom: button"},{"key":"plans_fee_off","label":"Note under the cards while the fee is NOT charged"},{"key":"plans_fee_on","label":"Note under the cards once the fee is charged"}]},{"title":"Careers page","keys":[{"key":"careers_title","label":"Page title"},{"key":"careers_body","label":"Paragraph"},{"key":"careers_form_title","label":"Heading over the form"},{"key":"careers_btn","label":"Send button"}]},{"title":"Contact page","keys":[{"key":"contact_title","label":"Page title"},{"key":"contact_intro","label":"Paragraph"},{"key":"contact_btn","label":"Send button"}]},{"title":"\"Add to your phone\" prompt","keys":[{"key":"install_btn","label":"Button in the footer"},{"key":"install_done","label":"Message once it's added"},{"key":"install_ios_title","label":"iPhone steps: heading"},{"key":"install_ios_1","label":"iPhone step 1"},{"key":"install_ios_2","label":"iPhone step 2"},{"key":"install_ios_3","label":"iPhone step 3"},{"key":"install_ok","label":"Close button"}]}];
 async function loadContentOverrides() {
   if (!BACKEND_AVAILABLE) return;
   try {

@@ -24,16 +24,33 @@ const { LICENSED_TRADE_CATEGORIES, hasValidLicense } = require('./routes/marketp
 // customers, response rate, cancellation rate, trust rating) rather
 // than a harsh default of zero — a brand new account hasn't done
 // anything wrong, so it shouldn't score as if it had.
+// v89: the weights now add up to exactly 100. They used to add up to 120,
+// so the parts shown to a pro summed to more than the total. The order
+// also changed: the most points go to the work itself (jobs done, whether
+// customers trust the pro, not cancelling, arriving on time), fewer to
+// one-off paperwork.
+//   Jobs completed            20
+//   Customer trust rating     20
+//   Low cancellation rate     15
+//   Arrived on time           15
+//   Identity verification     10
+//   Responding to jobs         7
+//   Repeat customers           5
+//   License / documents        4
+//   Background check           4   (guarantors confirmed by the team)
+//                            ---
+//                            100
+// The total is still capped at 99: nobody is shown a perfect 100.
 const WEIGHTS = {
+  jobsCompleted: 20,
+  customerTrustRating: 20,
+  cancellationRate: 15,
+  arrivedOnTime: 15,
   identityVerification: 10,
-  documentVerification: 10,
-  jobsCompleted: 15,
-  arrivedOnTime: 10,
-  repeatedCustomers: 15,
-  responseTime: 15,
-  backgroundCheck: 10,
-  cancellationRate: 20,
-  customerTrustRating: 15,
+  responseTime: 7,
+  repeatedCustomers: 5,
+  documentVerification: 4,
+  backgroundCheck: 4,
 };
 
 // Same volume benchmark already established elsewhere in this app
@@ -134,7 +151,13 @@ async function computeProviderScore(providerId) {
   // just mirrors identity verification as a stand-in. Once a real
   // background-check integration exists, this should read its actual
   // pass/fail result instead.
-  const backgroundCheck = provider.verified ? WEIGHTS.backgroundCheck : 0;
+  // v89: the background check is now a real result. It used to be given to
+  // anyone whose ID was approved, which measured the same thing twice. It
+  // is earned when the verification team has actually spoken to the pro's
+  // guarantors and marked them verified: one verified guarantor earns
+  // half, two or more earn all of it.
+  const verifiedGuarantors = (provider.guarantors || []).filter(g => g && g.status === 'verified').length;
+  const backgroundCheck = verifiedGuarantors >= 2 ? WEIGHTS.backgroundCheck : verifiedGuarantors === 1 ? WEIGHTS.backgroundCheck / 2 : 0;
 
   // 8. Cancellation rate — direct: reuses the exact same rate
   // calculation already established in checkAndAdvanceProviderTier
