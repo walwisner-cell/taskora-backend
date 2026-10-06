@@ -231,7 +231,7 @@ async function readinessReport(requestingUser) {
     item('privacy_policy', 'The Privacy Policy has been reviewed by an attorney', false,
       'A built-in policy is live at /privacy and editable in Settings. It was written to match the system and still needs a legal review.', 'business'),
     item('backups', 'A data backup was taken in the last two days', backupFresh,
-      backupLatest ? `Latest copy: ${backupLatest}. Copies are on the same disk; keep one elsewhere too.` : 'No backup found yet. One is taken about a minute after the server starts, then daily.', 'recommended'),
+      backupLatest ? `Latest copy: ${backupLatest}. Copies are on the same disk. Download one from Settings → Data backups every week or so and keep it somewhere else.` : 'No backup found yet. One is taken about a minute after the server starts, then daily.', 'recommended'),
     item('id_encryption', 'Extra encryption for ID files is switched on', idEncrypted,
       idEncrypted ? 'On' : 'Off. Set ID_FILE_ENCRYPTION_KEY on the server (see CHANGES_v82.md) and keep a copy of the key somewhere safe.', 'recommended'),
     item('id_checks', 'Automated ID and face checks are connected (Persona)', personaOk,

@@ -816,6 +816,34 @@ router.get('/backups', requireSuperAdmin, async (req, res) => {
   const b = require('../backup-scheduler');
   res.json({ applies: b.backupsApply(), keepDays: b.KEEP_DAYS, backups: b.backupsApply() ? b.listBackups() : [] });
 });
+// POST /api/admin/backups/download — v99, super admin: download one
+// day's backup as a single file, to keep somewhere off the server.
+// The file holds every record on the site (names, contact details,
+// scrambled passwords, bookings, messages), so it asks for the super
+// admin's password again, is limited to a few an hour, and is logged.
+const backupDownloadLimiter = require('express-rate-limit')({
+  windowMs: 60 * 60 * 1000, max: 6, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many backup downloads this hour. Try again later.' },
+});
+router.post('/backups/download', requireSuperAdmin, backupDownloadLimiter, async (req, res) => {
+  const b = require('../backup-scheduler');
+  if (!b.backupsApply()) return res.status(400).json({ error: 'Backups here only apply to the file store' });
+  const admin = await me(req);
+  const { password, day } = req.body || {};
+  const okPw = admin && admin.passwordHash && typeof password === 'string' && await require('bcryptjs').compare(password, admin.passwordHash);
+  if (!okPw) return res.status(403).json({ error: 'That password isn\'t right. Enter your own sign-in password to download a backup.' });
+  let list = b.listBackups();
+  if (!list.length) { b.runBackup(); list = b.listBackups(); }
+  const chosen = day ? list.find(x => x.day === day) : list[0];
+  if (!chosen) return res.status(404).json({ error: 'There is no backup for that day' });
+  let archive;
+  try { archive = b.buildBackupArchive(chosen.day); } catch (e) { return res.status(500).json({ error: 'The backup file couldn\'t be built' }); }
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'backup_download', `${chosen.day} (${archive.files} files, ${archive.buffer.length} bytes)`);
+  res.set({ 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${archive.filename}"`, 'Content-Length': archive.buffer.length, 'Cache-Control': 'no-store' });
+  res.end(archive.buffer);
+});
+
 // POST /api/admin/backups/run — v82, super admin: take a copy right now
 // (for example just before a risky change).
 router.post('/backups/run', requireSuperAdmin, async (req, res) => {

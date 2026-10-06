@@ -3212,6 +3212,20 @@ function jsArg(value) {
   return escapeHtml(JSON.stringify(String(value === null || value === undefined ? '' : value)).replace(/</g, '\\u003c').replace(/\u2028|\u2029/g, ''));
 }
 
+// v97: Spanish for the screens added in v74 to v96. tr('English text')
+// returns the Spanish when Spanish is selected and a translation exists,
+// otherwise the English it was given. So a missing translation shows
+// English, never a blank.
+const ES_TEXT = {"Before you start taking jobs": "Antes de empezar a aceptar trabajos", "Before you book": "Antes de reservar", "Here is what we ask of every pro on Trothen, and what you can expect from us. Check each box to agree.": "Esto es lo que pedimos a cada profesional en Trothen, y lo que puedes esperar de nosotros. Marca cada casilla para aceptar.", "Here is what we ask of every customer on Trothen, and what you can expect from us. Check each box to agree.": "Esto es lo que pedimos a cada cliente en Trothen, y lo que puedes esperar de nosotros. Marca cada casilla para aceptar.", "I am who I say I am": "Soy quien digo ser", "I'm 18 or older and the name on my account is my own. A person on the Trothen team reviews my government ID before I appear in search. I won't let anyone else work under my account.": "Tengo 18 años o más y el nombre de mi cuenta es el mío. Una persona del equipo de Trothen revisa mi documento de identidad oficial antes de que yo aparezca en las búsquedas. No dejaré que nadie más trabaje con mi cuenta.", "I'll be honest about my work": "Seré honesto sobre mi trabajo", "I'll describe my skills and any license truthfully. If a job turns out bigger than described, or needs a licensed trade I don't hold, I'll stop and tell the customer. Cancelling for that reason never counts against me.": "Describiré mis habilidades y cualquier licencia con la verdad. Si un trabajo resulta ser más grande de lo descrito, o requiere una licencia que no tengo, me detendré y se lo diré al cliente. Cancelar por ese motivo nunca cuenta en mi contra.", "I'll keep my word": "Cumpliré mi palabra", "Each booking comes with a short written agreement: what's being done, when, and for how much. I'll show up for the time I accepted, or say so early if I can't.": "Cada reserva incluye un breve acuerdo por escrito: qué se hará, cuándo y por cuánto. Llegaré a la hora que acepté, o avisaré con tiempo si no puedo.", "I'll treat everyone with respect and work safely": "Trataré a todos con respeto y trabajaré de forma segura", "No harassment and no discrimination, whatever someone's race, religion, gender, age, disability or background. I won't go into any space I wasn't invited into, and I'll stop and report a job that becomes unsafe.": "Sin acoso ni discriminación, sea cual sea la raza, religión, género, edad, discapacidad u origen de la persona. No entraré en ningún espacio al que no me hayan invitado, y detendré y reportaré un trabajo que se vuelva inseguro.", "I'll keep bookings and payment on Trothen": "Mantendré las reservas y el pago en Trothen", "The customer pays me through Trothen. The payment is held in escrow and released to me when they mark the job complete, less the commission shown on my dashboard. If there's a disagreement, a person on the Trothen team reviews it. Work arranged off Trothen has none of this.": "El cliente me paga a través de Trothen. El pago se retiene en depósito y se me libera cuando el cliente marca el trabajo como terminado, menos la comisión que aparece en mi panel. Si hay un desacuerdo, una persona del equipo de Trothen lo revisa. El trabajo acordado fuera de Trothen no tiene nada de esto.", "I work for myself": "Trabajo por mi cuenta", "I'm an independent contractor, not an employee of Trothen. I choose which jobs to take and how to do them, and my taxes, insurance and business costs are my own.": "Soy contratista independiente, no empleado de Trothen. Yo elijo qué trabajos aceptar y cómo hacerlos, y mis impuestos, seguros y gastos de negocio corren por mi cuenta.", "I'm 18 or older and the name on my account is my own. A person on the Trothen team reviews my government ID before my first booking.": "Tengo 18 años o más y el nombre de mi cuenta es el mío. Una persona del equipo de Trothen revisa mi documento de identidad oficial antes de mi primera reserva.", "I'll be honest about the job": "Seré honesto sobre el trabajo", "I'll describe the work accurately, including anything difficult or risky about it (pets, wiring, chemicals, damage), and I'll leave reviews based on what really happened.": "Describiré el trabajo con precisión, incluyendo cualquier cosa difícil o riesgosa (mascotas, cableado, químicos, daños), y dejaré reseñas basadas en lo que realmente pasó.", "Each booking comes with a short written agreement: what's being done, when, and for how much. I'll be there at the time I booked, or say so early if plans change.": "Cada reserva incluye un breve acuerdo por escrito: qué se hará, cuándo y por cuánto. Estaré presente a la hora que reservé, o avisaré con tiempo si cambian los planes.", "I'll treat everyone with respect": "Trataré a todos con respeto", "No harassment and no discrimination, whatever someone's race, religion, gender, age, disability or background. Pros run their own businesses; they aren't my staff, and I won't ask for work outside what we agreed.": "Sin acoso ni discriminación, sea cual sea la raza, religión, género, edad, discapacidad u origen de la persona. Los profesionales tienen su propio negocio; no son mis empleados, y no pediré trabajo fuera de lo acordado.", "I pay my pro through Trothen. The payment is held in escrow until I mark the job complete. If something goes wrong, I won't mark it complete; I'll raise it and a person on the Trothen team will review it. Work arranged off Trothen has none of this.": "Pago a mi profesional a través de Trothen. El pago se retiene en depósito hasta que yo marque el trabajo como terminado. Si algo sale mal, no lo marcaré como terminado; lo reportaré y una persona del equipo de Trothen lo revisará. El trabajo acordado fuera de Trothen no tiene nada de esto.", "Trothen is in early access: payments are in test mode right now and no real money moves yet.": "Trothen está en acceso anticipado: por ahora los pagos están en modo de prueba y todavía no se mueve dinero real.", "Trothen is a marketplace. It connects customers with independent pros; it doesn't employ you and isn't a party to the work itself.": "Trothen es un mercado. Conecta a clientes con profesionales independientes; no te emplea y no es parte del trabajo en sí.", "Trothen is a marketplace. It connects you with independent pros; it doesn't do the work itself and doesn't employ the people who do.": "Trothen es un mercado. Te conecta con profesionales independientes; no hace el trabajo y no emplea a quienes lo hacen.", "I agree to the Trothen Terms of Service": "Acepto los Términos de Servicio de Trothen", "The full terms cover fees, cancellations, what can't be booked on Trothen, and how accounts can be suspended.": "Los términos completos cubren tarifas, cancelaciones, lo que no se puede reservar en Trothen y cómo se pueden suspender las cuentas.", "Read the full terms": "Leer los términos completos", "Our": "Nuestra", "Privacy Policy": "Política de Privacidad", "explains how we use your information, including your ID and your location.": "explica cómo usamos tu información, incluyendo tu documento de identidad y tu ubicación.", "Back to the checkboxes": "Volver a las casillas", "Agree and continue": "Aceptar y continuar", "All checked. You can continue.": "Todo marcado. Puedes continuar.", "Check all {n} boxes to continue": "Marca las {n} casillas para continuar", "{n} box left to check": "Falta {n} casilla por marcar", "{n} boxes left to check": "Faltan {n} casillas por marcar", "Where is the job?": "¿Dónde es el trabajo?", "No street address? If you are at the place now, pin it. If you aren't, or Location is switched off on your phone, choose the spot on a map instead. Your pro gets a map link straight to it. Only the pro you hire sees it.": "¿No hay dirección? Si estás en el lugar ahora, márcalo. Si no estás allí, o la Ubicación está apagada en tu teléfono, elige el punto en un mapa. Tu profesional recibe un enlace de mapa directo al lugar. Solo lo ve el profesional que contrates.", "How we use your location": "Cómo usamos tu ubicación", "Pin my current location": "Marcar mi ubicación actual", "Choose on a map": "Elegir en un mapa", "GPS not working, or you're not there now? Type the location instead": "¿El GPS no funciona, o no estás allí ahora? Escribe la ubicación", "Use this": "Usar esto", "In Google Maps, press and hold on the spot, then copy the numbers or the Plus Code it shows.": "En Google Maps, mantén presionado el punto y copia los números o el Plus Code que aparece.", "Landmark or directions": "Punto de referencia o indicaciones", "e.g. Blue gate behind the Total station, ELWA Junction": "p. ej. Portón azul detrás de la gasolinera Total, cruce ELWA", "Location pinned": "Ubicación marcada", "Rough location pinned": "Ubicación aproximada marcada", "chosen on the map": "elegida en el mapa", "Check it on the map": "Verla en el mapa", "That is not exact. Step outside and pin again, or add a clear landmark below so your pro can find you.": "No es exacta. Sal al aire libre y márcala de nuevo, o añade abajo un punto de referencia claro para que tu profesional te encuentre.", "Adjust on the map": "Ajustar en el mapa", "Remove pin": "Quitar marca", "Finding your location…": "Buscando tu ubicación…", "This can take up to half a minute. Stay where the job is, outside if you can.": "Puede tardar hasta medio minuto. Quédate donde es el trabajo, al aire libre si puedes.", "Location is switched off for this site. Allow it in your browser or phone settings, then try again.": "La ubicación está apagada para este sitio. Permítela en los ajustes de tu navegador o teléfono e inténtalo de nuevo.", "This browser can't share location.": "Este navegador no puede compartir la ubicación.", "Your phone couldn't find its location. Step outside or near a window, make sure Location is on, and try again.": "Tu teléfono no pudo encontrar su ubicación. Sal al aire libre o acércate a una ventana, comprueba que la Ubicación esté encendida e inténtalo de nuevo.", "You can also type the location or just describe a landmark below.": "También puedes escribir la ubicación o simplemente describir un punto de referencia abajo.", "Slide the map until the pin sits on the right spot, then press \"Use this spot\".": "Mueve el mapa hasta que la marca quede en el lugar correcto y luego pulsa \"Usar este punto\".", "Search": "Buscar", "Find me": "Encuéntrame", "Use this spot": "Usar este punto", "Cancel": "Cancelar", "Zoom in closer (the + button, or pinch) until you can see the building or the yard.": "Acércate más (el botón + o pellizcando) hasta ver el edificio o el patio.", "Pin is at": "La marca está en", "Track your pro": "Seguir a tu profesional", "Trip map": "Mapa del viaje", "Tell the customer you're on the way? Your live location will be shared with this customer, and only this customer, until you tap Arrived. Keep this page open on your phone so they can see you coming.": "¿Avisar al cliente que vas en camino? Tu ubicación en vivo se compartirá con este cliente, y solo con este cliente, hasta que toques Llegué. Mantén esta página abierta en tu teléfono para que pueda verte llegar.", "I'm on my way": "Voy en camino", "Sharing your location with your customer until you tap Arrived.": "Compartiendo tu ubicación con tu cliente hasta que toques Llegué.", "Keep this page open.": "Mantén esta página abierta.", "Map": "Mapa", "Distance is a straight line, not the road. The position only updates while the pro's Trothen page is open on their phone.": "La distancia es en línea recta, no por carretera. La posición solo se actualiza mientras la página de Trothen del profesional esté abierta en su teléfono.", "is coming": "viene en camino", "Trip to": "Viaje hacia", "has arrived": "ha llegado", "You've arrived": "Has llegado", "Live location sharing has stopped.": "Se dejó de compartir la ubicación en vivo.", "Your pro hasn't set off yet": "Tu profesional aún no ha salido", "You'll be able to follow them here once they tap \"On my way\".": "Podrás seguirle aquí cuando toque \"Voy en camino\".", "is on the way": "va en camino", "Waiting for their phone to send a position.": "Esperando a que su teléfono envíe una posición.", "away": "de distancia", "to go": "para llegar", "Position updated": "Posición actualizada", "Your position was last sent": "Tu posición se envió por última vez", "Their phone may be locked or out of signal. This is their last known position.": "Su teléfono puede estar bloqueado o sin señal. Esta es su última posición conocida.", "Keep this page open with the screen on.": "Mantén esta página abierta con la pantalla encendida.", "Job location:": "Lugar del trabajo:", "Open in Maps": "Abrir en Mapas", "Get directions in Google Maps": "Cómo llegar en Google Maps", "Open their position in Maps": "Abrir su posición en Mapas", "New on Trothen": "Nuevo en Trothen", "feet": "pies", "miles": "millas", "Rough guess:": "Estimación aproximada:", "minutes, depending on the roads and traffic.": "minutos, según las calles y el tráfico.", "Submit Documents": "Enviar documentos", "Under Review": "En revisión", "Verified": "Verificado", "Account approved by our team. No ID has been reviewed for this account yet.": "Cuenta aprobada por nuestro equipo. Todavía no se ha revisado ningún documento de identidad para esta cuenta.", "Document Type": "Tipo de documento", "Full Legal Name (exactly as printed on the document)": "Nombre legal completo (exactamente como aparece en el documento)", "1. The front of your government-issued ID": "1. El frente de tu documento de identidad oficial", "The whole document, flat, with all four corners showing, nothing covered, and no glare. A photo or a PDF. On a phone you can take the photo right here.": "El documento completo, plano, con las cuatro esquinas visibles, sin nada tapado y sin reflejos. Una foto o un PDF. En un teléfono puedes tomar la foto aquí mismo.", "2. The back of your ID": "2. El reverso de tu documento", "(if it has one)": "(si lo tiene)", "For a driver's license or ID card, add the back as well. Skip this for a passport.": "Para una licencia de conducir o cédula, añade también el reverso. Omite esto si es un pasaporte.", "3. A photo of your face": "3. Una foto de tu rostro", "Take it now, in good light, looking at the camera, with no hat or sunglasses. A person on our team compares it with the photo on your ID.": "Tómala ahora, con buena luz, mirando a la cámara, sin gorra ni lentes de sol. Una persona de nuestro equipo la compara con la foto de tu documento.", "These are stored privately and are never shown to other users. Only the Trothen staff who review identity checks can open them. Check each preview is sharp enough to read before you send.": "Se guardan de forma privada y nunca se muestran a otros usuarios. Solo el personal de Trothen que revisa las identidades puede abrirlos. Comprueba que cada vista previa se lea con claridad antes de enviar.", "Submit for Review": "Enviar para revisión", "Your data and your account": "Tus datos y tu cuenta", "You can download a copy of everything Trothen holds about your account: your profile, bookings, payments, messages, reviews and identity-check records.": "Puedes descargar una copia de todo lo que Trothen guarda sobre tu cuenta: tu perfil, reservas, pagos, mensajes, reseñas y registros de verificación de identidad.", "Download my data": "Descargar mis datos", "Close my account.": "Cerrar mi cuenta.", "Your account stops working straight away and you're signed out everywhere. Records of past bookings and payments are kept, because the other person in each one has a right to them and money records have to be kept. Your personal details are then removed by our team.": "Tu cuenta deja de funcionar de inmediato y se cierra tu sesión en todas partes. Los registros de reservas y pagos anteriores se conservan, porque la otra persona en cada uno tiene derecho a ellos y los registros de dinero deben guardarse. Después, nuestro equipo elimina tus datos personales.", "Close my account": "Cerrar mi cuenta", "Your account can't be closed just yet:": "Tu cuenta todavía no se puede cerrar:", "This closes your account now. You'll be signed out everywhere and won't be able to sign back in. If you change your mind, contact support before your details are removed.": "Esto cierra tu cuenta ahora. Se cerrará tu sesión en todas partes y no podrás volver a entrar. Si cambias de opinión, contacta a soporte antes de que se eliminen tus datos.", "Your password, or type CLOSE": "Tu contraseña, o escribe CLOSE", "Your password": "Tu contraseña", "Why are you leaving?": "¿Por qué te vas?", "(optional)": "(opcional)", "Keep my account": "Conservar mi cuenta"};
+function tr(text) {
+  try { return (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'es' && Object.prototype.hasOwnProperty.call(ES_TEXT, text)) ? ES_TEXT[text] : text; } catch (e) { return text; }
+}
+const EARLY_ACCESS_SUFFIX = ' Trothen is in early access: payments are in test mode right now and no real money moves yet.';
+function trDetail(detail) {
+  const d = String(detail || '');
+  return d.endsWith(EARLY_ACCESS_SUFFIX) ? tr(d.slice(0, -EARLY_ACCESS_SUFFIX.length)) + ' ' + tr(EARLY_ACCESS_SUFFIX.trim()) : tr(d);
+}
+
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
@@ -3737,15 +3751,21 @@ function distLabel(miles) {
 }
 function describeAccuracy(m) {
   if (m == null) return '';
+  if (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'es') {
+    if (m <= 30) return `precisión de unos ${m} m`;
+    if (m <= 150) return `dentro de unos ${m} m`;
+    if (m < 1000) return `aproximada: dentro de unos ${Math.round(m / 50) * 50} m`;
+    return `muy aproximada: dentro de unos ${(m / 1000).toFixed(1)} km`;
+  }
   if (m <= 30) return `accurate to about ${m} m`;
   if (m <= 150) return `within about ${m} m`;
   if (m < 1000) return `rough: within about ${Math.round(m / 50) * 50} m`;
   return `very rough: within about ${(m / 1000).toFixed(1)} km`;
 }
 function locationErrorMessage(code) {
-  return code === 'denied' ? 'Location is switched off for this site. Allow it in your browser or phone settings, then try again.'
-    : code === 'unsupported' ? 'This browser can\'t share location.'
-    : 'Your phone couldn\'t find its location. Step outside or near a window, make sure Location is on, and try again.';
+  return code === 'denied' ? tr('Location is switched off for this site. Allow it in your browser or phone settings, then try again.')
+    : code === 'unsupported' ? tr("This browser can't share location.")
+    : tr("Your phone couldn't find its location. Step outside or near a window, make sure Location is on, and try again.");
 }
 
 // Plus Codes: a short code for any spot on earth, made from GPS
@@ -3818,8 +3838,8 @@ function renderLiveTripBar(note) {
   }
   const p = LIVE_TRIP.latest;
   bar.innerHTML = `<span style="width:10px;height:10px;border-radius:50%;background:#3DDC97;flex-shrink:0;"></span>
-    <span style="flex:1;">${note ? escapeHtml(note) : 'Sharing your location with your customer until you tap Arrived.'}${p && p.accuracyM ? ' (' + describeAccuracy(p.accuracyM) + ')' : ''} Keep this page open.</span>
-    <button class="btn-sm" style="background:#fff;color:#0F2640;border:none;" onclick="openTripTracking(LIVE_TRIP.contractId)">Map</button>`;
+    <span style="flex:1;">${note ? escapeHtml(note) : escapeHtml(tr('Sharing your location with your customer until you tap Arrived.'))}${p && p.accuracyM ? ' (' + describeAccuracy(p.accuracyM) + ')' : ''} ${escapeHtml(tr('Keep this page open.'))}</span>
+    <button class="btn-sm" style="background:#fff;color:#0F2640;border:none;" onclick="openTripTracking(LIVE_TRIP.contractId)">${escapeHtml(tr('Map'))}</button>`;
 }
 async function startLiveTrip(contractId) {
   if (!navigator.geolocation) return;
@@ -3882,10 +3902,11 @@ function closeTripTracking() {
 }
 function ago(seconds) {
   if (seconds == null) return '';
-  if (seconds < 10) return 'just now';
-  if (seconds < 60) return seconds + ' seconds ago';
+  const es = typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'es';
+  if (seconds < 10) return es ? 'ahora mismo' : 'just now';
+  if (seconds < 60) return es ? 'hace ' + seconds + ' segundos' : seconds + ' seconds ago';
   const m = Math.round(seconds / 60);
-  return m + ' minute' + (m === 1 ? '' : 's') + ' ago';
+  return es ? 'hace ' + m + ' minuto' + (m === 1 ? '' : 's') : m + ' minute' + (m === 1 ? '' : 's') + ' ago';
 }
 async function openTripTracking(contractId) {
   closeTripTracking();
@@ -3901,7 +3922,7 @@ async function openTripTracking(contractId) {
         <div id="trip-fresh" style="font-size:13.5px;margin-top:4px;color:var(--slate);" aria-live="polite"></div>
         <div id="trip-map" style="height:min(48vh,380px);border-radius:10px;margin-top:12px;background:var(--offwhite);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--slate);font-size:13.5px;">Loading the map…</div>
         <div id="trip-links" style="margin-top:10px;font-size:13.5px;line-height:1.7;"></div>
-        <div class="ver-note" style="margin-top:8px;">Distance is a straight line, not the road. The position only updates while the pro's Trothen page is open on their phone.</div>
+        <div class="ver-note" style="margin-top:8px;">${escapeHtml(tr("Distance is a straight line, not the road. The position only updates while the pro's Trothen page is open on their phone."))}</div>
       </div>
     </div></div>`);
   await refreshTripTracking();
@@ -3916,26 +3937,34 @@ async function refreshTripTracking() {
   if (TRIP_VIEW.contractId !== id) return;
   const iAmPro = AUTH.user && AUTH.user.role === 'provider';
   const set = (elId, html) => { const el = document.getElementById(elId); if (el) el.innerHTML = html; };
-  set('trip-title', escapeHtml(iAmPro ? 'Trip to ' + d.customerName : d.proName + ' is coming'));
+  set('trip-title', escapeHtml(iAmPro ? tr('Trip to') + ' ' + d.customerName : d.proName + ' ' + tr('is coming')));
   set('trip-sub', escapeHtml(d.service || ''));
-  const dist = d.distanceMiles != null ? `${d.distanceMiles < 0.1 ? Math.round(d.distanceMiles * 5280 / 10) * 10 + ' feet' : d.distanceMiles.toFixed(1) + ' miles'} (${d.distanceKm < 1 ? Math.round(d.distanceKm * 1000 / 10) * 10 + ' m' : d.distanceKm.toFixed(1) + ' km'})` : null;
+  const dist = d.distanceMiles != null ? `${d.distanceMiles < 0.1 ? Math.round(d.distanceMiles * 5280 / 10) * 10 + ' ' + tr('feet') : d.distanceMiles.toFixed(1) + ' ' + tr('miles')} (${d.distanceKm < 1 ? Math.round(d.distanceKm * 1000 / 10) * 10 + ' m' : d.distanceKm.toFixed(1) + ' km'})` : null;
   let headline = '', fresh = '';
-  if (d.phase === 'arrived') { headline = iAmPro ? 'You\'ve arrived' : escapeHtml(d.proName) + ' has arrived'; fresh = 'Live location sharing has stopped.'; }
-  else if (d.phase === 'not_started') { headline = iAmPro ? 'Tap "On My Way" when you set off' : 'Your pro hasn\'t set off yet'; fresh = iAmPro ? '' : 'You\'ll be able to follow them here once they tap "On my way".'; }
+  if (d.phase === 'arrived') { headline = iAmPro ? escapeHtml(tr("You've arrived")) : escapeHtml(d.proName) + ' ' + escapeHtml(tr('has arrived')); fresh = escapeHtml(tr('Live location sharing has stopped.')); }
+  else if (d.phase === 'not_started') { headline = iAmPro ? 'Tap "On My Way" when you set off' : escapeHtml(tr("Your pro hasn't set off yet")); fresh = iAmPro ? '' : escapeHtml(tr('You\'ll be able to follow them here once they tap "On my way".')); }
   else if (d.phase === 'ended') { headline = 'This trip is no longer live'; }
-  else if (!d.proLocation) { headline = iAmPro ? 'Finding your location…' : escapeHtml(d.proName) + ' is on the way'; fresh = iAmPro ? 'Make sure Location is on and this page stays open.' : 'Waiting for their phone to send a position.'; }
+  else if (!d.proLocation) { headline = iAmPro ? escapeHtml(tr('Finding your location…')) : escapeHtml(d.proName) + ' ' + escapeHtml(tr('is on the way')); fresh = iAmPro ? 'Make sure Location is on and this page stays open.' : escapeHtml(tr('Waiting for their phone to send a position.')); }
   else {
-    headline = dist ? (iAmPro ? dist + ' to go' : dist + ' away') : (iAmPro ? 'You\'re on the way' : escapeHtml(d.proName) + ' is on the way');
+    headline = dist ? (iAmPro ? dist + ' ' + escapeHtml(tr('to go')) : dist + ' ' + escapeHtml(tr('away'))) : (iAmPro ? 'You\'re on the way' : escapeHtml(d.proName) + ' ' + escapeHtml(tr('is on the way')));
     const stale = d.secondsSinceUpdate > 90;
-    fresh = `<span style="color:${stale ? '#8C6423' : 'var(--slate)'};">${iAmPro ? 'Your position was last sent ' : 'Position updated '}${ago(d.secondsSinceUpdate)}${d.proLocation.accuracyM ? ' · ' + describeAccuracy(d.proLocation.accuracyM) : ''}.${stale ? (iAmPro ? ' Keep this page open with the screen on.' : ' Their phone may be locked or out of signal. This is their last known position.') : ''}</span>`;
+    fresh = `<span style="color:${stale ? '#8C6423' : 'var(--slate)'};">${escapeHtml(tr(iAmPro ? 'Your position was last sent' : 'Position updated'))} ${ago(d.secondsSinceUpdate)}${d.proLocation.accuracyM ? ' · ' + describeAccuracy(d.proLocation.accuracyM) : ''}.${stale ? ' ' + escapeHtml(tr(iAmPro ? 'Keep this page open with the screen on.' : 'Their phone may be locked or out of signal. This is their last known position.')) : ''}</span>`;
     if (!d.jobLocation) fresh += '<div style="margin-top:4px;">No distance: this booking has no location pin.</div>';
+    // v99: a rough guess at how long, from the straight-line distance. Roads
+    // are longer than a straight line (about 1.3 to 1.6 times) and town
+    // traffic moves at roughly 15 to 30 km/h, so it is given as a range and
+    // called a guess. There is no real route behind it.
+    else if (d.distanceKm != null && d.distanceKm >= 0.3 && !stale) {
+      const lo = Math.max(1, Math.round(d.distanceKm * 1.3 / 30 * 60)), hi = Math.max(lo + 1, Math.round(d.distanceKm * 1.6 / 15 * 60));
+      fresh += `<div style="margin-top:4px;">${escapeHtml(tr('Rough guess:'))} ${lo}–${hi} ${escapeHtml(tr('minutes, depending on the roads and traffic.'))}</div>`;
+    }
   }
   set('trip-headline', headline); set('trip-fresh', fresh);
   const links = [];
   const mapsUrl = (p) => `https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}`;
-  if (d.jobLocation) links.push(`<div><strong>Job location:</strong> ${plusCodeFor(d.jobLocation.latitude, d.jobLocation.longitude)} · <a href="${iAmPro ? 'https://www.google.com/maps/dir/?api=1&destination=' + d.jobLocation.latitude + ',' + d.jobLocation.longitude : mapsUrl(d.jobLocation)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">${iAmPro ? 'Get directions in Google Maps' : 'Open in Maps'}</a>${d.landmark ? '<div style="color:var(--slate);">' + escapeHtml(d.landmark) + '</div>' : ''}</div>`);
+  if (d.jobLocation) links.push(`<div><strong>${escapeHtml(tr('Job location:'))}</strong> ${plusCodeFor(d.jobLocation.latitude, d.jobLocation.longitude)} · <a href="${iAmPro ? 'https://www.google.com/maps/dir/?api=1&destination=' + d.jobLocation.latitude + ',' + d.jobLocation.longitude : mapsUrl(d.jobLocation)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">${escapeHtml(tr(iAmPro ? 'Get directions in Google Maps' : 'Open in Maps'))}</a>${d.landmark ? '<div style="color:var(--slate);">' + escapeHtml(d.landmark) + '</div>' : ''}</div>`);
   else if (d.landmark) links.push(`<div><strong>Job location:</strong> ${escapeHtml(d.landmark)}</div>`);
-  if (d.proLocation && !iAmPro) links.push(`<div><strong>${escapeHtml(d.proName)}:</strong> <a href="${mapsUrl(d.proLocation)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">Open their position in Maps</a></div>`);
+  if (d.proLocation && !iAmPro) links.push(`<div><strong>${escapeHtml(d.proName)}:</strong> <a href="${mapsUrl(d.proLocation)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">${escapeHtml(tr('Open their position in Maps'))}</a></div>`);
   set('trip-links', links.join(''));
   drawTripMap(d);
 }
@@ -3980,23 +4009,23 @@ const JOB_PIN = {};
 function locationPickerHTML(prefix) {
   return `
   <div class="form-group" id="${prefix}-where">
-    <label class="form-label">Where is the job?</label>
-    <div class="ver-note" style="margin-bottom:8px;">No street address? If you are at the place now, pin it. If you aren't, or Location is switched off on your phone, choose the spot on a map instead. Your pro gets a map link straight to it. Only the pro you hire sees it. <a onclick="showPrivacyPolicy()" style="color:var(--teal);text-decoration:underline;cursor:pointer;">How we use your location</a></div>
+    <label class="form-label">${escapeHtml(tr('Where is the job?'))}</label>
+    <div class="ver-note" style="margin-bottom:8px;">${escapeHtml(tr("No street address? If you are at the place now, pin it. If you aren't, or Location is switched off on your phone, choose the spot on a map instead. Your pro gets a map link straight to it. Only the pro you hire sees it."))} <a onclick="showPrivacyPolicy()" style="color:var(--teal);text-decoration:underline;cursor:pointer;">${escapeHtml(tr('How we use your location'))}</a></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button type="button" class="btn-sm btn-sm-outline" id="${prefix}-pin-btn" onclick="pinJobLocation('${prefix}')">Pin my current location</button>
-      <button type="button" class="btn-sm btn-sm-outline" onclick="openMapPicker('${prefix}')">Choose on a map</button>
+      <button type="button" class="btn-sm btn-sm-outline" id="${prefix}-pin-btn" onclick="pinJobLocation('${prefix}')">${escapeHtml(tr('Pin my current location'))}</button>
+      <button type="button" class="btn-sm btn-sm-outline" onclick="openMapPicker('${prefix}')">${escapeHtml(tr('Choose on a map'))}</button>
     </div>
     <div id="${prefix}-pin-status" style="font-size:13.5px;margin-top:8px;" aria-live="polite"></div>
     <details style="margin-top:8px;">
-      <summary style="font-size:13.5px;cursor:pointer;color:var(--teal);">GPS not working, or you're not there now? Type the location instead</summary>
+      <summary style="font-size:13.5px;cursor:pointer;color:var(--teal);">${escapeHtml(tr("GPS not working, or you're not there now? Type the location instead"))}</summary>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
         <input class="form-input" type="text" id="${prefix}-typed-loc" placeholder="6.3156, -10.8074  or  6CRF858V+62  or a Google Maps link" style="flex:1;min-width:220px;"/>
-        <button type="button" class="btn-sm btn-sm-outline" onclick="useTypedJobLocation('${prefix}')">Use this</button>
+        <button type="button" class="btn-sm btn-sm-outline" onclick="useTypedJobLocation('${prefix}')">${escapeHtml(tr('Use this'))}</button>
       </div>
-      <div class="ver-note" style="margin-top:6px;">In Google Maps, press and hold on the spot, then copy the numbers or the Plus Code it shows.</div>
+      <div class="ver-note" style="margin-top:6px;">${escapeHtml(tr('In Google Maps, press and hold on the spot, then copy the numbers or the Plus Code it shows.'))}</div>
     </details>
-    <label class="form-label" style="margin-top:12px;" for="${prefix}-landmark">Landmark or directions</label>
-    <input class="form-input" type="text" id="${prefix}-landmark" maxlength="200" placeholder="e.g. Blue gate behind the Total station, ELWA Junction"/>
+    <label class="form-label" style="margin-top:12px;" for="${prefix}-landmark">${escapeHtml(tr('Landmark or directions'))}</label>
+    <input class="form-input" type="text" id="${prefix}-landmark" maxlength="200" placeholder="${escapeHtml(tr('e.g. Blue gate behind the Total station, ELWA Junction'))}"/>
   </div>`;
 }
 function renderJobPin(prefix) {
@@ -4006,20 +4035,20 @@ function renderJobPin(prefix) {
   if (!pin) { el.innerHTML = ''; return; }
   const rough = pin.accuracyM != null && pin.accuracyM > 150;
   el.innerHTML = `<div style="padding:9px 11px;border-radius:8px;border:1px solid ${rough ? '#E9D6A8' : '#BFE3D2'};background:${rough ? '#FBF3E4' : '#EEF8F3'};">
-    <strong>${rough ? 'Rough location pinned' : 'Location pinned'}</strong>${pin.accuracyM != null ? ' · ' + describeAccuracy(pin.accuracyM) : (pin.source === 'map' ? ' · chosen on the map' : '')}
-    <div style="margin-top:3px;">Plus Code: <strong>${plusCodeFor(pin.latitude, pin.longitude)}</strong> · <a href="https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);text-decoration:underline;">Check it on the map</a></div>
-    ${rough ? '<div style="margin-top:4px;">That is not exact. Step outside and pin again, or add a clear landmark below so your pro can find you.</div>' : ''}
-    <button type="button" style="margin-top:4px;background:none;border:none;padding:0;color:var(--teal);font-size:13px;text-decoration:underline;cursor:pointer;" onclick="openMapPicker('${prefix}')">Adjust on the map</button> · <button type="button" style="margin-top:4px;background:none;border:none;padding:0;color:var(--teal);font-size:13px;text-decoration:underline;cursor:pointer;" onclick="JOB_PIN['${prefix}']=null;renderJobPin('${prefix}')">Remove pin</button>
+    <strong>${escapeHtml(tr(rough ? 'Rough location pinned' : 'Location pinned'))}</strong>${pin.accuracyM != null ? ' · ' + describeAccuracy(pin.accuracyM) : (pin.source === 'map' ? ' · ' + escapeHtml(tr('chosen on the map')) : '')}
+    <div style="margin-top:3px;">Plus Code: <strong>${plusCodeFor(pin.latitude, pin.longitude)}</strong> · <a href="https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);text-decoration:underline;">${escapeHtml(tr('Check it on the map'))}</a></div>
+    ${rough ? '<div style="margin-top:4px;">' + escapeHtml(tr('That is not exact. Step outside and pin again, or add a clear landmark below so your pro can find you.')) + '</div>' : ''}
+    <button type="button" style="margin-top:4px;background:none;border:none;padding:0;color:var(--teal);font-size:13px;text-decoration:underline;cursor:pointer;" onclick="openMapPicker('${prefix}')">${escapeHtml(tr('Adjust on the map'))}</button> · <button type="button" style="margin-top:4px;background:none;border:none;padding:0;color:var(--teal);font-size:13px;text-decoration:underline;cursor:pointer;" onclick="JOB_PIN['${prefix}']=null;renderJobPin('${prefix}')">${escapeHtml(tr('Remove pin'))}</button>
   </div>`;
 }
 async function pinJobLocation(prefix) {
   const btn = document.getElementById(prefix + '-pin-btn');
   const el = document.getElementById(prefix + '-pin-status');
-  if (btn) { btn.disabled = true; btn.textContent = 'Finding your location…'; }
-  if (el) el.textContent = 'This can take up to half a minute. Stay where the job is, outside if you can.';
+  if (btn) { btn.disabled = true; btn.textContent = tr('Finding your location…'); }
+  if (el) el.textContent = tr('This can take up to half a minute. Stay where the job is, outside if you can.');
   const r = await getBestLocation({ goodEnoughM: 30, maxWaitMs: 25000, onProgress: (b) => { if (el) el.textContent = 'Getting closer: ' + describeAccuracy(b.accuracyM) + '…'; } });
-  if (btn) { btn.disabled = false; btn.textContent = 'Pin my current location'; }
-  if (r.error) { if (el) el.textContent = locationErrorMessage(r.error) + ' You can also type the location or just describe a landmark below.'; return; }
+  if (btn) { btn.disabled = false; btn.textContent = tr('Pin my current location'); }
+  if (r.error) { if (el) el.textContent = locationErrorMessage(r.error) + ' ' + tr('You can also type the location or just describe a landmark below.'); return; }
   JOB_PIN[prefix] = { latitude: r.latitude, longitude: r.longitude, accuracyM: r.accuracyM, source: 'gps' };
   renderJobPin(prefix);
 }
@@ -4048,8 +4077,8 @@ function updateMapPickReadout() {
   if (!el || !MAP_PICK.map) return;
   const c = MAP_PICK.map.getCenter(), z = MAP_PICK.map.getZoom();
   el.innerHTML = z < 16
-    ? '<span style="color:#8C6423;">Zoom in closer (the + button, or pinch) until you can see the building or the yard.</span>'
-    : `Pin is at <strong>${plusCodeFor(c.lat, c.lng)}</strong>`;
+    ? '<span style="color:#8C6423;">' + escapeHtml(tr('Zoom in closer (the + button, or pinch) until you can see the building or the yard.')) + '</span>'
+    : `${escapeHtml(tr('Pin is at'))} <strong>${plusCodeFor(c.lat, c.lng)}</strong>`;
   const btn = document.getElementById('map-pick-use');
   if (btn) btn.disabled = z < 16; // close enough to tell one building from the next
 }
@@ -4059,14 +4088,14 @@ async function openMapPicker(prefix) {
   document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="map-pick-overlay" style="z-index:5350;">
     <div class="modal" style="max-width:min(760px,96vw);width:96vw;max-height:96vh;display:flex;flex-direction:column;" role="dialog" aria-modal="true" aria-label="Choose the job location on a map">
       <div class="modal-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-shrink:0;">
-        <div><h3 style="margin:0;">Where is the job?</h3><p style="margin:4px 0 0;">Slide the map until the pin sits on the right spot, then press "Use this spot".</p></div>
+        <div><h3 style="margin:0;">${escapeHtml(tr('Where is the job?'))}</h3><p style="margin:4px 0 0;">${escapeHtml(tr('Slide the map until the pin sits on the right spot, then press "Use this spot".'))}</p></div>
         <button class="modal-close" onclick="closeMapPicker()" aria-label="Close">✕</button>
       </div>
       <div class="modal-body" style="overflow:auto;flex:1 1 auto;min-height:0;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <input class="form-input" type="search" id="map-pick-q" placeholder="Search a town, area or landmark, e.g. Paynesville" style="flex:1;min-width:200px;" onkeydown="if(event.key==='Enter'){event.preventDefault();searchMapPlace()}"/>
-          <button type="button" class="btn-sm btn-sm-outline" onclick="searchMapPlace()">Search</button>
-          <button type="button" class="btn-sm btn-sm-outline" id="map-pick-findme" onclick="mapPickFindMe()">Find me</button>
+          <button type="button" class="btn-sm btn-sm-outline" onclick="searchMapPlace()">${escapeHtml(tr('Search'))}</button>
+          <button type="button" class="btn-sm btn-sm-outline" id="map-pick-findme" onclick="mapPickFindMe()">${escapeHtml(tr('Find me'))}</button>
         </div>
         <div id="map-pick-results" style="margin-top:6px;font-size:13.5px;"></div>
         <div style="position:relative;margin-top:10px;">
@@ -4079,8 +4108,8 @@ async function openMapPicker(prefix) {
         <div id="map-pick-readout" style="margin-top:8px;font-size:13.5px;" aria-live="polite"></div>
       </div>
       <div class="modal-footer" style="display:flex;gap:10px;flex-shrink:0;">
-        <button class="btn-sm btn-sm-outline" style="flex:1;" onclick="closeMapPicker()">Cancel</button>
-        <button class="confirm-btn" style="flex:2;" id="map-pick-use" onclick="confirmMapPick()" disabled>Use this spot</button>
+        <button class="btn-sm btn-sm-outline" style="flex:1;" onclick="closeMapPicker()">${escapeHtml(tr('Cancel'))}</button>
+        <button class="confirm-btn" style="flex:2;" id="map-pick-use" onclick="confirmMapPick()" disabled>${escapeHtml(tr('Use this spot'))}</button>
       </div>
     </div></div>`);
   const ok = await loadLeaflet();
@@ -4120,7 +4149,7 @@ async function mapPickFindMe() {
   const btn = document.getElementById('map-pick-findme');
   if (btn) { btn.disabled = true; btn.textContent = 'Finding…'; }
   const r = await getBestLocation({ goodEnoughM: 60, maxWaitMs: 15000 });
-  if (btn) { btn.disabled = false; btn.textContent = 'Find me'; }
+  if (btn) { btn.disabled = false; btn.textContent = tr('Find me'); }
   if (r.error) return showToast(locationErrorMessage(r.error) + ' You can still move the map by hand.');
   if (MAP_PICK.map) MAP_PICK.map.setView([r.latitude, r.longitude], 17);
 }
@@ -4145,7 +4174,7 @@ function whereHTML(c) {
   const url = `https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}`;
   const rough = pin.accuracyM != null && pin.accuracyM > 150;
   const lm = c.landmark || (c.address && c.address !== 'Location pinned on the map' ? c.address : '');
-  return `<div style="font-size:13px;margin-top:4px;line-height:1.5;"><a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;white-space:nowrap;">Open in Maps</a> · <span title="Plus Code: works in Google Maps, even offline">${plusCodeFor(pin.latitude, pin.longitude)}</span>${rough ? ` <span style="color:#8C6423;">(${describeAccuracy(pin.accuracyM)})</span>` : ''}${lm ? `<div style="color:var(--slate);">${escapeHtml(lm)}</div>` : ''}</div>`;
+  return `<div style="font-size:13px;margin-top:4px;line-height:1.5;"><a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;white-space:nowrap;">${escapeHtml(tr('Open in Maps'))}</a> · <span title="Plus Code: works in Google Maps, even offline">${plusCodeFor(pin.latitude, pin.longitude)}</span>${rough ? ` <span style="color:#8C6423;">(${describeAccuracy(pin.accuracyM)})</span>` : ''}${lm ? `<div style="color:var(--slate);">${escapeHtml(lm)}</div>` : ''}</div>`;
 }
 
 function addressLinkHTML(address) {
@@ -4177,12 +4206,12 @@ function openJobCardHTML(j) {
       <div style="font-size:22px;line-height:1;flex-shrink:0;">${categoryIcon(j.category)}</div>
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <div style="font-weight:700;color:var(--navy);font-size:14px;">${j.category}</div>
+          <div style="font-weight:700;color:var(--navy);font-size:14px;">${escapeHtml(j.category)}</div>
           <div style="font-size:12.5px;color:var(--muted);white-space:nowrap;">${timeAgo(j.createdAt)}</div>
         </div>
         <div style="font-size:14px;color:var(--slate);margin-top:2px;line-height:1.5;">${escapeHtml(j.description)}</div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:10px;flex-wrap:wrap;">
-          ${j.budget ? `<span class="badge badge-neutral">Budget: ${j.budget}</span>` : '<span></span>'}
+          ${j.budget ? `<span class="badge badge-neutral">Budget: ${escapeHtml(j.budget)}</span>` : '<span></span>'}
           <div style="display:flex;gap:8px;">
             <button class="btn-sm btn-sm-primary" onclick="viewJobCandidates('${j.id}')">View Responses</button>
             <button class="btn-sm btn-sm-ghost" onclick="cancelJobRequest('${j.id}')">Cancel Request</button>
@@ -6297,7 +6326,7 @@ function setAuthRole(role) {
     // here too, instead of a hardcoded list going stale.
     const select = document.getElementById('auth-category');
     if (select && CATEGORIES.length) {
-      select.innerHTML = CATEGORIES.map(c => `<option>${c.name}</option>`).join('') + `<option value="__other__">Other (not listed — describe below)</option>`;
+      select.innerHTML = CATEGORIES.map(c => `<option>${escapeHtml(c.name)}</option>`).join('') + `<option value="__other__">Other (not listed — describe below)</option>`;
     }
   }
 }
@@ -6577,7 +6606,7 @@ function checkTermsGate(role) {
   const row = (i, label, detail) => `
             <label class="tg-row" for="tg-box-${i}">
               <input type="checkbox" class="tg-box" id="tg-box-${i}" onchange="updateTermsAgreeButton()"/>
-              <span><strong>${escapeHtml(label)}</strong><span class="tg-detail">${escapeHtml(detail)}</span></span>
+              <span><strong>${escapeHtml(tr(label))}</strong><span class="tg-detail">${escapeHtml(trDetail(detail))}</span></span>
             </label>`;
 
   const modalHtml = `
@@ -6602,24 +6631,24 @@ function checkTermsGate(role) {
       </style>
       <div class="modal" style="max-width:560px;" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="terms-gate-title">
         <div class="modal-header">
-          <h3 id="terms-gate-title">${title}</h3>
-          <p>${intro}</p>
+          <h3 id="terms-gate-title">${escapeHtml(tr(title))}</h3>
+          <p>${escapeHtml(tr(intro))}</p>
         </div>
         <div class="modal-body" id="terms-gate-summary-view">
           ${promises.map(([label, detail], i) => row(i, label, detail)).join('')}
           <label class="tg-row" for="terms-gate-checkbox">
             <input type="checkbox" class="tg-box" id="terms-gate-checkbox" onchange="updateTermsAgreeButton()"/>
-            <span><strong>I agree to the Trothen Terms of Service</strong><span class="tg-detail">The full terms cover fees, cancellations, what can't be booked on Trothen, and how accounts can be suspended. <button type="button" class="tg-link" onclick="event.preventDefault();openFullTermsInGate('${role}')">Read the full terms</button> Our <button type="button" class="tg-link" onclick="event.preventDefault();showPrivacyPolicy()">Privacy Policy</button> explains how we use your information, including your ID and your location.</span></span>
+            <span><strong>${escapeHtml(tr('I agree to the Trothen Terms of Service'))}</strong><span class="tg-detail">${escapeHtml(tr("The full terms cover fees, cancellations, what can't be booked on Trothen, and how accounts can be suspended."))} <button type="button" class="tg-link" onclick="event.preventDefault();openFullTermsInGate('${role}')">${escapeHtml(tr('Read the full terms'))}</button> ${escapeHtml(tr('Our'))} <button type="button" class="tg-link" onclick="event.preventDefault();showPrivacyPolicy()">${escapeHtml(tr('Privacy Policy'))}</button> ${escapeHtml(tr('explains how we use your information, including your ID and your location.'))}</span></span>
           </label>
-          <div class="tg-fine">${finePrint}</div>
+          <div class="tg-fine">${escapeHtml(tr(finePrint))}</div>
         </div>
         <div class="modal-body" id="terms-gate-full-view" style="display:none;">
-          <button onclick="closeFullTermsInGate()" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;padding:0;margin-bottom:14px;">← Back to the checkboxes</button>
+          <button onclick="closeFullTermsInGate()" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;padding:0;margin-bottom:14px;">← ${escapeHtml(tr('Back to the checkboxes'))}</button>
           <div id="terms-gate-full-content" style="font-size:14px;color:var(--text);">Loading…</div>
         </div>
         <div class="modal-footer" style="display:flex;gap:12px;flex-wrap:wrap;">
           <span class="tg-left" id="terms-gate-left" aria-live="polite"></span>
-          <button class="confirm-btn" id="terms-gate-agree-btn" disabled onclick="submitTermsAgreement()">Agree and continue</button>
+          <button class="confirm-btn" id="terms-gate-agree-btn" disabled onclick="submitTermsAgreement()">${escapeHtml(tr('Agree and continue'))}</button>
         </div>
       </div>
     </div>`;
@@ -6662,7 +6691,7 @@ function updateTermsAgreeButton() {
   boxes.forEach(b => { const r = b.closest('.tg-row'); if (r) r.classList.toggle('is-ticked', b.checked); });
   const left = boxes.filter(b => !b.checked).length;
   btn.disabled = left > 0;
-  if (leftEl) leftEl.textContent = left === 0 ? 'All checked. You can continue.' : left === boxes.length ? `Check all ${boxes.length} boxes to continue` : `${left} box${left === 1 ? '' : 'es'} left to check`;
+  if (leftEl) leftEl.textContent = left === 0 ? tr('All checked. You can continue.') : left === boxes.length ? tr('Check all {n} boxes to continue').replace('{n}', boxes.length) : tr(left === 1 ? '{n} box left to check' : '{n} boxes left to check').replace('{n}', left);
 }
 
 async function submitTermsAgreement() {
@@ -6808,38 +6837,38 @@ function verificationHTML(role, status) {
       <div class="step-dot ${verified ? 'done' : ''}">${verified ? '✓' : '3'}</div>
     </div>
     <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--slate);margin-top:-18px;margin-bottom:20px;max-width:520px;">
-      <span>Submit Documents</span><span>Under Review</span><span>Verified</span>
+      <span>${escapeHtml(tr("Submit Documents"))}</span><span>${escapeHtml(tr("Under Review"))}</span><span>${escapeHtml(tr("Verified"))}</span>
     </div>
     ${verified
       ? (VERIFIED_WITHOUT_ID
-          ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;white-space:normal;text-align:left;">Account approved by our team. No ID has been reviewed for this account yet.</div>`
+          ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;white-space:normal;text-align:left;">${escapeHtml(tr("Account approved by our team. No ID has been reviewed for this account yet."))}</div>`
           : `<div class="badge badge-success" style="font-size:14px;padding:8px 16px;">✓ Identity Verified — government ID confirmed</div>`)
       : inReview
         ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;">⏳ Submitted — awaiting review</div>`
         : `<div id="verification-action-area">
-            <div class="form-group"><label class="form-label">Document Type</label>
+            <div class="form-group"><label class="form-label">${escapeHtml(tr("Document Type"))}</label>
               <select class="form-input" id="verification-doc-type-select"><option>Loading…</option></select>
             </div>
-            <div class="form-group"><label class="form-label">Full Legal Name (exactly as printed on the document)</label>
+            <div class="form-group"><label class="form-label">${escapeHtml(tr("Full Legal Name (exactly as printed on the document)"))}</label>
               <input class="form-input" id="verification-legal-name-input" placeholder="e.g. Marcus T. Johnson"/>
             </div>
-            <div class="form-group"><label class="form-label">1. The front of your government-issued ID</label>
+            <div class="form-group"><label class="form-label">${escapeHtml(tr("1. The front of your government-issued ID"))}</label>
               <input class="form-input" type="file" id="verification-doc-file-input" accept="image/*,application/pdf" onchange="showVerificationPick(this, 'ver-pick-front')"/>
               <div id="ver-pick-front"></div>
-              <div class="ver-note" style="margin-top:6px;">The whole document, flat, with all four corners showing, nothing covered, and no glare. A photo or a PDF. On a phone you can take the photo right here.</div>
+              <div class="ver-note" style="margin-top:6px;">${escapeHtml(tr("The whole document, flat, with all four corners showing, nothing covered, and no glare. A photo or a PDF. On a phone you can take the photo right here."))}</div>
             </div>
-            <div class="form-group"><label class="form-label">2. The back of your ID <span style="font-weight:400;color:var(--slate);">(if it has one)</span></label>
+            <div class="form-group"><label class="form-label">${escapeHtml(tr("2. The back of your ID"))} <span style="font-weight:400;color:var(--slate);">${escapeHtml(tr("(if it has one)"))}</span></label>
               <input class="form-input" type="file" id="verification-back-file-input" accept="image/*,application/pdf" onchange="showVerificationPick(this, 'ver-pick-back')"/>
               <div id="ver-pick-back"></div>
-              <div class="ver-note" style="margin-top:6px;">For a driver's license or ID card, add the back as well. Skip this for a passport.</div>
+              <div class="ver-note" style="margin-top:6px;">${escapeHtml(tr("For a driver's license or ID card, add the back as well. Skip this for a passport."))}</div>
             </div>
-            <div class="form-group"><label class="form-label">3. A photo of your face</label>
+            <div class="form-group"><label class="form-label">${escapeHtml(tr("3. A photo of your face"))}</label>
               <input class="form-input" type="file" id="verification-selfie-file-input" accept="image/*" capture="user" onchange="showVerificationPick(this, 'ver-pick-selfie')"/>
               <div id="ver-pick-selfie"></div>
-              <div class="ver-note" style="margin-top:6px;">Take it now, in good light, looking at the camera, with no hat or sunglasses. A person on our team compares it with the photo on your ID.</div>
+              <div class="ver-note" style="margin-top:6px;">${escapeHtml(tr("Take it now, in good light, looking at the camera, with no hat or sunglasses. A person on our team compares it with the photo on your ID."))}</div>
             </div>
-            <div class="ver-note" style="margin:0 0 14px;">These are stored privately and are never shown to other users. Only the Trothen staff who review identity checks can open them. Check each preview is sharp enough to read before you send.</div>
-            <button class="btn-sm btn-sm-primary" id="verification-submit-btn" onclick="submitVerification('${role}')">Submit for Review</button>
+            <div class="ver-note" style="margin:0 0 14px;">${escapeHtml(tr("These are stored privately and are never shown to other users. Only the Trothen staff who review identity checks can open them. Check each preview is sharp enough to read before you send."))}</div>
+            <button class="btn-sm btn-sm-primary" id="verification-submit-btn" onclick="submitVerification('${role}')">${escapeHtml(tr("Submit for Review"))}</button>
           </div>`}
   </div>
   ${role === 'provider' ? `<div class="panel"><div class="panel-title">Additional Trust Checks</div>
@@ -7449,8 +7478,8 @@ function paymentHistoryTableHTML(payments) {
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:13px;">
             <div><span style="color:var(--muted);">Provider:</span> ${escapeHtml(p.providerName)}${p.providerEmail ? ` · ${escapeHtml(p.providerEmail)}` : ''}${p.providerPhone ? ` · ${escapeHtml(p.providerPhone)}` : ''}</div>
-            <div><span style="color:var(--muted);">Scheduled:</span> ${p.jobDate || '—'}${p.jobTime ? ` · ${p.jobTime}` : ''}</div>
-            <div style="grid-column:1/-1;"><span style="color:var(--muted);">Address:</span> ${p.address || '—'}</div>
+            <div><span style="color:var(--muted);">Scheduled:</span> ${escapeHtml(p.jobDate || '—')}${p.jobTime ? ` · ${p.jobTime}` : ''}</div>
+            <div style="grid-column:1/-1;"><span style="color:var(--muted);">Address:</span> ${escapeHtml(p.address || '—')}</div>
           </div>
         </div>
       </td>
@@ -7601,7 +7630,7 @@ function bookingsTable(list) {
 function gpsStatusNote(b) {
   // v93: while the pro is on the way, the customer gets a button to watch them come.
   const track = (b.onMyWayAt && !b.arrivedAt && b.status === 'active')
-    ? `<div style="margin-top:6px;"><button class="btn-sm btn-sm-primary" onclick="openTripTracking(${jsArg(b.id)})">Track your pro</button></div>` : '';
+    ? `<div style="margin-top:6px;"><button class="btn-sm btn-sm-primary" onclick="openTripTracking(${jsArg(b.id)})">${escapeHtml(tr('Track your pro'))}</button></div>` : '';
   if (!b.onMyWayAt && !b.arrivedAt) return '';
   const fmt = (iso) => new Date(iso).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
   const parts = [];
@@ -7933,7 +7962,7 @@ async function openAdvertiseForm() {
       cities = data.cities || [];
     } catch (e) { console.warn('Could not load cities for ad targeting', e); }
   }
-  const cityOptionsHtml = cities.map(c => `<option value="${escapeHtml(c.name)}">${c.name}, ${c.country}</option>`).join('');
+  const cityOptionsHtml = cities.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}, ${escapeHtml(c.country)}</option>`).join('');
 
   const modalHtml = `
     <div class="modal-overlay open" id="advertise-modal-overlay" onclick="if(event.target===this)document.getElementById('advertise-modal-overlay').remove()">
@@ -8752,7 +8781,7 @@ async function viewProviderProfile(id) {
       <div class="profile-meta-row">
         <div class="profile-meta-item">★ ${p.rating ? Number(p.rating).toFixed(1) : 'No'} rating</div>
         <div class="profile-meta-item">📋 ${escapeHtml(p.jobs)} jobs completed</div>
-        ${p.isNewPro ? `<div class="profile-meta-item" title="This pro's ID has been checked. They get a Trothen Score after their first five completed jobs.">New on Trothen</div>` : (p.trustScore != null ? `<div class="profile-meta-item" title="Trothen Score: a computed measure of this pro's reliability and track record">🛡️ ${p.trustScore}/100 Trothen Score</div>` : '')}
+        ${p.isNewPro ? `<div class="profile-meta-item" title="This pro's ID has been checked. They get a Trothen Score after their first five completed jobs.">${escapeHtml(tr('New on Trothen'))}</div>` : (p.trustScore != null ? `<div class="profile-meta-item" title="Trothen Score: a computed measure of this pro's reliability and track record">🛡️ ${p.trustScore}/100 Trothen Score</div>` : '')}
         ${AUTH.user && AUTH.user.role === 'customer' ? `<button class="btn-sm btn-sm-outline" id="profile-favorite-btn" onclick="toggleFavoriteProvider('${p.id}', false)">🤍 Save</button>` : ''}
       </div>
     </div>`;
@@ -8826,7 +8855,7 @@ async function viewProviderProfile(id) {
 
 /* ══════════════════════ POST A JOB / AI MATCHING ══════════════════════ */
 function postJobFormHTML() {
-  const options = CATEGORIES.map(c => `<option>${c.name}</option>`).join('');
+  const options = CATEGORIES.map(c => `<option>${escapeHtml(c.name)}</option>`).join('');
   return `
   <div class="form-group">
     <label class="form-label">Category</label>
@@ -9072,7 +9101,7 @@ async function runAIMatch() {
             : `<div style="width:44px;height:44px;border-radius:50%;background:${p.color};color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:600;flex-shrink:0;">${p.initials}</div>`}
           <div style="flex:1;">
             <div style="font-weight:600;font-size:13.5px;color:var(--navy);">${escapeHtml(p.name)} <span class="badge badge-success" style="margin-left:4px;">${escapeHtml(p.score)}% match</span></div>
-            <div style="font-size:13px;color:var(--slate);">${p.role} · $${p.price}/hr · ★ ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
+            <div style="font-size:13px;color:var(--slate);">${escapeHtml(p.role)} · $${p.price}/hr · ★ ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           </div>
           <button class="btn-sm btn-sm-primary" onclick="closePostJobModal();openBooking('${p.id}');">Book</button>
         </div>`).join('')}
@@ -9164,9 +9193,9 @@ const PROVIDER_SECTIONS = {
     const allTimeEarnings = providerData.payouts.reduce((s, p) => s + p.amount, 0);
     const catStatus = AUTH.user && AUTH.user.categoryApprovalStatus;
     const catBanner = catStatus === 'pending'
-      ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--gold);"><div style="font-size:13.5px;color:var(--navy);">⏳ Your category "<strong>${AUTH.user.category}</strong>" is pending a quick admin review (usually within 24 hours). You can use your account normally in the meantime — we'll notify you the moment it's reviewed.</div></div>`
+      ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--gold);"><div style="font-size:13.5px;color:var(--navy);">⏳ Your category "<strong>${escapeHtml(AUTH.user.category)}</strong>" is pending a quick admin review (usually within 24 hours). You can use your account normally in the meantime — we'll notify you the moment it's reviewed.</div></div>`
       : catStatus === 'rejected'
-      ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--danger, #C1554D);"><div style="font-size:13.5px;color:var(--navy);">Your category "<strong>${AUTH.user.category}</strong>" wasn't approved as a new listed category. <a onclick="selectProviderSection('settings')" style="color:var(--gold);cursor:pointer;">Update your category in Settings</a> to one of our current categories to be fully bookable.</div></div>`
+      ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--danger, #C1554D);"><div style="font-size:13.5px;color:var(--navy);">Your category "<strong>${escapeHtml(AUTH.user.category)}</strong>" wasn't approved as a new listed category. <a onclick="selectProviderSection('settings')" style="color:var(--gold);cursor:pointer;">Update your category in Settings</a> to one of our current categories to be fully bookable.</div></div>`
       : '';
     // Item 9 / Provider Score & Job Access: only worth showing when it's
     // actually informative — a top-tier provider with unlimited access
@@ -9850,7 +9879,7 @@ async function openPayoutCurrencyChoice() {
     const panel = document.getElementById('payout-currency-panel');
     const c = info.currency;
     const currencyChoiceHTML = info.isUSD ? '' : `
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Your account is based in a ${c.name} (${c.code}) region — choose how you'd like to receive this payout.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Your account is based in a ${escapeHtml(c.name)} (${c.code}) region — choose how you'd like to receive this payout.</div>
       <div style="display:flex;gap:8px;margin-bottom:${hasIntlMethod ? '16px' : '0'};">
         <button class="btn-sm btn-sm-primary" onclick="requestPayout('local', document.getElementById('payout-method-choice')?.value === 'intl')" style="flex:1;">${c.symbol} Receive in ${c.code}</button>
         <button class="btn-sm btn-sm-outline" onclick="requestPayout('usd', document.getElementById('payout-method-choice')?.value === 'intl')" style="flex:1;">$ Receive in USD</button>
@@ -10241,7 +10270,7 @@ function contractsTable(list) {
       const gpsButtons = !c.onMyWayAt
         ? `<button class="btn-sm btn-sm-outline" onclick="markContractOnMyWay('${c.id}')">🚗 On My Way</button> `
         : !c.arrivedAt
-          ? `<button class="btn-sm btn-sm-primary" onclick="openTripTracking('${c.id}')">Trip map</button> <button class="btn-sm btn-sm-outline" onclick="markContractArrived('${c.id}')">📍 Arrived</button> `
+          ? `<button class="btn-sm btn-sm-primary" onclick="openTripTracking('${c.id}')">${escapeHtml(tr('Trip map'))}</button> <button class="btn-sm btn-sm-outline" onclick="markContractArrived('${c.id}')">📍 Arrived</button> `
           : `<span style="font-size:12.5px;color:var(--slate);margin-right:6px;">🚗 On the way · 📍 Arrived</span>`;
       actions = `${gpsButtons}<button class="btn-sm btn-sm-outline" onclick="openScopeChangeRequestForm('${c.id}')">➕ Request Additional Payment</button> <button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>`;
     } else if (c.status === 'expired') {
@@ -10435,7 +10464,7 @@ async function submitScopeChangeRequest(contractId) {
 async function markContractOnMyWay(contractId) {
   if (!BACKEND_AVAILABLE) return showToast('Marked on the way (demo mode)');
   // v93: the pro agrees to share their live position for this trip.
-  const ok = await confirmDialog('Tell the customer you\'re on the way? Your live location will be shared with this customer, and only this customer, until you tap Arrived. Keep this page open on your phone so they can see you coming.', { confirmLabel: 'I\'m on my way' });
+  const ok = await confirmDialog(tr("Tell the customer you're on the way? Your live location will be shared with this customer, and only this customer, until you tap Arrived. Keep this page open on your phone so they can see you coming."), { confirmLabel: tr("I'm on my way") });
   if (!ok) return;
   showToast('Finding your location…');
   const location = await getOneTimeLocation();
@@ -12260,7 +12289,7 @@ async function loadAnnouncementsPanel() {
       <div class="panel" style="background:var(--offwhite);margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;flex-wrap:wrap;">
           <div>
-            <span class="badge ${ANNOUNCEMENT_PRIORITY_BADGE[a.priority] || 'badge-neutral'}">${a.priority}</span>
+            <span class="badge ${ANNOUNCEMENT_PRIORITY_BADGE[a.priority] || 'badge-neutral'}">${escapeHtml(a.priority)}</span>
             <strong style="margin-left:6px;color:var(--navy);">${escapeHtml(a.title)}</strong>
           </div>
           <span style="font-size:12.5px;color:var(--slate);white-space:nowrap;">${a.sentAt ? new Date(a.sentAt).toLocaleString() : (a.scheduledFor ? `Scheduled for ${new Date(a.scheduledFor).toLocaleString()}` : 'Not yet sent')}</span>
@@ -12345,7 +12374,7 @@ async function previewDataCleanup() {
       <div style="max-height:220px;overflow-y:auto;font-size:13px;color:var(--slate);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:10px;">
         ${result.accountsEligible.map(a => `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;">
           <input type="checkbox" class="cleanup-account-checkbox" data-account-id="${a.id}" checked onchange="updateCleanupSelectionCount()"/>
-          <span>${escapeHtml(a.name)} (${escapeHtml(a.email)}) — ${a.role}</span>
+          <span>${escapeHtml(a.name)} (${escapeHtml(a.email)}) — ${escapeHtml(a.role)}</span>
         </label>`).join('')}
       </div>
       <div class="form-group"><label class="form-label">Type <code>${expectedPhrase}</code> to confirm</label><input class="form-input" id="cleanup-confirm-input" placeholder="${escapeHtml(expectedPhrase)}"/></div>
@@ -13362,12 +13391,12 @@ function loadMyDataPanel(mainId) {
   if (!main || !BACKEND_AVAILABLE || !AUTH.user) return;
   const old = document.getElementById('my-data-panel'); if (old) old.remove();
   main.insertAdjacentHTML('beforeend', `<div class="panel" id="my-data-panel">
-    <div class="panel-title">Your data and your account</div>
-    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;">You can download a copy of everything Trothen holds about your account: your profile, bookings, payments, messages, reviews and identity-check records.</div>
-    <button class="btn-sm btn-sm-outline" id="my-data-download-btn" onclick="downloadMyData()">Download my data</button>
+    <div class="panel-title">${escapeHtml(tr("Your data and your account"))}</div>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;">${escapeHtml(tr("You can download a copy of everything Trothen holds about your account: your profile, bookings, payments, messages, reviews and identity-check records."))}</div>
+    <button class="btn-sm btn-sm-outline" id="my-data-download-btn" onclick="downloadMyData()">${escapeHtml(tr("Download my data"))}</button>
     <div style="border-top:1px solid var(--border);margin:18px 0 14px;"></div>
-    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;"><strong>Close my account.</strong> Your account stops working straight away and you're signed out everywhere. Records of past bookings and payments are kept, because the other person in each one has a right to them and money records have to be kept. Your personal details are then removed by our team.</div>
-    <button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="startCloseAccount()">Close my account</button>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;"><strong>${escapeHtml(tr("Close my account."))}</strong> ${escapeHtml(tr("Your account stops working straight away and you're signed out everywhere. Records of past bookings and payments are kept, because the other person in each one has a right to them and money records have to be kept. Your personal details are then removed by our team."))}</div>
+    <button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="startCloseAccount()">${escapeHtml(tr("Close my account"))}</button>
   </div>`);
 }
 async function downloadMyData() {
@@ -13384,23 +13413,23 @@ async function downloadMyData() {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     showToast('Your data has been downloaded');
   } catch (e) { showToast(e.message || 'Could not prepare your data'); }
-  if (btn) { btn.disabled = false; btn.textContent = 'Download my data'; }
+  if (btn) { btn.disabled = false; btn.textContent = tr('Download my data'); }
 }
 async function startCloseAccount() {
   let blockers = [];
   try { blockers = (await apiFetch('GET', '/auth/me/close-account/check')).blockers || []; } catch (e) { return showToast(e.message || 'Could not check your account'); }
   const usesGoogle = !!(AUTH.user && AUTH.user.googleId);
   const body = blockers.length
-    ? `<p style="margin:0 0 10px;">Your account can't be closed just yet:</p><ul style="margin:0 0 4px 18px;line-height:1.6;">${blockers.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>`
-    : `<p style="margin:0 0 12px;line-height:1.6;">This closes your account now. You'll be signed out everywhere and won't be able to sign back in. If you change your mind, contact support before your details are removed.</p>
-       <div class="form-group"><label class="form-label">${usesGoogle ? 'Your password, or type CLOSE' : 'Your password'}</label><input class="form-input" type="${usesGoogle ? 'text' : 'password'}" id="close-account-password" autocomplete="current-password"/></div>
-       <div class="form-group" style="margin-bottom:0;"><label class="form-label">Why are you leaving? <span style="font-weight:400;color:var(--slate);">(optional)</span></label><textarea class="form-input" id="close-account-reason" rows="2" maxlength="500"></textarea></div>`;
+    ? `<p style="margin:0 0 10px;">${escapeHtml(tr("Your account can't be closed just yet:"))}</p><ul style="margin:0 0 4px 18px;line-height:1.6;">${blockers.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>`
+    : `<p style="margin:0 0 12px;line-height:1.6;">${escapeHtml(tr("This closes your account now. You'll be signed out everywhere and won't be able to sign back in. If you change your mind, contact support before your details are removed."))}</p>
+       <div class="form-group"><label class="form-label">${escapeHtml(tr(usesGoogle ? 'Your password, or type CLOSE' : 'Your password'))}</label><input class="form-input" type="${usesGoogle ? 'text' : 'password'}" id="close-account-password" autocomplete="current-password"/></div>
+       <div class="form-group" style="margin-bottom:0;"><label class="form-label">${escapeHtml(tr("Why are you leaving?"))} <span style="font-weight:400;color:var(--slate);">${escapeHtml(tr("(optional)"))}</span></label><textarea class="form-input" id="close-account-reason" rows="2" maxlength="500"></textarea></div>`;
   document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="close-account-overlay" style="z-index:5200;"><div class="modal" style="max-width:460px;" role="dialog" aria-modal="true">
-    <div class="modal-header"><h3>Close my account</h3></div>
+    <div class="modal-header"><h3>${escapeHtml(tr("Close my account"))}</h3></div>
     <div class="modal-body" style="font-size:14px;">${body}</div>
     <div class="modal-footer" style="display:flex;gap:10px;">
-      <button class="btn-sm btn-sm-outline" style="flex:1;" onclick="document.getElementById('close-account-overlay').remove()">${blockers.length ? 'OK' : 'Keep my account'}</button>
-      ${blockers.length ? '' : '<button class="confirm-btn" style="flex:1;background:#A5352B;" id="close-account-confirm-btn" onclick="confirmCloseAccount()">Close my account</button>'}
+      <button class="btn-sm btn-sm-outline" style="flex:1;" onclick="document.getElementById('close-account-overlay').remove()">${blockers.length ? 'OK' : escapeHtml(tr('Keep my account'))}</button>
+      ${blockers.length ? '' : '<button class="confirm-btn" style="flex:1;background:#A5352B;" id="close-account-confirm-btn" onclick="confirmCloseAccount()">' + escapeHtml(tr('Close my account')) + '</button>'}
     </div></div></div>`);
 }
 async function confirmCloseAccount() {
@@ -13415,7 +13444,7 @@ async function confirmCloseAccount() {
     showToast('Your account has been closed.');
     setTimeout(() => { try { clearAuthSession(); } catch (e) {} location.href = '/'; }, 1500);
   } catch (e) {
-    btn.disabled = false; btn.textContent = 'Close my account';
+    btn.disabled = false; btn.textContent = tr('Close my account');
     showToast(e.message || 'Could not close your account');
   }
 }
@@ -13494,13 +13523,41 @@ async function loadBackupsPanel() {
   const old = document.getElementById('backups-panel'); if (old) old.remove();
   if (!d.applies) return;
   const latest = d.backups[0];
-  const rows = d.backups.map(b => `<tr><td>${escapeHtml(b.day)}</td><td>${b.files}</td><td>${Math.max(1, Math.round(b.bytes / 1024)).toLocaleString()} KB</td></tr>`).join('');
+  const rows = d.backups.map(b => `<tr><td>${escapeHtml(b.day)}</td><td>${b.files}</td><td>${Math.max(1, Math.round(b.bytes / 1024)).toLocaleString()} KB</td><td><button class="btn-sm btn-sm-ghost" onclick="downloadBackup(${jsArg(b.day)})">Download</button></td></tr>`).join('');
   main.insertAdjacentHTML('beforeend', `<div class="panel" id="backups-panel">
     <div class="panel-title">Data backups <small>a copy of the records, taken every night</small></div>
     <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:10px;">${latest ? `Latest copy: <strong>${escapeHtml(latest.day)}</strong>. The newest ${d.keepDays} days are kept.` : 'No copy has been taken yet. The first one is made about a minute after the server starts.'} These copies sit on the same disk as the data, so they protect against a bad change or a mistake, not against losing the disk. Uploaded photos and ID files are not included.</div>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:10px;">These copies sit on the same disk as the site, so they wouldn't survive losing that disk. Press <strong>Download</strong> beside a day to save that copy to this computer, and keep it somewhere safe (a different computer, a USB drive, or a cloud folder only you can open). About once a week is a sensible habit. The file holds every record on the site, so treat it like the keys to the business.</div>
     <button class="btn-sm btn-sm-outline" onclick="runBackupNow()">Take a copy now</button>
-    ${rows ? `<div class="data-table-wrap" style="margin-top:12px;"><table class="data-table"><thead><tr><th>Day</th><th>Files</th><th>Size</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+    ${rows ? `<div class="data-table-wrap" style="margin-top:12px;"><table class="data-table"><thead><tr><th>Day</th><th>Files</th><th>Size</th><th>Keep a copy</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
   </div>`);
+}
+// v99: save one day's backup to this computer.
+function downloadBackup(day) {
+  const old = document.getElementById('backup-dl-overlay'); if (old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="backup-dl-overlay" style="z-index:5300;"><div class="modal" style="max-width:440px;" role="dialog" aria-modal="true">
+    <div class="modal-header"><h3>Download the backup for ${escapeHtml(day)}</h3><p>This file holds every record on the site. Enter your own sign-in password to confirm it's you.</p></div>
+    <div class="modal-body"><div class="form-group" style="margin-bottom:0;"><label class="form-label" for="backup-dl-pw">Your password</label><input class="form-input" type="password" id="backup-dl-pw" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmDownloadBackup(${jsArg(day)})}"/></div></div>
+    <div class="modal-footer" style="display:flex;gap:10px;">
+      <button class="btn-sm btn-sm-outline" style="flex:1;" onclick="document.getElementById('backup-dl-overlay').remove()">Cancel</button>
+      <button class="confirm-btn" style="flex:1;" id="backup-dl-btn" onclick="confirmDownloadBackup(${jsArg(day)})">Download</button>
+    </div></div></div>`);
+  setTimeout(() => { const i = document.getElementById('backup-dl-pw'); if (i) i.focus(); }, 50);
+}
+async function confirmDownloadBackup(day) {
+  const pw = document.getElementById('backup-dl-pw').value;
+  if (!pw) return showToast('Enter your password');
+  const btn = document.getElementById('backup-dl-btn'); btn.disabled = true; btn.textContent = 'Preparing…';
+  try {
+    const res = await fetch(API_BASE + '/admin/backups/download', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AUTH.token }, body: JSON.stringify({ password: pw, day }) });
+    if (!res.ok) { let msg = 'The download failed'; try { msg = (await res.json()).error || msg; } catch (e) {} throw new Error(msg); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `trothen-backup-${day}.tar.gz`; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    document.getElementById('backup-dl-overlay').remove();
+    showToast('Backup saved to your downloads. Keep it somewhere safe.');
+  } catch (e) { btn.disabled = false; btn.textContent = 'Download'; showToast(e.message || 'The download failed'); }
 }
 async function runBackupNow() {
   try { const r = await apiFetch('POST', '/admin/backups/run'); showToast(`Copied ${r.files} data files`); loadBackupsPanel(); }
@@ -14136,7 +14193,7 @@ function providerCardsHTML(list) {
           <div class="meta-chip"><span class="star">★</span> ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           <div class="meta-chip">${uiIcon('jobs')} ${escapeHtml(p.jobs)} jobs</div>
           <div class="meta-chip">${uiIcon('pin')} ${p.distanceMiles != null ? `${distLabel(p.distanceMiles)} away` : ([escapeHtml(p.city), escapeHtml(p.country)].filter(Boolean).join(', ') || 'Location not set')}</div>
-          ${p.isNewPro ? `<div class="meta-chip" title="ID checked. This pro gets a Trothen Score after their first five completed jobs.">New on Trothen</div>` : (p.trustScore != null ? `<div class="meta-chip" title="Trothen Score: a computed measure of this pro's reliability and track record">${uiIcon('score')} ${p.trustScore}/100</div>` : '')}
+          ${p.isNewPro ? `<div class="meta-chip" title="ID checked. This pro gets a Trothen Score after their first five completed jobs.">${escapeHtml(tr('New on Trothen'))}</div>` : (p.trustScore != null ? `<div class="meta-chip" title="Trothen Score: a computed measure of this pro's reliability and track record">${uiIcon('score')} ${p.trustScore}/100</div>` : '')}
         </div>
         <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
         <div class="provider-footer">
@@ -14578,7 +14635,7 @@ function currencyToggleHTML() {
     <div class="form-group" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
       <label class="form-label">Pay in</label>
       <div style="display:flex;gap:8px;">
-        <button type="button" class="btn-sm btn-sm-primary" id="pay-currency-local-btn" onclick="setPayCurrency('local')" style="flex:1;">${c.symbol} ${c.name}</button>
+        <button type="button" class="btn-sm btn-sm-primary" id="pay-currency-local-btn" onclick="setPayCurrency('local')" style="flex:1;">${c.symbol} ${escapeHtml(c.name)}</button>
         <button type="button" class="btn-sm btn-sm-outline" id="pay-currency-usd-btn" onclick="setPayCurrency('usd')" style="flex:1;">$ USD</button>
       </div>
       <div id="currency-preview" style="font-size:13px;color:var(--muted);margin-top:6px;"></div>

@@ -49,6 +49,44 @@ function listBackups() {
 }
 
 // Only when using the file store. With a database, backups are the database's job.
+// v99: one backup as a single .tar.gz file, so a copy can be kept OFF the
+// server (the nightly copies sit on the same disk as the data, so they
+// don't survive losing that disk). Built with nothing but Node itself:
+// a tar file is a list of 512-byte headers each followed by the file's
+// bytes, then gzip over the whole thing. Opens with any unzip tool, or
+// "tar -xzf file.tar.gz" in the Windows command prompt.
+function buildBackupArchive(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) throw new Error('bad day');
+  const dir = path.join(backupsDir(), day);
+  if (!fs.existsSync(dir)) throw new Error('no such backup');
+  const zlib = require('zlib');
+  const blocks = [];
+  const header = (name, size, mtime) => {
+    const h = Buffer.alloc(512, 0);
+    h.write(name.slice(0, 99), 0, 'utf8');
+    h.write('0000644\0', 100, 'ascii'); h.write('0000000\0', 108, 'ascii'); h.write('0000000\0', 116, 'ascii');
+    h.write(size.toString(8).padStart(11, '0') + '\0', 124, 'ascii');
+    h.write(Math.floor(mtime / 1000).toString(8).padStart(11, '0') + '\0', 136, 'ascii');
+    h.write('        ', 148, 'ascii'); // checksum placeholder
+    h.write('0', 156, 'ascii');
+    h.write('ustar\0' + '00', 257, 'ascii');
+    let sum = 0; for (let i = 0; i < 512; i++) sum += h[i];
+    h.write(sum.toString(8).padStart(6, '0') + '\0 ', 148, 'ascii');
+    return h;
+  };
+  let files = 0;
+  for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort()) {
+    const full = path.join(dir, f);
+    const data = fs.readFileSync(full);
+    blocks.push(header(`trothen-backup-${day}/${f}`, data.length, fs.statSync(full).mtimeMs), data);
+    const pad = (512 - (data.length % 512)) % 512;
+    if (pad) blocks.push(Buffer.alloc(pad, 0));
+    files += 1;
+  }
+  blocks.push(Buffer.alloc(1024, 0));
+  return { buffer: zlib.gzipSync(Buffer.concat(blocks)), files, filename: `trothen-backup-${day}.tar.gz` };
+}
+
 function backupsApply() { return !process.env.DATABASE_URL; }
 
-module.exports = { runBackup, listBackups, backupsApply, KEEP_DAYS };
+module.exports = { runBackup, listBackups, backupsApply, buildBackupArchive, KEEP_DAYS };
