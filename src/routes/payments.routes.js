@@ -785,6 +785,16 @@ async function handleContractComplete(req, res) {
     tip = Math.round(tipAmount * 100) / 100;
   }
 
+  const done = await completeContractCore(contract, tip, req.user.sub);
+  // v108: a store order's driver is paid when the customer has the goods.
+  try { await require('../store-orders').afterComplete(contract, req.user.sub); } catch (e) { console.error('[store-orders] after complete:', e.message); }
+  res.json(done);
+}
+
+// v108: the part of "mark complete" that releases the money, on its own, so
+// a store order can complete its delivery with the same steps. The caller
+// has already checked who is asking and that the booking is active.
+async function completeContractCore(contract, tip, customerId) {
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
   const updated = await db.update('contracts', contract.id, { status: 'completed', tipAmount: tip, tipPaid: false, completedAt: new Date().toISOString() }); // v105: the day it was completed, for invoices and the tax report
@@ -817,9 +827,9 @@ async function handleContractComplete(req, res) {
 
   await notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts', { section: 'earnings' });
   if (tip > 0) {
-    await notify(contract.providerId, '🌟', `${(await db.find('users', u => u.id === req.user.sub))?.name || 'The customer'} left you a $${tip} tip on "${contract.service}" — 100% yours, no commission, added to your next payout.`, 'payoutAlerts', { section: 'earnings' });
+    await notify(contract.providerId, '🌟', `${(await db.find('users', u => u.id === customerId))?.name || 'The customer'} left you a $${tip} tip on "${contract.service}" — 100% yours, no commission, added to your next payout.`, 'payoutAlerts', { section: 'earnings' });
   }
-  res.json({ contract: updated, escrow: { ...escrow, status: 'released' } });
+  return { contract: updated, escrow: escrow ? { ...escrow, status: 'released' } : null };
 }
 
 // POST /api/contracts/:id/cancel — either the customer or the provider can
@@ -878,6 +888,10 @@ async function handleContractCancel(req, res) {
     protectedCancellation: isProtected,
   });
   await require('../store').giveBackStock(contract); // v105: goods not yet handed over go back on the shelf
+  // v108: a store order and its delivery go together. Cancelling the order
+  // cancels a delivery that hasn't collected the goods yet; a driver
+  // cancelling tells the customer and the seller so another can be chosen.
+  try { await require('../store-orders').afterCancel(updated, req.user.sub); } catch (e) { console.error('[store-orders] after cancel:', e.message); }
 
   if (isProtected) {
     const { checkProtectedCancellationAbuse } = require('../fraud-detection');
@@ -1183,3 +1197,4 @@ router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (re
 });
 
 module.exports = router;
+module.exports.completeContractCore = completeContractCore; // v108

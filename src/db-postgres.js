@@ -1,20 +1,22 @@
-// PostgreSQL-backed datastore. Same public interface as db-json.js
-// (all/find/filter/insert/update/remove/replaceAll) so route code written
-// against either backend is identical — see db.js, which picks this module
-// when DATABASE_URL is set.
+// PostgreSQL-backed datastore (rewritten in v108).
 //
-// Design note on find/filter: these fetch the full table and apply the
-// caller's JS predicate function in Node, rather than translating arbitrary
-// JS predicates into SQL WHERE clauses. That's a deliberate, honest
-// trade-off: at Trothen's current scale (hundreds, not millions, of rows)
-// this is fast and correct, and it means every route handler already
-// written against the old JSON store needed zero predicate-logic changes
-// to run against real Postgres. If a table's row count grows into the
-// millions, the highest-traffic queries (e.g. GET /providers) are the ones
-// to rewrite with real SQL WHERE clauses first — the schema and indexes in
-// schema.sql are already set up to support that.
-
-const { Pool } = require('pg');
+// Same seven actions as the JSON-file store in db-json.js: all, find,
+// filter, insert, update, remove, replaceAll. db.js picks this file when
+// DATABASE_URL is set. Nothing else in the app knows which one is in use.
+//
+// How records are kept: whole, as JSON, one row each, in one table (see
+// schema.sql). This is deliberately the same shape as the JSON files.
+// The version before this had a fixed column list for every kind of
+// record; it stored only the fields on that list and quietly dropped the
+// rest, so it fell behind every time the app gained a field or a new kind
+// of record. This one cannot fall behind, because it has no list: any
+// collection name and any field just works.
+//
+// find and filter read the whole collection and apply the caller's test
+// in Node, exactly as the JSON store does. At Trothen's size that is fast
+// and it keeps every route working unchanged. If a collection grows very
+// large, the busiest reads are the ones to give real SQL first.
+const { Pool, types } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
@@ -23,197 +25,205 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('render.com')
     ? { rejectUnauthorized: false } // Render's managed Postgres requires SSL but uses a cert chain `pg` doesn't verify by default
     : (process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false),
+  max: Number(process.env.PG_POOL_MAX) || 10,
 });
+// A dropped idle connection must not take the whole server down.
+pool.on('error', (err) => console.error('[postgres] idle connection error:', err.message));
 
-// Maps each JS collection name to its real table + the exact column list,
-// in (snake_case) DB order. Used to build safe, parameterized INSERT/UPDATE
-// statements without ever interpolating arbitrary object keys into SQL.
-const TABLES = {
-  users: { table: 'users', columns: ['id','name','email','password_hash','role','country','city','state','phone','address','zip_code','phone_verified','verified','active','status','region','is_super_admin','provider_role','category','skills','tags','availability','pricing_model','plan','pay_preference','payout_method','notif_prefs','rating','jobs','price','color','since','profile_photo_url','category_approval_status','two_factor_enabled','business_name','business_registration_number','admin_department','organization_id','accepting_bookings','token_version','terms_accepted_at','terms_version','license_expiry_date','insurance_expiry_date','terms_viewed_full','super_pro_eligible_since','on_hold','hold_reason','hold_since','latitude','longitude','referral_code','referred_by_user_id','must_change_password','license_expiry_reminder_sent_for','commission_rate_override','commission_rate_override_status','commission_rate_override_reason','commission_rate_override_proposed_by','region_scoped','payout_paypal_email','trust_score','trust_score_breakdown','trust_score_updated_at','hold_until','service_radius_miles','membership_tier','membership_started_at','membership_cancelled_at','membership_price','loyalty_points','guarantors','free_commission_credits','top_scorer_awarded_for_date','payout_method_intl','payout_paypal_email_intl','document_reminder_sent_at','trust_rate_percent','trust_rating_sample_size','google_id','is_seed_account','rejection_reason','created_at','updated_at'] },
-  categories: { table: 'categories', columns: ['id','name','icon','active','response_window_override_hours'] },
-  countries: { table: 'countries', columns: ['id','name','status'] },
-  cities: { table: 'cities', columns: ['id','name','country','admin_id'] },
-  jobs: { table: 'jobs', columns: ['id','customer_id','category','description','materials_on_hand','materials_cost','budget','pay_currency','photo_urls','status','created_at'] },
-  matches: { table: 'matches', columns: ['id','job_id','provider_id','customer_id','score','same_community','status','cover_letter','created_at'] },
-  contracts: { table: 'contracts', columns: ['id','booking_number','customer_id','provider_id','job_id','service','date','time','address','amount','pay_currency','status','signed_at','materials_advance','service_fee','photo_urls','provider_response_deadline','cancel_reason_category','cancelled_by_role','protected_cancellation','negotiation_transcript','on_my_way_at','on_my_way_location','arrived_at','arrived_location','tip_amount','tip_paid','loyalty_points_redeemed','materials_on_hand','created_at'] },
-  platformSettings: { table: 'platform_settings', columns: ['id','key','value','updated_at'] },
-  homepageImages: { table: 'homepage_images', columns: ['id','slot','filename','url','created_at','updated_at'] },
-  categoryImages: { table: 'category_images', columns: ['id','category_id','filename','url','created_at','updated_at'] },
-  escrowTransactions: { table: 'escrow_transactions', columns: ['id','contract_id','amount','service_fee','paid_currency','paid_amount_local','exchange_rate_note','status','payout_id','materials_advance_amount','materials_advance_released','materials_advance_payout_id','liberia_mo_mo_reference','created_at'] },
-  payouts: { table: 'payouts', columns: ['id','provider_id','gross_amount','commission_rate','commission_amount','amount','payout_currency','payout_amount_local','exchange_rate_note','method','status','line_items','date','created_at','paid_at'] },
-  disputes: { table: 'disputes', columns: ['id','contract_id','reason','amount','status','parties','resolution','resolved_at','created_at'] },
-  reviews: { table: 'reviews', columns: ['id','contract_id','provider_id','author_name','stars','text','trusted','created_at'] },
-  notifications: { table: 'notifications', columns: ['id','user_id','icon','text','time','read','link_to','created_at'] },
-  messages: { table: 'messages', columns: ['id','from_id','to_id','text','job_id','created_at'] },
-  verifications: { table: 'verifications', columns: ['id','user_id','doc_type','id_legal_name','name_match','document_filename','status','rejection_reason','review_deadline','created_at'] },
-  referrals: { table: 'referrals', columns: ['id','referrer_id','referred_user_id','referred_role','created_at'] },
-  accessLogs: { table: 'access_logs', columns: ['id','admin_id','resource_type','resource_id','ip_address','created_at'] },
-  promotions: { table: 'promotions', columns: ['id','title','message','image_url','created_by','region','audience','active','expires_at','email_sent_count','created_at'] },
-  favoriteProviders: { table: 'favorite_providers', columns: ['id','customer_id','provider_id','created_at'] },
-  scopeChangeRequests: { table: 'scope_change_requests', columns: ['id','contract_id','provider_id','customer_id','amount','reason','status','created_at','decided_at'] },
-  paymentMethods: { table: 'payment_methods', columns: ['id','user_id','type','brand','last4','name_on_card','expiry','billing_address','billing_zip','paypal_email','is_default','mode','created_at'] },
-  passwordResets: { table: 'password_resets', columns: ['id','user_id','token_hash','expires_at','used','created_at'] },
-  phoneVerifications: { table: 'phone_verifications', columns: ['id','user_id','code_hash','via_twilio_verify','expires_at','used','created_at'] },
-  portfolioPhotos: { table: 'portfolio_photos', columns: ['id','provider_id','filename','url','created_at'] },
-  pendingRegistrations: { table: 'pending_registrations', columns: ['id','payload','phone_code_hash','email_code_hash','phone_verified','email_verified','expires_at','created_at'] },
-  categoryRequests: { table: 'category_requests', columns: ['id','provider_id','requested_category','status','created_at','resolved_at'] },
-  pendingLogins: { table: 'pending_logins', columns: ['id','user_id','code_hash','expires_at','created_at'] },
-  fraudFlags: { table: 'fraud_flags', columns: ['id','type','severity','user_id','related_user_id','contract_id','details','status','review_deadline','reviewed_at','created_at'] },
-  contactSubmissions: { table: 'contact_submissions', columns: ['id','name','email','subject','message','city','status','created_at'] },
-  careersInquiries: { table: 'careers_inquiries', columns: ['id','name','email','phone','city','role','cover_letter','resume_url','status','created_at'] },
-  advertisingInquiries: { table: 'advertising_inquiries', columns: ['id','provider_id','company_name','contact_name','email','phone','message','status','target_city','is_live','price','currency_code','display_headline','display_subtext','display_link','approved_by','approved_at','created_at'] },
-  salesInquiries: { table: 'sales_inquiries', columns: ['id','company_name','contact_name','email','team_size','message','status','agreed_price','agreed_currency','internal_notes','converted_to_org_id','updated_at','created_at'] },
-  organizations: { table: 'organizations', columns: ['id','name','sales_inquiry_id','agreed_price','agreed_currency','commission_rate','seat_limit','account_manager_id','billing_contact_name','billing_contact_email','status','created_by','created_at','updated_at'] },
-  organizationInvites: { table: 'organization_invites', columns: ['id','organization_id','code','created_by','max_uses','uses_count','expires_at','status','created_at'] },
-  planPricingBase: { table: 'plan_pricing_base', columns: ['id','plan','usd_price','updated_at'] },
-  membershipPricingBase: { table: 'membership_pricing_base', columns: ['id','tier','usd_price','updated_at'] },
-  planPricingOverrides: { table: 'plan_pricing_overrides', columns: ['id','country','plan','local_price','currency_code','set_by','updated_at'] },
-  exchangeRates: { table: 'exchange_rates', columns: ['id','currency_code','rate_to_usd','source','fetched_at','updated_at'] },
-  // Item 14 — the permanent trail behind every dispute action (request
-  // info, escalate, reject, close, reopen, and the original resolve).
-  // Insert-only: nothing in this app ever calls db.update on this table,
-  // by design — an audit log that could be edited after the fact isn't
-  // one.
-  disputeAuditLog: { table: 'dispute_audit_log', columns: ['id','dispute_id','action','note','actor_id','actor_name','created_at'] },
-  // Item: real evidence attachments for disputes (photos, receipts, PDFs).
-  disputeEvidence: { table: 'dispute_evidence', columns: ['id','dispute_id','uploaded_by','uploaded_by_name','filename','original_name','mime_type','created_at'] },
-  // Item 16 — Administration Announcement Center.
-  announcements: { table: 'announcements', columns: ['id','title','body','priority','target_regions','author_id','author_name','scheduled_for','sent_at','recipient_count','read_by','created_at'] },
-  // Item 13 — the permanent record of every data-cleanup run. Also
-  // insert-only, for the same reason as disputeAuditLog above.
-  dataCleanupAuditLog: { table: 'data_cleanup_audit_log', columns: ['id','country','actor_id','actor_name','accounts_deleted','counts','created_at'] },
-  goLiveAuditLog: { table: 'go_live_audit_log', columns: ['id','action','actor_id','actor_name','accounts_removed','counts','target','created_at'] },
-  // Item 2 — true background push notification subscriptions.
-  pushSubscriptions: { table: 'push_subscriptions', columns: ['id','user_id','endpoint','p256dh','auth','created_at'] },
-  // Per-device sign-out — one row per active login.
-  sessions: { table: 'sessions', columns: ['id','user_id','device_label','created_at'] },
+const T = 'trothen_records';
+const SEQ = 'trothen_records_pos_seq';
+const LOCK_KEY = 7468301; // any fixed number; stops two starting servers preparing the tables at once
+
+// Collection names come from the app's own code, never from a visitor, but
+// they are still passed as values ($1), never written into the SQL text.
+function checkName(collection) {
+  if (typeof collection !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(collection)) throw new Error(`Unknown collection: ${collection}`);
+  return collection;
+}
+// The id column is only a quick way to find rows. The real id is the one
+// inside the record, and that is what gets compared (see sameId).
+const idText = (id) => (id !== undefined && id !== null) ? String(id) : null;
+const idOf = (record) => idText(record ? record.id : undefined);
+// The JSON store matches ids with ===, so the number 5 is not the text "5".
+const sameId = (record, id) => !!record && typeof record === 'object' && record.id === id;
+// What a record looks like after being written to a JSON file: fields set
+// to undefined are gone, dates have become text.
+const asJson = (record) => { const s = JSON.stringify(record); return s === undefined ? 'null' : s; };
+
+async function inTransaction(work) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (e2) { /* the first error is the one that matters */ }
+    throw e;
+  } finally { client.release(); }
+}
+
+// Adds records at the end of a collection, in the order given. The
+// position numbers are taken first so the order is certain.
+async function appendRows(client, collection, records) {
+  for (let start = 0; start < records.length; start += 500) {
+    const chunk = records.slice(start, start + 500);
+    const got = await client.query(`SELECT nextval('${SEQ}')::text AS pos FROM generate_series(1, $1::int)`, [chunk.length]);
+    const positions = got.rows.map(r => BigInt(r.pos)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).map(String);
+    await client.query(
+      `INSERT INTO ${T} (pos, collection, id, data)
+       SELECT p, $1, i, d::json FROM unnest($2::bigint[], $3::text[], $4::text[]) AS t(p, i, d)`,
+      [collection, positions, chunk.map(idOf), chunk.map(asJson)]
+    );
+  }
+}
+
+// ---- Moving data over from the old layout ---------------------------------
+// Before v108 each kind of record had its own table with fixed columns.
+// If this database still has those tables with rows in them, and the new
+// table is empty, the rows are copied across once at start-up. The old
+// tables are left exactly as they were. Set TROTHEN_SKIP_LEGACY_IMPORT=1
+// to turn this off.
+const LEGACY_COLLECTIONS = ['users', 'categories', 'countries', 'cities', 'jobs', 'matches', 'contracts', 'platformSettings', 'homepageImages', 'categoryImages', 'escrowTransactions', 'payouts', 'disputes', 'reviews', 'notifications', 'messages', 'verifications', 'referrals', 'accessLogs', 'promotions', 'favoriteProviders', 'scopeChangeRequests', 'paymentMethods', 'passwordResets', 'phoneVerifications', 'portfolioPhotos', 'pendingRegistrations', 'categoryRequests', 'pendingLogins', 'fraudFlags', 'contactSubmissions', 'careersInquiries', 'advertisingInquiries', 'salesInquiries', 'organizations', 'organizationInvites', 'planPricingBase', 'membershipPricingBase', 'planPricingOverrides', 'exchangeRates', 'disputeAuditLog', 'disputeEvidence', 'announcements', 'dataCleanupAuditLog', 'goLiveAuditLog', 'pushSubscriptions', 'sessions'];
+const camelToSnake = (s) => s.replace(/[A-Z]/g, (l) => '_' + l.toLowerCase());
+const snakeToCamel = (s) => s.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
+// Read old columns the way the app expects them: money and counts as
+// numbers, a plain date as the text it was saved as. Times come back as
+// dates and turn into the usual "2026-01-31T12:00:00.000Z" text when saved.
+const legacyTypes = {
+  getTypeParser(oid, format) {
+    if (oid === 1700) return (v) => parseFloat(v); // NUMERIC
+    if (oid === 20) return (v) => Number(v);       // BIGINT
+    if (oid === 1082) return (v) => v;             // DATE
+    return types.getTypeParser(oid, format);
+  },
 };
 
-// Columns stored as JSONB. `pg` serializes JS arrays using Postgres's native
-// array literal syntax ({a,b,c}) by default, which is NOT valid JSON — these
-// need an explicit JSON.stringify() before going out, and come back already
-// parsed into JS objects/arrays by `pg` automatically on the way in.
-const JSONB_COLUMNS = new Set(['tags', 'availability', 'notif_prefs', 'payload', 'line_items', 'link_to', 'value', 'photo_urls', 'negotiation_transcript', 'on_my_way_location', 'arrived_location', 'trust_score_breakdown', 'guarantors', 'target_regions', 'read_by', 'accounts_deleted', 'counts']);
-
-// Postgres's NUMERIC type comes back from the pg driver as a STRING, not a
-// JS number, specifically to avoid silent floating-point precision loss —
-// but every route in this app expects a real number (adding, multiplying,
-// comparing). Left unconverted, `0 + "180.00"` becomes the string
-// "0180.00" (JS string concatenation, not addition) instead of the number
-// 180. This list must include every column declared NUMERIC anywhere in
-// schema.sql — it's checked against the schema, not assembled by memory,
-// specifically because an incomplete list here fails silently (no error,
-// just wrong math) rather than loudly.
-const NUMERIC_COLUMNS = new Set([
-  'rating', 'price', 'amount', 'grossAmount', 'commissionAmount', 'commissionRate',
-  'materialsAdvance', 'materialsAdvanceAmount', 'paidAmountLocal', 'payoutAmountLocal',
-  'usdPrice', 'localPrice', 'rateToUsd', 'agreedPrice', 'responseWindowOverrideHours',
-]);
-
-function snakeToCamel(s) {
-  return s.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
-}
-
-function rowToObject(row) {
-  const obj = {};
-  for (const [key, value] of Object.entries(row)) {
-    const camelKey = snakeToCamel(key);
-    obj[camelKey] = (NUMERIC_COLUMNS.has(key) && value !== null) ? parseFloat(value) : value;
+async function importLegacyTables(client) {
+  if (process.env.TROTHEN_SKIP_LEGACY_IMPORT === '1') return [];
+  if ((await client.query(`SELECT 1 FROM ${T} LIMIT 1`)).rows.length) return [];
+  const tableOf = new Map(LEGACY_COLLECTIONS.map(c => [camelToSnake(c), c]));
+  const found = await client.query(
+    `SELECT table_name, bool_or(column_name = 'created_at') AS has_created
+       FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = ANY($1::text[])
+      GROUP BY table_name HAVING bool_or(column_name = 'id')`,
+    [[...tableOf.keys()]]
+  );
+  if (!found.rows.length) return [];
+  const done = [];
+  await client.query('BEGIN');
+  try {
+    for (const collection of LEGACY_COLLECTIONS) { // fixed order, so every run does the same thing
+      const hit = found.rows.find(r => r.table_name === camelToSnake(collection));
+      if (!hit) continue;
+      // table names here come from the fixed list above, never from outside
+      const { rows } = await client.query({ text: `SELECT * FROM "${hit.table_name}" ORDER BY ${hit.has_created ? 'created_at NULLS LAST, ' : ''}ctid`, types: legacyTypes });
+      if (!rows.length) continue;
+      const records = rows.map(row => { const o = {}; for (const [k, v] of Object.entries(row)) o[snakeToCamel(k)] = v; return o; });
+      await appendRows(client, collection, records);
+      done.push({ collection, table: hit.table_name, count: records.length });
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (e2) { /* keep the first error */ }
+    throw e;
   }
-  return obj;
+  if (done.length) console.log(`[postgres] Copied records from the old tables into ${T}: ${done.map(d => `${d.collection} ${d.count}`).join(', ')}. The old tables were left untouched.`);
+  return done;
 }
 
+// Creates the table if it is missing (schema.sql is safe to run again and
+// again), then moves old data over if there is any.
 async function ensureSchema() {
-  const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
-  await pool.query(sql);
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT pg_advisory_lock($1)', [LOCK_KEY]);
+    try {
+      await client.query(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8'));
+      module.exports.legacyImported = await importLegacyTables(client);
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]);
+    }
+  } finally { client.release(); }
 }
-// Run once at startup; server.js awaits this before accepting requests.
-const schemaReady = ensureSchema();
-
-function tableInfo(collection) {
-  const info = TABLES[collection];
-  if (!info) throw new Error(`Unknown collection: ${collection}`);
-  return info;
+// Runs once at start-up and every action below waits for it. If it fails
+// (say the database was not reachable yet) the next action tries again.
+let schemaPromise = null;
+function ready() {
+  if (!schemaPromise) schemaPromise = ensureSchema().catch((e) => { schemaPromise = null; throw e; });
+  return schemaPromise;
 }
+const firstReady = ready();
+firstReady.catch((e) => console.error('❌ Could not prepare the Postgres table:', e.message));
 
 const db = {
   async all(collection) {
-    await schemaReady;
-    const { table } = tableInfo(collection);
-    const { rows } = await pool.query(`SELECT * FROM ${table}`);
-    return rows.map(rowToObject);
+    await ready();
+    const { rows } = await pool.query(`SELECT data FROM ${T} WHERE collection = $1 ORDER BY pos`, [checkName(collection)]);
+    return rows.map(r => r.data);
   },
 
   async find(collection, predicate) {
-    const all = await db.all(collection);
-    return all.find(predicate) || null;
+    return (await db.all(collection)).find(predicate) || null;
   },
 
   async filter(collection, predicate) {
-    const all = await db.all(collection);
-    return all.filter(predicate);
+    return (await db.all(collection)).filter(predicate);
   },
 
   async insert(collection, record) {
-    await schemaReady;
-    const { table, columns } = tableInfo(collection);
-    // Only include columns the caller actually provided — this is what lets
-    // real Postgres column defaults (active DEFAULT TRUE, phone_verified
-    // DEFAULT FALSE, created_at DEFAULT now(), etc.) actually take effect.
-    // Explicitly inserting NULL for every unset field, which an earlier
-    // version of this did, silently overrides those defaults and violates
-    // NOT NULL constraints — caught by testing signup against a real
-    // database rather than assuming the JSON-store behavior would transfer.
-    const presentCols = columns.filter(col => snakeToCamel(col) in record);
-    const values = presentCols.map(col => {
-      const v = record[snakeToCamel(col)];
-      return JSONB_COLUMNS.has(col) && v !== null && v !== undefined ? JSON.stringify(v) : v;
-    });
-    const placeholders = presentCols.map((_, i) => `$${i + 1}`).join(', ');
-    const colList = presentCols.join(', ');
-    await pool.query(
-      `INSERT INTO ${table} (${colList}) VALUES (${placeholders})`,
-      values
-    );
+    await ready();
+    await pool.query(`INSERT INTO ${T} (collection, id, data) VALUES ($1, $2, $3::json)`, [checkName(collection), idOf(record), asJson(record)]);
     return record;
   },
 
+  // Changes the fields in `patch` and leaves the rest, the same way the
+  // JSON store does: the first record with that id, the new fields laid
+  // over the old ones, and updatedAt set. The row is locked while this
+  // happens so two changes to one record can't overwrite each other.
   async update(collection, id, patch) {
-    await schemaReady;
-    const { table, columns } = tableInfo(collection);
-    const patchWithTimestamp = { ...patch, updatedAt: new Date().toISOString() };
-    const setCols = columns.filter(col => {
-      const camel = snakeToCamel(col);
-      return camel in patchWithTimestamp && col !== 'id';
+    await ready();
+    const name = checkName(collection);
+    return inTransaction(async (client) => {
+      const found = await client.query(`SELECT pos, data FROM ${T} WHERE collection = $1 AND id IS NOT DISTINCT FROM $2 ORDER BY pos FOR UPDATE`, [name, idText(id)]);
+      const row = found.rows.find(r => sameId(r.data, id));
+      if (!row) return null;
+      const merged = { ...row.data, ...patch, updatedAt: new Date().toISOString() };
+      await client.query(`UPDATE ${T} SET data = $1::json, id = $2, updated_at = now() WHERE pos = $3`, [asJson(merged), idOf(merged), row.pos]);
+      return merged;
     });
-    if (!setCols.length) return db.find(collection, r => r.id === id);
-    const setClause = setCols.map((col, i) => `${col} = $${i + 2}`).join(', ');
-    const values = [id, ...setCols.map(col => {
-      const v = patchWithTimestamp[snakeToCamel(col)];
-      return JSONB_COLUMNS.has(col) && v !== null && v !== undefined ? JSON.stringify(v) : v;
-    })];
-    const { rows } = await pool.query(
-      `UPDATE ${table} SET ${setClause} WHERE id = $1 RETURNING *`,
-      values
-    );
-    return rows[0] ? rowToObject(rows[0]) : null;
   },
 
+  // Removes every record with that id. True if anything was removed.
   async remove(collection, id) {
-    await schemaReady;
-    const { table } = tableInfo(collection);
-    const { rowCount } = await pool.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
-    return rowCount > 0;
+    await ready();
+    const name = checkName(collection);
+    return inTransaction(async (client) => {
+      const found = await client.query(`SELECT pos, data FROM ${T} WHERE collection = $1 AND id IS NOT DISTINCT FROM $2 FOR UPDATE`, [name, idText(id)]);
+      const gone = found.rows.filter(r => sameId(r.data, id)).map(r => r.pos);
+      if (!gone.length) return false;
+      await client.query(`DELETE FROM ${T} WHERE pos = ANY($1::bigint[])`, [gone]);
+      return true;
+    });
   },
 
+  // Swaps the whole collection in one step: either all of the new records
+  // are in, or the old ones are still there.
   async replaceAll(collection, records) {
-    await schemaReady;
-    const { table } = tableInfo(collection);
-    await pool.query(`DELETE FROM ${table}`);
-    for (const record of records) {
-      await db.insert(collection, record);
-    }
+    await ready();
+    const name = checkName(collection);
+    const list = Array.isArray(records) ? records : [];
+    await inTransaction(async (client) => {
+      await client.query(`DELETE FROM ${T} WHERE collection = $1`, [name]);
+      await appendRows(client, name, list);
+    });
   },
 };
 
 module.exports = db;
+// For the copy scripts and for tests: not used by the app's routes.
+module.exports.pool = pool;
+module.exports.ready = firstReady;
+module.exports.legacyImported = [];
+module.exports.collections = async () => { await ready(); return (await pool.query(`SELECT collection, count(*)::int AS n FROM ${T} GROUP BY collection ORDER BY collection`)).rows; };

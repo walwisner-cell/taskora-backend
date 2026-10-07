@@ -72,9 +72,23 @@ app.set('trust proxy', 1);
 // plugins, no being framed by another site, and no sending forms
 // elsewhere. Set CSP_REPORT_ONLY=true on the server to make the browser
 // report problems without blocking, if something ever needs diagnosing.
+// v108: the page's code now lives in its own files (public/app/*.js), so
+// the policy can go a step further. Browsers that understand the newer
+// rules (every current one) follow these two:
+//   script-src-elem: a <script> may only come from this site or Google
+//                    sign-in. A <script> written into the page itself is
+//                    refused. That is the common way injected code runs.
+//   script-src-attr: the page's own buttons still use onclick="...", so
+//                    those stay allowed. Closing that too means rewriting
+//                    every button on the site.
+// Older browsers ignore both and fall back to script-src, unchanged from
+// before, so nothing breaks for them.
+// 'wasm-unsafe-eval' lets the page run the HEIC photo converter (a
+// WebAssembly file from this site). It does not allow eval() of text.
 const cspDirectives = {
   defaultSrc: ["'self'"],
-  scriptSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com'],
+  scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", 'https://accounts.google.com'],
+  scriptSrcElem: ["'self'", 'https://accounts.google.com'],
   scriptSrcAttr: ["'unsafe-inline'"],
   styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://accounts.google.com'],
   fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
@@ -133,6 +147,7 @@ app.use('/api/auth', authRoutes);
 // v105: pro stores, extra skills, pick-up/drop-off, and the pro's business tools.
 // These come first so their /api/admin/store addresses are reached before the main admin routes.
 app.use('/api', require('./src/routes/store.routes'));
+app.use('/api', require('./src/routes/orders.routes')); // v108: store orders, drivers, receipts
 app.use('/api', require('./src/routes/business.routes'));
 app.use('/api', marketplaceRoutes);
 app.use('/api', paymentsRoutes);
@@ -195,13 +210,28 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 // failure mode (looks like "the fix didn't work" when it's actually just
 // an old cached page). Other static assets (images, uploads) can still
 // cache normally since they change far less often.
+// v108: the page's code is in public/app/. The browser must always ask
+// whether it changed ("no-cache" means check first, not never keep), so a
+// deploy is picked up at once and an unchanged file costs almost nothing.
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('index.html')) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    } else if (/[\\/]app[\\/][^\\/]+\.js$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
     }
   },
 }));
+// A script or vendor file that isn't there must be a plain "not found". It
+// used to fall through to the line below and come back as the HTML page,
+// which a browser then tried to run as code.
+app.get(['/app/*', '/vendor/*'], (req, res) => res.status(404).type('text/plain').send('Not found'));
+{
+  const fsCheck = require('fs');
+  for (const f of ['app/trothen.js', 'app/theme.js']) {
+    if (!fsCheck.existsSync(path.join(__dirname, 'public', f))) console.error(`❌ public/${f} is missing. The site will not work without it. Copy the whole "public" folder from the release package, including the "app" folder.`);
+  }
+}
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');

@@ -91,17 +91,17 @@ function publicSkill(s) {
 }
 
 // ── THE PRO'S OWN STORE ────────────────────────────────────────────────
-function goodForOwner(g) {
+function goodForOwner(g, currencies) {
   return {
-    id: g.id, name: g.name, description: g.description || '', price: g.price, unit: g.unit || '', photoUrls: g.photoUrls || [],
+    id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, currencies), unit: g.unit || '', photoUrls: g.photoUrls || [],
     stock: g.stock === undefined ? null : g.stock, lowStockAt: g.lowStockAt === undefined ? null : g.lowStockAt, costPrice: g.costPrice === undefined ? null : g.costPrice,
     forSale: g.forSale !== false, hidden: g.hidden === true, status: g.status, reviewNote: g.reviewNote || null, reviewedAt: g.reviewedAt || null,
     sold: g.sold || 0, stockLog: (g.stockLog || []).slice(-10), createdAt: g.createdAt, updatedAt: g.updatedAt || null,
   };
 }
-function goodForShopper(g) {
+function goodForShopper(g, currencies) {
   return {
-    id: g.id, name: g.name, description: g.description || '', price: g.price, unit: g.unit || '', photoUrls: g.photoUrls || [],
+    id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, currencies), unit: g.unit || '', photoUrls: g.photoUrls || [],
     soldOut: !store.inStock(g, 1), left: (g.stock !== null && g.stock !== undefined && g.stock <= 5) ? g.stock : null,
   };
 }
@@ -111,11 +111,17 @@ router.get('/store/mine', requireAuth, requireRole('provider'), async (req, res)
   const me = await freshUser(req);
   const goods = (await db.filter('storeGoods', g => g.providerId === req.user.sub)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   const settings = await store.storeSettings();
+  const currencies = await store.currenciesFor(me);
   res.json({
     store: me.store || null,
     live: store.storeIsLive(me),
-    goods: goods.map(goodForOwner),
-    settings: { enabled: settings.enabled, purchaseFee: settings.purchaseFee, maxGoodsPerStore: settings.maxGoodsPerStore, feePaidBy: settings.feePaidBy },
+    // v108: the manager's decision on the store itself, why it isn't showing, and its options
+    approval: me.store && me.store.name ? { status: store.storeApproval(me), note: (me.store.approval && me.store.approval.note) || null } : null,
+    whyNotLive: store.whyNotLive(me),
+    options: store.storeOptions(me),
+    currencies,
+    goods: goods.map(g => goodForOwner(g, currencies)),
+    settings: { enabled: settings.enabled, purchaseFee: settings.purchaseFee, maxGoodsPerStore: settings.maxGoodsPerStore, feePaidBy: settings.feePaidBy, deliveryFeePercent: settings.deliveryFeePercent },
     rules: { text: settings.rulesText, version: settings.rulesVersion, agreed: !!(me.store && me.store.rulesVersion === settings.rulesVersion), agreedAt: (me.store && me.store.rulesAgreedAt) || null },
     verified: me.verified === true,
   });
@@ -124,7 +130,7 @@ router.get('/store/mine', requireAuth, requireRole('provider'), async (req, res)
 // PUT /api/store/mine  { name, description, open }
 router.put('/store/mine', requireAuth, requireRole('provider'), async (req, res) => {
   const me = await freshUser(req);
-  const { name, description, open, agreeRules } = req.body || {};
+  const { name, description, open, agreeRules, options } = req.body || {};
   const settings = await store.storeSettings();
   if (!isNonEmptyString(name, { min: 3, max: 60 }) || !looksLikeRealText(name)) return res.status(400).json({ error: 'Give your store a name of 3 to 60 characters' });
   if (description !== undefined && description !== null && description !== '' && !isNonEmptyString(description, { max: 300 })) return res.status(400).json({ error: 'The store description must be under 300 characters' });
@@ -145,17 +151,74 @@ router.put('/store/mine', requireAuth, requireRole('provider'), async (req, res)
     liveGoods: prev.liveGoods || 0,
   };
   if (agreeRules === true && !alreadyAgreed) { next.rulesVersion = settings.rulesVersion; next.rulesAgreedAt = new Date().toISOString(); }
+  // v108: store options. Only what was sent is changed.
+  if (options !== undefined) {
+    const r = readStoreOptions(options, store.storeOptions(me));
+    if (r.error) return res.status(400).json({ error: r.error });
+    const bannedOpt = await bannedReason(r.out.pickupPlace, r.out.orderNote, r.out.hours);
+    if (bannedOpt) return res.status(400).json({ error: `That wording can't be used (${bannedOpt}).` });
+    next.options = r.out;
+  }
+  // v108: a manager approves the store itself. A new store, or one whose
+  // name or description changed, waits for that. Switching it on or off,
+  // or changing options, does not send it back.
+  const wordsChanged = next.name !== (prev.name || '') || next.description !== (prev.description || '');
+  const hadDecision = prev.approval && ['approved', 'rejected', 'pending'].includes(prev.approval.status);
+  let askManagers = false;
+  // A store that was turned down is looked at again whenever the pro saves it.
+  if (!hadDecision || wordsChanged || prev.approval.status === 'rejected') {
+    askManagers = !hadDecision || prev.approval.status !== 'pending'; // not told twice while it is already waiting
+    next.approval = { status: 'pending', askedAt: new Date().toISOString(), note: null };
+  }
   await db.update('users', me.id, { store: next });
   await store.refreshStoreLive(me.id);
+  if (askManagers) await tellManagersAboutStore(me, next);
   const after = await freshUser(req);
-  res.json({ store: after.store, live: store.storeIsLive(after) });
+  res.json({ store: after.store, live: store.storeIsLive(after), approval: { status: store.storeApproval(after), note: (after.store.approval && after.store.approval.note) || null }, whyNotLive: store.whyNotLive(after), options: store.storeOptions(after) });
 });
+
+// v108: reads the store options a pro sent. `cur` is what is saved now.
+function readStoreOptions(o, cur) {
+  if (!o || typeof o !== 'object') return { error: 'The store options could not be read.' };
+  const out = { ...cur };
+  if (o.deliveryMethods !== undefined) {
+    if (!Array.isArray(o.deliveryMethods) || !o.deliveryMethods.length || o.deliveryMethods.some(m => !store.DELIVERY_METHODS.includes(m))) return { error: 'Choose at least one way for customers to get their goods.' };
+    out.deliveryMethods = [...new Set(o.deliveryMethods)];
+  }
+  if (o.deliveryFee !== undefined) {
+    if (typeof o.deliveryFee !== 'number' || o.deliveryFee < 0 || o.deliveryFee > 1000) return { error: 'Your delivery charge must be between $0 and $1,000.' };
+    out.deliveryFee = money(o.deliveryFee);
+  }
+  for (const [k, max, label] of [['pickupPlace', 200, 'Where customers collect'], ['hours', 120, 'Opening hours'], ['orderNote', 300, 'The note to customers']]) {
+    if (o[k] !== undefined) {
+      if (o[k] !== null && o[k] !== '' && (typeof o[k] !== 'string' || o[k].trim().length > max)) return { error: `${label} must be under ${max} characters.` };
+      out[k] = o[k] ? String(o[k]).trim() : '';
+    }
+  }
+  if (o.pickupLocation !== undefined) {
+    if (o.pickupLocation === null) out.pickupLocation = null;
+    else { const pt = readPoint(o.pickupLocation); if (!pt) return { error: 'The pin for your store isn\'t a valid position. Please pin it again.' }; out.pickupLocation = { latitude: pt.latitude, longitude: pt.longitude }; }
+  }
+  if ((out.deliveryMethods.includes('pickup') || out.deliveryMethods.includes('driver')) && !out.pickupPlace && !out.pickupLocation) {
+    return { error: 'Say where the goods are collected from: describe the place or pin it. Customers who collect, and drivers, need this.' };
+  }
+  return { out };
+}
+async function tellManagersAboutStore(provider, s) {
+  const managers = await regionalAdminsFor({ city: provider.city, country: provider.country });
+  const supers = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin && u.active !== false);
+  const seen = new Set();
+  for (const a of [...managers, ...supers]) {
+    if (seen.has(a.id)) continue; seen.add(a.id);
+    await notify(a.id, '🛍️', `${provider.name} has a store waiting for approval: "${s.name}". Approve it in Stores & Skills before it can go live.`, null, { section: 'stores' });
+  }
+}
 
 // POST /api/store/photo/upload
 const goodPhotoUpload = photoUploader('store');
 router.post('/store/photo/upload', requireAuth, requireRole('provider'), uploadLimiter, (req, res) => handlePhotoUpload(goodPhotoUpload, req, res));
 
-function readGoodBody(body, userId, existing) {
+function readGoodBody(body, userId, existing, currencies) {
   const b = body || {};
   const out = {};
   const has = (k) => Object.prototype.hasOwnProperty.call(b, k);
@@ -167,9 +230,22 @@ function readGoodBody(body, userId, existing) {
     if (b.description && !isNonEmptyString(b.description, { max: 400 })) return { error: 'The description must be under 400 characters' };
     out.description = b.description ? String(b.description).trim() : '';
   }
-  if (!existing || has('price')) {
-    if (typeof b.price !== 'number' || !(b.price > 0) || b.price > 100000) return { error: 'Enter a price above zero, in US dollars' };
-    out.price = money(b.price);
+  if (!existing || has('price') || has('currency')) {
+    // v108: the price can be in US dollars or in the currency of the pro's country.
+    const code = has('currency') && b.currency ? String(b.currency).toUpperCase() : ((existing && existing.priceCurrency) || 'USD');
+    const cur = (currencies || []).find(c => c.code === code);
+    if (!cur) return { error: `Prices can be in ${(currencies || []).map(c => c.code).join(' or ') || 'USD'}.` };
+    const amount = has('price') ? b.price : (existing ? (code === 'USD' ? existing.price : existing.priceLocal) : undefined);
+    if (typeof amount !== 'number' || !(amount > 0)) return { error: 'Enter a price above zero' };
+    if (code === 'USD') {
+      if (amount > 100000) return { error: 'The price is too high. The most is $100,000.' };
+      out.price = money(amount); out.priceCurrency = 'USD'; out.priceLocal = null;
+    } else {
+      const usd = store.usdFromLocal(amount, cur.rate);
+      if (usd > 100000) return { error: 'The price is too high.' };
+      if (usd < 0.01) return { error: `That price is less than one US cent. Enter a higher price in ${code}.` };
+      out.priceCurrency = code; out.priceLocal = money(amount); out.price = usd; // dollars today; worked out again when someone buys
+    }
   }
   if (has('unit')) {
     if (b.unit && !isNonEmptyString(b.unit, { max: 20 })) return { error: 'The unit must be under 20 characters, for example "pack" or "bottle"' };
@@ -212,7 +288,8 @@ router.post('/store/goods', requireAuth, requireRole('provider'), async (req, re
   const me = await freshUser(req);
   const settings = await store.storeSettings();
   if (!settings.enabled) return res.status(403).json({ error: 'Stores are switched off at the moment.' });
-  const { out, error } = readGoodBody(req.body, me.id, null);
+  const currencies = await store.currenciesFor(me);
+  const { out, error } = readGoodBody(req.body, me.id, null, currencies);
   if (error) return res.status(400).json({ error });
   const forSale = out.forSale !== false;
   if (forSale && !(me.store && me.store.name)) return res.status(400).json({ error: 'Name your store first, then add goods to it.' });
@@ -223,7 +300,7 @@ router.post('/store/goods', requireAuth, requireRole('provider'), async (req, re
   if (count >= settings.maxGoodsPerStore) return res.status(400).json({ error: `A store can hold up to ${settings.maxGoodsPerStore} goods. Remove one first.` });
   const good = {
     id: `good_${nanoid(10)}`, providerId: me.id,
-    name: out.name, description: out.description || '', price: out.price, unit: out.unit || '', photoUrls: out.photoUrls || [],
+    name: out.name, description: out.description || '', price: out.price, priceCurrency: out.priceCurrency || 'USD', priceLocal: out.priceLocal || null, unit: out.unit || '', photoUrls: out.photoUrls || [],
     stock: out.stock === undefined ? null : out.stock, lowStockAt: out.lowStockAt === undefined ? null : out.lowStockAt, costPrice: out.costPrice === undefined ? null : out.costPrice,
     forSale, hidden: false,
     status: forSale ? 'pending' : 'private',
@@ -233,7 +310,7 @@ router.post('/store/goods', requireAuth, requireRole('provider'), async (req, re
   await db.insert('storeGoods', good);
   if (forSale) await tellManagersAboutGood(me, good);
   await store.refreshStoreLive(me.id);
-  res.status(201).json({ good: goodForOwner(good) });
+  res.status(201).json({ good: goodForOwner(good, currencies) });
 });
 
 // PATCH /api/store/goods/:id
@@ -241,7 +318,8 @@ router.patch('/store/goods/:id', requireAuth, requireRole('provider'), async (re
   const me = await freshUser(req);
   const good = await db.find('storeGoods', g => g.id === req.params.id && g.providerId === me.id);
   if (!good) return res.status(404).json({ error: 'Good not found' });
-  const { out, error } = readGoodBody(req.body, me.id, good);
+  const currencies = await store.currenciesFor(me);
+  const { out, error } = readGoodBody(req.body, me.id, good, currencies);
   if (error) return res.status(400).json({ error });
   const banned = await bannedReason(out.name !== undefined ? out.name : good.name, out.description !== undefined ? out.description : good.description);
   if (banned) return res.status(400).json({ error: `This can't be sold on Trothen (${banned}).` });
@@ -265,7 +343,7 @@ router.patch('/store/goods/:id', requireAuth, requireRole('provider'), async (re
   const updated = await db.update('storeGoods', good.id, patch);
   if (needsReview && good.status !== 'pending') await tellManagersAboutGood(me, updated);
   await store.refreshStoreLive(me.id);
-  res.json({ good: goodForOwner(updated), needsReview });
+  res.json({ good: goodForOwner(updated, currencies), needsReview });
 });
 
 // POST /api/store/goods/:id/stock  { change, reason }  — stock in or out by hand
@@ -279,7 +357,7 @@ router.post('/store/goods/:id/stock', requireAuth, requireRole('provider'), asyn
   const to = from + change;
   if (to < 0) return res.status(400).json({ error: `You only have ${from}. Stock can't go below zero.` });
   const updated = await db.update('storeGoods', good.id, { stock: to, stockLog: [...(good.stockLog || []), { at: new Date().toISOString(), from, to, reason }].slice(-30) });
-  res.json({ good: goodForOwner(updated) });
+  res.json({ good: goodForOwner(updated, await store.currenciesFor(await freshUser(req))) });
 });
 
 // DELETE /api/store/goods/:id
@@ -305,9 +383,14 @@ router.get('/providers/:id/store', async (req, res) => {
   const goods = (await db.filter('storeGoods', g => g.providerId === p.id)).filter(store.isOnShelf)
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const settings = await store.storeSettings();
+  const currencies = await store.currenciesFor(p);
+  const opt = store.storeOptions(p);
   res.json({
-    store: { name: p.store.name, description: p.store.description || '', providerId: p.id, providerName: p.name },
-    goods: goods.map(goodForShopper),
+    store: { name: p.store.name, description: p.store.description || '', providerId: p.id, providerName: p.name, city: p.city || '', country: p.country || '' },
+    goods: goods.map(g => goodForShopper(g, currencies)),
+    // v108: how the goods can reach the customer, and what the seller charges to bring them
+    delivery: { methods: opt.deliveryMethods, sellerFee: opt.deliveryFee, pickupPlace: opt.pickupPlace || [p.city, p.country].filter(Boolean).join(', '), hasPickupPin: !!opt.pickupLocation, hours: opt.hours, orderNote: opt.orderNote, feePercent: settings.deliveryFeePercent },
+    currencies: currencies.map(c => ({ code: c.code, symbol: c.symbol })),
     purchaseFee: settings.feePaidBy === 'customer' ? settings.purchaseFee : 0, // v106: nothing extra for the customer when the pro pays the fee
   });
 });
@@ -436,11 +519,14 @@ function carryOpen(contract) {
 
 // POST /api/contracts/:id/handover  { stage: 'pickup'|'dropoff', photoUrls, location, note }
 router.post('/contracts/:id/handover', requireAuth, async (req, res) => {
-  const contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  // v108: on a delivery, the seller of the goods can also record the pick-up (handing them to the driver).
+  const contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub || (c.delivery && c.delivery.sellerId === req.user.sub)));
   if (!contract) return res.status(404).json({ error: 'Booking not found' });
   if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${String(contract.status).replace(/_/g, ' ')}. Pick-up and drop-off can only be recorded on a confirmed booking that isn't finished.` });
   const { stage, photoUrls, location, note } = req.body || {};
   if (!['pickup', 'dropoff'].includes(stage)) return res.status(400).json({ error: 'Say whether this is the pick-up or the drop-off' });
+  const iAmSeller = !!(contract.delivery && contract.delivery.sellerId === req.user.sub && contract.providerId !== req.user.sub && contract.customerId !== req.user.sub);
+  if (iAmSeller && stage !== 'pickup') return res.status(403).json({ error: 'As the seller you record the pick-up, when you hand the goods to the driver. The driver and the customer record the drop-off.' });
   const urls = cleanPhotoUrls(photoUrls, 'handover', req.user.sub, 6);
   if (urls === null || !urls.length) return res.status(400).json({ error: 'Add at least one photo (up to 6), taken on this page' });
   if (note && !isNonEmptyString(note, { max: 300 })) return res.status(400).json({ error: 'The note must be under 300 characters' });
@@ -449,7 +535,7 @@ router.post('/contracts/:id/handover', requireAuth, async (req, res) => {
   if (stage === 'dropoff' && !h.pickup.length) return res.status(400).json({ error: 'Record the pick-up first, then the drop-off.' });
   if (h[stage].length >= 6) return res.status(400).json({ error: `There are already 6 ${stage === 'pickup' ? 'pick-up' : 'drop-off'} records on this booking.` });
   const now = new Date().toISOString();
-  const entry = { id: `ho_${nanoid(8)}`, by: iAmPro ? 'provider' : 'customer', byId: req.user.sub, at: now, photoUrls: urls, location: location ? readPoint(location) : null, note: note ? String(note).trim() : null };
+  const entry = { id: `ho_${nanoid(8)}`, by: iAmSeller ? 'seller' : iAmPro ? 'provider' : 'customer', byId: req.user.sub, at: now, photoUrls: urls, location: location ? readPoint(location) : null, note: note ? String(note).trim() : null };
   h[stage] = [...h[stage], entry];
   // The route is recorded from the PRO's pick-up to the PRO's drop-off.
   if (iAmPro && stage === 'pickup' && !h.carryStartedAt) { h.carryStartedAt = now; h.trail = entry.location ? [{ ...entry.location, at: now }] : []; }
@@ -457,6 +543,13 @@ router.post('/contracts/:id/handover', requireAuth, async (req, res) => {
   const updated = await db.update('contracts', contract.id, { handover: h });
   const me = await freshUser(req);
   const other = iAmPro ? contract.customerId : contract.providerId;
+  // v108: on a delivery, everyone else on it is told: the customer, the driver and the seller.
+  if (contract.delivery) {
+    for (const id of new Set([contract.customerId, contract.providerId, contract.delivery.sellerId])) {
+      if (!id || id === req.user.sub || id === other) continue;
+      await notify(id, stage === 'pickup' ? '📦' : '✅', `${me ? me.name : 'Someone'} recorded the ${stage === 'pickup' ? 'pick-up' : 'drop-off'} for "${String(contract.service).slice(0, 60)}" with ${urls.length} photo${urls.length === 1 ? '' : 's'}.`, 'bookingUpdates', { section: id === contract.delivery.sellerId ? 'store' : 'bookings' });
+    }
+  }
   await notify(other, stage === 'pickup' ? '📦' : '✅', `${me ? me.name : 'The other person'} recorded the ${stage === 'pickup' ? 'pick-up' : 'drop-off'} for "${String(contract.service).slice(0, 60)}" with ${urls.length} photo${urls.length === 1 ? '' : 's'}.`, 'bookingUpdates', { section: 'bookings' });
   res.status(201).json({ handover: updated.handover, carrying: carryOpen(updated) });
 });
@@ -504,7 +597,10 @@ router.get('/admin/store/review', adminGate, async (req, res) => {
   const mine = (id) => { const p = byId.get(id); return p && req.covers(p) ? p : null; };
   const goods = await db.all('storeGoods');
   const proInfo = (p) => ({ id: p.id, name: p.name, email: p.email, city: p.city || '', country: p.country || '', category: p.category || '', storeName: (p.store && p.store.name) || '' });
-  const shape = (g, p) => ({ id: g.id, name: g.name, description: g.description || '', price: g.price, unit: g.unit || '', photoUrls: g.photoUrls || [], status: g.status, reviewNote: g.reviewNote || null, reviewedAt: g.reviewedAt || null, reviewedByName: g.reviewedByName || null, createdAt: g.createdAt, updatedAt: g.updatedAt || null, pro: proInfo(p) });
+  const curCache = new Map();
+  const curFor = async (p) => { const k = p.country || ''; if (!curCache.has(k)) curCache.set(k, await store.currenciesFor(p)); return curCache.get(k); };
+  for (const u of users) if (u.store && u.store.name) await curFor(u);
+  const shape = (g, p) => ({ id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, curCache.get(p.country || '') || []), unit: g.unit || '', photoUrls: g.photoUrls || [], status: g.status, reviewNote: g.reviewNote || null, reviewedAt: g.reviewedAt || null, reviewedByName: g.reviewedByName || null, createdAt: g.createdAt, updatedAt: g.updatedAt || null, pro: proInfo(p) });
   const pending = [], recent = [];
   for (const g of goods) {
     const p = mine(g.providerId);
@@ -517,7 +613,12 @@ router.get('/admin/store/review', adminGate, async (req, res) => {
   const stores = users.filter(u => u.store && u.store.name && req.covers(u)).map(u => ({
     ...proInfo(u), open: u.store.open === true, closedByAdmin: u.store.closedByAdmin === true, closedReason: u.store.closedReason || null,
     live: store.storeIsLive(u), goods: goods.filter(g => g.providerId === u.id && g.forSale !== false).length, liveGoods: u.store.liveGoods || 0,
-  })).sort((a, b) => a.storeName.localeCompare(b.storeName));
+    // v108: the store's own approval, and in plain words why it isn't showing
+    description: u.store.description || '', approval: store.storeApproval(u), approvalNote: (u.store.approval && u.store.approval.note) || null, askedAt: (u.store.approval && u.store.approval.askedAt) || u.store.createdAt || null,
+    whyNotLive: store.whyNotLive(u), whyNotLiveWords: store.WHY_NOT_LIVE_WORDS[store.whyNotLive(u)] || null,
+    waitingGoods: goods.filter(g => g.providerId === u.id && g.status === 'pending').length,
+    options: store.storeOptions(u), verified: u.verified === true,
+  })).sort((a, b) => (a.approval === 'pending' ? 0 : 1) - (b.approval === 'pending' ? 0 : 1) || a.storeName.localeCompare(b.storeName));
   const skills = [];
   for (const u of users) {
     if (!req.covers(u)) continue;
@@ -554,6 +655,26 @@ router.post('/admin/store/goods/:id/decide', adminGate, async (req, res) => {
     ? `"${good.name}" was approved and is now in your store.`
     : `"${good.name}" wasn't approved for your store: ${String(note).trim()} Change it and it will be checked again.`, null, { section: 'store' });
   res.json({ good: { id: updated.id, status: updated.status } });
+});
+
+// v108: a manager approves or turns down the store itself.
+router.post('/admin/store/stores/:providerId/decide', adminGate, async (req, res) => {
+  const pro = await db.find('users', u => u.id === req.params.providerId && u.role === 'provider');
+  if (!pro || !pro.store || !pro.store.name || !req.covers(pro)) return res.status(404).json({ error: 'Store not found' });
+  const { decision, note } = req.body || {};
+  if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ error: 'Decide approve or reject' });
+  if (decision === 'reject' && !isNonEmptyString(note, { min: 3, max: 300 })) return res.status(400).json({ error: 'Say why the store is being turned down, so the pro can fix it (3 to 300 characters)' });
+  if (note && !isNonEmptyString(note, { max: 300 })) return res.status(400).json({ error: 'The note must be under 300 characters' });
+  const approval = { status: decision === 'approve' ? 'approved' : 'rejected', note: note ? String(note).trim() : null, askedAt: (pro.store.approval && pro.store.approval.askedAt) || null, decidedAt: new Date().toISOString(), decidedBy: req.adminUser.id, decidedByName: req.adminUser.name };
+  await db.update('users', pro.id, { store: { ...pro.store, approval } });
+  await store.refreshStoreLive(pro.id);
+  const after = await db.find('users', u => u.id === pro.id);
+  const why = store.whyNotLive(after);
+  try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'store_decision', resourceId: `${pro.id}: ${approval.status}`, ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the decision stands */ }
+  await notify(pro.id, decision === 'approve' ? '✅' : '❌', decision === 'approve'
+    ? `Your store "${pro.store.name}" was approved.${why ? ' It is not showing to customers yet: ' + (store.WHY_NOT_LIVE_WORDS[why] || '').toLowerCase() + '.' : ' Customers can now see it.'}`
+    : `Your store "${pro.store.name}" wasn't approved: ${String(note).trim()} Change it in My Store and it will be looked at again.`, null, { section: 'store' });
+  res.json({ ok: true, approval: approval.status, live: why === null, whyNotLive: why, whyNotLiveWords: store.WHY_NOT_LIVE_WORDS[why] || null });
 });
 
 router.post('/admin/store/stores/:providerId/close', adminGate, async (req, res) => {
@@ -611,6 +732,7 @@ router.get('/admin/skills/:providerId/licence', adminGate, async (req, res) => {
 const PRIVACY_ADDITIONS = [
   { key: 'stores', test: /Stores and business tools/i, after: /^Jobs and bookings\./m, text: 'Stores and business tools (pros only, optional). If you open a store: its name, your goods, their photos and prices, and your stock. If you use the business tools: the quotes, estimates and invoices you write (including the customer name and contact you type in), your list of tools, and your expenses and receipt photos. Only you can see your business records, except a quote, estimate or invoice you choose to send to a customer on Trothen, which that customer can also see. Your store name is public, and your goods and prices are shown to anyone who opens your store once a Trothen manager has approved them. If you add a skill in a licensed trade, the licence photo you attach is kept privately and only the Trothen staff who check it can open it.' },
   { key: 'handover', test: /Pick-up and drop-off\. When goods/i, after: /^Live trip\./m, text: 'Pick-up and drop-off. When goods or materials are carried as part of a booking, the customer or the pro can take photos at pick-up and at drop-off. Each record keeps who took it, when, and where the phone was, if the phone gives a position. From the pro\'s pick-up record until the pro\'s drop-off record, the pro\'s phone also records the route taken, while the Trothen page is open. Only the customer and the pro on that booking, and Trothen staff handling a dispute, can see these.' },
+  { key: 'store-orders', test: /Store orders and delivery\./i, after: /^Pick-up and drop-off\. When goods/m, text: "Store orders and delivery. When you buy goods from a pro's store, the seller sees your first name, what you bought and any note you write. If you ask for the goods to be brought to you, the place you give (a pin, a landmark or an address) is shown to whoever brings them: the seller if the seller delivers, or the driver you chose. When a driver delivers, the seller is not shown your address. A store's collection place, and its pin if the seller set one, are shown to customers who order from it and to the driver. A driver's name, what they deliver with, their rating and their price are shown to customers choosing a driver; a driver's own position is never shown." }, // v108
   { key: 'handover-kept', test: /Pick-up and drop-off\. The positions/i, after: /^Job location\. The exact pin/m, text: 'Pick-up and drop-off. The positions on pick-up and drop-off records, and the recorded route, are removed on the same 90-day rule. The photos and times stay with the booking as the record of the hand-over.' },
 ];
 function addMissingPrivacyParagraphs(content) {
@@ -640,7 +762,7 @@ router.post('/admin/store/privacy-check/apply', adminGate, async (req, res) => {
 
 router.put('/admin/store/settings', adminGate, async (req, res) => {
   if (!req.adminUser.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
-  const { enabled, purchaseFee, feePaidBy, bannedWords, rulesText } = req.body || {};
+  const { enabled, purchaseFee, feePaidBy, bannedWords, rulesText, deliveryFeePercent } = req.body || {};
   const patch = {};
   const before = await store.storeSettings();
   if (feePaidBy !== undefined) {
@@ -656,6 +778,10 @@ router.put('/admin/store/settings', adminGate, async (req, res) => {
     const next = rulesText.trim() || store.DEFAULT_STORE_RULES;
     // New wording means every pro is asked to agree again.
     if (next !== before.rulesText) { patch.rulesText = rulesText.trim(); patch.rulesVersion = before.rulesVersion + 1; }
+  }
+  if (deliveryFeePercent !== undefined) {
+    if (typeof deliveryFeePercent !== 'number' || deliveryFeePercent < 0 || deliveryFeePercent > 30) return res.status(400).json({ error: 'Trothen\'s share of a delivery charge must be between 0% and 30%' });
+    patch.deliveryFeePercent = Math.round(deliveryFeePercent * 100) / 100;
   }
   if (enabled !== undefined) patch.enabled = enabled === true;
   if (purchaseFee !== undefined) {

@@ -31,7 +31,16 @@ const STORE_DEFAULTS = {
   // rulesVersion makes every pro agree again the next time they save.
   rulesVersion: 1,
   rulesText: '',
+  // v108: Trothen's share of a delivery charge, as a percentage. It is
+  // added for the customer at checkout, on a seller's own delivery charge
+  // and on a pick-and-drop driver's price. Never on the goods.
+  deliveryFeePercent: 9,
 };
+// v108: how goods can reach the customer.
+const DELIVERY_METHODS = ['pickup', 'seller', 'driver'];
+const DELIVERY_LABELS = { pickup: 'I collect it myself', seller: 'The seller brings it', driver: 'A pick-and-drop driver brings it' };
+const DRIVER_SKILL = 'Pick & Drop';
+const VEHICLES = ['motorbike', 'keke', 'car', 'van', 'truck', 'bicycle', 'on foot'];
 // The built-in store rules, used until a super admin writes their own.
 // Plain commitments, not a contract an attorney has approved.
 const DEFAULT_STORE_RULES = [
@@ -62,6 +71,7 @@ async function storeSettings() {
       bannedWords: Array.isArray(v.bannedWords) ? v.bannedWords.filter(w => typeof w === 'string' && w.trim()).map(w => w.trim().toLowerCase()).slice(0, 200) : [],
       rulesVersion: Number.isInteger(v.rulesVersion) && v.rulesVersion > 0 ? v.rulesVersion : 1,
       rulesText: typeof v.rulesText === 'string' && v.rulesText.trim() ? v.rulesText.trim() : DEFAULT_STORE_RULES,
+      deliveryFeePercent: Number.isFinite(Number(v.deliveryFeePercent)) && Number(v.deliveryFeePercent) >= 0 && Number(v.deliveryFeePercent) <= 30 ? Math.round(Number(v.deliveryFeePercent) * 100) / 100 : STORE_DEFAULTS.deliveryFeePercent,
     };
   } catch (e) { /* keep the last known settings */ }
   return cached;
@@ -87,12 +97,89 @@ function inStock(g, qty = 1) {
   return g.stock === null || g.stock === undefined || g.stock >= qty;
 }
 
-// The store is live (its name shows under the pro) when the pro opened
-// it, a manager hasn't closed it, and at least one good is approved.
-// A closed or paused account's store is never live.
-function storeIsLive(user) {
+// v108: a manager approves the STORE itself (its name and what it says it
+// sells), as well as each good. Stores made before this are 'pending'.
+function storeApproval(user) {
+  const a = user && user.store && user.store.approval;
+  return a && ['approved', 'rejected', 'pending'].includes(a.status) ? a.status : 'pending';
+}
+// Why a store is not showing to customers, as one short code, or null when
+// it is live. In the order a person would fix them.
+function whyNotLive(user) {
   const s = user && user.store;
-  return !!(cached.enabled && s && s.open === true && s.closedByAdmin !== true && s.name && (s.liveGoods || 0) > 0 && user.verified && user.active !== false && user.onHold !== true);
+  if (!cached.enabled) return 'stores_off';
+  if (!s || !s.name) return 'not_set_up';
+  if (user.active === false || user.onHold === true) return 'account_paused';
+  if (s.closedByAdmin === true) return 'closed_by_team';
+  if (!user.verified) return 'id_not_verified';
+  if (storeApproval(user) === 'rejected') return 'store_turned_down';
+  if (storeApproval(user) !== 'approved') return 'store_waiting';
+  if (!((s.liveGoods || 0) > 0)) return 'no_approved_goods';
+  if (s.open !== true) return 'switched_off';
+  return null;
+}
+const WHY_NOT_LIVE_WORDS = {
+  stores_off: 'Stores are switched off for everyone',
+  not_set_up: 'The store has no name yet',
+  account_paused: 'The pro\'s account is paused or closed',
+  closed_by_team: 'Closed by the Trothen team',
+  id_not_verified: 'The pro\'s ID is not verified yet',
+  store_turned_down: 'The store was turned down by a manager',
+  store_waiting: 'Waiting for a manager to approve the store',
+  no_approved_goods: 'No approved goods on the shelf yet',
+  switched_off: 'The pro has switched the store off',
+};
+// The store is live (its name shows under the pro) when a manager approved
+// it, the pro switched it on, a manager hasn't closed it, and at least one
+// good is approved. A closed or paused account's store is never live.
+function storeIsLive(user) {
+  return whyNotLive(user) === null;
+}
+
+// v108: store options, read with safe defaults. A store with no options
+// saved offers self pick-up and a pick-and-drop driver.
+function storeOptions(user) {
+  const o = (user && user.store && user.store.options) || {};
+  let methods = Array.isArray(o.deliveryMethods) ? o.deliveryMethods.filter(m => DELIVERY_METHODS.includes(m)) : ['pickup', 'driver'];
+  if (!methods.length) methods = ['pickup'];
+  const fee = Number(o.deliveryFee);
+  const loc = o.pickupLocation && typeof o.pickupLocation.latitude === 'number' && typeof o.pickupLocation.longitude === 'number' ? { latitude: o.pickupLocation.latitude, longitude: o.pickupLocation.longitude } : null;
+  return {
+    deliveryMethods: [...new Set(methods)],
+    deliveryFee: Number.isFinite(fee) && fee >= 0 ? money(fee) : 0,
+    pickupPlace: typeof o.pickupPlace === 'string' ? o.pickupPlace : '',
+    pickupLocation: loc,
+    hours: typeof o.hours === 'string' ? o.hours : '',
+    orderNote: typeof o.orderNote === 'string' ? o.orderNote : '',
+  };
+}
+
+// v108: prices in more than one currency. A good is priced in US dollars
+// or in the currency of the pro's own country. Money on Trothen is always
+// held in US dollars, so a local price is turned into dollars with the
+// exchange rate at the moment someone buys.
+const { currencyForCountry } = require('./currency-data');
+const { resolveRate } = require('./plan-pricing');
+async function currenciesFor(user) {
+  const local = currencyForCountry((user && user.country) || 'United States');
+  const out = [{ code: 'USD', symbol: '$', name: 'US Dollar', rate: 1 }];
+  if (local.code !== 'USD') out.push({ code: local.code, symbol: local.symbol, name: local.name, rate: resolveRate(local.code, await db.all('exchangeRates')) });
+  return out;
+}
+function usdFromLocal(amount, rate) { return money(Number(amount) / (rate > 0 ? rate : 1)); }
+// The price of a good in US dollars right now.
+function goodUsdPrice(g, currencies) {
+  if (g.priceCurrency && g.priceCurrency !== 'USD' && Number(g.priceLocal) > 0) {
+    const c = (currencies || []).find(x => x.code === g.priceCurrency);
+    if (c) return Math.max(0.01, usdFromLocal(g.priceLocal, c.rate));
+  }
+  return g.price;
+}
+function goodPriceFields(g, currencies) {
+  const c = g.priceCurrency && g.priceCurrency !== 'USD' ? (currencies || []).find(x => x.code === g.priceCurrency) : null;
+  return c && Number(g.priceLocal) > 0
+    ? { price: goodUsdPrice(g, currencies), priceCurrency: c.code, priceLocal: g.priceLocal, priceSymbol: c.symbol }
+    : { price: g.price, priceCurrency: 'USD', priceLocal: null, priceSymbol: '$' };
 }
 function publicStore(user) {
   return storeIsLive(user) ? { name: user.store.name } : null;
@@ -121,6 +208,7 @@ async function priceBasket(providerId, rawItems) {
   const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
   if (!provider || !storeIsLive(provider)) return { error: 'This pro\'s store isn\'t open right now. Remove the goods to carry on with the booking.' };
   const goods = await db.filter('storeGoods', g => g.providerId === providerId);
+  const currencies = await currenciesFor(provider); // v108
   const merged = new Map();
   for (const it of rawItems) {
     if (!it || typeof it.goodId !== 'string') return { error: 'The basket could not be read. Please pick your goods again.' };
@@ -134,7 +222,11 @@ async function priceBasket(providerId, rawItems) {
     const g = goods.find(x => x.id === goodId);
     if (!g || !isOnShelf(g)) return { error: 'One of the goods you picked is no longer in the store. Open the store and pick again.' };
     if (!inStock(g, qty)) return { error: g.stock > 0 ? `Only ${g.stock} of "${g.name}" left in the store.` : `"${g.name}" is sold out.` };
-    items.push({ goodId: g.id, name: g.name, unit: g.unit || null, unitPrice: g.price, qty, lineTotal: money(g.price * qty) });
+    const pf = goodPriceFields(g, currencies);
+    const line = { goodId: g.id, name: g.name, unit: g.unit || null, unitPrice: pf.price, qty, lineTotal: money(pf.price * qty) };
+    // v108: a good priced in local money keeps that price on the order, next to the dollars charged.
+    if (pf.priceCurrency !== 'USD') { line.priceCurrency = pf.priceCurrency; line.priceSymbol = pf.priceSymbol; line.unitPriceLocal = pf.priceLocal; line.lineTotalLocal = money(pf.priceLocal * qty); }
+    items.push(line);
   }
   return { items, total: money(items.reduce((s, i) => s + i.lineTotal, 0)) };
 }
@@ -164,6 +256,12 @@ async function giveBackStock(contract) {
   // Goods already handed over stay sold; a refund after that is a dispute matter.
   const h = fresh.handover || {};
   if ((h.dropoff && h.dropoff.length) || (h.pickup && h.pickup.length)) return false;
+  // v108: the same when a driver has already collected them.
+  if (fresh.deliveryContractId) {
+    const d = await db.find('contracts', c => c.id === fresh.deliveryContractId);
+    const dh = (d && d.handover) || {};
+    if ((dh.pickup && dh.pickup.length) || (dh.dropoff && dh.dropoff.length)) return false;
+  }
   await db.update('contracts', fresh.id, { storeStockGivenBack: true });
   for (const it of fresh.storeItems) {
     const g = await db.find('storeGoods', x => x.id === it.goodId);
@@ -193,6 +291,8 @@ module.exports = {
   STORE_DEFAULTS, DEFAULT_STORE_RULES, MAX_PHOTOS_PER_GOOD, MAX_QTY_PER_LINE, MAX_EXTRA_SKILLS, money,
   storeSettings, storeSettingsCached, saveStoreSettings,
   isOnShelf, inStock, storeIsLive, publicStore, refreshStoreLive,
+  DELIVERY_METHODS, DELIVERY_LABELS, DRIVER_SKILL, VEHICLES, storeApproval, whyNotLive, WHY_NOT_LIVE_WORDS, storeOptions,
+  currenciesFor, usdFromLocal, goodUsdPrice, goodPriceFields,
   priceBasket, holdStock, giveBackStock,
   approvedSkills, hasSkill,
 };

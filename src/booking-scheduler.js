@@ -21,6 +21,11 @@ async function expireOneBooking(contract) {
   // read before the update above, not after.
   const isDirectBooking = contract.status === 'pending_provider_confirmation' && !contract.jobId;
   const isJobSelection = contract.status === 'pending_provider_confirmation' && !!contract.jobId;
+  if (contract.delivery) { // v108: a driver didn't answer a delivery request in time
+    await notify(contract.providerId, '⏰', `You didn't answer the delivery request "${contract.service}" in time, so it was offered back to the customer.`, null, { section: 'bookings' });
+    try { await require('./store-orders').deliveryEvent(contract, 'expired'); } catch (e) { console.error('[store-orders] expiry:', e.message); }
+    return updated;
+  }
 
   await notify(contract.providerId, '⏰', `You didn't respond to the booking request for "${contract.service}" in time, so it expired automatically and the customer was refunded.`, null, { section: 'bookings' });
 

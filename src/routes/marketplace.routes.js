@@ -1704,6 +1704,10 @@ async function handleRespondOffer(req, res) {
     }
 
     const provider = await db.find('users', u => u.id === req.user.sub);
+    if (contract.delivery) { // v108: a driver said no to a delivery
+      await require('../store-orders').deliveryEvent(contract, 'declined');
+      return res.json({ contract: updated, escrow: null });
+    }
     await notify(contract.customerId, '❌', `${provider ? provider.name : 'The provider'} can't take "${contract.service}" and declined the booking. Any held funds have been refunded — try another provider.`, null, { section: 'bookings' });
     return res.json({ contract: updated, escrow: null });
   }
@@ -1741,7 +1745,8 @@ async function handleRespondOffer(req, res) {
   const confirmMessage = (isDirectBooking || isJobSelection)
     ? `Your booking for "${contract.service}" was confirmed by the provider.`
     : `Your offer of $${contract.amount} for "${contract.service}" was accepted — escrow funded, booking confirmed.`;
-  await notify(contract.customerId, '🤝', confirmMessage, null, { section: 'bookings' });
+  if (contract.delivery) await require('../store-orders').deliveryEvent(contract, 'accepted'); // v108: tells the customer and the seller
+  else await notify(contract.customerId, '🤝', confirmMessage, null, { section: 'bookings' });
   res.json({ contract: updated, escrow });
 }
 
@@ -2273,3 +2278,8 @@ module.exports.publicProvider = publicProvider;
 // actively declined — one real implementation, not two copies that could
 // drift apart.
 module.exports.attemptJobReassignment = attemptJobReassignment;
+// v108: store orders are made in src/routes/orders.routes.js with the same
+// booking number, payment hold and location rules as every other booking.
+module.exports.generateBookingNumber = generateBookingNumber;
+module.exports.fundEscrowForContract = fundEscrowForContract;
+module.exports.readJobLocation = readJobLocation;

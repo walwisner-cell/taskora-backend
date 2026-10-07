@@ -246,6 +246,8 @@ Live trip. When a pro taps "On my way", their position is shared with that one c
 
 Pick-up and drop-off. When goods or materials are carried as part of a booking, the customer or the pro can take photos at pick-up and at drop-off. Each record keeps who took it, when, and where the phone was, if the phone gives a position. From the pro's pick-up record until the pro's drop-off record, the pro's phone also records the route taken, while the Trothen page is open. Only the customer and the pro on that booking, and Trothen staff handling a dispute, can see these.
 
+Store orders and delivery. When you buy goods from a pro's store, the seller sees your first name, what you bought and any note you write. If you ask for the goods to be brought to you, the place you give (a pin, a landmark or an address) is shown to whoever brings them: the seller if the seller delivers, or the driver you chose. When a driver delivers, the seller is not shown your address. A store's collection place, and its pin if the seller set one, are shown to customers who order from it and to the driver. A driver's name, what they deliver with, their rating and their price are shown to customers choosing a driver; a driver's own position is never shown.
+
 Maps. When a map is shown, the map pictures come from OpenStreetMap, and links can open Google Maps. Those services receive your internet address and the area of the map you are viewing, as with any website.
 
 You can switch location off for this site in your browser or phone settings. You can then type a location, choose it on a map, or describe a landmark instead.
