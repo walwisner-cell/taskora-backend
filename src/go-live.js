@@ -54,6 +54,7 @@ const PERSON_COLLECTIONS = [
   'portfolioPhotos', 'favoriteProviders', 'referrals', 'scopeChangeRequests', 'sessions',
   'pushSubscriptions', 'passwordResets', 'pendingLogins', 'phoneVerifications', 'fraudFlags',
   'promotions', 'organizationInvites',
+  'storeGoods', 'proTools', 'proExpenses', 'proDocs', // v105: pro stores and business tools
 ];
 const PERSON_FIELDS = ['userId', 'customerId', 'providerId', 'fromId', 'toId', 'referrerId', 'referredUserId', 'reviewerId', 'authorId', 'contactId'];
 

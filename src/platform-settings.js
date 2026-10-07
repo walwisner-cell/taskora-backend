@@ -206,7 +206,7 @@ Questions about these Terms: {{SUPPORT_EMAIL}}`,
   // {{SUPPORT_EMAIL}} are filled in from live settings when it is shown.
   privacyPolicyContent: `Trothen Privacy Policy
 
-Last updated: 5 October 2026
+Last updated: 7 October 2026
 
 # 1. What This Covers
 
@@ -221,6 +221,8 @@ Identity check. To confirm who you are, we ask for a photo or PDF of a governmen
 Guarantors (pros only, optional). If you name people who can vouch for you, we store their names and phone numbers and may call them. Please tell them first.
 
 Jobs and bookings. What you ask for or agree to do, the price, dates and times, photos or videos you attach, the written agreement for each booking, reviews, and any dispute and the evidence either side uploads.
+
+Stores and business tools (pros only, optional). If you open a store: its name, your goods, their photos and prices, and your stock. If you use the business tools: the quotes, estimates and invoices you write (including the customer name and contact you type in), your list of tools, and your expenses and receipt photos. Only you can see your business records, except a quote, estimate or invoice you choose to send to a customer on Trothen, which that customer can also see. Your store name is public, and your goods and prices are shown to anyone who opens your store once a Trothen manager has approved them. If you add a skill in a licensed trade, the licence photo you attach is kept privately and only the Trothen staff who check it can open it.
 
 Location. See section 3.
 
@@ -241,6 +243,8 @@ Searching. If you press the location button when searching, your position is use
 A pro's base location. A pro can share where they are based so customers see a real distance. A pro can remove it at any time in Settings.
 
 Live trip. When a pro taps "On my way", their position is shared with that one customer until they tap "Arrived". It is not shared before or after, and the live position is deleted on arrival. We keep the point where the pro said they set off and the point where they said they arrived, to help settle disputes and detect fraud.
+
+Pick-up and drop-off. When goods or materials are carried as part of a booking, the customer or the pro can take photos at pick-up and at drop-off. Each record keeps who took it, when, and where the phone was, if the phone gives a position. From the pro's pick-up record until the pro's drop-off record, the pro's phone also records the route taken, while the Trothen page is open. Only the customer and the pro on that booking, and Trothen staff handling a dispute, can see these.
 
 Maps. When a map is shown, the map pictures come from OpenStreetMap, and links can open Google Maps. Those services receive your internet address and the area of the map you are viewing, as with any website.
 
@@ -269,6 +273,8 @@ ID documents and face photos. {{ID_RETENTION_SENTENCE}} If a dispute or a fraud 
 Live trip position. Deleted when the pro arrives.
 
 Job location. The exact pin, and the points where the pro said they set off and arrived, are removed 90 days after a booking ends, unless a dispute on it is still open. For a job post that never became a booking, the pin and landmark are removed after 30 days.
+
+Pick-up and drop-off. The positions on pick-up and drop-off records, and the recorded route, are removed on the same 90-day rule. The photos and times stay with the booking as the record of the hand-over.
 
 Sign-ups that are started and not finished. Deleted within about an hour.
 

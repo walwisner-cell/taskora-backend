@@ -12,6 +12,7 @@ const { notify } = require('../notify');
 const { currencyForCountry, convertFromUSD } = require('../currency-data');
 const { effectivePlanPricing, resolveRate } = require('../plan-pricing');
 const { contractStatusLocks } = require('../contract-locks');
+const proStore = require('../store'); // v105: pro stores and extra skills
 
 const router = express.Router();
 
@@ -104,6 +105,10 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
     contractId: contract.id,
     amount: contract.amount, // canonical USD amount — always the accounting figure of record
     serviceFee: contract.serviceFee || 0, // tracked separately — real revenue tied to this booking, distinct from the provider's commission
+    storeGoodsAmount: contract.storeGoodsTotal || 0, // v105: the part of the amount that is goods from the pro's store (no commission)
+    storeFee: contract.storeFee || 0, // v105: the flat store purchase fee
+    // v106: when the pro pays the fee it is not in serviceFee; it is taken at payout instead.
+    storeFeeFromPro: contract.storeFeePaidBy === 'pro' ? Math.min(contract.storeFee || 0, contract.storeGoodsTotal || 0) : 0,
     paidCurrency: wantsLocal ? currency.code : 'USD',
     paidAmountLocal,
     exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
@@ -210,6 +215,11 @@ function publicProvider(u) {
     isNewPro: u.trustScoreProvisional === true || u.trustScore == null,
     // Only a yes/no, so a profile can say "two-step sign-in turned on" truthfully.
     twoFactorEnabled: u.twoFactorEnabled === true,
+    // v105: every kind of work this pro can be found under (the main one
+    // first), and the NAME of their store if it is open. Goods and prices
+    // are never sent here; they are only shown inside the store.
+    skills: proStore.approvedSkills(u),
+    store: proStore.publicStore(u),
   };
 }
 
@@ -235,7 +245,7 @@ router.get('/categories', async (req, res) => {
     id: c.id,
     name: c.name,
     icon: c.icon || '🛠️',
-    proCount: (await db.filter('users', u => u.role === 'provider' && u.verified && u.category === c.name)).length,
+    proCount: (await db.filter('users', u => u.role === 'provider' && u.verified && proStore.hasSkill(u, c.name))).length, // v105: counts extra skills too
   })));
   res.json({ categories: withCounts });
 });
@@ -566,20 +576,23 @@ router.get('/showcase', async (req, res) => {
 });
 
 router.get('/live-ads', async (req, res) => {
-  const city = req.query.city || null;
-  const liveAds = await db.filter('advertisingInquiries', a => a.isLive === true);
-  const cityMatch = city ? liveAds.find(a => a.targetCity === city) : null;
-  const globalMatch = liveAds.find(a => !a.targetCity);
-  const ad = cityMatch || globalMatch || null;
-  res.json({
-    ad: ad ? {
-      companyName: ad.companyName,
-      displayHeadline: ad.displayHeadline || ad.companyName,
-      displaySubtext: ad.displaySubtext || `Reach customers browsing Trothen${ad.targetCity ? ` in ${ad.targetCity}` : ''} right now`,
-      displayLink: ad.displayLink || null,
-      targetCity: ad.targetCity || null,
-    } : null,
-  });
+  // v107: every live ad takes its turn, city ads reach visitors who aren't
+  // signed in, and ads end when their time is up (see src/ads.js).
+  const ads = await require('../ads').adsForVisitor({ city: typeof req.query.city === 'string' ? req.query.city : null, country: typeof req.query.country === 'string' ? req.query.country : null });
+  res.set('Cache-Control', 'no-store');
+  res.json({ ads, ad: ads[0] || null });
+});
+
+// v107: counting. When an ad is shown on someone's screen, and when its
+// button is pressed. No visitor details are kept, only the totals.
+const adCountLimiter = rateLimit({ windowMs: 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests' } });
+router.post('/live-ads/:id/:what(seen|click)', adCountLimiter, async (req, res) => {
+  const ad = await db.find('advertisingInquiries', a => a.id === req.params.id);
+  if (ad && require('../ads').isRunning(ad)) {
+    const field = req.params.what === 'click' ? 'clicks' : 'views';
+    await db.update('advertisingInquiries', ad.id, { [field]: (ad[field] || 0) + 1 });
+  }
+  res.json({ ok: true });
 });
 
 // GET /api/org-invites/:code — public, no auth: lets the signup page (or
@@ -737,7 +750,7 @@ router.get('/providers', async (req, res) => {
   // with no photo yet isn't "fully active" for discovery purposes; they
   // still have a working account and can add one in Settings any time.
   let providers = await db.filter('users', u => u.role === 'provider' && u.verified && u.profilePhotoUrl);
-  if (category) providers = providers.filter(p => p.category === category);
+  if (category) providers = providers.filter(p => proStore.hasSkill(p, category)); // v105: main skill or an approved extra one
   if (q) {
     const needle = q.toLowerCase();
     // Item 2 / search strengthening: plain substring matching alone missed
@@ -752,7 +765,9 @@ router.get('/providers', async (req, res) => {
       p.category.toLowerCase().includes(needle) ||
       (p.providerRole || '').toLowerCase().includes(needle) ||
       (p.tags || []).some(t => t.toLowerCase().includes(needle)) ||
-      synonymCategories.includes(p.category)
+      synonymCategories.includes(p.category) ||
+      // v105: a carpenter who also does plumbing is found by "plumber" too
+      proStore.approvedSkills(p).some(sk => sk.toLowerCase().includes(needle) || synonymCategories.includes(sk))
     );
   }
 
@@ -994,7 +1009,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   // state/region; only if THAT comes up empty does it widen to the whole
   // country. A customer in Lagos is never matched to a provider in Abuja
   // over one in a different country, no matter how good that provider is.
-  const inCategoryUnfiltered = await db.filter('users', u => u.role === 'provider' && u.category === category && u.verified && u.profilePhotoUrl);
+  const inCategoryUnfiltered = await db.filter('users', u => u.role === 'provider' && proStore.hasSkill(u, category) && u.verified && u.profilePhotoUrl); // v105: main skill or an approved extra one
   const weeklyCounts = await weeklyMatchCountsForProviders(inCategoryUnfiltered.map(u => u.id));
   // Lazy require — provider-score.js requires this file back (for
   // LICENSED_TRADE_CATEGORIES/hasValidLicense), so a top-level require
@@ -1423,7 +1438,16 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   if (customer.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to book again shortly. Contact support if you need this resolved sooner.' });
   }
-  const { providerId, service, date, time, amount, payCurrency, materialsAdvance, photoUrls, isOffer, useLoyaltyPoints, materialsOnHand } = req.body || {};
+  const { providerId, date, time, amount, payCurrency, materialsAdvance, photoUrls, isOffer, useLoyaltyPoints, materialsOnHand } = req.body || {};
+  let { service } = req.body || {};
+  // v105: goods picked in the pro's store, and whether this is goods only (no job).
+  const goodsOnly = (req.body || {}).goodsOnly === true;
+  const basket = await proStore.priceBasket(providerId, (req.body || {}).storeItems);
+  if (basket.error) return res.status(400).json({ error: basket.error });
+  if (goodsOnly && !basket.items.length) return res.status(400).json({ error: 'Pick at least one good from the store, or book the pro for a job.' });
+  if (goodsOnly && (typeof service !== 'string' || service.trim().length < 3)) {
+    service = ('Store order: ' + basket.items.map(i => `${i.qty} x ${i.name}`).join(', ')).slice(0, 200);
+  }
   // v92: a street address is no longer the only way to say where the job
   // is. A GPS pin or a landmark is enough, because many places have no
   // street address. At least one of the three is still required.
@@ -1458,6 +1482,9 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   if (materialsAdvance && amount && materialsAdvance > amount) {
     return res.status(400).json({ error: 'The materials advance can\'t be more than the total job amount' });
   }
+  if (goodsOnly && materialsAdvance) {
+    return res.status(400).json({ error: 'A materials advance is for a job. This order is for goods only.' });
+  }
   const validPhotoUrls = validateJobPhotoUrls(photoUrls);
   if (validPhotoUrls === null) return res.status(400).json({ error: 'Invalid photo — please re-upload your photos and try again' });
 
@@ -1470,7 +1497,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     return res.status(400).json({ error: `${provider.name} isn't currently accepting new bookings. Try another provider, or check back later.` });
   }
 
-  const isNegotiable = provider.pricingModel === 'negotiable' || (provider.pricingModel === 'both' && !!isOffer);
+  const isNegotiable = !goodsOnly && (provider.pricingModel === 'negotiable' || (provider.pricingModel === 'both' && !!isOffer)); // v105: goods have a fixed price, so a goods-only order is never an offer
   if (isNegotiable && (amount === undefined || amount <= 0)) {
     return res.status(400).json({ error: 'Enter your offer amount for this provider' });
   }
@@ -1513,10 +1540,23 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   // ignored rather than honored.
   const { awardLoyaltyPoint, POINTS_FOR_FREE_BOOKING } = require('../loyalty');
   const customerForPoints = await db.find('users', u => u.id === req.user.sub);
-  const canRedeemPoints = !!useLoyaltyPoints && customerForPoints && (customerForPoints.loyaltyPoints || 0) >= POINTS_FOR_FREE_BOOKING;
-  const finalContractAmount = amount || provider.price * 2;
+  const canRedeemPoints = !goodsOnly && !!useLoyaltyPoints && customerForPoints && (customerForPoints.loyaltyPoints || 0) >= POINTS_FOR_FREE_BOOKING; // v105: points waive the fee on a job; a goods-only order has no such fee
+  // v105: the booking amount is the job plus any goods from the pro's
+  // store. The 9% service fee is worked out on the job only. Goods carry
+  // one flat purchase fee instead (set by the super admin), and no
+  // commission is taken on them when the pro is paid.
+  const laborAmount = goodsOnly ? 0 : (amount || provider.price * 2);
+  const goodsTotal = basket.total;
+  const finalContractAmount = proStore.money(laborAmount + goodsTotal);
+  const storeSettingsNow = await proStore.storeSettings();
+  const storeFee = basket.items.length ? storeSettingsNow.purchaseFee : 0;
+  // v106: the super admin chooses who pays the flat fee. When the pro pays,
+  // the customer is charged nothing extra and the fee is taken from the
+  // pro's money at payout (never more than the goods came to).
+  const storeFeePaidBy = storeSettingsNow.feePaidBy === 'pro' ? 'pro' : 'customer';
+  const storeFeeFromCustomer = storeFeePaidBy === 'customer' ? storeFee : 0;
   const { feeDiscountForTier } = require('../membership');
-  const realServiceFee = Math.round(computeServiceFee(finalContractAmount) * (1 - feeDiscountForTier(customerForPoints && customerForPoints.membershipTier)) * 100) / 100;
+  const realServiceFee = laborAmount > 0 ? Math.round(computeServiceFee(laborAmount) * (1 - feeDiscountForTier(customerForPoints && customerForPoints.membershipTier)) * 100) / 100 : 0;
 
   const contract = {
     id: `ct_${nanoid(10)}`,
@@ -1528,7 +1568,16 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     jobLocation: bookWhere.jobLocation, // v92
     landmark: bookWhere.landmark,
     amount: finalContractAmount,
-    serviceFee: canRedeemPoints ? 0 : realServiceFee,
+    serviceFee: proStore.money((canRedeemPoints ? 0 : realServiceFee) + storeFeeFromCustomer),
+    // v105: what the amount is made of
+    laborAmount,
+    storeItems: basket.items,
+    storeGoodsTotal: goodsTotal,
+    storeFee,
+    storeFeePaidBy: basket.items.length ? storeFeePaidBy : null,
+    goodsOnly,
+    materialsCost: goodsTotal > 0 ? goodsTotal : null,
+    storeStockHeld: basket.items.length > 0,
     loyaltyPointsRedeemed: canRedeemPoints ? POINTS_FOR_FREE_BOOKING : 0,
     materialsAdvance: materialsAdvance || 0,
     materialsOnHand: materialsOnHand ? materialsOnHand.trim() : null,
@@ -1540,6 +1589,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     createdAt: new Date().toISOString(),
   };
   await db.insert('contracts', contract);
+  if (basket.items.length) await proStore.holdStock(basket.items); // v105: held now, given back if the booking doesn't go ahead
 
   if (canRedeemPoints) {
     await db.update('users', customerForPoints.id, { loyaltyPoints: (customerForPoints.loyaltyPoints || 0) - POINTS_FOR_FREE_BOOKING });
@@ -1552,7 +1602,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   // booking itself; just creates a real, reviewable flag when something's
   // genuinely off.
   const { checkPriceAnomaly, checkNewAccountHighValue } = require('../fraud-detection');
-  await checkPriceAnomaly(provider.category, contract.amount, contract.id, req.user.sub, providerId);
+  if (laborAmount > 0) await checkPriceAnomaly(provider.category, laborAmount, contract.id, req.user.sub, providerId); // v105: goods don't count as an unusual job price
   await checkNewAccountHighValue(req.user.sub, contract.amount);
 
   // Funds are held immediately regardless of pricing model — a direct
@@ -1582,7 +1632,8 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}" — respond by ${deadlineLabel} or it expires automatically.${conflictNote}`, null, { section: 'bookings' });
   } else {
     escrow = await fundEscrowForContract(contract, req.user.sub, payCurrency);
-    await notify(providerId, '📋', `${customer ? customer.name : 'A customer'} booked you for "${contract.service}" on ${date} — confirm by ${deadlineLabel} or the booking is automatically cancelled and refunded.${conflictNote}`, null, { section: 'bookings' });
+    const goodsNote = basket.items.length ? ` It includes ${basket.items.reduce((n, i) => n + i.qty, 0)} good${basket.items.reduce((n, i) => n + i.qty, 0) === 1 ? '' : 's'} from your store ($${goodsTotal}); they are held for this customer.` : ''; // v106
+    await notify(providerId, '📋', `${customer ? customer.name : 'A customer'} booked you for "${contract.service}" on ${date} — confirm by ${deadlineLabel} or the booking is automatically cancelled and refunded.${goodsNote}${conflictNote}`, null, { section: 'bookings' });
   }
   res.status(201).json({ contract, escrow, sameDayConflict: !!sameDayConflict });
 });
@@ -1644,6 +1695,7 @@ async function handleRespondOffer(req, res) {
       if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
     }
     const updated = await db.update('contracts', contract.id, { status: 'declined' });
+    await proStore.giveBackStock(contract); // v105: goods go back on the shelf
 
     if (isJobSelection) {
       const job = await db.find('jobs', j => j.id === contract.jobId);
@@ -1853,6 +1905,21 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
     row('Location pin', `Plus Code ${code.slice(0, 8)}+${code.slice(8)}  (${contract.jobLocation.latitude}, ${contract.jobLocation.longitude})`);
   }
   twoColumnRow('Agreed Amount (USD)', `$${contract.amount}`, 'Contract Signed', contract.signedAt || new Date(contract.createdAt).toLocaleDateString());
+  // v105: goods bought from the pro's store as part of this booking.
+  if (Array.isArray(contract.storeItems) && contract.storeItems.length) {
+    sectionHeader('Goods From the Pro\'s Store');
+    for (const i of contract.storeItems) row(String(i.name).slice(0, 80), `${i.qty} x $${Number(i.unitPrice).toFixed(2)}${i.unit ? ' per ' + i.unit : ''}  =  $${Number(i.lineTotal).toFixed(2)}`);
+    twoColumnRow('Goods Total', `$${Number(contract.storeGoodsTotal || 0).toFixed(2)}`, contract.goodsOnly ? 'Job' : 'Job Amount', contract.goodsOnly ? 'Goods only, no job' : `$${Number(contract.laborAmount || 0).toFixed(2)}`);
+    row('Store Purchase Fee', `$${Number(contract.storeFee || 0).toFixed(2)} (a flat fee to Trothen, paid by ${contract.storeFeePaidBy === 'pro' ? 'the pro out of the goods money' : 'the customer'}; no commission is taken on goods)`);
+  }
+  if (contract.handover && ((contract.handover.pickup || []).length || (contract.handover.dropoff || []).length)) {
+    sectionHeader('Pick-up and Drop-off Record');
+    const who = (e) => e.by === 'provider' ? 'the pro' : 'the customer';
+    const where = (e) => e.location ? `  ·  at ${e.location.latitude}, ${e.location.longitude}` : '  ·  no location recorded';
+    for (const e of (contract.handover.pickup || [])) row('Pick-up', `${new Date(e.at).toLocaleString('en-US')}  ·  ${e.photoUrls.length} photo${e.photoUrls.length === 1 ? '' : 's'} by ${who(e)}${where(e)}${e.note ? '  ·  ' + e.note : ''}`);
+    for (const e of (contract.handover.dropoff || [])) row('Drop-off', `${new Date(e.at).toLocaleString('en-US')}  ·  ${e.photoUrls.length} photo${e.photoUrls.length === 1 ? '' : 's'} by ${who(e)}${where(e)}${e.note ? '  ·  ' + e.note : ''}`);
+    if ((contract.handover.trail || []).length > 1) row('Route recorded', `${contract.handover.trail.length} positions from the pro's phone between pick-up and drop-off`);
+  }
 
   sectionHeader('Escrow & Payment');
   if (escrow) {

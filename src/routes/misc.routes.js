@@ -180,9 +180,22 @@ router.post('/careers-inquiry', publicFormLimiter, (req, res, next) => {
 // give a seller this visibility rather than leaving them to wonder what
 // happened after they paid.
 router.get('/my-ad-status', requireAuth, requireRole('provider'), async (req, res) => {
+  await require('../ads').endExpiredAds();
+  const mine = (await db.filter('advertisingInquiries', a => a.providerId === req.user.sub)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const ad = mine.find(a => a.isLive === true || a.status === 'new');
+  // v107: the last one that ended or was turned down, so the pro isn't left guessing.
+  const last = !ad ? mine[0] : null;
+  const shape = (a) => ({ id: a.id, isLive: a.isLive === true, status: a.status, price: a.price, displayHeadline: a.displayHeadline, displaySubtext: a.displaySubtext, targetCity: a.targetCity, createdAt: a.createdAt, liveUntil: a.liveUntil || null, views: a.views || 0, clicks: a.clicks || 0, declineReason: a.declineReason || null, endedReason: a.endedReason || null });
+  res.json({ ad: ad ? shape(ad) : null, last: last ? shape(last) : null });
+});
+
+// v107: DELETE /api/my-ad — a pro takes their own ad down, or withdraws
+// one that is still waiting. They used to be told to contact support.
+router.delete('/my-ad', requireAuth, requireRole('provider'), async (req, res) => {
   const ad = await db.find('advertisingInquiries', a => a.providerId === req.user.sub && (a.isLive === true || a.status === 'new'));
-  if (!ad) return res.json({ ad: null });
-  res.json({ ad: { id: ad.id, isLive: ad.isLive, price: ad.price, displayHeadline: ad.displayHeadline, targetCity: ad.targetCity, createdAt: ad.createdAt } });
+  if (!ad) return res.status(404).json({ error: 'You have no ad running or waiting.' });
+  await db.update('advertisingInquiries', ad.id, { isLive: false, status: 'closed', endedAt: new Date().toISOString(), endedReason: ad.isLive ? 'taken_down_by_pro' : 'withdrawn_by_pro' });
+  res.json({ ok: true, wasLive: ad.isLive === true });
 });
 
 router.get('/ad-pricing', async (req, res) => {
@@ -239,7 +252,7 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
   // A provider can only ever target their own city, or genuinely go
   // platform-wide — never claim to represent a city they're not
   // actually based in.
-  const wantsOwnCity = targetCity === provider.city;
+  const wantsOwnCity = !!targetCity && String(targetCity).trim().toLowerCase() === String(provider.city || '').trim().toLowerCase(); // v107: capital letters and spaces don't matter
   const wantsPlatformWide = !targetCity;
   if (!wantsOwnCity && !wantsPlatformWide) {
     return res.status(400).json({ error: 'You can only target your own city, or the whole platform' });
@@ -614,8 +627,13 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
   };
   await db.insert('verifications', record);
 
+  // v107: the regional admins for this person, including an admin who
+  // covers the whole country and cities typed with different capitals.
+  // Before, only an admin whose city matched letter for letter was told.
+  const regionalIds = new Set((await require('../admin-scope').regionalAdminsFor({ city: user.city, country: user.country })).map(a => a.id));
+  const reviewers = await db.filter('users', u => u.role === 'admin' && u.active !== false && (u.isSuperAdmin || u.adminDepartment === 'verification' || regionalIds.has(u.id)));
   if (!nameMatch) {
-    const admins = await db.filter('users', u => u.role === 'admin' && (u.isSuperAdmin || u.adminDepartment === 'verification' || (!u.adminDepartment && u.city === user.city)));
+    const admins = reviewers;
     for (const admin of admins) {
       await notify(admin.id, '⚠️', `${user.name}'s submitted ID name ("${idLegalName.trim()}") doesn't clearly match their account name — needs manual review.`, null, { section: 'verification' });
     }
@@ -625,9 +643,9 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
     // sat in the queue until an admin happened to check manually. A
     // real review queue tells reviewers when something new actually
     // needs them, not just the flagged exceptions.
-    const admins = await db.filter('users', u => u.role === 'admin' && (u.isSuperAdmin || u.adminDepartment === 'verification' || (!u.adminDepartment && u.city === user.city)));
+    const admins = reviewers;
     for (const admin of admins) {
-      await notify(admin.id, '🪪', `${user.name} submitted identity verification — ready for review.`, null, { section: 'verification' });
+      await notify(admin.id, '🪪', `${user.name} (${user.role === 'customer' ? 'customer' : 'pro'}) submitted identity verification — ready for review.`, null, { section: 'verification' });
     }
   }
 
@@ -937,7 +955,21 @@ router.post('/provider/guarantors', requireAuth, requireRole('provider'), async 
       return res.status(400).json({ error: 'Each guarantor needs at least a real name and phone number' });
     }
   }
-  const existing = (await db.find('users', u => u.id === req.user.sub)).guarantors || [];
+  // v106: a guarantor is someone ELSE who vouches for the pro. One with the
+  // pro's own phone number or name, or the same person listed twice, is
+  // refused, because calling them proves nothing.
+  const meForCheck = await db.find('users', u => u.id === req.user.sub);
+  const { guarantorProblem } = require('../guarantor-check');
+  const seenPhones = new Set();
+  for (const g of guarantors) {
+    const why = guarantorProblem(meForCheck, g);
+    if (why === 'phone') return res.status(400).json({ error: `"${String(g.name).trim()}" has your own phone number. A guarantor must be another person, with their own number.` });
+    if (why === 'name') return res.status(400).json({ error: 'You can\'t be your own guarantor. Name someone else who knows you and your work.' });
+    const key = require('../guarantor-check').phoneKey(g.phone);
+    if (seenPhones.has(key)) return res.status(400).json({ error: 'Two of your guarantors have the same phone number. Each one must be a different person.' });
+    seenPhones.add(key);
+  }
+  const existing = meForCheck.guarantors || [];
   // Preserve any existing verification status when a provider re-saves
   // (e.g. edits guarantor #2's phone number) — matching by phone number,
   // since that's the one field the verification team actually uses to

@@ -52,6 +52,11 @@ async function buildExport(userId) {
     identityChecks: mine(await safeAll('verifications'), 'userId').map(v => strip(v, ['documentFilename', 'selfieFilename', 'backFilename'])),
     portfolioPhotos: mine(await safeAll('portfolioPhotos'), 'providerId'),
     favorites: mine(await safeAll('favorites'), 'customerId', 'userId'),
+    // v105: the pro's store and business records
+    storeGoods: mine(await safeAll('storeGoods'), 'providerId'),
+    tools: mine(await safeAll('proTools'), 'providerId'),
+    expenses: mine(await safeAll('proExpenses'), 'providerId'),
+    quotesAndInvoices: mine(await safeAll('proDocs'), 'providerId', 'customerId'),
   };
 }
 
@@ -106,6 +111,27 @@ async function eraseAccount(closure, adminId) {
   // Public photos.
   for (const p of (await safeAll('portfolioPhotos')).filter(p => p.providerId === user.id)) { removeFileQuietly(UPLOADS_DIR, p.filename); await db.remove('portfolioPhotos', p.id); }
   if (user.profilePhotoUrl) removeFileQuietly(UPLOADS_DIR, String(user.profilePhotoUrl).split('/').pop());
+  // v105: their store, and the business records only they used. Goods
+  // already bought stay written on the bookings they were part of.
+  for (const g of (await safeAll('storeGoods')).filter(g => g.providerId === user.id)) {
+    for (const u of (g.photoUrls || [])) removeFileQuietly(UPLOADS_DIR, String(u).split('/').pop());
+    try { await db.remove('storeGoods', g.id); } catch (e) { /* skip */ }
+  }
+  for (const x of (await safeAll('proExpenses')).filter(x => x.providerId === user.id)) {
+    if (x.receiptUrl) removeFileQuietly(UPLOADS_DIR, String(x.receiptUrl).split('/').pop());
+    try { await db.remove('proExpenses', x.id); } catch (e) { /* skip */ }
+  }
+  for (const sk of (user.extraSkills || [])) if (sk && sk.licenceFile) removeFileQuietly(PRIVATE_UPLOADS_DIR, sk.licenceFile); // v106: licence proof for extra skills
+  for (const coll of ['proTools', 'proDocs']) {
+    for (const r of (await safeAll(coll)).filter(r => r.providerId === user.id)) { try { await db.remove(coll, r.id); } catch (e) { /* skip */ } }
+  }
+  // Where they were when they recorded a pick-up or drop-off, and (for a
+  // pro) the routes recorded while carrying. The photos and times stay as
+  // the record of the hand-over.
+  for (const c of (await safeAll('contracts')).filter(c => c.handover && (c.customerId === user.id || c.providerId === user.id))) {
+    const strip = (list) => (list || []).map(e => e.byId === user.id ? { ...e, location: null } : e);
+    await db.update('contracts', c.id, { handover: { ...c.handover, pickup: strip(c.handover.pickup), dropoff: strip(c.handover.dropoff), trail: c.providerId === user.id ? [] : (c.handover.trail || []) } });
+  }
   // Things only they used.
   for (const coll of ['paymentMethods', 'pushSubscriptions', 'notifications', 'favorites']) {
     for (const r of (await safeAll(coll)).filter(r => r.userId === user.id || r.customerId === user.id)) { try { await db.remove(coll, r.id); } catch (e) { /* skip */ } }

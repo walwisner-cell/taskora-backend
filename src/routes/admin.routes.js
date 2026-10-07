@@ -74,9 +74,11 @@ function inRegion(region, person) {
 }
 // An ad belongs to a city admin when it targets their city, and to a
 // country admin when the pro who placed it is in their country.
-function adInRegion(region, ad, pro) {
+// v107: an ad from an outside company has no pro behind it, so a country
+// admin never saw it. Now it is theirs when its city is in their country.
+function adInRegion(region, ad, pro, citiesHere) {
   if (!region) return true;
-  if (region instanceof CountryScope) return !!pro && sameText(pro.country, region.country);
+  if (region instanceof CountryScope) return pro ? sameText(pro.country, region.country) : !!(ad.targetCity && citiesHere && citiesHere.has(String(ad.targetCity).trim().toLowerCase()));
   return sameText(ad.targetCity, region);
 }
 // For records that only carry a city typed by a member of the public
@@ -338,11 +340,31 @@ router.get('/reports/analytics', async (req, res) => {
   });
 });
 
+// v107: where a person's ID stands, in one word, for every admin list.
+//   approved = an ID was reviewed and approved
+//   waiting  = an ID is in the Verification Queue now
+//   rejected = their last ID was turned down and they haven't sent another
+//   none     = they have never sent one
+// "Verified" on an account comes ONLY from an approved ID (v75). Approving
+// the account in User Approvals lets the person in; it does not verify
+// them. These lists now say which of the two steps is outstanding.
+async function idStatusByUser() {
+  const byUser = new Map();
+  const rank = { approved: 4, waiting: 3, rejected: 2 };
+  for (const v of await db.all('verifications')) {
+    const s = v.status === 'approved' ? 'approved' : ['pending', 'review_required'].includes(v.status) ? 'waiting' : v.status === 'rejected' ? 'rejected' : null;
+    if (!s) continue;
+    if (!byUser.has(v.userId) || rank[s] > rank[byUser.get(v.userId)]) byUser.set(v.userId, s);
+  }
+  return (userId) => byUser.get(userId) || 'none';
+}
+
 // GET /api/admin/users/pending
 router.get('/users/pending', async (req, res) => {
   const region = await myRegion(req);
+  const idOf = await idStatusByUser(); // v107: show where each person's ID stands, next to the account
   const pending = (await db.filter('users', u => u.role !== 'admin' && u.verified === false && u.status !== 'approved' && u.status !== 'rejected' && (!region || inRegion(region, u))))
-    .map(publicAdmin);
+    .map(u => ({ ...publicAdmin(u), idStatus: idOf(u.id) }));
   res.json({ users: pending });
 });
 
@@ -380,7 +402,8 @@ router.get('/users/all', async (req, res) => {
     if (u.approvedBy) return { verifiedVia: 'account_approval', verifiedByName: adminNames.get(u.approvedBy) || null, verifiedAt: u.approvedAt || null };
     return { verifiedVia: 'unknown' };
   };
-  res.json({ users: users.map(u => ({ ...publicAdmin(u), ...howVerified(u) })) });
+  const idOf = await idStatusByUser(); // v107
+  res.json({ users: users.map(u => ({ ...publicAdmin(u), ...howVerified(u), idStatus: idOf(u.id), accountStatus: u.status || 'pending' })) });
 });
 
 // Masks all but the first character of the local part and keeps the
@@ -712,7 +735,11 @@ router.post('/users/:id/decide', requireDepartment(['verification', 'customer_se
       ? 'Your account has been approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
       : 'Your account has been approved.';
   await notify(target.id, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? approveMessage : `Your account application was not approved: ${finalRejectionReason}`, null, { section: 'overview' });
-  res.json({ user: publicAdmin(updated) });
+  // v107: tell the admin screen whether the person still has to send an ID,
+  // and whether one is already waiting, so "approved but still Unverified"
+  // is explained on the spot.
+  const idStatus = decision === 'approve' ? (await idStatusByUser())(target.id) : null;
+  res.json({ user: publicAdmin(updated), needsId: providerNeedsId, idStatus });
 });
 
 // GET /api/admin/verification-queue
@@ -724,7 +751,14 @@ router.get('/providers-with-guarantors', requireDepartment(['verification']), as
   const region = await myRegion(req);
   let providers = await db.filter('users', u => u.role === 'provider' && u.guarantors && u.guarantors.length > 0);
   if (region) providers = providers.filter(p => inRegion(region, p));
-  res.json({ providers: providers.map(p => ({ id: p.id, name: p.name, city: p.city, category: p.category, guarantors: p.guarantors })) });
+  // v106: flag guarantors that are not really someone else (the pro's own
+  // number or name), and numbers used as a guarantor by several pros.
+  const { guarantorProblem, phoneKey } = require('../guarantor-check');
+  const usedBy = new Map();
+  for (const p of await db.filter('users', u => u.role === 'provider' && u.guarantors && u.guarantors.length > 0)) {
+    for (const g of p.guarantors) { const k = phoneKey(g.phone); if (!usedBy.has(k)) usedBy.set(k, new Set()); usedBy.get(k).add(p.id); }
+  }
+  res.json({ providers: providers.map(p => ({ id: p.id, name: p.name, city: p.city, category: p.category, guarantors: p.guarantors.map(g => ({ ...g, problem: guarantorProblem(p, g), sharedWithOtherPros: Math.max(0, (usedBy.get(phoneKey(g.phone)) || new Set()).size - 1) })) })) });
 });
 
 // PATCH /api/admin/providers/:id/guarantors/:index — mark one specific
@@ -742,9 +776,17 @@ router.patch('/providers/:id/guarantors/:index', requireDepartment(['verificatio
     return res.status(404).json({ error: 'That guarantor was not found on this provider\'s account' });
   }
   const { status } = req.body || {};
-  if (!['contacted', 'verified'].includes(status)) return res.status(400).json({ error: 'status must be contacted or verified' });
+  if (!['contacted', 'verified', 'rejected'].includes(status)) return res.status(400).json({ error: 'status must be contacted, verified or rejected' });
+  // v106: a guarantor with the pro's own number or name can't be marked verified.
+  const problem = require('../guarantor-check').guarantorProblem(provider, guarantors[idx]);
+  if (status === 'verified' && problem) {
+    return res.status(400).json({ error: problem === 'phone' ? 'This guarantor has the pro\'s own phone number, so it can\'t be verified. Mark it not accepted and ask the pro for a different person.' : 'This guarantor has the pro\'s own name, so it can\'t be verified. Mark it not accepted and ask the pro for a different person.' });
+  }
   guarantors[idx] = { ...guarantors[idx], status, contactedAt: new Date().toISOString() };
   const updated = await db.update('users', provider.id, { guarantors });
+  if (status === 'rejected') {
+    await notify(provider.id, '❌', `Your guarantor "${guarantors[idx].name}" wasn't accepted. A guarantor must be another person with their own phone number. Please replace them in Verification.`, null, { section: 'verification' });
+  }
   if (status === 'verified') {
     await notify(provider.id, '✅', `Your guarantor "${guarantors[idx].name}" has been contacted and verified — thank you for helping us keep Trothen trustworthy.`, null, { section: 'verification' });
   }
@@ -1013,16 +1055,38 @@ router.get('/verification-gaps', requireDepartment(['verification']), async (req
   res.json({ gaps });
 });
 
-// POST /api/admin/verification-gaps/:userId  { action: 'request' | 'remove_badge' }
+// v107: GET /api/admin/verification-waiting — people who are NOT verified
+// and have nothing in the queue: they have never sent an ID, or their last
+// one was turned down. Nothing an admin can approve; the next step is
+// theirs. Listed so the team can see them and send a reminder.
+router.get('/verification-waiting', requireDepartment(['verification']), async (req, res) => {
+  const region = await myRegion(req);
+  const idOf = await idStatusByUser();
+  const people = (await db.filter('users', u => (u.role === 'provider' || u.role === 'customer') && u.verified !== true && u.active !== false && u.status !== 'rejected' && !u.erased && (!region || inRegion(region, u))))
+    .map(u => ({ id: u.id, name: u.name, role: u.role, city: u.city || null, country: u.country || null, joined: (u.createdAt || '').slice(0, 10), idStatus: idOf(u.id), accountApproved: u.status === 'approved', lastIdReminderAt: u.lastIdReminderAt || null }))
+    .filter(p => p.idStatus === 'none' || p.idStatus === 'rejected')
+    .sort((a, b) => String(b.joined).localeCompare(String(a.joined)));
+  res.json({ people, counts: { customers: people.filter(p => p.role === 'customer').length, providers: people.filter(p => p.role === 'provider').length } });
+});
+
+// POST /api/admin/verification-gaps/:userId  { action: 'request' | 'remove_badge' | 'remind' }
 router.post('/verification-gaps/:userId', requireDepartment(['verification']), async (req, res) => {
   const { action } = req.body || {};
-  if (!['request', 'remove_badge'].includes(action)) return res.status(400).json({ error: 'action must be request or remove_badge' });
+  if (!['request', 'remove_badge', 'remind'].includes(action)) return res.status(400).json({ error: 'action must be request, remove_badge or remind' });
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.userId && (u.role === 'provider' || u.role === 'customer'));
   if (!target) return res.status(404).json({ error: 'Person not found' });
   if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That user is outside the area you manage' });
   const isCustomer = target.role === 'customer';
-  if (action === 'remove_badge') {
+  if (action === 'remind') {
+    // v107: a nudge to someone who isn't verified yet. At most one a day each.
+    if (target.verified === true) return res.status(400).json({ error: 'This person is already verified.' });
+    if (target.lastIdReminderAt && (Date.now() - new Date(target.lastIdReminderAt).getTime()) < 24 * 60 * 60 * 1000) return res.status(429).json({ error: 'They were already reminded in the last day.' });
+    await notify(target.id, '🪪', isCustomer
+      ? 'Reminder: please verify your identity in the Verification section. Upload a government ID and a photo of your face. You can post a job or book a pro once it has been reviewed.'
+      : 'Reminder: please verify your identity in the Verification section. Upload a government ID and a photo of your face. You appear in search and can take jobs once it has been reviewed.', null, { section: 'verification' });
+    await db.update('users', target.id, { lastIdReminderAt: new Date().toISOString() });
+  } else if (action === 'remove_badge') {
     await db.update('users', target.id, { verified: false });
     await notify(target.id, '🪪', isCustomer
       ? 'Before your next booking, please verify your identity in the Verification section. It only takes a few minutes.'
@@ -1224,7 +1288,7 @@ router.get('/transactions', requireDepartment(['financial', 'accountant', 'contr
     // otherwise their individual plan rate) — so admins aren't left
     // guessing what a job will net the platform before payout happens.
     const commissionRate = provider ? effectiveCommissionRate(provider, orgsById.get(provider.organizationId)) : null;
-    const estCommission = commissionRate != null ? Math.round(c.amount * commissionRate * 100) / 100 : null;
+    const estCommission = commissionRate != null ? Math.round(Math.max(0, c.amount - (c.storeGoodsTotal || 0)) * commissionRate * 100) / 100 : null; // v105: no commission on store goods
     return {
       contractId: c.id,
       bookingNumber: c.bookingNumber || c.id,
@@ -1283,7 +1347,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'c
     const regionalProviderIds = new Set((await db.filter('users', u => u.role === 'provider' && inRegion(region, u))).map(u => u.id));
     payoutsInScope = payoutsInScope.filter(p => regionalProviderIds.has(p.providerId));
   }
-  const payoutsCommissionInScope = payoutsInScope.reduce((s, p) => s + (p.commissionAmount || 0), 0);
+  const payoutsCommissionInScope = payoutsInScope.reduce((s, p) => s + (p.commissionAmount || 0) + (p.storeFeeAmount || 0), 0); // v106
   const orgsById = new Map((await db.all('organizations')).map(o => [o.id, o]));
 
   const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
@@ -1300,7 +1364,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'c
   const totalGMV = scoped.reduce((s, r) => s + r.c.amount, 0);
   const totalHeld = scoped.filter(r => r.escrow && r.escrow.status === 'held').reduce((s, r) => s + r.escrow.amount, 0);
   const totalReleased = scoped.filter(r => r.escrow && r.escrow.status === 'released').reduce((s, r) => s + r.escrow.amount, 0);
-  const totalEstCommission = scoped.reduce((s, r) => s + r.c.amount * effectiveCommissionRate(r.provider, orgsById.get(r.provider && r.provider.organizationId)), 0);
+  const totalEstCommission = scoped.reduce((s, r) => s + Math.max(0, r.c.amount - (r.c.storeGoodsTotal || 0)) * effectiveCommissionRate(r.provider, orgsById.get(r.provider && r.provider.organizationId)), 0);
   twoColumnRow('Total GMV', `$${totalGMV.toFixed(2)}`, 'Transactions', String(scoped.length));
   twoColumnRow('Escrow Held', `$${totalHeld.toFixed(2)}`, 'Escrow Released', `$${totalReleased.toFixed(2)}`);
   twoColumnRow('Est. Commission (unpaid + paid)', `$${totalEstCommission.toFixed(2)}`, 'Realized Commission (paid out)', `$${payoutsCommissionInScope.toFixed(2)}`);
@@ -1318,7 +1382,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'c
         (provider && provider.category) || '—',
         c.service,
         `$${c.amount}`,
-        `$${(c.amount * effectiveCommissionRate(provider, orgsById.get(provider && provider.organizationId))).toFixed(2)}`,
+        `$${(Math.max(0, c.amount - (c.storeGoodsTotal || 0)) * effectiveCommissionRate(provider, orgsById.get(provider && provider.organizationId))).toFixed(2)}`,
         c.status,
       ])
     );
@@ -3170,13 +3234,15 @@ router.get('/advertising-inquiries', async (req, res) => {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const region = await myRegion(req); // null for a super admin
+  await require('../ads').endExpiredAds(); // v107: ads whose time is up come down before the list is shown
   let inquiries = await db.all('advertisingInquiries');
   if (region) {
     const prosById = new Map((await db.filter('users', u => u.role === 'provider')).map(u => [u.id, u]));
-    inquiries = inquiries.filter(i => adInRegion(region, i, prosById.get(i.providerId)));
+    const citiesHere = region instanceof CountryScope ? await require('../ads').citiesInCountry(region.country) : null;
+    inquiries = inquiries.filter(i => adInRegion(region, i, prosById.get(i.providerId), citiesHere));
   }
   inquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  res.json({ inquiries });
+  res.json({ inquiries, defaultRunDays: require('../ads').DEFAULT_RUN_DAYS });
 });
 
 // PATCH /api/admin/advertising-inquiries/:id/status — move an inquiry
@@ -3186,15 +3252,28 @@ router.get('/advertising-inquiries', async (req, res) => {
 router.patch('/advertising-inquiries/:id/status', async (req, res) => {
   const { status } = req.body || {};
   if (!['new', 'contacted', 'closed'].includes(status)) return res.status(400).json({ error: 'status must be new, contacted, or closed' });
+  const declineReason = (req.body || {}).declineReason;
+  if (declineReason !== undefined && !isNonEmptyString(declineReason, { min: 3, max: 300 })) return res.status(400).json({ error: 'Say why the ad is being turned down (3 to 300 characters)' });
   const target = await db.find('advertisingInquiries', i => i.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'Inquiry not found' });
   const m = await me(req);
   if (!m.isSuperAdmin) {
     if (m.adminDepartment) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
     const region = await myRegion(req);
-    if (!adInRegion(region, target, target.providerId ? await db.find('users', u => u.id === target.providerId) : null)) return res.status(403).json({ error: 'This inquiry targets a different place than the one you manage.' });
+    if (!adInRegion(region, target, target.providerId ? await db.find('users', u => u.id === target.providerId) : null, region instanceof CountryScope ? await require('../ads').citiesInCountry(region.country) : null)) return res.status(403).json({ error: 'This inquiry targets a different place than the one you manage.' });
   }
-  const updated = await db.update('advertisingInquiries', target.id, { status });
+  // v107: closing an ad that is live takes it down too. Before, "Close"
+  // left it showing on the home page with nothing in the list to say so.
+  const patchStatus = { status };
+  if (status === 'closed' && target.isLive) { patchStatus.isLive = false; patchStatus.endedAt = new Date().toISOString(); patchStatus.endedReason = 'closed_by_admin'; }
+  if (status === 'closed' && declineReason) patchStatus.declineReason = String(declineReason).trim();
+  const updated = await db.update('advertisingInquiries', target.id, patchStatus);
+  // A pro who placed the ad is told. They used to hear nothing.
+  if (status === 'closed' && target.providerId && target.status !== 'closed') {
+    await notify(target.providerId, '📣', declineReason
+      ? `Your ad "${target.displayHeadline || target.companyName}" wasn't approved: ${String(declineReason).trim()} You can change it and send it again from the home page. Payments are in test mode, so nothing was charged.`
+      : `Your ad "${target.displayHeadline || target.companyName}" has been closed${target.isLive ? ' and is no longer showing' : ''}.`, null, { section: 'overview' });
+  }
   res.json({ inquiry: updated });
 });
 
@@ -3206,7 +3285,10 @@ router.patch('/advertising-inquiries/:id/status', async (req, res) => {
 // targetCity is null, which only a super admin can approve — that's not
 // any one region's call to make).
 router.patch('/advertising-inquiries/:id/live', async (req, res) => {
-  const { isLive, price, currencyCode, displayHeadline, displaySubtext, displayLink } = req.body || {};
+  const { isLive, price, currencyCode, displayHeadline, displaySubtext, displayLink, runDays } = req.body || {};
+  if (isLive && runDays !== undefined && (!Number.isInteger(runDays) || runDays < 1 || runDays > 365)) return res.status(400).json({ error: 'An ad can run for 1 to 365 days' });
+  if (displayHeadline !== undefined && String(displayHeadline || '').trim().length > 100) return res.status(400).json({ error: 'The headline must be under 100 characters' });
+  if (displaySubtext !== undefined && String(displaySubtext || '').trim().length > 200) return res.status(400).json({ error: 'The line under the headline must be under 200 characters' });
   const target = await db.find('advertisingInquiries', i => i.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'Inquiry not found' });
   const m = await me(req);
@@ -3214,7 +3296,7 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
     if (m.adminDepartment) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
     const region = await myRegion(req);
     if (!target.targetCity) return res.status(403).json({ error: 'Platform-wide ads can only be approved by a super admin.' });
-    if (!adInRegion(region, target, target.providerId ? await db.find('users', u => u.id === target.providerId) : null)) return res.status(403).json({ error: 'This inquiry targets a different place than the one you manage.' });
+    if (!adInRegion(region, target, target.providerId ? await db.find('users', u => u.id === target.providerId) : null, region instanceof CountryScope ? await require('../ads').citiesInCountry(region.country) : null)) return res.status(403).json({ error: 'This inquiry targets a different place than the one you manage.' });
   }
   if (isLive && (typeof price !== 'number' || price < 0)) return res.status(400).json({ error: 'Enter a valid price to go live' });
 
@@ -3224,9 +3306,20 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
     patch.currencyCode = currencyCode || currencyForCountry(m.country || 'United States').code;
     patch.approvedBy = m.id;
     patch.approvedAt = new Date().toISOString();
+    // v107: an ad runs for a set number of days, then comes down by itself.
+    const days = Number.isInteger(runDays) ? runDays : require('../ads').DEFAULT_RUN_DAYS;
+    patch.runDays = days;
+    patch.liveUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    patch.status = 'contacted'; patch.endedAt = null; patch.endedReason = null; patch.declineReason = null;
+    if (!target.isLive) { patch.views = 0; patch.clicks = 0; }
+  } else if (target.isLive) {
+    patch.endedAt = new Date().toISOString(); patch.endedReason = 'taken_down_by_admin';
   }
-  if (displayHeadline !== undefined) patch.displayHeadline = (displayHeadline || '').trim() || null;
-  if (displaySubtext !== undefined) patch.displaySubtext = (displaySubtext || '').trim() || null;
+  // v107: a blank box no longer wipes what the advertiser wrote. Before,
+  // approving a pro's ad with the "line under the headline" box left empty
+  // erased the pro's own line and the ad showed a stock sentence instead.
+  if (displayHeadline !== undefined && String(displayHeadline || '').trim()) patch.displayHeadline = String(displayHeadline).trim();
+  if (displaySubtext !== undefined && String(displaySubtext || '').trim()) patch.displaySubtext = String(displaySubtext).trim();
   if (displayLink !== undefined) {
     const trimmedLink = (displayLink || '').trim();
     if (trimmedLink && !/^https?:\/\//i.test(trimmedLink)) {
@@ -3236,6 +3329,11 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
   }
 
   const updated = await db.update('advertisingInquiries', target.id, patch);
+  if (target.providerId && !!isLive !== (target.isLive === true)) {
+    await notify(target.providerId, '📣', isLive
+      ? `Your ad "${updated.displayHeadline || updated.companyName}" is now live on the home page${updated.targetCity ? ' for ' + updated.targetCity : ''}. It runs until ${String(updated.liveUntil).slice(0, 10)}.`
+      : `Your ad "${updated.displayHeadline || updated.companyName}" was taken down by the Trothen team and is no longer showing.`, null, { section: 'overview' });
+  }
   res.json({ inquiry: updated });
 });
 

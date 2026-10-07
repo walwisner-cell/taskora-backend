@@ -130,6 +130,10 @@ app.use(morgan('dev'));
 
 // ---- API routes ----
 app.use('/api/auth', authRoutes);
+// v105: pro stores, extra skills, pick-up/drop-off, and the pro's business tools.
+// These come first so their /api/admin/store addresses are reached before the main admin routes.
+app.use('/api', require('./src/routes/store.routes'));
+app.use('/api', require('./src/routes/business.routes'));
 app.use('/api', marketplaceRoutes);
 app.use('/api', paymentsRoutes);
 app.use('/api/admin', adminRoutes);
@@ -323,6 +327,11 @@ seedIfEmpty()
     const { sweepDocumentUploadReminders } = require('./src/document-upload-reminder-scheduler');
     setTimeout(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, 23000);
     setInterval(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+
+    // v107: ads come down when their time is up (see src/ads.js). Hourly.
+    const { endExpiredAds } = require('./src/ads');
+    setTimeout(() => { endExpiredAds().catch(e => console.error('[ads] sweep failed:', e)); }, 37000);
+    setInterval(() => { endExpiredAds().catch(e => console.error('[ads] sweep failed:', e)); }, 60 * 60 * 1000);
 
     // v96: remove exact job locations once they're no longer needed (see
     // src/location-retention-scheduler.js). Shortly after boot, then daily.

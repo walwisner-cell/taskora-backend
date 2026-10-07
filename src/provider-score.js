@@ -156,7 +156,7 @@ async function computeProviderScore(providerId) {
   // is earned when the verification team has actually spoken to the pro's
   // guarantors and marked them verified: one verified guarantor earns
   // half, two or more earn all of it.
-  const verifiedGuarantors = (provider.guarantors || []).filter(g => g && g.status === 'verified').length;
+  const verifiedGuarantors = (provider.guarantors || []).filter(g => g && g.status === 'verified' && !require('./guarantor-check').guarantorProblem(provider, g)).length; // v106: a "guarantor" with the pro's own number or name earns nothing
   const backgroundCheck = verifiedGuarantors >= 2 ? WEIGHTS.backgroundCheck : verifiedGuarantors === 1 ? WEIGHTS.backgroundCheck / 2 : 0;
 
   // 8. Cancellation rate — direct: reuses the exact same rate

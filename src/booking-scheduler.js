@@ -13,6 +13,7 @@ async function expireOneBooking(contract) {
     await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
   }
   const updated = await db.update('contracts', contract.id, { status: 'expired' });
+  try { await require('./store').giveBackStock(contract); } catch (e) { console.error('[store] could not give stock back:', e.message); } // v105
 
   const provider = await db.find('users', u => u.id === contract.providerId);
   // NOTE: contract.status here is still the pre-update value passed in by

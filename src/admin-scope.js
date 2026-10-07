@@ -28,4 +28,22 @@ async function regionalAdminsFor({ city, country } = {}) {
   });
 }
 
-module.exports = { regionalAdminsFor };
+// v105: "may this admin look after this person?" for screens outside
+// admin.routes.js (the store and skills review). Same rules as myRegion()
+// there: a super admin sees everyone; a regional admin sees their city or
+// their whole country; a department admin sees everyone unless their
+// account was created as region-scoped.
+function adminScopeFor(admin) {
+  if (!admin || admin.role !== 'admin' || admin.active === false) return () => false;
+  if (admin.isSuperAdmin) return () => true;
+  const scoped = (person) => {
+    if (!person) return false;
+    if (admin.adminScope === 'country' && admin.country) return same(person.country, admin.country);
+    return same(person.city, admin.region || admin.city);
+  };
+  if (!admin.adminDepartment) return scoped;
+  if (admin.adminDepartment !== 'sales' && admin.regionScoped) return scoped;
+  return () => true;
+}
+
+module.exports = { regionalAdminsFor, adminScopeFor };

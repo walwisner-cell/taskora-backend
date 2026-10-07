@@ -27,10 +27,18 @@ async function sweepLocationRetention(now = new Date()) {
   const bookingCutoff = new Date(now.getTime() - PIN_DAYS_AFTER_BOOKING * DAY).toISOString();
   for (const c of await safe('contracts')) {
     if (!ENDED.includes(c.status) || openDisputeContracts.has(c.id)) continue;
-    if (!c.jobLocation && !c.onMyWayLocation && !c.arrivedLocation && !c.liveLocation) continue;
+    const carried = c.handover && ((c.handover.trail || []).length || [...(c.handover.pickup || []), ...(c.handover.dropoff || [])].some(e => e.location)); // v105
+    if (!c.jobLocation && !c.onMyWayLocation && !c.arrivedLocation && !c.liveLocation && !carried) continue;
     const endedAt = c.completedAt || c.cancelledAt || c.updatedAt || c.createdAt;
     if (!endedAt || String(endedAt) > bookingCutoff) continue;
-    await db.update('contracts', c.id, { jobLocation: null, onMyWayLocation: null, arrivedLocation: null, liveLocation: null, locationRemovedAt: now.toISOString() });
+    const patch = { jobLocation: null, onMyWayLocation: null, arrivedLocation: null, liveLocation: null, locationRemovedAt: now.toISOString() };
+    // v105: the recorded route and the positions on pick-up and drop-off
+    // records go too. The photos and times stay as the record of the hand-over.
+    if (carried) {
+      const strip = (list) => (list || []).map(e => ({ ...e, location: null }));
+      patch.handover = { ...c.handover, trail: [], pickup: strip(c.handover.pickup), dropoff: strip(c.handover.dropoff) };
+    }
+    await db.update('contracts', c.id, patch);
     bookings += 1;
   }
 

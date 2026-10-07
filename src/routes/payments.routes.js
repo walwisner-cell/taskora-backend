@@ -392,8 +392,19 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   // should use it up.
   const usedFreeCommissionCredit = (provider.freeCommissionCredits || 0) > 0;
   if (usedFreeCommissionCredit) commissionRate = 0;
-  const commissionAmount = Math.round(grossAmount * commissionRate * 100) / 100;
-  let netAmount = Math.round((grossAmount - commissionAmount + totalTips) * 100) / 100;
+  // v105: goods sold from the pro's store carry no commission. Trothen's
+  // share of a store purchase is the flat fee the customer paid at
+  // booking. So the goods part of each booking is taken out before the
+  // commission is worked out. (If a dispute was split, what is left of
+  // the booking is counted as goods first.)
+  const storeGoodsAmount = Math.round(payableEscrow.reduce((sum, e) => sum + Math.min(e.storeGoodsAmount || 0, Math.max(0, e.amount - (e.materialsAdvanceAmount || 0))), 0) * 100) / 100;
+  const commissionableAmount = Math.max(0, Math.round((grossAmount - storeGoodsAmount) * 100) / 100);
+  const commissionAmount = Math.round(commissionableAmount * commissionRate * 100) / 100;
+  // v106: store purchase fees the pro pays (when the super admin has set
+  // the fee to come from the pro). Never more than what is being paid on
+  // that booking, so a split dispute can't push a payout below zero.
+  const storeFeeAmount = Math.round(payableEscrow.reduce((sum, e) => sum + Math.min(e.storeFeeFromPro || 0, Math.max(0, e.amount - (e.materialsAdvanceAmount || 0))), 0) * 100) / 100;
+  let netAmount = Math.round((grossAmount - commissionAmount - storeFeeAmount + totalTips) * 100) / 100;
   // v78: open monthly plan fees come out here, oldest first, and never
   // more than half of this payout. Returns 0 while plan billing is off.
   const planBilling = require('../plan-billing');
@@ -438,6 +449,8 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     grossAmount,
     commissionRate,
     commissionAmount,
+    storeGoodsAmount, // v105: the part of this payout that is store goods (no commission)
+    storeFeeAmount, // v106: flat store purchase fees paid by the pro
     amount: netAmount, // canonical USD amount actually paid out, after commission (and any plan fee)
     planFeeAmount: planFee.amount,
     planFeeItems: planFee.items,
@@ -472,8 +485,9 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
   const tipNote = totalTips > 0 ? ` (includes $${totalTips} in tips — no commission taken on those)` : '';
   const planFeeNote = planFee.amount > 0 ? ` $${planFee.amount} in plan fees was taken from this payout.` : '';
+  const goodsNote = storeGoodsAmount > 0 ? ` $${storeGoodsAmount} of this is goods from your store, with no commission taken${storeFeeAmount > 0 ? `; $${storeFeeAmount} in store purchase fees was taken instead` : ''}.` : '';
   const creditNote = usedFreeCommissionCredit ? ' 🏆 Used your top-scorer free-commission credit — 0% commission on this payout!' : '';
-  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned)${tipNote}${planFeeNote}${creditNote} — processing.`, 'payoutAlerts', { section: 'earnings' });
+  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned)${tipNote}${goodsNote}${planFeeNote}${creditNote} — processing.`, 'payoutAlerts', { section: 'earnings' });
   res.status(201).json({ payout });
 }
 
@@ -773,7 +787,7 @@ async function handleContractComplete(req, res) {
 
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
-  const updated = await db.update('contracts', contract.id, { status: 'completed', tipAmount: tip, tipPaid: false });
+  const updated = await db.update('contracts', contract.id, { status: 'completed', tipAmount: tip, tipPaid: false, completedAt: new Date().toISOString() }); // v105: the day it was completed, for invoices and the tax report
 
   // Real completed-jobs tracking — this used to be a static number set once
   // at signup and never touched again (every provider profile showed the
@@ -863,6 +877,7 @@ async function handleContractCancel(req, res) {
     cancelledByRole: iAmProvider ? 'provider' : 'customer',
     protectedCancellation: isProtected,
   });
+  await require('../store').giveBackStock(contract); // v105: goods not yet handed over go back on the shelf
 
   if (isProtected) {
     const { checkProtectedCancellationAbuse } = require('../fraud-detection');
@@ -1001,7 +1016,7 @@ router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res
   const released = all.filter(e => e.status === 'released').reduce((s, e) => s + e.amount, 0);
   // Real commission revenue — the sum of what's actually been deducted
   // across every payout ever made, not a placeholder figure.
-  const commissionRevenue = payouts.reduce((s, p) => s + (p.commissionAmount || 0), 0);
+  const commissionRevenue = payouts.reduce((s, p) => s + (p.commissionAmount || 0) + (p.storeFeeAmount || 0), 0); // v106: store fees paid by pros count as Trothen's share too
   // Real service fee revenue — the customer-side fee, genuinely separate
   // from commission (which comes from the provider's side). Summed across
   // every contract that actually reached a real transaction, matching the
@@ -1086,7 +1101,7 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
     const provider = providerById.get(p.providerId);
     if (!provider) continue;
     const b = bucket(provider.city || 'Unknown', provider.country || 'Unknown');
-    b.commissionRevenue += (p.commissionAmount || 0);
+    b.commissionRevenue += (p.commissionAmount || 0) + (p.storeFeeAmount || 0);
   }
 
   // Average transaction value per region — total volume moved (held +
