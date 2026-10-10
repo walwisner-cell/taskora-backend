@@ -383,28 +383,56 @@ router.post('/sales-inquiry', publicFormLimiter, async (req, res) => {
 // of the list rather than wherever raw insertion order happened to leave
 // it.
 router.get('/notifications/mine', requireAuth, async (req, res) => {
-  const notifications = (await db.filter('notifications', n => n.userId === req.user.sub))
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  res.json({ notifications });
+  const mine = await db.filter('notifications', n => n.userId === req.user.sub);
+  // v109.2: cleared notifications are kept, so they can be looked at again
+  // and brought back. ?cleared=1 lists them, newest cleared first.
+  if (req.query.cleared === '1') {
+    const cleared = mine.filter(n => n.clearedAt).sort((a, b) => String(b.clearedAt).localeCompare(String(a.clearedAt))).slice(0, 200);
+    return res.json({ notifications: cleared });
+  }
+  const notifications = mine.filter(n => !n.clearedAt).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ notifications, clearedCount: mine.length - notifications.length });
 });
 
-// DELETE /api/notifications/:id — dismiss a single notification for good.
-// Previously there was no way to ever actually remove one; marking it
-// "read" only ever hid the unread indicator, it stayed in the list
-// forever.
+// v109.2: clearing a notification puts it away instead of deleting it.
+// Each person keeps up to 300 cleared ones; older cleared ones are removed.
+const MAX_CLEARED_KEPT = 300;
+async function trimCleared(userId) {
+  const cleared = (await db.filter('notifications', n => n.userId === userId && n.clearedAt)).sort((a, b) => String(b.clearedAt).localeCompare(String(a.clearedAt)));
+  for (const n of cleared.slice(MAX_CLEARED_KEPT)) await db.remove('notifications', n.id);
+}
+
+// DELETE /api/notifications/:id — clear one notification (it can be brought back).
 router.delete('/notifications/:id', requireAuth, async (req, res) => {
   const record = await db.find('notifications', n => n.id === req.params.id && n.userId === req.user.sub);
   if (!record) return res.status(404).json({ error: 'Notification not found' });
-  await db.remove('notifications', record.id);
+  if (!record.clearedAt) await db.update('notifications', record.id, { clearedAt: new Date().toISOString(), read: true });
+  await trimCleared(req.user.sub);
   res.json({ ok: true });
 });
 
-// DELETE /api/notifications — clear every notification for the current
-// user at once.
+// DELETE /api/notifications — clear every notification (they can be brought back).
 router.delete('/notifications', requireAuth, async (req, res) => {
-  const mine = await db.filter('notifications', n => n.userId === req.user.sub);
-  for (const n of mine) await db.remove('notifications', n.id);
+  const now = new Date().toISOString();
+  const mine = await db.filter('notifications', n => n.userId === req.user.sub && !n.clearedAt);
+  for (const n of mine) await db.update('notifications', n.id, { clearedAt: now, read: true });
+  await trimCleared(req.user.sub);
   res.json({ ok: true, cleared: mine.length });
+});
+
+// POST /api/notifications/:id/restore — bring one cleared notification back.
+router.post('/notifications/:id/restore', requireAuth, async (req, res) => {
+  const record = await db.find('notifications', n => n.id === req.params.id && n.userId === req.user.sub);
+  if (!record) return res.status(404).json({ error: 'Notification not found' });
+  await db.update('notifications', record.id, { clearedAt: null });
+  res.json({ ok: true });
+});
+
+// POST /api/notifications/restore-all — bring every cleared notification back.
+router.post('/notifications/restore-all', requireAuth, async (req, res) => {
+  const cleared = await db.filter('notifications', n => n.userId === req.user.sub && n.clearedAt);
+  for (const n of cleared) await db.update('notifications', n.id, { clearedAt: null });
+  res.json({ ok: true, restored: cleared.length });
 });
 
 // ── Push notifications (item 2's "background notifications") ───────────────
