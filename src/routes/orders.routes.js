@@ -199,6 +199,16 @@ router.post('/store/orders', requireAuth, requireRole('customer'), requireCurren
   const settings = await store.storeSettings();
   const { generateBookingNumber, fundEscrowForContract } = require('./marketplace.routes');
   const sellerDeliveryFee = method === 'seller' ? opt.deliveryFee : 0;
+  // v109: what is charged must be what the customer saw. If the seller
+  // changed a price or their delivery charge, or the exchange rate moved,
+  // between the customer opening the checkout and paying, nothing is
+  // charged and the new figures are sent back to approve.
+  if (b.expectedGoodsTotal !== undefined && Math.abs(Number(b.expectedGoodsTotal) - basket.total) > 0.009) {
+    return res.status(409).json({ code: 'PRICE_CHANGED', goodsTotal: basket.total, error: `The goods now come to $${basket.total.toFixed(2)}. A price changed since you opened the checkout. Check it and approve again.` });
+  }
+  if (b.expectedDeliveryFee !== undefined && Math.abs(Number(b.expectedDeliveryFee) - sellerDeliveryFee) > 0.009) {
+    return res.status(409).json({ code: 'PRICE_CHANGED', deliveryFee: sellerDeliveryFee, error: `The seller's delivery charge is now $${sellerDeliveryFee.toFixed(2)}. Check it and approve again.` });
+  }
   const storeFee = settings.purchaseFee;
   const storeFeePaidBy = settings.feePaidBy === 'pro' ? 'pro' : 'customer';
   const pickupPlace = opt.pickupPlace || [seller.city, seller.country].filter(Boolean).join(', ');

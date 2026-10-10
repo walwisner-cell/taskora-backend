@@ -1181,7 +1181,15 @@ router.get('/disputes', requireDepartment(['disputes', 'customer_service', 'lega
 // job screened automatically" claim — a real, reviewable queue, not just a
 // marketing line.
 router.get('/fraud-flags', requireDepartment('disputes'), async (req, res) => {
-  const flags = await db.all('fraudFlags');
+  let flags = await db.all('fraudFlags');
+  // v109: a city or country admin sees flags about people in their own area
+  // only. They used to see every flag on the platform, with emails.
+  const fraudRegion = await myRegion(req);
+  if (fraudRegion) {
+    const kept = [];
+    for (const f of flags) { const u = f.userId ? await db.find('users', x => x.id === f.userId) : null; if (u && inRegion(fraudRegion, u)) kept.push(f); }
+    flags = kept;
+  }
   const withNames = await Promise.all(flags.map(async f => {
     const user = f.userId ? await db.find('users', u => u.id === f.userId) : null;
     const relatedUser = f.relatedUserId ? await db.find('users', u => u.id === f.relatedUserId) : null;
@@ -2894,6 +2902,11 @@ router.delete('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
 router.get('/contact-submissions', async (req, res) => {
   const m = await me(req);
   if (!m) return res.status(403).json({ error: 'Not authorized' });
+  // v109: messages from the public go to customer service, legal and the
+  // area admins, not to every team (finance, HR, sales, verification).
+  if (!m.isSuperAdmin && m.adminDepartment && !['customer_service', 'legal'].includes(m.adminDepartment)) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
   let submissions = (await db.all('contactSubmissions')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   if (!m.isSuperAdmin) {
     const kept = [];

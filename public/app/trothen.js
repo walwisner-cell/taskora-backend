@@ -1509,7 +1509,7 @@ function renderHomeCategories() {
 
 function goCategoriesPage() {
   showScreen('screen-categories');
-  renderNavbar('navbar-categories', 'home');
+  renderNavbar('navbar-categories', navRoleNow());
   document.getElementById('categories-page-sub').textContent = `${CATEGORIES.length} service type${CATEGORIES.length === 1 ? '' : 's'} available — tap any to see its providers`;
   document.getElementById('categories-page-grid').innerHTML = categoryCardsHTML(CATEGORIES);
   window.scrollTo(0, 0);
@@ -1521,7 +1521,7 @@ let directoryCategoryFilter = 'All';
 function goDirectory(category) {
   directoryCategoryFilter = category || 'All';
   showScreen('screen-directory');
-  renderNavbar('navbar-directory', 'home');
+  renderNavbar('navbar-directory', navRoleNow());
   document.getElementById('directory-search').value = '';
   const chips = ['All', ...CATEGORIES.map(c => c.name)];
   document.getElementById('directory-chips').innerHTML = chips.map(c =>
@@ -2456,7 +2456,7 @@ function closeAccountMenu() {
 
 function showPricing() {
   showScreen('screen-pricing');
-  renderNavbar('navbar-pricing', 'home');
+  renderNavbar('navbar-pricing', navRoleNow());
   loadPricingPage();
 }
 
@@ -2607,7 +2607,7 @@ async function showTermsPageModal(preferredRole) {
 
 async function showAboutPage() {
   showScreen('screen-about');
-  renderNavbar('navbar-about', 'home');
+  renderNavbar('navbar-about', navRoleNow());
   const body = document.getElementById('about-us-body');
   if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable — no backend connection.</p>'; return; }
   try {
@@ -2618,7 +2618,7 @@ async function showAboutPage() {
 
 async function showTermsPage(preferredRole) {
   showScreen('screen-terms');
-  renderNavbar('navbar-terms', 'home');
+  renderNavbar('navbar-terms', navRoleNow());
   // Default to whichever role we actually know the visitor is (signed-in
   // user's real role, or the role the consent gate was just shown for),
   // falling back to the customer version for a random footer click from
@@ -2644,12 +2644,12 @@ async function loadTermsContent(role) {
 
 function showCareersPage() {
   showScreen('screen-careers');
-  renderNavbar('navbar-careers', 'home');
+  renderNavbar('navbar-careers', navRoleNow());
 }
 
 function showContactPage() {
   showScreen('screen-contact');
-  renderNavbar('navbar-contact', 'home');
+  renderNavbar('navbar-contact', navRoleNow());
   loadContactDirectInfo();
 }
 
@@ -3217,7 +3217,7 @@ async function mockAuth() {
     if (!email || !password) return showToast('Please fill in all fields');
   } else {
     const zipRequired = !(GEO_DATA.noPostalCodeCountries || []).includes(country);
-    if (!email || !password || !name || !phone || !address || !city || !state || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
+    { const missing = firstMissingSignupField({ name, email, password, phone, address, city, state, zipCode, zipRequired }); if (missing) return missing; }
     if (authState.role === 'provider' && !skills) return showToast('List at least one skill or specialty');
     if (authState.role === 'provider' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
   }
@@ -5631,7 +5631,7 @@ async function viewProviderProfile(id) {
   const p = PROVIDERS.find(x => x.id === id);
   if (!p) return;
   showScreen('screen-profile');
-  renderNavbar('navbar-profile', 'home');
+  renderNavbar('navbar-profile', navRoleNow());
   document.getElementById('profile-head').innerHTML = `
     <div class="profile-avatar-lg" ${p.profilePhotoUrl ? '' : `style="background:${p.color}"`}>${p.profilePhotoUrl ? `<img src="${escapeHtml(p.profilePhotoUrl)}" alt="${escapeHtml(p.name)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : escapeHtml(p.initials)}</div>
     <div>
@@ -6078,7 +6078,7 @@ const PROVIDER_SECTIONS = {
     // moment it's been requested.
     const availableForPayout = providerData.contracts
       .filter(c => c.escrow && c.escrow.status === 'released' && !c.escrow.payoutId)
-      .reduce((s, c) => s + c.escrow.amount, 0);
+      .reduce((s, c) => s + c.escrow.amount - (c.escrow.materialsAdvancePayoutId ? (c.escrow.materialsAdvanceAmount || 0) : 0), 0);
     const payoutBanner = availableForPayout > 0
       ? `<div class="panel" style="background:#EAF4EF;border:1.5px solid var(--teal, #2E8C6F);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
           <div><div style="font-weight:700;color:var(--navy);font-size:14px;">💰 You have $${availableForPayout.toLocaleString()} available to withdraw</div><div style="font-size:13px;color:var(--slate);margin-top:2px;">From jobs customers have confirmed complete — request it whenever you're ready.</div></div>
@@ -6129,14 +6129,14 @@ const PROVIDER_SECTIONS = {
   earnings: () => {
     const pendingPayout = providerData.contracts
       .filter(c => c.escrow && c.escrow.status === 'held')
-      .reduce((s, c) => s + c.escrow.amount, 0);
+      .reduce((s, c) => s + c.escrow.amount - (c.escrow.materialsAdvancePayoutId ? (c.escrow.materialsAdvanceAmount || 0) : 0), 0);
     // What's actually withdrawable right now: escrow the customer has
     // already released (job confirmed complete) that hasn't gone out in a
     // past payout yet. This is what the Request Payout button will
     // actually pay — distinct from "Pending" above, which is still locked.
     const availableForPayout = providerData.contracts
       .filter(c => c.escrow && c.escrow.status === 'released' && !c.escrow.payoutId)
-      .reduce((s, c) => s + c.escrow.amount, 0);
+      .reduce((s, c) => s + c.escrow.amount - (c.escrow.materialsAdvancePayoutId ? (c.escrow.materialsAdvanceAmount || 0) : 0), 0);
     const freeCommissionCredits = (AUTH.user && AUTH.user.freeCommissionCredits) || 0;
     // Matches the real rates in src/commission.js (COMMISSION_RATES) — this
     // was previously a separate, outdated table (12/8/5%) that had drifted
@@ -7406,7 +7406,7 @@ async function confirmProviderCancel(contractId) {
 function selectProviderSection(key) {
   const availableForPayout = providerData.contracts
     .filter(c => c.escrow && c.escrow.status === 'released' && !c.escrow.payoutId)
-    .reduce((s, c) => s + c.escrow.amount, 0);
+    .reduce((s, c) => s + c.escrow.amount - (c.escrow.materialsAdvancePayoutId ? (c.escrow.materialsAdvanceAmount || 0) : 0), 0);
   const navItems = PROVIDER_NAV_ITEMS.map(it => it.key === 'earnings' ? { ...it, dot: availableForPayout > 0 } : it);
   renderDashNav('provider-nav', navItems, key, 'selectProviderSection');
   renderSectionSafely('provider-main', key, () => PROVIDER_SECTIONS[key]());
@@ -11665,10 +11665,9 @@ async function confirmBooking() {
   closeModal();
 
   // Show confirmation screen
-  document.getElementById('screen-home').classList.remove('active');
+  showScreen('screen-confirm'); // v109: every other screen is put away, not only the home page
   const confirmScreen = document.getElementById('screen-confirm');
-  confirmScreen.classList.add('active');
-  renderNavbar('navbar-confirm', 'home');
+  renderNavbar('navbar-confirm', navRoleNow());
 
   // A Mutual Agreement offer isn't a confirmed booking yet — no escrow
   // exists until the provider actually accepts this specific amount, so the
@@ -12206,7 +12205,7 @@ function initChatBubbleModalGuard() {
     const onAuthScreen = authScreen && authScreen.classList.contains('active');
     const shouldHide = anyModalOpen || onAuthScreen;
     bubble.style.display = shouldHide ? 'none' : '';
-    if (shouldHide && panel) panel.style.display = 'none';
+    if (panel) { if (shouldHide) panel.classList.remove('open'); panel.style.display = ''; }
   };
   overlays.forEach(o => {
     new MutationObserver(updateVisibility).observe(o, { attributes: true, attributeFilter: ['class'] });
@@ -15799,6 +15798,9 @@ async function submitCheckout() {
     }
     const items = Object.entries(STORE_BASKET[CHECKOUT.pid] || {}).map(([goodId, qty]) => ({ goodId, qty }));
     const body = { providerId: CHECKOUT.pid, items, deliveryMethod: m, note: (CHECKOUT.note || '').trim() || undefined, ...place };
+    // v109: the totals the customer is looking at, so a price that changed meanwhile is never charged unseen
+    if (CHECKOUT.priced) body.expectedGoodsTotal = CHECKOUT.priced.goodsTotal;
+    body.expectedDeliveryFee = m === 'seller' ? Number((CHECKOUT.delivery && CHECKOUT.delivery.sellerFee) || 0) : 0;
     if (m === 'driver') { body.driverId = dr.id; body.driverPrice = dr.price; }
     const r = await apiFetch('POST', '/store/orders', body);
     delete STORE_BASKET[CHECKOUT.pid];
@@ -15808,6 +15810,13 @@ async function submitCheckout() {
     await goToCustomerDashboard('orders');
   } catch (e) {
     showToast(e.message || 'Could not place the order');
+    // v109: the goods or the seller's delivery charge changed: show the new figures to approve
+    if (e.data && e.data.code === 'PRICE_CHANGED' && (e.data.goodsTotal !== undefined || e.data.deliveryFee !== undefined)) {
+      CHECKOUT.busy = false;
+      if (e.data.deliveryFee !== undefined && CHECKOUT.delivery) CHECKOUT.delivery.sellerFee = e.data.deliveryFee;
+      try { const items = Object.entries(STORE_BASKET[CHECKOUT.pid] || {}).map(([goodId, qty]) => ({ goodId, qty })); CHECKOUT.priced = await apiFetch('POST', '/store/price-basket', { providerId: CHECKOUT.pid, items }); } catch (er) {}
+      return drawCheckout();
+    }
     if (/price/i.test(e.message || '')) { CHECKOUT.busy = false; return loadCheckoutDrivers(); } // a driver changed their price: show the new one
   } finally { CHECKOUT.busy = false; if (document.getElementById('co-body')) drawCheckout(); }
 }
@@ -16261,6 +16270,80 @@ function resetAuthSteps() {
 { const _logout = logout; logout = async function () { const r = await _logout.apply(this, arguments); resetAuthSteps(); return r; }; }
 { const _ok2fa = submitLogin2FA; submitLogin2FA = async function () { await _ok2fa.apply(this, arguments); if (AUTH.token) resetAuthSteps(); }; }
 { const _okSignup = submitSignupVerification; submitSignupVerification = async function () { await _okSignup.apply(this, arguments); if (AUTH.token) resetAuthSteps(); }; }
+
+// v109: the booking form sends the goods total the customer saw, so a price
+// changed in the meantime is refused instead of charged.
+{ const _bgp = bookingGoodsPayload; bookingGoodsPayload = function () { const p = _bgp.apply(this, arguments); if (p && p.storeItems && BOOKING_BASKET_PRICED) p.expectedGoodsTotal = BOOKING_BASKET_PRICED.goodsTotal; return p; }; }
+
+/* ══════════════════════ v109: FROM THE FULL AUDIT ══════════════════════ */
+// Which navbar to show on public screens: the signed-in one when signed in.
+function navRoleNow() {
+  return AUTH.user ? (AUTH.user.role === 'admin' ? (AUTH.user.isSuperAdmin ? 'superadmin' : 'admin') : AUTH.user.role) : 'home';
+}
+(function () {
+  const css = document.createElement('style');
+  css.textContent = `
+    /* the admin tables were cut off on the right at 1024-1400px wide */
+    .dash-main { min-width:0; }
+    /* on a phone the notifications panel started off the left edge of the screen */
+    @media (max-width:520px) {
+      .notif-panel { position:fixed !important; left:12px !important; right:12px !important; width:auto !important; top:calc(64px + env(safe-area-inset-top, 0px)) !important; max-height:72vh; overflow:auto !important; }
+    }
+    /* things people press on a phone are at least 40px tall */
+    @media (max-width:600px) {
+      .account-menu-btn { min-height:40px; min-width:40px; }
+      .profile-back { display:inline-flex; align-items:center; min-height:40px; }
+      .password-toggle-btn { min-width:40px; min-height:40px; }
+      .auth-foot a { display:inline-block; padding:10px 0; }
+      .footer-links a { display:inline-block; padding:9px 0; }
+      #ms-open, #my-store-body input[type=checkbox], #extra-skills-panel input[type=checkbox], .extra-skill-row input[type=checkbox] { width:22px; height:22px; }
+    }`;
+  document.head.appendChild(css);
+})();
+// v109: one plain message per missing sign-up field, with the cursor put on it.
+function firstMissingSignupField(v) {
+  const checks = [['name', 'auth-name', 'Enter your full name'], ['email', 'auth-email', 'Enter your email address'], ['password', 'auth-password', 'Choose a password'],
+    ['phone', 'auth-phone', 'Enter your phone number'], ['state', 'auth-state', 'Choose your state or region'], ['city', 'auth-city', 'Enter your city'],
+    ['address', 'auth-address', 'Enter your address'], ['zipCode', 'auth-zip', 'Enter your zip or postal code']];
+  for (const [k, id, msg] of checks) {
+    if (k === 'zipCode' && !v.zipRequired) continue;
+    if (!v[k]) { const el = document.getElementById(id); if (el) { try { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} } showToast(tr(msg)); return true; }
+  }
+  return false;
+}
+
+/* ══════════════════════ v109: SPANISH ON THE MAIN CUSTOMER SCREENS ══════════════════════
+   The home page, the list of pros, a pro's profile, the booking form and
+   the customer's account were still partly in English when Spanish was
+   chosen. Same method as the newer pages: the words are swapped after they
+   are drawn and put back for English. Names, reviews and anything a person
+   wrote stay as written. */
+const MAIN_ES = {"(optional)": "(opcional)", "optional": "opcional", "if there is one": "si la hay", "Address": "Dirección", "Date": "Fecha", "Time": "Hora", "Service Needed": "Servicio que necesitas", "Describe the job briefly...": "Describe el trabajo brevemente...", "Helps your pro quote accurately — they won't need to bring or charge for anything you've already got.": "Ayuda a tu profesional a cotizar bien: no tendrá que traer ni cobrar lo que ya tienes.", "If your pro needs to buy materials before starting, agree an advance here — it releases to them right away instead of waiting until the job is marked complete. The rest of the payment stays protected in escrow as usual.": "Si tu profesional necesita comprar materiales antes de empezar, acuerda aquí un adelanto: se le entrega de inmediato en lugar de esperar a que el trabajo se marque como completado. El resto del pago sigue protegido en depósito de garantía como siempre.", "Job amount (#hr)": "Importe del trabajo (#h)", "Materials Advance": "Adelanto para materiales", "Photos of the job": "Fotos del trabajo", "Service fee": "Tarifa de servicio", "Service rate": "Tarifa del servicio", "Total charged": "Total cobrado", "Street address, if the place has one": "Dirección, si el lugar la tiene", "What do you already have?": "¿Qué tienes ya?", "e.g. # — released to your pro immediately, not held until completion": "p. ej. #: se entrega a tu profesional de inmediato, no se retiene hasta el final", "e.g. I already bought the replacement faucet": "p. ej. Ya compré el grifo de repuesto", "— tap to choose, or drag and drop": "— toca para elegir, o arrastra y suelta", "📷 Add Photos or Videos": "📷 Añadir fotos o videos", "🔒 Confirm & Pay Securely": "🔒 Confirmar y pagar con seguridad", "🔒 Only shared with the pro you book — never made public or shown to anyone else.": "🔒 Solo se comparte con el profesional que reservas; nunca se publica ni se muestra a nadie más.", "A clear photo or short video of the actual problem or space — e.g. the leaking pipe, the room to paint, the strange noise the machine is making. A video often explains a problem faster than a photo can. Not a screenshot or an unrelated file; it's what your pro sees before deciding whether to take the job. JPEG, PNG, WEBP, GIF (#MB max) or MP#, MOV, WEBM (#MB max) · up to # files.": "Una foto clara o un video corto del problema o del lugar real: p. ej. la tubería que gotea, la habitación que pintar, el ruido extraño de la máquina. Un video suele explicar un problema más rápido que una foto. No una captura de pantalla ni un archivo sin relación: es lo que tu profesional ve antes de decidir si acepta el trabajo. JPEG, PNG, WEBP, GIF (máx. #MB) o MP#, MOV, WEBM (máx. #MB) · hasta # archivos.", "Active": "Activa", "Booking #": "Reserva n.º", "Cancel": "Cancelar", "Completed": "Completada", "Pro": "Profesional", "Service": "Servicio", "Status": "Estado", "Escrow": "Depósito", "Action": "Acción", "Amount": "Importe", "Customer · Verified ✓": "Cliente · Verificado ✓", "Every job, contract, and escrow status in one place": "Cada trabajo, contrato y estado del depósito en un solo lugar", "Favorite Pros": "Profesionales favoritos", "Leave Review": "Dejar reseña", "Messages": "Mensajes", "My Bookings": "Mis reservas", "Overview": "Resumen", "Payments": "Pagos", "Settings": "Configuración", "Verification": "Verificación", "Report a Problem": "Reportar un problema", "Mark Complete": "Marcar como completado", "📋 Additional Requests": "📋 Solicitudes adicionales", "📄 PDF": "📄 PDF", "💬 Message": "💬 Mensaje", "Awaiting Confirmation": "Esperando confirmación", "Waiting on the provider": "Esperando al profesional", "Disputed": "En disputa", "Cancelled": "Cancelada", "Declined": "Rechazada", "Expired": "Vencida", "No favorites yet — tap the ❤️ on any provider's profile to save them here for next time.": "Aún no tienes favoritos: toca el ❤️ en el perfil de un profesional para guardarlo aquí para la próxima vez.", "Providers you've saved to rebook quickly": "Profesionales que guardaste para volver a reservar rápido", "+ Post a New Job": "+ Publicar un trabajo nuevo", "+ Post a Job": "+ Publicar un trabajo", "# total": "# en total", "Active Bookings": "Reservas activas", "Completed Jobs": "Trabajos completados", "Here's what's happening with your bookings": "Esto es lo que pasa con tus reservas", "In Escrow": "En depósito", "Recent Bookings": "Reservas recientes", "✓ Verified": "✓ Verificado", "+ Add Payment Method": "+ Añadir método de pago", "Name as shown on the card": "Nombre como aparece en la tarjeta", "No payment methods yet — add one to test the booking flow.": "Aún no tienes métodos de pago: añade uno para probar una reserva.", "Paid To": "Pagado a", "Payment History": "Historial de pagos", "Payment Methods": "Métodos de pago", "Payment methods & escrow history": "Métodos de pago e historial del depósito", "The phone number linked to your account": "El número de teléfono vinculado a tu cuenta", "⬇ Download PDF": "⬇ Descargar PDF", "# people have joined using your link.": "# personas se han unido con tu enlace.", "# point per booking, rebooking, referral, or review. # points = a free booking (waives our service fee — your provider is always paid in full).": "# punto por cada reserva, nueva reserva, recomendación o reseña. # puntos = una reserva gratis (sin nuestra tarifa de servicio; tu profesional siempre cobra completo).", "# more points until your next free booking.": "# puntos más para tu próxima reserva gratis.", "Booking updates": "Novedades de reservas", "Confirm New Password": "Confirma la nueva contraseña", "Confirm your phone number": "Confirma tu número de teléfono", "Currently on the Free tier.": "Ahora estás en el plan gratuito.", "Get alerts even when Trothen isn't open in a tab": "Recibe avisos aunque Trothen no esté abierto en una pestaña", "Invite people you trust to Trothen — share your personal link by text, WhatsApp, or on social media.": "Invita a Trothen a personas de confianza: comparte tu enlace personal por mensaje, WhatsApp o redes sociales.", "Message sound alert": "Sonido al recibir mensajes", "More savings + premium support": "Más ahorro + atención preferente", "New Password": "Nueva contraseña", "New messages from pros": "Mensajes nuevos de profesionales", "Off — signing in only requires your password.": "Desactivado: para entrar solo se pide tu contraseña.", "Offers and product news": "Ofertas y novedades", "Play a sound when a new message arrives, so it doesn't come in silently": "Suena un aviso cuando llega un mensaje nuevo, para que no pase desapercibido", "Re-enter new password": "Vuelve a escribir la nueva contraseña", "Require a code at sign-in": "Pedir un código al iniciar sesión", "Save Changes": "Guardar cambios", "Save Location": "Guardar ubicación", "Saved to your account": "Guardado en tu cuenta", "Sign out of all devices": "Cerrar sesión en todos los dispositivos", "Signing out normally only signs out this device. If a phone or another computer is still signed in somewhere you don't recognize, this signs out everywhere at once.": "Cerrar sesión normalmente solo cierra este dispositivo. Si un teléfono u otra computadora sigue con tu sesión abierta en algún lugar que no reconoces, esto la cierra en todas partes a la vez.", "Status changes on your active bookings": "Cambios de estado en tus reservas activas", "This is what matches you with pros in your community — if this is wrong (including if it says a location you've never lived in), fix it here.": "Esto es lo que te conecta con profesionales de tu zona: si está mal (incluso si muestra un lugar donde nunca viviste), corrígelo aquí.", "Your Link": "Tu enlace", "Your Referral Link": "Tu enlace de recomendación", "Your phone number is confirmed.": "Tu número de teléfono está confirmado.", "💬 Text Message": "💬 Mensaje de texto", "# verified providers": "# profesionales verificados", "# verified provider": "# profesional verificado", "# jobs": "# trabajos", "Book": "Reservar", "Browse All Pros": "Ver todos los profesionales", "Search by name, skill, or specialty...": "Busca por nombre, habilidad o especialidad...", "Show all kinds of work": "Mostrar todos los tipos de trabajo", "← Back to Explore": "← Volver a explorar", "About": "Acerca de", "Book Now": "Reservar ahora", "Escrow-protected, released when the job is confirmed done": "Protegido en depósito; se entrega cuando se confirma que el trabajo está hecho", "Message": "Mensaje", "No portfolio photos yet.": "Aún no hay fotos de trabajos.", "Portfolio": "Trabajos", "Reviews (#)": "Reseñas (#)", "Verified booking": "Reserva verificada", "★ # rating": "★ # de calificación", "📋 # jobs completed": "📋 # trabajos completados", "🤍 Save": "🤍 Guardar", "❤️ Saved": "❤️ Guardado", "My Bookings ": "Mis reservas", "See pros": "Ver profesionales", "From #/hr": "Desde #/h", "# checked pros ready": "# profesionales verificados disponibles", "# checked pro ready": "# profesional verificado disponible", "Top Rated Pros": "Profesionales mejor valorados", "Ranked by rating, distance & fit": "Ordenados por calificación, distancia y afinidad", "ID checked": "Identidad verificada", "How does escrow actually protect me?": "¿Cómo me protege realmente el depósito de garantía?", "Escrow means the money for your job is held safely by Trothen — not paid to the pro — until you confirm the work is done. Once you mark a booking \"Complete\" in My Bookings, the funds release to your pro automatically.": "El depósito de garantía significa que Trothen guarda el dinero de tu trabajo, sin pagarlo al profesional, hasta que confirmes que el trabajo está hecho. Cuando marcas una reserva como \"Completada\" en Mis reservas, el dinero se entrega a tu profesional automáticamente.", "How are pros verified?": "¿Cómo se verifica a los profesionales?", "Every customer and provider on Trothen goes through identity verification — submit a government ID in Settings, and an admin reviews it (usually quickly). Providers also get a background check before their first job.": "Cada cliente y profesional en Trothen pasa por una verificación de identidad: envías un documento oficial y una persona de nuestro equipo lo revisa (normalmente rápido). Los profesionales también pasan una comprobación de antecedentes antes de su primer trabajo.", "What if something goes wrong with a job?": "¿Y si algo sale mal con un trabajo?", "If something's wrong with a job, don't mark it complete — that releases escrow. Instead, message your pro first to try to resolve it, and if that doesn't work, our Finance & Dispute team can step in to review and resolve it fairly.": "Si algo está mal con un trabajo, no lo marques como completado: eso entrega el dinero del depósito. Primero escribe a tu profesional para intentar resolverlo y, si no funciona, nuestro equipo de Finanzas y Disputas puede intervenir para revisarlo y resolverlo con justicia.", "How does matching work?": "¿Cómo funciona la búsqueda de profesionales?", "When you post a job, our matching engine ranks verified pros in your category and community by rating, experience, and proximity (we prioritize pros in your exact zip code first). You'll see the top matches with a fit score.": "Cuando publicas un trabajo, ordenamos a los profesionales verificados de tu categoría y zona por calificación, experiencia y cercanía (primero los de tu mismo código postal). Verás los mejores con su puntuación de afinidad.", "What are the pricing plans?": "¿Cuáles son los planes de precios?", "Trothen has three plans for pros. Starter takes # commission on each job. Pro takes # and is reached automatically once you qualify. Super Pro takes # and is confirmed by our team once you qualify. Each plan also has a monthly price, which depends on your country: the Provider Plans page shows yours. The monthly fee isn't being charged during early access. Customers don't pay to join.": "Trothen tiene tres planes para profesionales. Starter cobra un # de comisión por trabajo. Pro cobra un # y se alcanza automáticamente cuando cumples los requisitos. Super Pro cobra un # y lo confirma nuestro equipo cuando cumples los requisitos. Cada plan tiene además un precio mensual que depende de tu país: la página de Planes para profesionales muestra el tuyo. La cuota mensual no se cobra durante el acceso anticipado. Los clientes no pagan por unirse.", "How do I become a pro on Trothen?": "¿Cómo me hago profesional en Trothen?", "Click \"Become a Pro\" at the top of the page, or choose \"Provider\" when you sign up. You'll need your category, skills, and location — new providers start unverified until an admin approves their documents.": "Pulsa \"Hazte profesional\" en la parte superior de la página, o elige \"Profesional\" al registrarte. Necesitarás tu categoría, tus habilidades y tu ubicación; los profesionales nuevos empiezan sin verificar hasta que una persona de nuestro equipo apruebe sus documentos.", "Privacy Policy": "Política de privacidad", "Store Orders": "Pedidos de tiendas", "Quotes & Invoices": "Presupuestos y facturas", "Browse All Categories": "Ver todas las categorías", "hired": "contrató a"};
+Object.assign(PAGE_ES.pages, MAIN_ES);
+PAGE_RULES.push(
+  [/^Welcome back, (.+?)( 👋)?$/, 'Bienvenido de nuevo, $1$2'],
+  [/^✓ Verified account — showing pros in (.+?) · (\d+) active bookings?$/, '✓ Cuenta verificada — profesionales en $1 · $2 reservas activas'],
+  [/^✓ Verified account — showing pros in (.+)$/, '✓ Cuenta verificada — profesionales en $1'],
+  [/^⏳ Verification pending — showing pros in (.+)$/, '⏳ Verificación pendiente — profesionales en $1'],
+  [/^(.+) · Serving (.+?) · +Trothen Pro since (\d+)$/, '$1 · Atiende en $2 · En Trothen desde $3'],
+  [/^Responds by (.+)$/, 'Responde antes del $1'],
+  [/^Book ([A-Z][\w.'-]*(?: [A-Z][\w.'-]*)?)$/, 'Reservar a $1']
+);
+// Category names: use the translations the site already has.
+{ const _pageEs = pageEs; pageEs = function (text) {
+  const r = _pageEs(text); if (r !== null) return r;
+  const core = String(text).trim();
+  const cat = (typeof CATEGORY_TRANSLATIONS !== 'undefined' && CATEGORY_TRANSLATIONS.es) ? CATEGORY_TRANSLATIONS.es[core] : null;
+  return cat ? String(text).replace(core, cat) : null;
+}; }
+const MAIN_ES_SCREENS = ['screen-home', 'screen-directory', 'screen-profile', 'screen-categories', 'screen-customer', 'booking-modal', 'screen-confirm'];
+for (const id of MAIN_ES_SCREENS) if (!PAGE_ES_SCREENS.includes(id)) PAGE_ES_SCREENS.push(id);
+(function () {
+  let timer = null;
+  const obs = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => { if (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'es') for (const id of MAIN_ES_SCREENS) pageTranslate(document.getElementById(id)); }, 80); });
+  const start = () => { for (const id of MAIN_ES_SCREENS) { const el = document.getElementById(id); if (el) obs.observe(el, { childList: true, subtree: true, characterData: true }); } };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
 
 const BIZ_ES = {"# Trothen booking, # own invoices": "# reserva de Trothen, # facturas propias", "# Trothen bookings, # own invoices": "# reservas de Trothen, # facturas propias", "# Trothen booking, # own invoice": "# reserva de Trothen, # factura propia", "# Trothen bookings, # own invoice": "# reservas de Trothen, # factura propia", "# in this period": "# en este periodo", "(switched off in Tax & invoice details)": "(desactivado en Datos de impuestos y facturas)", "+ Add a line": "+ Añadir una línea", "+ Add a tool": "+ Añadir una herramienta", "+ Add an expense": "+ Añadir un gasto", "+ Add an item": "+ Añadir un artículo", "+ New estimate": "+ Nuevo estimado", "+ New invoice": "+ Nueva factura", "+ New quote": "+ Nueva cotización", "A bill for work done": "Una cuenta por trabajo realizado", "A fixed price for the work": "Un precio fijo por el trabajo", "Your best guess at the price": "Tu mejor cálculo del precio", "A quote is a fixed price. An estimate is your best guess, and the paper says the final price may change. Build it, then send it to a customer on Trothen (they can accept or decline it there), or download the PDF and send it by WhatsApp or email. When they say yes, turn it into an invoice with one tap.": "Una cotización es un precio fijo. Un estimado es tu mejor cálculo, y el documento dice que el precio final puede cambiar. Prepáralo y envíalo a un cliente en Trothen (allí puede aceptarlo o rechazarlo), o descarga el PDF y envíalo por WhatsApp o correo. Cuando diga que sí, conviértelo en factura con un toque.", "Accepted": "Aceptada", "Action": "Acción", "Add a tool": "Añadir una herramienta", "Add an expense": "Añadir un gasto", "Add at least one line with a description": "Añade al menos una línea con descripción", "Add one": "Añadir uno", "All time": "Todo", "Amount": "Importe", "Amount (US$)": "Importe (US$)", "At #": "Al #", "Average Trothen booking": "Reserva media en Trothen", "Best-selling goods": "Productos más vendidos", "Bought on": "Comprada el", "Broken": "Rota", "Business Tools": "Herramientas de negocio", "Cancel": "Cancelar", "Close": "Cerrar", "Condition": "Estado", "Contact line on your papers": "Línea de contacto en tus documentos", "Costs": "Costos", "Costs #": "Costos #", "Costs (your expenses, Trothen commission and plan fees)": "Costos (tus gastos, comisión de Trothen y cuotas del plan)", "Could not load your customers": "No se pudieron cargar tus clientes", "Could not make the invoice": "No se pudo crear la factura", "Could not remove": "No se pudo quitar", "Could not save": "No se pudo guardar", "Could not send": "No se pudo enviar", "Could not update": "No se pudo actualizar", "Could not upload": "No se pudo subir", "Could not load this": "No se pudo cargar", "Customer": "Cliente", "Date": "Fecha", "Declined": "Rechazada", "Description": "Descripción", "Different items": "Artículos distintos", "Discount (US$)": "Descuento (US$)", "Download as a spreadsheet (CSV)": "Descargar como hoja de cálculo (CSV)", "Draft": "Borrador", "Each": "Cada uno", "Edit": "Editar", "Edit INV-#": "Editar INV-#", "Edit Q-#": "Editar Q-#", "Edit E-#": "Editar E-#", "Edit expense": "Editar gasto", "Edit tool": "Editar herramienta", "Enter the amount spent": "Escribe el importe gastado", "Enter the date": "Escribe la fecha", "Enter who it is for": "Escribe para quién es", "Estimate": "Estimado", "Every job a customer marks complete gets an invoice here without you doing anything. Your customer can download the same invoice from their bookings.": "Cada trabajo que un cliente marca como completado recibe aquí una factura sin que hagas nada. Tu cliente puede descargar la misma factura desde sus reservas.", "Every line needs a quantity and a price": "Cada línea necesita cantidad y precio", "Expenses": "Gastos", "Expenses # · Trothen #": "Gastos # · Trothen #", "Expenses you recorded": "Gastos que registraste", "For": "Para", "From": "Desde", "Give the tool a name": "Ponle nombre a la herramienta", "Good": "Buena", "Goods": "Productos", "Goods sold through your store": "Productos vendidos en tu tienda", "Income": "Ingresos", "Income #": "Ingresos #", "Income and costs by month": "Ingresos y costos por mes", "Income before tax": "Ingresos antes de impuestos", "Income counts once the customer has marked a job complete and the money is released to you. It is shown before Trothen's commission; the commission is under Costs. Payments are in test mode during early access.": "El ingreso cuenta cuando el cliente marca el trabajo como completado y el dinero se te libera. Se muestra antes de la comisión de Trothen; la comisión está en Costos. Los pagos están en modo de prueba durante el acceso anticipado.", "Income, expenses and tax for this period": "Ingresos, gastos e impuestos de este periodo", "Inventory": "Inventario", "Invoice": "Factura", "Invoice · #": "Factura · #", "Invoices": "Facturas", "Invoices for Trothen bookings": "Facturas de reservas en Trothen", "Job": "Trabajo", "Jobs through Trothen": "Trabajos por Trothen", "Kind": "Tipo", "Left over": "Restante", "Left over (profit before tax)": "Restante (ganancia antes de impuestos)", "Licences & insurance": "Licencias y seguros", "Line at the bottom of your papers": "Línea al pie de tus documentos", "Lines": "Líneas", "Lost": "Perdida", "Make invoice": "Crear factura", "Mark an invoice Paid when the money reaches you. Only paid invoices count as income in your summary and tax report. Trothen does not hold or protect money for work that was not booked through Trothen.": "Marca una factura como Pagada cuando recibas el dinero. Solo las facturas pagadas cuentan como ingreso en tu resumen e informe de impuestos. Trothen no retiene ni protege dinero de trabajos que no se reservaron por Trothen.", "Marketing": "Publicidad", "Materials": "Materiales", "Month": "Mes", "Month by month": "Mes a mes", "My prices on Trothen already include this tax": "Mis precios en Trothen ya incluyen este impuesto", "Name": "Nombre", "Needs service": "Necesita servicio", "Needs your attention": "Necesita tu atención", "New estimate": "Nuevo estimado", "New invoice": "Nueva factura", "New quote": "Nueva cotización", "Next service due": "Próximo servicio", "No expenses in this period. Add what you spend on materials, stock, transport and the rest, and your summary will show what is really left over.": "No hay gastos en este periodo. Añade lo que gastas en materiales, inventario, transporte y lo demás, y tu resumen mostrará lo que de verdad queda.", "No expenses recorded in this period.": "No hay gastos registrados en este periodo.", "No goods sold in this period.": "No se vendieron productos en este periodo.", "No quotes or estimates yet.": "Aún no hay cotizaciones ni estimados.", "No tax rate set": "Sin tasa de impuesto", "No tools listed yet. List them so you know what you own, where each one is, and when it needs servicing.": "Aún no hay herramientas. Anótalas para saber qué tienes, dónde está cada una y cuándo necesita servicio.", "None yet. Write one here, or make one from a quote.": "Aún ninguna. Escribe una aquí o créala desde una cotización.", "None yet. They appear here as jobs are completed.": "Aún ninguna. Aparecen aquí cuando se completan trabajos.", "Note": "Nota", "Notes": "Notas", "Nothing here yet. Add the goods you sell and the supplies you want to keep count of.": "Aún no hay nada. Añade los productos que vendes y los materiales que quieres contar.", "Nothing recorded in this period yet.": "Aún no hay nada registrado en este periodo.", "Number": "Número", "Other": "Otro", "Paid": "Pagada", "Paid to": "Pagado a", "Pay by": "Pagar antes de", "Phone & data": "Teléfono y datos", "Phone, WhatsApp or email": "Teléfono, WhatsApp o correo", "Price each": "Precio por unidad", "Profit before tax": "Ganancia antes de impuestos", "Quantity": "Cantidad", "Quotation": "Cotización", "Quotation · #": "Cotización · #", "Estimate · #": "Estimado · #", "Quotes & estimates": "Cotizaciones y estimados", "Quotes, invoices, stock, tools, expenses and your numbers in one place": "Cotizaciones, facturas, inventario, herramientas, gastos y tus números en un solo lugar", "Receipt": "Recibo", "Receipt photo": "Foto del recibo", "Remove": "Quitar", "Remove line": "Quitar línea", "Remove this expense?": "¿Quitar este gasto?", "Remove this tool from your list?": "¿Quitar esta herramienta de tu lista?", "Removed": "Quitado", "Rent & utilities": "Alquiler y servicios", "Save": "Guardar", "Saved": "Guardado", "Send": "Enviar", "Send INV-# on Trothen": "Enviar INV-# por Trothen", "Send Q-# on Trothen": "Enviar Q-# por Trothen", "Send E-# on Trothen": "Enviar E-# por Trothen", "Send again": "Enviar de nuevo", "Send on Trothen": "Enviar por Trothen", "Send to": "Enviar a", "Sent": "Enviada", "Sent on Trothen #/#/#": "Enviada por Trothen #/#/#", "Serial S#": "Serie S#", "Serial or mark": "Serie o marca", "Service due": "Servicio pendiente", "Show": "Mostrar", "Status": "Estado", "Status updated": "Estado actualizado", "Stock": "Inventario", "Stock for the store": "Inventario para la tienda", "Stock goes down by itself when a customer books goods from your store, and comes back if that booking is declined, cancelled before hand-over, or runs out of time. Use \"Stock in / out\" for deliveries, damage and anything you use yourself.": "El inventario baja solo cuando un cliente reserva productos de tu tienda, y vuelve si esa reserva se rechaza, se cancela antes de la entrega o se vence. Usa \"Entrada / salida de inventario\" para entregas, daños y lo que uses tú.", "Stock on hand (at cost)": "Inventario disponible (al costo)", "Stock on hand, at what it cost you": "Inventario disponible, a lo que te costó", "Stock on hand, at your selling prices": "Inventario disponible, a tus precios de venta", "Subtotal # · Discount −# · Tax # ·": "Subtotal # · Descuento −# · Impuesto # ·", "Subtotal # · Tax # ·": "Subtotal # · Impuesto # ·", "Summary": "Resumen", "Tax & invoice details": "Datos de impuestos y facturas", "Tax (%)": "Impuesto (%)", "Tax collected": "Impuesto cobrado", "Tax collected in total": "Impuesto cobrado en total", "Tax collected on your own invoices": "Impuesto cobrado en tus propias facturas", "Tax inside your Trothen prices": "Impuesto dentro de tus precios en Trothen", "Tax rate (%)": "Tasa de impuesto (%)", "Tax report": "Informe de impuestos", "Tax, GST, VAT…": "Impuesto, IVA…", "Their phone or email": "Su teléfono o correo", "This month": "Este mes", "This report adds up what is recorded on Trothen and what you entered yourself. It is not tax advice and it does not work out what you owe. Give it to your accountant or tax office, who can tell you what applies where you live.": "Este informe suma lo registrado en Trothen y lo que tú anotaste. No es asesoría fiscal y no calcula lo que debes. Entrégalo a tu contador u oficina de impuestos, que te dirán qué aplica donde vives.", "This year": "Este año", "Tick this only if you are registered for the tax. Your Trothen invoices will then show how much of each price is tax. It does not change what customers pay.": "Márcalo solo si estás registrado para el impuesto. Tus facturas de Trothen mostrarán cuánto de cada precio es impuesto. No cambia lo que pagan los clientes.", "Tips": "Propinas", "To": "Hasta", "Tool": "Herramienta", "Tools": "Herramientas", "Tools & equipment": "Herramientas y equipo", "Tools (#)": "Herramientas (#)", "Total": "Total", "Total #": "Total #", "Transport & fuel": "Transporte y combustible", "Trothen commission": "Comisión de Trothen", "Trothen plan fees": "Cuotas del plan de Trothen", "Trothen store purchase fees": "Tarifas de Trothen por compras en tienda", "Used on new quotes and invoices. Leave at # if you don't charge tax.": "Se usa en cotizaciones y facturas nuevas. Déjalo en # si no cobras impuesto.", "Valid until": "Válida hasta", "Value": "Valor", "Value (US$)": "Valor (US$)", "Void": "Anulada", "Wages & helpers": "Sueldos y ayudantes", "What it is": "Qué es", "What the tax is called": "Cómo se llama el impuesto", "What the work is": "Cuál es el trabajo", "What you spent, by kind": "Lo que gastaste, por tipo", "Where it is / who has it": "Dónde está / quién la tiene", "Where it is, or who has it": "Dónde está, o quién la tiene", "Where the income came from": "De dónde vino el ingreso", "Who it is for": "Para quién es", "Your customer gets a notice and finds it under \"Quotes & Invoices\". They can accept or decline it. Once they accept, the price can no longer be changed. The name on it becomes their Trothen name. This list shows customers you already have a booking or a conversation with.": "Tu cliente recibe un aviso y lo encuentra en \"Cotizaciones y facturas\". Puede aceptarlo o rechazarlo. Una vez aceptado, el precio ya no se puede cambiar. El nombre en el documento pasa a ser su nombre en Trothen. Esta lista muestra clientes con quienes ya tienes una reserva o una conversación.", "Your customer gets a notice and finds it under \"Quotes & Invoices\". They can download it. The name on it becomes their Trothen name. This list shows customers you already have a booking or a conversation with.": "Tu cliente recibe un aviso y lo encuentra en \"Cotizaciones y facturas\". Puede descargarlo. El nombre en el documento pasa a ser su nombre en Trothen. Esta lista muestra clientes con quienes ya tienes una reserva o una conversación.", "You can send this on Trothen to a customer you already have a booking or a conversation with. There is nobody on that list yet. Download the PDF and send it yourself for now.": "Puedes enviarlo por Trothen a un cliente con quien ya tengas una reserva o una conversación. Aún no hay nadie en esa lista. Por ahora descarga el PDF y envíalo tú.", "Your own invoices": "Tus propias facturas", "Your own invoices marked paid": "Tus propias facturas marcadas como pagadas", "Your tax number": "Tu número fiscal", "description, how many, price each": "descripción, cantidad, precio por unidad", "e.g. Makita drill": "p. ej. Taladro Makita", "e.g. Rewire the kitchen": "p. ej. Recablear la cocina", "e.g. Thank you for your business": "p. ej. Gracias por su preferencia", "e.g. Van, or lent to Moses": "p. ej. Camioneta, o prestada a Moisés", "for work done outside Trothen": "por trabajo hecho fuera de Trothen", "incl. # Tax": "incl. # de impuesto", "made automatically": "creadas automáticamente", "optional": "opcional", "optional, printed on it": "opcional, se imprime en el documento", "optional, printed on your papers": "opcional, se imprime en tus documentos", "worth #": "valor #", "📄 Download the report (PDF)": "📄 Descargar el informe (PDF)", "📷 Take or choose a photo": "📷 Tomar o elegir una foto", "🧰 # tools need attention ·": "🧰 # herramientas necesitan atención ·", "🧰 # tool needs attention ·": "🧰 # herramienta necesita atención ·", "🧾 # invoice sent and not yet paid (#) ·": "🧾 # factura enviada y aún sin pagar (#) ·", "🧾 # invoices sent and not yet paid (#) ·": "🧾 # facturas enviadas y aún sin pagar (#) ·", "📝 # quote sent and waiting for an answer ·": "📝 # cotización enviada y esperando respuesta ·", "📝 # quotes sent and waiting for an answer ·": "📝 # cotizaciones enviadas y esperando respuesta ·", "Item": "Artículo", "In stock": "En existencia", "Warn at": "Avisar al llegar a", "Cost": "Costo", "Price": "Precio", "Sold": "Vendidos", "Last changes": "Últimos cambios", "Stock in / out": "Entrada / salida de inventario", "Not counted": "Sin contar", "For sale": "A la venta", "Not for sale": "No está a la venta", "# · low": "# · bajo", "Loading…": "Cargando…", "Uploading…": "Subiendo…", "Invoice INV-# made": "Factura INV-# creada", "Business tools need a live connection.": "Las herramientas de negocio necesitan conexión.", "Jobs": "Trabajos", "Stock in": "Entrada", "Stock out": "Salida", "Set by hand": "Ajuste manual", "Add from your goods…": "Añadir de tus productos…", "+ Add from your goods…": "+ Añadir de tus productos…", "Add a good from your stock": "Añadir un producto de tu inventario", "Expenses, line by line": "Gastos, línea por línea", "Paid through Trothen": "Pagada por Trothen", "#-#-# · due": "#-#-# · vencido"};
 

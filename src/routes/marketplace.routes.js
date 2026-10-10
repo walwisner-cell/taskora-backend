@@ -63,7 +63,8 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   const currency = currencyForCountry(customer ? customer.country : 'United States');
   const wantsLocal = payCurrencyChoice === 'local' && currency.code !== 'USD';
   const rate = wantsLocal ? resolveRate(currency.code, await db.all('exchangeRates')) : null;
-  const paidAmountLocal = wantsLocal ? convertFromUSD(contract.amount, currency.code, rate) : null;
+  // v109: what the customer pays includes the service fee, so the local figure does too.
+  const paidAmountLocal = wantsLocal ? convertFromUSD(Math.round(((contract.amount || 0) + (contract.serviceFee || 0)) * 100) / 100, currency.code, rate) : null;
 
   // Real integration point for Liberia mobile money collections (LCMMMI
   // — see src/liberia-momo.js for the full picture). isLiberiaMoMoConfigured()
@@ -1445,6 +1446,10 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   const basket = await proStore.priceBasket(providerId, (req.body || {}).storeItems);
   if (basket.error) return res.status(400).json({ error: basket.error });
   if (goodsOnly && !basket.items.length) return res.status(400).json({ error: 'Pick at least one good from the store, or book the pro for a job.' });
+  // v109: the goods total charged must be the one the customer saw.
+  if (basket.items.length && (req.body || {}).expectedGoodsTotal !== undefined && Math.abs(Number(req.body.expectedGoodsTotal) - basket.total) > 0.009) {
+    return res.status(409).json({ code: 'PRICE_CHANGED', goodsTotal: basket.total, error: `The goods now come to $${basket.total.toFixed(2)}. A price changed since you picked them. Check it and book again.` });
+  }
   if (goodsOnly && (typeof service !== 'string' || service.trim().length < 3)) {
     service = ('Store order: ' + basket.items.map(i => `${i.qty} x ${i.name}`).join(', ')).slice(0, 200);
   }
@@ -1595,7 +1600,9 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     await db.update('users', customerForPoints.id, { loyaltyPoints: (customerForPoints.loyaltyPoints || 0) - POINTS_FOR_FREE_BOOKING });
     await notify(req.user.sub, '🎁', `Free booking credit applied — $${realServiceFee.toFixed(2)} service fee waived on "${contract.service}".`, null, { section: 'bookings' });
   }
-  await awardLoyaltyPoint(req.user.sub, 'booking');
+  // v109: the booking point is now given when the job is completed (see
+  // completeContractCore). Giving it here let anyone collect points by
+  // booking and cancelling.
 
   // Real fraud/safety screening on every booking — this is what actually
   // backs the "every job screened automatically" claim. Never blocks the
@@ -1696,6 +1703,7 @@ async function handleRespondOffer(req, res) {
     }
     const updated = await db.update('contracts', contract.id, { status: 'declined' });
     await proStore.giveBackStock(contract); // v105: goods go back on the shelf
+    await require('../loyalty').givePointsBack(contract); // v109
 
     if (isJobSelection) {
       const job = await db.find('jobs', j => j.id === contract.jobId);
@@ -1774,9 +1782,21 @@ router.get('/contracts/mine', requireAuth, async (req, res) => {
 // exists, and a verification ID so the document can't be casually altered
 // without it being obvious.
 router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
-  const contract = await db.find('contracts', c =>
-    c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub || req.user.role === 'admin')
-  );
+  let contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  // v109: an admin used to be able to download ANY contract, whatever place
+  // or team they look after. Now only the teams that handle bookings
+  // (disputes, finance, legal, customer service) or the admin for the
+  // customer's or the pro's area can.
+  if (!contract && req.user.role === 'admin') {
+    const c = await db.find('contracts', x => x.id === req.params.id);
+    const admin = await db.find('users', u => u.id === req.user.sub);
+    if (c && admin) {
+      const okTeam = admin.isSuperAdmin || !admin.adminDepartment || ['disputes', 'financial', 'legal', 'customer_service'].includes(admin.adminDepartment);
+      const covers = require('../admin-scope').adminScopeFor(admin);
+      const [cu, pr] = [await db.find('users', u => u.id === c.customerId), await db.find('users', u => u.id === c.providerId)];
+      if (okTeam && (covers(cu) || covers(pr))) contract = c;
+    }
+  }
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
   const customer = await db.find('users', u => u.id === contract.customerId);

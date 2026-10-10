@@ -310,8 +310,8 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     e.materialsAdvanceReleased && e.materialsAdvanceAmount > 0 && !e.materialsAdvancePayoutId && e.status !== 'refunded'
   );
 
-  const grossAmount = payableEscrow.reduce((sum, e) => sum + (e.amount - (e.materialsAdvanceAmount || 0)), 0)
-    + payableAdvances.reduce((sum, e) => sum + e.materialsAdvanceAmount, 0);
+  const grossAmount = Math.round((payableEscrow.reduce((sum, e) => sum + (e.amount - (e.materialsAdvanceAmount || 0)), 0)
+    + payableAdvances.reduce((sum, e) => sum + e.materialsAdvanceAmount, 0)) * 100) / 100; // v109: rounded to cents
 
   // Unpaid tips — gathered from completed contracts directly (not the
   // escrow ledger), and added to what's paid out AFTER commission is
@@ -319,7 +319,7 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   // Genuinely optional on the customer's side (see handleContractComplete),
   // so this is simply $0 for a provider with none.
   const unpaidTipContracts = (await db.filter('contracts', c => c.providerId === req.user.sub && c.tipAmount > 0 && !c.tipPaid));
-  const totalTips = unpaidTipContracts.reduce((sum, c) => sum + c.tipAmount, 0);
+  const totalTips = Math.round(unpaidTipContracts.reduce((sum, c) => sum + c.tipAmount, 0) * 100) / 100; // v109: rounded to cents
 
   if (grossAmount <= 0 && totalTips <= 0) {
     return res.status(400).json({ error: 'Nothing to pay out yet — this only includes jobs the customer has marked complete, tips, or agreed materials advances, that haven\'t already been paid out.' });
@@ -718,6 +718,13 @@ router.post('/scope-change-requests/:id/decide', requireAuth, requireRole('custo
   }
 });
 
+// v109: the customer's service fee on work (same rule as booking: 9%,
+// at least $2.99, at most $25).
+function serviceFeeFor(amount) {
+  const raw = Math.max(amount * 0.09, 2.99);
+  return Math.round(Math.min(raw, 25) * 100) / 100;
+}
+
 async function handleScopeChangeDecide(req, res, request) {
   // Re-read fresh under the lock — the request looked up before
   // acquiring it could theoretically be stale if another request for
@@ -740,11 +747,32 @@ async function handleScopeChangeDecide(req, res, request) {
   if (contract.status !== 'active') {
     return res.status(400).json({ error: `This booking is now ${contract.status} — it can no longer be adjusted` });
   }
+  // v109: a store order has no work in it to add to.
+  if (contract.storeOrder || contract.goodsOnly) {
+    return res.status(400).json({ error: 'A store order can\'t have extra work added. Book the pro for a job instead.' });
+  }
 
-  const updatedContract = await db.update('contracts', contract.id, { amount: Math.round((contract.amount + request.amount) * 100) / 100 });
+  // v109: the extra is work, so the work part and the service fee go up too.
+  // Before, only the total moved: the fee stayed at the old figure and the
+  // amount paid in local money wasn't updated.
+  const money2 = (n) => Math.round(n * 100) / 100;
+  const newLabor = money2((contract.laborAmount !== undefined && contract.laborAmount !== null ? contract.laborAmount : contract.amount - (contract.storeGoodsTotal || 0)) + request.amount);
+  const customerForFee = await db.find('users', u => u.id === contract.customerId);
+  const { feeDiscountForTier } = require('../membership');
+  const feeWaived = (contract.loyaltyPointsRedeemed || 0) > 0;
+  const laborFee = feeWaived ? 0 : money2(serviceFeeFor(newLabor) * (1 - feeDiscountForTier(customerForFee && customerForFee.membershipTier)));
+  const storeFeeFromCustomer = contract.storeFeePaidBy === 'customer' ? (contract.storeFee || 0) : 0;
+  const newServiceFee = money2(laborFee + storeFeeFromCustomer);
+  const updatedContract = await db.update('contracts', contract.id, { amount: money2(contract.amount + request.amount), laborAmount: newLabor, serviceFee: newServiceFee });
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow) {
-    await db.update('escrowTransactions', escrow.id, { amount: Math.round((escrow.amount + request.amount) * 100) / 100 });
+    const patch = { amount: money2(escrow.amount + request.amount), serviceFee: newServiceFee };
+    if (escrow.paidCurrency && escrow.paidCurrency !== 'USD') {
+      const { convertFromUSD } = require('../currency-data');
+      const { resolveRate } = require('../plan-pricing');
+      patch.paidAmountLocal = convertFromUSD(money2(updatedContract.amount + newServiceFee), escrow.paidCurrency, resolveRate(escrow.paidCurrency, await db.all('exchangeRates')));
+    }
+    await db.update('escrowTransactions', escrow.id, patch);
   }
   await db.update('scopeChangeRequests', request.id, { status: 'approved', decidedAt: new Date().toISOString() });
 
@@ -796,7 +824,10 @@ async function handleContractComplete(req, res) {
 // has already checked who is asking and that the booking is active.
 async function completeContractCore(contract, tip, customerId) {
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
-  if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'released' });
+  // v109: only money that is still held can be released. A refunded or
+  // already-released record is never changed back.
+  if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'released' });
+  await require('../loyalty').awardLoyaltyPoint(customerId, 'booking'); // v109: the booking point is earned when the job is done
   const updated = await db.update('contracts', contract.id, { status: 'completed', tipAmount: tip, tipPaid: false, completedAt: new Date().toISOString() }); // v105: the day it was completed, for invoices and the tax report
 
   // Real completed-jobs tracking — this used to be a static number set once
@@ -823,7 +854,8 @@ async function completeContractCore(contract, tip, customerId) {
   const providerContractIds = new Set(providerContracts.map(c => c.id));
   const releasedUnpaid = (await db.filter('escrowTransactions', e => e.status === 'released' && !e.payoutId))
     .filter(e => providerContractIds.has(e.contractId));
-  const totalAvailable = releasedUnpaid.reduce((s, e) => s + e.amount, 0);
+  // v109: an advance already paid out is not available again.
+  const totalAvailable = Math.round(releasedUnpaid.reduce((s, e) => s + e.amount - (e.materialsAdvancePayoutId ? (e.materialsAdvanceAmount || 0) : 0), 0) * 100) / 100;
 
   await notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts', { section: 'earnings' });
   if (tip > 0) {
@@ -878,7 +910,23 @@ async function handleContractCancel(req, res) {
     return res.status(400).json({ error: `This booking is already ${contract.status} and can't be cancelled` });
   }
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
-  if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+  // v109: two ways money could go out twice. (1) The pro had already been
+  // paid the materials advance, and cancelling refunded the customer in
+  // full as well. (2) Goods had already been handed over (pick-up or
+  // drop-off recorded), and cancelling refunded them while the customer
+  // kept the goods. Both now go to "Report a Problem", where a person decides.
+  if (escrow && escrow.materialsAdvancePayoutId) {
+    return res.status(409).json({ code: 'USE_DISPUTE', error: 'The pro has already been paid the materials advance for this booking, so it can\'t simply be cancelled. Use "Report a Problem" and our team will sort out what is owed.' });
+  }
+  const handedOver = (c) => !!(c && c.handover && (((c.handover.pickup || []).length) || ((c.handover.dropoff || []).length)));
+  let linked = null;
+  if (contract.deliveryContractId) linked = await db.find('contracts', c => c.id === contract.deliveryContractId);
+  else if (contract.delivery && contract.delivery.forContractId) linked = await db.find('contracts', c => c.id === contract.delivery.forContractId);
+  if (contract.status === 'active' && (handedOver(contract) || handedOver(linked))) {
+    return res.status(409).json({ code: 'USE_DISPUTE', error: 'The goods have already been handed over, so this can\'t be cancelled for a refund. If something is wrong, use "Report a Problem" on the booking.' });
+  }
+  if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+  await require('../loyalty').givePointsBack(contract); // v109
   const iAmProvider = contract.providerId === req.user.sub;
   const isProtected = iAmProvider && PROTECTED_CANCEL_REASONS.has(reasonCategory);
   const updated = await db.update('contracts', contract.id, {
@@ -1036,7 +1084,7 @@ router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res
   // every contract that actually reached a real transaction, matching the
   // same escrow records already being counted above, not a separate,
   // possibly-inconsistent query.
-  const serviceFeeRevenue = all.reduce((s, e) => s + (e.serviceFee || 0), 0);
+  const serviceFeeRevenue = Math.round(all.filter(e => e.status !== 'refunded').reduce((s, e) => s + (e.serviceFee || 0), 0) * 100) / 100; // v109: a refunded booking's fee is not revenue
   res.json({ held, released, count: all.length, commissionRevenue, serviceFeeRevenue });
 });
 
@@ -1108,7 +1156,7 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
     const b = bucket(customer.city || 'Unknown', customer.country || 'Unknown');
     if (e.status === 'held') b.held += e.amount;
     if (e.status === 'released') b.released += e.amount;
-    b.serviceFeeRevenue += (e.serviceFee || 0);
+    if (e.status !== 'refunded') b.serviceFeeRevenue += (e.serviceFee || 0); // v109
     b.transactionCount += 1;
   }
   for (const p of payouts) {
@@ -1151,7 +1199,13 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
 router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (req, res) => {
   const { dateFrom, dateTo, category, city, country, status, providerTier } = req.query;
   const requestingAdmin = await db.find('users', u => u.id === req.user.sub);
-  const region = requestingAdmin && !requestingAdmin.isSuperAdmin && !requestingAdmin.adminDepartment ? requestingAdmin.region : null;
+  // v109: the same rule as the other money reports. A team admin outside
+  // finance or legal (customer service, HR, sales...) used to get the whole
+  // platform's bookings here.
+  if (requestingAdmin && !requestingAdmin.isSuperAdmin && requestingAdmin.adminDepartment && !['financial', 'legal'].includes(requestingAdmin.adminDepartment)) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${requestingAdmin.adminDepartment} team and doesn't have access to this.` });
+  }
+  const region = requestingAdmin && !requestingAdmin.isSuperAdmin && (!requestingAdmin.adminDepartment || requestingAdmin.regionScoped) ? (requestingAdmin.region || requestingAdmin.city || requestingAdmin.country || null) : null;
   const allContracts = await db.all('contracts');
   const allUsers = await db.all('users');
   const userById = new Map(allUsers.map(u => [u.id, u]));
@@ -1188,7 +1242,7 @@ router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (re
   const total = {
     count: rows.length,
     gmv: Math.round(rows.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100,
-    serviceFeeRevenue: Math.round(rows.reduce((s, r) => s + (r.serviceFee || 0), 0) * 100) / 100,
+    serviceFeeRevenue: Math.round(rows.filter(r => !['cancelled', 'declined', 'expired', 'refunded'].includes(r.status)).reduce((s, r) => s + (r.serviceFee || 0), 0) * 100) / 100, // v109: refunded bookings' fees are not revenue
     completed: rows.filter(r => r.status === 'completed').length,
     cancelled: rows.filter(r => r.status === 'cancelled').length,
   };

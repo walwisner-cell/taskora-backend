@@ -223,7 +223,12 @@ async function priceBasket(providerId, rawItems) {
     if (!g || !isOnShelf(g)) return { error: 'One of the goods you picked is no longer in the store. Open the store and pick again.' };
     if (!inStock(g, qty)) return { error: g.stock > 0 ? `Only ${g.stock} of "${g.name}" left in the store.` : `"${g.name}" is sold out.` };
     const pf = goodPriceFields(g, currencies);
-    const line = { goodId: g.id, name: g.name, unit: g.unit || null, unitPrice: pf.price, qty, lineTotal: money(pf.price * qty) };
+    // v109: a local-money good is worked out from the whole line in local
+    // money, not from a unit price already rounded to cents. A ₦100 good
+    // bought 99 times used to come to ₦9,207 instead of ₦9,900.
+    const cur = pf.priceCurrency !== 'USD' ? currencies.find(x => x.code === pf.priceCurrency) : null;
+    const lineTotal = cur ? Math.max(0.01, money(Number(pf.priceLocal) * qty / (cur.rate > 0 ? cur.rate : 1))) : money(pf.price * qty);
+    const line = { goodId: g.id, name: g.name, unit: g.unit || null, unitPrice: pf.price, qty, lineTotal };
     // v108: a good priced in local money keeps that price on the order, next to the dollars charged.
     if (pf.priceCurrency !== 'USD') { line.priceCurrency = pf.priceCurrency; line.priceSymbol = pf.priceSymbol; line.unitPriceLocal = pf.priceLocal; line.lineTotalLocal = money(pf.priceLocal * qty); }
     items.push(line);

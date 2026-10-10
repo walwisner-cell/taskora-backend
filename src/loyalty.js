@@ -27,4 +27,17 @@ async function awardLoyaltyPoint(customerId, reason) {
   }
 }
 
-module.exports = { awardLoyaltyPoint, POINTS_FOR_FREE_BOOKING };
+// v109: points spent on a booking that doesn't go ahead (declined, expired,
+// cancelled) are given back. They used to be lost. Only once per booking.
+async function givePointsBack(contract) {
+  try {
+    if (!contract || !(contract.loyaltyPointsRedeemed > 0)) return;
+    const fresh = await db.find('contracts', c => c.id === contract.id);
+    if (!fresh || fresh.loyaltyPointsReturned) return;
+    await db.update('contracts', fresh.id, { loyaltyPointsReturned: true });
+    const customer = await db.find('users', u => u.id === fresh.customerId);
+    if (customer) await db.update('users', customer.id, { loyaltyPoints: (customer.loyaltyPoints || 0) + fresh.loyaltyPointsRedeemed });
+  } catch (e) { console.error('[loyalty] Failed to give points back:', e.message); }
+}
+
+module.exports = { awardLoyaltyPoint, givePointsBack, POINTS_FOR_FREE_BOOKING };
