@@ -359,6 +359,8 @@ seedIfEmpty()
     setInterval(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
 
     // v107: ads come down when their time is up (see src/ads.js). Hourly.
+    // v108.1: customers marked verified before v75 without an approved ID
+    setTimeout(() => { require('./src/customer-id-rule').applyCustomerIdRule().catch(e => console.error('[customer-id-rule] failed:', e)); }, 5000);
     const { endExpiredAds } = require('./src/ads');
     setTimeout(() => { endExpiredAds().catch(e => console.error('[ads] sweep failed:', e)); }, 37000);
     setInterval(() => { endExpiredAds().catch(e => console.error('[ads] sweep failed:', e)); }, 60 * 60 * 1000);
