@@ -48,12 +48,65 @@ async function me(req) {
 // set: sales leads are about custom multi-seat organization deals, which
 // aren't really a per-city concept the way disputes or verification
 // queues are.
+// v90: a regional admin can now cover a WHOLE COUNTRY instead of one city.
+//
+// Why: city scope compares the admin's city with the exact city text each
+// person typed when they signed up. "Monrovia", "monrovia", "Paynesville"
+// and "Monrovia City" are all different strings, so an admin "for
+// Monrovia" could open their dashboard and see almost nobody. Country
+// comes from a fixed list, so country scope can't miss people that way.
+//
+// An admin record carries adminScope: 'country' or 'city' (missing means
+// 'city', so every admin created before this behaves exactly as before).
+// For a country-wide admin, myRegion() returns a CountryScope: it prints
+// as the country's name wherever a label is needed, and inRegion() below
+// knows to compare countries. For a city admin it still returns the plain
+// city text. Every "is this person mine?" check goes through inRegion().
+class CountryScope extends String {
+  constructor(country) { super(country); this.country = country; }
+}
+const sameText = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+function inRegion(region, person) {
+  if (!region) return true;           // super admin / global role: everyone
+  if (!person) return false;
+  if (region instanceof CountryScope) return sameText(person.country, region.country);
+  return sameText(person.city, region); // v90: capital letters and stray spaces no longer make a city miss
+}
+// An ad belongs to a city admin when it targets their city, and to a
+// country admin when the pro who placed it is in their country.
+// v107: an ad from an outside company has no pro behind it, so a country
+// admin never saw it. Now it is theirs when its city is in their country.
+function adInRegion(region, ad, pro, citiesHere) {
+  if (!region) return true;
+  if (region instanceof CountryScope) return pro ? sameText(pro.country, region.country) : !!(ad.targetCity && citiesHere && citiesHere.has(String(ad.targetCity).trim().toLowerCase()));
+  return sameText(ad.targetCity, region);
+}
+// For records that only carry a city typed by a member of the public
+// (contact messages, job applications): a country-wide admin gets the
+// ones with no city, the ones that name their country, and the ones whose
+// city is a city known in their country. A city admin gets their city.
+async function adminCovers(m, item) {
+  if (!m || m.isSuperAdmin) return true;
+  if (m.adminScope === 'country' && m.country) {
+    if (item.country) return sameText(item.country, m.country);
+    if (!item.city) return true;
+    const known = new Set([
+      ...(await db.filter('cities', c => sameText(c.country, m.country))).map(c => String(c.name || '').trim().toLowerCase()),
+      ...(await db.filter('users', u => sameText(u.country, m.country) && u.city)).map(u => String(u.city).trim().toLowerCase()),
+    ]);
+    return known.has(String(item.city).trim().toLowerCase());
+  }
+  return sameText(item.city, m.city);
+}
+function regionWord(region) { return region instanceof CountryScope ? 'country' : 'city'; }
+
 async function myRegion(req) {
   const m = await me(req);
   if (!m) return null;
   if (m.isSuperAdmin) return null;
-  if (!m.adminDepartment) return m.region; // plain regional admin — unchanged, always scoped
-  if (m.adminDepartment !== 'sales' && m.regionScoped) return m.city;
+  const scoped = () => (m.adminScope === 'country' && m.country) ? new CountryScope(m.country) : (m.region || m.city);
+  if (!m.adminDepartment) return scoped(); // plain regional admin — always scoped
+  if (m.adminDepartment !== 'sales' && m.regionScoped) return scoped();
   return null;
 }
 
@@ -127,11 +180,11 @@ function requireSuperAdminOrCustomerService(req, res, next) {
 // up front instead of two individual database round-trips per dispute —
 // harmless today on the small JSON-file store, but a real, meaningful
 // difference once this runs against actual Postgres at scale.
-async function disputeCity(dispute, contractById, customerById) {
+async function disputeCustomer(dispute, contractById, customerById) {
   const contract = contractById ? contractById.get(dispute.contractId) : await db.find('contracts', c => c.id === dispute.contractId);
   if (!contract) return null;
   const customer = customerById ? customerById.get(contract.customerId) : await db.find('users', u => u.id === contract.customerId);
-  return customer ? customer.city : null;
+  return customer || null;
 }
 
 function publicAdmin(u, options = {}) {
@@ -158,7 +211,7 @@ function publicAdmin(u, options = {}) {
 // GET /api/admin/stats
 router.get('/stats', async (req, res) => {
   const region = await myRegion(req);
-  const users = (await db.all('users')).filter(u => !region || u.city === region);
+  const users = (await db.all('users')).filter(u => !region || inRegion(region, u));
   const allContracts = await db.all('contracts');
   const allCustomersForStats = await db.filter('users', u => u.role === 'customer');
   const customerByIdForStats = new Map(allCustomersForStats.map(c => [c.id, c]));
@@ -166,13 +219,13 @@ router.get('/stats', async (req, res) => {
   const allDisputes = await db.all('disputes');
   const disputes = [];
   for (const d of allDisputes) {
-    if (!region || (await disputeCity(d, contractByIdForStats, customerByIdForStats)) === region) disputes.push(d);
+    if (!region || inRegion(region, await disputeCustomer(d, contractByIdForStats, customerByIdForStats))) disputes.push(d);
   }
   const contracts = [];
   for (const c of allContracts) {
     if (!region) { contracts.push(c); continue; }
     const customer = customerByIdForStats.get(c.customerId);
-    if (customer && customer.city === region) contracts.push(c);
+    if (customer && inRegion(region, customer)) contracts.push(c);
   }
   const pendingUsers = users.filter(u => u.role !== 'admin' && u.verified === false).length;
   const gmv = contracts.reduce((s, c) => s + (c.amount || 0), 0);
@@ -210,9 +263,9 @@ router.get('/reports/analytics', async (req, res) => {
   // regional admin's reports should reflect their own city's activity,
   // not the whole platform's.
   const contracts = region
-    ? allContracts.filter(c => { const cust = customerById.get(c.customerId); return cust && cust.city === region; })
+    ? allContracts.filter(c => { const cust = customerById.get(c.customerId); return cust && inRegion(region, cust); })
     : allContracts;
-  const providers = region ? allProviders.filter(p => p.city === region) : allProviders;
+  const providers = region ? allProviders.filter(p => inRegion(region, p)) : allProviders;
 
   // ── Category performance: REAL demand (bookings), not provider supply ──
   const catStats = new Map(); // category -> { jobsBooked, gmv, ratings: [] }
@@ -287,11 +340,31 @@ router.get('/reports/analytics', async (req, res) => {
   });
 });
 
+// v107: where a person's ID stands, in one word, for every admin list.
+//   approved = an ID was reviewed and approved
+//   waiting  = an ID is in the Verification Queue now
+//   rejected = their last ID was turned down and they haven't sent another
+//   none     = they have never sent one
+// "Verified" on an account comes ONLY from an approved ID (v75). Approving
+// the account in User Approvals lets the person in; it does not verify
+// them. These lists now say which of the two steps is outstanding.
+async function idStatusByUser() {
+  const byUser = new Map();
+  const rank = { approved: 4, waiting: 3, rejected: 2 };
+  for (const v of await db.all('verifications')) {
+    const s = v.status === 'approved' ? 'approved' : ['pending', 'review_required'].includes(v.status) ? 'waiting' : v.status === 'rejected' ? 'rejected' : null;
+    if (!s) continue;
+    if (!byUser.has(v.userId) || rank[s] > rank[byUser.get(v.userId)]) byUser.set(v.userId, s);
+  }
+  return (userId) => byUser.get(userId) || 'none';
+}
+
 // GET /api/admin/users/pending
 router.get('/users/pending', async (req, res) => {
   const region = await myRegion(req);
-  const pending = (await db.filter('users', u => u.role !== 'admin' && u.verified === false && (!region || u.city === region)))
-    .map(publicAdmin);
+  const idOf = await idStatusByUser(); // v107: show where each person's ID stands, next to the account
+  const pending = (await db.filter('users', u => u.role !== 'admin' && u.verified === false && u.status !== 'approved' && u.status !== 'rejected' && (!region || inRegion(region, u))))
+    .map(u => ({ ...publicAdmin(u), idStatus: idOf(u.id) }));
   res.json({ users: pending });
 });
 
@@ -306,14 +379,31 @@ router.get('/users/all', async (req, res) => {
   const region = await myRegion(req);
   const { role } = req.query;
   let users = await db.filter('users', u => u.role === 'customer' || u.role === 'provider');
-  if (region) users = users.filter(u => u.city === region);
+  if (region) users = users.filter(u => inRegion(region, u));
   if (role && ['customer', 'provider'].includes(role)) users = users.filter(u => u.role === role);
   // publicAdmin() masks contact info by default for any customer/provider
   // record — see its definition above for the full reasoning. This was
   // the endpoint the original gap was caught in; the masking itself now
   // lives at the source so every other endpoint that returns a person's
   // record is covered too, not just this one.
-  res.json({ users: users.map(u => publicAdmin(u)) });
+  // v75: how each person came to be "Verified", so nobody has to guess.
+  const approvedRecords = await db.filter('verifications', v => v.status === 'approved');
+  const latestApproved = new Map();
+  for (const v of approvedRecords) {
+    const prev = latestApproved.get(v.userId);
+    if (!prev || String(v.reviewedAt || '') > String(prev.reviewedAt || '')) latestApproved.set(v.userId, v);
+  }
+  const adminNames = new Map((await db.filter('users', u => u.role === 'admin')).map(a => [a.id, a.name]));
+  const howVerified = (u) => {
+    if (u.verified !== true) return {};
+    const rec = latestApproved.get(u.id);
+    if (rec && (rec.source === 'persona' || rec.reviewedBy === 'persona')) return { verifiedVia: 'persona', verifiedAt: rec.reviewedAt || null };
+    if (rec) return { verifiedVia: 'id_review', verifiedByName: adminNames.get(rec.reviewedBy) || null, verifiedAt: rec.reviewedAt || null };
+    if (u.approvedBy) return { verifiedVia: 'account_approval', verifiedByName: adminNames.get(u.approvedBy) || null, verifiedAt: u.approvedAt || null };
+    return { verifiedVia: 'unknown' };
+  };
+  const idOf = await idStatusByUser(); // v107
+  res.json({ users: users.map(u => ({ ...publicAdmin(u), ...howVerified(u), idStatus: idOf(u.id), accountStatus: u.status || 'pending' })) });
 });
 
 // Masks all but the first character of the local part and keeps the
@@ -355,7 +445,7 @@ router.get('/users/:id/contact', async (req, res) => {
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.id && (u.role === 'customer' || u.role === 'provider'));
   if (!target) return res.status(404).json({ error: 'Person not found' });
-  if (region && target.city !== region) return res.status(403).json({ error: 'That person is outside your assigned city' });
+  if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That person is outside the area you manage' });
   const { logAccess } = require('../access-log');
   await logAccess(req, 'contact_info_reveal', target.id);
   res.json({ email: target.email, phone: target.phone, address: [target.address, target.zipCode].filter(Boolean).join(', ') || null });
@@ -387,7 +477,7 @@ router.get('/providers/:id/score', async (req, res) => {
   const region = await myRegion(req);
   const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
-  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  if (region && !inRegion(region, provider)) return res.status(403).json({ error: 'That provider is outside the area you manage' });
   const { computeProviderScore, recommendedActionForScore } = require('../provider-score');
   const result = await computeProviderScore(provider.id);
   res.json({ ...result, recommendedAction: recommendedActionForScore(result.total) });
@@ -402,7 +492,7 @@ router.get('/providers/leaderboard', async (req, res) => {
   const region = await myRegion(req);
   const { recommendedActionForScore } = require('../provider-score');
   let providers = await db.filter('users', u => u.role === 'provider' && u.trustScore != null);
-  if (region) providers = providers.filter(p => p.city === region);
+  if (region) providers = providers.filter(p => inRegion(region, p));
   providers.sort((a, b) => (b.trustScore || 0) - (a.trustScore || 0));
   res.json({
     providers: providers.map(p => ({
@@ -410,7 +500,8 @@ router.get('/providers/leaderboard', async (req, res) => {
       trustScore: p.trustScore, plan: p.plan, rating: p.rating, jobs: p.jobs,
       trustScoreUpdatedAt: p.trustScoreUpdatedAt,
       onHold: p.onHold, holdUntil: p.holdUntil,
-      recommendedAction: recommendedActionForScore(p.trustScore),
+      isNew: p.trustScoreProvisional === true, // v91: fewer than five completed jobs; number is provisional
+      recommendedAction: p.trustScoreProvisional === true ? null : recommendedActionForScore(p.trustScore),
     })),
   });
 });
@@ -430,7 +521,7 @@ router.post('/providers/:id/hold', async (req, res) => {
   const region = await myRegion(req);
   const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
-  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  if (region && !inRegion(region, provider)) return res.status(403).json({ error: 'That provider is outside the area you manage' });
 
   const { months, reason } = req.body || {};
   if (typeof months !== 'number' || months <= 0 || months > 24) {
@@ -463,7 +554,7 @@ router.patch('/users/:id/status', async (req, res) => {
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.id && (u.role === 'customer' || u.role === 'provider'));
   if (!target) return res.status(404).json({ error: 'User not found' });
-  if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That user is outside the area you manage' });
   const updated = await db.update('users', target.id, { active });
   await notify(target.id, active ? '✅' : '⛔', active ? 'Your account has been reactivated.' : 'Your account has been suspended. Contact support for details.', null, { section: 'settings' });
 
@@ -511,7 +602,7 @@ router.post('/providers/:id/propose-commission-rate', async (req, res) => {
   const region = await myRegion(req);
   const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
-  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  if (region && !inRegion(region, provider)) return res.status(403).json({ error: 'That provider is outside the area you manage' });
   if (provider.commissionRateOverrideStatus === 'pending') {
     return res.status(400).json({ error: 'This provider already has a proposal awaiting approval' });
   }
@@ -582,7 +673,7 @@ router.patch('/users/:id/hold', async (req, res) => {
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.id && (u.role === 'customer' || u.role === 'provider'));
   if (!target) return res.status(404).json({ error: 'User not found' });
-  if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That user is outside the area you manage' });
   const updated = await db.update('users', target.id, {
     onHold,
     holdReason: onHold ? (reason || 'Placed on hold by an admin') : null,
@@ -620,14 +711,35 @@ router.post('/users/:id/decide', requireDepartment(['verification', 'customer_se
   const region = await myRegion(req);
   const target = await db.find('users', u => u.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
-  if (region && target.city !== region) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That user is outside the area you manage' });
   const finalRejectionReason = decision === 'reject' ? rejectionReason.trim() : null;
-  const updated = await db.update('users', req.params.id, { verified: decision === 'approve', status: decision === 'approve' ? 'approved' : 'rejected', rejectionReason: finalRejectionReason });
-  const approveMessage = target.role === 'provider' && !target.profilePhotoUrl
-    ? 'Your account has been approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
-    : 'Your account has been approved.';
+  // A provider's "ID checked" badge (the `verified` flag) now comes only
+  // from an ID that was actually reviewed — an approved document in the
+  // Verification Queue, or an automated Persona check. Approving the
+  // account alone lets them in, but doesn't put the badge on.
+  // v75: customers follow the same rule. Approving the account no longer
+  // marks a customer "Verified" on its own; only a reviewed ID does.
+  let verifiedValue = decision === 'approve';
+  let providerNeedsId = false;
+  if (decision === 'approve' && (target.role === 'provider' || target.role === 'customer')) {
+    const approvedId = await db.find('verifications', v => v.userId === target.id && v.status === 'approved');
+    verifiedValue = !!approvedId;
+    providerNeedsId = !approvedId;
+  }
+  const updated = await db.update('users', req.params.id, { verified: verifiedValue, status: decision === 'approve' ? 'approved' : 'rejected', rejectionReason: finalRejectionReason, approvedBy: decision === 'approve' ? req.user.sub : null, approvedAt: decision === 'approve' ? new Date().toISOString() : null });
+  const approveMessage = providerNeedsId
+    ? (target.role === 'customer'
+        ? 'Your account has been approved. Next, verify your identity in the Verification section. You can post a job or book a pro once your ID has been reviewed.'
+        : 'Your account has been approved. Next, verify your identity in the Verification section, so customers see "ID checked" and you appear in search.')
+    : target.role === 'provider' && !target.profilePhotoUrl
+      ? 'Your account has been approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
+      : 'Your account has been approved.';
   await notify(target.id, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? approveMessage : `Your account application was not approved: ${finalRejectionReason}`, null, { section: 'overview' });
-  res.json({ user: publicAdmin(updated) });
+  // v107: tell the admin screen whether the person still has to send an ID,
+  // and whether one is already waiting, so "approved but still Unverified"
+  // is explained on the spot.
+  const idStatus = decision === 'approve' ? (await idStatusByUser())(target.id) : null;
+  res.json({ user: publicAdmin(updated), needsId: providerNeedsId, idStatus });
 });
 
 // GET /api/admin/verification-queue
@@ -638,8 +750,15 @@ router.post('/users/:id/decide', requireDepartment(['verification', 'customer_se
 router.get('/providers-with-guarantors', requireDepartment(['verification']), async (req, res) => {
   const region = await myRegion(req);
   let providers = await db.filter('users', u => u.role === 'provider' && u.guarantors && u.guarantors.length > 0);
-  if (region) providers = providers.filter(p => p.city === region);
-  res.json({ providers: providers.map(p => ({ id: p.id, name: p.name, city: p.city, category: p.category, guarantors: p.guarantors })) });
+  if (region) providers = providers.filter(p => inRegion(region, p));
+  // v106: flag guarantors that are not really someone else (the pro's own
+  // number or name), and numbers used as a guarantor by several pros.
+  const { guarantorProblem, phoneKey } = require('../guarantor-check');
+  const usedBy = new Map();
+  for (const p of await db.filter('users', u => u.role === 'provider' && u.guarantors && u.guarantors.length > 0)) {
+    for (const g of p.guarantors) { const k = phoneKey(g.phone); if (!usedBy.has(k)) usedBy.set(k, new Set()); usedBy.get(k).add(p.id); }
+  }
+  res.json({ providers: providers.map(p => ({ id: p.id, name: p.name, city: p.city, category: p.category, guarantors: p.guarantors.map(g => ({ ...g, problem: guarantorProblem(p, g), sharedWithOtherPros: Math.max(0, (usedBy.get(phoneKey(g.phone)) || new Set()).size - 1) })) })) });
 });
 
 // PATCH /api/admin/providers/:id/guarantors/:index — mark one specific
@@ -650,16 +769,24 @@ router.patch('/providers/:id/guarantors/:index', requireDepartment(['verificatio
   const region = await myRegion(req);
   const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
-  if (region && provider.city !== region) return res.status(403).json({ error: 'That provider is outside your assigned city' });
+  if (region && !inRegion(region, provider)) return res.status(403).json({ error: 'That provider is outside the area you manage' });
   const idx = parseInt(req.params.index, 10);
   const guarantors = provider.guarantors || [];
   if (!Number.isInteger(idx) || idx < 0 || idx >= guarantors.length) {
     return res.status(404).json({ error: 'That guarantor was not found on this provider\'s account' });
   }
   const { status } = req.body || {};
-  if (!['contacted', 'verified'].includes(status)) return res.status(400).json({ error: 'status must be contacted or verified' });
+  if (!['contacted', 'verified', 'rejected'].includes(status)) return res.status(400).json({ error: 'status must be contacted, verified or rejected' });
+  // v106: a guarantor with the pro's own number or name can't be marked verified.
+  const problem = require('../guarantor-check').guarantorProblem(provider, guarantors[idx]);
+  if (status === 'verified' && problem) {
+    return res.status(400).json({ error: problem === 'phone' ? 'This guarantor has the pro\'s own phone number, so it can\'t be verified. Mark it not accepted and ask the pro for a different person.' : 'This guarantor has the pro\'s own name, so it can\'t be verified. Mark it not accepted and ask the pro for a different person.' });
+  }
   guarantors[idx] = { ...guarantors[idx], status, contactedAt: new Date().toISOString() };
   const updated = await db.update('users', provider.id, { guarantors });
+  if (status === 'rejected') {
+    await notify(provider.id, '❌', `Your guarantor "${guarantors[idx].name}" wasn't accepted. A guarantor must be another person with their own phone number. Please replace them in Verification.`, null, { section: 'verification' });
+  }
   if (status === 'verified') {
     await notify(provider.id, '✅', `Your guarantor "${guarantors[idx].name}" has been contacted and verified — thank you for helping us keep Trothen trustworthy.`, null, { section: 'verification' });
   }
@@ -675,10 +802,303 @@ router.get('/verification-queue', requireDepartment(['verification']), async (re
   const queue = [];
   for (const v of open) {
     const user = await db.find('users', u => u.id === v.userId);
-    const entry = { ...v, userName: user ? user.name : 'Unknown', accountName: user ? user.name : null, country: user ? user.country : '', city: user ? user.city : null };
-    if (!region || entry.city === region) queue.push(entry);
+    const { documentFilename, selfieFilename, backFilename, ...vSafe } = v;
+    const entry = { ...vSafe, userName: user ? user.name : 'Unknown', accountName: user ? user.name : null, role: user ? user.role : null, country: user ? user.country : '', city: user ? user.city : null, hasDocument: !!v.documentFilename, hasSelfie: !!v.selfieFilename, hasBack: !!v.backFilename };
+    if (!region || inRegion(region, entry)) queue.push(entry);
   }
-  res.json({ queue });
+  // v77: tell the reviewer how files are being kept, so a storage problem
+  // or the retention period is visible on the page, not buried in logs.
+  const { getSetting } = require('../platform-settings');
+  res.json({
+    queue,
+    storage: { persistent: !!process.env.PRIVATE_UPLOADS_DIR, encrypted: require('../file-crypto').isEnabled() },
+    retentionDays: Number(await getSetting('idDocumentRetentionDays')) || 0,
+    automatedCheckConnected: require('../persona-verification').isPersonaConfigured ? !!require('../persona-verification').isPersonaConfigured() : false,
+  });
+});
+
+// ── v83: accounts closed by their owners ───────────────────────────────
+// GET /api/admin/account-closures — super admin.
+router.get('/account-closures', requireSuperAdmin, async (req, res) => {
+  let list = [];
+  try { list = await db.all('accountClosures'); } catch (e) { list = []; }
+  const users = new Map((await db.all('users')).map(u => [u.id, u]));
+  res.json({
+    closures: list.sort((a, b) => String(b.requestedAt).localeCompare(String(a.requestedAt))).map(c => {
+      const u = users.get(c.userId);
+      return { ...c, name: u ? u.name : 'Unknown', email: u && !u.erased ? u.email : null, daysSinceClosed: Math.floor((Date.now() - new Date(c.requestedAt).getTime()) / 86400000) };
+    }),
+  });
+});
+// POST /api/admin/account-closures/:id/reopen — super admin. Only before erasing.
+router.post('/account-closures/:id/reopen', requireSuperAdmin, async (req, res) => {
+  const c = await db.find('accountClosures', x => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Not found' });
+  if (c.status !== 'closed') return res.status(409).json({ error: 'This account\'s details have already been erased. It can\'t be reopened.' });
+  await db.update('users', c.userId, { active: true, closedAt: null, closedByOwner: false });
+  await db.update('accountClosures', c.id, { status: 'reopened', reopenedAt: new Date().toISOString(), reopenedBy: req.user.sub });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'account_reopened', c.userId);
+  res.json({ ok: true });
+});
+// POST /api/admin/account-closures/:id/erase — super admin. Permanent.
+router.post('/account-closures/:id/erase', requireSuperAdmin, async (req, res) => {
+  const c = await db.find('accountClosures', x => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Not found' });
+  if (c.status !== 'closed') return res.status(409).json({ error: c.status === 'erased' ? 'Already erased' : 'This account was reopened' });
+  const result = await require('../account-privacy').eraseAccount(c, req.user.sub);
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'account_erased', c.userId);
+  res.json({ ok: true });
+});
+
+// GET /api/admin/backups — v82, super admin: the nightly data copies.
+router.get('/backups', requireSuperAdmin, async (req, res) => {
+  const b = require('../backup-scheduler');
+  res.json({ applies: b.backupsApply(), keepDays: b.KEEP_DAYS, backups: b.backupsApply() ? b.listBackups() : [] });
+});
+// POST /api/admin/backups/download — v99, super admin: download one
+// day's backup as a single file, to keep somewhere off the server.
+// The file holds every record on the site (names, contact details,
+// scrambled passwords, bookings, messages), so it asks for the super
+// admin's password again, is limited to a few an hour, and is logged.
+const backupDownloadLimiter = require('express-rate-limit')({
+  windowMs: 60 * 60 * 1000, max: 6, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many backup downloads this hour. Try again later.' },
+});
+router.post('/backups/download', requireSuperAdmin, backupDownloadLimiter, async (req, res) => {
+  const b = require('../backup-scheduler');
+  if (!b.backupsApply()) return res.status(400).json({ error: 'Backups here only apply to the file store' });
+  const admin = await me(req);
+  const { password, day } = req.body || {};
+  const okPw = admin && admin.passwordHash && typeof password === 'string' && await require('bcryptjs').compare(password, admin.passwordHash);
+  if (!okPw) return res.status(403).json({ error: 'That password isn\'t right. Enter your own sign-in password to download a backup.' });
+  let list = b.listBackups();
+  if (!list.length) { b.runBackup(); list = b.listBackups(); }
+  const chosen = day ? list.find(x => x.day === day) : list[0];
+  if (!chosen) return res.status(404).json({ error: 'There is no backup for that day' });
+  let archive;
+  try { archive = b.buildBackupArchive(chosen.day); } catch (e) { return res.status(500).json({ error: 'The backup file couldn\'t be built' }); }
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'backup_download', `${chosen.day} (${archive.files} files, ${archive.buffer.length} bytes)`);
+  res.set({ 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${archive.filename}"`, 'Content-Length': archive.buffer.length, 'Cache-Control': 'no-store' });
+  res.end(archive.buffer);
+});
+
+// POST /api/admin/backups/run — v82, super admin: take a copy right now
+// (for example just before a risky change).
+router.post('/backups/run', requireSuperAdmin, async (req, res) => {
+  const b = require('../backup-scheduler');
+  if (!b.backupsApply()) return res.status(400).json({ error: 'Backups here only apply to the file store' });
+  try {
+    const result = b.runBackup();
+    const { logAccess } = require('../access-log');
+    await logAccess(req, 'backup_run', result.day);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ error: 'The backup failed: ' + e.message }); }
+});
+
+// POST /api/admin/users/:id/temp-password — v81, super admin only.
+// The way back in for someone who has forgotten their password while
+// reset-by-email isn't connected. Makes a one-time password, shows it to
+// the super admin once, signs the person out everywhere, and makes them
+// choose a new password the next time they sign in. Written to the access
+// log. The super admin should give it to the person only after confirming
+// who they are (for example by calling the phone number on the account).
+router.post('/users/:id/temp-password', requireSuperAdmin, async (req, res) => {
+  const target = await db.find('users', u => u.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.id === req.user.sub) return res.status(400).json({ error: 'Use Change Password in your own settings for your own account' });
+  if (target.isSuperAdmin) return res.status(403).json({ error: 'A super admin\'s password can\'t be reset from here' });
+  const { hashPassword } = require('../auth');
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const bytes = require('crypto').randomBytes(14);
+  const tempPassword = Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+  await db.update('users', target.id, { passwordHash: hashPassword(tempPassword), mustChangePassword: true, tokenVersion: (target.tokenVersion || 0) + 1 });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'temp_password_issued', target.id);
+  await notify(target.id, '🔐', 'Your password was reset by the Trothen team. If you didn\'t ask for this, contact support straight away.', null, { section: 'settings' });
+  res.json({ ok: true, tempPassword });
+});
+
+// PATCH /api/admin/settings/id-retention  { days } — super admin only.
+// 0 keeps files until deleted by hand; otherwise 7 to 3650 days.
+router.patch('/settings/id-retention', requireSuperAdmin, async (req, res) => {
+  const days = Number((req.body || {}).days);
+  if (!Number.isInteger(days) || days < 0 || (days > 0 && days < 7) || days > 3650) {
+    return res.status(400).json({ error: 'Enter 0 to keep files, or a whole number of days from 7 to 3650' });
+  }
+  const { setSetting } = require('../platform-settings');
+  await setSetting('idDocumentRetentionDays', days);
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'id_retention_update', String(days));
+  res.json({ ok: true, retentionDays: days });
+});
+
+// POST /api/admin/verification-gaps-ask-all — v77: one message to every
+// person marked verified with no reviewed ID and none waiting. Nobody's
+// badge is removed by this.
+router.post('/verification-gaps-ask-all', requireDepartment(['verification']), async (req, res) => {
+  const region = await myRegion(req);
+  const approvedIds = new Set((await db.filter('verifications', v => v.status === 'approved')).map(v => v.userId));
+  const openIds = new Set((await db.filter('verifications', v => ['pending', 'review_required'].includes(v.status))).map(v => v.userId));
+  const people = await db.filter('users', u => (u.role === 'provider' || u.role === 'customer') && u.verified === true && !approvedIds.has(u.id) && !openIds.has(u.id) && (!region || inRegion(region, u)));
+  for (const p of people) {
+    await notify(p.id, '🪪', p.role === 'customer'
+      ? 'Please verify your identity in the Verification section, so your "Verified" status is backed by a reviewed ID.'
+      : 'Please verify your identity in the Verification section, so the "ID checked" badge on your profile is backed by a reviewed ID.', null, { section: 'verification' });
+  }
+  res.json({ ok: true, asked: people.length });
+});
+
+// v82: every ID file is opened through this one place. It decrypts when
+// the file was stored encrypted, sets the right type from the file's own
+// first bytes (never the stored name), and keeps it out of every cache.
+function sendPrivateIdFile(res, filename) {
+  const pathMod = require('path');
+  const { PRIVATE_UPLOADS_DIR } = require('../uploads');
+  const filePath = pathMod.join(PRIVATE_UPLOADS_DIR, pathMod.basename(String(filename)));
+  if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'The file is missing on disk' });
+  let buf;
+  try { buf = require('../file-crypto').readPossiblyEncrypted(filePath); }
+  catch (e) { return res.status(500).json({ error: e.message }); }
+  const head = buf.subarray(0, 12);
+  const type = head.subarray(0, 4).toString('latin1') === '%PDF' ? 'application/pdf'
+    : (head[0] === 0x89 && head[1] === 0x50) ? 'image/png'
+    : (head[0] === 0xFF && head[1] === 0xD8) ? 'image/jpeg'
+    : (head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') ? 'image/webp'
+    : 'application/octet-stream';
+  res.set('Cache-Control', 'no-store, private');
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Content-Type', type);
+  res.send(buf);
+}
+
+// GET /api/admin/verification/:id/back — v80: the back of the ID, when
+// one was sent. Same rules as the front and the face photo.
+router.get('/verification/:id/back', requireDepartment(['verification']), async (req, res) => {
+  const record = await db.find('verifications', v => v.id === req.params.id);
+  if (!record || !record.backFilename) return res.status(404).json({ error: 'No back of ID on record' });
+  const region = await myRegion(req);
+  const user = await db.find('users', u => u.id === record.userId);
+  if (region && (!user || !inRegion(region, user))) return res.status(403).json({ error: 'That user is outside the area you manage' });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'verification_document_back', record.id);
+  sendPrivateIdFile(res, record.backFilename);
+});
+
+// GET /api/admin/verification/:id/selfie — v77: the face photo sent with
+// the ID. Same rules as the document below: verification team only, own
+// city only, every look recorded, never cached.
+router.get('/verification/:id/selfie', requireDepartment(['verification']), async (req, res) => {
+  const record = await db.find('verifications', v => v.id === req.params.id);
+  if (!record || !record.selfieFilename) return res.status(404).json({ error: 'No face photo on record' });
+  const region = await myRegion(req);
+  const user = await db.find('users', u => u.id === record.userId);
+  if (region && (!user || !inRegion(region, user))) return res.status(403).json({ error: 'That user is outside the area you manage' });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'verification_selfie', record.id);
+  sendPrivateIdFile(res, record.selfieFilename);
+});
+
+// GET /api/admin/verification-history — v85: checks that have already been
+// decided, newest first, so a reviewer can look back at the documents for
+// as long as the files are kept. Same people can see it as the queue, and
+// a city admin only sees their own city.
+router.get('/verification-history', requireDepartment(['verification']), async (req, res) => {
+  const region = await myRegion(req);
+  const decided = (await db.filter('verifications', v => ['approved', 'rejected', 'superseded'].includes(v.status)))
+    .sort((a, b) => String(b.reviewedAt || b.createdAt || '').localeCompare(String(a.reviewedAt || a.createdAt || '')));
+  const users = new Map((await db.all('users')).map(u => [u.id, u]));
+  const { getSetting } = require('../platform-settings');
+  const retentionDays = Number(await getSetting('idDocumentRetentionDays')) || 0;
+  const onHold = await require('../id-retention-scheduler').accountsOnRetentionHold(); // v95
+  const history = [];
+  for (const v of decided) {
+    const user = users.get(v.userId);
+    if (region && (!user || !inRegion(region, user))) continue;
+    const reviewer = v.reviewedBy && v.reviewedBy !== 'persona' ? users.get(v.reviewedBy) : null;
+    const decidedAt = v.reviewedAt || v.createdAt || null;
+    history.push({
+      id: v.id,
+      userName: user ? user.name : 'Unknown',
+      role: user ? user.role : null,
+      city: user ? user.city : null,
+      docType: v.docType || null,
+      idLegalName: v.idLegalName || null,
+      status: v.status,
+      rejectionReason: v.rejectionReason || null,
+      decidedAt,
+      reviewedByName: v.reviewedBy === 'persona' || v.source === 'persona' ? 'Automated check' : (reviewer ? reviewer.name : null),
+      hasDocument: !!v.documentFilename, hasBack: !!v.backFilename, hasSelfie: !!v.selfieFilename,
+      filesDeletedAt: v.filesDeletedAt || null,
+      filesHeldReason: (v.documentFilename || v.selfieFilename || v.backFilename) ? (onHold.get(v.userId) || null) : null, // v95: kept past the period while this is open
+      filesDeleteOn: (retentionDays > 0 && decidedAt && (v.documentFilename || v.selfieFilename || v.backFilename) && !onHold.has(v.userId))
+        ? new Date(new Date(decidedAt).getTime() + retentionDays * 86400000).toISOString().slice(0, 10) : null,
+    });
+    if (history.length >= 200) break;
+  }
+  res.json({ history });
+});
+
+// GET /api/admin/verification-gaps — providers who carry the verified
+// badge but have no approved ID on file (for example, approved through
+// account approval before v64). Listed so a reviewer can ask them for an
+// ID, or take the badge off until one is checked.
+router.get('/verification-gaps', requireDepartment(['verification']), async (req, res) => {
+  const region = await myRegion(req);
+  const approvedIds = new Set((await db.filter('verifications', v => v.status === 'approved')).map(v => v.userId));
+  const openIds = new Set((await db.filter('verifications', v => ['pending', 'review_required'].includes(v.status))).map(v => v.userId));
+  const gaps = (await db.filter('users', u => (u.role === 'provider' || u.role === 'customer') && u.verified === true && !approvedIds.has(u.id) && (!region || inRegion(region, u))))
+    .map(u => ({ id: u.id, name: u.name, role: u.role, city: u.city || null, country: u.country || null, idSubmitted: openIds.has(u.id) }));
+  res.json({ gaps });
+});
+
+// v107: GET /api/admin/verification-waiting — people who are NOT verified
+// and have nothing in the queue: they have never sent an ID, or their last
+// one was turned down. Nothing an admin can approve; the next step is
+// theirs. Listed so the team can see them and send a reminder.
+router.get('/verification-waiting', requireDepartment(['verification']), async (req, res) => {
+  const region = await myRegion(req);
+  const idOf = await idStatusByUser();
+  const people = (await db.filter('users', u => (u.role === 'provider' || u.role === 'customer') && u.verified !== true && u.active !== false && u.status !== 'rejected' && !u.erased && (!region || inRegion(region, u))))
+    .map(u => ({ id: u.id, name: u.name, role: u.role, city: u.city || null, country: u.country || null, joined: (u.createdAt || '').slice(0, 10), idStatus: idOf(u.id), accountApproved: u.status === 'approved', lastIdReminderAt: u.lastIdReminderAt || null }))
+    .filter(p => p.idStatus === 'none' || p.idStatus === 'rejected')
+    .sort((a, b) => String(b.joined).localeCompare(String(a.joined)));
+  res.json({ people, counts: { customers: people.filter(p => p.role === 'customer').length, providers: people.filter(p => p.role === 'provider').length } });
+});
+
+// POST /api/admin/verification-gaps/:userId  { action: 'request' | 'remove_badge' | 'remind' }
+router.post('/verification-gaps/:userId', requireDepartment(['verification']), async (req, res) => {
+  const { action } = req.body || {};
+  if (!['request', 'remove_badge', 'remind'].includes(action)) return res.status(400).json({ error: 'action must be request, remove_badge or remind' });
+  const region = await myRegion(req);
+  const target = await db.find('users', u => u.id === req.params.userId && (u.role === 'provider' || u.role === 'customer'));
+  if (!target) return res.status(404).json({ error: 'Person not found' });
+  if (region && !inRegion(region, target)) return res.status(403).json({ error: 'That user is outside the area you manage' });
+  const isCustomer = target.role === 'customer';
+  if (action === 'remind') {
+    // v107: a nudge to someone who isn't verified yet. At most one a day each.
+    if (target.verified === true) return res.status(400).json({ error: 'This person is already verified.' });
+    if (target.lastIdReminderAt && (Date.now() - new Date(target.lastIdReminderAt).getTime()) < 24 * 60 * 60 * 1000) return res.status(429).json({ error: 'They were already reminded in the last day.' });
+    await notify(target.id, '🪪', isCustomer
+      ? 'Reminder: please verify your identity in the Verification section. Upload a government ID and a photo of your face. You can post a job or book a pro once it has been reviewed.'
+      : 'Reminder: please verify your identity in the Verification section. Upload a government ID and a photo of your face. You appear in search and can take jobs once it has been reviewed.', null, { section: 'verification' });
+    await db.update('users', target.id, { lastIdReminderAt: new Date().toISOString() });
+  } else if (action === 'remove_badge') {
+    await db.update('users', target.id, { verified: false });
+    await notify(target.id, '🪪', isCustomer
+      ? 'Before your next booking, please verify your identity in the Verification section. It only takes a few minutes.'
+      : 'To keep your "ID checked" badge and stay in search, please verify your identity in the Verification section. It only takes a few minutes.', null, { section: 'verification' });
+  } else {
+    await notify(target.id, '🪪', isCustomer
+      ? 'Please verify your identity in the Verification section, so your "Verified" status is backed by a reviewed ID.'
+      : 'Please verify your identity in the Verification section, so the "ID checked" badge on your profile is backed by a reviewed ID.', null, { section: 'verification' });
+  }
+  const { logAccess } = require('../access-log');
+  await logAccess(req, `verification_gap_${action}`, target.id);
+  res.json({ ok: true });
 });
 
 // GET /api/admin/verification/:id/document — the actual document file
@@ -695,11 +1115,12 @@ router.get('/verification/:id/document', requireDepartment(['verification']), as
   if (!record || !record.documentFilename) return res.status(404).json({ error: 'Document not found' });
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
-  if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
-  const { PRIVATE_UPLOADS_DIR } = require('../uploads');
-  const filePath = require('path').join(PRIVATE_UPLOADS_DIR, record.documentFilename);
-  if (!require('fs').existsSync(filePath)) return res.status(404).json({ error: 'Document file is missing on disk' });
-  res.sendFile(filePath);
+  if (region && (!user || !inRegion(region, user))) return res.status(403).json({ error: 'That user is outside the area you manage' });
+  // Every look at someone's ID is recorded (who, when, which record), and
+  // the file is never kept in the browser's or any proxy's cache.
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'verification_document', record.id);
+  sendPrivateIdFile(res, record.documentFilename);
 });
 
 // POST /api/admin/verification/:id/decide  { decision: 'approve' | 'reject', rejectionReason? }
@@ -711,12 +1132,20 @@ router.post('/verification/:id/decide', requireDepartment(['verification']), asy
   }
   const record = await db.find('verifications', v => v.id === req.params.id);
   if (!record) return res.status(404).json({ error: 'Verification record not found' });
+  // Only a submission that's still waiting can be decided. An older one
+  // replaced by a newer upload ("superseded"), or one already decided,
+  // can't be approved by mistake from a stale screen.
+  if (!['pending', 'review_required'].includes(record.status)) {
+    return res.status(409).json({ error: `This submission is already ${record.status.replace('_', ' ')} — refresh the queue.` });
+  }
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
-  if (region && (!user || user.city !== region)) return res.status(403).json({ error: 'That user is outside your assigned city' });
+  if (region && (!user || !inRegion(region, user))) return res.status(403).json({ error: 'That user is outside the area you manage' });
+  if (user && user.id === req.user.sub) return res.status(403).json({ error: 'You can\'t review your own verification' });
   const status = decision === 'approve' ? 'approved' : 'rejected';
   const finalRejectionReason = decision === 'reject' ? rejectionReason.trim() : null;
-  await db.update('verifications', record.id, { status, rejectionReason: finalRejectionReason });
+  // Who decided and when, kept with the record.
+  await db.update('verifications', record.id, { status, rejectionReason: finalRejectionReason, reviewedBy: req.user.sub, reviewedAt: new Date().toISOString() });
   if (decision === 'approve') await db.update('users', record.userId, { verified: true });
   const approveMessage = user && user.role === 'provider' && !user.profilePhotoUrl
     ? 'Your identity verification was approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
@@ -740,7 +1169,7 @@ router.get('/disputes', requireDepartment(['disputes', 'customer_service', 'lega
   for (const d of all) {
     if (from && (d.createdAt || '').slice(0, 10) < from) continue;
     if (to && (d.createdAt || '').slice(0, 10) > to) continue;
-    if (!region || (await disputeCity(d, contractByIdForDisputes, customerByIdForDisputes)) === region) disputes.push(d);
+    if (!region || inRegion(region, await disputeCustomer(d, contractByIdForDisputes, customerByIdForDisputes))) disputes.push(d);
   }
   res.json({ disputes });
 });
@@ -752,7 +1181,15 @@ router.get('/disputes', requireDepartment(['disputes', 'customer_service', 'lega
 // job screened automatically" claim — a real, reviewable queue, not just a
 // marketing line.
 router.get('/fraud-flags', requireDepartment('disputes'), async (req, res) => {
-  const flags = await db.all('fraudFlags');
+  let flags = await db.all('fraudFlags');
+  // v109: a city or country admin sees flags about people in their own area
+  // only. They used to see every flag on the platform, with emails.
+  const fraudRegion = await myRegion(req);
+  if (fraudRegion) {
+    const kept = [];
+    for (const f of flags) { const u = f.userId ? await db.find('users', x => x.id === f.userId) : null; if (u && inRegion(fraudRegion, u)) kept.push(f); }
+    flags = kept;
+  }
   const withNames = await Promise.all(flags.map(async f => {
     const user = f.userId ? await db.find('users', u => u.id === f.userId) : null;
     const relatedUser = f.relatedUserId ? await db.find('users', u => u.id === f.relatedUserId) : null;
@@ -792,7 +1229,7 @@ router.get('/disputes/pdf', requireDepartment(['disputes', 'customer_service', '
   for (const d of all) {
     if (from && (d.createdAt || '').slice(0, 10) < from) continue;
     if (to && (d.createdAt || '').slice(0, 10) > to) continue;
-    if (!region || (await disputeCity(d, contractByIdForDisputesPdf, customerByIdForDisputesPdf)) === region) disputes.push(d);
+    if (!region || inRegion(region, await disputeCustomer(d, contractByIdForDisputesPdf, customerByIdForDisputesPdf))) disputes.push(d);
   }
   disputes.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
@@ -849,7 +1286,7 @@ router.get('/transactions', requireDepartment(['financial', 'accountant', 'contr
   }));
   const orgsById = new Map((await db.all('organizations')).map(o => [o.id, o]));
 
-  const scoped = region ? rows.filter(r => r.customer && r.customer.city === region) : rows;
+  const scoped = region ? rows.filter(r => r.customer && inRegion(region, r.customer)) : rows;
   const transactions = scoped.map(({ c, customer, provider, escrow }) => {
     const materialsAdvanceAmount = (escrow && escrow.materialsAdvanceAmount) || 0;
     // Real commission is only recorded on the payout itself, once it's
@@ -859,7 +1296,7 @@ router.get('/transactions', requireDepartment(['financial', 'accountant', 'contr
     // otherwise their individual plan rate) — so admins aren't left
     // guessing what a job will net the platform before payout happens.
     const commissionRate = provider ? effectiveCommissionRate(provider, orgsById.get(provider.organizationId)) : null;
-    const estCommission = commissionRate != null ? Math.round(c.amount * commissionRate * 100) / 100 : null;
+    const estCommission = commissionRate != null ? Math.round(Math.max(0, c.amount - (c.storeGoodsTotal || 0)) * commissionRate * 100) / 100 : null; // v105: no commission on store goods
     return {
       contractId: c.id,
       bookingNumber: c.bookingNumber || c.id,
@@ -900,7 +1337,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'c
     const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
     return { c, customer, provider, escrow };
   }));
-  const scoped = (region ? rows.filter(r => r.customer && r.customer.city === region) : rows)
+  const scoped = (region ? rows.filter(r => r.customer && inRegion(region, r.customer)) : rows)
     .sort((a, b) => new Date(a.c.createdAt) - new Date(b.c.createdAt));
 
   const me_ = await me(req);
@@ -915,10 +1352,10 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'c
   if (from) payoutsInScope = payoutsInScope.filter(p => (p.date || '').slice(0, 10) >= from);
   if (to) payoutsInScope = payoutsInScope.filter(p => (p.date || '').slice(0, 10) <= to);
   if (region) {
-    const regionalProviderIds = new Set((await db.filter('users', u => u.role === 'provider' && u.city === region)).map(u => u.id));
+    const regionalProviderIds = new Set((await db.filter('users', u => u.role === 'provider' && inRegion(region, u))).map(u => u.id));
     payoutsInScope = payoutsInScope.filter(p => regionalProviderIds.has(p.providerId));
   }
-  const payoutsCommissionInScope = payoutsInScope.reduce((s, p) => s + (p.commissionAmount || 0), 0);
+  const payoutsCommissionInScope = payoutsInScope.reduce((s, p) => s + (p.commissionAmount || 0) + (p.storeFeeAmount || 0), 0); // v106
   const orgsById = new Map((await db.all('organizations')).map(o => [o.id, o]));
 
   const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
@@ -935,7 +1372,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'c
   const totalGMV = scoped.reduce((s, r) => s + r.c.amount, 0);
   const totalHeld = scoped.filter(r => r.escrow && r.escrow.status === 'held').reduce((s, r) => s + r.escrow.amount, 0);
   const totalReleased = scoped.filter(r => r.escrow && r.escrow.status === 'released').reduce((s, r) => s + r.escrow.amount, 0);
-  const totalEstCommission = scoped.reduce((s, r) => s + r.c.amount * effectiveCommissionRate(r.provider, orgsById.get(r.provider && r.provider.organizationId)), 0);
+  const totalEstCommission = scoped.reduce((s, r) => s + Math.max(0, r.c.amount - (r.c.storeGoodsTotal || 0)) * effectiveCommissionRate(r.provider, orgsById.get(r.provider && r.provider.organizationId)), 0);
   twoColumnRow('Total GMV', `$${totalGMV.toFixed(2)}`, 'Transactions', String(scoped.length));
   twoColumnRow('Escrow Held', `$${totalHeld.toFixed(2)}`, 'Escrow Released', `$${totalReleased.toFixed(2)}`);
   twoColumnRow('Est. Commission (unpaid + paid)', `$${totalEstCommission.toFixed(2)}`, 'Realized Commission (paid out)', `$${payoutsCommissionInScope.toFixed(2)}`);
@@ -953,7 +1390,7 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'c
         (provider && provider.category) || '—',
         c.service,
         `$${c.amount}`,
-        `$${(c.amount * effectiveCommissionRate(provider, orgsById.get(provider && provider.organizationId))).toFixed(2)}`,
+        `$${(Math.max(0, c.amount - (c.storeGoodsTotal || 0)) * effectiveCommissionRate(provider, orgsById.get(provider && provider.organizationId))).toFixed(2)}`,
         c.status,
       ])
     );
@@ -966,7 +1403,7 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   const region = await myRegion(req);
   const dispute = await db.find('disputes', d => d.id === req.params.id);
   if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
-  if (region && (await disputeCity(dispute)) !== region) return res.status(403).json({ error: 'That dispute is outside your assigned city' });
+  if (region && !inRegion(region, await disputeCustomer(dispute))) return res.status(403).json({ error: 'That dispute is outside the area you manage' });
 
   // Previously this only ever had one outcome: release escrow to the
   // provider, no matter what the dispute was actually about. If a
@@ -977,7 +1414,15 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   // silently changes for a request that doesn't specify one) or refund
   // the customer.
   const { decision, note } = req.body || {};
-  const outcome = decision === 'refund_customer' ? 'refund_customer' : 'release_to_provider';
+  // v84: the decision has to be spelled out. It used to be that anything
+  // other than "refund_customer" (a typo, or nothing at all) quietly
+  // released the money to the pro.
+  // v96: a third outcome, "split": part goes back to the customer and the
+  // rest is released to the pro.
+  if (!['refund_customer', 'release_to_provider', 'split'].includes(decision)) {
+    return res.status(400).json({ error: 'Choose a decision: refund the customer, release the payment to the pro, or split it' });
+  }
+  const outcome = decision;
   // Item: Joseph asked for a real way for the dispute team to explain a
   // decision to the people it actually affects — both parties previously
   // only ever got a fixed, generic line regardless of what the dispute
@@ -988,19 +1433,76 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   }
   const trimmedNote = note.trim();
 
+  // v84: a dispute is decided once. Before this, a resolved dispute could
+  // be resolved again the other way, and again, moving the payment each
+  // time: a customer could be refunded after the pro had already been
+  // paid, so the same money was given out twice.
+  if (['resolved', 'closed', 'rejected'].includes(dispute.status)) {
+    return res.status(409).json({ error: `This dispute is already ${dispute.status}. A super admin has to reopen it before it can be decided again.` });
+  }
+  const escrowNow = await db.find('escrowTransactions', e => e.contractId === dispute.contractId);
+  if (outcome === 'refund_customer' && escrowNow && (escrowNow.payoutId || escrowNow.materialsAdvancePayoutId)) {
+    return res.status(409).json({ error: 'The pro has already been paid out for this booking, so the system can\'t refund it. This one has to be settled by hand: recover the money from the pro or refund the customer from Trothen\'s own funds, and record what was done in a note.' });
+  }
+  if (outcome === 'release_to_provider' && escrowNow && escrowNow.status === 'refunded') {
+    return res.status(409).json({ error: 'This payment has already been refunded to the customer, so it can\'t be released to the pro.' });
+  }
+  // v96: split. Only possible while the whole payment is still held, so
+  // the two parts always add up to exactly what the customer paid.
+  let splitRefund = 0;
+  if (outcome === 'split') {
+    if (!escrowNow) return res.status(409).json({ error: 'There is no payment on this booking to split.' });
+    if (escrowNow.status !== 'held' || escrowNow.payoutId || escrowNow.materialsAdvancePayoutId) {
+      return res.status(409).json({ error: 'A split is only possible while the whole payment is still held. Part of this one has already been released, refunded or paid out.' });
+    }
+    const amt = Number((req.body || {}).refundAmount);
+    splitRefund = Math.round(amt * 100) / 100;
+    if (!Number.isFinite(amt) || splitRefund <= 0 || splitRefund >= escrowNow.amount) {
+      return res.status(400).json({ error: `Enter how much to refund to the customer: more than 0 and less than the full $${escrowNow.amount}. For all or nothing, use Refund or Release instead.` });
+    }
+  }
+
   const updated = await db.update('disputes', dispute.id, { status: 'resolved', resolvedAt: new Date().toISOString(), resolution: outcome });
   const resolvingAdmin = await me(req);
   await db.insert('disputeAuditLog', {
     id: `dal_${nanoid(10)}`,
     disputeId: dispute.id,
     action: 'resolve',
-    note: `${outcome === 'refund_customer' ? 'Resolved: refunded the customer' : 'Resolved: released escrow to the provider'} — ${trimmedNote}`,
+    note: `${outcome === 'refund_customer' ? 'Resolved: refunded the customer' : outcome === 'split' ? `Resolved: split. $${splitRefund} refunded to the customer, the rest released to the provider` : 'Resolved: released escrow to the provider'} — ${trimmedNote}`,
     actorId: resolvingAdmin ? resolvingAdmin.id : null,
     actorName: resolvingAdmin ? resolvingAdmin.name : 'Unknown admin',
     createdAt: new Date().toISOString(),
   });
   const escrow = await db.find('escrowTransactions', e => e.contractId === updated.contractId);
   const contract = await db.find('contracts', c => c.id === updated.contractId);
+
+  // v84: the booking itself is closed out too. It used to stay "disputed"
+  // for good after the dispute was settled.
+  if (contract && contract.status === 'disputed') {
+    if (outcome === 'refund_customer') {
+      await db.update('contracts', contract.id, { status: 'cancelled', cancelledByRole: 'dispute', cancelledAt: new Date().toISOString(), cancelReason: 'Refunded after a dispute' });
+    } else {
+      await db.update('contracts', contract.id, { status: 'completed', completedAt: new Date().toISOString(), completedVia: 'dispute' });
+      const pro = await db.find('users', u => u.id === contract.providerId);
+      if (pro) await db.update('users', pro.id, { jobs: (pro.jobs || 0) + 1 });
+      try { await require('../commission').checkAndAdvanceProviderTier(contract.providerId); } catch (e) { /* never block a resolution on this */ }
+    }
+  }
+
+  if (outcome === 'split') {
+    const released = Math.round((escrow.amount - splitRefund) * 100) / 100;
+    // The payment record now carries the part released to the pro (so
+    // commission and the payout are worked out on that part only), and
+    // remembers the original amount and the part refunded.
+    await db.update('escrowTransactions', escrow.id, { status: 'released', originalAmount: escrow.amount, refundedAmount: splitRefund, amount: released, splitByDisputeId: dispute.id });
+    await db.update('disputes', dispute.id, { refundedAmount: splitRefund, releasedAmount: released });
+    if (contract) {
+      await db.update('contracts', contract.id, { refundedAmount: splitRefund });
+      await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved with a split: $${splitRefund} is refunded to you and $${released} goes to your pro. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved with a split: $${released} is released to you and $${splitRefund} is refunded to the customer. ${trimmedNote}`, 'bookingUpdates', { section: 'earnings' });
+    }
+    return res.json({ dispute: { ...updated, refundedAmount: splitRefund, releasedAmount: released } });
+  }
 
   if (outcome === 'refund_customer') {
     const wasRefunded = escrow && escrow.status === 'refunded';
@@ -1063,6 +1565,16 @@ router.post('/disputes/:id/action', requireSuperAdmin, async (req, res) => {
   if (action === 'reopen' && dispute.status === 'open') {
     return res.status(400).json({ error: 'This dispute is already open' });
   }
+  // v84: reopening has to put the money back where a fresh decision can be
+  // made safely. That's only possible while the payment is still inside
+  // Trothen: released to the pro's balance but not yet cashed out. If it
+  // was refunded, or the pro has been paid, the money has left and the
+  // dispute can't be reopened here.
+  const escrowForAction = await db.find('escrowTransactions', e => e.contractId === dispute.contractId);
+  if (action === 'reopen' && dispute.status === 'resolved' && escrowForAction) {
+    if (escrowForAction.status === 'refunded') return res.status(409).json({ error: 'The customer has already been refunded, so this dispute can\'t be reopened.' });
+    if (escrowForAction.payoutId || escrowForAction.materialsAdvancePayoutId) return res.status(409).json({ error: 'The pro has already been paid out for this booking, so this dispute can\'t be reopened here. Settle it by hand and record it in a note.' });
+  }
   if (action !== 'reopen' && dispute.status !== 'open') {
     return res.status(400).json({ error: `This dispute is already ${dispute.status} — reopen it first if it needs further action` });
   }
@@ -1072,6 +1584,28 @@ router.post('/disputes/:id/action', requireSuperAdmin, async (req, res) => {
     status: statusByAction[action],
     ...(action === 'reopen' ? { resolvedAt: null, resolution: null } : {}),
   });
+
+  // v84: keep the booking and its payment in step with the dispute.
+  if (contract) {
+    if (action === 'reopen') {
+      // back to frozen, so it can be decided again
+      if (escrowForAction && escrowForAction.status === 'released') {
+        // v96: if it had been split, the full original amount goes back on hold.
+        const restore = escrowForAction.originalAmount != null ? { amount: escrowForAction.originalAmount, originalAmount: null, refundedAmount: null, splitByDisputeId: null } : {};
+        await db.update('escrowTransactions', escrowForAction.id, { status: 'held', ...restore });
+        if (escrowForAction.originalAmount != null) await db.update('contracts', contract.id, { refundedAmount: null });
+      }
+      if (contract.status === 'completed' && contract.completedVia === 'dispute') {
+        const pro = await db.find('users', u => u.id === contract.providerId);
+        if (pro && (pro.jobs || 0) > 0) await db.update('users', pro.id, { jobs: pro.jobs - 1 });
+      }
+      await db.update('contracts', contract.id, { status: 'disputed', completedVia: null });
+    } else if ((action === 'reject' || action === 'close') && contract.status === 'disputed') {
+      // not upheld, or closed without a decision: the booking carries on as
+      // it was, with the payment still held, instead of staying frozen forever.
+      await db.update('contracts', contract.id, { status: 'active' });
+    }
+  }
 
   await db.insert('disputeAuditLog', {
     id: `dal_${nanoid(10)}`,
@@ -1106,7 +1640,7 @@ router.get('/disputes/:id/audit-log', requireDepartment(['disputes', 'customer_s
   const region = await myRegion(req);
   const dispute = await db.find('disputes', d => d.id === req.params.id);
   if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
-  if (region && (await disputeCity(dispute)) !== region) return res.status(403).json({ error: 'That dispute is outside your assigned city' });
+  if (region && !inRegion(region, await disputeCustomer(dispute))) return res.status(403).json({ error: 'That dispute is outside the area you manage' });
   const log = (await db.filter('disputeAuditLog', l => l.disputeId === dispute.id)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   res.json({ log });
 });
@@ -1495,6 +2029,16 @@ router.patch('/settings/booking-window', requireSuperAdmin, async (req, res) => 
 // platform" pattern already used for ad pricing and advertising
 // inquiries. Falls back to the platform-wide number (isPlaceholder still
 // computed honestly) if this city hasn't set its own yet.
+// Joseph's report: "allow me to add more than one customer service
+// number — Dispute, Onboarding, Promotion, General." Before this, a
+// region (or the platform-wide fallback) could only ever have ONE
+// number for everything. SUPPORT_CATEGORIES are the extra, optional
+// lines on top of the always-present General one; any category left
+// unset simply falls back to General, so nothing already set on the
+// real site is ever broken by this — old data with no "categories" key
+// at all reads exactly as it always did.
+const { SUPPORT_CATEGORIES } = require('../platform-settings');
+
 router.get('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
   const m = await me(req);
   if (!m.isSuperAdmin && m.adminDepartment) {
@@ -1512,24 +2056,30 @@ router.get('/settings/support-contact', requireAuth, requireRole('admin'), async
     // admin panel can list and manage them directly.
     const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
     const allRegional = Object.entries(regionalContacts).map(([city, c]) => ({ city, ...c }));
-    return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null, allRegional });
+    return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null, allRegional, categories: SUPPORT_CATEGORIES });
   }
   const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
   const own = regionalContacts[region];
-  if (own) return res.json({ ...own, isPlaceholder: false, region, usingPlatformFallback: false });
-  return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region, usingPlatformFallback: true });
+  if (own) return res.json({ ...own, isPlaceholder: false, region, usingPlatformFallback: false, categories: SUPPORT_CATEGORIES });
+  return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region, usingPlatformFallback: true, categories: SUPPORT_CATEGORIES });
 });
 
 // PATCH /api/admin/settings/support-contact — a super admin sets the
 // platform-wide fallback; a regional admin sets their own city's real
 // number, stored separately so one region's number never overwrites
-// another's or the global fallback.
+// another's or the global fallback. An optional `category` (dispute,
+// onboarding or promotion) sets that ONE category's own number instead
+// of the General one — General itself is unaffected and keeps serving
+// as the fallback for any category nobody has given its own number yet.
 router.patch('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
   const m = await me(req);
   if (!m.isSuperAdmin && m.adminDepartment) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
-  const { whatsapp, phoneDisplay, email } = req.body || {};
+  const { whatsapp, phoneDisplay, email, category } = req.body || {};
+  if (category !== undefined && category !== null && !SUPPORT_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${SUPPORT_CATEGORIES.join(', ')} — or omitted for the General number` });
+  }
   if (!isNonEmptyString(whatsapp) || !/^\d{7,15}$/.test(whatsapp)) {
     return res.status(400).json({ error: 'WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567' });
   }
@@ -1558,33 +2108,61 @@ router.patch('/settings/support-contact', requireAuth, requireRole('admin'), asy
   // ever affects their own city, exactly as before.
   const { targetRegion } = req.body || {};
   const region = (m.isSuperAdmin && isNonEmptyString(targetRegion)) ? targetRegion.trim() : await myRegion(req);
+  const entry = { whatsapp, phoneDisplay, email: trimmedEmail };
   if (!region) {
-    await setSetting('supportContact', { whatsapp, phoneDisplay, email: trimmedEmail });
-    return res.json({ ok: true, whatsapp, phoneDisplay, email: trimmedEmail, region: null });
+    const current = await getSetting('supportContact');
+    if (category) {
+      const categories = { ...(current.categories || {}), [category]: entry };
+      await setSetting('supportContact', { ...current, categories });
+      return res.json({ ok: true, ...entry, category, region: null });
+    }
+    await setSetting('supportContact', { ...entry, categories: current.categories || {} });
+    return res.json({ ok: true, ...entry, region: null });
   }
   const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
-  regionalContacts[region] = { whatsapp, phoneDisplay, email: trimmedEmail };
+  const currentRegional = regionalContacts[region] || {};
+  if (category) {
+    regionalContacts[region] = { ...currentRegional, categories: { ...(currentRegional.categories || {}), [category]: entry } };
+  } else {
+    regionalContacts[region] = { ...entry, categories: currentRegional.categories || {} };
+  }
   await setSetting('regionalSupportContacts', regionalContacts);
-  res.json({ ok: true, whatsapp, phoneDisplay, email: trimmedEmail, region });
+  res.json({ ok: true, ...entry, category: category || null, region });
 });
 
-// DELETE /api/admin/settings/support-contact — a regional admin can remove
-// their own city's number to fall back to the platform-wide one again
-// (e.g. their staff line changed and isn't set up yet). Not available to
-// a super admin, who has no "fallback" of their own to fall back to.
+// DELETE /api/admin/settings/support-contact — clears one category's own
+// number (falling back to General again), or without a category, clears
+// a region's General number entirely (falling back to the platform-wide
+// number) — the platform-wide General number itself can never be
+// deleted, only replaced (see PATCH above).
 router.delete('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
   const m = await me(req);
   if (!m.isSuperAdmin && m.adminDepartment) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
-  // Same targetRegion pattern as the PATCH route above — a super admin
-  // clearing a specific OTHER city's contact, not just their own (which
-  // they don't have).
-  const { targetRegion } = req.body || {};
-  const region = (m.isSuperAdmin && isNonEmptyString(targetRegion)) ? targetRegion.trim() : await myRegion(req);
-  if (!region) return res.status(400).json({ error: 'The platform-wide number can be changed, but not removed — set a new one instead.' });
+  const { category, targetRegion } = req.body || {};
+  if (category !== undefined && category !== null && !SUPPORT_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${SUPPORT_CATEGORIES.join(', ')}` });
+  }
   const { getSetting, setSetting } = require('../platform-settings');
+  const region = (m.isSuperAdmin && isNonEmptyString(targetRegion)) ? targetRegion.trim() : await myRegion(req);
+  if (!region) {
+    if (!category) return res.status(400).json({ error: 'The platform-wide General number can be changed, but not removed — set a new one instead.' });
+    const current = await getSetting('supportContact');
+    const categories = { ...(current.categories || {}) };
+    delete categories[category];
+    await setSetting('supportContact', { ...current, categories });
+    return res.json({ ok: true, category, region: null });
+  }
   const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
+  if (!regionalContacts[region]) return res.json({ ok: true, region });
+  if (category) {
+    const categories = { ...(regionalContacts[region].categories || {}) };
+    delete categories[category];
+    regionalContacts[region] = { ...regionalContacts[region], categories };
+    await setSetting('regionalSupportContacts', regionalContacts);
+    return res.json({ ok: true, category, region });
+  }
   delete regionalContacts[region];
   await setSetting('regionalSupportContacts', regionalContacts);
   res.json({ ok: true, region });
@@ -1622,6 +2200,35 @@ router.patch('/settings/homepage-content', requireSuperAdmin, async (req, res) =
   };
   await setSetting('homepageContent', content);
   res.json({ ok: true, ...content });
+});
+
+// GET/PATCH /api/admin/settings/content-overrides — super admin only: the
+// rest of the front-page wording (search box, job ticket, the four checks,
+// section titles, closing boxes, footer line). Only known keys are
+// accepted, only plain text (no < or >), each up to 600 characters. A key
+// that's left out goes back to the built-in wording. Live immediately.
+router.get('/settings/content-overrides', requireSuperAdmin, async (req, res) => {
+  const { getSetting, EDITABLE_CONTENT_KEYS } = require('../platform-settings');
+  res.json({ overrides: (await getSetting('contentOverrides')) || {}, editableKeys: EDITABLE_CONTENT_KEYS });
+});
+router.patch('/settings/content-overrides', requireSuperAdmin, async (req, res) => {
+  const { setSetting, EDITABLE_CONTENT_KEYS } = require('../platform-settings');
+  const { overrides } = req.body || {};
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return res.status(400).json({ error: 'overrides must be an object of key → text' });
+  const clean = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!EDITABLE_CONTENT_KEYS.includes(key)) return res.status(400).json({ error: `"${key}" isn't an editable piece of text` });
+    if (typeof value !== 'string') return res.status(400).json({ error: `The text for "${key}" must be plain text` });
+    const text = value.trim();
+    if (!text) continue; // blank = use the built-in wording
+    if (text.length > 600) return res.status(400).json({ error: `The text for "${key}" is too long (600 characters at most)` });
+    if (/[<>]/.test(text)) return res.status(400).json({ error: `Please don't use < or > in "${key}"` });
+    clean[key] = text;
+  }
+  await setSetting('contentOverrides', clean);
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'content_overrides_update', null);
+  res.json({ ok: true, overrides: clean });
 });
 
 // ── ABOUT US & TERMS OF SERVICE ──────────────────────────────────────────
@@ -1672,7 +2279,39 @@ router.patch('/settings/footer', requireSuperAdmin, async (req, res) => {
   const footer = { companyName: companyName.trim(), location: location.trim(), supportEmail: supportEmail.trim(), copyrightYear: year };
   const { setSetting } = require('../platform-settings');
   await setSetting('footerInfo', footer);
+  require('../platform-settings').publicSupportEmail().catch(() => {}); // v95
   res.json({ ok: true, footer });
+});
+
+// GET /api/admin/settings/contact-check — v95: the one support email that
+// visitors see, where it is used, and advice about it.
+router.get('/settings/contact-check', requireSuperAdminOrCustomerService, async (req, res) => {
+  const ps = require('../platform-settings');
+  const email = await ps.publicSupportEmail();
+  const host = (process.env.APP_URL ? String(process.env.APP_URL).replace(/^https?:\/\//, '').replace(/\/.*$/, '') : req.get('host')) || '';
+  res.json({
+    email,
+    advice: ps.supportEmailAdvice(email, host),
+    usedIn: ['the footer of every page', 'the Terms of Service', 'the Privacy Policy', 'PDF reports and agreements', 'the support chat'],
+    retentionDays: Number(await ps.getSetting('idDocumentRetentionDays')) || 0,
+  });
+});
+
+// v94: the Privacy Policy, editable like the Terms of Service.
+router.get('/settings/privacy-policy', requireSuperAdminOrCustomerService, async (req, res) => {
+  const { getSetting } = require('../platform-settings');
+  res.json({ content: await getSetting('privacyPolicyContent') });
+});
+router.patch('/settings/privacy-policy', requireSuperAdminOrCustomerService, async (req, res) => {
+  const { content } = req.body || {};
+  if (!isNonEmptyString(content, { min: 10, max: 50000 })) {
+    return res.status(400).json({ error: 'Enter some content (up to 50,000 characters)' });
+  }
+  const { setSetting } = require('../platform-settings');
+  await setSetting('privacyPolicyContent', content.trim());
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'privacy_policy_update', String(content.trim().length));
+  res.json({ ok: true, content: content.trim() });
 });
 
 router.get('/settings/terms-of-service-customer', requireSuperAdminOrCustomerService, async (req, res) => {
@@ -2128,7 +2767,7 @@ router.get('/cities', requireSuperAdmin, async (req, res) => {
   const cities = await Promise.all(allCities.map(async c => {
     const admin = await db.find('users', u => u.id === c.adminId);
     const userCount = (await db.filter('users', u => u.city === c.name && u.role !== 'admin')).length;
-    return { ...c, adminName: admin ? admin.name : null, adminEmail: admin ? admin.email : null, adminActive: admin ? admin.active !== false : null, userCount };
+    return { ...c, adminName: admin ? admin.name : null, adminEmail: admin ? admin.email : null, adminActive: admin ? admin.active !== false : null, adminScope: admin && admin.adminScope === 'country' ? 'country' : 'city', userCount };
   }));
   res.json({ cities });
 });
@@ -2162,7 +2801,8 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
   if (!m.isSuperAdmin && m.adminDepartment !== 'customer_service') {
     return res.status(403).json({ error: 'Only a super admin or the customer service team can add new employees.' });
   }
-  const { name, email, password, city, country, department, regionScoped } = req.body || {};
+  const { name, email, password, city, country, department, regionScoped, scope } = req.body || {};
+  if (scope !== undefined && !['country', 'city'].includes(scope)) return res.status(400).json({ error: 'scope must be country or city' });
   const errors = validate([
     ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
@@ -2186,6 +2826,7 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
     name: name.trim(), email: email.trim(), city, country,
     role: 'admin',
     region: city,
+    adminScope: scope === 'country' ? 'country' : 'city', // v90: whole country, or just the city above
     isSuperAdmin: false,
     adminDepartment: department || null,
     active: true,
@@ -2222,6 +2863,12 @@ router.patch('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
   if ('active' in (req.body || {})) {
     if (typeof req.body.active !== 'boolean') return res.status(400).json({ error: 'active must be true or false' });
     patch.active = req.body.active;
+  }
+  // v90: switch an existing admin between one city and the whole country.
+  if ('scope' in (req.body || {})) {
+    if (!['country', 'city'].includes(req.body.scope)) return res.status(400).json({ error: 'scope must be country or city' });
+    if (req.body.scope === 'country' && !target.country) return res.status(400).json({ error: 'This admin has no country on their account. Set one first.' });
+    patch.adminScope = req.body.scope;
   }
   if ('city' in (req.body || {})) {
     if (!isNonEmptyString(req.body.city, { min: 2, max: 100 })) return res.status(400).json({ error: 'Enter a valid city' });
@@ -2299,9 +2946,16 @@ router.delete('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
 router.get('/contact-submissions', async (req, res) => {
   const m = await me(req);
   if (!m) return res.status(403).json({ error: 'Not authorized' });
+  // v109: messages from the public go to customer service, legal and the
+  // area admins, not to every team (finance, HR, sales, verification).
+  if (!m.isSuperAdmin && m.adminDepartment && !['customer_service', 'legal'].includes(m.adminDepartment)) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  }
   let submissions = (await db.all('contactSubmissions')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   if (!m.isSuperAdmin) {
-    submissions = submissions.filter(s => !s.city || s.city === m.city);
+    const kept = [];
+    for (const sub of submissions) if (!sub.city || await adminCovers(m, sub)) kept.push(sub);
+    submissions = kept;
   }
   res.json({ submissions });
 });
@@ -2318,8 +2972,8 @@ router.patch('/contact-submissions/:id/status', async (req, res) => {
   }
   const target = await db.find('contactSubmissions', s => s.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'Submission not found' });
-  if (!m.isSuperAdmin && target.city && target.city !== m.city) {
-    return res.status(403).json({ error: 'That submission is outside your assigned city' });
+  if (!m.isSuperAdmin && target.city && !(await adminCovers(m, target))) {
+    return res.status(403).json({ error: 'That submission is outside the area you manage' });
   }
   const updated = await db.update('contactSubmissions', target.id, { status });
   res.json({ submission: updated });
@@ -2339,7 +2993,9 @@ router.get('/careers-inquiries', async (req, res) => {
   }
   let inquiries = (await db.all('careersInquiries')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   if (isPlainRegionalManager || isRegionalHr) {
-    inquiries = inquiries.filter(i => i.city === m.city);
+    const keptInq = [];
+    for (const inq of inquiries) if (await adminCovers(m, inq)) keptInq.push(inq);
+    inquiries = keptInq;
   }
   res.json({ inquiries });
 });
@@ -2361,8 +3017,8 @@ router.patch('/careers-inquiries/:id/status', async (req, res) => {
   }
   const target = await db.find('careersInquiries', i => i.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'Application not found' });
-  if ((isPlainRegionalManager || isRegionalHr) && target.city !== m.city) {
-    return res.status(403).json({ error: 'That application is outside your assigned city' });
+  if ((isPlainRegionalManager || isRegionalHr) && !(await adminCovers(m, target))) {
+    return res.status(403).json({ error: 'That application is outside the area you manage' });
   }
   const updated = await db.update('careersInquiries', target.id, { status });
   res.json({ inquiry: updated });
@@ -2429,7 +3085,7 @@ router.get('/promotions', async (req, res) => {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   let promos = (await db.all('promotions')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  if (!m.isSuperAdmin) promos = promos.filter(p => !p.region || p.region === m.city);
+  if (!m.isSuperAdmin) promos = promos.filter(p => !p.region || sameText(p.region, m.city) || (m.adminScope === 'country' && sameText(p.region, m.country)));
   res.json({ promotions: promos });
 });
 
@@ -2524,6 +3180,14 @@ router.post('/promotions', async (req, res) => {
   if (audience && !['customers', 'providers', 'both'].includes(audience)) {
     return res.status(400).json({ error: 'audience must be customers, providers, or both' });
   }
+  // v84: the picture has to be one uploaded here, and the end date a real
+  // date that hasn't passed.
+  if (imageUrl && !/^\/uploads\/[A-Za-z0-9._-]+$/.test(String(imageUrl))) {
+    return res.status(400).json({ error: 'Use the upload button to add a promotion image' });
+  }
+  if (expiresAt && (Number.isNaN(new Date(expiresAt).getTime()) || new Date(expiresAt).getTime() < Date.now())) {
+    return res.status(400).json({ error: 'The end date must be a real date in the future' });
+  }
 
   const promo = {
     id: `promo_${nanoid(10)}`,
@@ -2531,7 +3195,7 @@ router.post('/promotions', async (req, res) => {
     message: message.trim(),
     imageUrl: imageUrl || null,
     createdBy: m.id,
-    region: m.isSuperAdmin ? (region || null) : m.city,
+    region: m.isSuperAdmin ? (region || null) : (m.adminScope === 'country' && m.country ? m.country : m.city), // v90: a country-wide admin's promotion reaches their whole country
     audience: audience || 'both',
     active: true,
     expiresAt: expiresAt || null,
@@ -2627,10 +3291,15 @@ router.get('/advertising-inquiries', async (req, res) => {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const region = await myRegion(req); // null for a super admin
+  await require('../ads').endExpiredAds(); // v107: ads whose time is up come down before the list is shown
   let inquiries = await db.all('advertisingInquiries');
-  if (region) inquiries = inquiries.filter(i => i.targetCity === region);
+  if (region) {
+    const prosById = new Map((await db.filter('users', u => u.role === 'provider')).map(u => [u.id, u]));
+    const citiesHere = region instanceof CountryScope ? await require('../ads').citiesInCountry(region.country) : null;
+    inquiries = inquiries.filter(i => adInRegion(region, i, prosById.get(i.providerId), citiesHere));
+  }
   inquiries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  res.json({ inquiries });
+  res.json({ inquiries, defaultRunDays: require('../ads').DEFAULT_RUN_DAYS });
 });
 
 // PATCH /api/admin/advertising-inquiries/:id/status — move an inquiry
@@ -2640,15 +3309,28 @@ router.get('/advertising-inquiries', async (req, res) => {
 router.patch('/advertising-inquiries/:id/status', async (req, res) => {
   const { status } = req.body || {};
   if (!['new', 'contacted', 'closed'].includes(status)) return res.status(400).json({ error: 'status must be new, contacted, or closed' });
+  const declineReason = (req.body || {}).declineReason;
+  if (declineReason !== undefined && !isNonEmptyString(declineReason, { min: 3, max: 300 })) return res.status(400).json({ error: 'Say why the ad is being turned down (3 to 300 characters)' });
   const target = await db.find('advertisingInquiries', i => i.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'Inquiry not found' });
   const m = await me(req);
   if (!m.isSuperAdmin) {
     if (m.adminDepartment) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
     const region = await myRegion(req);
-    if (target.targetCity !== region) return res.status(403).json({ error: 'This inquiry targets a different city than the one you manage.' });
+    if (!adInRegion(region, target, target.providerId ? await db.find('users', u => u.id === target.providerId) : null, region instanceof CountryScope ? await require('../ads').citiesInCountry(region.country) : null)) return res.status(403).json({ error: 'This inquiry targets a different place than the one you manage.' });
   }
-  const updated = await db.update('advertisingInquiries', target.id, { status });
+  // v107: closing an ad that is live takes it down too. Before, "Close"
+  // left it showing on the home page with nothing in the list to say so.
+  const patchStatus = { status };
+  if (status === 'closed' && target.isLive) { patchStatus.isLive = false; patchStatus.endedAt = new Date().toISOString(); patchStatus.endedReason = 'closed_by_admin'; }
+  if (status === 'closed' && declineReason) patchStatus.declineReason = String(declineReason).trim();
+  const updated = await db.update('advertisingInquiries', target.id, patchStatus);
+  // A pro who placed the ad is told. They used to hear nothing.
+  if (status === 'closed' && target.providerId && target.status !== 'closed') {
+    await notify(target.providerId, '📣', declineReason
+      ? `Your ad "${target.displayHeadline || target.companyName}" wasn't approved: ${String(declineReason).trim()} You can change it and send it again from the home page. Payments are in test mode, so nothing was charged.`
+      : `Your ad "${target.displayHeadline || target.companyName}" has been closed${target.isLive ? ' and is no longer showing' : ''}.`, null, { section: 'overview' });
+  }
   res.json({ inquiry: updated });
 });
 
@@ -2660,7 +3342,10 @@ router.patch('/advertising-inquiries/:id/status', async (req, res) => {
 // targetCity is null, which only a super admin can approve — that's not
 // any one region's call to make).
 router.patch('/advertising-inquiries/:id/live', async (req, res) => {
-  const { isLive, price, currencyCode, displayHeadline, displaySubtext, displayLink } = req.body || {};
+  const { isLive, price, currencyCode, displayHeadline, displaySubtext, displayLink, runDays } = req.body || {};
+  if (isLive && runDays !== undefined && (!Number.isInteger(runDays) || runDays < 1 || runDays > 365)) return res.status(400).json({ error: 'An ad can run for 1 to 365 days' });
+  if (displayHeadline !== undefined && String(displayHeadline || '').trim().length > 100) return res.status(400).json({ error: 'The headline must be under 100 characters' });
+  if (displaySubtext !== undefined && String(displaySubtext || '').trim().length > 200) return res.status(400).json({ error: 'The line under the headline must be under 200 characters' });
   const target = await db.find('advertisingInquiries', i => i.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'Inquiry not found' });
   const m = await me(req);
@@ -2668,7 +3353,7 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
     if (m.adminDepartment) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
     const region = await myRegion(req);
     if (!target.targetCity) return res.status(403).json({ error: 'Platform-wide ads can only be approved by a super admin.' });
-    if (target.targetCity !== region) return res.status(403).json({ error: 'This inquiry targets a different city than the one you manage.' });
+    if (!adInRegion(region, target, target.providerId ? await db.find('users', u => u.id === target.providerId) : null, region instanceof CountryScope ? await require('../ads').citiesInCountry(region.country) : null)) return res.status(403).json({ error: 'This inquiry targets a different place than the one you manage.' });
   }
   if (isLive && (typeof price !== 'number' || price < 0)) return res.status(400).json({ error: 'Enter a valid price to go live' });
 
@@ -2678,9 +3363,20 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
     patch.currencyCode = currencyCode || currencyForCountry(m.country || 'United States').code;
     patch.approvedBy = m.id;
     patch.approvedAt = new Date().toISOString();
+    // v107: an ad runs for a set number of days, then comes down by itself.
+    const days = Number.isInteger(runDays) ? runDays : require('../ads').DEFAULT_RUN_DAYS;
+    patch.runDays = days;
+    patch.liveUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    patch.status = 'contacted'; patch.endedAt = null; patch.endedReason = null; patch.declineReason = null;
+    if (!target.isLive) { patch.views = 0; patch.clicks = 0; }
+  } else if (target.isLive) {
+    patch.endedAt = new Date().toISOString(); patch.endedReason = 'taken_down_by_admin';
   }
-  if (displayHeadline !== undefined) patch.displayHeadline = (displayHeadline || '').trim() || null;
-  if (displaySubtext !== undefined) patch.displaySubtext = (displaySubtext || '').trim() || null;
+  // v107: a blank box no longer wipes what the advertiser wrote. Before,
+  // approving a pro's ad with the "line under the headline" box left empty
+  // erased the pro's own line and the ad showed a stock sentence instead.
+  if (displayHeadline !== undefined && String(displayHeadline || '').trim()) patch.displayHeadline = String(displayHeadline).trim();
+  if (displaySubtext !== undefined && String(displaySubtext || '').trim()) patch.displaySubtext = String(displaySubtext).trim();
   if (displayLink !== undefined) {
     const trimmedLink = (displayLink || '').trim();
     if (trimmedLink && !/^https?:\/\//i.test(trimmedLink)) {
@@ -2690,6 +3386,11 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
   }
 
   const updated = await db.update('advertisingInquiries', target.id, patch);
+  if (target.providerId && !!isLive !== (target.isLive === true)) {
+    await notify(target.providerId, '📣', isLive
+      ? `Your ad "${updated.displayHeadline || updated.companyName}" is now live on the home page${updated.targetCity ? ' for ' + updated.targetCity : ''}. It runs until ${String(updated.liveUntil).slice(0, 10)}.`
+      : `Your ad "${updated.displayHeadline || updated.companyName}" was taken down by the Trothen team and is no longer showing.`, null, { section: 'overview' });
+  }
   res.json({ inquiry: updated });
 });
 
@@ -2699,6 +3400,87 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
 // /exchange-rates) the full rate table. A regional admin gets just their
 // own country's current effective pricing — base plus their own override
 // if they've set one — so they can decide whether to set or change it.
+// ── v78: provider monthly plan fee (see src/plan-billing.js) ───────────
+// GET /api/admin/plan-billing — super admin: the two locks, what a month
+// would bill right now, and the invoices so far.
+router.get('/plan-billing', requireSuperAdmin, async (req, res) => {
+  const planBilling = require('../plan-billing');
+  const state = await planBilling.getState();
+  const all = await db.all('planInvoices');
+  const sum = (list, f) => Math.round(list.reduce((s, i) => s + f(i), 0) * 100) / 100;
+  const names = new Map((await db.filter('users', u => u.role === 'provider')).map(u => [u.id, u.name]));
+  res.json({
+    state,
+    preview: await planBilling.preview(),
+    totals: {
+      invoices: all.length,
+      billedUsd: sum(all.filter(i => i.status !== 'waived'), i => i.amountUsd),
+      collectedUsd: sum(all, i => i.paidUsd || 0),
+      outstandingUsd: sum(all.filter(i => i.status === 'open'), i => i.amountUsd - (i.paidUsd || 0)),
+    },
+    recent: all.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50)
+      .map(i => ({ id: i.id, providerName: names.get(i.providerId) || 'Unknown', plan: i.plan, period: i.period, amountUsd: i.amountUsd, paidUsd: i.paidUsd || 0, status: i.status })),
+  });
+});
+
+// PATCH /api/admin/plan-billing  { on?, noticeDays? } — super admin.
+// Switching ON is refused unless PLAN_BILLING_ENABLED=true is set on the
+// server. Switching on starts the notice period and tells every billable
+// provider. Switching off stops new invoices and stops taking fees from
+// payouts; nothing already recorded is deleted.
+router.patch('/plan-billing', requireSuperAdmin, async (req, res) => {
+  const planBilling = require('../plan-billing');
+  const { getSetting, setSetting } = require('../platform-settings');
+  const current = { on: false, startedAt: null, noticeDays: 30, ...((await getSetting('planBilling')) || {}) };
+  const body = req.body || {};
+  const next = { ...current };
+  if ('noticeDays' in body) {
+    const n = Number(body.noticeDays);
+    if (!Number.isInteger(n) || n < 14 || n > 180) return res.status(400).json({ error: 'The notice period must be a whole number of days from 14 to 180' });
+    if (current.on && n !== current.noticeDays) return res.status(400).json({ error: 'The notice period can\'t be changed while billing is switched on. Switch it off first.' });
+    next.noticeDays = n;
+  }
+  let justStarted = false;
+  if ('on' in body) {
+    if (typeof body.on !== 'boolean') return res.status(400).json({ error: 'on must be true or false' });
+    if (body.on && !planBilling.envEnabled()) {
+      return res.status(400).json({ error: 'Plan billing is locked. Set PLAN_BILLING_ENABLED to true in the server environment (Render) first. Do that only once real payments are live.' });
+    }
+    if (body.on && !current.on) { next.startedAt = new Date().toISOString(); justStarted = true; }
+    if (!body.on) next.startedAt = null;
+    next.on = body.on;
+  }
+  await setSetting('planBilling', next);
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'plan_billing_update', JSON.stringify({ on: next.on, noticeDays: next.noticeDays }));
+  let told = 0;
+  if (justStarted) {
+    const rows = await planBilling.pricingRows();
+    const begins = new Date(Date.now() + next.noticeDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    for (const p of await db.filter('users', planBilling.isBillable)) {
+      const pr = planBilling.priceFor(p, rows);
+      if (!(pr.amountUsd > 0)) continue;
+      const shown = pr.currencyCode === 'USD' ? `$${pr.amountUsd}` : `${pr.currencySymbol}${pr.localPrice} (about $${pr.amountUsd})`;
+      await notify(p.id, '🧾', `From ${begins}, your Trothen plan fee of ${shown} a month starts. Nothing is charged to a card: it comes out of your payouts, and never more than half of one payout.`, null, { section: 'earnings' });
+      told += 1;
+    }
+  }
+  res.json({ ok: true, state: await planBilling.getState(), providersTold: told });
+});
+
+// POST /api/admin/plan-billing/invoices/:id/waive — super admin: forgive
+// what's still owed on one invoice. Anything already collected stays.
+router.post('/plan-billing/invoices/:id/waive', requireSuperAdmin, async (req, res) => {
+  const inv = await db.find('planInvoices', i => i.id === req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  if (inv.status !== 'open') return res.status(409).json({ error: `This invoice is already ${inv.status}` });
+  await db.update('planInvoices', inv.id, { status: 'waived', waivedBy: req.user.sub, waivedAt: new Date().toISOString() });
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'plan_invoice_waive', inv.id);
+  await notify(inv.providerId, '🧾', `Your plan fee for ${inv.period} was waived by the Trothen team.`, null, { section: 'earnings' });
+  res.json({ ok: true });
+});
+
 router.get('/plan-pricing', async (req, res) => {
   const m = await me(req);
   if (!m.isSuperAdmin && m.adminDepartment) {
@@ -3016,15 +3798,43 @@ router.patch('/organizations/:id', requireSuperAdminOrDepartment('sales'), async
     }
     patch.commissionRate = commissionRate;
   }
-  if (seatLimit !== undefined) patch.seatLimit = seatLimit === null ? null : parseInt(seatLimit, 10);
-  if (accountManagerId !== undefined) patch.accountManagerId = accountManagerId;
-  if (billingContactName !== undefined) patch.billingContactName = billingContactName;
-  if (billingContactEmail !== undefined) patch.billingContactEmail = billingContactEmail;
+  // v84: each of these is checked now. A seat limit of "lots" used to be
+  // saved as "no limit", and -5 was saved as -5.
+  if (seatLimit !== undefined) {
+    if (seatLimit !== null && (!Number.isInteger(seatLimit) || seatLimit < 1 || seatLimit > 10000)) {
+      return res.status(400).json({ error: 'Seat limit must be a whole number from 1 to 10,000, or empty for no limit' });
+    }
+    if (seatLimit !== null) {
+      const seatsNow = (await db.filter('users', u => u.role === 'provider' && u.organizationId === org.id)).length;
+      if (seatLimit < seatsNow) return res.status(400).json({ error: `This organization already has ${seatsNow} seats in use. Remove some first, or set the limit to at least ${seatsNow}.` });
+    }
+    patch.seatLimit = seatLimit;
+  }
+  if (accountManagerId !== undefined) {
+    if (accountManagerId !== null && !(await db.find('users', u => u.id === accountManagerId && u.role === 'admin'))) {
+      return res.status(400).json({ error: 'The account manager must be an admin account' });
+    }
+    patch.accountManagerId = accountManagerId;
+  }
+  if (billingContactName !== undefined) {
+    if (billingContactName !== null && !isNonEmptyString(billingContactName, { min: 2, max: 120 })) return res.status(400).json({ error: 'Enter the billing contact\'s name (2 to 120 characters)' });
+    patch.billingContactName = billingContactName === null ? null : billingContactName.trim();
+  }
+  if (billingContactEmail !== undefined) {
+    if (billingContactEmail !== null && !isValidEmail(billingContactEmail)) return res.status(400).json({ error: 'Enter a valid billing email address' });
+    patch.billingContactEmail = billingContactEmail === null ? null : billingContactEmail.trim();
+  }
   if (status !== undefined) {
     if (!['active', 'suspended'].includes(status)) return res.status(400).json({ error: 'status must be active or suspended' });
     patch.status = status;
   }
   const updated = await db.update('organizations', org.id, patch);
+  // v84: a change to an organization's commission rate or status affects
+  // money, so it's written to the access log.
+  if ('commissionRate' in patch || 'status' in patch) {
+    const { logAccess } = require('../access-log');
+    await logAccess(req, 'organization_update', `${org.id} ${JSON.stringify({ commissionRate: patch.commissionRate, status: patch.status })}`);
+  }
   res.json({ organization: updated });
 });
 
