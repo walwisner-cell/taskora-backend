@@ -34,10 +34,16 @@ async function refreshLiveExchangeRates() {
     const existing = existingByCode.get(code);
     if (existing && existing.source === 'manual') { skippedManual++; continue; }
 
-    const patch = { currencyCode: code, rateToUsd: rate, source: 'live', fetchedAt: now, updatedAt: now };
-    if (existing) await db.update('exchangeRates', existing.id, patch);
-    else await db.insert('exchangeRates', { id: `xr_${code}`, ...patch });
-    updated++;
+    try {
+      const patch = { currencyCode: code, rateToUsd: rate, source: 'live', fetchedAt: now, updatedAt: now };
+      if (existing) await db.update('exchangeRates', existing.id, patch);
+      else await db.insert('exchangeRates', { id: `xr_${code}`, ...patch });
+      updated++;
+    } catch (e) {
+      // v110: one currency failing to save shouldn't stop every other
+      // currency's rate from being refreshed too.
+      console.error(`[exchange-rates] Could not save the rate for ${code} — skipped, continuing with the rest:`, e.message);
+    }
   }
 
   const summary = { ok: true, updated, skippedManual, missingFromProvider, providerUpdatedAt: liveData.providerUpdatedAt, refreshedAt: now };

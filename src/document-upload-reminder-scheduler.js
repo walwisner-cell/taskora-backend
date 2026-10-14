@@ -26,12 +26,20 @@ async function sweepDocumentUploadReminders() {
 
   let reminded = 0;
   for (const user of candidates) {
-    await db.update('users', user.id, { documentReminderSentAt: new Date().toISOString() });
-    await notify(user.id, '🪪', 'Quick reminder — you haven\'t finished verifying your identity yet. It only takes a couple minutes, and unlocks the full Trothen experience.', null, { section: 'verification' });
-    if (isSmsConfigured() && user.phone) {
-      await sendSms(user.phone, 'Trothen: You started signing up but haven\'t finished identity verification yet. Open the app to finish — it only takes a couple minutes.');
+    try {
+      // v110: notify first, then mark — so a notify/SMS failure doesn't
+      // falsely record that this person was reminded when they weren't,
+      // which would silently block them from ever getting a real one
+      // (same principle as the provider-score and other sweeps below).
+      await notify(user.id, '🪪', 'Quick reminder — you haven\'t finished verifying your identity yet. It only takes a couple minutes, and unlocks the full Trothen experience.', null, { section: 'verification' });
+      if (isSmsConfigured() && user.phone) {
+        await sendSms(user.phone, 'Trothen: You started signing up but haven\'t finished identity verification yet. Open the app to finish — it only takes a couple minutes.');
+      }
+      await db.update('users', user.id, { documentReminderSentAt: new Date().toISOString() });
+      reminded += 1;
+    } catch (e) {
+      console.error(`[document-reminder-scheduler] Failed to remind ${user.id} — skipped, continuing with the rest:`, e.message);
     }
-    reminded += 1;
   }
 
   if (reminded > 0) console.log(`[document-reminder-scheduler] Sent a verification reminder to ${reminded} account${reminded === 1 ? '' : 's'}.`);

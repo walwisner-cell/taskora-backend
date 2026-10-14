@@ -763,6 +763,32 @@ async function handleScopeChangeDecide(req, res, request) {
   const laborFee = feeWaived ? 0 : money2(serviceFeeFor(newLabor) * (1 - feeDiscountForTier(customerForFee && customerForFee.membershipTier)));
   const storeFeeFromCustomer = contract.storeFeePaidBy === 'customer' ? (contract.storeFee || 0) : 0;
   const newServiceFee = money2(laborFee + storeFeeFromCustomer);
+
+  // v110: money-safety fix, same reasoning as fundEscrowForContract. Every
+  // other place that adds to what's held — the original booking — goes
+  // through fundEscrowForContract, which genuinely attempts to collect a
+  // Liberian mobile-money customer's charge before any record changes.
+  // This approval path bumped the held escrow amount directly, with no
+  // equivalent attempt to actually collect the ADDITIONAL money from a
+  // Liberian mobile-money customer — meaning once that integration goes
+  // live, a provider could be shown (and eventually paid) more than was
+  // ever actually charged to the customer for the added work. Harmless
+  // today (MoMo is still gated, so this call is a no-op for everyone),
+  // but this closes the same gap before it can matter.
+  const scopeChangeCustomer = customerForFee;
+  if (scopeChangeCustomer && scopeChangeCustomer.country === 'Liberia') {
+    const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('../liberia-momo');
+    if (isLiberiaMoMoConfigured()) {
+      const defaultMethod = await db.find('paymentMethods', m => m.userId === scopeChangeCustomer.id && m.isDefault);
+      if (defaultMethod && defaultMethod.type === 'mobile_money') {
+        const result = await requestMobileMoneyCollection(defaultMethod.mobileMoneyNumber, request.amount, contract.id, null);
+        if (!result.success) {
+          return res.status(409).json({ error: `The additional $${request.amount} could not be collected from the customer's mobile money account: ${result.message}. Nothing on this booking was changed — ask the customer to try approving again.` });
+        }
+      }
+    }
+  }
+
   const updatedContract = await db.update('contracts', contract.id, { amount: money2(contract.amount + request.amount), laborAmount: newLabor, serviceFee: newServiceFee });
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow) {

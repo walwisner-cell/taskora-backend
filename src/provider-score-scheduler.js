@@ -26,6 +26,19 @@ async function sweepProviderScores() {
   let reactivated = 0;
 
   for (const provider of providers) {
+   // v110: every provider's own work is wrapped in its own try/catch now.
+   // Before this fix, one provider with a real computation error (bad or
+   // missing data on their account) threw out of the whole loop — the
+   // uncaught error only stopped at the OUTER .catch() in server.js, which
+   // means every provider after that one in the list silently never got a
+   // score recomputed that day, with nothing visible anywhere to say so
+   // beyond a server log line nobody was watching. This is very likely
+   // why a real, established provider with hundreds of completed jobs
+   // could still show as "New on Trothen" with no score on their public
+   // card: the sweep never got past some earlier account. Now a failure
+   // on one provider is logged and skipped, and everyone else still gets
+   // computed normally that day.
+   try {
     // A manual hold (see POST /admin/providers/:id/hold) auto-expires
     // once holdUntil passes — this is the actual check that makes that
     // "auto" real, rather than leaving a provider held forever until
@@ -82,6 +95,9 @@ async function sweepProviderScores() {
       await notify(admin.id, '⚠️', `${provider.name}'s Trothen Score dropped to ${result.total}/100 — recommended: ${action.label}.`, null, { section: 'people' });
     }
     flagged += 1;
+   } catch (e) {
+    console.error(`[provider-score-scheduler] Could not compute a score for ${provider.name || provider.id} (${provider.id}) — skipped, continuing with the rest:`, e);
+   }
   }
 
   if (flagged > 0) console.log(`[provider-score-scheduler] Flagged ${flagged} provider${flagged === 1 ? '' : 's'} for a newly-recommended score-based pause.`);

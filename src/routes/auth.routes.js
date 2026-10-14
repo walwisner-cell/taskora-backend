@@ -1061,8 +1061,15 @@ router.patch('/me', requireAuth, async (req, res) => {
     }
     patch.availability = patch.availability.map(a => a.trim()).slice(0, 15);
   }
-  if ('pricingModel' in patch && !['hourly', 'negotiable'].includes(patch.pricingModel)) {
-    return res.status(400).json({ error: 'Pricing model must be hourly or negotiable' });
+  // v110: 'both' is a real, fully-built third option — a customer can
+  // either book the provider at their hourly rate or propose their own
+  // offer (see isNegotiable in marketplace.routes.js, and the "Both"
+  // pricing choice already in the Settings UI) — this check was only
+  // ever updated for the first two options and silently rejected the
+  // third, so a provider choosing "Both" in Settings could never
+  // actually save it.
+  if ('pricingModel' in patch && !['hourly', 'negotiable', 'both'].includes(patch.pricingModel)) {
+    return res.status(400).json({ error: 'Pricing model must be hourly, negotiable, or both' });
   }
   if ('price' in patch && (typeof patch.price !== 'number' || patch.price <= 0)) {
     return res.status(400).json({ error: 'Hourly rate must be a positive number' });

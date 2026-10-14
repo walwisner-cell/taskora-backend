@@ -31,15 +31,21 @@ async function sweepLocationRetention(now = new Date()) {
     if (!c.jobLocation && !c.onMyWayLocation && !c.arrivedLocation && !c.liveLocation && !carried) continue;
     const endedAt = c.completedAt || c.cancelledAt || c.updatedAt || c.createdAt;
     if (!endedAt || String(endedAt) > bookingCutoff) continue;
-    const patch = { jobLocation: null, onMyWayLocation: null, arrivedLocation: null, liveLocation: null, locationRemovedAt: now.toISOString() };
-    // v105: the recorded route and the positions on pick-up and drop-off
-    // records go too. The photos and times stay as the record of the hand-over.
-    if (carried) {
-      const strip = (list) => (list || []).map(e => ({ ...e, location: null }));
-      patch.handover = { ...c.handover, trail: [], pickup: strip(c.handover.pickup), dropoff: strip(c.handover.dropoff) };
+    try {
+      const patch = { jobLocation: null, onMyWayLocation: null, arrivedLocation: null, liveLocation: null, locationRemovedAt: now.toISOString() };
+      // v105: the recorded route and the positions on pick-up and drop-off
+      // records go too. The photos and times stay as the record of the hand-over.
+      if (carried) {
+        const strip = (list) => (list || []).map(e => ({ ...e, location: null }));
+        patch.handover = { ...c.handover, trail: [], pickup: strip(c.handover.pickup), dropoff: strip(c.handover.dropoff) };
+      }
+      await db.update('contracts', c.id, patch);
+      bookings += 1;
+    } catch (e) {
+      // v110: one bad record shouldn't stop every other ended booking's
+      // location from being cleaned up too.
+      console.error(`[location-retention] Could not clear location for contract ${c.id} — skipped, continuing with the rest:`, e.message);
     }
-    await db.update('contracts', c.id, patch);
-    bookings += 1;
   }
 
   const jobCutoff = new Date(now.getTime() - PIN_DAYS_UNHIRED_JOB * DAY).toISOString();
@@ -49,8 +55,12 @@ async function sweepLocationRetention(now = new Date()) {
     if (j.status === 'open' || String(j.createdAt || '') > jobCutoff) continue;
     // A hired job's pin lives on its booking and follows the booking rule above.
     if (hiredJobIds.has(j.id) && String(j.createdAt || '') > bookingCutoff) continue;
-    await db.update('jobs', j.id, { jobLocation: null, landmark: null, locationRemovedAt: now.toISOString() });
-    jobs += 1;
+    try {
+      await db.update('jobs', j.id, { jobLocation: null, landmark: null, locationRemovedAt: now.toISOString() });
+      jobs += 1;
+    } catch (e) {
+      console.error(`[location-retention] Could not clear location for job ${j.id} — skipped, continuing with the rest:`, e.message);
+    }
   }
   if (bookings || jobs) console.log(`[location-retention] Removed the exact location from ${bookings} ended booking${bookings === 1 ? '' : 's'} and ${jobs} old job post${jobs === 1 ? '' : 's'}.`);
   return { bookings, jobs };

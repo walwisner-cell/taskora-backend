@@ -483,6 +483,20 @@ router.get('/providers/:id/score', async (req, res) => {
   res.json({ ...result, recommendedAction: recommendedActionForScore(result.total) });
 });
 
+// POST /api/admin/providers/scores/recompute — runs the real daily score
+// sweep (src/provider-score-scheduler.js) right now instead of waiting for
+// its next scheduled run, and actually SAVES the result (unlike the
+// single-provider live lookup above, which is read-only). Super-admin
+// only, since one run touches every provider's stored score, commission
+// credits and score-drop notifications platform-wide. v110: added
+// alongside the fix that stops one provider's bad data from silently
+// blocking everyone else's recompute for the rest of that day.
+router.post('/providers/scores/recompute', requireSuperAdmin, async (req, res) => {
+  const { sweepProviderScores } = require('../provider-score-scheduler');
+  const result = await sweepProviderScores();
+  res.json({ ran: true, ...result });
+});
+
 // GET /api/admin/providers/leaderboard — every provider ranked by trust
 // score, highest first. Uses whatever was last computed by the daily
 // sweep (see src/provider-score-scheduler.js) rather than recomputing

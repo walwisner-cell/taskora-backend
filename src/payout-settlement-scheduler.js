@@ -22,9 +22,15 @@ async function sweepPayoutSettlement() {
   for (const payout of processing) {
     const age = Date.now() - new Date(payout.createdAt).getTime();
     if (age < SETTLEMENT_DELAY_MS) continue;
-    await db.update('payouts', payout.id, { status: 'paid', paidAt: new Date().toISOString() });
-    await notify(payout.providerId, '✅', `Your payout of $${payout.amount} has settled and should now be in your account.`, 'payoutAlerts', { section: 'earnings' });
-    settled += 1;
+    try {
+      await db.update('payouts', payout.id, { status: 'paid', paidAt: new Date().toISOString() });
+      await notify(payout.providerId, '✅', `Your payout of $${payout.amount} has settled and should now be in your account.`, 'payoutAlerts', { section: 'earnings' });
+      settled += 1;
+    } catch (e) {
+      // v110: one bad payout record shouldn't stop every other provider's
+      // payout from settling on schedule too.
+      console.error(`[payout-settlement-scheduler] Could not settle payout ${payout.id} — skipped, continuing with the rest:`, e.message);
+    }
   }
   if (settled > 0) console.log(`[payout-settlement-scheduler] Settled ${settled} payout${settled === 1 ? '' : 's'}.`);
   return { checked: processing.length, settled };

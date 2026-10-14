@@ -6522,7 +6522,12 @@ async function toggleAcceptingBookings() {
 async function savePricingModel() {
   const model = pricingModelUIState || (AUTH.user && AUTH.user.pricingModel) || 'hourly';
   const patch = { pricingModel: model };
-  if (model === 'hourly') {
+  // v110: "Both" shows the same hourly-rate field as "Hourly Rate" (a
+  // customer can book at that rate OR make an offer), so it needs to be
+  // saved here too — this used to only run for model === 'hourly',
+  // which meant choosing "Both" and saving silently never updated the
+  // rate at all.
+  if (model === 'hourly' || model === 'both') {
     const price = parseFloat(document.getElementById('set-prov-price').value);
     if (!price || price <= 0) return showToast('Enter a valid hourly rate');
     patch.price = price;
@@ -8051,7 +8056,8 @@ const ADMIN_SECTIONS = {
       <div id="guarantors-review-panel"><div style="color:var(--slate);font-size:13.5px;padding:12px 0;">Loading…</div></div>
     </div>`,
   providerscores: () => `
-    <div class="dash-header"><div><div class="dash-title">Provider Scores</div><div class="dash-sub">Ranked by real, computed trust score — updated daily. Flags a recommended pause when a score drops, but never applies one automatically; that's always a real click from a real admin.</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Provider Scores</div><div class="dash-sub">Ranked by real, computed trust score — updated daily. Flags a recommended pause when a score drops, but never applies one automatically; that's always a real click from a real admin.</div></div>
+    ${AUTH.user && AUTH.user.isSuperAdmin ? `<button class="btn-sm btn-sm-outline" id="recompute-scores-btn" onclick="recomputeAllProviderScores()">🔄 Recompute now</button>` : ''}</div>
     <div class="panel" id="provider-scores-panel"><div style="color:var(--slate);font-size:13.5px;padding:12px 0;">Loading…</div></div>`,
   promotions: () => `
     <div class="dash-header"><div><div class="dash-title">Promotions</div><div class="dash-sub">${AUTH.user && AUTH.user.isSuperAdmin ? 'Post platform-wide, or target one city' : `Post to ${AUTH.user.region || AUTH.user.city || 'your city'} — your promotions only reach your own city`}</div></div>
@@ -9118,6 +9124,21 @@ function salesInquiriesTableHTML(list) {
     </td>
   </tr>`).join('')}
   </tbody></table></div>`;
+}
+
+// v110: runs the real scoring sweep right now instead of waiting for its
+// daily schedule — useful right after a fix to the scoring logic itself
+// (or any time a provider's score looks stale) without waiting up to a
+// day to see it take effect.
+async function recomputeAllProviderScores() {
+  const btn = document.getElementById('recompute-scores-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Recomputing…'; }
+  try {
+    const r = await apiFetch('POST', '/admin/providers/scores/recompute');
+    showToast(`Recomputed ${r.checked} provider${r.checked === 1 ? '' : 's'}.${r.flagged ? ` ${r.flagged} newly flagged for review.` : ''}`);
+    await loadProviderScoresPanel();
+  } catch (e) { showToast(e.message || 'Could not recompute scores'); }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 Recompute now'; }
 }
 
 async function loadProviderScoresPanel() {
@@ -15867,7 +15888,12 @@ function drawCheckout() {
     ${checkoutPlaceHTML()}
     <div style="font-weight:700;color:var(--navy);margin:10px 0 6px;">${escapeHtml(tr('Choose your driver'))}</div>
     ${CHECKOUT.loadingDrivers ? `<p style="color:var(--slate);font-size:14px;">${escapeHtml(tr('Finding drivers near the store…'))}</p>`
-      : !(CHECKOUT.drivers || []).length ? `<div class="ver-note">${escapeHtml(tr('No pick-and-drop driver is available near this store right now.'))} ${del.methods.includes('pickup') ? escapeHtml(tr('You can collect it yourself, or try again later.')) : escapeHtml(tr('Please try again later.'))}</div>`
+      : !(CHECKOUT.drivers || []).length ? `<div class="ver-note">${escapeHtml(tr('No pick-and-drop driver is available near this store right now.'))} ${del.methods.includes('pickup') ? escapeHtml(tr('You can collect it yourself, or check again in a bit.')) : escapeHtml(tr('Please check again in a bit.'))}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          ${del.methods.includes('pickup') ? `<button type="button" class="btn-sm btn-sm-primary" onclick="setCheckoutMethod('pickup')">${escapeHtml(tr('Collect it myself instead'))}</button>` : ''}
+          <button type="button" class="btn-sm btn-sm-outline" onclick="loadCheckoutDrivers()">🔄 ${escapeHtml(tr('Check again'))}</button>
+        </div>
+      </div>`
       : CHECKOUT.drivers.map(x => driverCardHTML(x, x.id === CHECKOUT.driverId)).join('') + `<div style="font-size:12.5px;color:var(--muted);">${CHECKOUT.distanceKm != null ? `${escapeHtml(tr('The trip is about'))} ${escapeHtml(kmWords(CHECKOUT.distanceKm))}. ` : `${escapeHtml(tr('Prices are each driver\'s starting price. Add a pin to see the price for your distance.'))} `}${escapeHtml(tr('The driver has'))} ${CHECKOUT.answerMinutes || 30} ${escapeHtml(tr('minutes to accept. If they don\'t, the delivery money comes back to you and you choose again.'))}</div>`}`;
   body.innerHTML = `
     ${p ? `<div class="booking-summary" style="margin-bottom:14px;">${p.items.map(i => `<div class="summary-row"><span>${i.qty} × ${escapeHtml(i.name)}</span><span>${i.priceCurrency ? escapeHtml(localMoney(i.priceSymbol, i.lineTotalLocal)) + ' ≈ ' : ''}${usd2(i.lineTotal)}</span></div>`).join('')}</div>` : ''}

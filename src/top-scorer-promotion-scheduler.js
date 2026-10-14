@@ -46,17 +46,23 @@ async function sweepTopScorerPromotion(now = new Date()) {
     if (list.some(p => p.topScorerAwardedForMonth === month)) continue; // this country's award for that month is already given
     const eligible = list.filter(p => (jobsThatMonth.get(p.id) || 0) > 0);
     if (!eligible.length) continue; // nobody in this country completed a job that month
-    eligible.sort((a, b) =>
-      (b.trustScore - a.trustScore) ||
-      ((jobsThatMonth.get(b.id) || 0) - (jobsThatMonth.get(a.id) || 0)) ||
-      String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-    const winner = eligible[0];
-    await db.update('users', winner.id, {
-      freeCommissionCredits: (winner.freeCommissionCredits || 0) + 1,
-      topScorerAwardedForMonth: month,
-    });
-    await notify(winner.id, '🏆', `You had the highest Trothen Score in ${countryPhrase(country)} for ${monthLabel(month)}. Your next payout will have 0% commission.`, null, { section: 'earnings' });
-    awarded += 1;
+    try {
+      eligible.sort((a, b) =>
+        (b.trustScore - a.trustScore) ||
+        ((jobsThatMonth.get(b.id) || 0) - (jobsThatMonth.get(a.id) || 0)) ||
+        String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+      const winner = eligible[0];
+      await db.update('users', winner.id, {
+        freeCommissionCredits: (winner.freeCommissionCredits || 0) + 1,
+        topScorerAwardedForMonth: month,
+      });
+      await notify(winner.id, '🏆', `You had the highest Trothen Score in ${countryPhrase(country)} for ${monthLabel(month)}. Your next payout will have 0% commission.`, null, { section: 'earnings' });
+      awarded += 1;
+    } catch (e) {
+      // v110: one country's award failing (a bad record, a notify error)
+      // shouldn't stop every other country's award from being given too.
+      console.error(`[top-scorer-promotion-scheduler] Could not award ${country} for ${month} — skipped, continuing with the rest:`, e.message);
+    }
   }
 
   if (awarded > 0) console.log(`[top-scorer-promotion-scheduler] ${monthLabel(month)}: awarded a commission-free payout to ${awarded} pro${awarded === 1 ? '' : 's'} (one per country).`);
