@@ -13237,6 +13237,10 @@ function setThemeChoice(choice) {
 // button only shows when installing is actually possible and Trothen
 // isn't already installed.
 let DEFERRED_INSTALL = null;
+// v110: used by installTrothen() below to stop making people wait the
+// full 3 seconds for an installer that was never coming — see the note
+// there.
+const PAGE_LOAD_TIME = Date.now();
 function isStandalone() { return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true; }
 function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
 // v100: apps that open links inside themselves (WhatsApp, Facebook,
@@ -13301,10 +13305,26 @@ async function installTrothen() {
     // straight to written steps. (A press stays "fresh" to the browser
     // for about five seconds, so the installer can still open.)
     const couldOffer = /Chrome|Edg\//i.test(navigator.userAgent) && !/OPR\//i.test(navigator.userAgent) && !isIOS() && !isInAppBrowser();
-    if (couldOffer) {
+    // v110: real bug, found by actually clicking this button rather than
+    // just reading the code — this used to wait a flat 3 seconds after
+    // EVERY click before falling back to the written instructions, even
+    // though Chrome/Edge only ever fire the installer event once, early
+    // in the page's life. By the time someone has opened the account
+    // menu and clicked this, several seconds have almost always already
+    // passed since the page loaded — so the installer was either already
+    // sitting there (handled above) or was never coming, and this 3-
+    // second wait was just a dead, unresponsive-feeling pause before
+    // anything visible happened. It only waits for whatever's left of a
+    // 3-second grace period measured from when the PAGE loaded, not from
+    // the click, so a click soon after load still gets the full benefit
+    // of the doubt, and a click any later goes straight to the
+    // instructions.
+    const msSincePageLoad = Date.now() - PAGE_LOAD_TIME;
+    const remainingGrace = Math.max(0, 3000 - msSincePageLoad);
+    if (couldOffer && remainingGrace > 0) {
       showToast(tr('Opening the installer…'));
       const started = Date.now();
-      while (!DEFERRED_INSTALL && Date.now() - started < 3000) await new Promise(r => setTimeout(r, 150));
+      while (!DEFERRED_INSTALL && Date.now() - started < remainingGrace) await new Promise(r => setTimeout(r, 150));
       if (DEFERRED_INSTALL) return installTrothen();
     }
     showInstallSteps();

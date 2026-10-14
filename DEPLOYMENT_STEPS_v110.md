@@ -1,13 +1,13 @@
 # Trothen v110 — Deployment Steps
 
-18 files total: 1 new write-up, 17 modified. See `CHANGES_v110.md` for what each one does and why.
+18 files total: 1 new write-up, 17 modified (two of those, `public\app\trothen.js` and `public\index.html`, were touched twice this release — once for the admin-editable rule, once for the "Get the app" fix — the byte counts below are the final numbers). See `CHANGES_v110.md` for what each one does and why.
 
 ## 1. Files and where they go
 
 | File | Status | Bytes |
 |---|---|---|
 | `public\index.html` | modified | 238,502 |
-| `public\app\trothen.js` | modified | 1,474,456 |
+| `public\app\trothen.js` | modified | 1,475,757 |
 | `src\account-privacy.js` | modified | 16,886 |
 | `src\platform-settings.js` | modified | 36,547 |
 | `src\provider-score.js` | modified | 18,009 |
@@ -23,7 +23,7 @@
 | `src\location-retention-scheduler.js` | modified | 4,103 |
 | `src\payout-settlement-scheduler.js` | modified | 2,085 |
 | `src\top-scorer-promotion-scheduler.js` | modified | 3,863 |
-| `CHANGES_v110.md` | new (this write-up, optional to deploy — doesn't affect the app) | 20,937 |
+| `CHANGES_v110.md` | new (this write-up, optional to deploy — doesn't affect the app) | 23,405 |
 
 ## 2. cmd.exe deploy steps
 
@@ -62,7 +62,7 @@ git push
 
 ## 3. What's new in v110
 
-See `CHANGES_v110.md` for the full plain-language write-up of all 17 items, including:
+See `CHANGES_v110.md` for the full plain-language write-up of all 18 items, including:
 - The real root cause of provider scores not showing (one bad provider record could silently block the whole daily scoring run for everyone) — fixed, plus the same fix applied to six other scheduled sweeps that had the identical risk.
 - The store checkout no longer dead-ends when no pick-and-drop driver is available.
 - The money-ordering safety fix, now applied in five places: store purchases, store deliveries, direct bookings, job-board hires/negotiable offers, and additional-payment ("scope change") approvals.
@@ -71,6 +71,7 @@ See `CHANGES_v110.md` for the full plain-language write-up of all 17 items, incl
 - The admin Provider Scores "Breakdown" view now says plainly how many completed-on-Trothen bookings a pro has and how many more are needed before "New on Trothen" becomes a real score — a profile's own jobs/rating figure is not the same thing as a completed Trothen booking, and no amount of recomputing can substitute for the real thing.
 - Every place the "5 jobs" number showed now says exactly what it's counting ("Trothen bookings") so it doesn't read as a contradiction next to a pro's own real-world stats.
 - **New:** the "New on Trothen" rule (how many Trothen bookings before a pro's score stops being provisional) is no longer a fixed number in the code — it's a real setting you can see and change yourself from Admin → Provider Scores, with no deploy needed. See item 17 in `CHANGES_v110.md`.
+- **Fixed:** the account menu's "Get the app" button used to make you wait a flat 3 seconds with no real feedback before showing install instructions — it looked broken. It's now instant for any realistic click. See item 18 in `CHANGES_v110.md`. Every other item in that menu (Explore, Settings, Get Help, Terms of Service, Privacy Policy, About Us, Sign Out) was tested live and already worked correctly.
 - The PDF data export, categorized support numbers, and a full audit of Store, GPS, Payments, Business tools, Auth, and the rest of Misc.
 
 ## 4. Post-deploy smoke test
@@ -88,6 +89,7 @@ See `CHANGES_v110.md` for the full plain-language write-up of all 17 items, incl
 11. As a super admin, open Admin → Provider Scores and confirm you see a new panel above the table stating the current rule (default: 5) with an editable number field and a Save button. Change it to a different number, save, and confirm the panel shows the new number without a page reload.
 12. As a *non*-super-admin admin (if you have one), open the same page and confirm you see the rule stated as plain text, with no editable field — only a super admin can change it.
 13. After saving a new number in step 11, click "Recompute now" and confirm a pro who now crosses the new threshold shows a real score instead of "New."
+14. Open the account menu (top right, your name) on a computer, wait a few seconds, then click "Get the app" — confirm install instructions (or your browser's real install prompt) appear right away instead of a multi-second pause.
 
 ## 5. Still open / not part of this release
 
