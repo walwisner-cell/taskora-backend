@@ -333,6 +333,26 @@ let PROVIDERS = [];
 
 let loadProvidersRequestId = 0;
 
+// v110: shared shape for a provider card, used by the homepage grid, the
+// Browse All Pros directory, and a couple of one-off lookups — kept in one
+// place so every listing shows the same real fields (country included).
+function mapPublicProvider(p) {
+  return {
+    id: p.id, name: p.name, initials: p.initials, role: p.role, cat: p.category,
+    rating: p.rating, jobs: p.jobs, price: p.price, tags: p.tags || [], color: p.color, since: p.since,
+    verified: p.verified !== false, city: p.city || '', country: p.country || '',
+    availability: p.availability && p.availability.length ? p.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'],
+    pricingModel: p.pricingModel || 'hourly',
+    profilePhotoUrl: p.profilePhotoUrl || null,
+    acceptingBookings: p.acceptingBookings !== false,
+    trustScore: p.trustScore != null ? p.trustScore : null,
+    isNewPro: p.isNewPro === true, // v91: fewer than five completed jobs
+    twoFactorEnabled: p.twoFactorEnabled === true,
+    skills: Array.isArray(p.skills) && p.skills.length ? p.skills : [p.category], // v105: main skill first, then extra ones
+    store: p.store || null, // v105: only the store's name
+  };
+}
+
 async function loadProviders() {
   if (!BACKEND_AVAILABLE) return;
   const requestId = ++loadProvidersRequestId;
@@ -377,20 +397,7 @@ async function loadProviders() {
     // solve. Without a country param, an empty response is more likely a
     // transient issue, so the previous list is kept rather than wiped.
     if (Array.isArray(data.providers)) {
-      PROVIDERS = data.providers.map(p => ({
-        id: p.id, name: p.name, initials: p.initials, role: p.role, cat: p.category,
-        rating: p.rating, jobs: p.jobs, price: p.price, tags: p.tags || [], color: p.color, since: p.since,
-        verified: p.verified !== false, city: p.city || '',
-        availability: p.availability && p.availability.length ? p.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'],
-        pricingModel: p.pricingModel || 'hourly',
-        profilePhotoUrl: p.profilePhotoUrl || null,
-        acceptingBookings: p.acceptingBookings !== false,
-        trustScore: p.trustScore != null ? p.trustScore : null,
-        isNewPro: p.isNewPro === true, // v91: fewer than five completed jobs
-        twoFactorEnabled: p.twoFactorEnabled === true,
-        skills: Array.isArray(p.skills) && p.skills.length ? p.skills : [p.category], // v105: main skill first, then extra ones
-        store: p.store || null, // v105: only the store's name
-      }));
+      PROVIDERS = data.providers.map(mapPublicProvider);
     }
   } catch (e) { console.warn('Could not load providers from API.', e); }
 }
@@ -1517,9 +1524,25 @@ function goCategoriesPage() {
 
 /* ══════════════════════ PROVIDER DIRECTORY (full "View all" page) ══════════════════════ */
 let directoryCategoryFilter = 'All';
+// v110: "Browse All Pros" deliberately shows every country by default (it's
+// the one place on the site meant to be a full, unscoped listing) — but
+// with real providers from several countries now on the platform, "every
+// country mixed into one list with no way to narrow it" stopped being
+// useful. This filter is explicit and visible, unlike the quiet
+// country-mismatch bug fixed earlier: the person chooses it, and the
+// heading always says plainly which countries they're looking at.
+let directoryCountryFilter = 'All';
+// "Browse All Pros" is the one page meant to be genuinely unscoped — the
+// homepage grid (PROVIDERS, via loadProviders) deliberately narrows to the
+// signed-in person's own country, which would make a country filter here
+// pointless if this page just reused that same list. So this page fetches
+// its own, always-unscoped copy (every verified provider, every country)
+// the first time it's opened, and reuses it after that.
+let DIRECTORY_PROVIDERS = null;
 
-function goDirectory(category) {
+async function goDirectory(category) {
   directoryCategoryFilter = category || 'All';
+  directoryCountryFilter = 'All';
   showScreen('screen-directory');
   renderNavbar('navbar-directory', navRoleNow());
   document.getElementById('directory-search').value = '';
@@ -1527,6 +1550,22 @@ function goDirectory(category) {
   document.getElementById('directory-chips').innerHTML = chips.map(c =>
     `<button class="directory-chip ${c === directoryCategoryFilter ? 'active' : ''}" onclick="setDirectoryCategory(${jsArg(c)})">${escapeHtml(c === 'All' ? t('directory_all') : translateCategoryName(c))}</button>`
   ).join('');
+  if (DIRECTORY_PROVIDERS === null && BACKEND_AVAILABLE) {
+    try {
+      const data = await apiFetch('GET', '/providers'); // no country/city — every verified provider, on purpose
+      DIRECTORY_PROVIDERS = Array.isArray(data.providers) ? data.providers.map(mapPublicProvider) : PROVIDERS.slice();
+    } catch (e) { DIRECTORY_PROVIDERS = PROVIDERS.slice(); } // fall back to whatever's already loaded rather than showing nothing
+  } else if (DIRECTORY_PROVIDERS === null) {
+    DIRECTORY_PROVIDERS = PROVIDERS.slice();
+  }
+  const countrySelect = document.getElementById('directory-country-select');
+  if (countrySelect) {
+    // Only countries that actually have a provider loaded — no point
+    // offering a country with nothing to show.
+    const presentCountries = [...new Set(DIRECTORY_PROVIDERS.map(p => p.country).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    countrySelect.innerHTML = `<option value="All">All countries</option>` + presentCountries.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    countrySelect.value = 'All';
+  }
   renderDirectory();
   window.scrollTo(0, 0);
 }
@@ -1537,11 +1576,17 @@ function setDirectoryCategory(category) {
   renderDirectory();
 }
 
+function setDirectoryCountry(country) {
+  directoryCountryFilter = country || 'All';
+  renderDirectory();
+}
+
 function renderDirectory() {
   const q = document.getElementById('directory-search').value.trim().toLowerCase();
   const sortBy = document.getElementById('directory-sort') ? document.getElementById('directory-sort').value : 'best';
-  let list = PROVIDERS.slice();
+  let list = (DIRECTORY_PROVIDERS || PROVIDERS).slice();
   if (directoryCategoryFilter && directoryCategoryFilter !== 'All') list = list.filter(p => proHasSkill(p, directoryCategoryFilter));
+  if (directoryCountryFilter && directoryCountryFilter !== 'All') list = list.filter(p => p.country === directoryCountryFilter);
   if (q) {
     const synonymCategories = categoriesForSearchTerm(q);
     list = list.filter(p =>
@@ -1559,7 +1604,9 @@ function renderDirectory() {
   else if (sortBy === 'rating') list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
   else if (sortBy === 'jobs') list.sort((a, b) => (b.jobs || 0) - (a.jobs || 0));
   else if (sortBy === 'distance') list.sort((a, b) => (a.distanceMiles ?? Infinity) - (b.distanceMiles ?? Infinity));
-  document.getElementById('directory-sub').textContent = `${list.length} verified provider${list.length === 1 ? '' : 's'}${directoryCategoryFilter !== 'All' ? ' in ' + directoryCategoryFilter : ''}`;
+  const categoryNote = directoryCategoryFilter !== 'All' ? ' in ' + directoryCategoryFilter : '';
+  const countryNote = directoryCountryFilter !== 'All' ? (categoryNote ? ', ' : ' in ') + directoryCountryFilter : '';
+  document.getElementById('directory-sub').textContent = `${list.length} verified provider${list.length === 1 ? '' : 's'}${categoryNote}${countryNote}`;
   document.getElementById('directory-grid').innerHTML = providerCardsHTML(list);
 }
 
@@ -2469,14 +2516,28 @@ function showPricing() {
 // with an explicit country when the visitor changes the selector.
 async function loadPricingPage(country) {
   const select = document.getElementById('pricing-country-select');
+  // Filling the dropdown's OPTIONS only has to happen once per page load —
+  // that part is genuinely a one-time setup. But WHICH country is selected
+  // is a separate question that must be re-asked every time this page is
+  // opened: this screen is public and often opened before sign-in
+  // finishes, so an anonymous visit can populate it to "United States"
+  // first, and without this split, a provider from Liberia who then signs
+  // in and comes back here was stuck seeing the stale United States price
+  // forever in that session — the exact "I keep showing this thing" bug
+  // Joseph reported, since nothing ever re-checked AUTH.user after the
+  // first populate. Once someone has manually picked a country from the
+  // dropdown themselves (pricing-country-user-picked), that explicit
+  // choice is respected and never silently overridden again.
   if (select && !select.dataset.populated) {
     const countries = (GEO_DATA.countries && GEO_DATA.countries.length) ? GEO_DATA.countries : FALLBACK_GEO.countries;
-    const defaultCountry = country || (AUTH.user && AUTH.user.country) || 'United States';
-    select.innerHTML = countries.map(c => `<option value="${escapeHtml(c)}" ${c === defaultCountry ? 'selected' : ''}>${c}</option>`).join('');
+    select.innerHTML = countries.map(c => `<option value="${escapeHtml(c)}">${c}</option>`).join('');
     select.dataset.populated = 'true';
-    country = defaultCountry;
+  }
+  if (!country && select && select.dataset.userPicked !== 'true') {
+    country = (AUTH.user && AUTH.user.country) || 'United States';
   }
   country = country || (select && select.value) || (AUTH.user && AUTH.user.country) || 'United States';
+  if (select) select.value = country;
   if (!BACKEND_AVAILABLE) return; // leave the static fallback prices showing
 
   try {
@@ -6580,6 +6641,52 @@ async function saveRegionalSupportContact() {
   } catch (e) { showToast(e.message || 'Could not save this setting'); }
 }
 
+// Joseph's report: "allow me to add more than one customer service
+// number — Dispute, Onboarding, Promotion, General." These three cover
+// one extra, optional number each; any left unset just keeps using the
+// General number above it. Works identically for the platform-wide
+// panel and a regional admin's own city panel — the only difference is
+// whether targetRegion is sent.
+const SUPPORT_CATEGORY_LABELS = { dispute: 'Dispute', onboarding: 'Onboarding', promotion: 'Promotion' };
+function supportCategoryRowsHTML(contact, idPrefix, targetRegionCity) {
+  const categories = (contact && contact.categories) || {};
+  return `<div style="background:var(--offwhite);border-radius:10px;padding:14px;margin-top:12px;">
+    <div class="form-label" style="margin-bottom:8px;">Category-specific numbers <span style="color:var(--slate);font-weight:400;">(optional — anything left blank uses the General number above)</span></div>
+    ${Object.keys(SUPPORT_CATEGORY_LABELS).map(cat => { const c = categories[cat]; return `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
+      <div style="width:90px;font-size:13px;font-weight:600;color:var(--navy);padding-bottom:7px;">${SUPPORT_CATEGORY_LABELS[cat]}</div>
+      <div><label class="form-label" style="font-size:12px;">WhatsApp</label><input class="form-input" id="${idPrefix}-${cat}-whatsapp" style="width:140px;padding:6px 8px;" value="${escapeHtml(c ? c.whatsapp : '')}" placeholder="(using General)"/></div>
+      <div><label class="form-label" style="font-size:12px;">Phone Shown</label><input class="form-input" id="${idPrefix}-${cat}-phone" style="width:140px;padding:6px 8px;" value="${escapeHtml(c ? c.phoneDisplay : '')}" placeholder="(using General)"/></div>
+      <div><label class="form-label" style="font-size:12px;">Email</label><input class="form-input" type="email" id="${idPrefix}-${cat}-email" style="width:160px;padding:6px 8px;" value="${escapeHtml(c ? (c.email || '') : '')}" placeholder="(optional)"/></div>
+      <button class="btn-sm btn-sm-outline" data-cat="${cat}" onclick="saveSupportCategoryContact(this.dataset.cat, '${idPrefix}'${targetRegionCity ? `, '${escapeHtml(targetRegionCity)}'` : ''})">Save</button>
+      ${c ? `<button class="btn-sm btn-sm-ghost" data-cat="${cat}" onclick="clearSupportCategoryContact(this.dataset.cat${targetRegionCity ? `, '${escapeHtml(targetRegionCity)}'` : ''})">Clear</button>` : ''}
+    </div>`; }).join('')}
+  </div>`;
+}
+async function saveSupportCategoryContact(category, idPrefix, targetRegionCity) {
+  const whatsapp = document.getElementById(`${idPrefix}-${category}-whatsapp`).value.trim();
+  const phoneDisplay = document.getElementById(`${idPrefix}-${category}-phone`).value.trim();
+  const email = document.getElementById(`${idPrefix}-${category}-email`).value.trim();
+  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567');
+  if (phoneDisplay.length < 5) return showToast('Enter a valid display phone number');
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('PATCH', '/admin/settings/support-contact', { whatsapp, phoneDisplay, email, category, ...(targetRegionCity ? { targetRegion: targetRegionCity } : {}) });
+    showToast(`${SUPPORT_CATEGORY_LABELS[category]} number saved`);
+    await loadAdminData();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not save this number'); }
+}
+async function clearSupportCategoryContact(category, targetRegionCity) {
+  if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
+  try {
+    await apiFetch('DELETE', '/admin/settings/support-contact', { category, ...(targetRegionCity ? { targetRegion: targetRegionCity } : {}) });
+    showToast(`${SUPPORT_CATEGORY_LABELS[category]} now uses the General number again`);
+    await loadAdminData();
+    selectAdminSection('settings');
+  } catch (e) { showToast(e.message || 'Could not clear this number'); }
+}
+
 async function removeRegionalSupportContact() {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
@@ -8442,6 +8549,7 @@ Liberia</textarea></div>
         <button class="btn-sm btn-sm-primary" onclick="saveRegionalSupportContact()">Save</button>
         ${adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? `<button class="btn-sm btn-sm-outline" onclick="removeRegionalSupportContact()">Remove — use platform default instead</button>` : ''}
       </div>
+      ${!adminData.supportContact || adminData.supportContact.usingPlatformFallback ? `<div style="font-size:13px;color:var(--slate);margin-top:10px;">Set your own General number above first — category numbers for ${escapeHtml(AUTH.user.region || 'your city')} need that in place first.</div>` : supportCategoryRowsHTML(adminData.supportContact, 'regional-support', AUTH.user.region)}
     </div>` : ''}
     ${AUTH.user && AUTH.user.isSuperAdmin ? `
     <div class="panel"><div class="panel-title">Platform Settings</div>
@@ -8463,6 +8571,7 @@ Liberia</textarea></div>
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Support Email <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="email" id="support-email" value="${escapeHtml(adminData.supportContact ? (adminData.supportContact.email || '') : '')}" placeholder="support@trothenpro.com"/></div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveSupportContact()">Save</button>
+      ${supportCategoryRowsHTML(adminData.supportContact, 'support')}
       <div style="background:var(--offwhite);border-radius:10px;padding:14px;margin-top:16px;">
         <div class="form-label" style="margin-bottom:8px;">Set a contact for a specific city</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
@@ -10287,26 +10396,36 @@ function loadMyDataPanel(mainId) {
     <div class="panel-title">${escapeHtml(tr("Your data and your account"))}</div>
     <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;">${escapeHtml(tr("You can download a copy of everything Trothen holds about your account: your profile, bookings, payments, messages, reviews and identity-check records."))}</div>
     <button class="btn-sm btn-sm-outline" id="my-data-download-btn" onclick="downloadMyData()">${escapeHtml(tr("Download my data"))}</button>
+    <button class="btn-sm btn-sm-ghost" id="my-data-download-json-btn" style="margin-left:8px;" onclick="downloadMyData(true)">${escapeHtml(tr("Download the complete file (.json)"))}</button>
     <div style="border-top:1px solid var(--border);margin:18px 0 14px;"></div>
     <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;"><strong>${escapeHtml(tr("Close my account."))}</strong> ${escapeHtml(tr("Your account stops working straight away and you're signed out everywhere. Records of past bookings and payments are kept, because the other person in each one has a right to them and money records have to be kept. Your personal details are then removed by our team."))}</div>
     <button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="startCloseAccount()">${escapeHtml(tr("Close my account"))}</button>
   </div>`);
 }
-async function downloadMyData() {
-  const btn = document.getElementById('my-data-download-btn');
+// asJson === true downloads the complete, exact .json file (for someone
+// moving their data elsewhere); the default button downloads a real,
+// readable PDF — Joseph reported the old single JSON-only download as
+// "not downloading in PDF", since a .json file isn't something a phone
+// can open and read as a document.
+async function downloadMyData(asJson) {
+  const btnId = asJson ? 'my-data-download-json-btn' : 'my-data-download-btn';
+  const btn = document.getElementById(btnId);
+  const originalText = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Preparing…'; }
   try {
-    const res = await fetch(API_BASE + '/auth/me/export', { headers: { Authorization: 'Bearer ' + AUTH.token } });
+    const path = asJson ? '/auth/me/export' : '/auth/me/export.pdf';
+    const res = await fetch(API_BASE + path, { headers: { Authorization: 'Bearer ' + AUTH.token } });
     if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Could not prepare your data'); }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'trothen-my-data-' + new Date().toISOString().slice(0, 10) + '.json';
+    const ext = asJson ? 'json' : 'pdf';
+    a.href = url; a.download = 'trothen-my-data-' + new Date().toISOString().slice(0, 10) + '.' + ext;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     showToast('Your data has been downloaded');
   } catch (e) { showToast(e.message || 'Could not prepare your data'); }
-  if (btn) { btn.disabled = false; btn.textContent = tr('Download my data'); }
+  if (btn) { btn.disabled = false; btn.textContent = originalText; }
 }
 async function startCloseAccount() {
   let blockers = [];
@@ -12062,14 +12181,24 @@ function setupScrollFadeIn() {
   }, { threshold: 0.12 });
   els.forEach(el => observer.observe(el));
 }
-function supportContactHTML() {
-  return `<br/><br/>📱 WhatsApp: <a href="https://wa.me/${SUPPORT_CONTACT.whatsapp}" target="_blank" style="color:var(--gold);">Chat with us</a><br/>☎️ Call: <a href="tel:+${SUPPORT_CONTACT.whatsapp}" style="color:var(--gold);">${SUPPORT_CONTACT.phoneDisplay}</a>${SUPPORT_CONTACT.email ? `<br/>✉️ Email: <a href="mailto:${escapeHtml(SUPPORT_CONTACT.email)}" style="color:var(--gold);">${escapeHtml(SUPPORT_CONTACT.email)}</a>` : ''}`;
+// Optional category ('dispute' | 'onboarding' | 'promotion') picks that
+// topic's own number if one has been set (Settings → Support Chat
+// Contact Info) — otherwise falls back to the General number exactly as
+// before. Resolved from the categories map already included in
+// SUPPORT_CONTACT (see loadSupportContact / GET /support-contact), so
+// this never needs its own network round trip.
+function supportContactHTML(category) {
+  const own = category && SUPPORT_CONTACT.categories && SUPPORT_CONTACT.categories[category];
+  const whatsapp = own ? own.whatsapp : SUPPORT_CONTACT.whatsapp;
+  const phoneDisplay = own ? own.phoneDisplay : SUPPORT_CONTACT.phoneDisplay;
+  const email = own ? own.email : SUPPORT_CONTACT.email;
+  return `<br/><br/>📱 WhatsApp: <a href="https://wa.me/${whatsapp}" target="_blank" style="color:var(--gold);">Chat with us</a><br/>☎️ Call: <a href="tel:+${whatsapp}" style="color:var(--gold);">${phoneDisplay}</a>${email ? `<br/>✉️ Email: <a href="mailto:${escapeHtml(email)}" style="color:var(--gold);">${escapeHtml(email)}</a>` : ''}`;
 }
 
 const SUPPORT_FAQ = [
   { keywords: ['escrow', 'hold', 'held', 'release fund'], answer: "Escrow means the money for your job is held safely by Trothen — not paid to the pro — until you confirm the work is done. Once you mark a booking \"Complete\" in My Bookings, the funds release to your pro automatically." },
   { keywords: ['verif', 'id check', 'background check', 'kyc'], answer: "Every customer and provider on Trothen goes through identity verification — submit a government ID in Settings, and an admin reviews it (usually quickly). Providers also get a background check before their first job." },
-  { keywords: ['dispute', 'problem', 'complaint', 'refund', 'bad job', 'not happy'], answer: "If something's wrong with a job, don't mark it complete — that releases escrow. Instead, message your pro first to try to resolve it, and if that doesn't work, our Finance & Dispute team can step in to review and resolve it fairly." },
+  { keywords: ['dispute', 'problem', 'complaint', 'refund', 'bad job', 'not happy'], answer: "If something's wrong with a job, don't mark it complete — that releases escrow. Instead, message your pro first to try to resolve it, and if that doesn't work, our Finance & Dispute team can step in to review and resolve it fairly." + supportContactHTML('dispute') },
   { keywords: ['pay', 'payment', 'card', 'billing'], answer: "You can add a payment method in Customer → Payments. Right now this runs in test mode (no real charges) while we finalize our payment processor — you can use any test card number to try the flow." },
   { keywords: ['become a pro', 'sign up as provider', 'join as provider', 'provider account'], answer: "Click \"Become a Pro\" at the top of the page, or choose \"Provider\" when you sign up. You'll need your category, skills, and location — new providers start unverified until an admin approves their documents." },
   { keywords: ['price', 'pricing', 'plan', 'cost', 'subscription', 'fee'], get answer() { return `Trothen has three plans for pros. Starter takes ${PLAN_COMMISSION.starter}% commission on each job. Pro takes ${PLAN_COMMISSION.pro}% and is reached automatically once you qualify. Super Pro takes ${PLAN_COMMISSION.superpro}% and is confirmed by our team once you qualify. Each plan also has a monthly price, which depends on your country: the Provider Plans page shows yours. ${PLAN_BILLING_PUBLIC.active ? 'The monthly fee comes out of your payouts, never a card.' : 'The monthly fee isn\'t being charged during early access.'} Customers don't pay to join.`; } },

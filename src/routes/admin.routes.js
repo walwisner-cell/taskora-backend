@@ -2029,6 +2029,16 @@ router.patch('/settings/booking-window', requireSuperAdmin, async (req, res) => 
 // platform" pattern already used for ad pricing and advertising
 // inquiries. Falls back to the platform-wide number (isPlaceholder still
 // computed honestly) if this city hasn't set its own yet.
+// Joseph's report: "allow me to add more than one customer service
+// number — Dispute, Onboarding, Promotion, General." Before this, a
+// region (or the platform-wide fallback) could only ever have ONE
+// number for everything. SUPPORT_CATEGORIES are the extra, optional
+// lines on top of the always-present General one; any category left
+// unset simply falls back to General, so nothing already set on the
+// real site is ever broken by this — old data with no "categories" key
+// at all reads exactly as it always did.
+const { SUPPORT_CATEGORIES } = require('../platform-settings');
+
 router.get('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
   const m = await me(req);
   if (!m.isSuperAdmin && m.adminDepartment) {
@@ -2046,24 +2056,30 @@ router.get('/settings/support-contact', requireAuth, requireRole('admin'), async
     // admin panel can list and manage them directly.
     const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
     const allRegional = Object.entries(regionalContacts).map(([city, c]) => ({ city, ...c }));
-    return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null, allRegional });
+    return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null, allRegional, categories: SUPPORT_CATEGORIES });
   }
   const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
   const own = regionalContacts[region];
-  if (own) return res.json({ ...own, isPlaceholder: false, region, usingPlatformFallback: false });
-  return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region, usingPlatformFallback: true });
+  if (own) return res.json({ ...own, isPlaceholder: false, region, usingPlatformFallback: false, categories: SUPPORT_CATEGORIES });
+  return res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region, usingPlatformFallback: true, categories: SUPPORT_CATEGORIES });
 });
 
 // PATCH /api/admin/settings/support-contact — a super admin sets the
 // platform-wide fallback; a regional admin sets their own city's real
 // number, stored separately so one region's number never overwrites
-// another's or the global fallback.
+// another's or the global fallback. An optional `category` (dispute,
+// onboarding or promotion) sets that ONE category's own number instead
+// of the General one — General itself is unaffected and keeps serving
+// as the fallback for any category nobody has given its own number yet.
 router.patch('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
   const m = await me(req);
   if (!m.isSuperAdmin && m.adminDepartment) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
-  const { whatsapp, phoneDisplay, email } = req.body || {};
+  const { whatsapp, phoneDisplay, email, category } = req.body || {};
+  if (category !== undefined && category !== null && !SUPPORT_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${SUPPORT_CATEGORIES.join(', ')} — or omitted for the General number` });
+  }
   if (!isNonEmptyString(whatsapp) || !/^\d{7,15}$/.test(whatsapp)) {
     return res.status(400).json({ error: 'WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567' });
   }
@@ -2092,33 +2108,61 @@ router.patch('/settings/support-contact', requireAuth, requireRole('admin'), asy
   // ever affects their own city, exactly as before.
   const { targetRegion } = req.body || {};
   const region = (m.isSuperAdmin && isNonEmptyString(targetRegion)) ? targetRegion.trim() : await myRegion(req);
+  const entry = { whatsapp, phoneDisplay, email: trimmedEmail };
   if (!region) {
-    await setSetting('supportContact', { whatsapp, phoneDisplay, email: trimmedEmail });
-    return res.json({ ok: true, whatsapp, phoneDisplay, email: trimmedEmail, region: null });
+    const current = await getSetting('supportContact');
+    if (category) {
+      const categories = { ...(current.categories || {}), [category]: entry };
+      await setSetting('supportContact', { ...current, categories });
+      return res.json({ ok: true, ...entry, category, region: null });
+    }
+    await setSetting('supportContact', { ...entry, categories: current.categories || {} });
+    return res.json({ ok: true, ...entry, region: null });
   }
   const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
-  regionalContacts[region] = { whatsapp, phoneDisplay, email: trimmedEmail };
+  const currentRegional = regionalContacts[region] || {};
+  if (category) {
+    regionalContacts[region] = { ...currentRegional, categories: { ...(currentRegional.categories || {}), [category]: entry } };
+  } else {
+    regionalContacts[region] = { ...entry, categories: currentRegional.categories || {} };
+  }
   await setSetting('regionalSupportContacts', regionalContacts);
-  res.json({ ok: true, whatsapp, phoneDisplay, email: trimmedEmail, region });
+  res.json({ ok: true, ...entry, category: category || null, region });
 });
 
-// DELETE /api/admin/settings/support-contact — a regional admin can remove
-// their own city's number to fall back to the platform-wide one again
-// (e.g. their staff line changed and isn't set up yet). Not available to
-// a super admin, who has no "fallback" of their own to fall back to.
+// DELETE /api/admin/settings/support-contact — clears one category's own
+// number (falling back to General again), or without a category, clears
+// a region's General number entirely (falling back to the platform-wide
+// number) — the platform-wide General number itself can never be
+// deleted, only replaced (see PATCH above).
 router.delete('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
   const m = await me(req);
   if (!m.isSuperAdmin && m.adminDepartment) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
-  // Same targetRegion pattern as the PATCH route above — a super admin
-  // clearing a specific OTHER city's contact, not just their own (which
-  // they don't have).
-  const { targetRegion } = req.body || {};
-  const region = (m.isSuperAdmin && isNonEmptyString(targetRegion)) ? targetRegion.trim() : await myRegion(req);
-  if (!region) return res.status(400).json({ error: 'The platform-wide number can be changed, but not removed — set a new one instead.' });
+  const { category, targetRegion } = req.body || {};
+  if (category !== undefined && category !== null && !SUPPORT_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${SUPPORT_CATEGORIES.join(', ')}` });
+  }
   const { getSetting, setSetting } = require('../platform-settings');
+  const region = (m.isSuperAdmin && isNonEmptyString(targetRegion)) ? targetRegion.trim() : await myRegion(req);
+  if (!region) {
+    if (!category) return res.status(400).json({ error: 'The platform-wide General number can be changed, but not removed — set a new one instead.' });
+    const current = await getSetting('supportContact');
+    const categories = { ...(current.categories || {}) };
+    delete categories[category];
+    await setSetting('supportContact', { ...current, categories });
+    return res.json({ ok: true, category, region: null });
+  }
   const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
+  if (!regionalContacts[region]) return res.json({ ok: true, region });
+  if (category) {
+    const categories = { ...(regionalContacts[region].categories || {}) };
+    delete categories[category];
+    regionalContacts[region] = { ...regionalContacts[region], categories };
+    await setSetting('regionalSupportContacts', regionalContacts);
+    return res.json({ ok: true, category, region });
+  }
   delete regionalContacts[region];
   await setSetting('regionalSupportContacts', regionalContacts);
   res.json({ ok: true, region });

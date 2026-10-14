@@ -80,8 +80,12 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
     },
     createdAt: new Date().toISOString(),
   };
-  await db.insert('contracts', delivery);
+  // Same ordering fix as the main store order above: charge the driver's
+  // delivery fee BEFORE the delivery contract exists on record, so a
+  // failed charge never leaves an un-paid-for delivery request sitting
+  // in the database (or reaching the driver's notification below).
   await fundEscrowForContract(delivery, order.customerId, payCurrency);
+  await db.insert('contracts', delivery);
   await db.update('contracts', order.id, { deliveryMethod: 'driver', deliveryContractId: delivery.id, address: where.address, jobLocation: where.jobLocation || null, landmark: where.landmark || null });
   const by = new Date(delivery.providerResponseDeadline).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   await notify(driver.id, '🚚', `Delivery request: collect store order #${order.bookingNumber} (${delivery.delivery.items.slice(0, 80)}) from ${seller.store.name}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver.country)}` : ''}. You are paid $${price.toFixed(2)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by} server time).`, 'bookingUpdates', { section: 'bookings' });
@@ -237,9 +241,18 @@ router.post('/store/orders', requireAuth, requireRole('customer'), requireCurren
     payCurrency: b.payCurrency === 'local' ? 'local' : 'usd',
     createdAt: new Date().toISOString(),
   };
+  // Charging the customer happens FIRST, before anything else is
+  // committed. fundEscrowForContract can genuinely fail (today, only a
+  // Liberian mobile-money collection request that MTN's own API
+  // rejects) — if it throws, nothing about this order should exist yet:
+  // no contract on record, and no stock taken off the shelf for goods
+  // that were never actually paid for. Inserting the contract and
+  // holding stock BEFORE this call (the order this used to run in)
+  // would leave exactly that broken, un-paid-for "active" order sitting
+  // in the database the moment the charge failed.
+  await fundEscrowForContract(order, customer.id, order.payCurrency);
   await db.insert('contracts', order);
   await store.holdStock(basket.items);
-  await fundEscrowForContract(order, customer.id, order.payCurrency);
   try { await require('../fraud-detection').checkNewAccountHighValue(customer.id, order.amount); } catch (e) { /* the order stands */ }
   const count = basket.items.reduce((n, i) => n + i.qty, 0);
   const how = method === 'pickup' ? 'The customer will collect it.' : method === 'seller' ? `Bring it to the customer: ${where.address}. Your delivery charge of $${sellerDeliveryFee.toFixed(2)} is included.` : `A driver (${driver.name}) has been asked to collect it.`;

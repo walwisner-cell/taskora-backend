@@ -360,15 +360,17 @@ router.get('/plan-pricing', async (req, res) => {
 // it's showing is still that placeholder, so it can be honest about it
 // rather than silently presenting a fake number as real.
 router.get('/support-contact', async (req, res) => {
-  const { getSetting, DEFAULTS } = require('../platform-settings');
+  const { getSetting, DEFAULTS, resolveContactCategory, SUPPORT_CATEGORIES } = require('../platform-settings');
   const global = await getSetting('supportContact');
   const city = (req.query.city || '').trim();
+  const category = (req.query.category || '').trim();
+  const categoryArg = SUPPORT_CATEGORIES.includes(category) ? category : null;
   if (city) {
     const regionalContacts = (await getSetting('regionalSupportContacts')) || {};
     const own = regionalContacts[city];
-    if (own) return res.json({ ...own, isPlaceholder: false, region: city });
+    if (own) return res.json({ ...resolveContactCategory(own, categoryArg), categories: own.categories || {}, isPlaceholder: false, region: city, category: categoryArg });
   }
-  res.json({ ...global, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null });
+  res.json({ ...resolveContactCategory(global, categoryArg), categories: global.categories || {}, isPlaceholder: global.whatsapp === DEFAULTS.supportContact.whatsapp, region: null, category: categoryArg });
 });
 
 // GET /api/footer — public, no auth: every visitor, signed in or not,
@@ -1334,8 +1336,15 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
     negotiationTranscript,
     createdAt: new Date().toISOString(),
   };
-  await db.insert('contracts', contract);
+  // Charging the customer happens FIRST, before this contract exists on
+  // record — the same money-ordering fix applied to store orders in v110.
+  // fundEscrowForContract can genuinely fail (today, only a Liberian
+  // mobile-money collection request MTN's own API rejects). If it throws,
+  // nothing about this hire should exist yet: no job marked "matched", no
+  // other candidates implicitly tied up, no contract sitting in the
+  // database for money that was never actually taken.
   const escrow = await fundEscrowForContract(contract, req.user.sub, job.payCurrency);
+  await db.insert('contracts', contract);
   await db.update('jobs', job.id, { status: 'matched' });
   await db.update('matches', match.id, { status: 'accepted' });
 
@@ -1413,8 +1422,11 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
     negotiationTranscript: [],
     createdAt: new Date().toISOString(),
   };
-  await db.insert('contracts', contract);
+  // Same money-ordering fix as above: charge before the contract exists on
+  // record, so a failed charge never leaves a phantom re-offered booking
+  // with no real payment behind it.
   const escrow = await fundEscrowForContract(contract, job.customerId, job.payCurrency);
+  await db.insert('contracts', contract);
   await db.update('matches', next.id, { status: 'accepted' });
 
   const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
@@ -1593,6 +1605,19 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     providerResponseDeadline: responseDeadline,
     createdAt: new Date().toISOString(),
   };
+  // v110: money-ordering fix — the same class of bug fixed in store orders
+  // and job-matching above. A direct (non-negotiable) booking charges the
+  // customer immediately, so that charge must happen BEFORE this contract
+  // exists on record and before any goods from the pro's store are held
+  // off the shelf — otherwise a failed charge (reachable today only via
+  // the still-gated Liberia mobile-money collection) would leave a
+  // phantom "active-looking" booking with stock already taken for a job
+  // nobody actually paid for. A negotiable Mutual Agreement offer has
+  // nothing to charge yet (funds aren't held until the provider actually
+  // accepts a price — see /respond-offer below), so for that case this
+  // stays null and nothing else here changes.
+  let escrow = null;
+  if (!isNegotiable) escrow = await fundEscrowForContract(contract, req.user.sub, payCurrency);
   await db.insert('contracts', contract);
   if (basket.items.length) await proStore.holdStock(basket.items); // v105: held now, given back if the booking doesn't go ahead
 
@@ -1617,8 +1642,9 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   // wait on escrow the way a negotiable offer has to wait on the price
   // itself being agreed. If the provider declines or doesn't respond in
   // time, this gets refunded automatically (see /respond-offer and
-  // src/booking-scheduler.js).
-  let escrow = null;
+  // src/booking-scheduler.js). (The actual charge now happens earlier,
+  // above, before the contract is inserted — `escrow` here is just the
+  // result already computed there.)
   const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
 
   // This app's booking form uses free-text time slots ("Morning (8–12pm)",
@@ -1638,7 +1664,6 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   if (isNegotiable) {
     await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}" — respond by ${deadlineLabel} or it expires automatically.${conflictNote}`, null, { section: 'bookings' });
   } else {
-    escrow = await fundEscrowForContract(contract, req.user.sub, payCurrency);
     const goodsNote = basket.items.length ? ` It includes ${basket.items.reduce((n, i) => n + i.qty, 0)} good${basket.items.reduce((n, i) => n + i.qty, 0) === 1 ? '' : 's'} from your store ($${goodsTotal}); they are held for this customer.` : ''; // v106
     await notify(providerId, '📋', `${customer ? customer.name : 'A customer'} booked you for "${contract.service}" on ${date} — confirm by ${deadlineLabel} or the booking is automatically cancelled and refunded.${goodsNote}${conflictNote}`, null, { section: 'bookings' });
   }
@@ -1728,8 +1753,24 @@ async function handleRespondOffer(req, res) {
     return res.status(403).json({ error: `${acceptingProvider.category} requires a current, verified license on file before you can accept jobs — add your license expiry date in Settings.` });
   }
 
-  const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10) });
+  // v110: money-ordering fix. For a direct booking or a job-board hire,
+  // escrow was already funded earlier (at booking/selection time) — the
+  // work below just releases a held-back materials advance or looks the
+  // existing escrow up, neither of which can newly fail, so marking the
+  // contract active first is harmless. A NEGOTIABLE offer is different:
+  // this is the very first charge attempt, made only now that the
+  // provider has agreed to a price. That charge must happen BEFORE the
+  // contract is written as 'active' in the database — otherwise a failed
+  // charge (today, only a still-gated Liberia mobile-money collection)
+  // would leave a booking that looks live and accepted with no payment
+  // behind it at all.
   let escrow;
+  if (!isDirectBooking && !isJobSelection) {
+    // Pass a would-be-active copy (not yet written) so fundEscrowForContract
+    // sees the right status for its materials-advance-release check.
+    escrow = await fundEscrowForContract({ ...contract, status: 'active' }, contract.customerId, contract.payCurrency);
+  }
+  const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10) });
   if (isDirectBooking) {
     // Already funded at booking time — but the materials advance was
     // deliberately held back until now (see fundEscrowForContract). This
@@ -1747,8 +1788,6 @@ async function handleRespondOffer(req, res) {
     const match = await db.find('matches', m => m.jobId === contract.jobId && m.providerId === contract.providerId);
     const job = await db.find('jobs', j => j.id === contract.jobId);
     if (job) await finalizeJobSelection(job, match ? match.id : null);
-  } else {
-    escrow = await fundEscrowForContract(updated, contract.customerId, contract.payCurrency); // negotiable offer funds now, at the agreed number — pass the freshly-updated contract (status: 'active'), not the stale pre-update object
   }
   const confirmMessage = (isDirectBooking || isJobSelection)
     ? `Your booking for "${contract.service}" was confirmed by the provider.`

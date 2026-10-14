@@ -163,4 +163,109 @@ async function eraseAccount(closure, adminId) {
   return { ok: true };
 }
 
-module.exports = { buildExport, closureBlockers, closeAccount, eraseAccount };
+// A real, readable PDF version of buildExport(), for the "Download my
+// data" button. The JSON export above is complete and exact, but it is
+// not something an ordinary person can actually open and read on a
+// phone — Joseph reported this as "not downloading in PDF", which is a
+// fair description of what happens when a .json file lands on a phone
+// with no app that opens it. This covers the same ground in a document
+// a person can actually read: a profile summary, then a real line per
+// booking/payout/dispute (the things people actually want to check),
+// then honest counts for everything else (messages, notifications and
+// so on) rather than dumping hundreds of raw records into a PDF, with a
+// note that the complete machine-readable file is still available.
+async function buildExportPdf(res, userId) {
+  const data = await buildExport(userId);
+  if (!data) return false;
+  const { createReportDoc } = require('./pdf-report-builder');
+  const me = data.profile;
+  const r = createReportDoc({
+    res, filename: `trothen-my-data-${new Date().toISOString().slice(0, 10)}.pdf`,
+    title: 'Your Data', subtitle: 'Everything Trothen holds about your account',
+    docId: me.id, verificationSeed: `my-data|${me.id}|${data.exportedAt}`,
+  });
+  r.sectionHeader('Your profile');
+  r.twoColumnRow('Name', me.name || '—', 'Role', me.role || '—');
+  r.twoColumnRow('Email', me.email || '—', 'Phone', me.phone || '—');
+  r.twoColumnRow('Country', me.country || '—', 'City', me.city || '—');
+  r.row('Account created', me.createdAt ? new Date(me.createdAt).toLocaleDateString('en-US') : '—');
+
+  if (data.bookings.length) {
+    // Contracts only ever store the other party's ID, not their name —
+    // resolve it here so the PDF reads like a real statement ("With:
+    // Marcus T.") rather than a bare, meaningless ID string.
+    const otherPartyIds = data.bookings.map(b => (b.customerId === userId ? b.providerId : b.customerId)).filter(Boolean);
+    const otherParties = otherPartyIds.length ? await db.filter('users', u => otherPartyIds.includes(u.id)) : [];
+    const nameById = new Map(otherParties.map(u => [u.id, u.name]));
+    r.sectionHeader(`Bookings (${data.bookings.length})`);
+    r.table(
+      [{ label: 'Date', width: 85 }, { label: 'Status', width: 85 }, { label: 'What', width: 110 }, { label: 'With', width: 100 }, { label: 'Amount', width: 80, align: 'right' }],
+      data.bookings.slice(0, 60).map(b => [
+        b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-US') : '—',
+        String(b.status || '—'),
+        String(b.service || '—').slice(0, 24),
+        String(nameById.get(b.customerId === userId ? b.providerId : b.customerId) || '—').slice(0, 22),
+        b.amount != null ? `$${Number(b.amount).toFixed(2)}` : '—',
+      ])
+    );
+    if (data.bookings.length > 60) r.paragraph(`${data.bookings.length - 60} more booking(s) are in the full data file — see below.`, { size: 8.5 });
+  } else {
+    r.sectionHeader('Bookings'); r.paragraph('No bookings yet.');
+  }
+
+  if (data.payouts.length) {
+    r.sectionHeader(`Payouts (${data.payouts.length})`);
+    r.table(
+      [{ label: 'Date', width: 120 }, { label: 'Status', width: 120 }, { label: 'Amount', width: 220, align: 'right' }],
+      data.payouts.slice(0, 40).map(p => [
+        p.date || p.createdAt ? new Date(p.date || p.createdAt).toLocaleDateString('en-US') : '—',
+        String(p.status || '—'),
+        p.amount != null ? `$${Number(p.amount).toFixed(2)}` : '—',
+      ])
+    );
+  }
+
+  if (data.disputes.length) {
+    r.sectionHeader(`Disputes (${data.disputes.length})`);
+    r.table(
+      [{ label: 'Opened', width: 120 }, { label: 'Status', width: 120 }, { label: 'Reason', width: 220 }],
+      data.disputes.slice(0, 30).map(d => [
+        d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-US') : '—',
+        String(d.status || '—'),
+        String(d.reason || d.category || '—').slice(0, 40),
+      ])
+    );
+  }
+
+  if (data.reviews.length) {
+    r.sectionHeader(`Reviews (${data.reviews.length})`);
+    r.table(
+      [{ label: 'Date', width: 110 }, { label: 'Rating', width: 70, align: 'right' }, { label: 'Comment', width: 280 }],
+      data.reviews.slice(0, 30).map(rv => [
+        rv.createdAt ? new Date(rv.createdAt).toLocaleDateString('en-US') : '—',
+        rv.stars != null ? `${rv.stars}/5` : '—',
+        String(rv.text || '—').slice(0, 50),
+      ])
+    );
+  }
+
+  r.sectionHeader('Everything else Trothen holds');
+  r.paragraph(
+    [
+      `Messages: ${data.messages.length}`,
+      `Notifications: ${data.notifications.length}`,
+      `Identity checks on file: ${data.identityChecks.length}`,
+      `Saved favorites: ${data.favorites.length}`,
+      me.role === 'provider' ? `Portfolio photos: ${data.portfolioPhotos.length}` : null,
+      me.role === 'provider' ? `Store items: ${data.storeGoods.length}` : null,
+      me.role === 'provider' ? `Quotes/invoices: ${data.quotesAndInvoices.length}` : null,
+    ].filter(Boolean).join('    ·    '),
+    { size: 9.5 }
+  );
+  r.paragraph('Passwords are never stored in readable form and are not included here. Photos and ID document images are not inside this document; the records of them are. For the complete, exact copy of every field above (useful if you are moving your data somewhere else), use "Download the complete file (.json)" on the same screen.', { size: 8.5 });
+
+  r.finish({ closingNote: `Generated for ${me.name || me.email} on ${new Date(data.exportedAt).toLocaleString('en-US')}.` });
+  return true;
+}
+
+module.exports = { buildExport, buildExportPdf, closureBlockers, closeAccount, eraseAccount };

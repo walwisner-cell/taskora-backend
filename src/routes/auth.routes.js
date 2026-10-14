@@ -908,6 +908,17 @@ router.get('/me/export', requireAuth, privacyLimiter, async (req, res) => {
   res.type('application/json').send(JSON.stringify(data, null, 2));
 });
 
+// GET /api/auth/me/export.pdf — the same data as /me/export, but as a real,
+// readable PDF document instead of a raw .json file. Reported by Joseph as
+// "this document is not downloading in PDF" — the button always produced a
+// .json file, which isn't a document a phone can actually open and read.
+router.get('/me/export.pdf', requireAuth, privacyLimiter, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me || me.role === 'admin') return res.status(400).json({ error: 'Data downloads are for customer and pro accounts' });
+  const ok = await require('../account-privacy').buildExportPdf(res, me.id);
+  if (!ok) res.status(404).json({ error: 'Account not found' });
+});
+
 // GET /api/auth/me/close-account/check — can I close right now, and if not, why.
 router.get('/me/close-account/check', requireAuth, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);

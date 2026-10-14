@@ -429,4 +429,26 @@ function supportEmailAdvice(email, siteHost) {
   return notes;
 }
 
-module.exports = { getSetting, setSetting, computeResponseWindowHours, DEFAULTS, EDITABLE_CONTENT_KEYS, publicSupportEmail, supportEmailCached, supportEmailAdvice };
+// v110: "allow me to add more than one customer service number — Dispute,
+// Onboarding, Promotion, General." These are the optional extra lines a
+// platform-wide or regional support contact can set on top of its
+// always-present General number. Shared between the admin settings
+// routes (admin.routes.js) and the public lookup (marketplace.routes.js)
+// so both resolve a category the same way.
+const SUPPORT_CATEGORIES = ['dispute', 'onboarding', 'promotion'];
+
+// Resolves one contact "slot" (the platform-wide fallback, or one
+// region's own entry) into what should actually be shown for a given
+// category: that slot's own category override if it set one, otherwise
+// that slot's General number. Old data with no "categories" key at all
+// (every contact set before this feature existed) resolves exactly as
+// it always did — general-only, for every category.
+function resolveContactCategory(slot, category) {
+  if (category && SUPPORT_CATEGORIES.includes(category) && slot.categories && slot.categories[category]) {
+    const c = slot.categories[category];
+    return { whatsapp: c.whatsapp, phoneDisplay: c.phoneDisplay, email: c.email || '' };
+  }
+  return { whatsapp: slot.whatsapp, phoneDisplay: slot.phoneDisplay, email: slot.email || '' };
+}
+
+module.exports = { getSetting, setSetting, computeResponseWindowHours, DEFAULTS, EDITABLE_CONTENT_KEYS, publicSupportEmail, supportEmailCached, supportEmailAdvice, SUPPORT_CATEGORIES, resolveContactCategory };

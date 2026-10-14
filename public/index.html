@@ -3011,7 +3011,7 @@
         <div class="pricing-sub" data-i18n="plans_sub">Every provider starts on Starter. You're moved up automatically as you complete real jobs and build a real track record — there's no way to pay or click your way to a higher tier.</div>
         <div style="margin-top:16px;display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap;">
           <label class="form-label" style="margin:0;" data-i18n="plans_country">Show pricing for</label>
-          <select class="form-input" id="pricing-country-select" style="width:auto;padding:6px 10px;font-size:14px;" onchange="loadPricingPage(this.value)"></select>
+          <select class="form-input" id="pricing-country-select" style="width:auto;padding:6px 10px;font-size:14px;" onchange="this.dataset.userPicked='true';loadPricingPage(this.value)"></select>
         </div>
       </div>
       <div class="pricing-grid">
@@ -3111,6 +3111,7 @@
         <option value="jobs">Most Jobs Completed</option>
         <option value="distance">Nearest to Me</option>
       </select>
+      <select class="form-input form-select" id="directory-country-select" onchange="setDirectoryCountry(this.value)" style="max-width:200px;"></select>
       <div class="directory-chips" id="directory-chips"></div>
     </div>
     <div class="providers-grid" id="directory-grid" style="margin-top:20px;"></div>
@@ -3167,6 +3168,6 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=cf7dbe2d57" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/trothen.js?v=3e9283d49d" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
 </body>
 </html>
