@@ -9224,8 +9224,14 @@ async function openProviderScoreBreakdown(providerId, providerName) {
     const target = document.getElementById('score-breakdown-body');
     if (!target) return;
     target.innerHTML = `
-      <div style="font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;">${r.total}/100</div>
-      ${r.recommendedAction ? `<div class="badge" style="background:#FBF3E3;color:#8A6A2A;white-space:normal;margin-bottom:14px;">${escapeHtml(r.recommendedAction.label)}</div>` : '<div class="badge badge-success" style="margin-bottom:14px;">Good standing</div>'}
+      <div style="font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;">${r.total}/100${r.isNew ? ' <span style="font-size:14px;font-weight:600;color:var(--slate);">(provisional)</span>' : ''}</div>
+      ${r.isNew
+        ? `<div style="background:#EEF4FB;border:1px solid #C9DBF0;border-radius:8px;padding:10px 12px;font-size:13.5px;line-height:1.5;margin-bottom:14px;">
+             <strong>Shows as "New on Trothen" to customers</strong> — this pro has <strong>${r.completedJobs} completed Trothen booking${r.completedJobs === 1 ? '' : 's'}</strong> on record, and needs ${r.jobsUntilScored} more before this number becomes their real, public score.
+             ${r.completedJobs === 0 ? ' If this pro has real-world experience (star rating, a jobs-done figure) shown elsewhere on their card, that figure describes work done off Trothen — it is not the same thing as a completed Trothen booking, and this score can only count bookings actually done through Trothen. Recomputing cannot change that; only real completed bookings on this platform can.' : ''}
+           </div>`
+        : ''}
+      ${r.recommendedAction ? `<div class="badge" style="background:#FBF3E3;color:#8A6A2A;white-space:normal;margin-bottom:14px;">${escapeHtml(r.recommendedAction.label)}</div>` : (r.isNew ? '' : '<div class="badge badge-success" style="margin-bottom:14px;">Good standing</div>')}
       ${rows}`;
   } catch (e) {
     if (body) body.textContent = (e && e.message) || 'Could not load this score right now.';

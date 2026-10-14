@@ -7,7 +7,7 @@
 | File | Status | Bytes |
 |---|---|---|
 | `public\index.html` | modified | 238,502 |
-| `public\app\trothen.js` | modified | 1,470,397 |
+| `public\app\trothen.js` | modified | 1,471,419 |
 | `src\account-privacy.js` | modified | 16,886 |
 | `src\platform-settings.js` | modified | 35,810 |
 | `src\provider-score-scheduler.js` | modified | 6,507 |
@@ -22,7 +22,7 @@
 | `src\location-retention-scheduler.js` | modified | 4,103 |
 | `src\payout-settlement-scheduler.js` | modified | 2,085 |
 | `src\top-scorer-promotion-scheduler.js` | modified | 3,863 |
-| `CHANGES_v110.md` | new (this write-up, optional to deploy — doesn't affect the app) | 14,474 |
+| `CHANGES_v110.md` | new (this write-up, optional to deploy — doesn't affect the app) | 16,421 |
 
 ## 2. cmd.exe deploy steps
 
@@ -66,6 +66,7 @@ See `CHANGES_v110.md` for the full plain-language write-up of all 14 items, incl
 - The money-ordering safety fix, now applied in five places: store purchases, store deliveries, direct bookings, job-board hires/negotiable offers, and additional-payment ("scope change") approvals.
 - A real country filter on "Browse All Pros".
 - The "Both" pricing option (hourly rate OR customer offer) can now actually be saved — it was silently rejected before.
+- The admin Provider Scores "Breakdown" view now says plainly how many completed-on-Trothen bookings a pro has and how many more are needed before "New on Trothen" becomes a real score — a profile's own jobs/rating figure is not the same thing as a completed Trothen booking, and no amount of recomputing can substitute for the real thing.
 - The PDF data export, categorized support numbers, and a full audit of Store, GPS, Payments, Business tools, Auth, and the rest of Misc.
 
 ## 4. Post-deploy smoke test
