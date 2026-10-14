@@ -197,16 +197,22 @@ async function computeProviderScore(providerId) {
   const rawTotal = identityVerification + documentVerification + jobsCompleted + arrivedOnTime + repeatedCustomers + responseTime + backgroundCheck + cancellationRate + customerTrustRating;
   const total = Math.max(0, Math.min(99, Math.round(rawTotal)));
 
-  // v91: a pro is "new" until they have completed NEW_PRO_JOBS jobs. Until
-  // then the number above is provisional: most of it is benefit of the
-  // doubt, not a track record. Callers use this to show "New on Trothen"
-  // instead of a number, to give a fixed starter allowance of job matches,
-  // and to hold back score rewards and low-score alerts.
-  const isNew = completed.length < NEW_PRO_JOBS;
+  // v91: a pro is "new" until they have completed enough jobs THROUGH
+  // TROTHEN (see providerScoreNewProJobs in src/platform-settings.js —
+  // v110 made this a real, admin-editable setting instead of a fixed
+  // code constant). Until then the number above is provisional: most of
+  // it is benefit of the doubt, not a track record. Callers use this to
+  // show "New on Trothen" instead of a number, to give a fixed starter
+  // allowance of job matches, and to hold back score rewards and
+  // low-score alerts.
+  const { getSetting } = require('./platform-settings');
+  const configuredThreshold = Number(await getSetting('providerScoreNewProJobs'));
+  const newProJobsThreshold = Number.isInteger(configuredThreshold) && configuredThreshold >= 1 ? configuredThreshold : NEW_PRO_JOBS;
+  const isNew = completed.length < newProJobsThreshold;
   return {
     isNew,
     completedJobs: completed.length,
-    jobsUntilScored: Math.max(0, NEW_PRO_JOBS - completed.length),
+    jobsUntilScored: Math.max(0, newProJobsThreshold - completed.length),
     total,
     breakdown: {
       identityVerification: Math.round(identityVerification * 10) / 10,

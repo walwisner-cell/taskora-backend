@@ -5529,7 +5529,7 @@ async function loadProviderScorePanel() {
     };
     // v91: until five jobs are done, the number is provisional and says so.
     const newNote = data.isNew
-      ? `<div style="background:#EEF4FB;border:1px solid #C9DBF0;border-radius:8px;padding:10px 12px;font-size:13.5px;line-height:1.55;margin-bottom:12px;"><strong>You're new on Trothen.</strong> This number is provisional: most of it is a clean start, not a track record yet. Customers see "New on Trothen" on your profile instead of a score. After ${data.jobsUntilScored} more completed job${data.jobsUntilScored === 1 ? '' : 's'} it becomes your real score and shows on your profile. Until then you can be sent up to 10 new job matches a week.</div>`
+      ? `<div style="background:#EEF4FB;border:1px solid #C9DBF0;border-radius:8px;padding:10px 12px;font-size:13.5px;line-height:1.55;margin-bottom:12px;"><strong>You're new on Trothen.</strong> This number is provisional: most of it is a clean start, not a track record yet. Customers see "New on Trothen" on your profile instead of a score. A Trothen Score only counts jobs completed through Trothen itself — not work done before you joined or off the platform. After ${data.jobsUntilScored} more completed Trothen job${data.jobsUntilScored === 1 ? '' : 's'} it becomes your real score and shows on your profile. Until then you can be sent up to 10 new job matches a week.</div>`
       : '';
     body.innerHTML = `
       ${newNote}
@@ -5702,7 +5702,7 @@ async function viewProviderProfile(id) {
       <div class="profile-meta-row">
         <div class="profile-meta-item">★ ${p.rating ? Number(p.rating).toFixed(1) : 'No'} rating</div>
         <div class="profile-meta-item">📋 ${escapeHtml(p.jobs)} jobs completed</div>
-        ${p.isNewPro ? `<div class="profile-meta-item" title="This pro's ID has been checked. They get a Trothen Score after their first five completed jobs.">${escapeHtml(tr('New on Trothen'))}</div>` : (p.trustScore != null ? `<div class="profile-meta-item" title="Trothen Score: a computed measure of this pro's reliability and track record">🛡️ ${p.trustScore}/100 Trothen Score</div>` : '')}
+        ${p.isNewPro ? `<div class="profile-meta-item" title="This pro's ID has been checked. They get a Trothen Score after their first five jobs completed through Trothen (not counting work done elsewhere).">${escapeHtml(tr('New on Trothen'))}</div>` : (p.trustScore != null ? `<div class="profile-meta-item" title="Trothen Score: a computed measure of this pro's reliability and track record on Trothen">🛡️ ${p.trustScore}/100 Trothen Score</div>` : '')}
         ${AUTH.user && AUTH.user.role === 'customer' ? `<button class="btn-sm btn-sm-outline" id="profile-favorite-btn" onclick="toggleFavoriteProvider('${p.id}', false)">🤍 Save</button>` : ''}
       </div>
     </div>`;
@@ -8058,6 +8058,7 @@ const ADMIN_SECTIONS = {
   providerscores: () => `
     <div class="dash-header"><div><div class="dash-title">Provider Scores</div><div class="dash-sub">Ranked by real, computed trust score — updated daily. Flags a recommended pause when a score drops, but never applies one automatically; that's always a real click from a real admin.</div></div>
     ${AUTH.user && AUTH.user.isSuperAdmin ? `<button class="btn-sm btn-sm-outline" id="recompute-scores-btn" onclick="recomputeAllProviderScores()">🔄 Recompute now</button>` : ''}</div>
+    <div class="panel" id="provider-score-rule-panel" style="display:none;"></div>
     <div class="panel" id="provider-scores-panel"><div style="color:var(--slate);font-size:13.5px;padding:12px 0;">Loading…</div></div>`,
   promotions: () => `
     <div class="dash-header"><div><div class="dash-title">Promotions</div><div class="dash-sub">${AUTH.user && AUTH.user.isSuperAdmin ? 'Post platform-wide, or target one city' : `Post to ${AUTH.user.region || AUTH.user.city || 'your city'} — your promotions only reach your own city`}</div></div>
@@ -9141,12 +9142,46 @@ async function recomputeAllProviderScores() {
   if (btn) { btn.disabled = false; btn.textContent = '🔄 Recompute now'; }
 }
 
+// v110: the "New on Trothen" threshold (how many jobs completed THROUGH
+// TROTHEN before a score stops being provisional) is now a real,
+// editable rule instead of a fixed number buried in code — see
+// providerScoreNewProJobs in src/platform-settings.js.
+function renderProviderScoreRulePanel(threshold, canEdit) {
+  const el = document.getElementById('provider-score-rule-panel');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="panel-title">New-pro rule</div>
+    <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">A provider shows "New on Trothen" instead of a real score until they've completed this many jobs <strong>through Trothen itself</strong> — a high rating or jobs number on their own profile doesn't count toward this; it can reflect real work done before they joined or off the platform.</div>
+    ${canEdit ? `
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <label class="form-label" style="margin:0;" for="new-pro-threshold-input">Jobs needed, completed on Trothen</label>
+        <input class="form-input" type="number" min="1" max="50" step="1" id="new-pro-threshold-input" value="${escapeHtml(String(threshold))}" style="max-width:90px;"/>
+        <button class="btn-sm btn-sm-primary" onclick="saveNewProJobsThreshold()">Save</button>
+      </div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Changing this doesn't retroactively update anyone's stored score — click "Recompute now" above right after saving to apply it immediately, or wait for tonight's daily run.</div>
+    ` : `<div style="font-size:13.5px;"><strong>${threshold}</strong> completed Trothen bookings</div>`}
+  `;
+}
+async function saveNewProJobsThreshold() {
+  const input = document.getElementById('new-pro-threshold-input');
+  const n = parseInt(input.value, 10);
+  if (!Number.isInteger(n) || n < 1 || n > 50) return showToast('Enter a whole number from 1 to 50');
+  try {
+    await apiFetch('PUT', '/admin/providers/scores/settings', { newProJobsThreshold: n });
+    showToast('Saved. Click "Recompute now" to apply it to every provider right away, or it applies at tonight\'s daily run.');
+    await loadProviderScoresPanel();
+  } catch (e) { showToast(e.message || 'Could not save this setting'); }
+}
+
 async function loadProviderScoresPanel() {
   if (!BACKEND_AVAILABLE) return;
   const panel = document.getElementById('provider-scores-panel');
   if (!panel) return;
   try {
-    const { providers } = await apiFetch('GET', '/admin/providers/leaderboard');
+    const { providers, newProJobsThreshold, canEditSettings } = await apiFetch('GET', '/admin/providers/leaderboard');
+    const threshold = newProJobsThreshold || 5;
+    renderProviderScoreRulePanel(threshold, !!canEditSettings);
     const target = document.getElementById('provider-scores-panel');
     if (!target) return;
     if (!providers.length) {
@@ -9163,7 +9198,7 @@ async function loadProviderScoresPanel() {
         <td>${p.onHold
           ? `<span class="badge badge-warn">On hold${p.holdUntil ? ' until ' + new Date(p.holdUntil).toLocaleDateString() : ''}</span>`
           : p.isNew
-            ? '<span class="badge badge-neutral">New: fewer than 5 jobs, starter allowance</span>'
+            ? `<span class="badge badge-neutral" title="Counts only jobs completed through Trothen itself — a high rating or jobs figure on their profile can reflect work done elsewhere, which doesn't count toward this.">New: fewer than ${threshold} Trothen booking${threshold === 1 ? '' : 's'}, starter allowance</span>`
           : p.trustScore <= 40
             ? `<span class="badge" style="background:#FDECEA;color:#C1554D;">New matches paused (automatic)</span>`
             : p.recommendedAction
@@ -11237,7 +11272,7 @@ function providerCardsHTML(list) {
           <div class="meta-chip"><span class="star">★</span> ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           <div class="meta-chip">${uiIcon('jobs')} ${escapeHtml(p.jobs)} jobs</div>
           <div class="meta-chip">${uiIcon('pin')} ${p.distanceMiles != null ? `${distLabel(p.distanceMiles)} away` : ([escapeHtml(p.city), escapeHtml(p.country)].filter(Boolean).join(', ') || 'Location not set')}</div>
-          ${p.isNewPro ? `<div class="meta-chip" title="ID checked. This pro gets a Trothen Score after their first five completed jobs.">${escapeHtml(tr('New on Trothen'))}</div>` : (p.trustScore != null ? `<div class="meta-chip" title="Trothen Score: a computed measure of this pro's reliability and track record">${uiIcon('score')} ${p.trustScore}/100</div>` : '')}
+          ${p.isNewPro ? `<div class="meta-chip" title="ID checked. This pro gets a Trothen Score after their first five jobs completed through Trothen (not counting work done elsewhere).">${escapeHtml(tr('New on Trothen'))}</div>` : (p.trustScore != null ? `<div class="meta-chip" title="Trothen Score: a computed measure of this pro's reliability and track record on Trothen">${uiIcon('score')} ${p.trustScore}/100</div>` : '')}
         </div>
         <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
         <div class="provider-footer">

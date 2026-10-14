@@ -497,6 +497,31 @@ router.post('/providers/scores/recompute', requireSuperAdmin, async (req, res) =
   res.json({ ran: true, ...result });
 });
 
+// PUT /api/admin/providers/scores/settings  { newProJobsThreshold }
+// v110: how many jobs completed THROUGH TROTHEN a provider needs before
+// they stop showing as "New on Trothen" and get a real score — used to
+// be a fixed code constant, now a real admin-editable setting (see
+// providerScoreNewProJobs in src/platform-settings.js). Super admin only,
+// since this changes how every provider on the platform is scored.
+// Changing it alone doesn't retroactively update anyone's stored
+// isNew/score — the next daily sweep, or "Recompute now" right after
+// this, applies it.
+router.put('/providers/scores/settings', requireSuperAdmin, async (req, res) => {
+  const { newProJobsThreshold } = req.body || {};
+  const n = Number(newProJobsThreshold);
+  if (!Number.isInteger(n) || n < 1 || n > 50) {
+    return res.status(400).json({ error: 'The number of Trothen bookings needed must be a whole number from 1 to 50.' });
+  }
+  const { setSetting, getSetting } = require('../platform-settings');
+  const before = await getSetting('providerScoreNewProJobs');
+  await setSetting('providerScoreNewProJobs', n);
+  try {
+    const m = await me(req);
+    await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: m ? m.id : null, resourceType: 'provider_score_settings', resourceId: `newProJobsThreshold ${before} -> ${n}`, ipAddress: req.ip, createdAt: new Date().toISOString() });
+  } catch (e) { /* the change still stands */ }
+  res.json({ newProJobsThreshold: n });
+});
+
 // GET /api/admin/providers/leaderboard — every provider ranked by trust
 // score, highest first. Uses whatever was last computed by the daily
 // sweep (see src/provider-score-scheduler.js) rather than recomputing
@@ -505,10 +530,14 @@ router.post('/providers/scores/recompute', requireSuperAdmin, async (req, res) =
 router.get('/providers/leaderboard', async (req, res) => {
   const region = await myRegion(req);
   const { recommendedActionForScore } = require('../provider-score');
+  const { getSetting } = require('../platform-settings');
   let providers = await db.filter('users', u => u.role === 'provider' && u.trustScore != null);
   if (region) providers = providers.filter(p => inRegion(region, p));
   providers.sort((a, b) => (b.trustScore || 0) - (a.trustScore || 0));
+  const m = await me(req);
   res.json({
+    newProJobsThreshold: Number(await getSetting('providerScoreNewProJobs')),
+    canEditSettings: !!(m && m.isSuperAdmin === true),
     providers: providers.map(p => ({
       id: p.id, name: p.name, city: p.city, category: p.category,
       trustScore: p.trustScore, plan: p.plan, rating: p.rating, jobs: p.jobs,

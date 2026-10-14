@@ -48,6 +48,18 @@ const DEFAULTS = {
     beyond7d: 24,  // job starts more than a week out — respond within 24 hours
   },
 
+  // v110: how many jobs completed THROUGH TROTHEN a provider needs before
+  // their Trust Score stops being provisional ("New on Trothen") and
+  // starts showing as a real number. Used to be a fixed code constant
+  // (NEW_PRO_JOBS in src/provider-score.js) — moved here, the same
+  // "DB row overrides code default" pattern as every other number on
+  // this page, so a super admin can actually change it (Admin → Provider
+  // Scores) instead of needing a code deploy. Deliberately can never be
+  // set to 0: a score with zero completed Trothen bookings behind it
+  // isn't a track record, it's benefit of the doubt, and showing it as a
+  // real number would misrepresent what it actually is.
+  providerScoreNewProJobs: 5,
+
   // The homepage support chat's "Chat with us" / "Call" links. Ships with
   // an obviously-fake placeholder number on purpose — flagged in every
   // audit rather than silently invented — until a super admin sets the
