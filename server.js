@@ -117,6 +117,12 @@ app.use(helmet({
   // Google Sign-In test that this was the actual root cause — the
   // popup opened but stayed blank until this changed.
   crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  // Helmet's default (no-referrer) made OpenStreetMap's tile servers refuse
+  // every map tile ("Access blocked", 403): their usage policy requires a
+  // Referer. strict-origin-when-cross-origin sends only the site name
+  // (https://trothenpro.com), never the page or anything in its address.
+  // The private ride-share page sets no-referrer for itself, further down.
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 // CORS was wide open (any origin, unconditionally) with no way to
 // restrict it. Given this app authenticates with a Bearer token rather

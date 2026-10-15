@@ -15,6 +15,28 @@
   function section(title, sub) {
     return `<div class="dash-header"><div><div class="dash-title">${e(tr(title))}</div><div class="dash-sub">${e(tr(sub))}</div></div></div><div id="rides-body"><div class="panel">${e(tr('Loading…'))}</div></div>`;
   }
+  // Every map in the app (job pin, trip view, handover, ride tracking) uses the
+  // tile provider set by MAP_TILE_URL on the server, so changing provider never
+  // needs a code change. Without that setting nothing is altered.
+  (function patchTiles() {
+    const orig = window.loadLeaflet; if (typeof orig !== 'function') return;
+    window.loadLeaflet = async function () {
+      const ok = await orig.apply(this, arguments);
+      try {
+        if (ok && window.L && window.L.tileLayer && !window.L.tileLayer.__trothen) {
+          const cfg = R.cfg || await loadConfig();
+          const real = window.L.tileLayer;
+          const wrapped = function (url, opts) {
+            if (cfg && cfg.tileUrl && /tile\.openstreetmap\.org/.test(String(url)) && !/tile\.openstreetmap\.org/.test(cfg.tileUrl)) { url = cfg.tileUrl; opts = Object.assign({}, opts, { attribution: cfg.tileAttribution || (opts && opts.attribution) }); }
+            return real.call(window.L, url, opts);
+          };
+          wrapped.__trothen = true; Object.keys(real).forEach(k => { wrapped[k] = real[k]; });
+          window.L.tileLayer = wrapped;
+        }
+      } catch (e) { /* the default map still works */ }
+      return ok;
+    };
+  })();
   async function loadConfig() { try { R.cfg = await apiFetch('GET', '/rides/config'); } catch (x) { R.cfg = null; } return R.cfg; }
 
   // ── menus ────────────────────────────────────────────────────────────

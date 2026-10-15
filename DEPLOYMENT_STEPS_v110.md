@@ -8,7 +8,7 @@
 |---|---|---|
 | `public\index.html` | modified | 238,553 |
 | `public\app\trothen.js` | modified | 1,476,462 |
-| `public\app\rides.js` | **new** | 60,571 |
+| `public\app\rides.js` | **new** | 61,794 |
 | `public\app\ride-share.js` | **new** | 2,081 |
 | `public\ride-share.html` | **new** | 1,415 |
 | `src\account-privacy.js` | modified | 16,886 |
@@ -31,8 +31,8 @@
 | `src\location-retention-scheduler.js` | modified | 4,103 |
 | `src\payout-settlement-scheduler.js` | modified | 2,085 |
 | `src\top-scorer-promotion-scheduler.js` | modified | 3,863 |
-| `server.js` | modified | 25,793 |
-| `CHANGES_v110.md` | new (this write-up, optional to deploy) | 32,436 |
+| `server.js` | modified | 26,231 |
+| `CHANGES_v110.md` | new (this write-up, optional to deploy) | 33,090 |
 
 ## 2. cmd.exe deploy steps
 
@@ -118,6 +118,7 @@ See `CHANGES_v110.md` for the full plain-language write-up of all 21 items, incl
 19. As a rider, tap Find drivers: the Ride Rules appear and must be accepted. As a driver, open Rides and confirm the document list marks which uploads are required.
 20. In Admin > Rides, confirm the commission, insurance, night rule and rules fields save. Complete a ride and check the driver's payout shows the ride commission (default 5%), not the plan rate.
 21. On a driver phone, turn on airplane mode for a minute during a trip, turn it off, and confirm the route catches up on the map.
+22. Open any map (for example "Where is the job?"). You should see real map tiles, not "Access blocked". If you still see the blocked message, set `MAP_TILE_URL` to a tile provider you have an account with and restart.
 
 ## 5. Still open / not part of this release
 

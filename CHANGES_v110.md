@@ -113,6 +113,8 @@ Found by testing live with a simulated slow payment, not by reading code.
 - **Optional motorbike night rule.** Off by default; Admin > Rides can block motorbike rides between chosen hours.
 - **Ride commission.** Rides use their own rate, default 5%, never above the provider's plan rate (13/12/10%). Change it in Admin > Rides. Riders pay a 9% service fee (minimum $0.25), also adjustable.
 - **Privacy text.** The default Privacy Policy now covers live location and phone numbers shared during a trip or delivery. A lawyer should review it.
+- **Fixed: maps showed "Access blocked" (403).** OpenStreetMap's free tile servers refuse requests that carry no Referer, and the site was telling browsers to send none. The site now sends only its own name (`https://trothenpro.com`, never a page address). The private ride-share page still sends nothing. This affected every map (job pin, trip view, handover, ride tracking).
+- **One setting for all maps.** `MAP_TILE_URL` and `MAP_TILE_ATTRIBUTION` now apply to every map in the app, not just ride tracking. OpenStreetMap's free servers are not meant for heavy commercial traffic, so before a real launch pick a paid or keyed tile provider and set it.
 - **Needs your decision before real riders:** confirm with Liberia's Ministry of Transport and a lawyer what permit and insurance passenger transport requires; the rules in the app are placeholders until you do.
 
 ## Files changed
