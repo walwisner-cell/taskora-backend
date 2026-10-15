@@ -35,6 +35,8 @@ const STORE_DEFAULTS = {
   // added for the customer at checkout, on a seller's own delivery charge
   // and on a pick-and-drop driver's price. Never on the goods.
   deliveryFeePercent: 9,
+  // v110: days a seller has to pack a paid order. After that the customer is refunded automatically.
+  sellerPackDays: 7,
 };
 // v108: how goods can reach the customer.
 const DELIVERY_METHODS = ['pickup', 'seller', 'driver'];
@@ -72,6 +74,7 @@ async function storeSettings() {
       rulesVersion: Number.isInteger(v.rulesVersion) && v.rulesVersion > 0 ? v.rulesVersion : 1,
       rulesText: typeof v.rulesText === 'string' && v.rulesText.trim() ? v.rulesText.trim() : DEFAULT_STORE_RULES,
       deliveryFeePercent: Number.isFinite(Number(v.deliveryFeePercent)) && Number(v.deliveryFeePercent) >= 0 && Number(v.deliveryFeePercent) <= 30 ? Math.round(Number(v.deliveryFeePercent) * 100) / 100 : STORE_DEFAULTS.deliveryFeePercent,
+      sellerPackDays: Number.isInteger(v.sellerPackDays) && v.sellerPackDays >= 1 && v.sellerPackDays <= 60 ? v.sellerPackDays : STORE_DEFAULTS.sellerPackDays,
     };
   } catch (e) { /* keep the last known settings */ }
   return cached;
@@ -254,6 +257,36 @@ async function holdStock(items) {
     }
   }
 }
+// v110: reserve BEFORE charging. Two customers buying the last unit at the
+// same moment used to both pass the "in stock" check, both get charged, and
+// only then was stock taken off. Now the check and the take-off happen as one
+// step behind a queue (one at a time), and the charge comes after. If the
+// charge fails the stock is put straight back (releaseStock).
+let reserveQueue = Promise.resolve();
+function reserveStock(items) {
+  const run = async () => {
+    for (const it of items || []) {
+      const g = await db.find('storeGoods', x => x.id === it.goodId);
+      if (!g || !isOnShelf(g)) return { error: 'One of the goods you picked is no longer in the store. Open the store and pick again.' };
+      if (!inStock(g, it.qty)) return { error: g.stock > 0 ? `Only ${g.stock} of "${g.name}" left in the store.` : `"${g.name}" is sold out.` };
+    }
+    await holdStock(items);
+    return { ok: true };
+  };
+  const result = reserveQueue.then(run, run);
+  reserveQueue = result.catch(() => {});
+  return result;
+}
+// Undo a reservation that never became an order (payment failed).
+async function releaseStock(items) {
+  for (const it of items || []) {
+    const g = await db.find('storeGoods', x => x.id === it.goodId);
+    if (!g) continue;
+    const patch = { sold: Math.max(0, (g.sold || 0) - it.qty) };
+    if (g.stock !== null && g.stock !== undefined) patch.stock = g.stock + it.qty;
+    await db.update('storeGoods', g.id, patch);
+  }
+}
 async function giveBackStock(contract) {
   if (!contract || !Array.isArray(contract.storeItems) || !contract.storeItems.length) return false;
   const fresh = await db.find('contracts', c => c.id === contract.id);
@@ -298,6 +331,6 @@ module.exports = {
   isOnShelf, inStock, storeIsLive, publicStore, refreshStoreLive,
   DELIVERY_METHODS, DELIVERY_LABELS, DRIVER_SKILL, VEHICLES, storeApproval, whyNotLive, WHY_NOT_LIVE_WORDS, storeOptions,
   currenciesFor, usdFromLocal, goodUsdPrice, goodPriceFields,
-  priceBasket, holdStock, giveBackStock,
+  priceBasket, holdStock, reserveStock, releaseStock, giveBackStock,
   approvedSkills, hasSkill,
 };

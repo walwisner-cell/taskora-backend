@@ -121,7 +121,7 @@ router.get('/store/mine', requireAuth, requireRole('provider'), async (req, res)
     options: store.storeOptions(me),
     currencies,
     goods: goods.map(g => goodForOwner(g, currencies)),
-    settings: { enabled: settings.enabled, purchaseFee: settings.purchaseFee, maxGoodsPerStore: settings.maxGoodsPerStore, feePaidBy: settings.feePaidBy, deliveryFeePercent: settings.deliveryFeePercent },
+    settings: { enabled: settings.enabled, purchaseFee: settings.purchaseFee, maxGoodsPerStore: settings.maxGoodsPerStore, feePaidBy: settings.feePaidBy, deliveryFeePercent: settings.deliveryFeePercent, sellerPackDays: settings.sellerPackDays },
     rules: { text: settings.rulesText, version: settings.rulesVersion, agreed: !!(me.store && me.store.rulesVersion === settings.rulesVersion), agreedAt: (me.store && me.store.rulesAgreedAt) || null },
     verified: me.verified === true,
   });
@@ -531,11 +531,38 @@ router.post('/contracts/:id/handover', requireAuth, async (req, res) => {
   if (urls === null || !urls.length) return res.status(400).json({ error: 'Add at least one photo (up to 6), taken on this page' });
   if (note && !isNonEmptyString(note, { max: 300 })) return res.status(400).json({ error: 'The note must be under 300 characters' });
   const iAmPro = contract.providerId === req.user.sub;
+  // v111: codes on a store delivery. The seller must type the driver's pick-up
+  // code to record the hand-over to the driver; the driver must type the
+  // customer's drop-off code to record the drop-off. A driver whose customer
+  // can't give the code can still record it without, with a written reason,
+  // and the record is marked so it can be reviewed in a dispute.
+  let codeVerified = false, codeSkipped = false;
+  if (contract.delivery && ((stage === 'pickup' && iAmSeller) || (stage === 'dropoff' && iAmPro))) {
+    const codes = await db.find('deliveryCodes', x => x.contractId === contract.id);
+    if (codes) {
+      const given = String((req.body || {}).code || '').trim();
+      const skip = stage === 'dropoff' && (req.body || {}).noCode === true;
+      if (skip) {
+        if (!note || String(note).trim().length < 10) return res.status(400).json({ code: 'CODE_NEEDED', error: 'Say why you have no code (at least a few words), for example that the customer could not be reached.' });
+        codeSkipped = true;
+      } else {
+        if (codes.lockedUntil && new Date(codes.lockedUntil) > new Date()) return res.status(429).json({ error: 'Too many wrong codes. Wait a few minutes and try again.' });
+        const want = stage === 'pickup' ? codes.pickupCode : codes.dropoffCode;
+        if (given !== want) {
+          const attempts = (codes.attempts || 0) + 1;
+          await db.update('deliveryCodes', codes.id, { attempts: attempts >= 5 ? 0 : attempts, lockedUntil: attempts >= 5 ? new Date(Date.now() + 10 * 60 * 1000).toISOString() : null });
+          return res.status(400).json({ code: 'CODE_NEEDED', error: given ? (attempts >= 5 ? 'Wrong code 5 times. Locked for 10 minutes.' : 'That code is not right.') : (stage === 'pickup' ? 'Enter the pick-up code the driver shows you.' : 'Enter the drop-off code from the customer\'s app.') });
+        }
+        codeVerified = true;
+        await db.update('deliveryCodes', codes.id, { attempts: 0, lockedUntil: null });
+      }
+    }
+  }
   const h = { pickup: [], dropoff: [], trail: [], ...(contract.handover || {}) };
   if (stage === 'dropoff' && !h.pickup.length) return res.status(400).json({ error: 'Record the pick-up first, then the drop-off.' });
   if (h[stage].length >= 6) return res.status(400).json({ error: `There are already 6 ${stage === 'pickup' ? 'pick-up' : 'drop-off'} records on this booking.` });
   const now = new Date().toISOString();
-  const entry = { id: `ho_${nanoid(8)}`, by: iAmSeller ? 'seller' : iAmPro ? 'provider' : 'customer', byId: req.user.sub, at: now, photoUrls: urls, location: location ? readPoint(location) : null, note: note ? String(note).trim() : null };
+  const entry = { id: `ho_${nanoid(8)}`, by: iAmSeller ? 'seller' : iAmPro ? 'provider' : 'customer', byId: req.user.sub, at: now, codeVerified, codeSkipped, photoUrls: urls, location: location ? readPoint(location) : null, note: note ? String(note).trim() : null };
   h[stage] = [...h[stage], entry];
   // The route is recorded from the PRO's pick-up to the PRO's drop-off.
   if (iAmPro && stage === 'pickup' && !h.carryStartedAt) { h.carryStartedAt = now; h.trail = entry.location ? [{ ...entry.location, at: now }] : []; }
@@ -733,6 +760,7 @@ const PRIVACY_ADDITIONS = [
   { key: 'stores', test: /Stores and business tools/i, after: /^Jobs and bookings\./m, text: 'Stores and business tools (pros only, optional). If you open a store: its name, your goods, their photos and prices, and your stock. If you use the business tools: the quotes, estimates and invoices you write (including the customer name and contact you type in), your list of tools, and your expenses and receipt photos. Only you can see your business records, except a quote, estimate or invoice you choose to send to a customer on Trothen, which that customer can also see. Your store name is public, and your goods and prices are shown to anyone who opens your store once a Trothen manager has approved them. If you add a skill in a licensed trade, the licence photo you attach is kept privately and only the Trothen staff who check it can open it.' },
   { key: 'handover', test: /Pick-up and drop-off\. When goods/i, after: /^Live trip\./m, text: 'Pick-up and drop-off. When goods or materials are carried as part of a booking, the customer or the pro can take photos at pick-up and at drop-off. Each record keeps who took it, when, and where the phone was, if the phone gives a position. From the pro\'s pick-up record until the pro\'s drop-off record, the pro\'s phone also records the route taken, while the Trothen page is open. Only the customer and the pro on that booking, and Trothen staff handling a dispute, can see these.' },
   { key: 'store-orders', test: /Store orders and delivery\./i, after: /^Pick-up and drop-off\. When goods/m, text: "Store orders and delivery. When you buy goods from a pro's store, the seller sees your first name, what you bought and any note you write. If you ask for the goods to be brought to you, the place you give (a pin, a landmark or an address) is shown to whoever brings them: the seller if the seller delivers, or the driver you chose. When a driver delivers, the seller is not shown your address. A store's collection place, and its pin if the seller set one, are shown to customers who order from it and to the driver. A driver's name, what they deliver with, their rating and their price are shown to customers choosing a driver; a driver's own position is never shown." }, // v108
+  { key: 'rides', test: /Rides and live tracking\./i, after: /^Store orders and delivery\./m, text: "Rides and live tracking. If you request or give a ride, or a driver delivers your store order, the position of the driver's phone is sent to Trothen every few seconds while the ride or delivery is open and is shown on a map to the people on it (the rider or customer, and the seller on a delivery). The route so far is kept with the booking for disputes and safety, and the live position is deleted when the trip ends. While a ride or delivery is open, the people on it can also see each other's phone number so they can call or text. Numbers are not shown before a driver accepts or after the order ends. If a rider uses Share my trip, anyone with that link can see the driver's first name, vehicle, plate and live position until about an hour after the trip ends. A safety alert (SOS) sends the sender's position and the booking details to Trothen staff. A driver's licence, vehicle registration, vehicle photo and insurance document are kept privately and only Trothen staff who approve drivers or handle a dispute can open them." },
   { key: 'handover-kept', test: /Pick-up and drop-off\. The positions/i, after: /^Job location\. The exact pin/m, text: 'Pick-up and drop-off. The positions on pick-up and drop-off records, and the recorded route, are removed on the same 90-day rule. The photos and times stay with the booking as the record of the hand-over.' },
 ];
 function addMissingPrivacyParagraphs(content) {
@@ -762,7 +790,7 @@ router.post('/admin/store/privacy-check/apply', adminGate, async (req, res) => {
 
 router.put('/admin/store/settings', adminGate, async (req, res) => {
   if (!req.adminUser.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
-  const { enabled, purchaseFee, feePaidBy, bannedWords, rulesText, deliveryFeePercent } = req.body || {};
+  const { enabled, purchaseFee, feePaidBy, bannedWords, rulesText, deliveryFeePercent, sellerPackDays } = req.body || {};
   const patch = {};
   const before = await store.storeSettings();
   if (feePaidBy !== undefined) {
@@ -782,6 +810,10 @@ router.put('/admin/store/settings', adminGate, async (req, res) => {
   if (deliveryFeePercent !== undefined) {
     if (typeof deliveryFeePercent !== 'number' || deliveryFeePercent < 0 || deliveryFeePercent > 30) return res.status(400).json({ error: 'Trothen\'s share of a delivery charge must be between 0% and 30%' });
     patch.deliveryFeePercent = Math.round(deliveryFeePercent * 100) / 100;
+  }
+  if (sellerPackDays !== undefined) {
+    if (!Number.isInteger(sellerPackDays) || sellerPackDays < 1 || sellerPackDays > 60) return res.status(400).json({ error: 'Days a seller has to pack an order must be a whole number from 1 to 60' });
+    patch.sellerPackDays = sellerPackDays;
   }
   if (enabled !== undefined) patch.enabled = enabled === true;
   if (purchaseFee !== undefined) {

@@ -14422,7 +14422,8 @@ async function saveHandover() {
   const id = HANDOVER.contractId, stage = HANDOVER.stage;
   try {
     btn.textContent = tr('Saving…');
-    const r = await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/handover`, { stage, photoUrls: HANDOVER.photos, note: document.getElementById('ho-note').value.trim() || undefined, location: fix.error ? undefined : fix });
+    const codeEl = document.getElementById('ho-code'), noCodeEl = document.getElementById('ho-nocode'); // v111: delivery codes
+    const r = await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/handover`, { stage, photoUrls: HANDOVER.photos, note: document.getElementById('ho-note').value.trim() || undefined, location: fix.error ? undefined : fix, code: codeEl && codeEl.value.trim() ? codeEl.value.trim() : undefined, noCode: noCodeEl && noCodeEl.checked ? true : undefined });
     if (RAW_CONTRACTS[id]) RAW_CONTRACTS[id].handover = r.handover;
     showToast(fix.error ? tr('Saved, without a location (your phone could not give one).') : tr(stage === 'pickup' ? 'Pick-up recorded' : 'Drop-off recorded'));
     if (AUTH.user.role === 'provider') { if (r.carrying) startCarry(id); else if (CARRY.contractId === id) stopCarry(); }
@@ -15610,7 +15611,10 @@ function sellerOrderHTML(o) {
   const liveDelivery = d && ['pending_provider_confirmation', 'active'].includes(d.status);
   const how = o.deliveryMethod === 'pickup' ? tr('The customer collects it')
     : o.deliveryMethod === 'seller' ? `${tr('You bring it')}: ${o.dropoff && o.dropoff.address ? o.dropoff.address : ''}`
-    : d && d.driver && liveDelivery ? `${tr('Driver')}: ${d.driver.name}${d.driver.vehicle ? ' (' + tr(d.driver.vehicle) + ')' : ''}` : tr('The customer is choosing a driver');
+    : d && d.driver && liveDelivery ? `${tr('Driver')}: ${d.driver.name}${d.driver.vehicle ? ' (' + tr(d.driver.vehicle) + ')' : ''}`
+    // v110: only say the customer is still choosing while the order is open.
+    : d && d.driver && d.status === 'completed' ? `${tr('Delivered by')} ${d.driver.name}`
+    : !active ? '' : tr('The customer is choosing a driver');
   return `<div class="store-order" style="padding:12px 0;border-top:1px solid var(--border);">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;">
       <div style="font-weight:700;color:var(--navy);">${escapeHtml(tr('Order'))} #${escapeHtml(o.number)} <span style="font-weight:400;color:var(--slate);">· ${escapeHtml(o.customer ? o.customer.name : '')} · ${escapeHtml(new Date(o.createdAt).toLocaleDateString())}</span></div>
@@ -16058,7 +16062,11 @@ function customerOrderHTML(o) {
   if (o.deliveryMethod === 'pickup') how = `${escapeHtml(tr('Collect from'))} <strong>${escapeHtml(o.pickup.place || o.store.name)}</strong>${mapsLink(o.pickup.location)}${o.store.hours ? ' · ' + escapeHtml(o.store.hours) : ''}`;
   else if (o.deliveryMethod === 'seller') how = `${escapeHtml(tr('The seller brings it to'))} <strong>${escapeHtml((o.dropoff && (o.dropoff.landmark || o.dropoff.address)) || '')}</strong>`;
   else if (d && d.driver && liveDelivery) how = `${VEHICLE_ICON[d.driver.vehicle] || '🚚'} <strong>${escapeHtml(d.driver.name)}</strong> ${escapeHtml(tr(d.status === 'active' ? 'is bringing it' : 'has been asked to bring it'))} · ${usd2(d.price)}${d.distanceKm ? ' · ' + escapeHtml(kmWords(d.distanceKm)) : ''}${d.answerBy ? ` · ${escapeHtml(tr('answers by'))} ${escapeHtml(new Date(d.answerBy).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}` : ''}`;
-  else if (d && d.status === 'completed') how = `${escapeHtml(tr('Delivered by'))} <strong>${escapeHtml(d.driver ? d.driver.name : '')}</strong>`;
+  else if (d && d.status === 'completed' && d.driver) how = `${escapeHtml(tr('Delivered by'))} <strong>${escapeHtml(d.driver.name)}</strong>`;
+  // v110: "No driver yet. Choose one..." only makes sense while the order is
+  // still open. On a finished or cancelled order it used to keep showing, so
+  // a completed order looked stuck. Nothing to arrange any more: say nothing.
+  else if (!active) how = '';
   else how = `<span style="color:#B4472E;">${escapeHtml(tr('No driver yet. Choose one, or collect it yourself.'))}</span>`;
   const driverPaid = d && ['active', 'completed', 'pending_provider_confirmation'].includes(d.status) ? d.price + (d.serviceFee || 0) : 0;
   return `<div class="panel store-order" data-order="${escapeHtml(o.id)}">

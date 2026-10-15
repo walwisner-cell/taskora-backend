@@ -399,7 +399,17 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   // the booking is counted as goods first.)
   const storeGoodsAmount = Math.round(payableEscrow.reduce((sum, e) => sum + Math.min(e.storeGoodsAmount || 0, Math.max(0, e.amount - (e.materialsAdvanceAmount || 0))), 0) * 100) / 100;
   const commissionableAmount = Math.max(0, Math.round((grossAmount - storeGoodsAmount) * 100) / 100);
-  const commissionAmount = Math.round(commissionableAmount * commissionRate * 100) / 100;
+  // v111: rides carry their own, lower commission (a setting, default 5%, never
+  // above the pro's normal rate). The rider already paid Trothen a fee on top
+  // of the fare, and a flat 10-13% off a $3 ride would leave a driver almost nothing.
+  const rideSharePct = Number(await require('../platform-settings').getSetting('rideCommissionPercent'));
+  const rideRate = usedFreeCommissionCredit ? 0 : Math.min(commissionRate, (Number.isFinite(rideSharePct) ? rideSharePct : 5) / 100);
+  const rideGross = Math.round(payableEscrow.reduce((sum, e) => {
+    const c = contracts.find(x => x.id === e.contractId);
+    return c && c.ride ? sum + Math.max(0, e.amount - (e.materialsAdvanceAmount || 0)) : sum;
+  }, 0) * 100) / 100;
+  const rideCommission = Math.round(Math.min(rideGross, commissionableAmount) * rideRate * 100) / 100;
+  const commissionAmount = Math.round((Math.max(0, commissionableAmount - rideGross) * commissionRate + rideCommission) * 100) / 100;
   // v106: store purchase fees the pro pays (when the super admin has set
   // the fee to come from the pro). Never more than what is being paid on
   // that booking, so a split dispute can't push a payout below zero.
@@ -449,6 +459,7 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     grossAmount,
     commissionRate,
     commissionAmount,
+    rideGrossAmount: rideGross, rideCommissionRate: rideGross > 0 ? rideRate : null, // v111
     storeGoodsAmount, // v105: the part of this payout that is store goods (no commission)
     storeFeeAmount, // v106: flat store purchase fees paid by the pro
     amount: netAmount, // canonical USD amount actually paid out, after commission (and any plan fee)
@@ -824,6 +835,7 @@ async function handleContractComplete(req, res) {
   if (contract.status !== 'active') {
     return res.status(400).json({ error: `This booking is already ${contract.status} and can't be marked complete` });
   }
+  if (contract.ride && !contract.ride.startedAt) return res.status(400).json({ error: 'The trip has not started yet. If you no longer need the ride, cancel it instead.' }); // v111
 
   // Tipping — genuinely optional (default $0, never required to complete
   // a job), and deliberately kept separate from the escrow/commission
@@ -941,6 +953,9 @@ async function handleContractCancel(req, res) {
   // full as well. (2) Goods had already been handed over (pick-up or
   // drop-off recorded), and cancelling refunded them while the customer
   // kept the goods. Both now go to "Report a Problem", where a person decides.
+  if (contract.ride && contract.ride.startedAt && contract.status === 'active') { // v111: once the trip has started, a problem goes to a person
+    return res.status(409).json({ code: 'USE_DISPUTE', error: 'The trip has already started, so it can\'t be cancelled for a refund. If something went wrong, use "Report a Problem" on the booking.' });
+  }
   if (escrow && escrow.materialsAdvancePayoutId) {
     return res.status(409).json({ code: 'USE_DISPUTE', error: 'The pro has already been paid the materials advance for this booking, so it can\'t simply be cancelled. Use "Report a Problem" and our team will sort out what is owed.' });
   }

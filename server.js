@@ -148,6 +148,7 @@ app.use('/api/auth', authRoutes);
 // These come first so their /api/admin/store addresses are reached before the main admin routes.
 app.use('/api', require('./src/routes/store.routes'));
 app.use('/api', require('./src/routes/orders.routes')); // v108: store orders, drivers, receipts
+app.use('/api', require('./src/routes/rides.routes')); // v111: passenger rides
 app.use('/api', require('./src/routes/business.routes'));
 app.use('/api', marketplaceRoutes);
 app.use('/api', paymentsRoutes);
@@ -232,6 +233,12 @@ app.get(['/app/*', '/vendor/*'], (req, res) => res.status(404).type('text/plain'
     if (!fsCheck.existsSync(path.join(__dirname, 'public', f))) console.error(`❌ public/${f} is missing. The site will not work without it. Copy the whole "public" folder from the release package, including the "app" folder.`);
   }
 }
+// v111: the public "follow my ride" page (no login; the long random link is the key)
+app.get('/ride-share/:token', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.sendFile(path.join(__dirname, 'public', 'ride-share.html'));
+});
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -321,6 +328,10 @@ seedIfEmpty()
     const FIVE_MINUTES_MS = 5 * 60 * 1000;
     setTimeout(() => { expireOverdueBookingResponses().catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, 8000);
     setInterval(() => { expireOverdueBookingResponses().catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, FIVE_MINUTES_MS);
+    const { sweepUnpackedStoreOrders } = require('./src/store-order-sweep');
+    const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+    setTimeout(() => { sweepUnpackedStoreOrders().catch(e => console.error('[store-order-sweep] Unexpected error:', e)); }, 20000);
+    setInterval(() => { sweepUnpackedStoreOrders().catch(e => console.error('[store-order-sweep] Unexpected error:', e)); }, SIX_HOURS_MS);
 
     // Document (license) expiry reminder sweep (see
     // src/document-expiry-scheduler.js). Runs once shortly after boot, then

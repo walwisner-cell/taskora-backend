@@ -1617,9 +1617,20 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   // accepts a price — see /respond-offer below), so for that case this
   // stays null and nothing else here changes.
   let escrow = null;
-  if (!isNegotiable) escrow = await fundEscrowForContract(contract, req.user.sub, payCurrency);
-  await db.insert('contracts', contract);
-  if (basket.items.length) await proStore.holdStock(basket.items); // v105: held now, given back if the booking doesn't go ahead
+  // v110: goods are reserved first (one buyer at a time) so two customers can't
+  // both get the last unit; undone if the charge or the save fails.
+  if (basket.items.length) {
+    const held = await proStore.reserveStock(basket.items);
+    if (held.error) return res.status(400).json({ error: held.error });
+  }
+  try {
+    if (!isNegotiable) escrow = await fundEscrowForContract(contract, req.user.sub, payCurrency);
+    await db.insert('contracts', contract);
+  } catch (e) {
+    if (basket.items.length) await proStore.releaseStock(basket.items);
+    console.error('[booking] payment or save failed, stock put back:', e.message);
+    return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be completed, so you were not charged and nothing was booked. Please try again or use another payment method.' });
+  }
 
   if (canRedeemPoints) {
     await db.update('users', customerForPoints.id, { loyaltyPoints: (customerForPoints.loyaltyPoints || 0) - POINTS_FOR_FREE_BOOKING });
@@ -2342,3 +2353,4 @@ module.exports.attemptJobReassignment = attemptJobReassignment;
 module.exports.generateBookingNumber = generateBookingNumber;
 module.exports.fundEscrowForContract = fundEscrowForContract;
 module.exports.readJobLocation = readJobLocation;
+module.exports.computeServiceFee = computeServiceFee; // v111: rides

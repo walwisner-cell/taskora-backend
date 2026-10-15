@@ -1,6 +1,7 @@
 // v108: store orders (goods bought with no job), delivery by a driver,
 // and receipts. The rules are in plain words in src/store-orders.js.
 const express = require('express');
+const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { nanoid } = require('nanoid');
 const db = require('../db');
@@ -86,6 +87,8 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
   // in the database (or reaching the driver's notification below).
   await fundEscrowForContract(delivery, order.customerId, payCurrency);
   await db.insert('contracts', delivery);
+  // v111: two 4-digit codes. The customer's is given to the driver when the goods arrive; the driver's is shown to the seller when the goods are collected. Kept apart from the contract so no booking list can leak them.
+  await db.insert('deliveryCodes', { id: `dc_${nanoid(8)}`, contractId: delivery.id, pickupCode: String(crypto.randomInt(1000, 10000)), dropoffCode: String(crypto.randomInt(1000, 10000)), attempts: 0, lockedUntil: null, createdAt: new Date().toISOString() });
   await db.update('contracts', order.id, { deliveryMethod: 'driver', deliveryContractId: delivery.id, address: where.address, jobLocation: where.jobLocation || null, landmark: where.landmark || null });
   const by = new Date(delivery.providerResponseDeadline).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   await notify(driver.id, '🚚', `Delivery request: collect store order #${order.bookingNumber} (${delivery.delivery.items.slice(0, 80)}) from ${seller.store.name}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver.country)}` : ''}. You are paid $${price.toFixed(2)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by} server time).`, 'bookingUpdates', { section: 'bookings' });
@@ -109,6 +112,8 @@ async function orderView(order, viewerId) {
       distanceKm: (d.delivery && d.delivery.distanceKm) || null, answerBy: d.status === 'pending_provider_confirmation' ? d.providerResponseDeadline : null,
       driver: driver ? { id: driver.id, name: driver.name, vehicle: so.driverRates(driver).vehicle, rating: driver.rating || null, profilePhotoUrl: driver.profilePhotoUrl || null, initials: driver.initials || null, color: driver.color || null } : null,
       pickedUpAt: (h.pickup && h.pickup[0] && h.pickup[0].at) || null, droppedOffAt: (h.dropoff && h.dropoff[0] && h.dropoff[0].at) || null,
+      // v111: only the customer sees this code, and only until the goods are dropped off
+      dropoffCode: (viewerId === order.customerId && ['active', 'pending_provider_confirmation'].includes(d.status) && !(h.dropoff && h.dropoff.length)) ? ((await db.find('deliveryCodes', x => x.contractId === d.id)) || {}).dropoffCode || null : null,
       // enough of the delivery booking for the hand-over window to open on it
       raw: { id: d.id, service: d.service, status: d.status, handover: d.handover || null, delivery: d.delivery, providerId: d.providerId, customerId: d.customerId },
     };
@@ -129,6 +134,7 @@ async function orderView(order, viewerId) {
     dropoff: method === 'pickup' ? null : (!iAmSeller || method === 'seller') ? { address: order.address, landmark: order.landmark || null, location: order.jobLocation || null } : { address: null, landmark: null, location: null },
     customer: customer ? { name: iAmSeller ? `${firstName(customer.name)} ${String(customer.name || '').trim().split(/\s+/).slice(-1)[0][0] || ''}.`.replace(/ \.$/, '') : customer.name } : null,
     delivery,
+    contacts: contactsFor(order, d, d ? await db.find('users', u => u.id === d.providerId) : null, seller, viewerId, customer), // v111
     // The customer can pick a driver (or switch to collecting) while the order is open and nobody is on the way.
     canArrangeDelivery: order.status === 'active' && method !== 'seller' && !live,
     handover: order.handover || null,
@@ -169,6 +175,7 @@ router.get('/store/drivers', requireAuth, driverLimiter, async (req, res) => {
 });
 
 // ── BUYING ─────────────────────────────────────────────────────────────
+const buyInFlight = new Set(); // v110: one purchase at a time per customer (double-tap guard)
 // POST /api/store/orders { providerId, items, deliveryMethod, driverId, driverPrice, jobLocation, landmark, address, note, payCurrency }
 router.post('/store/orders', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
   const customer = await customerCanBuy(req, res);
@@ -250,9 +257,24 @@ router.post('/store/orders', requireAuth, requireRole('customer'), requireCurren
   // holding stock BEFORE this call (the order this used to run in)
   // would leave exactly that broken, un-paid-for "active" order sitting
   // in the database the moment the charge failed.
-  await fundEscrowForContract(order, customer.id, order.payCurrency);
-  await db.insert('contracts', order);
-  await store.holdStock(basket.items);
+  // v110: stock is reserved first (one buyer at a time), then the charge is
+  // made; if the charge or the save fails, the reservation is undone.
+  if (buyInFlight.has(customer.id)) return res.status(409).json({ error: 'Your order is already being processed. Please wait a moment.' });
+  buyInFlight.add(customer.id);
+  try {
+    const held = await store.reserveStock(basket.items);
+    if (held.error) return res.status(400).json({ error: held.error });
+    try {
+      await fundEscrowForContract(order, customer.id, order.payCurrency);
+      await db.insert('contracts', order);
+    } catch (e) {
+      await store.releaseStock(basket.items);
+      console.error('[store order] payment or save failed, stock put back:', e.message);
+      return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be completed, so you were not charged and nothing was ordered. Please try again or use another payment method.' });
+    }
+  } finally {
+    buyInFlight.delete(customer.id);
+  }
   try { await require('../fraud-detection').checkNewAccountHighValue(customer.id, order.amount); } catch (e) { /* the order stands */ }
   const count = basket.items.reduce((n, i) => n + i.qty, 0);
   const how = method === 'pickup' ? 'The customer will collect it.' : method === 'seller' ? `Bring it to the customer: ${where.address}. Your delivery charge of $${sellerDeliveryFee.toFixed(2)} is included.` : `A driver (${driver.name}) has been asked to collect it.`;
@@ -261,6 +283,93 @@ router.post('/store/orders', requireAuth, requireRole('customer'), requireCurren
   const fresh = await db.find('contracts', c => c.id === order.id);
   res.status(201).json({ order: await orderView(fresh, customer.id) });
 });
+
+// ── v111: CONTACTS AND LIVE TRACKING ───────────────────────────────────
+// A phone number is shown to the other people on an order only while the
+// order is open. It is what lets them call, text or WhatsApp each other.
+const contactOf = (u) => (u && u.phone && String(u.phone).trim()) ? { name: u.name, phone: String(u.phone).trim() } : (u ? { name: u.name, phone: null } : null);
+const SPEED_KMH = { motorbike: 25, keke: 20, car: 30, van: 25, truck: 25, bicycle: 12, 'on foot': 5 };
+const { distanceInMiles, isValidCoordinate } = require('../geo-distance');
+function kmOf(a, b) {
+  if (!a || !b || !isValidCoordinate(a.latitude, a.longitude) || !isValidCoordinate(b.latitude, b.longitude)) return null;
+  return Math.round(distanceInMiles(a.latitude, a.longitude, b.latitude, b.longitude) * 1.609344 * 10) / 10;
+}
+const trackLimiter = rateLimit({ windowMs: 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false, message: { error: 'Location updates are arriving too quickly.' } });
+// The driver's phone sends its position here while a delivery is open.
+router.post('/deliveries/:id/location', requireAuth, requireRole('provider'), trackLimiter, async (req, res) => {
+  const d = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub && c.delivery);
+  if (!d) return res.status(404).json({ error: 'Delivery not found' });
+  if (d.status !== 'active') return res.status(409).json({ code: 'TRACK_CLOSED', error: 'This delivery is not open, so your position is not being shared.' });
+  // v111: positions kept while the phone had no signal arrive together
+  if (Array.isArray((req.body || {}).points)) {
+    const tm = require('../track-merge');
+    const batch = tm.cleanBatch(req.body.points);
+    if (!batch.length) return res.status(400).json({ error: 'None of those positions could be used' });
+    await db.update('contracts', d.id, { liveLocation: tm.newestLive(batch, d.liveLocation), track: tm.mergeTrack(d.track, batch) });
+    return res.json({ ok: true, kept: batch.length });
+  }
+  const { latitude, longitude, accuracyM, speedMps } = req.body || {};
+  if (!isValidCoordinate(latitude, longitude) || (latitude === 0 && longitude === 0)) return res.status(400).json({ error: 'That is not a valid position' });
+  const now = Date.now();
+  const prev = d.liveLocation;
+  if (prev && now - new Date(prev.at).getTime() < 5000) return res.json({ ok: true, kept: false });
+  const acc = Number(accuracyM);
+  const live = { latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6, accuracyM: Number.isFinite(acc) && acc > 0 && acc < 100000 ? Math.round(acc) : null, speedKmh: Number.isFinite(Number(speedMps)) && Number(speedMps) >= 0 ? Math.round(Number(speedMps) * 3.6) : null, at: new Date(now).toISOString() };
+  const track = Array.isArray(d.track) ? d.track : [];
+  const last = track[track.length - 1];
+  let next = (!last || now - last[2] >= 15000) ? [...track, [Math.round(latitude * 1e5) / 1e5, Math.round(longitude * 1e5) / 1e5, now]] : track;
+  if (next.length > 400) next = next.filter((_, i) => i === 0 || i % 2 === 0 || i === next.length - 1);
+  await db.update('contracts', d.id, { liveLocation: live, track: next });
+  res.json({ ok: true, kept: true });
+});
+// The customer or the seller watching an order's delivery.
+router.get('/store/orders/:id/track', requireAuth, trackLimiter, async (req, res) => {
+  const order = await db.find('contracts', c => c.id === req.params.id && c.storeOrder === true && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const d = await so.deliveryOf(order);
+  const iAmCustomer = order.customerId === req.user.sub;
+  const seller = await db.find('users', u => u.id === order.providerId);
+  const opt = seller ? store.storeOptions(seller) : {};
+  const pickup = order.pickupLocation || opt.pickupLocation || null;
+  const dropoff = order.jobLocation || null;
+  const driverUser = d ? await db.find('users', u => u.id === d.providerId) : null;
+  const h = (d && d.handover) || {};
+  const pickedUp = !!(h.pickup && h.pickup.length), droppedOff = !!(h.dropoff && h.dropoff.length);
+  let phase = 'none';
+  if (order.status === 'completed' || droppedOff) phase = 'delivered';
+  else if (order.status === 'cancelled') phase = 'cancelled';
+  else if (d && d.status === 'pending_provider_confirmation') phase = 'waiting_driver';
+  else if (d && d.status === 'active') phase = pickedUp ? 'to_customer' : 'to_store';
+  const live = d && d.status === 'active' && d.liveLocation ? d.liveLocation : null;
+  const ageS = live ? Math.max(0, Math.round((Date.now() - new Date(live.at).getTime()) / 1000)) : null;
+  const target = phase === 'to_store' ? pickup : phase === 'to_customer' ? dropoff : null;
+  const remaining = live && target ? kmOf(live, target) : null;
+  const vehicle = driverUser ? so.driverRates(driverUser).vehicle : null;
+  const speed = Math.max(8, Math.min(60, live && live.speedKmh && live.speedKmh > 3 ? live.speedKmh : (SPEED_KMH[vehicle] || 20)));
+  const viewerIsSeller = !iAmCustomer;
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    phase, driver: driverUser ? { name: driverUser.name, vehicle, profilePhotoUrl: driverUser.profilePhotoUrl || null, initials: driverUser.initials || null } : null,
+    live: live ? { latitude: live.latitude, longitude: live.longitude, accuracyM: live.accuracyM, speedKmh: live.speedKmh, secondsAgo: ageS } : null,
+    stale: ageS != null && ageS > 120,
+    pickup: pickup ? { latitude: pickup.latitude, longitude: pickup.longitude, place: order.pickupPlace || opt.pickupPlace || '' } : null,
+    // the seller only sees where it is going when the seller is the one bringing it
+    dropoff: dropoff && (iAmCustomer || order.deliveryMethod === 'seller' || phase === 'to_customer' || phase === 'delivered') ? { latitude: dropoff.latitude, longitude: dropoff.longitude, place: order.landmark || order.address || '' } : null,
+    remainingKm: remaining, etaMinutes: remaining != null ? Math.max(1, Math.round(remaining * 1.3 / speed * 60)) : null,
+    trail: d && d.status === 'active' && Array.isArray(d.track) ? d.track.slice(-120).map(p => [p[0], p[1]]) : [],
+    contacts: contactsFor(order, d, driverUser, seller, req.user.sub),
+    orderNumber: order.bookingNumber, viewer: viewerIsSeller ? 'seller' : 'customer',
+  });
+});
+// Who each person may call: only while the order is open.
+function contactsFor(order, d, driverUser, seller, viewerId, customerUser) {
+  if (order.status !== 'active') return {};
+  const out = {};
+  const driverOpen = d && d.status === 'active';
+  if (viewerId === order.customerId) { if (seller) out.seller = contactOf(seller); if (driverOpen && driverUser) out.driver = contactOf(driverUser); }
+  else if (viewerId === order.providerId) { if (driverOpen && driverUser) out.driver = contactOf(driverUser); if (order.deliveryMethod === 'seller' && customerUser) out.customer = contactOf(customerUser); }
+  return out;
+}
 
 // GET /api/store/orders/mine
 router.get('/store/orders/mine', requireAuth, async (req, res) => {
@@ -283,6 +392,9 @@ router.get('/store/orders/mine', requireAuth, async (req, res) => {
       dropoff: { address: d.address, landmark: d.landmark || null, location: d.jobLocation || null },
       orderStatus: order ? order.status : null, orderReadyAt: order ? (order.readyAt || null) : null,
       pickedUpAt: (h.pickup && h.pickup[0] && h.pickup[0].at) || null, droppedOffAt: (h.dropoff && h.dropoff[0] && h.dropoff[0].at) || null,
+      contacts: d.status === 'active' ? { customer: contactOf(await db.find('users', u => u.id === d.customerId)), seller: contactOf(await db.find('users', u => u.id === d.delivery.sellerId)) } : {}, // v111
+      customerFirstName: undefined,
+      pickupCode: (d.status === 'active' && !(h.pickup && h.pickup.length)) ? ((await db.find('deliveryCodes', x => x.contractId === d.id)) || {}).pickupCode || null : null, // v111: show this to the seller
     });
   }
   res.json({ selling: await Promise.all(selling.slice(0, 100).map(o => orderView(o, me))), delivering });

@@ -5,3 +5,4 @@ uploads/
 *.zip
 taskora-backend/
 taskora-backend-OLD/
+private-uploads/
