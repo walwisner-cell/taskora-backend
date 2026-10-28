@@ -54,7 +54,22 @@
     if (!cfg || !cfg.availableHere) return;
     menuFor = AUTH.user.id + role;
     if (role === 'customer') { addNav(CUSTOMER_NAV_ITEMS, 'bookings', { key: 'rides', label: 'Rides', icon: '🛵' }); rerenderNav('customer-nav', CUSTOMER_NAV_ITEMS, 'selectCustomerSection'); }
-    else { addNav(PROVIDER_NAV_ITEMS, 'contracts', { key: 'rides', label: 'Rides', icon: '🛵' }); rerenderNav('provider-nav', PROVIDER_NAV_ITEMS, 'selectProviderSection'); }
+    else { addNav(PROVIDER_NAV_ITEMS, 'contracts', { key: 'rides', label: 'Rides', icon: '🛵' }); rerenderNav('provider-nav', PROVIDER_NAV_ITEMS, 'selectProviderSection'); inviteDriver(); }
+  }
+  // v114: a pro who has not applied (or has not finished) is invited to give rides. The sign-up box "I also want to
+  // give rides" sends them straight to the application the first time they sign in.
+  function inviteCard(st) {
+    const word = st === 'rejected' ? 'Your ride driver application was not approved. Open Rides to see why and fix it.' : st === 'draft' ? 'You started a ride driver application. Finish it and send it for review.' : 'Earn more by giving rides to passengers. You need a driving licence and a vehicle, and the Trothen team checks your papers before you can start.';
+    return `<div class="panel" id="rides-invite" style="border-left:4px solid var(--gold,#C9A227);display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><div style="flex:1;min-width:220px;"><div class="panel-title" style="margin-bottom:4px;">🛵 ${e(tr('Give rides'))}</div><div style="font-size:14px;color:var(--slate);">${e(tr(word))}</div></div><button class="btn-sm btn-sm-primary" onclick="selectProviderSection('rides')">${e(tr(st === 'draft' || st === 'rejected' ? 'Open Rides' : 'See what is needed'))}</button></div>`;
+  }
+  async function inviteDriver() {
+    let d; try { d = await apiFetch('GET', '/rides/driver/me'); } catch (x) { return; }
+    if (!d || !d.availableHere || !['none', 'draft', 'rejected'].includes(d.status)) return;
+    R.invite = d.status;
+    let want = false; try { want = localStorage.getItem('trothen_want_rides') === '1'; if (want) localStorage.removeItem('trothen_want_rides'); } catch (x) { /* no storage: just show the card */ }
+    if (want) return setTimeout(() => selectProviderSection('rides'), 400);
+    const m = el('provider-main'), act = document.querySelector('#provider-nav .dash-nav-item.active');
+    if (m && !el('rides-invite') && act && /overview/i.test(act.textContent)) m.insertAdjacentHTML('afterbegin', inviteCard(d.status));
   }
   function rerenderNav(id, items, fn) {
     const box = el(id); if (!box) return;
@@ -64,6 +79,7 @@
   }
   CUSTOMER_SECTIONS.rides = () => section('Rides', 'Get a safe ride from a verified driver');
   PROVIDER_SECTIONS.rides = () => section('Rides', 'Give rides to passengers');
+  { const f = PROVIDER_SECTIONS.overview; PROVIDER_SECTIONS.overview = function () { const h = f.apply(this, arguments); return (R.invite ? inviteCard(R.invite) : '') + h; }; }
   if (typeof ADMIN_SECTIONS !== 'undefined') ADMIN_SECTIONS.rides = () => section('Rides', 'Drivers, safety alerts and where rides are on');
 
   { const f = selectCustomerSection; selectCustomerSection = function (key) { stopTimers(); const r = f.apply(this, arguments); if (key === 'rides') loadRiderPage(); return r; }; }
@@ -140,17 +156,21 @@
           <div style="flex:1;min-width:180px;"><div style="font-weight:700;color:var(--navy);">${e(d.name)} <span style="font-weight:400;color:var(--slate);">· ${d.rating ? '★ ' + e(d.rating) : e(tr('New'))}</span></div>
           <div style="font-size:13.5px;color:var(--slate);">${e(tr(d.vehicle))}${d.make ? ' · ' + e(d.make) : ''} · ${e(km(d.awayKm))} ${e(tr('away'))}${d.helmet ? ' · ' + e(tr('helmet provided')) : ''}</div></div>
           <div style="text-align:right;"><div style="font-weight:700;font-size:18px;">${money(d.fare)}</div><div style="font-size:12px;color:var(--slate);">+ ${e(r.feePercent)}% ${e(tr('Trothen fee'))}</div></div>
-          <button class="btn-sm btn-sm-primary" onclick="ridesRequest(${jsArg(d.id)},${d.fare})">${e(tr('Request'))}</button>
+          <div style="display:flex;flex-direction:column;gap:6px;"><button class="btn-sm btn-sm-primary" onclick="ridesRequest(${jsArg(d.id)},${d.fare},'app')">${e(tr('Request'))}</button>
+          ${d.cashOk ? `<button class="btn-sm btn-sm-outline" onclick="ridesRequest(${jsArg(d.id)},${d.fare},'cash')">💵 ${e(tr('Pay cash'))}</button><div style="font-size:11.5px;color:var(--slate);max-width:120px;">${e(tr('no Trothen fee'))}</div>` : ''}</div>
         </div>`).join('');
     } catch (x) { out.innerHTML = `<div class="ver-note">${e(x.message || 'Could not find drivers')}</div>`; }
   };
-  window.ridesRequest = async function (driverId, fare) {
+  window.ridesRequest = async function (driverId, fare, payment) {
     const q = R.quote; if (!q) return;
-    if (!(await confirmDialog(tr('Request this ride? The fare is held now and refunded if the driver does not answer or you cancel before the trip starts.'), { confirmLabel: tr('Request ride') }))) return;
+    const cash = payment === 'cash';
+    if (!(await confirmDialog(cash
+      ? tr('Request this ride and pay the driver in cash? You pay exactly') + ' ' + money(fare) + ' ' + tr('at the end of the trip. Nothing is held by Trothen, so there is no automatic refund. If the driver asks for more, say no and report it.')
+      : tr('Request this ride? The fare is held now and refunded if the driver does not answer or you cancel before the trip starts.'), { confirmLabel: tr('Request ride') }))) return;
     try {
-      await apiFetch('POST', '/rides', { driverId, passengers: q.pax, expectedFare: fare, pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
+      await apiFetch('POST', '/rides', { driverId, passengers: q.pax, expectedFare: fare, payment: cash ? 'cash' : 'app', payWith: !cash && typeof tokenPayWith === 'function' ? tokenPayWith('ride') : undefined, pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
       showToast(tr('Ride requested. Waiting for the driver.')); loadRiderPage();
-    } catch (x) { showToast(x.message || 'Could not request the ride'); if (x.data && x.data.code === 'PRICE_CHANGED') window.ridesFindDrivers(); }
+    } catch (x) { showToast(x.message || 'Could not request the ride'); if (x.data && (x.data.code === 'PRICE_CHANGED' || x.data.code === 'CASH_NOT_AVAILABLE')) window.ridesFindDrivers(); }
   };
   function riderTrip(r) {
     const d = r.driver || {};
@@ -164,17 +184,29 @@
       ${waiting ? `<div class="ver-note">${e(tr('Answer due by'))} ${e(when(r.answerBy))}. ${e(tr('If there is no answer you are refunded automatically.'))}</div>` : ''}
       ${r.pin ? `<div style="text-align:center;margin:12px 0;padding:14px;border-radius:12px;background:#EEF8F3;"><div style="font-size:13px;color:var(--slate);">${e(tr('Your trip PIN. Check the plate, then give the driver this PIN.'))}</div><div style="font-size:44px;font-weight:800;letter-spacing:10px;color:var(--navy);">${e(r.pin)}</div></div>` : ''}
       ${r.status === 'active' ? `<div style="font-size:14px;margin:6px 0;">${r.live ? `📍 ${e(tr(r.phase === 'to_destination' ? 'On the way to your destination' : 'Driver is coming'))}${r.etaMinutes ? ' · ' + e(tr('about')) + ' ' + r.etaMinutes + ' ' + e(tr('min')) : ''}${r.stale ? ` · <span style="color:#B4472E;">${e(tr('no update for a while'))}</span>` : ''}` : e(tr('Waiting for the driver\'s location…'))}</div><button class="btn-sm btn-sm-primary" onclick="openTrack('ride',${jsArg(r.id)})">🗺️ ${e(tr('Watch on the map'))}</button>${contactRow(r.contact)}` : ''}
+      ${r.cash ? `<div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#FFF6DD;border:1px solid #E0A526;font-size:14px;">💵 <strong>${e(tr('Cash ride.'))}</strong> ${e(tr('Pay the driver exactly'))} <strong>${money(r.payInCash)}</strong> ${e(tr('at the end. Nothing is held by Trothen. If the driver asks for more, do not pay it. Report it here.'))}</div>` : ''}
+      ${r.autoReleaseAt ? `<div class="ver-note" style="margin-top:8px;">${e(tr(r.cash ? 'Your driver says you have arrived. If you do nothing, this ride is closed as complete on' : 'Your driver says you have arrived. If you do nothing, the fare is released to the driver on'))} ${e(new Date(r.autoReleaseAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}. ${e(tr('If something was wrong, use Report a Problem on the booking before then.'))}</div>` : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-        ${r.canConfirm ? `<button class="confirm-btn" onclick="ridesConfirm(${jsArg(r.id)})">✅ ${e(tr('I arrived safely, pay the driver'))}</button>` : ''}
+        ${r.canConfirm ? `<button class="confirm-btn" onclick="ridesConfirm(${jsArg(r.id)},${r.cash ? 'true' : 'false'})">✅ ${e(tr(r.cash ? 'I arrived safely and paid in cash' : 'I arrived safely, pay the driver'))}</button>` : ''}
+        ${r.cash ? `<button class="btn-sm btn-sm-outline" onclick="ridesReport(${jsArg(r.id)})">📝 ${e(tr('Report a problem'))}</button>` : ''}
         ${r.shareUrl ? `<button class="btn-sm btn-sm-outline" onclick="ridesShare(${jsArg(r.shareUrl)})">🔗 ${e(tr('Share my trip'))}</button>` : ''}
         ${r.status === 'active' ? `<button class="btn-sm" style="background:#C0392B;color:#fff;" onclick="ridesSOS(${jsArg(r.id)})">🚨 ${e(tr('Emergency / SOS'))}</button>` : ''}
         ${r.canCancel ? `<button class="btn-sm btn-sm-outline" onclick="ridesCancel(${jsArg(r.id)})">${e(tr('Cancel ride'))}</button>` : ''}
       </div>
       <div class="ver-note" style="margin-top:10px;">${e(tr('Never get in if the plate or the driver does not match. Fare:'))} ${money(r.fare)} + ${money(r.fee)} ${e(tr('Trothen fee'))}.</div></div>`;
   }
-  window.ridesConfirm = async function (id) {
-    if (!(await confirmDialog(tr('Confirm you arrived? The driver is paid now.'), { confirmLabel: tr('Pay the driver') }))) return;
-    try { await apiFetch('POST', `/rides/${encodeURIComponent(id)}/confirm`, {}); showToast(tr('Thank you. The driver has been paid.')); loadRiderPage(); } catch (x) { showToast(x.message || 'Could not confirm'); }
+  window.ridesReport = function (id) {
+    v105Overlay('report-overlay', `<div class="modal-header"><button class="modal-close" onclick="v105Close('report-overlay')" aria-label="Close">✕</button><h3>${e(tr('Report a problem'))}</h3><p>${e(tr('Tell the Trothen team what happened on this ride.'))}</p></div>
+      <div class="modal-body"><textarea class="form-input" id="report-note" rows="5" maxlength="500" placeholder="${e(tr('For example: the driver asked for more than the fare shown'))}"></textarea></div>
+      <div class="modal-footer" style="display:flex;gap:10px;"><button class="btn-sm btn-sm-outline" style="flex:1;" onclick="v105Close('report-overlay')">${e(tr('Cancel'))}</button><button class="confirm-btn" style="flex:2;" onclick="ridesSendReport(${jsArg(id)})">${e(tr('Send'))}</button></div>`, 520);
+  };
+  window.ridesSendReport = async function (id) {
+    try { await apiFetch('POST', `/rides/${encodeURIComponent(id)}/report`, { note: (el('report-note') || {}).value || '' }); v105Close('report-overlay'); showToast(tr('Thank you. The Trothen team has been told.')); }
+    catch (x) { showToast(x.message || 'Could not send'); }
+  };
+  window.ridesConfirm = async function (id, cash) {
+    if (!(await confirmDialog(cash ? tr('Confirm you arrived and paid the driver in cash?') : tr('Confirm you arrived? The driver is paid now.'), { confirmLabel: cash ? tr('Yes, I paid') : tr('Pay the driver') }))) return;
+    try { await apiFetch('POST', `/rides/${encodeURIComponent(id)}/confirm`, {}); showToast(tr(cash ? 'Thank you. Ride complete.' : 'Thank you. The driver has been paid.')); loadRiderPage(); } catch (x) { showToast(x.message || 'Could not confirm'); }
   };
   window.ridesCancel = async function (id) {
     if (!(await confirmDialog(tr('Cancel this ride? Your money comes back.'), { confirmLabel: tr('Cancel ride'), danger: true }))) return;
@@ -199,7 +231,7 @@
     R.drv = d; R.list = list;
     if (!d.availableHere) { body().innerHTML = `<div class="panel"><div class="ver-note">${e(tr('Rides are not open in your country yet.'))}</div></div>`; return; }
     let html = '';
-    if (d.status === 'approved') html += driverOps(d, list) + driverRates(d);
+    if (d.status === 'approved') html += driverOps(d, list) + driverPass(d) + driverRates(d);
     else html += driverApply(d);
     const past = list.filter(r => !['active', 'pending_provider_confirmation'].includes(r.status));
     if (past.length) html += `<div class="panel"><div class="panel-title">${e(tr('Past rides'))}</div>${past.slice(0, 15).map(pastRow).join('')}</div>`;
@@ -219,26 +251,35 @@
       ${d.status === 'suspended' ? `<div class="ver-note" style="border-left:3px solid #C0392B;">${e(tr('Your ride driving is paused:'))} ${e(d.rejectReason || '')}</div>` : ''}
       <div class="ver-note" style="margin-bottom:12px;">${e(tr('To keep riders safe, an admin checks your licence and your vehicle before you can take rides. Your documents are private.'))}</div>
       <div class="dates-row">
-        <div class="form-group"><label class="form-label" for="rd-vehicle">${e(tr('Vehicle'))}</label><select class="form-input form-select" id="rd-vehicle" ${locked ? 'disabled' : ''}>${Object.keys(d.vehicles).map(v => `<option value="${v}" ${v === d.vehicle ? 'selected' : ''}>${e(tr(v))} (${d.vehicles[v]} ${e(tr('seats'))})</option>`).join('')}</select></div>
+        <div class="form-group"><label class="form-label" for="rd-vehicle">${e(tr('Vehicle'))}</label><select class="form-input form-select" id="rd-vehicle" onchange="ridesVehicleChanged()" ${locked ? 'disabled' : ''}>${Object.keys(d.vehicles).map(v => `<option value="${v}" ${v === d.vehicle ? 'selected' : ''}>${e(tr(v))} (${d.vehicles[v]} ${e(tr('seats'))})</option>`).join('')}</select></div>
         <div class="form-group"><label class="form-label" for="rd-make">${e(tr('Make / colour'))}</label><input class="form-input" id="rd-make" maxlength="40" value="${e(d.make)}" placeholder="Honda, red" ${locked ? 'disabled' : ''}/></div>
         <div class="form-group"><label class="form-label" for="rd-plate">${e(tr('Number plate'))}</label><input class="form-input" id="rd-plate" maxlength="15" value="${e(d.plate)}" ${locked ? 'disabled' : ''}/></div>
       </div>
       <div class="dates-row">
         <div class="form-group"><label class="form-label" for="rd-lic">${e(tr("Driver's licence number"))}</label><input class="form-input" id="rd-lic" maxlength="30" value="${e(d.licenceNumber)}" ${locked ? 'disabled' : ''}/></div>
         <div class="form-group"><label class="form-label" for="rd-exp">${e(tr('Licence expires'))}</label><input class="form-input" type="date" id="rd-exp" value="${e(d.licenceExpiry)}" ${locked ? 'disabled' : ''}/></div>
+        <div class="form-group"><label class="form-label" for="rd-ins">${e(tr('Insurance or road permit expires'))}${need.includes('insurance') ? '' : ' (' + e(tr('optional')) + ')'}</label><input class="form-input" type="date" id="rd-ins" value="${e(d.insuranceExpiry || '')}" ${locked ? 'disabled' : ''}/><div class="ver-note" style="margin-top:4px;">${e(tr('We remind you a week before it runs out. If it expires you go offline until you update it.'))}</div></div>
+        ${need.includes('roadworthy') ? `<div class="form-group"><label class="form-label" for="rd-rw">${e(tr('Roadworthiness certificate expires'))}</label><input class="form-input" type="date" id="rd-rw" value="${e(d.roadworthyExpiry || '')}" ${locked ? 'disabled' : ''}/></div>` : ''}
       </div>
+      <div class="ver-note" id="rd-need" style="margin-bottom:10px;">${e(tr('Papers needed for your vehicle:'))} <strong>${need.map(k => e(tr((d.docKinds || {})[k] || k))).join(', ')}</strong>. ${e(tr('The list depends on your country and vehicle. Save your details to update it.'))}</div>
       <label style="display:flex;gap:8px;align-items:center;margin:6px 0 12px;"><input type="checkbox" id="rd-helmet" ${d.helmet ? 'checked' : ''} ${locked ? 'disabled' : ''}/> ${e(tr('I carry a helmet for the passenger (motorbike riders)'))}</label>
       ${locked ? '' : `<button class="btn-sm btn-sm-primary" onclick="ridesSaveApply()">${e(tr('Save details'))}</button>`}
-      <div style="margin-top:14px;font-weight:700;color:var(--navy);">${e(tr('Documents'))}</div>${Object.keys(d.docKinds || { licence: 1, registration: 1, vehicle: 1, insurance: 1 }).map(docRow).join('')}
+      <div style="margin-top:14px;font-weight:700;color:var(--navy);">${e(tr('Documents'))}</div>${need.map(docRow).join('')}
+      ${(() => { const rest = Object.keys(d.docKinds || {}).filter(k => !need.includes(k)); return rest.length ? `<details style="margin-top:6px;"><summary style="cursor:pointer;color:var(--slate);">${e(tr('Add other documents (optional)'))}</summary>${rest.map(docRow).join('')}</details>` : ''; })()}
       ${locked || d.status === 'none' ? '' : `<button class="confirm-btn" style="margin-top:12px;" onclick="ridesSubmitApply()">${e(tr('Send for review'))}</button>`}</div>`;
   }
   window.el_ = (id) => document.getElementById(id);
   window.ridesSaveApply = async function () {
     if (!(await ensureRules())) return;
     try {
-      await apiFetch('POST', '/rides/driver/apply', { vehicle: el('rd-vehicle').value, make: el('rd-make').value, plate: el('rd-plate').value, licenceNumber: el('rd-lic').value, licenceExpiry: el('rd-exp').value, helmet: el('rd-helmet').checked });
+      await apiFetch('POST', '/rides/driver/apply', { vehicle: el('rd-vehicle').value, make: el('rd-make').value, plate: el('rd-plate').value, licenceNumber: el('rd-lic').value, licenceExpiry: el('rd-exp').value, insuranceExpiry: el('rd-ins') ? el('rd-ins').value : undefined, roadworthyExpiry: el('rd-rw') ? el('rd-rw').value : undefined, helmet: el('rd-helmet').checked });
       showToast(tr('Saved. Now upload your documents.')); loadDriverPage();
     } catch (x) { showToast(x.message || 'Could not save'); }
+  };
+  window.ridesVehicleChanged = function () {
+    const d = R.drv, box = el('rd-need'); if (!d || !box || !d.requiredByVehicle) return;
+    const list = d.requiredByVehicle[el('rd-vehicle').value] || [];
+    box.innerHTML = e(tr('Papers needed for your vehicle:')) + ' <strong>' + list.map(k => e(tr((d.docKinds || {})[k] || k))).join(', ') + '</strong>. ' + e(tr('Save your details to update the boxes below.'));
   };
   window.ridesUploadDoc = async function (kind, input) {
     const file = input.files && input.files[0]; input.value = ''; if (!file) return;
@@ -251,6 +292,27 @@
   };
   window.ridesSubmitApply = async function () {
     try { await apiFetch('POST', '/rides/driver/submit', {}); showToast(tr('Sent. We will review it soon.')); loadDriverPage(); } catch (x) { showToast(x.message || 'Could not send'); }
+  };
+  function driverPass(d) {
+    if (!d.passEnabled) return '';
+    const p = d.pass || {}, act = p.active;
+    const when2 = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    return `<div class="panel"><div class="panel-title">${e(tr('Driver Pass'))}</div>
+      ${act ? `<div style="padding:10px 12px;border-radius:10px;background:#EEF8F3;font-size:14.5px;">🎟️ <strong>${e(act.label)}</strong> ${e(tr('is active until'))} ${e(when2(act.endsAt))}. ${e(tr('You keep the whole fare on every ride while it runs.'))}</div>`
+        : `<div class="ver-note">${e(tr('No pass at the moment. App rides pay Trothen'))} ${e(d.commissionPercent)}% ${e(tr('when you are paid out. With a pass you pay one flat price and keep every fare.'))}</div>`}
+      ${(p.queued || []).map(q => `<div class="ver-note" style="margin-top:6px;">${e(q.label)} ${e(tr('starts'))} ${e(when2(q.startsAt))}.</div>`).join('')}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">${(d.passPlans || []).map(pl => `<button class="btn-sm btn-sm-outline" onclick="ridesBuyPass(${jsArg(pl.id)},${pl.priceUsd},${jsArg(pl.label)})"><strong>${e(pl.label)}</strong> · ${money(pl.priceUsd)} · ${pl.days} ${e(tr(pl.days === 1 ? 'day' : 'days'))}</button>`).join('')}</div>
+      ${d.cashEnabled ? `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px;"><input type="checkbox" id="rd-cash" ${d.acceptsCash ? 'checked' : ''} onchange="ridesCashToggle(this.checked)" style="margin-top:4px;"/> <span>${e(tr('I take cash rides.'))} <span style="color:var(--slate);">${e(tr('Riders can then pay you in cash. This only works while you have an active pass. You collect the fare yourself and Trothen takes nothing from it.'))}</span></span></label>` : ''}
+      <div class="ver-note" style="margin-top:10px;">${e(tr('Passes are paid like other payments in Trothen. Buying a second pass while one is running starts it when the first ends.'))}</div></div>`;
+  }
+  window.ridesBuyPass = async function (id, price, label) {
+    if (!(await confirmDialog(tr('Buy the') + ' ' + label + ' ' + tr('for') + ' ' + money(price) + '?', { confirmLabel: tr('Buy pass') }))) return;
+    try { await apiFetch('POST', '/rides/driver/pass', { planId: id, expectedPrice: price }); showToast(tr('Pass bought')); loadDriverPage(); }
+    catch (x) { showToast(x.message || 'Could not buy the pass'); if (x.data && x.data.code === 'PRICE_CHANGED') loadDriverPage(); }
+  };
+  window.ridesCashToggle = async function (on) {
+    try { const r = await apiFetch('PUT', '/rides/driver/cash', { accepts: on }); showToast(on ? (r.hasPass ? tr('You now take cash rides') : tr('Saved. Cash rides start once you buy a pass.')) : tr('You no longer take cash rides')); }
+    catch (x) { showToast(x.message || 'Could not save'); loadDriverPage(); }
   };
   function driverRates(d) {
     return `<div class="panel"><div class="panel-title">${e(tr('My fares'))}</div>
@@ -270,17 +332,21 @@
       <div class="ver-note" style="margin-top:8px;">${e(tr('Keep this page open while you are online so riders can find you. You go offline by yourself after 12 hours.'))}</div></div>
       ${incoming.map(r => `<div class="panel" style="border:2px solid #E0A526;"><div class="panel-title">${e(tr('New ride request'))} <small>#${e(r.number)}</small></div>
         <div><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(r.passengers)} ${e(tr('passenger(s)'))}</div>
-        <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(tr('Fare'))}: <strong>${money(r.fare)}</strong> · ${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>
+        <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(tr('Fare'))}: <strong>${money(r.fare)}</strong>${r.cash ? ' · 💵 <strong>' + e(tr('paid in CASH by the rider')) + '</strong>' : ''} · ${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>
         <div style="display:flex;gap:8px;"><button class="btn-sm btn-sm-primary" onclick="ridesAnswer(${jsArg(r.id)},'accept')">${e(tr('Accept'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAnswer(${jsArg(r.id)},'decline')">${e(tr('Decline'))}</button></div></div>`).join('')}
       ${active.map(r => `<div class="panel" style="border:2px solid var(--teal);"><div class="panel-title">${e(tr(r.startedAt ? 'Trip in progress' : 'Go to your rider'))} <small>#${e(r.number)}</small></div>
         <div><strong>${e(r.pickup.address)}</strong> <a href="https://www.google.com/maps/dir/?api=1&destination=${r.pickup.latitude},${r.pickup.longitude}" target="_blank" rel="noopener">🧭</a> → <strong>${e(r.dropoff.address)}</strong> <a href="https://www.google.com/maps/dir/?api=1&destination=${r.dropoff.latitude},${r.dropoff.longitude}" target="_blank" rel="noopener">🧭</a></div>
         <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(r.rider ? r.rider.name : '')} · ${e(r.passengers)} ${e(tr('passenger(s)'))} · ${money(r.fare)}</div>
+        ${r.cash ? `<div style="margin:6px 0;padding:8px 12px;border-radius:10px;background:#FFF6DD;border:1px solid #E0A526;font-size:14px;">💵 <strong>${e(tr('CASH ride.'))}</strong> ${e(tr('Collect'))} <strong>${money(r.payInCash)}</strong> ${e(tr('from the rider at the end. Do not ask for more than this.'))} <a onclick="ridesReport(${jsArg(r.id)})" style="cursor:pointer;text-decoration:underline;">${e(tr('Report a problem'))}</a></div>` : ''}
         ${contactRow(r.contact)}
         ${!r.startedAt ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
           <button class="btn-sm btn-sm-outline" onclick="ridesArrived(${jsArg(r.id)})">📍 ${e(tr('I have arrived'))}</button>
           <input class="form-input" id="rd-pin-${e(r.id)}" inputmode="numeric" maxlength="4" placeholder="${e(tr('Rider PIN'))}" style="width:130px;"/>
           <button class="btn-sm btn-sm-primary" onclick="ridesStart(${jsArg(r.id)})">${e(tr('Start trip'))}</button></div>
-          <div class="ver-note" style="margin-top:8px;">${e(tr('You can only start with the 4-digit PIN from the rider\'s app. Do not carry anyone who cannot give it.'))}</div>`
+          <div class="ver-note" style="margin-top:8px;">${e(tr('You can only start with the 4-digit PIN from the rider\'s app. Do not carry anyone who cannot give it.'))}</div>
+          ${r.driverArrivedAt ? (r.canNoShow
+            ? `<div style="margin-top:8px;"><button class="btn-sm btn-sm-outline" onclick="ridesNoShow(${jsArg(r.id)})">🚫 ${e(tr('The rider did not show up'))}</button><div class="ver-note" style="margin-top:6px;">${e(tr('You waited the full time. The ride is cancelled and the rider is refunded. Repeated no-shows pause that rider.'))}</div></div>`
+            : `<div class="ver-note" style="margin-top:8px;">${e(tr('If the rider does not come, you can report it after waiting'))} ${r.waitMinutes} ${e(tr('minutes'))} (${e(tr('from'))} ${e(new Date(r.noShowOpensAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}).</div>`) : ''}`
         : `<div style="display:flex;gap:8px;margin-top:8px;"><button class="confirm-btn" onclick="ridesEnd(${jsArg(r.id)})">🏁 ${e(tr(r.endedAt ? 'Waiting for the rider to confirm' : 'End trip'))}</button></div>`}
         <div style="display:flex;gap:8px;margin-top:8px;"><button class="btn-sm" style="background:#C0392B;color:#fff;" onclick="ridesSOS(${jsArg(r.id)})">🚨 ${e(tr('Emergency / SOS'))}</button>${r.canCancel ? `<button class="btn-sm btn-sm-outline" onclick="ridesCancel(${jsArg(r.id)})">${e(tr('Cancel'))}</button>` : ''}</div></div>`).join('')}`;
   }
@@ -298,6 +364,10 @@
   window.ridesStart = async function (id) {
     const pin = (el('rd-pin-' + id) || {}).value || ''; const f = await here();
     try { await apiFetch('POST', `/rides/${encodeURIComponent(id)}/start`, { pin, latitude: f ? f.latitude : undefined, longitude: f ? f.longitude : undefined }); showToast(tr('Trip started')); loadDriverPage(); } catch (x) { showToast(x.message || 'Could not start'); }
+  };
+  window.ridesNoShow = async function (id) {
+    if (!(await confirmDialog(tr('Report that the rider did not show up? The ride is cancelled and the rider is refunded.'), { confirmLabel: tr('Report no-show'), danger: true }))) return;
+    try { await apiFetch('POST', `/rides/${encodeURIComponent(id)}/no-show`, {}); showToast(tr('The ride was cancelled and the rider was refunded')); loadDriverPage(); } catch (x) { showToast(x.message || 'Error'); }
   };
   window.ridesEnd = async function (id) { try { await apiFetch('POST', `/rides/${encodeURIComponent(id)}/end`, {}); showToast(tr('The rider has been asked to confirm')); loadDriverPage(); } catch (x) { showToast(x.message || 'Error'); } };
 
@@ -511,6 +581,17 @@
         <div class="form-group"><label class="form-label" for="rs-fee">${e(tr('Trothen fee on top of the fare (%)'))}</label><input class="form-input" id="rs-fee" type="number" value="${e(s.feePercent)}"/></div></div>
         <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-comm">${e(tr('Driver commission on ride earnings (%)'))}</label><input class="form-input" id="rs-comm" type="number" min="0" max="30" value="${e(s.commissionPercent)}"/></div>
         <div class="form-group"><label class="form-label" for="rs-ins">${e(tr('Insurance or road permit'))}</label><select class="form-input form-select" id="rs-ins"><option value="1" ${s.requireInsurance ? 'selected' : ''}>${e(tr('Required to be approved'))}</option><option value="0" ${!s.requireInsurance ? 'selected' : ''}>${e(tr('Optional'))}</option></select></div></div>
+        <div class="form-group"><label class="form-label" for="rs-docs">${e(tr('Papers a driver must upload, by country and vehicle. One rule per line: country | vehicle | papers. Use * for any.'))}</label><textarea class="form-input" id="rs-docs" rows="4" style="font-family:monospace;" placeholder="Liberia | motorbike | licence, registration, vehicle, insurance, police, helmet">${e((o.docRules || []).map(r => [r.country, r.vehicle, r.docs.join(', ')].join(' | ')).join('\n'))}</textarea>
+        <div class="ver-note" style="margin-top:4px;">${e(tr('Papers you can name:'))} ${Object.keys(o.docKinds || {}).map(k => '<code>' + e(k) + '</code> = ' + e(tr(o.docKinds[k]))).join('; ')}. ${e(tr('Every rule must include licence, registration and vehicle. With no rule the standard list applies:'))} ${(o.standardDocs || []).map(k => e(k)).join(', ')}. ${e(tr('The most specific rule wins. Drivers already approved are not removed when you add a paper: you will see a warning on their line and can ask them for it or suspend them. Ask a Liberian lawyer or the Ministry of Transport which papers are legally required before you set these.'))}</div></div>
+        <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-pass">${e(tr('Driver Pass'))}</label><select class="form-input form-select" id="rs-pass"><option value="1" ${s.passEnabled ? 'selected' : ''}>${e(tr('On: drivers can buy passes'))}</option><option value="0" ${!s.passEnabled ? 'selected' : ''}>${e(tr('Off'))}</option></select></div>
+        <div class="form-group"><label class="form-label" for="rs-cash">${e(tr('Cash rides'))}</label><select class="form-input form-select" id="rs-cash"><option value="0" ${!s.cashEnabled ? 'selected' : ''}>${e(tr('Off (app payment only)'))}</option><option value="1" ${s.cashEnabled ? 'selected' : ''}>${e(tr('On: only for drivers with an active pass'))}</option></select></div></div>
+        <div class="form-group"><label class="form-label" for="rs-plans">${e(tr('Pass prices, one per line: short-name, label, days, price in US$'))}</label><textarea class="form-input" id="rs-plans" rows="4" style="font-family:monospace;">${e((s.passPlans || []).map(p => [p.id, p.label, p.days, Number(p.priceUsd).toFixed(2)].join(', ')).join('\n'))}</textarea>
+        <div class="ver-note" style="margin-top:4px;">${e(tr('These starting prices are placeholders. Set the real ones after checking what drivers in your country can pay. Cash rides carry no held money, so have your lawyer add a line about them to the Ride Rules before turning them on.'))}</div></div>
+        <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-auto">${e(tr('Release the fare automatically after the driver ends the trip (hours, 0 = never)'))}</label><input class="form-input" id="rs-auto" type="number" min="0" max="168" value="${e(s.autoReleaseHours)}"/></div>
+        <div class="form-group"><label class="form-label" for="rs-nostart">${e(tr('Cancel and refund a ride that never started after (hours)'))}</label><input class="form-input" id="rs-nostart" type="number" min="1" max="48" value="${e(s.noStartHours)}"/></div></div>
+        <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-stuck">${e(tr('Flag a started trip nobody ended after (hours)'))}</label><input class="form-input" id="rs-stuck" type="number" min="1" max="48" value="${e(s.stuckHours)}"/></div>
+        <div class="form-group"><label class="form-label" for="rs-wait">${e(tr('Driver waits for a rider (minutes)'))}</label><input class="form-input" id="rs-wait" type="number" min="3" max="30" value="${e(s.waitMinutes)}"/></div>
+        <div class="form-group"><label class="form-label" for="rs-keep">${e(tr('Keep GPS routes of finished rides (days)'))}</label><input class="form-input" id="rs-keep" type="number" min="1" max="365" value="${e(s.trackKeepDays)}"/></div></div>
         <div class="form-group"><label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" id="rs-night" ${s.motorbikeNight && s.motorbikeNight.enabled ? 'checked' : ''}/> ${e(tr('No motorbike rides between'))} <input class="form-input" id="rs-n1" type="number" min="0" max="23" value="${e(s.motorbikeNight ? s.motorbikeNight.startHour : 20)}" style="width:70px;"/> ${e(tr('and'))} <input class="form-input" id="rs-n2" type="number" min="0" max="23" value="${e(s.motorbikeNight ? s.motorbikeNight.endHour : 6)}" style="width:70px;"/> ${e(tr('o\'clock (Liberia time)'))}</label></div>
         <div class="form-group"><label class="form-label" for="rs-rr">${e(tr('Ride Rules shown to riders'))} <small>(v${e(s.rulesVersion)})</small></label><textarea class="form-input" id="rs-rr" rows="8">${e(s.rulesRider)}</textarea></div>
         <div class="form-group"><label class="form-label" for="rs-rd">${e(tr('Ride Rules shown to drivers'))}</label><textarea class="form-input" id="rs-rd" rows="8">${e(s.rulesDriver)}</textarea></div>
@@ -518,16 +599,20 @@
         <button class="btn-sm btn-sm-primary" onclick="ridesAdminSave()">${e(tr('Save'))}</button>
         <div class="ver-note" style="margin-top:10px;">${e(tr('Turn a country on only after you have checked its transport rules. Even when it is on, no ride can happen until you approve a driver there.'))}</div>`
         : `<div class="ver-note">${e(tr('Rides are on in:'))} <strong>${e((s.enabledCountries || []).join(', ') || tr('no country'))}</strong>. ${e(tr('Only a super admin can change this.'))}</div>`}</div>
-      <div class="panel"><div class="panel-title">${e(tr('Safety alerts'))}</div>${o.alerts.length ? o.alerts.map(a => `<div style="padding:10px 0;border-top:1px solid var(--border);font-size:14px;${a.status === 'open' ? 'background:#FDF0EE;' : ''}"><strong>${a.status === 'open' ? '🚨 ' : ''}#${e(a.bookingNumber)}</strong> · ${e(a.raisedByRole)} ${e(a.raisedByName)} · ${e(new Date(a.createdAt).toLocaleString())}${a.location ? ` · <a href="https://www.google.com/maps/search/?api=1&query=${a.location.latitude},${a.location.longitude}" target="_blank" rel="noopener">${e(tr('Open location'))}</a>` : ''}${a.note ? `<div>${e(a.note)}</div>` : ''}${a.status === 'open' ? `<button class="btn-sm btn-sm-outline" style="margin-top:6px;" onclick="ridesAdminResolve(${jsArg(a.id)})">${e(tr('Mark handled'))}</button>` : ` <span style="color:var(--slate);">${e(tr('handled'))}</span>`}</div>`).join('') : `<div style="color:var(--slate);">${e(tr('None'))}</div>`}</div>
+      <div class="panel"><div class="panel-title">${e(tr('Safety alerts'))}</div>${o.alerts.length ? o.alerts.map(a => `<div style="padding:10px 0;border-top:1px solid var(--border);font-size:14px;${a.status === 'open' ? 'background:#FDF0EE;' : ''}"><strong>${a.status === 'open' ? (a.kind === 'report' ? '📝 ' : '🚨 ') : ''}#${e(a.bookingNumber)}</strong>${a.kind === 'report' ? ` <em>${e(tr('problem report'))}</em>` : ''} · ${e(a.raisedByRole)} ${e(a.raisedByName)} · ${e(new Date(a.createdAt).toLocaleString())}${a.location ? ` · <a href="https://www.google.com/maps/search/?api=1&query=${a.location.latitude},${a.location.longitude}" target="_blank" rel="noopener">${e(tr('Open location'))}</a>` : ''}${a.note ? `<div>${e(a.note)}</div>` : ''}${a.status === 'open' ? `<button class="btn-sm btn-sm-outline" style="margin-top:6px;" onclick="ridesAdminResolve(${jsArg(a.id)})">${e(tr('Mark handled'))}</button>` : ` <span style="color:var(--slate);">${e(tr('handled'))}</span>`}</div>`).join('') : `<div style="color:var(--slate);">${e(tr('None'))}</div>`}</div>
+      ${o.passes ? `<div class="panel"><div class="panel-title">${e(tr('Driver Passes'))}</div><div style="display:flex;gap:18px;flex-wrap:wrap;font-size:14px;"><span>🎟️ ${o.passes.activeDrivers} ${e(tr('drivers with an active pass'))}</span><span>🛒 ${o.passes.soldLast30Days} ${e(tr('sold in the last 30 days'))}</span><span>💵 ${money(o.passes.revenueLast30Days)} ${e(tr('in the last 30 days'))}</span></div>
+        ${(o.passes.recent || []).length ? `<div style="margin-top:8px;font-size:13px;color:var(--slate);">${o.passes.recent.map(x => `${e(new Date(x.createdAt).toLocaleDateString())} · ${e(x.label)} · ${money(x.priceUsd)} · ${e(x.paymentStatus)}`).join('<br>')}</div>` : ''}
+        <div class="ver-note" style="margin-top:8px;">${e(tr('"simulated" means payments are not live yet, so no real money moved.'))}</div></div>` : ''}
+      <div class="panel"><div class="panel-title">${e(tr('Recent rides'))}</div>${(o.recent || []).length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="text-align:left;color:var(--slate);"><th style="padding:6px;">#</th><th>${e(tr('When'))}</th><th>${e(tr('Rider'))}</th><th>${e(tr('Driver'))}</th><th>${e(tr('Trip'))}</th><th>${e(tr('Fare'))}</th><th>${e(tr('Status'))}</th></tr></thead><tbody>${o.recent.map(x => `<tr style="border-top:1px solid var(--border);${x.sos ? 'background:#FDF0EE;' : ''}"><td style="padding:6px;">${e(x.number)}</td><td>${e(new Date(x.createdAt).toLocaleString())}</td><td>${e(x.rider)}</td><td>${e(x.driver)}</td><td>${e(x.from || '')} → ${e(x.to || '')} · ${e(x.km || '')} km</td><td>${money(x.fare)}</td><td>${statusBadge(x.status)}${x.sos ? ' 🚨' : ''}${x.note ? `<div style="color:var(--slate);">${e(x.note)}</div>` : ''}</td></tr>`).join('')}</tbody></table></div>` : `<div class="ver-note">${e(tr('No rides yet.'))}</div>`}</div>
       <div class="panel"><div class="panel-title">${e(tr('Driver applications'))}</div>${o.applications.length ? o.applications.map(a => `<div style="padding:12px 0;border-top:1px solid var(--border);font-size:14px;">
         <div style="font-weight:700;color:var(--navy);">${e(a.name)} <span style="font-weight:400;color:var(--slate);">· ${e(a.city || '')} ${e(a.country || '')} · ${statusBadge(a.status)}</span></div>
-        <div>${e(a.vehicle)} ${e(a.make || '')} · ${e(tr('plate'))} <strong>${e(a.plate)}</strong> · ${e(tr('licence'))} ${e(a.licenceNumber)} (${e(tr('expires'))} ${e(a.licenceExpiry)})${a.vehicle === 'motorbike' ? ' · ' + e(a.helmet ? tr('helmet confirmed') : tr('NO helmet')) : ''}</div>
-        <div style="margin:6px 0;">${['licence', 'registration', 'vehicle', 'insurance'].map(k => a.docs[k] ? `<button class="btn-sm btn-sm-outline" onclick="ridesAdminDoc(${jsArg(a.userId)},'${k}')">📄 ${e(tr(k))}</button> ` : '').join('')}</div>
+        <div>${e(a.vehicle)} ${e(a.make || '')} · ${e(tr('plate'))} <strong>${e(a.plate)}</strong> · ${e(tr('licence'))} ${e(a.licenceNumber)} (${e(tr('expires'))} ${e(a.licenceExpiry)})${a.insuranceExpiry ? ' · ' + e(tr('insurance until')) + ' ' + e(a.insuranceExpiry) : ''}${a.roadworthyExpiry ? ' · ' + e(tr('roadworthy until')) + ' ' + e(a.roadworthyExpiry) : ''}${a.vehicle === 'motorbike' ? ' · ' + e(a.helmet ? tr('helmet confirmed') : tr('NO helmet')) : ''}</div>
+        <div style="margin:6px 0;">${Object.keys(o.docKinds || a.docs).map(k => a.docs[k] ? `<button class="btn-sm btn-sm-outline" onclick="ridesAdminDoc(${jsArg(a.userId)},'${k}')">📄 ${e(tr((o.docKinds || {})[k] || k))}${(a.required || []).includes(k) ? '' : ' (' + e(tr('extra')) + ')'}</button> ` : '').join('')}${(a.missing || []).length ? `<div style="margin-top:6px;color:#B4472E;font-weight:600;">⚠️ ${e(tr('Missing required:'))} ${a.missing.map(k => e(tr((o.docKinds || {})[k] || k))).join(', ')}</div>` : ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">${a.status === 'pending' ? `<button class="btn-sm btn-sm-primary" onclick="ridesAdminDecide(${jsArg(a.userId)},'approve')">${e(tr('Approve'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAdminDecide(${jsArg(a.userId)},'reject')">${e(tr('Reject'))}</button>` : ''}${a.status === 'approved' ? `<button class="btn-sm btn-sm-outline" onclick="ridesAdminDecide(${jsArg(a.userId)},'suspend')">${e(tr('Suspend'))}</button>` : ''}</div></div>`).join('') : `<div style="color:var(--slate);">${e(tr('No applications yet.'))}</div>`}</div>`;
   }
   window.ridesAdminSave = async function () {
     try {
-      await apiFetch('PUT', '/admin/rides/settings', { enabledCountries: el('rs-countries').value.split(',').map(x => x.trim()).filter(Boolean), maxKm: Number(el('rs-max').value), searchKm: Number(el('rs-search').value), answerMinutes: Number(el('rs-ans').value), feePercent: Number(el('rs-fee').value), commissionPercent: Number(el('rs-comm').value), requireInsurance: el('rs-ins').value === '1', motorbikeNight: { enabled: el('rs-night').checked, startHour: Number(el('rs-n1').value), endHour: Number(el('rs-n2').value) }, rulesRider: el('rs-rr').value, rulesDriver: el('rs-rd').value });
+      await apiFetch('PUT', '/admin/rides/settings', { enabledCountries: el('rs-countries').value.split(',').map(x => x.trim()).filter(Boolean), maxKm: Number(el('rs-max').value), searchKm: Number(el('rs-search').value), answerMinutes: Number(el('rs-ans').value), feePercent: Number(el('rs-fee').value), commissionPercent: Number(el('rs-comm').value), requireInsurance: el('rs-ins').value === '1', motorbikeNight: { enabled: el('rs-night').checked, startHour: Number(el('rs-n1').value), endHour: Number(el('rs-n2').value) }, rulesRider: el('rs-rr').value, rulesDriver: el('rs-rd').value, docRules: el('rs-docs').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const x = l.split('|').map(t => t.trim()); return { country: x[0], vehicle: (x[1] || '').toLowerCase(), docs: (x[2] || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean) }; }), passEnabled: el('rs-pass').value === '1', cashEnabled: el('rs-cash').value === '1', passPlans: el('rs-plans').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const x = l.split(',').map(t => t.trim()); return { id: x[0], label: x[1], days: Number(x[2]), priceUsd: Number(x[3]) }; }), autoReleaseHours: Number(el('rs-auto').value), noStartHours: Number(el('rs-nostart').value), stuckHours: Number(el('rs-stuck').value), waitMinutes: Number(el('rs-wait').value), trackKeepDays: Number(el('rs-keep').value) });
       showToast(tr('Saved')); loadAdminRides();
     } catch (x) { showToast(x.message || 'Could not save'); }
   };

@@ -57,6 +57,8 @@ async function buildExport(userId) {
     tools: mine(await safeAll('proTools'), 'providerId'),
     expenses: mine(await safeAll('proExpenses'), 'providerId'),
     quotesAndInvoices: mine(await safeAll('proDocs'), 'providerId', 'customerId'),
+    tokens: mine(await safeAll('tokenLedger'), 'userId'), // v115
+    tokenPurchases: mine(await safeAll('tokenPurchases'), 'userId'),
   };
 }
 
@@ -76,6 +78,9 @@ async function closureBlockers(user) {
     if (escrow.some(e => provContractIds.has(e.contractId) && e.status === 'released' && !e.payoutId)) reasons.push('You have earnings you haven\'t cashed out yet. Request your payout first.');
     if ((await safeAll('payouts')).some(p => p.providerId === user.id && p.status === 'processing')) reasons.push('A payout to you is still being processed.');
   }
+  // v115: unspent tokens are the customer's stored money; closing would strand them.
+  const tokenBal = Math.round((await safeAll('tokenLedger')).filter(l => l.userId === user.id).reduce((t, l) => t + (Number(l.tokens) || 0), 0) * 100) / 100;
+  if (tokenBal > 0.004) reasons.push(`You still have ${tokenBal} tokens. Spend them, or contact support to arrange a refund of the unspent tokens, before closing your account.`);
   const openJobs = (await safeAll('jobs')).filter(j => j.customerId === user.id && ['open', 'pending', 'matching'].includes(j.status));
   if (openJobs.length) reasons.push(`You have ${openJobs.length} job${openJobs.length === 1 ? '' : 's'} still posted. Cancel ${openJobs.length === 1 ? 'it' : 'them'} first.`);
   return reasons;

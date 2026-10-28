@@ -2813,6 +2813,9 @@
           <input class="form-input" type="text" id="auth-skills"/>
           <div style="font-size:13px;color:var(--muted);margin-top:5px;">Comma-separated — helps us match you to the right jobs</div>
         </div>
+        <div class="form-group" id="auth-rides-group">
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;"><input type="checkbox" id="auth-wants-rides" style="margin-top:3px;" onchange="try{localStorage.setItem('trothen_want_rides',this.checked?'1':'')}catch(e){}"/> <span>I also want to give rides to passengers <span style="color:var(--muted);">(where rides are available. You apply after signing up, with your licence and vehicle papers.)</span></span></label>
+        </div>
         <div class="form-group" id="auth-invite-group">
           <label class="form-label">Organization Invite Code <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
           <input class="form-input" type="text" id="auth-invite-code" style="text-transform:uppercase;" oninput="checkInviteCode(this.value)" placeholder="e.g. CY5IGNHP"/>
@@ -3168,7 +3171,8 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=88cf43b781" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
-<script src="/app/rides.js?v=c44b33fd92"></script>
+<script src="/app/trothen.js?v=d76fe026f2" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/rides.js?v=0c4257b5ba"></script>
+<script src="/app/tokens.js?v=709971e5e2"></script>
 </body>
 </html>

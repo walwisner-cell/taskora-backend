@@ -69,7 +69,7 @@ async function cancelNeverStarted() {
         if (!fresh || fresh.status !== 'active' || fresh.ride.startedAt) return false;
         if (await openSosFor(fresh.id)) return false;
         const escrow = await db.find('escrowTransactions', e => e.contractId === fresh.id);
-        if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+        if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' }); await require('./tokens').refundEscrow(escrow && escrow.id); // v115: tokens back
         try { await require('./loyalty').givePointsBack(fresh); } catch (e) { /* points are best effort */ }
         await db.update('contracts', fresh.id, { status: 'cancelled', cancelReasonCategory: 'ride_not_started', cancelledByRole: 'system', protectedCancellation: false, ride: { ...fresh.ride, live: null, track: null } });
         await notify(fresh.customerId, '↩️', fresh.ride.cash ? `Ride #${fresh.bookingNumber} never started, so it was cancelled. You paid nothing.` : `Ride #${fresh.bookingNumber} never started, so it was cancelled and you were refunded in full.`, 'bookingUpdates', { section: 'rides' });

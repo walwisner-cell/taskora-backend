@@ -408,7 +408,12 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     const c = contracts.find(x => x.id === e.contractId);
     return c && c.ride ? sum + Math.max(0, e.amount - (e.materialsAdvanceAmount || 0)) : sum;
   }, 0) * 100) / 100;
-  const rideCommission = Math.round(Math.min(rideGross, commissionableAmount) * rideRate * 100) / 100;
+  // v113: rides taken while the driver had an active Driver Pass carry no commission at all.
+  const ridePassFree = Math.round(payableEscrow.reduce((sum, e) => {
+    const c = contracts.find(x => x.id === e.contractId);
+    return c && c.ride && c.ride.commissionFree === true ? sum + Math.max(0, e.amount - (e.materialsAdvanceAmount || 0)) : sum;
+  }, 0) * 100) / 100;
+  const rideCommission = Math.round(Math.min(Math.max(0, rideGross - ridePassFree), commissionableAmount) * rideRate * 100) / 100;
   const commissionAmount = Math.round((Math.max(0, commissionableAmount - rideGross) * commissionRate + rideCommission) * 100) / 100;
   // v106: store purchase fees the pro pays (when the super admin has set
   // the fee to come from the pro). Never more than what is being paid on
@@ -459,7 +464,7 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     grossAmount,
     commissionRate,
     commissionAmount,
-    rideGrossAmount: rideGross, rideCommissionRate: rideGross > 0 ? rideRate : null, // v111
+    rideGrossAmount: rideGross, ridePassFreeAmount: ridePassFree, rideCommissionRate: rideGross > 0 ? rideRate : null, // v111, v113
     storeGoodsAmount, // v105: the part of this payout that is store goods (no commission)
     storeFeeAmount, // v106: flat store purchase fees paid by the pro
     amount: netAmount, // canonical USD amount actually paid out, after commission (and any plan fee)
@@ -786,14 +791,23 @@ async function handleScopeChangeDecide(req, res, request) {
   // ever actually charged to the customer for the added work. Harmless
   // today (MoMo is still gated, so this call is a no-op for everyone),
   // but this closes the same gap before it can matter.
+  // v115: a booking paid with tokens pays the extra with tokens too, when the
+  // balance covers it; otherwise the extra is taken the normal way.
+  const escrowBefore = await db.find('escrowTransactions', e => e.contractId === contract.id);
+  let extraTokens = null;
+  if (escrowBefore && (escrowBefore.paidWith === 'tokens' || escrowBefore.paidWith === 'tokens_fee')) {
+    const feeDelta = Math.max(0, money2(newServiceFee - (contract.serviceFee || 0)));
+    extraTokens = await require('../tokens').trySpendExtra({ customerId: contract.customerId, escrowId: escrowBefore.id, contract, forAmount: escrowBefore.paidWith === 'tokens' ? request.amount : 0, forFee: feeDelta });
+  }
   const scopeChangeCustomer = customerForFee;
-  if (scopeChangeCustomer && scopeChangeCustomer.country === 'Liberia') {
+  if (scopeChangeCustomer && scopeChangeCustomer.country === 'Liberia' && !(extraTokens && extraTokens.forAmount >= request.amount)) {
     const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('../liberia-momo');
     if (isLiberiaMoMoConfigured()) {
       const defaultMethod = await db.find('paymentMethods', m => m.userId === scopeChangeCustomer.id && m.isDefault);
       if (defaultMethod && defaultMethod.type === 'mobile_money') {
         const result = await requestMobileMoneyCollection(defaultMethod.mobileMoneyNumber, request.amount, contract.id, null);
         if (!result.success) {
+          if (extraTokens) await require('../tokens').addBackExtra(extraTokens); // v115
           return res.status(409).json({ error: `The additional $${request.amount} could not be collected from the customer's mobile money account: ${result.message}. Nothing on this booking was changed — ask the customer to try approving again.` });
         }
       }
@@ -804,6 +818,7 @@ async function handleScopeChangeDecide(req, res, request) {
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow) {
     const patch = { amount: money2(escrow.amount + request.amount), serviceFee: newServiceFee };
+    if (extraTokens) Object.assign(patch, { tokensForAmount: money2((escrow.tokensForAmount || 0) + extraTokens.forAmount), tokensForFee: money2((escrow.tokensForFee || 0) + extraTokens.forFee), tokensSpent: money2((escrow.tokensSpent || 0) - extraTokens.tokens) });
     if (escrow.paidCurrency && escrow.paidCurrency !== 'USD') {
       const { convertFromUSD } = require('../currency-data');
       const { resolveRate } = require('../plan-pricing');
@@ -813,6 +828,9 @@ async function handleScopeChangeDecide(req, res, request) {
   }
   await db.update('scopeChangeRequests', request.id, { status: 'approved', decidedAt: new Date().toISOString() });
 
+  if (escrowBefore && escrowBefore.paidWith && escrowBefore.paidWith !== 'normal') {
+    await notify(contract.customerId, '🪙', extraTokens ? `${-extraTokens.tokens} tokens were used for the extra work on "${contract.service}". Balance: ${extraTokens.balanceAfter} tokens.` : `Your token balance didn't cover the extra work on "${contract.service}", so the extra was paid the normal way.`, null, { section: 'tokens' });
+  }
   await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved — the contract and held escrow have been updated. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
   res.json({ request: { ...request, status: 'approved' }, contract: updatedContract });
 }
@@ -895,6 +913,10 @@ async function completeContractCore(contract, tip, customerId) {
   // v109: an advance already paid out is not available again.
   const totalAvailable = Math.round(releasedUnpaid.reduce((s, e) => s + e.amount - (e.materialsAdvancePayoutId ? (e.materialsAdvanceAmount || 0) : 0), 0) * 100) / 100;
 
+  if (contract.ride && contract.ride.cash) {
+    await notify(contract.providerId, '💵', `Ride #${contract.bookingNumber} is complete. The rider paid you $${Number(contract.amount).toFixed(2)} in cash, so nothing is added to your Trothen balance.`, 'bookingUpdates', { section: 'rides' });
+    return { contract: updated, escrow: null };
+  }
   await notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts', { section: 'earnings' });
   if (tip > 0) {
     await notify(contract.providerId, '🌟', `${(await db.find('users', u => u.id === customerId))?.name || 'The customer'} left you a $${tip} tip on "${contract.service}" — 100% yours, no commission, added to your next payout.`, 'payoutAlerts', { section: 'earnings' });
@@ -966,7 +988,7 @@ async function handleContractCancel(req, res) {
   if (contract.status === 'active' && (handedOver(contract) || handedOver(linked))) {
     return res.status(409).json({ code: 'USE_DISPUTE', error: 'The goods have already been handed over, so this can\'t be cancelled for a refund. If something is wrong, use "Report a Problem" on the booking.' });
   }
-  if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+  if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' }); await require('../tokens').refundEscrow(escrow && escrow.id); // v115: tokens back
   await require('../loyalty').givePointsBack(contract); // v109
   const iAmProvider = contract.providerId === req.user.sub;
   const isProtected = iAmProvider && PROTECTED_CANCEL_REASONS.has(reasonCategory);
@@ -1029,6 +1051,7 @@ router.get('/payments/mine', requireAuth, requireRole('customer'), async (req, r
       status: c.status,
       escrowStatus: escrow ? escrow.status : 'none',
       paidCurrency: escrow ? escrow.paidCurrency : 'USD',
+      paidWith: escrow ? (escrow.paidWith || 'normal') : 'normal', tokensSpent: escrow ? (escrow.tokensSpent || 0) : 0, // v115
       paidAmountLocal: escrow ? escrow.paidAmountLocal : null,
       disputeStatus: dispute ? dispute.status : null,
     };

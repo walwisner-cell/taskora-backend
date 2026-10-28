@@ -80,14 +80,34 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   // was never actually collected — express-async-errors (already used
   // throughout this file) turns this throw into a real, clean error
   // response instead of a crash.
+  // v115: Trothen Tokens. contract.payWith is "tokens" (the whole booking:
+  // job + Trothen fee) or "tokens_fee" (only the Trothen fee). The tokens
+  // are taken first; if the balance is too small this throws a TOKENS_SHORT
+  // error the page can show, and nothing has been taken or booked.
+  const tokens = require('../tokens');
+  const payWith = tokens.cleanPayWith(contract.payWith);
+  const escrowId = `esc_${nanoid(10)}`;
+  let tokenSpend = null;
+  if (payWith) {
+    const forFee = tokens.money(contract.serviceFee || 0);
+    const forAmount = payWith === 'tokens' ? tokens.money(contract.amount || 0) : 0;
+    if (forFee + forAmount > 0) {
+      tokenSpend = await tokens.spendForEscrow({ customerId, escrowId, contract, forAmount, forFee });
+    }
+  }
+  const tokensForAmount = tokenSpend ? tokenSpend.forAmount : 0;
+  const tokensForFee = tokenSpend ? tokenSpend.forFee : 0;
+  // If anything below fails after tokens were taken, give them straight back.
+  const undoTokens = async () => { if (tokenSpend) await tokens.voidSpend(escrowId); };
+
   let liberiaMoMoReference = null;
-  if (customer && customer.country === 'Liberia') {
+  if (customer && customer.country === 'Liberia' && tokensForAmount < (contract.amount || 0)) {
     const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('../liberia-momo');
     if (isLiberiaMoMoConfigured()) {
       const defaultMethod = await db.find('paymentMethods', m => m.userId === customer.id && m.isDefault);
       if (defaultMethod && defaultMethod.type === 'mobile_money') {
-        const result = await requestMobileMoneyCollection(defaultMethod.mobileMoneyNumber, contract.amount, contract.id, rate);
-        if (!result.success) throw new Error(`Mobile money charge could not be started: ${result.message}`);
+        const result = await requestMobileMoneyCollection(defaultMethod.mobileMoneyNumber, tokens.money((contract.amount || 0) - tokensForAmount), contract.id, rate);
+        if (!result.success) { await undoTokens(); throw new Error(`Mobile money charge could not be started: ${result.message}`); }
         liberiaMoMoReference = result.referenceId;
       }
     }
@@ -102,7 +122,7 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   const advance = Math.min(contract.materialsAdvance || 0, contract.amount);
 
   const escrow = {
-    id: `esc_${nanoid(10)}`,
+    id: escrowId,
     contractId: contract.id,
     amount: contract.amount, // canonical USD amount — always the accounting figure of record
     serviceFee: contract.serviceFee || 0, // tracked separately — real revenue tied to this booking, distinct from the provider's commission
@@ -110,9 +130,14 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
     storeFee: contract.storeFee || 0, // v105: the flat store purchase fee
     // v106: when the pro pays the fee it is not in serviceFee; it is taken at payout instead.
     storeFeeFromPro: contract.storeFeePaidBy === 'pro' ? Math.min(contract.storeFee || 0, contract.storeGoodsTotal || 0) : 0,
-    paidCurrency: wantsLocal ? currency.code : 'USD',
-    paidAmountLocal,
-    exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
+    paidCurrency: wantsLocal && payWith !== 'tokens' ? currency.code : 'USD',
+    paidAmountLocal: payWith === 'tokens' ? null : (tokenSpend && wantsLocal ? convertFromUSD(tokens.money((contract.amount || 0) + (contract.serviceFee || 0) - tokensForAmount - tokensForFee), currency.code, rate) : paidAmountLocal), // v115: the part not paid with tokens
+    exchangeRateNote: wantsLocal && payWith !== 'tokens' ? 'Approximate test-mode exchange rate — not a live market rate' : null,
+    // v115: how much of this payment was tokens (1 token = $1)
+    paidWith: tokenSpend ? payWith : 'normal',
+    tokensSpent: tokenSpend ? tokens.money(tokensForAmount + tokensForFee) : 0,
+    tokensForAmount,
+    tokensForFee,
     status: 'held',
     materialsAdvanceAmount: advance,
     materialsAdvanceReleased: false,
@@ -120,7 +145,11 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
     liberiaMoMoReference, // null unless a real LCMMMI collection request was actually made for this escrow — see above
     createdAt: new Date().toISOString(),
   };
-  await db.insert('escrowTransactions', escrow);
+  try { await db.insert('escrowTransactions', escrow); }
+  catch (e) {
+    await undoTokens();
+    throw e;
+  }
 
   // A materials advance releases as soon as the JOB itself is confirmed —
   // not the moment the customer books, before any provider has agreed to
@@ -980,6 +1009,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
     // provider accepts the match, but the customer's currency preference is
     // set at the moment they post, not re-asked for later.
     payCurrency: payCurrency === 'local' ? 'local' : 'usd',
+    payWith: require('../tokens').cleanPayWith((req.body || {}).payWith), // v115
     photoUrls: validPhotoUrls,
     jobLocation: jobWhere.jobLocation, // v92: GPS pin of the job site, if the customer gave one
     landmark: jobWhere.landmark,
@@ -1330,6 +1360,7 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
     address: job.landmark || null,
     amount: finalAmount,
     serviceFee: computeServiceFee(finalAmount),
+    payWith: require('../tokens').cleanPayWith((req.body || {}).payWith) || job.payWith || null, // v115
     status: 'pending_provider_confirmation',
     signedAt: null,
     providerResponseDeadline: responseDeadline,
@@ -1416,6 +1447,7 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
     service: job.description,
     amount: failedAmount,
     serviceFee: computeServiceFee(failedAmount),
+    payWith: job.payWith || null, // v115
     status: 'pending_provider_confirmation',
     signedAt: null,
     providerResponseDeadline: responseDeadline,
@@ -1425,7 +1457,16 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
   // Same money-ordering fix as above: charge before the contract exists on
   // record, so a failed charge never leaves a phantom re-offered booking
   // with no real payment behind it.
-  const escrow = await fundEscrowForContract(contract, job.customerId, job.payCurrency);
+  let escrow;
+  try { escrow = await fundEscrowForContract(contract, job.customerId, job.payCurrency); }
+  catch (e) {
+    // v115: the customer chose tokens and no longer has enough. Nobody can be
+    // charged without them here, so the job is reopened for them instead.
+    if (e.code !== 'TOKENS_SHORT') throw e;
+    await db.update('jobs', job.id, { status: 'open' });
+    await notify(job.customerId, '🪙', `Your pro for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" couldn't confirm, and your token balance is too low to offer the job to the next pro automatically. ${e.message.split('.')[0]}. Top up your tokens and choose a pro again.`, null, { section: 'tokens' });
+    return null;
+  }
   await db.insert('contracts', contract);
   await db.update('matches', next.id, { status: 'accepted' });
 
@@ -1601,10 +1642,19 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     photoUrls: validPhotoUrls,
     status: isNegotiable ? 'pending_agreement' : 'pending_provider_confirmation',
     payCurrency: payCurrency === 'local' ? 'local' : 'usd',
+    payWith: require('../tokens').cleanPayWith((req.body || {}).payWith), // v115: tokens, if the customer chose them
     signedAt: null,
     providerResponseDeadline: responseDeadline,
     createdAt: new Date().toISOString(),
   };
+  // v115: an offer is only paid when the pro accepts it, but a customer who
+  // chose tokens should hear now, not later, if their balance can't cover it.
+  if (isNegotiable && contract.payWith) {
+    const tk = require('../tokens');
+    const need = tk.money((contract.payWith === 'tokens' ? contract.amount : 0) + (contract.serviceFee || 0));
+    const have = await tk.balance(req.user.sub);
+    if (have + 0.001 < need) return res.status(402).json({ code: 'TOKENS_SHORT', need, have, short: tk.money(need - have), error: `This offer needs ${need} tokens and you have ${have}. Buy ${tk.money(need - have)} more tokens, or choose another way to pay.` });
+  }
   // v110: money-ordering fix — the same class of bug fixed in store orders
   // and job-matching above. A direct (non-negotiable) booking charges the
   // customer immediately, so that charge must happen BEFORE this contract
@@ -1628,7 +1678,9 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     await db.insert('contracts', contract);
   } catch (e) {
     if (basket.items.length) await proStore.releaseStock(basket.items);
+    if (escrow) await require('../tokens').undoIfOrphan(escrow); // v115: the booking wasn't saved, so tokens taken for it go back
     console.error('[booking] payment or save failed, stock put back:', e.message);
+    if (e.expose) return res.status(e.status || 402).json({ code: e.code, ...(e.extra || {}), error: e.message }); // v115: e.g. not enough tokens
     return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be completed, so you were not charged and nothing was booked. Please try again or use another payment method.' });
   }
 
@@ -1735,7 +1787,7 @@ async function handleRespondOffer(req, res) {
       // Escrow was already funded at booking/selection time — declining
       // refunds it, same treatment as a cancellation.
       const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
-      if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+      if (escrow) await db.update('escrowTransactions', escrow.id, { status: 'refunded' }); await require('../tokens').refundEscrow(escrow && escrow.id); // v115: tokens back
     }
     const updated = await db.update('contracts', contract.id, { status: 'declined' });
     await proStore.giveBackStock(contract); // v105: goods go back on the shelf
@@ -1779,7 +1831,13 @@ async function handleRespondOffer(req, res) {
   if (!isDirectBooking && !isJobSelection) {
     // Pass a would-be-active copy (not yet written) so fundEscrowForContract
     // sees the right status for its materials-advance-release check.
-    escrow = await fundEscrowForContract({ ...contract, status: 'active' }, contract.customerId, contract.payCurrency);
+    try { escrow = await fundEscrowForContract({ ...contract, status: 'active' }, contract.customerId, contract.payCurrency); }
+    catch (e) {
+      // v115: the customer offered to pay with tokens and doesn't have enough now.
+      if (e.code !== 'TOKENS_SHORT') throw e;
+      await notify(contract.customerId, '🪙', `${acceptingProvider ? acceptingProvider.name : 'Your pro'} wants to accept your offer for "${contract.service}", but your token balance is too low (${e.extra.have} of ${e.extra.need} tokens). Buy ${e.extra.short} more tokens so they can accept it.`, null, { section: 'tokens' });
+      return res.status(409).json({ code: 'CUSTOMER_TOKENS_SHORT', error: 'The customer chose to pay with tokens and their balance is too low right now. We\'ve asked them to top up. Try accepting again a little later.' });
+    }
   }
   const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10) });
   if (isDirectBooking) {
@@ -2181,6 +2239,9 @@ router.post('/disputes', requireAuth, disputeLimiter, async (req, res) => {
     c.id === contractId && (c.customerId === req.user.sub || c.providerId === req.user.sub)
   );
   if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  if (contract.ride && contract.ride.cash) { // v113: a cash ride has no held money to refund or release
+    return res.status(400).json({ code: 'USE_RIDE_REPORT', error: 'This ride was paid in cash, so there is no held payment to dispute. Use the problem button on the ride to tell the Trothen team what happened.' });
+  }
   if (contract.status === 'disputed') {
     return res.status(409).json({ error: 'There is already an open dispute on this booking' });
   }

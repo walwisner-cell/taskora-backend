@@ -67,11 +67,68 @@ const DEFAULTS = {
   rideSearchKm: 15,       // how far from the pickup a driver can be and still be offered
   rideAnswerMinutes: 5,   // how long a driver has to answer a ride request
   rideCommissionPercent: 5, // taken from the driver at payout on ride earnings, instead of the plan rate (never higher than the plan rate)
+  rideDocRules: [], // v114: which papers a ride driver must upload, by country and vehicle: [{country:'Liberia'|'*', vehicle:'motorbike'|'*', docs:['licence',...]}]. Empty = the standard list.
   rideRequireInsurance: true, // drivers must upload insurance or a road permit before approval
   rideRulesVersion: 1, // rises by itself when the texts below are edited; everyone must then accept again
   rideRulesRider: "Trothen Ride Rules for Riders\n\n1. What Trothen is. Trothen connects riders with independent drivers. Trothen does not employ the drivers, own the vehicles or provide the transport itself.\n2. Before you get in. Check that the plate number and the driver in the app match the vehicle and person in front of you. Only then give the driver your 4-digit trip PIN. If anything looks wrong, do not get in and cancel the ride.\n3. Your safety. The driver must carry no more people than the vehicle has seats. On a motorbike you must wear the helmet the driver provides. If you feel unsafe, press SOS: it sends an alert and your position to the Trothen team. In an emergency call your local emergency number first.\n4. Money. The fare is held by Trothen when you request the ride and is paid to the driver when you confirm you arrived. If the driver does not answer, or you cancel before the trip starts, you are refunded. After the trip starts, problems go to Report a Problem and a person decides.\n5. Location and phone numbers. While a ride is open, the driver sees where you are being picked up and where you are going, you see the driver's live position, and each of you can see the other's phone number so you can call or text. If you use Share my trip, anyone with that link can see the driver's first name, vehicle, plate and live position until about an hour after the trip ends. Numbers and live positions are not shown before the driver accepts or after the ride ends.\n6. Behaviour. No illegal goods, no threats, no harassment, no damage to the vehicle. Trothen can close accounts that break these rules.\n7. Insurance. Trothen is not an insurer. Drivers are asked to carry insurance, but Trothen does not promise that a trip is insured.\n8. Local law. You must follow the transport laws of the country you are in.",
   rideRulesDriver: "Trothen Ride Rules for Drivers\n\n1. You are independent. You are not an employee of Trothen. You are responsible for your own licence, your vehicle's registration and roadworthiness, any transport permit your country or city requires, your insurance, and your taxes.\n2. Your documents must be real and in date. You must keep a valid driver's licence and a registered vehicle. An expired licence switches you off automatically. Do not use another person's documents or another vehicle than the one you registered.\n3. Carry only the PIN-checked rider. Start a trip only after the rider gives you the 4-digit PIN. Never carry more people than the vehicle has seats. On a motorbike, carry a helmet for the passenger and carry one passenger only.\n4. Drive safely and sober. No alcohol or drugs, no phone use while driving, follow traffic law. Report any accident or threat at once with SOS.\n5. Location and phone numbers. While you are online, riders near you can see how far away you are. While a ride is open, the rider sees your live position and your phone number, and you see theirs. Your Trothen page must stay open with location allowed for the trip to be tracked. Numbers and positions are not shared after the ride ends.\n6. Money. The rider's fare is held and paid to you when they confirm the trip. Trothen takes a commission from your ride earnings at payout (shown in Settings). Do not ask riders for extra money outside the app or cancel to ask for more.\n7. Conduct. Treat riders with respect. Trothen can pause or end your driving if rules are broken or safety reports come in.",
   rideMotorbikeNight: { enabled: false, startHour: 20, endHour: 6 }, // optional: no motorbike rides in these hours (Liberia time = UTC). Older sources mention such a rule; check before using
+  // v113: Driver Pass. Like Ghana's newer ride apps, a driver can pay a flat pass (a day, a week, a month)
+  // instead of a commission on each ride. While a pass is active the driver keeps every fare and may also
+  // take cash rides. Without a pass, digital rides pay the commission above. The prices below are
+  // placeholders (US dollars): set the real ones in Admin > Rides after checking what drivers can pay.
+  ridePassEnabled: true,
+  ridePassPlans: [
+    { id: 'day', label: 'Daily pass', days: 1, priceUsd: 2 },
+    { id: 'week', label: 'Weekly pass', days: 7, priceUsd: 10 },
+    { id: 'month', label: 'Monthly pass', days: 30, priceUsd: 35 },
+  ],
+  // v115: Trothen Tokens (see src/tokens.js). 1 token = US$1.00 when spent.
+  // A pack's "tokens" can be more than its price (bonus), never less. These
+  // packs are placeholders: set the real ones in Admin > Tokens.
+  tokensEnabled: true,
+  tokensFeeOnlyEnabled: true, // customers may use tokens for the Trothen fee only
+  tokenMaxBalance: 500,       // most tokens one customer can hold (keeps the stored balance small)
+  tokenPacks: [
+    { id: 'small', label: 'Small', priceUsd: 10, tokens: 10 },
+    { id: 'medium', label: 'Medium', priceUsd: 25, tokens: 26 },
+    { id: 'large', label: 'Large', priceUsd: 50, tokens: 53 },
+    { id: 'xl', label: 'Extra large', priceUsd: 100, tokens: 110 },
+  ],
+  // v116: best practice for the African markets. Smaller packs (people top
+  // up little and often, like airtime), lower limits per customer, and a
+  // daily buying limit so a stolen phone or mobile money account can't be
+  // emptied into tokens in one go. Local prices are worked out from the
+  // exchange rate and rounded (L$10, ₦50, GH₵0.50 steps) unless a fixed
+  // localPrice is set for a pack in Admin > Tokens > Countries.
+  tokenDailyLimitUsd: 200,  // most a customer can buy in 24 hours (US$), unless a country says otherwise
+  tokenCountries: [],       // countries where tokens are on; empty = every country
+  tokenCountryRules: {
+    Liberia: { maxBalance: 200, dailyLimitUsd: 100, packs: [
+      { id: 'mini', label: 'Mini', priceUsd: 2, tokens: 2 },
+      { id: 'small', label: 'Small', priceUsd: 5, tokens: 5 },
+      { id: 'medium', label: 'Medium', priceUsd: 10, tokens: 10.5 },
+      { id: 'large', label: 'Large', priceUsd: 25, tokens: 26.5 },
+    ] },
+    Ghana: { maxBalance: 200, dailyLimitUsd: 100, packs: [
+      { id: 'mini', label: 'Mini', priceUsd: 2, tokens: 2 },
+      { id: 'small', label: 'Small', priceUsd: 5, tokens: 5 },
+      { id: 'medium', label: 'Medium', priceUsd: 10, tokens: 10.5 },
+      { id: 'large', label: 'Large', priceUsd: 25, tokens: 26.5 },
+    ] },
+    Nigeria: { maxBalance: 200, dailyLimitUsd: 100, packs: [
+      { id: 'mini', label: 'Mini', priceUsd: 2, tokens: 2 },
+      { id: 'small', label: 'Small', priceUsd: 5, tokens: 5 },
+      { id: 'medium', label: 'Medium', priceUsd: 10, tokens: 10.5 },
+      { id: 'large', label: 'Large', priceUsd: 25, tokens: 26.5 },
+    ] },
+  },
+  rideCashEnabled: false, // cash rides are off until a super admin switches them on (and only drivers with an active pass can take them)
+  rideAutoReleaseHours: 12, // after the driver ends a trip, the fare is released to the driver this many hours later if the rider has neither confirmed nor reported a problem (0 = never, the rider must always confirm)
+  rideNoStartHours: 3,    // an accepted ride that has not started this long after it was requested is cancelled and refunded
+  rideStuckHours: 6,      // a started trip that nobody has ended after this long is flagged to the Trothen team
+  rideWaitMinutes: 10,    // how long a driver waits at the pickup before they can report that the rider did not show
+  rideTrackKeepDays: 30,  // GPS routes and last-known positions of finished rides are deleted after this many days
   rideFeePercent: 9,      // Trothen's share of a ride fare, added on top for the rider (0 to 30)
 
   // The homepage support chat's "Chat with us" / "Call" links. Ships with

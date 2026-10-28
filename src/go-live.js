@@ -55,6 +55,7 @@ const PERSON_COLLECTIONS = [
   'pushSubscriptions', 'passwordResets', 'pendingLogins', 'phoneVerifications', 'fraudFlags',
   'promotions', 'organizationInvites',
   'storeGoods', 'proTools', 'proExpenses', 'proDocs', // v105: pro stores and business tools
+  'tokenLedger', 'tokenPurchases', // v115: Trothen Tokens
 ];
 const PERSON_FIELDS = ['userId', 'customerId', 'providerId', 'fromId', 'toId', 'referrerId', 'referredUserId', 'reviewerId', 'authorId', 'contactId'];
 

@@ -10,7 +10,7 @@ const { notify } = require('./notify');
 async function expireOneBooking(contract) {
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow && escrow.status === 'held') {
-    await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+    await db.update('escrowTransactions', escrow.id, { status: 'refunded' }); await require('./tokens').refundEscrow(escrow && escrow.id); // v115: tokens back
   }
   const updated = await db.update('contracts', contract.id, { status: 'expired' });
   try { await require('./store').giveBackStock(contract); } catch (e) { console.error('[store] could not give stock back:', e.message); } // v105

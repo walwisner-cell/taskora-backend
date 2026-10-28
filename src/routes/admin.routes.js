@@ -1538,6 +1538,7 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
     // commission and the payout are worked out on that part only), and
     // remembers the original amount and the part refunded.
     await db.update('escrowTransactions', escrow.id, { status: 'released', originalAmount: escrow.amount, refundedAmount: splitRefund, amount: released, splitByDisputeId: dispute.id });
+    await require('../tokens').refundEscrow(escrow.id); // v115: if the job was paid with tokens, the refunded part goes back as tokens
     await db.update('disputes', dispute.id, { refundedAmount: splitRefund, releasedAmount: released });
     if (contract) {
       await db.update('contracts', contract.id, { refundedAmount: splitRefund });
@@ -1549,7 +1550,7 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
 
   if (outcome === 'refund_customer') {
     const wasRefunded = escrow && escrow.status === 'refunded';
-    if (escrow && !wasRefunded) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+    if (escrow && !wasRefunded) await db.update('escrowTransactions', escrow.id, { status: 'refunded' }); await require('../tokens').refundEscrow(escrow && escrow.id); // v115: tokens back
     if (contract) {
       await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved in your favor — ${wasRefunded ? 'your payment was already refunded.' : 'your payment has been refunded.'} ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
       await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — the customer was refunded, so this booking's escrow will not be released to you. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });

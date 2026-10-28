@@ -155,6 +155,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api', require('./src/routes/store.routes'));
 app.use('/api', require('./src/routes/orders.routes')); // v108: store orders, drivers, receipts
 app.use('/api', require('./src/routes/rides.routes')); // v111: passenger rides
+app.use('/api', require('./src/routes/tokens.routes')); // v115: Trothen Tokens
 app.use('/api', require('./src/routes/business.routes'));
 app.use('/api', marketplaceRoutes);
 app.use('/api', paymentsRoutes);
@@ -261,6 +262,11 @@ app.use('/api', (req, res) => {
 
 // ---- Error handler ----
 app.use((err, req, res, next) => {
+  // v115: an error written to be shown (for example "not enough tokens")
+  // goes back to the page as it is; anything else stays a plain 500.
+  if (err && err.expose === true && err.status >= 400 && err.status < 500) {
+    return res.status(err.status).json({ code: err.code, ...(err.extra || {}), error: err.message });
+  }
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });
@@ -339,6 +345,11 @@ seedIfEmpty()
     setTimeout(() => { sweepUnpackedStoreOrders().catch(e => console.error('[store-order-sweep] Unexpected error:', e)); }, 20000);
     setInterval(() => { sweepUnpackedStoreOrders().catch(e => console.error('[store-order-sweep] Unexpected error:', e)); }, SIX_HOURS_MS);
 
+    // v112: ride housekeeping (unconfirmed rides, never-started rides, stuck trips, old GPS data, expired papers)
+    const { runRideSweeps } = require('./src/ride-sweep');
+    setTimeout(() => { runRideSweeps().catch(e => console.error('[ride-sweep] Unexpected error:', e)); }, 40000);
+    setInterval(() => { runRideSweeps().catch(e => console.error('[ride-sweep] Unexpected error:', e)); }, 10 * 60 * 1000);
+
     // Document (license) expiry reminder sweep (see
     // src/document-expiry-scheduler.js). Runs once shortly after boot, then
     // once every 24 hours — a 30-day warning has no reason to run more
@@ -408,6 +419,11 @@ seedIfEmpty()
     };
     setTimeout(() => { sweepExpiredSignups().catch(e => console.error('[signup] sweep failed:', e)); }, 31000);
     setInterval(() => { sweepExpiredSignups().catch(e => console.error('[signup] sweep failed:', e)); }, 60 * 60 * 1000);
+
+    // v115: tokens owed back on refunded bookings, and mobile-money token
+    // purchases waiting for MTN's answer. Every 5 minutes.
+    setInterval(() => { require('./src/tokens').sweep().catch(e => console.error('[tokens] sweep failed:', e)); }, 5 * 60 * 1000);
+    setTimeout(() => { require('./src/tokens').sweep().catch(e => console.error('[tokens] sweep failed:', e)); }, 15000);
 
     // v78: monthly provider plan invoices (see src/plan-billing.js). Does
     // nothing unless billing is switched on. Shortly after boot, then daily;

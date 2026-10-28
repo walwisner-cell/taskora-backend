@@ -1,29 +1,31 @@
 # Trothen v110 — Deployment Steps
 
-27 files total: 7 new (`src\track-merge.js`, `public\app\rides.js`, `public\app\ride-share.js`, `public\ride-share.html`, `src\store-order-sweep.js`, `src\routes\rides.routes.js` and the write-up), the rest modified. Byte counts below are final. See `CHANGES_v110.md` for what each one does and why.
+29 files total: 9 new (`src\ride-pass.js`, `src\ride-sweep.js`, `src\track-merge.js`, `public\app\rides.js`, `public\app\ride-share.js`, `public\ride-share.html`, `src\store-order-sweep.js`, `src\routes\rides.routes.js` and the write-up), the rest modified. Byte counts below are final. See `CHANGES_v110.md` for what each one does and why.
 
 ## 1. Files and where they go
 
 | File | Status | Bytes |
 |---|---|---|
-| `public\index.html` | modified | 238,553 |
+| `public\index.html` | modified | 239,065 |
 | `public\app\trothen.js` | modified | 1,476,462 |
-| `public\app\rides.js` | **new** | 61,794 |
+| `public\app\rides.js` | **new** | 80,585 |
 | `public\app\ride-share.js` | **new** | 2,081 |
 | `public\ride-share.html` | **new** | 1,415 |
 | `src\account-privacy.js` | modified | 16,886 |
-| `src\platform-settings.js` | modified | 42,153 |
+| `src\platform-settings.js` | modified | 43,839 |
 | `src\provider-score.js` | modified | 18,009 |
 | `src\provider-score-scheduler.js` | modified | 6,507 |
 | `src\store.js` | modified | 18,802 |
 | `src\store-order-sweep.js` | **new** | 2,496 |
+| `src\ride-pass.js` | **new** | 6,270 |
+| `src\ride-sweep.js` | **new** | 9,902 |
 | `src\track-merge.js` | **new** | 2,347 |
-| `src\routes\rides.routes.js` | **new** | 47,547 |
+| `src\routes\rides.routes.js` | **new** | 64,489 |
 | `src\routes\auth.routes.js` | modified | 82,348 |
 | `src\routes\admin.routes.js` | modified | 235,065 |
-| `src\routes\marketplace.routes.js` | modified | 143,638 |
+| `src\routes\marketplace.routes.js` | modified | 143,962 |
 | `src\routes\orders.routes.js` | modified | 45,470 |
-| `src\routes\payments.routes.js` | modified | 77,396 |
+| `src\routes\payments.routes.js` | modified | 78,179 |
 | `src\routes\store.routes.js` | modified | 63,161 |
 | `src\fx-scheduler.js` | modified | 2,538 |
 | `src\document-upload-reminder-scheduler.js` | modified | 2,494 |
@@ -31,8 +33,8 @@
 | `src\location-retention-scheduler.js` | modified | 4,103 |
 | `src\payout-settlement-scheduler.js` | modified | 2,085 |
 | `src\top-scorer-promotion-scheduler.js` | modified | 3,863 |
-| `server.js` | modified | 26,231 |
-| `CHANGES_v110.md` | new (this write-up, optional to deploy) | 33,090 |
+| `server.js` | modified | 26,644 |
+| `CHANGES_v110.md` | new (this write-up, optional to deploy) | 36,865 |
 
 ## 2. cmd.exe deploy steps
 
@@ -51,6 +53,8 @@ dir src\provider-score.js
 dir src\provider-score-scheduler.js
 dir src\store.js
 dir src\store-order-sweep.js
+dir src\ride-pass.js
+dir src\ride-sweep.js
 dir src\track-merge.js
 dir src\routes\rides.routes.js
 dir src\routes\auth.routes.js
@@ -119,6 +123,14 @@ See `CHANGES_v110.md` for the full plain-language write-up of all 21 items, incl
 20. In Admin > Rides, confirm the commission, insurance, night rule and rules fields save. Complete a ride and check the driver's payout shows the ride commission (default 5%), not the plan rate.
 21. On a driver phone, turn on airplane mode for a minute during a trip, turn it off, and confirm the route catches up on the map.
 22. Open any map (for example "Where is the job?"). You should see real map tiles, not "Access blocked". If you still see the blocked message, set `MAP_TILE_URL` to a tile provider you have an account with and restart.
+23. As a driver, go to the pickup, tap "I have arrived", and wait. Before 10 minutes the page says when you can report a no-show. After 10 minutes the "The rider did not show up" button appears. Press it and confirm the rider is refunded.
+24. As a rider, finish a trip and do not confirm. The trip card shows the time the fare will be released automatically. In Admin > Rides you can change that number (0 = never).
+25. In Admin > Rides, check the new "Recent rides" list and the new settings (automatic release, never-started, stuck, driver wait, GPS days). Save and confirm the numbers stick and "Insurance or road permit" stays on Required.
+26. Apply as a new driver: the form must ask for the insurance or road permit expiry date and refuse an expired one.
+27. As a driver, open Rides > Driver Pass and buy the daily pass. Confirm it shows as active and says you keep the whole fare.
+28. As a super admin, open Admin > Rides, set the pass prices (one per line) and switch Cash rides on. Save and confirm the Driver Passes panel appears.
+29. As the driver, tick "I take cash rides". As a rider, find drivers: that driver should show a "Pay cash" button. Request, accept, start with the PIN, end, and confirm. No money should be held and the driver's balance should not change.
+30. On a cash ride, use "Report a problem" as the rider and confirm the report appears in Admin > Rides > Safety alerts. Confirm the normal "Report a Problem" on the booking is refused for a cash ride with a clear message.
 
 ## 5. Still open / not part of this release
 

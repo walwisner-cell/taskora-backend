@@ -5970,7 +5970,7 @@ async function runAIMatch() {
   let matchScope = 'city';
   if (BACKEND_AVAILABLE && AUTH.token && AUTH.user && AUTH.user.role === 'customer') {
     try {
-      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, materialsOnHand, materialsCost, budget, payCurrency: 'local', photoUrls, ...readJobWhere('pj') });
+      const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, materialsOnHand, materialsCost, budget, payCurrency: 'local', photoUrls, ...readJobWhere('pj'), payWith: (typeof tokenPayWith === 'function' ? tokenPayWith('job') : undefined) });
       realCallSucceeded = true;
       isKnownCategory = result.isKnownCategory !== false;
       matchScope = result.matchScope || 'city';
@@ -11828,7 +11828,7 @@ async function confirmBooking() {
   if (BACKEND_AVAILABLE) {
     try {
       const { contract } = await apiFetch('POST', '/contracts', {
-        providerId: currentPro.id, service: goodsOnly ? undefined : desc, date, time, address: addr, ...bookWhere, amount: goodsOnly ? undefined : total, ...goods, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls: goodsOnly ? [] : photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked, materialsOnHand: document.getElementById('job-materials-on-hand')?.value.trim() || undefined,
+        providerId: currentPro.id, service: goodsOnly ? undefined : desc, date, time, address: addr, ...bookWhere, amount: goodsOnly ? undefined : total, ...goods, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls: goodsOnly ? [] : photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked, payWith: (typeof tokenPayWith === 'function' ? tokenPayWith('booking') : undefined), materialsOnHand: document.getElementById('job-materials-on-hand')?.value.trim() || undefined,
       });
       contractId = contract.bookingNumber || contract.id;
       isPendingOffer = contract.status === 'pending_agreement';
@@ -16012,7 +16012,7 @@ async function submitCheckout() {
   CHECKOUT.busy = true; drawCheckout();
   try {
     if (CHECKOUT.orderId) {
-      await apiFetch('POST', '/store/orders/' + encodeURIComponent(CHECKOUT.orderId) + '/delivery', { deliveryMethod: 'driver', driverId: dr.id, driverPrice: dr.price, ...place });
+      await apiFetch('POST', '/store/orders/' + encodeURIComponent(CHECKOUT.orderId) + '/delivery', { deliveryMethod: 'driver', driverId: dr.id, driverPrice: dr.price, ...place, payWith: (typeof tokenPayWith === 'function' ? (tokenPayWith('checkout') || null) : undefined) });
       v105Close('store-checkout-overlay'); showToast(tr('The driver has been asked. You will be told when they accept.')); await loadMyOrders();
       return;
     }
@@ -16022,6 +16022,7 @@ async function submitCheckout() {
     if (CHECKOUT.priced) body.expectedGoodsTotal = CHECKOUT.priced.goodsTotal;
     body.expectedDeliveryFee = m === 'seller' ? Number((CHECKOUT.delivery && CHECKOUT.delivery.sellerFee) || 0) : 0;
     if (m === 'driver') { body.driverId = dr.id; body.driverPrice = dr.price; }
+    if (typeof tokenPayWith === 'function') body.payWith = tokenPayWith('checkout'); // v115
     const r = await apiFetch('POST', '/store/orders', body);
     delete STORE_BASKET[CHECKOUT.pid];
     v105Close('store-checkout-overlay'); v105Close('pro-store-overlay');
