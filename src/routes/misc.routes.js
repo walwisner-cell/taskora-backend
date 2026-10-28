@@ -195,6 +195,7 @@ router.delete('/my-ad', requireAuth, requireRole('provider'), async (req, res) =
   const ad = await db.find('advertisingInquiries', a => a.providerId === req.user.sub && (a.isLive === true || a.status === 'new'));
   if (!ad) return res.status(404).json({ error: 'You have no ad running or waiting.' });
   await db.update('advertisingInquiries', ad.id, { isLive: false, status: 'closed', endedAt: new Date().toISOString(), endedReason: ad.isLive ? 'taken_down_by_pro' : 'withdrawn_by_pro' });
+  if (!ad.approvedAt) await require('../tokens').refundRef(`ad:${ad.id}`, 'you withdrew your ad before it ran'); // v118: nothing happens if it wasn't paid with tokens
   res.json({ ok: true, wasLive: ad.isLive === true });
 });
 
@@ -262,8 +263,17 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
   const { selfServeAdPriceForCity } = require('../ad-pricing');
   const price = await selfServeAdPriceForCity(city);
 
+  // v118: a pro who chose "pay for ads with tokens" pays from tokens when
+  // the balance covers the whole price; otherwise it is paid the usual way.
+  const adId = `ad_${nanoid(10)}`;
+  const tokens = require('../tokens');
+  let paidWithTokens = false;
+  if (tokens.autopayOf(provider).ad && (await tokens.settingsFor(provider.country)).enabled && price > 0) {
+    try { await tokens.spend(provider.id, price, `ad:${adId}`, `Ad: ${String(displayHeadline).trim().slice(0, 60)}`); paidWithTokens = true; }
+    catch (e) { if (e.code !== 'TOKENS_SHORT') throw e; }
+  }
   const submission = {
-    id: `ad_${nanoid(10)}`,
+    id: adId,
     providerId: provider.id,
     companyName: provider.businessName || provider.name,
     contactName: provider.name,
@@ -278,9 +288,11 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
     displayHeadline: displayHeadline.trim(),
     displaySubtext: displaySubtext.trim(),
     displayLink: (displayLink || '').trim() || null,
+    paidWith: paidWithTokens ? 'tokens' : 'normal', // v118
     createdAt: new Date().toISOString(),
   };
-  await db.insert('advertisingInquiries', submission);
+  try { await db.insert('advertisingInquiries', submission); }
+  catch (e) { if (paidWithTokens) await tokens.refundRef(`ad:${adId}`, 'the ad could not be saved'); throw e; }
 
   const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
   const regionalAdmins = city ? await require('../admin-scope').regionalAdminsFor({ city }) : []; // v96: country-wide admins too
@@ -289,7 +301,7 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
     await notify(admin.id, '📣', `${provider.name} (an existing provider) submitted a self-serve ad, already paid ($${price}) — just needs a quick content review${city ? ` for ${city}` : ' (platform-wide)'}`, null, { section: 'advertising' });
   }
 
-  res.json({ submission });
+  res.json({ submission, paidWithTokens });
 });
 
 router.post('/advertising-inquiry', publicFormLimiter, async (req, res) => {

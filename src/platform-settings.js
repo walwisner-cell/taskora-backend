@@ -83,11 +83,11 @@ const DEFAULTS = {
     { id: 'week', label: 'Weekly pass', days: 7, priceUsd: 10 },
     { id: 'month', label: 'Monthly pass', days: 30, priceUsd: 35 },
   ],
-  // v115: Trothen Tokens (see src/tokens.js). 1 token = US$1.00 when spent.
+  // v115/v118: Trothen Tokens for pros (see src/tokens.js). 1 token = US$1.00 when spent.
   // A pack's "tokens" can be more than its price (bonus), never less. These
   // packs are placeholders: set the real ones in Admin > Tokens.
   tokensEnabled: true,
-  tokensFeeOnlyEnabled: true, // customers may use tokens for the Trothen fee only
+  tokensFeeOnlyEnabled: true, // v115 customer setting; not used since tokens became pro-only in v118
   tokenMaxBalance: 500,       // most tokens one customer can hold (keeps the stored balance small)
   tokenPacks: [
     { id: 'small', label: 'Small', priceUsd: 10, tokens: 10 },
@@ -102,21 +102,25 @@ const DEFAULTS = {
   // exchange rate and rounded (L$10, ₦50, GH₵0.50 steps) unless a fixed
   // localPrice is set for a pack in Admin > Tokens > Countries.
   tokenDailyLimitUsd: 200,  // most a customer can buy in 24 hours (US$), unless a country says otherwise
-  tokenCountries: [],       // countries where tokens are on; empty = every country
+  tokenCountries: [],
+  // v118: a small fee in tokens for each job a pro accepts. Off until a super admin
+  // turns it on (here for every country, or per country in Admin > Tokens > Countries).
+  tokenJobFeeDefault: { enabled: false, flatTokens: 1, percent: 0, maxTokens: 0 },
+  tokenPaymentCodeHours: 48, // v117: how long a mobile money payment code stays open if no payment is reported       // countries where tokens are on; empty = every country
   tokenCountryRules: {
-    Liberia: { maxBalance: 200, dailyLimitUsd: 100, packs: [
+    Liberia: { maxBalance: 200, dailyLimitUsd: 100, momoAccounts: [], packs: [
       { id: 'mini', label: 'Mini', priceUsd: 2, tokens: 2 },
       { id: 'small', label: 'Small', priceUsd: 5, tokens: 5 },
       { id: 'medium', label: 'Medium', priceUsd: 10, tokens: 10.5 },
       { id: 'large', label: 'Large', priceUsd: 25, tokens: 26.5 },
     ] },
-    Ghana: { maxBalance: 200, dailyLimitUsd: 100, packs: [
+    Ghana: { maxBalance: 200, dailyLimitUsd: 100, momoAccounts: [], packs: [
       { id: 'mini', label: 'Mini', priceUsd: 2, tokens: 2 },
       { id: 'small', label: 'Small', priceUsd: 5, tokens: 5 },
       { id: 'medium', label: 'Medium', priceUsd: 10, tokens: 10.5 },
       { id: 'large', label: 'Large', priceUsd: 25, tokens: 26.5 },
     ] },
-    Nigeria: { maxBalance: 200, dailyLimitUsd: 100, packs: [
+    Nigeria: { maxBalance: 200, dailyLimitUsd: 100, momoAccounts: [], packs: [
       { id: 'mini', label: 'Mini', priceUsd: 2, tokens: 2 },
       { id: 'small', label: 'Small', priceUsd: 5, tokens: 5 },
       { id: 'medium', label: 'Medium', priceUsd: 10, tokens: 10.5 },

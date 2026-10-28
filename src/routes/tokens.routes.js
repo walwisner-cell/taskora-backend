@@ -1,4 +1,4 @@
-// v115: Trothen Tokens — what customers and admins can do with them.
+// v115/v118: Trothen Tokens — what pros and admins can do with them.
 // The rules themselves live in src/tokens.js.
 const express = require('express');
 const rateLimit = require('express-rate-limit');
@@ -21,9 +21,10 @@ async function localFor(country) {
 
 // GET /api/tokens/me — balance, packs (priced for this customer's
 // country, in their own money), limits and history.
-router.get('/tokens/me', requireAuth, requireRole('customer'), async (req, res) => {
+router.get('/tokens/me', requireAuth, requireRole('provider'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   try { await tokens.checkPendingPurchases(me.id); } catch (e) { /* shown as waiting */ }
+  try { await tokens.sweep(me.id); } catch (e) { /* the 5-minute sweep will catch it */ }
   const s = await tokens.settingsFor(me.country);
   const loc = await localFor(me.country);
   const bal = await tokens.balance(me.id);
@@ -45,13 +46,61 @@ router.get('/tokens/me', requireAuth, requireRole('customer'), async (req, res) 
     pending: pending.map(p => ({ id: p.id, packLabel: p.packLabel, tokens: p.tokens, priceUsd: p.priceUsd, priceLocal: p.priceLocal ?? null, createdAt: p.createdAt })),
     history: lines.slice(-50).reverse().map(tokens.publicLine),
     verified: me.verified === true,
+    // v118: what this pro pays with tokens
+    autopay: tokens.autopayOf(me),
+    jobFee: s.jobFee && s.jobFee.enabled ? s.jobFee : null,
+    planInvoices: (await db.filter('planInvoices', i => i.providerId === me.id && i.status === 'open')).map(i => ({ id: i.id, period: i.period, plan: i.plan, amountUsd: i.amountUsd, paidUsd: i.paidUsd || 0, owedUsd: tokens.money(i.amountUsd - (i.paidUsd || 0)), localPrice: i.localPrice, currencyCode: i.currencyCode, currencySymbol: i.currencySymbol })),
+    // v117: pay by sending mobile money yourself, with a code from Trothen
+    canPayByCode: s.momoAccounts.length > 0,
+    payTo: s.momoAccounts,
+    codes: (await db.filter('tokenPurchases', p => p.userId === me.id && p.method === 'mobile_money_code' && (tokens.OPEN_STATUSES.includes(p.status) || Date.now() - new Date(p.createdAt).getTime() < 7 * 24 * 60 * 60 * 1000)))
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 10).map(tokens.publicCode),
   });
+});
+
+// PUT /api/tokens/autopay { commission, plan, ad, pass } — which bills this pro pays from tokens first.
+router.put('/tokens/autopay', requireAuth, requireRole('provider'), async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const b = req.body || {};
+  const next = { ...tokens.autopayOf(me) };
+  for (const k of tokens.AUTOPAY_KEYS) if (b[k] !== undefined) next[k] = b[k] === true;
+  await db.update('users', me.id, { tokenAutoPay: next });
+  res.json({ autopay: next });
+});
+// POST /api/tokens/plan-invoices/:id/pay — pay an open plan fee from tokens now.
+router.post('/tokens/plan-invoices/:id/pay', requireAuth, requireRole('provider'), buyLimiter, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const r = await tokens.payPlanInvoice(me, req.params.id);
+  if (!r.ok) return res.status(r.status || 400).json({ code: r.code, error: r.error });
+  res.json({ paid: r.paid, left: r.left, balance: await tokens.balance(me.id) });
+});
+
+// POST /api/tokens/payment-code { packId, expectedPrice, agree, requestId }
+router.post('/tokens/payment-code', requireAuth, requireRole('provider'), buyLimiter, async (req, res) => {
+  const b = req.body || {};
+  if (b.agree !== true) return res.status(400).json({ error: 'Please tick the box to say you have read how tokens work.' });
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const r = await tokens.createPaymentCode(me, b.packId, b.expectedPrice, b.requestId);
+  if (!r.ok) return res.status(r.status || 400).json({ code: r.code, price: r.price, error: r.error });
+  res.status(r.repeated ? 200 : 201).json({ paymentCode: tokens.publicCode(r.purchase), repeated: !!r.repeated });
+});
+router.post('/tokens/payment-code/:id/paid', requireAuth, requireRole('provider'), buyLimiter, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const r = await tokens.customerReportsPaid(me, req.params.id, (req.body || {}).transactionId);
+  if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+  res.json({ paymentCode: tokens.publicCode(r.purchase) });
+});
+router.post('/tokens/payment-code/:id/cancel', requireAuth, requireRole('provider'), async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const r = await tokens.customerCancelsCode(me, req.params.id);
+  if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+  res.json({ paymentCode: tokens.publicCode(r.purchase) });
 });
 
 // POST /api/tokens/buy { packId, expectedPrice, agree, requestId }
 // expectedPrice is the amount the customer saw: local money where they
 // have one, otherwise US dollars. requestId makes a retry safe.
-router.post('/tokens/buy', requireAuth, requireRole('customer'), buyLimiter, async (req, res) => {
+router.post('/tokens/buy', requireAuth, requireRole('provider'), buyLimiter, async (req, res) => {
   const b = req.body || {};
   if (b.agree !== true) return res.status(400).json({ error: 'Please tick the box to say you have read how tokens work.' });
   const me = await db.find('users', u => u.id === req.user.sub);
@@ -61,7 +110,7 @@ router.post('/tokens/buy', requireAuth, requireRole('customer'), buyLimiter, asy
 });
 
 // ── ADMIN ──────────────────────────────────────────────────────────────
-// Looking: super admins, customer service (to answer a customer's
+// Looking: super admins, customer service (to answer a pro's
 // question about their balance) and the finance team. Changing settings or a
 // balance: super admins only, and every change is logged.
 const TOKEN_VIEW_DEPARTMENTS = ['customer_service', 'financial', 'accountant', 'controller'];
@@ -105,6 +154,11 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
   }
   if (b.enabled !== undefined) await setSetting('tokensEnabled', b.enabled === true);
   if (b.feeOnlyEnabled !== undefined) await setSetting('tokensFeeOnlyEnabled', b.feeOnlyEnabled === true);
+  if (b.jobFeeDefault !== undefined) {
+    const f = tokens.cleanJobFee(b.jobFeeDefault);
+    if (!f) return res.status(400).json({ error: 'Job fee: a flat amount from 0 to 100 tokens, a percent of the job from 0 to 20, and a most-per-job from 0 to 200 (0 = no cap).' });
+    await setSetting('tokenJobFeeDefault', f);
+  }
   if (b.dailyLimitUsd !== undefined) {
     const n = Number(b.dailyLimitUsd);
     if (!Number.isFinite(n) || n < 1 || n > 10000) return res.status(400).json({ error: 'The daily buying limit must be from $1 to $10,000.' });
@@ -127,11 +181,23 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
     const rules = { ...(before.countryRules || {}) };
     if (r.remove === true) delete rules[country];
     else {
+      // Anything not sent is kept as it was, so saving one part (say the
+      // mobile money numbers) never wipes the packs or limits.
+      const prev = before.countryRules[country] || {};
       const rule = {};
-      if (r.enabled === false) rule.enabled = false;
+      if (r.enabled === false || (r.enabled === undefined && prev.enabled === false)) rule.enabled = false;
+      if (r.maxBalance === undefined && prev.maxBalance != null) rule.maxBalance = prev.maxBalance;
+      if (r.dailyLimitUsd === undefined && prev.dailyLimitUsd != null) rule.dailyLimitUsd = prev.dailyLimitUsd;
+      if (r.packs === undefined && Array.isArray(prev.packs)) rule.packs = prev.packs;
+      if (r.jobFee === undefined && prev.jobFee) rule.jobFee = prev.jobFee;
+      if (r.jobFee !== undefined && r.jobFee !== null) {
+        const f = tokens.cleanJobFee(r.jobFee);
+        if (!f) return res.status(400).json({ error: `${country} job fee: a flat amount from 0 to 100 tokens, a percent of the job from 0 to 20, and a most-per-job from 0 to 200 (0 = no cap).` });
+        rule.jobFee = f;
+      }
       if (r.maxBalance !== undefined && r.maxBalance !== null && r.maxBalance !== '') {
         const n = Number(r.maxBalance);
-        if (!Number.isInteger(n) || n < 10 || n > 10000) return res.status(400).json({ error: `${country}: the most one customer can hold must be a whole number from 10 to 10,000 tokens.` });
+        if (!Number.isInteger(n) || n < 10 || n > 10000) return res.status(400).json({ error: `${country}: the most one pro can hold must be a whole number from 10 to 10,000 tokens.` });
         rule.maxBalance = n;
       }
       if (r.dailyLimitUsd !== undefined && r.dailyLimitUsd !== null && r.dailyLimitUsd !== '') {
@@ -139,6 +205,13 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
         if (!Number.isFinite(n) || n < 1 || n > 10000) return res.status(400).json({ error: `${country}: the daily limit must be from $1 to $10,000.` });
         rule.dailyLimitUsd = Math.round(n * 100) / 100;
       }
+      if (Array.isArray(r.momoAccounts)) {
+        const accs = r.momoAccounts.map(a => ({ network: String(a.network || '').trim(), number: String(a.number || '').trim(), accountName: String(a.accountName || '').trim() })).filter(a => a.network || a.number || a.accountName);
+        if (accs.length > 4 || accs.some(a => a.network.length < 2 || a.network.length > 40 || !/^[0-9+ ()-]{6,20}$/.test(a.number) || a.accountName.length < 2 || a.accountName.length > 60)) {
+          return res.status(400).json({ error: `${country}: up to 4 mobile money numbers, each with a network (e.g. MTN MoMo), a number (digits only, 6 to 20) and the account name pros will see when they send.` });
+        }
+        rule.momoAccounts = accs;
+      } else if (before.countryRules[country] && before.countryRules[country].momoAccounts) rule.momoAccounts = before.countryRules[country].momoAccounts;
       if (Array.isArray(r.packs) && r.packs.length) {
         const list = r.packs.map(p => ({ id: String(p.id || '').trim().toLowerCase(), label: String(p.label || '').trim(), priceUsd: tokens.money(p.priceUsd), tokens: tokens.money(p.tokens), ...(p.localPrice !== undefined && p.localPrice !== null && p.localPrice !== '' ? { localPrice: Number(p.localPrice) } : {}) }));
         if (list.length > 8 || list.some(p => !tokens.cleanCountryPack(p)) || new Set(list.map(p => p.id)).size !== list.length) {
@@ -152,7 +225,7 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
   }
   if (b.maxBalance !== undefined) {
     const n = Number(b.maxBalance);
-    if (!Number.isInteger(n) || n < 10 || n > 10000) return res.status(400).json({ error: 'The most one customer can hold must be a whole number from 10 to 10,000 tokens.' });
+    if (!Number.isInteger(n) || n < 10 || n > 10000) return res.status(400).json({ error: 'The most one pro can hold must be a whole number from 10 to 10,000 tokens.' });
     await setSetting('tokenMaxBalance', n);
   }
   const after = await tokens.settings();
@@ -160,11 +233,11 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
   res.json({ settings: after });
 });
 
-// GET /api/admin/tokens/customer?q=email-or-name — one customer's balance and history.
+// GET /api/admin/tokens/customer?q=email-or-name — one pro's balance and history.
 router.get('/admin/tokens/customer', gate, async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
-  if (q.length < 3) return res.status(400).json({ error: 'Type at least 3 letters of the customer\'s email or name.' });
-  const matches = (await db.filter('users', u => u.role === 'customer' && ((u.email || '').toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q)))).slice(0, 10);
+  if (q.length < 3) return res.status(400).json({ error: 'Type at least 3 letters of the pro\'s email or name.' });
+  const matches = (await db.filter('users', u => u.role === 'provider' && ((u.email || '').toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q)))).slice(0, 10);
   const out = [];
   for (const u of matches) {
     const lines = await tokens.ledgerOf(u.id);
@@ -185,7 +258,7 @@ router.post('/admin/tokens/adjust', gate, superOnly, async (req, res) => {
 });
 
 
-// GET /api/admin/tokens/country?country=Liberia — what customers in one
+// GET /api/admin/tokens/country?country=Liberia — what pros in one
 // country see: packs in local money, and whether a fixed local price has
 // drifted from today's exchange rate (it then gives too much or too little).
 router.get('/admin/tokens/country', gate, async (req, res) => {
@@ -196,7 +269,7 @@ router.get('/admin/tokens/country', gate, async (req, res) => {
   const s = await tokens.settingsFor(country);
   const rule = all.countryRules[country] || null;
   res.json({
-    country, currency: s.currency, rate: s.rate, enabled: s.enabled, maxBalance: s.maxBalance, dailyLimitUsd: s.dailyLimitUsd,
+    country, currency: s.currency, rate: s.rate, enabled: s.enabled, maxBalance: s.maxBalance, dailyLimitUsd: s.dailyLimitUsd, jobFee: s.jobFee,
     hasOwnRule: !!rule, rule,
     packs: s.packs.map(p => {
       const driftPct = p.listUsd > 0 ? Math.round(((p.priceUsd - p.listUsd) / p.listUsd) * 1000) / 10 : 0;
@@ -216,6 +289,34 @@ router.post('/admin/tokens/offline-topup', gate, financeOnly, async (req, res) =
   if (!r.ok) return res.status(r.status || 400).json({ code: r.code, error: r.error });
   await logIt(req, 'tokens_offline_topup', `${b.userId} ${r.purchase.tokens} ${b.method} ${r.purchase.receipt}`.slice(0, 250));
   res.status(201).json({ purchase: r.purchase, line: tokens.publicLine(r.line) });
+});
+
+
+// ── v117: mobile money payment codes (finance team) ────────────────────
+// GET /api/admin/tokens/codes?status=open|all&q=CODE — codes to check.
+router.get('/admin/tokens/codes', gate, async (req, res) => {
+  const q = String(req.query.q || '').trim().toUpperCase();
+  const all = await db.filter('tokenPurchases', p => p.method === 'mobile_money_code');
+  let rows = q ? all.filter(p => p.paymentCode === q || (p.customerTransactionId || '').toUpperCase() === q) : (req.query.status === 'all' ? all : all.filter(p => ['customer_says_paid', 'awaiting_payment'].includes(p.status)));
+  // the ones a customer says they've paid come first, oldest first
+  rows = rows.sort((a, b) => (a.status === 'customer_says_paid' ? 0 : 1) - (b.status === 'customer_says_paid' ? 0 : 1) || String(a.createdAt).localeCompare(String(b.createdAt))).slice(0, 100);
+  const users = await db.filter('users', u => rows.some(r => r.userId === u.id));
+  await logIt(req, 'tokens_codes_view');
+  res.json({ codes: rows.map(p => { const u = users.find(x => x.id === p.userId) || {}; return { ...tokens.publicCode(p), customer: u.name || 'Unknown', email: u.email || null, phone: u.phone || null, country: u.country || null, receipt: p.receipt || null, amountReceived: p.amountReceived ?? null, recordedByName: p.recordedByName || null }; }) });
+});
+router.post('/admin/tokens/codes/confirm', gate, financeOnly, async (req, res) => {
+  const b = req.body || {};
+  const r = await tokens.confirmPaymentCode(req.adminUser, b.code, b.transactionId, b.amountReceived);
+  if (!r.ok) return res.status(r.status || 400).json({ code: r.code, error: r.error });
+  await logIt(req, 'tokens_code_confirm', `${r.purchase.paymentCode} ${r.purchase.receipt} ${r.purchase.amountReceived}`.slice(0, 250));
+  res.json({ paymentCode: tokens.publicCode(r.purchase), line: tokens.publicLine(r.line) });
+});
+router.post('/admin/tokens/codes/reject', gate, financeOnly, async (req, res) => {
+  const b = req.body || {};
+  const r = await tokens.rejectPaymentCode(req.adminUser, b.code, b.reason);
+  if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+  await logIt(req, 'tokens_code_reject', String(b.code).slice(0, 40));
+  res.json({ paymentCode: tokens.publicCode(r.purchase) });
 });
 
 module.exports = router;

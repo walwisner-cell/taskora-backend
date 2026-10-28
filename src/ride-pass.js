@@ -56,7 +56,14 @@ async function buy(driver, planId, expectedPrice) {
   try {
     const id = `rp_${nanoid(10)}`;
     let paymentRef = null, paymentStatus = 'simulated';
-    if (driver.country === 'Liberia') {
+    // v118: a driver who chose "pay for driver passes with tokens" pays from
+    // tokens when the balance covers the whole price; otherwise as before.
+    const tokens = require('./tokens');
+    if (tokens.autopayOf(driver).pass && (await tokens.settingsFor(driver.country)).enabled) {
+      try { await tokens.spend(driver.id, plan.priceUsd, `pass:${id}`, plan.label); paymentStatus = 'tokens'; }
+      catch (e) { if (e.code !== 'TOKENS_SHORT') throw e; }
+    }
+    if (paymentStatus !== 'tokens' && driver.country === 'Liberia') {
       const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('./liberia-momo');
       if (isLiberiaMoMoConfigured()) {
         const method = await db.find('paymentMethods', m => m.userId === driver.id && m.isDefault && m.type === 'mobile_money');
@@ -70,7 +77,8 @@ async function buy(driver, planId, expectedPrice) {
     const lastEnd = all.length ? Math.max(...all.map(p => new Date(p.endsAt).getTime())) : 0;
     const start = Math.max(Date.now(), lastEnd);
     const row = { id, userId: driver.id, planId: plan.id, label: plan.label, days: plan.days, priceUsd: plan.priceUsd, startsAt: new Date(start).toISOString(), endsAt: new Date(start + plan.days * DAY).toISOString(), paymentRef, paymentStatus, createdAt: new Date().toISOString() };
-    await db.insert('ridePasses', row);
+    try { await db.insert('ridePasses', row); }
+    catch (e) { if (paymentStatus === 'tokens') await tokens.refundRef(`pass:${id}`, 'the pass could not be saved'); throw e; }
     const later = start > Date.now() + 1000;
     await notify(driver.id, '🎟️', `Your ${plan.label} is ${later ? 'booked. It starts when your current pass ends' : 'active'} and runs until ${row.endsAt.slice(0, 16).replace('T', ' ')} UTC. You keep the whole fare on every ride while it runs.`, 'bookingUpdates', { section: 'rides' });
     return { ok: true, pass: row };
