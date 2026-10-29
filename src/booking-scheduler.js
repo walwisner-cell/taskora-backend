@@ -10,7 +10,7 @@ const { notify } = require('./notify');
 async function expireOneBooking(contract) {
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
   if (escrow && escrow.status === 'held') {
-    await db.update('escrowTransactions', escrow.id, { status: 'refunded' }); await require('./tokens').refundEscrow(escrow && escrow.id); // v115: tokens back
+    await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
   }
   const updated = await db.update('contracts', contract.id, { status: 'expired' });
   try { await require('./store').giveBackStock(contract); } catch (e) { console.error('[store] could not give stock back:', e.message); } // v105
@@ -28,7 +28,7 @@ async function expireOneBooking(contract) {
     return updated;
   }
 
-  await notify(contract.providerId, '⏰', `You didn't respond to the booking request for "${contract.service}" in time, so it expired automatically and the customer was refunded.`, null, { section: 'bookings' });
+  await notify(contract.providerId, '⏰', `You didn't respond to the booking request for "${contract.service}" in time, so it expired automatically${contract.payMethod === 'cash' ? '' : ' and the customer was refunded'}.`, null, { section: 'bookings' }); // v119: nothing to refund on a cash job
 
   if (isJobSelection) {
     // Item 10: try the next real candidate automatically instead of just
@@ -42,7 +42,7 @@ async function expireOneBooking(contract) {
   }
 
   const customerMessage = isDirectBooking
-    ? `${provider ? provider.name : 'The provider'} didn't confirm "${contract.service}" in time, so the booking was automatically cancelled and any held funds refunded. Try another provider, or book them again for a later time.`
+    ? `${provider ? provider.name : 'The provider'} didn't confirm "${contract.service}" in time, so the booking was automatically cancelled${contract.payMethod === 'cash' ? '' : ' and any held funds refunded'}. Try another provider, or book them again for a later time.`
     : `${provider ? provider.name : 'The provider'} didn't respond to your offer for "${contract.service}" in time, so it expired automatically and any held funds were refunded.`;
   await notify(contract.customerId, '⏰', customerMessage, null, { section: 'bookings' });
 

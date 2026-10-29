@@ -1493,6 +1493,12 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   // v96: split. Only possible while the whole payment is still held, so
   // the two parts always add up to exactly what the customer paid.
   let splitRefund = 0;
+  // v119: on a cash job Trothen never held the money, so there is nothing
+  // to split or refund through the app. The decision is still recorded and
+  // both sides are told; any money between them is settled outside the app.
+  const disputedContract = await db.find('contracts', c => c.id === dispute.contractId);
+  const isCashJob = !!(disputedContract && disputedContract.payMethod === 'cash');
+  if (isCashJob && outcome === 'split') return res.status(400).json({ error: 'This was a cash job: Trothen holds no money to split. Decide for the customer or for the pro, and explain in the note what the pro should pay back, if anything.' });
   if (outcome === 'split') {
     if (!escrowNow) return res.status(409).json({ error: 'There is no payment on this booking to split.' });
     if (escrowNow.status !== 'held' || escrowNow.payoutId || escrowNow.materialsAdvancePayoutId) {
@@ -1538,7 +1544,6 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
     // commission and the payout are worked out on that part only), and
     // remembers the original amount and the part refunded.
     await db.update('escrowTransactions', escrow.id, { status: 'released', originalAmount: escrow.amount, refundedAmount: splitRefund, amount: released, splitByDisputeId: dispute.id });
-    await require('../tokens').refundEscrow(escrow.id); // v115: if the job was paid with tokens, the refunded part goes back as tokens
     await db.update('disputes', dispute.id, { refundedAmount: splitRefund, releasedAmount: released });
     if (contract) {
       await db.update('contracts', contract.id, { refundedAmount: splitRefund });
@@ -1548,9 +1553,16 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
     return res.json({ dispute: { ...updated, refundedAmount: splitRefund, releasedAmount: released } });
   }
 
+  if (outcome === 'refund_customer' && isCashJob) {
+    if (contract) {
+      await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been decided in your favour. This was a cash job, so Trothen did not hold the money and can't refund it through the app. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
+      await notify(contract.providerId, '⚖️', `A dispute on your cash job "${contract.service}" (${dispute.reason}) was decided in the customer's favour. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
+    }
+    return res.json({ dispute: updated });
+  }
   if (outcome === 'refund_customer') {
     const wasRefunded = escrow && escrow.status === 'refunded';
-    if (escrow && !wasRefunded) await db.update('escrowTransactions', escrow.id, { status: 'refunded' }); await require('../tokens').refundEscrow(escrow && escrow.id); // v115: tokens back
+    if (escrow && !wasRefunded) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
     if (contract) {
       await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved in your favor — ${wasRefunded ? 'your payment was already refunded.' : 'your payment has been refunded.'} ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
       await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — the customer was refunded, so this booking's escrow will not be released to you. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });

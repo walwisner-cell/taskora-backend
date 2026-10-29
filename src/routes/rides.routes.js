@@ -239,7 +239,6 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
       loyaltyPointsRedeemed: 0, materialsAdvance: 0, materialsOnHand: null, photoUrls: [],
       status: 'pending_provider_confirmation', signedAt: null,
       payCurrency: b.payCurrency === 'local' ? 'local' : 'usd',
-      payWith: cash ? null : require('../tokens').cleanPayWith(b.payWith), // v115
       providerResponseDeadline: new Date(Date.now() + minutes * 60 * 1000).toISOString(),
       createdAt: new Date().toISOString(),
       ride: {
@@ -252,7 +251,6 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
     if (!cash) try { await fundEscrowForContract(contract, me.id, contract.payCurrency); }
     catch (e) {
       console.error('[ride] payment failed:', e.message);
-      if (e.expose) return res.status(e.status || 402).json({ code: e.code, ...(e.extra || {}), error: e.message }); // v115: e.g. not enough tokens
       return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be completed, so you were not charged and no ride was requested. Please try again.' });
     }
     await db.insert('contracts', contract);
@@ -526,7 +524,7 @@ router.post('/rides/:id/no-show', requireAuth, requireRole('provider'), (req, re
   const opens = new Date(c.ride.driverArrivedAt).getTime() + waitMin * 60000;
   if (Date.now() < opens) return res.status(400).json({ error: `Please wait the full ${waitMin} minutes first. You can report it at ${new Date(opens).toISOString().slice(11, 16)} UTC.` });
   const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
-  if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' }); await require('../tokens').refundEscrow(escrow && escrow.id); // v115: tokens back
+  if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
   try { await require('../loyalty').givePointsBack(c); } catch (e) { /* best effort */ }
   const u = await db.update('contracts', c.id, { status: 'cancelled', cancelReasonCategory: 'rider_no_show', cancelledByRole: 'provider', protectedCancellation: false, ride: { ...c.ride, noShow: true, live: null, track: null } });
   const rider = await db.find('users', x => x.id === c.customerId);

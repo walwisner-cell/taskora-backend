@@ -298,7 +298,14 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   );
   const contracts = await db.filter('contracts', c => c.providerId === req.user.sub);
   const contractIds = new Set(contracts.map(c => c.id));
-  const payableEscrow = releasedEscrow.filter(e => contractIds.has(e.contractId));
+  // v119: once a super admin turns on "only pay out money Trothen really
+  // received" (for the live site), a payout only includes bookings whose
+  // money truly arrived: paid by a confirmed payment code, or collected by
+  // mobile money. Test-mode bookings stay out, so no real money is sent
+  // for money that was never paid in.
+  const realOnly = (await require('../platform-settings').getSetting('payoutsRequireRealPayment')) === true;
+  const reallyPaid = (e) => !realOnly || e.paidBy === 'code' || !!e.liberiaMoMoReference;
+  const payableEscrow = releasedEscrow.filter(e => contractIds.has(e.contractId) && reallyPaid(e));
 
   // Materials advances release the moment they're agreed, independent of
   // whether the rest of the job is done — so they're gathered separately
@@ -307,7 +314,7 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   // remainder while the advance itself is fully payable right now.
   const allEscrowForProvider = await db.filter('escrowTransactions', e => contractIds.has(e.contractId));
   const payableAdvances = allEscrowForProvider.filter(e =>
-    e.materialsAdvanceReleased && e.materialsAdvanceAmount > 0 && !e.materialsAdvancePayoutId && e.status !== 'refunded'
+    e.materialsAdvanceReleased && e.materialsAdvanceAmount > 0 && !e.materialsAdvancePayoutId && e.status !== 'refunded' && reallyPaid(e)
   );
 
   const grossAmount = Math.round((payableEscrow.reduce((sum, e) => sum + (e.amount - (e.materialsAdvanceAmount || 0)), 0)
@@ -787,7 +794,7 @@ async function handleScopeChangeDecide(req, res, request) {
   const feeWaived = (contract.loyaltyPointsRedeemed || 0) > 0;
   const laborFee = feeWaived ? 0 : money2(serviceFeeFor(newLabor) * (1 - feeDiscountForTier(customerForFee && customerForFee.membershipTier)));
   const storeFeeFromCustomer = contract.storeFeePaidBy === 'customer' ? (contract.storeFee || 0) : 0;
-  const newServiceFee = money2(laborFee + storeFeeFromCustomer);
+  const newServiceFee = contract.payMethod === 'cash' ? 0 : money2(laborFee + storeFeeFromCustomer); // v119: no Trothen fee for the customer on a cash job
 
   // v110: money-safety fix, same reasoning as fundEscrowForContract. Every
   // other place that adds to what's held — the original booking — goes
@@ -801,7 +808,7 @@ async function handleScopeChangeDecide(req, res, request) {
   // today (MoMo is still gated, so this call is a no-op for everyone),
   // but this closes the same gap before it can matter.
   const scopeChangeCustomer = customerForFee;
-  if (scopeChangeCustomer && scopeChangeCustomer.country === 'Liberia') {
+  if (contract.payMethod !== 'cash' && scopeChangeCustomer && scopeChangeCustomer.country === 'Liberia') {
     const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('../liberia-momo');
     if (isLiberiaMoMoConfigured()) {
       const defaultMethod = await db.find('paymentMethods', m => m.userId === scopeChangeCustomer.id && m.isDefault);
@@ -827,7 +834,7 @@ async function handleScopeChangeDecide(req, res, request) {
   }
   await db.update('scopeChangeRequests', request.id, { status: 'approved', decidedAt: new Date().toISOString() });
 
-  await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved — the contract and held escrow have been updated. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
+  await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved — ${contract.payMethod === 'cash' ? 'the agreed cash price' : 'the contract and held escrow'} have been updated. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
   res.json({ request: { ...request, status: 'approved' }, contract: updatedContract });
 }
 
@@ -863,6 +870,26 @@ async function handleContractComplete(req, res) {
       return res.status(400).json({ error: 'Tip must be a positive number (and a realistic one — under 3x the job price)' });
     }
     tip = Math.round(tipAmount * 100) / 100;
+  }
+
+  // v119: a cash job. The customer pays the pro directly, so there is no
+  // escrow to release and no tip through Trothen. The customer confirms the
+  // cash they paid; Trothen's commission (already taken from the pro's
+  // tokens) is corrected to that amount, and a big gap is flagged.
+  if (contract.payMethod === 'cash') {
+    const paid = Number((req.body || {}).cashPaidAmount);
+    if (!Number.isFinite(paid) || paid <= 0 || paid > (contract.amount || 0) * 5 + 1) {
+      return res.status(400).json({ code: 'CASH_AMOUNT', error: `Tell us how much you paid the pro in cash (the booking price was $${Number(contract.amount).toFixed(2)}).` });
+    }
+    const cashPaid = Math.round(paid * 100) / 100;
+    await db.update('contracts', contract.id, { cashPaidAmount: cashPaid });
+    const done = await completeContractCore({ ...contract, cashPaidAmount: cashPaid }, 0, req.user.sub);
+    try { await require('../tokens').settleCashCommission(contract, cashPaid); } catch (e) { console.error('[tokens] cash settle failed:', e.message); }
+    const gap = contract.amount > 0 ? Math.abs(cashPaid - contract.amount) / contract.amount : 0;
+    if (gap > 0.15) {
+      try { await require('../fraud-detection').createFlag({ type: 'cash_amount_mismatch', severity: 'medium', userId: contract.providerId, relatedUserId: contract.customerId, contractId: contract.id, details: `Cash job #${contract.bookingNumber}: booked at $${contract.amount}, the customer says they paid $${cashPaid}. Check with both if this looks wrong (extra work agreed on the spot is normal).` }); } catch (e) { /* never block completion */ }
+    }
+    return res.json(done);
   }
 
   const done = await completeContractCore(contract, tip, req.user.sub);
@@ -909,6 +936,10 @@ async function completeContractCore(contract, tip, customerId) {
   // v109: an advance already paid out is not available again.
   const totalAvailable = Math.round(releasedUnpaid.reduce((s, e) => s + e.amount - (e.materialsAdvancePayoutId ? (e.materialsAdvanceAmount || 0) : 0), 0) * 100) / 100;
 
+  if (contract.payMethod === 'cash') { // v119
+    await notify(contract.providerId, '💵', `"${contract.service}" is marked done. The customer says they paid you $${Number(contract.cashPaidAmount || contract.amount).toFixed(2)} in cash, so nothing is added to your Trothen balance.`, 'bookingUpdates', { section: 'contracts' });
+    return { contract: updated, escrow: null };
+  }
   if (contract.ride && contract.ride.cash) {
     await notify(contract.providerId, '💵', `Ride #${contract.bookingNumber} is complete. The rider paid you $${Number(contract.amount).toFixed(2)} in cash, so nothing is added to your Trothen balance.`, 'bookingUpdates', { section: 'rides' });
     return { contract: updated, escrow: null };
@@ -962,10 +993,21 @@ async function handleContractCancel(req, res) {
     c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub)
   );
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
-  if (!['active', 'pending_agreement', 'pending_provider_confirmation'].includes(contract.status)) {
+  if (!['active', 'pending_agreement', 'pending_provider_confirmation', 'awaiting_payment'].includes(contract.status)) {
     return res.status(400).json({ error: `This booking is already ${contract.status} and can't be cancelled` });
   }
   const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+  // v119: a booking still waiting for the customer's mobile money payment.
+  if (contract.status === 'awaiting_payment') {
+    if (contract.customerId !== req.user.sub) return res.status(403).json({ error: 'Only the customer can cancel a booking that isn\'t paid yet.' });
+    if (escrow && escrow.customerSaysPaidAt) return res.status(409).json({ code: 'USE_SUPPORT', error: 'You told us you have sent the payment, so this can\'t be cancelled here. Contact support: if the money arrived, it will be refunded.' });
+    if (escrow && escrow.status === 'awaiting_payment') await db.update('escrowTransactions', escrow.id, { status: 'payment_cancelled' });
+    const gone = await db.update('contracts', contract.id, { status: 'cancelled', cancelledByRole: 'customer', cancelReasonCategory: 'not_paid', cancelledAt: new Date().toISOString() });
+    await require('../store').giveBackStock(contract);
+    await require('../loyalty').givePointsBack(contract);
+    if (contract.jobId) { const job = await db.find('jobs', j => j.id === contract.jobId); if (job && job.status === 'matched') await db.update('jobs', job.id, { status: 'open' }); }
+    return res.json({ contract: gone, escrow: null });
+  }
   // v109: two ways money could go out twice. (1) The pro had already been
   // paid the materials advance, and cancelling refunded the customer in
   // full as well. (2) Goods had already been handed over (pick-up or
@@ -995,6 +1037,7 @@ async function handleContractCancel(req, res) {
     protectedCancellation: isProtected,
   });
   await require('../store').giveBackStock(contract); // v105: goods not yet handed over go back on the shelf
+  if (contract.payMethod === 'cash') { try { await require('../tokens').sweep(contract.providerId); } catch (e) { /* the 5-minute sweep gives it back */ } } // v119: commission back now, when it is due
   // v108: a store order and its delivery go together. Cancelling the order
   // cancels a delivery that hasn't collected the goods yet; a driver
   // cancelling tells the customer and the seller so another can be chosen.
@@ -1143,8 +1186,11 @@ router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res
   // every contract that actually reached a real transaction, matching the
   // same escrow records already being counted above, not a separate,
   // possibly-inconsistent query.
-  const serviceFeeRevenue = Math.round(all.filter(e => e.status !== 'refunded').reduce((s, e) => s + (e.serviceFee || 0), 0) * 100) / 100; // v109: a refunded booking's fee is not revenue
-  res.json({ held, released, count: all.length, commissionRevenue, serviceFeeRevenue });
+  const serviceFeeRevenue = Math.round(all.filter(e => ['held', 'released'].includes(e.status)).reduce((s, e) => s + (e.serviceFee || 0), 0) * 100) / 100; // v109: a refunded booking's fee is not revenue; v119: nor one never paid
+  // v119: commission pros paid from tokens on cash jobs (net of any given back)
+  const cashLines = await db.filter('tokenLedger', l => l.refKind === 'cashjob');
+  const cashJobCommission = Math.round(-cashLines.reduce((s, l) => s + (Number(l.tokens) || 0), 0) * 100) / 100;
+  res.json({ held, released, count: all.length, commissionRevenue, serviceFeeRevenue, cashJobCommission });
 });
 
 // GET /api/admin/financial-by-region — a real, per-city breakdown of escrow
@@ -1215,7 +1261,7 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
     const b = bucket(customer.city || 'Unknown', customer.country || 'Unknown');
     if (e.status === 'held') b.held += e.amount;
     if (e.status === 'released') b.released += e.amount;
-    if (e.status !== 'refunded') b.serviceFeeRevenue += (e.serviceFee || 0); // v109
+    if (['held', 'released'].includes(e.status)) b.serviceFeeRevenue += (e.serviceFee || 0); // v109; v119: not unpaid ones
     b.transactionCount += 1;
   }
   for (const p of payouts) {
@@ -1290,7 +1336,7 @@ router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (re
 
     rows.push({
       bookingNumber: c.bookingNumber, service: c.service, status: c.status,
-      amount: c.amount, serviceFee: c.serviceFee || 0,
+      amount: c.amount, serviceFee: c.serviceFee || 0, payMethod: c.payMethod || 'protected', // v119
       customerName: customer.name, providerName: provider.name,
       providerCategory: provider.category, providerTier: provider.plan || 'starter',
       city: provider.city, country: provider.country,
@@ -1301,7 +1347,7 @@ router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (re
   const total = {
     count: rows.length,
     gmv: Math.round(rows.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100,
-    serviceFeeRevenue: Math.round(rows.filter(r => !['cancelled', 'declined', 'expired', 'refunded'].includes(r.status)).reduce((s, r) => s + (r.serviceFee || 0), 0) * 100) / 100, // v109: refunded bookings' fees are not revenue
+    serviceFeeRevenue: Math.round(rows.filter(r => !['cancelled', 'declined', 'expired', 'refunded', 'awaiting_payment'].includes(r.status) && r.payMethod !== 'cash').reduce((s, r) => s + (r.serviceFee || 0), 0) * 100) / 100, // v109: refunded bookings' fees are not revenue
     completed: rows.filter(r => r.status === 'completed').length,
     cancelled: rows.filter(r => r.status === 'cancelled').length,
   };

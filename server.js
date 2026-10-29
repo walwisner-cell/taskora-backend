@@ -156,6 +156,7 @@ app.use('/api', require('./src/routes/store.routes'));
 app.use('/api', require('./src/routes/orders.routes')); // v108: store orders, drivers, receipts
 app.use('/api', require('./src/routes/rides.routes')); // v111: passenger rides
 app.use('/api', require('./src/routes/tokens.routes')); // v115: Trothen Tokens
+app.use('/api', require('./src/routes/custpay.routes')); // v119: customer payments by code
 app.use('/api', require('./src/routes/business.routes'));
 app.use('/api', marketplaceRoutes);
 app.use('/api', paymentsRoutes);
@@ -423,6 +424,8 @@ seedIfEmpty()
     // v115: tokens owed back on refunded bookings, and mobile-money token
     // purchases waiting for MTN's answer. Every 5 minutes.
     setInterval(() => { require('./src/tokens').sweep().catch(e => console.error('[tokens] sweep failed:', e)); }, 5 * 60 * 1000);
+    // v119: bookings whose payment code ran out without a payment are cancelled.
+    setInterval(() => { require('./src/customer-payments').expireUnpaid().catch(e => console.error('[customer-payments] sweep failed:', e)); }, 5 * 60 * 1000);
     setTimeout(() => { require('./src/tokens').sweep().catch(e => console.error('[tokens] sweep failed:', e)); }, 15000);
 
     // v78: monthly provider plan invoices (see src/plan-billing.js). Does

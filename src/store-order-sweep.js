@@ -15,7 +15,7 @@ async function refundOne(order) {
     const h = fresh.handover || {};
     if ((h.pickup && h.pickup.length) || (h.dropoff && h.dropoff.length)) return false;
     const escrow = await db.find('escrowTransactions', e => e.contractId === fresh.id);
-    if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' }); await require('./tokens').refundEscrow(escrow && escrow.id); // v115: tokens back
+    if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
     const updated = await db.update('contracts', fresh.id, { status: 'cancelled', cancelReasonCategory: 'seller_no_response', cancelledByRole: 'system', protectedCancellation: false });
     await store.giveBackStock(fresh);
     try { await require('./store-orders').afterCancel(updated, null); } catch (e) { console.error('[store-order-sweep] after cancel:', e.message); }

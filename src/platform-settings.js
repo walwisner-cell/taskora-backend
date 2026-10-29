@@ -103,9 +103,14 @@ const DEFAULTS = {
   // localPrice is set for a pack in Admin > Tokens > Countries.
   tokenDailyLimitUsd: 200,  // most a customer can buy in 24 hours (US$), unless a country says otherwise
   tokenCountries: [],
-  // v118: a small fee in tokens for each job a pro accepts. Off until a super admin
-  // turns it on (here for every country, or per country in Admin > Tokens > Countries).
-  tokenJobFeeDefault: { enabled: false, flatTokens: 1, percent: 0, maxTokens: 0 },
+  // v119: how customers pay for jobs while in-app payments aren't live.
+  // Cash jobs: the customer pays the pro directly after the work; Trothen's
+  // commission is taken from the pro's tokens. Per country, an admin can
+  // also turn on payment codes for protected (escrow) jobs.
+  cashJobsEnabled: true,
+  payoutsRequireRealPayment: false, // turn ON for the live site: payouts only include bookings whose money really arrived (payment code or mobile money)
+  tokenTestPurchases: false, // TEST SITES ONLY: lets "Pay in the app" add tokens without any real payment
+  customerPaymentCodeHours: 24, // how long a customer has to pay a booking by code
   tokenPaymentCodeHours: 48, // v117: how long a mobile money payment code stays open if no payment is reported       // countries where tokens are on; empty = every country
   tokenCountryRules: {
     Liberia: { maxBalance: 200, dailyLimitUsd: 100, momoAccounts: [], packs: [

@@ -1,0 +1,15 @@
+Payment logos in this folder
+
+visa.svg, mastercard.svg, amex.svg, discover.svg, paypal.svg
+  From the "payment-icons" package v1.2.1 (svg/min/flat), Mozilla Public License 2.0.
+  https://github.com/muffinresearch/payment-icons
+
+applepay.svg
+  From the "simple-icons" package v16.36.0, CC0-1.0 (viewBox cropped to the mark).
+  https://simpleicons.org
+
+The logos themselves are trademarks of Visa, Mastercard, American Express,
+Discover, PayPal and Apple. They are shown only to tell people which payment
+methods Trothen accepts. Before showing any of them on the live site for a
+method that really takes payments, follow that company's brand rules, for
+example Apple's Apple Pay marketing guidelines and PayPal's logo guidelines.

@@ -45,7 +45,7 @@ function readDropoff(body) {
 }
 
 // Makes the booking with the driver for one order, and holds the money for it.
-async function createDelivery({ order, seller, driver, where, payCurrency, expectedPrice, payWith }) {
+async function createDelivery({ order, seller, driver, where, payCurrency, expectedPrice }) {
   const { generateBookingNumber, fundEscrowForContract } = require('./marketplace.routes');
   const opt = store.storeOptions(seller);
   const settings = await store.storeSettings();
@@ -72,7 +72,6 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
     loyaltyPointsRedeemed: 0, materialsAdvance: 0, materialsOnHand: null, photoUrls: [],
     status: 'pending_provider_confirmation',
     payCurrency: payCurrency === 'local' ? 'local' : 'usd',
-    payWith: require('../tokens').cleanPayWith(payWith === undefined ? order.payWith : payWith), // v115
     signedAt: null,
     providerResponseDeadline: new Date(Date.now() + so.DELIVERY_RESPONSE_MINUTES * 60 * 1000).toISOString(),
     delivery: {
@@ -247,19 +246,8 @@ router.post('/store/orders', requireAuth, requireRole('customer'), requireCurren
     // the goods on the shelf at that price. There is nothing to accept.
     status: 'active', signedAt: today(), providerResponseDeadline: null,
     payCurrency: b.payCurrency === 'local' ? 'local' : 'usd',
-    payWith: require('../tokens').cleanPayWith(b.payWith), // v115
     createdAt: new Date().toISOString(),
   };
-  // v115: paying with tokens: check the balance covers the order AND the
-  // driver's delivery before anything is taken, so it is never half paid.
-  if (order.payWith) {
-    const tk = require('../tokens');
-    const dPrice = driver ? so.quoteFor(driver, so.kmBetween(opt.pickupLocation, where.jobLocation)) : 0;
-    const dFee = driver ? pct(dPrice, settings.deliveryFeePercent) : 0;
-    const need = tk.money((order.payWith === 'tokens' ? order.amount + dPrice : 0) + order.serviceFee + dFee);
-    const have = await tk.balance(customer.id);
-    if (have + 0.001 < need) return res.status(402).json({ code: 'TOKENS_SHORT', need, have, short: tk.money(need - have), error: `This order needs ${need} tokens and you have ${have}. Buy ${tk.money(need - have)} more tokens, or choose another way to pay. Nothing was ordered.` });
-  }
   // Charging the customer happens FIRST, before anything else is
   // committed. fundEscrowForContract can genuinely fail (today, only a
   // Liberian mobile-money collection request that MTN's own API
@@ -281,9 +269,7 @@ router.post('/store/orders', requireAuth, requireRole('customer'), requireCurren
       await db.insert('contracts', order);
     } catch (e) {
       await store.releaseStock(basket.items);
-      try { const esc = await db.find('escrowTransactions', x => x.contractId === order.id); if (esc) await require('../tokens').undoIfOrphan(esc); } catch (x) { /* logged inside */ } // v115
       console.error('[store order] payment or save failed, stock put back:', e.message);
-      if (e.expose) return res.status(e.status || 402).json({ code: e.code, ...(e.extra || {}), error: e.message }); // v115
       return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be completed, so you were not charged and nothing was ordered. Please try again or use another payment method.' });
     }
   } finally {
@@ -463,7 +449,7 @@ router.post('/store/orders/:id/delivery', requireAuth, requireRole('customer'), 
       return res.status(400).json({ code: 'PICK_DRIVER', error: 'Choose a driver from the list. The one you picked isn\'t available any more.' });
     }
     if (b.driverPrice === undefined) return res.status(400).json({ error: 'Approve the driver\'s price first.' });
-    const made = await createDelivery({ order, seller, driver, where, payCurrency: order.payCurrency, expectedPrice: b.driverPrice, payWith: b.payWith === undefined ? order.payWith : b.payWith });
+    const made = await createDelivery({ order, seller, driver, where, payCurrency: order.payCurrency, expectedPrice: b.driverPrice });
     if (made.error) return res.status(409).json({ code: made.code, price: made.price, error: made.error });
     await notify(seller.id, '🚚', `A driver (${driver.name}) has been asked to collect store order #${order.bookingNumber}.`, 'bookingUpdates', { section: 'store' });
     const fresh = await db.find('contracts', c => c.id === order.id);

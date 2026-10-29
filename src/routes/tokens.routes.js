@@ -48,7 +48,11 @@ router.get('/tokens/me', requireAuth, requireRole('provider'), async (req, res) 
     verified: me.verified === true,
     // v118: what this pro pays with tokens
     autopay: tokens.autopayOf(me),
-    jobFee: s.jobFee && s.jobFee.enabled ? s.jobFee : null,
+    // v119: commission on cash jobs is taken from tokens at this rate
+    cashCommissionRate: await tokens.cashCommissionRate(me),
+    tokenDebt: tokens.money(me.tokenDebt || 0),
+    cashJobsOn: (await require('../customer-payments').optionsFor(me.country)).cashJobs,
+    inAppPay: await tokens.inAppPaymentAvailable(me.country), // v119: false = only payment codes and offline payments
     planInvoices: (await db.filter('planInvoices', i => i.providerId === me.id && i.status === 'open')).map(i => ({ id: i.id, period: i.period, plan: i.plan, amountUsd: i.amountUsd, paidUsd: i.paidUsd || 0, owedUsd: tokens.money(i.amountUsd - (i.paidUsd || 0)), localPrice: i.localPrice, currencyCode: i.currencyCode, currencySymbol: i.currencySymbol })),
     // v117: pay by sending mobile money yourself, with a code from Trothen
     canPayByCode: s.momoAccounts.length > 0,
@@ -133,7 +137,7 @@ router.get('/admin/tokens', gate, async (req, res) => {
   const users = await db.filter('users', u => userIds.includes(u.id));
   const nameOf = (id) => { const u = users.find(x => x.id === id); return u ? u.name : 'Unknown'; };
   res.json({
-    settings: await tokens.settings(),
+    settings: { ...(await tokens.settings()), cashJobsEnabled: (await getSetting('cashJobsEnabled')) !== false, testPurchases: (await getSetting('tokenTestPurchases')) === true, payoutsRealOnly: (await getSetting('payoutsRequireRealPayment')) === true },
     canEdit: req.adminUser.isSuperAdmin === true,
     canRecordPayments: req.adminUser.isSuperAdmin === true || ['financial', 'accountant', 'controller'].includes(req.adminUser.adminDepartment),
     offlineMethods: tokens.OFFLINE_METHODS,
@@ -154,11 +158,9 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
   }
   if (b.enabled !== undefined) await setSetting('tokensEnabled', b.enabled === true);
   if (b.feeOnlyEnabled !== undefined) await setSetting('tokensFeeOnlyEnabled', b.feeOnlyEnabled === true);
-  if (b.jobFeeDefault !== undefined) {
-    const f = tokens.cleanJobFee(b.jobFeeDefault);
-    if (!f) return res.status(400).json({ error: 'Job fee: a flat amount from 0 to 100 tokens, a percent of the job from 0 to 20, and a most-per-job from 0 to 200 (0 = no cap).' });
-    await setSetting('tokenJobFeeDefault', f);
-  }
+  if (b.cashJobsEnabled !== undefined) await setSetting('cashJobsEnabled', b.cashJobsEnabled === true); // v119: cash jobs anywhere
+  if (b.testPurchases !== undefined) await setSetting('tokenTestPurchases', b.testPurchases === true); // v119: test sites only
+  if (b.payoutsRealOnly !== undefined) await setSetting('payoutsRequireRealPayment', b.payoutsRealOnly === true); // v119: live site
   if (b.dailyLimitUsd !== undefined) {
     const n = Number(b.dailyLimitUsd);
     if (!Number.isFinite(n) || n < 1 || n > 10000) return res.status(400).json({ error: 'The daily buying limit must be from $1 to $10,000.' });
@@ -189,11 +191,12 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
       if (r.maxBalance === undefined && prev.maxBalance != null) rule.maxBalance = prev.maxBalance;
       if (r.dailyLimitUsd === undefined && prev.dailyLimitUsd != null) rule.dailyLimitUsd = prev.dailyLimitUsd;
       if (r.packs === undefined && Array.isArray(prev.packs)) rule.packs = prev.packs;
-      if (r.jobFee === undefined && prev.jobFee) rule.jobFee = prev.jobFee;
-      if (r.jobFee !== undefined && r.jobFee !== null) {
-        const f = tokens.cleanJobFee(r.jobFee);
-        if (!f) return res.status(400).json({ error: `${country} job fee: a flat amount from 0 to 100 tokens, a percent of the job from 0 to 20, and a most-per-job from 0 to 200 (0 = no cap).` });
-        rule.jobFee = f;
+      // v119: how customers in this country pay for jobs.
+      if (r.cashJobs === false || (r.cashJobs === undefined && prev.cashJobs === false)) rule.cashJobs = false;
+      const mode = r.protectedPayMode !== undefined ? r.protectedPayMode : prev.protectedPayMode;
+      if (mode !== undefined && mode !== null) {
+        if (!['simulated', 'code'].includes(mode)) return res.status(400).json({ error: `${country}: protected payments must be "simulated" or "code".` });
+        rule.protectedPayMode = mode;
       }
       if (r.maxBalance !== undefined && r.maxBalance !== null && r.maxBalance !== '') {
         const n = Number(r.maxBalance);
@@ -269,7 +272,8 @@ router.get('/admin/tokens/country', gate, async (req, res) => {
   const s = await tokens.settingsFor(country);
   const rule = all.countryRules[country] || null;
   res.json({
-    country, currency: s.currency, rate: s.rate, enabled: s.enabled, maxBalance: s.maxBalance, dailyLimitUsd: s.dailyLimitUsd, jobFee: s.jobFee,
+    country, currency: s.currency, rate: s.rate, enabled: s.enabled, maxBalance: s.maxBalance, dailyLimitUsd: s.dailyLimitUsd,
+    payments: await require('../customer-payments').optionsFor(country), // v119
     hasOwnRule: !!rule, rule,
     packs: s.packs.map(p => {
       const driftPct = p.listUsd > 0 ? Math.round(((p.priceUsd - p.listUsd) / p.listUsd) * 1000) / 10 : 0;

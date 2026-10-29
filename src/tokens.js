@@ -84,7 +84,6 @@ async function settings() {
     dailyLimitUsd: Number(await getSetting('tokenDailyLimitUsd')) || 200,
     countries: Array.isArray(countries) && countries.length ? countries : null, // null = every country
     countryRules: rules && typeof rules === 'object' ? rules : {},
-    jobFeeDefault: cleanJobFee(await getSetting('tokenJobFeeDefault')),
     packs: Array.isArray(packs) ? packs.filter(cleanPack).map(p => ({ id: p.id, label: p.label.trim(), priceUsd: money(p.priceUsd), tokens: money(p.tokens), bonus: money(p.tokens - p.priceUsd) })) : [],
   };
 }
@@ -114,7 +113,6 @@ async function settingsFor(country) {
     dailyLimitUsd: Number(rule.dailyLimitUsd) || s.dailyLimitUsd,
     currency: cur, rate,
     packs,
-    jobFee: cleanJobFee(rule.jobFee) || s.jobFeeDefault || null, // v118: this country's job fee, or the default
     momoAccounts: Array.isArray(rule.momoAccounts) ? rule.momoAccounts.filter(a => a && a.number) : [], // v117: Trothen's own numbers customers send to
   };
 }
@@ -189,6 +187,16 @@ async function velocityCheck(customer, recentCount) {
   } catch (e) { /* never block a purchase on this */ }
 }
 
+// v119: can a pro in this country pay for tokens inside the app right now?
+// Only when real mobile money collection is set up for their country
+// (Liberia, once MTN is connected), or a super admin has switched on test
+// purchases for a test site.
+async function inAppPaymentAvailable(country) {
+  if ((await getSetting('tokenTestPurchases')) === true) return true;
+  if (country === 'Liberia') { try { return require('./liberia-momo').isLiberiaMoMoConfigured(); } catch (e) { return false; } }
+  return false;
+}
+
 // requestId: made by the page once per purchase attempt. If the network
 // drops and the page sends the same purchase again, the first one is
 // returned instead of charging twice.
@@ -214,6 +222,12 @@ async function buy(customer, packId, expectedPrice, requestId) {
     if (!chk.ok) return chk;
     const id = `tkp_${nanoid(10)}`;
     let paymentRef = null, status = 'paid', paymentStatus = 'simulated';
+    // v119: with no real in-app payment for this country, buying "in the app"
+    // would hand out tokens for nothing. It is refused unless a super admin
+    // has switched on test purchases (for a test site only).
+    if (!(await inAppPaymentAvailable(customer.country))) {
+      return { status: 403, code: 'NO_INAPP_PAYMENT', error: 'Paying in the app isn\'t available in your country yet. Use "Send mobile money myself" to get a payment code, or pay at a Trothen office or agent.' };
+    }
     if (customer.country === 'Liberia') {
       const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('./liberia-momo');
       if (isLiberiaMoMoConfigured()) {
@@ -279,7 +293,7 @@ async function creditPurchase(purchase) {
     await db.update('tokenPurchases', purchase.id, { status: 'paid', creditedAt: new Date().toISOString() });
     await notify(purchase.userId, '🪙', `${purchase.tokens} tokens added${purchase.bonus > 0 ? ` (including ${purchase.bonus} bonus)` : ''}${purchase.receipt ? ` for your payment with receipt ${purchase.receipt}` : ''}. Your balance is now ${line.balanceAfter} tokens. Reference: ${purchase.id}.`, null, { section: 'tokens' });
     return line;
-  });
+  }).then(async (line) => { if (line) { try { await settleDebtAfterCredit(purchase.userId); } catch (e) { console.error('[tokens] debt settle failed:', e.message); } } return line; }); // v119: commission owed is taken first
 }
 
 // MoMo purchases waiting for MTN: asks MTN how each one went.
@@ -307,7 +321,7 @@ async function checkPendingPurchases(userId) {
 // ── spending ────────────────────────────────────────────────────────────
 // What a pro can spend tokens on. ref ties a spend to the thing it paid
 // for, e.g. "job:ct_x", "commission:po_x", "plan:pinv_x", "ad:ad_x", "pass:rp_x".
-const SPEND_WORDS = { job: 'Job fee', commission: 'Commission', plan: 'Plan fee', ad: 'Ad', pass: 'Driver pass' };
+const SPEND_WORDS = { cashjob: 'Commission on a cash job', commission: 'Commission', plan: 'Plan fee', ad: 'Ad', pass: 'Driver pass' };
 function refKind(ref) { return String(ref || '').split(':')[0]; }
 
 // Takes exactly `amount` tokens, or throws TOKENS_SHORT (nothing taken).
@@ -358,45 +372,111 @@ function autopayOf(u) {
   return Object.fromEntries(AUTOPAY_KEYS.map(k => [k, a[k] === true]));
 }
 
-// ── job fee: a small fee in tokens for each job a pro accepts ───────────
-// Off until an admin sets it for a country. Not charged on rides (drivers
-// have the driver pass and ride commission) or on store deliveries.
-function cleanJobFee(f) {
-  if (!f || typeof f !== 'object') return null;
-  const flat = Number(f.flatTokens || 0), pct = Number(f.percent || 0), max = Number(f.maxTokens || 0);
-  if (![flat, pct, max].every(Number.isFinite) || flat < 0 || flat > 100 || pct < 0 || pct > 20 || max < 0 || max > 200) return null;
-  return { enabled: f.enabled === true, flatTokens: money(flat), percent: money(pct), maxTokens: money(max) };
+// ── v119: commission on CASH jobs, paid from tokens ─────────────────────
+// On a cash job the customer pays the pro directly, so Trothen never holds
+// the money and can't take its commission from a payout. Instead:
+//   1. When the pro accepts, the commission (their plan rate x the job
+//      price) is taken from their tokens. No tokens, no accepting.
+//   2. When the customer marks the job done they confirm the cash they
+//      paid; the commission is corrected to that amount (more taken, or
+//      some given back). Anything the pro can't cover is recorded as owed
+//      (users.tokenDebt) and taken from their next token purchase; they
+//      can't accept new cash jobs while they owe.
+//   3. If the job doesn't happen and it isn't the pro's doing, the
+//      commission goes back (see commissionRefundReason).
+const cashRef = (contractId) => `cashjob:${contractId}`;
+async function cashCommissionRate(provider) {
+  const { effectiveCommissionRate } = require('./commission');
+  const org = provider.organizationId ? await db.find('organizations', o => o.id === provider.organizationId && o.status !== 'suspended') : null;
+  return effectiveCommissionRate(provider, org);
 }
-function jobFeeFor(s, contract) {
-  const f = s.jobFee;
-  if (!s.enabled || !f || !f.enabled || !contract || contract.ride || contract.delivery || contract.storeOrder || contract.goodsOnly) return 0;
-  const work = Number(contract.laborAmount !== undefined && contract.laborAmount !== null ? contract.laborAmount : contract.amount) || 0;
-  let fee = f.flatTokens + work * f.percent / 100;
-  if (f.maxTokens > 0) fee = Math.min(fee, f.maxTokens);
-  return money(Math.max(0, fee));
+function jobPriceOf(contract) {
+  return Number(contract.laborAmount !== undefined && contract.laborAmount !== null ? contract.laborAmount : contract.amount) || 0;
 }
-// Called when a pro accepts a booking. Throws TOKENS_SHORT if they can't pay.
-async function chargeJobFee(provider, contract) {
-  const s = await settingsFor(provider.country);
-  const fee = jobFeeFor(s, contract);
-  if (!(fee > 0)) return null;
-  const ref = `job:${contract.id}`;
-  if (await db.find('tokenLedger', l => l.ref === ref && l.kind === 'spend')) return null; // already paid for this job
+async function takenFor(ref) {
+  const lines = await db.filter('tokenLedger', l => l.ref === ref);
+  return money(-lines.reduce((t, l) => t + (Number(l.tokens) || 0), 0)); // net tokens taken so far
+}
+
+// Called when a pro accepts a cash job. Throws TOKENS_SHORT (or OWES_TOKENS)
+// with a message the page shows; nothing changes in that case.
+async function chargeCashCommission(provider, contract) {
+  if (!contract || contract.payMethod !== 'cash') return null;
+  const ref = cashRef(contract.id);
+  if (await db.find('tokenLedger', l => l.ref === ref && l.kind === 'spend')) return null; // already taken for this job
+  const debt = money(provider.tokenDebt || 0);
+  if (debt > 0) throw tokenError(402, 'OWES_TOKENS', `You still owe ${debt} tokens of commission from an earlier cash job. Buy tokens on your Tokens page (what you owe is taken first), then accept this job.`, { debt });
+  // A top-scorer free-commission credit covers one cash job.
+  if ((provider.freeCommissionCredits || 0) > 0) {
+    await db.update('users', provider.id, { freeCommissionCredits: provider.freeCommissionCredits - 1 });
+    await db.update('contracts', contract.id, { cashCommission: { rate: 0, tokens: 0, freeCredit: true } });
+    return { free: true };
+  }
+  const rate = await cashCommissionRate(provider);
+  const due = money(jobPriceOf(contract) * rate);
+  if (!(due > 0)) return null;
   try {
-    return await spend(provider.id, fee, ref, `Job fee: ${String(contract.service || '').slice(0, 80)}`, { bookingNumber: contract.bookingNumber || null });
+    const line = await spend(provider.id, due, ref, `Commission ${Math.round(rate * 1000) / 10}% on cash job: ${String(contract.service || '').slice(0, 70)}`, { bookingNumber: contract.bookingNumber || null });
+    await db.update('contracts', contract.id, { cashCommission: { rate, tokens: due, takenAt: new Date().toISOString() } });
+    return line;
   } catch (e) {
-    if (e.code === 'TOKENS_SHORT') e.message = `Accepting this job costs ${fee} token${fee === 1 ? '' : 's'} and you have ${e.extra.have}. Buy tokens on your Tokens page, then accept it. The customer's booking stays open until the answer deadline.`;
+    if (e.code === 'TOKENS_SHORT') e.message = `This is a cash job: the customer pays you directly, so Trothen's ${Math.round(rate * 1000) / 10}% commission (${due} token${due === 1 ? '' : 's'}) is paid from your tokens when you accept. You have ${e.extra.have}. Buy tokens on your Tokens page, then accept it. The booking stays open until the answer deadline.`;
     throw e;
   }
 }
-// When does a job fee come back? When the job didn't happen and it wasn't
-// the pro's doing: the customer cancelled, the pro cancelled for a reason
-// that doesn't count against them (unsafe, wrong category, etc.), or the
-// booking was cancelled by Trothen. Ordinary pro cancellations keep the
-// fee (that is what stops accept-then-drop). After a dispute the fee is
-// not given back by itself; the team can give it back with "Change
-// balance" if the pro was not at fault.
-function jobFeeRefundReason(c) {
+
+// Called when the customer confirms a cash job is done and how much they paid.
+async function settleCashCommission(contract, paidAmount) {
+  const c = await db.find('contracts', x => x.id === contract.id);
+  if (!c || c.payMethod !== 'cash' || !c.cashCommission || c.cashCommission.freeCredit) return null;
+  const ref = cashRef(c.id);
+  const rate = c.cashCommission.rate;
+  // The job part of what was paid (store goods are never in a cash job).
+  const due = money(Math.max(0, Number(paidAmount) || 0) * rate);
+  const taken = await takenFor(ref);
+  const diff = money(due - taken);
+  const result = { due, taken, extra: 0, back: 0, owed: 0 };
+  if (diff > 0.004) {
+    const line = await spendUpTo(c.providerId, diff, ref, 'Commission on extra cash paid', { bookingNumber: c.bookingNumber || null });
+    result.extra = line ? money(-line.tokens) : 0;
+    result.owed = money(diff - result.extra);
+    if (result.owed > 0) {
+      const pro = await db.find('users', u => u.id === c.providerId);
+      await db.update('users', c.providerId, { tokenDebt: money((pro.tokenDebt || 0) + result.owed) });
+    }
+  } else if (diff < -0.004) {
+    await withUserLock(c.providerId, () => addLine(c.providerId, { kind: 'refund', tokens: -diff, ref, refKind: 'cashjob', bookingNumber: c.bookingNumber || null, note: 'Commission corrected: the customer paid less than the booking price' }));
+    result.back = money(-diff);
+  }
+  await db.update('contracts', c.id, { cashCommission: { ...c.cashCommission, settledTokens: due, settledAt: new Date().toISOString(), owed: result.owed } });
+  const words = result.extra > 0 || result.owed > 0
+    ? `The customer confirmed paying more than the booking price, so ${result.extra} more tokens of commission were taken${result.owed > 0 ? ` and ${result.owed} are owed (taken from your next token purchase; you can't accept cash jobs until then)` : ''}.`
+    : result.back > 0 ? `The customer confirmed paying less than the booking price, so ${result.back} tokens of commission came back to you.` : 'The commission already taken was right.';
+  await notify(c.providerId, '💵', `Cash job #${c.bookingNumber || ''} is complete. ${words}`, 'bookingUpdates', { section: 'tokens' });
+  return result;
+}
+
+// Owed commission is taken first from any tokens a pro buys.
+async function settleDebtAfterCredit(userId) {
+  const pro = await db.find('users', u => u.id === userId);
+  const debt = money((pro && pro.tokenDebt) || 0);
+  if (!(debt > 0)) return 0;
+  const line = await spendUpTo(userId, debt, `debt:${Date.now()}`, 'Commission you owed from a cash job', { refKind: 'cashjob' });
+  const paid = line ? money(-line.tokens) : 0;
+  if (paid > 0) {
+    await db.update('users', userId, { tokenDebt: money(debt - paid) });
+    await notify(userId, '🪙', `${paid} tokens paid the commission you owed${debt - paid > 0.004 ? `; ${money(debt - paid)} is still owed` : '. You can accept cash jobs again'}.`, null, { section: 'tokens' });
+  }
+  return paid;
+}
+
+// When does a cash job's commission come back? When the job didn't happen
+// and it wasn't the pro's doing: the customer cancelled, the pro cancelled
+// for a reason that doesn't count against them (unsafe, wrong category,
+// etc.), or Trothen cancelled it. Ordinary pro cancellations keep it (that
+// is what stops accept-then-drop). After a dispute it is not given back by
+// itself; the team can give it back with "Change balance".
+function commissionRefundReason(c) {
   if (!c) return null;
   if (c.status === 'cancelled' && c.cancelledByRole === 'customer') return 'the customer cancelled the job';
   if (c.status === 'cancelled' && c.cancelledByRole === 'provider' && c.protectedCancellation) return 'the job was cancelled for a reason that doesn\'t count against you';
@@ -467,7 +547,7 @@ async function newPaymentCode() {
   for (let i = 0; i < 10; i++) {
     let c = 'TK';
     for (let j = 0; j < 6; j++) c += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
-    if (!(await db.find('tokenPurchases', p => p.paymentCode === c))) return c;
+    if (!(await db.find('tokenPurchases', p => p.paymentCode === c)) && !(await db.find('escrowTransactions', e => e.paymentCode === c))) return c; // v119: unique across token and booking codes
   }
   throw new Error('Could not make a unique payment code');
 }
@@ -603,14 +683,14 @@ function publicCode(p) {
 async function sweep(onlyUserId) {
   let n = 0;
   try {
-    const spends = await db.filter('tokenLedger', l => l.kind === 'spend' && l.ref && (!onlyUserId || l.userId === onlyUserId) && (l.refKind === 'job' || l.refKind === 'ad'));
+    const spends = await db.filter('tokenLedger', l => l.kind === 'spend' && l.ref && (!onlyUserId || l.userId === onlyUserId) && (l.refKind === 'cashjob' || l.refKind === 'ad') && !String(l.ref).startsWith('debt:'));
     const refunded = new Set((await db.filter('tokenLedger', l => l.kind === 'refund' && l.ref)).map(l => l.ref));
     for (const sp of spends) {
       if (refunded.has(sp.ref)) continue;
       const id = sp.ref.slice(sp.ref.indexOf(':') + 1);
-      if (sp.refKind === 'job') {
-        const why = jobFeeRefundReason(await db.find('contracts', c => c.id === id));
-        if (why && await refundRef(sp.ref, `job fee back: ${why}`)) n++;
+      if (sp.refKind === 'cashjob') {
+        const why = commissionRefundReason(await db.find('contracts', c => c.id === id));
+        if (why && await refundRef(sp.ref, `commission back: ${why}`)) n++;
       } else if (sp.refKind === 'ad') {
         const ad = await db.find('advertisingInquiries', a => a.id === id);
         if (ad && ad.status === 'closed' && !ad.approvedAt && await refundRef(sp.ref, 'your ad was not run')) n++;
@@ -638,6 +718,7 @@ async function adminAdjust(admin, userId, tokens, reason) {
     return addLine(user.id, { kind: t > 0 ? 'admin_add' : 'admin_remove', tokens: t, note: reason.trim(), actorId: admin.id, actorName: admin.name });
   });
   if (!line) return { status: 400, error: 'That would take the balance below zero.' };
+  if (t > 0) { try { await settleDebtAfterCredit(user.id); } catch (e) { /* stays owed */ } } // v119: tokens added pay what is owed first
   await notify(user.id, '🪙', `${t > 0 ? `${t} tokens were added to` : `${-t} tokens were removed from`} your balance by the Trothen team: ${reason.trim()}. Balance: ${line.balanceAfter} tokens.`, null, { section: 'tokens' });
   return { ok: true, line };
 }
@@ -672,4 +753,4 @@ async function stats() {
   };
 }
 
-module.exports = { OPEN_STATUSES, createPaymentCode, customerReportsPaid, customerCancelsCode, confirmPaymentCode, rejectPaymentCode, expirePaymentCodes, publicCode, cleanPack, cleanCountryPack, niceLocal, settings, settingsFor, recordOfflineTopUp, OFFLINE_METHODS, balance, ledgerOf, publicLine, buy, creditPurchase, checkPendingPurchases, spend, spendUpTo, refundRef, AUTOPAY_KEYS, autopayOf, cleanJobFee, jobFeeFor, chargeJobFee, payCommission, payPlanInvoice, autoPayPlanInvoices, SPEND_WORDS, sweep, adminAdjust, stats, tokenError, money };
+module.exports = { inAppPaymentAvailable, newPaymentCode, OPEN_STATUSES, createPaymentCode, customerReportsPaid, customerCancelsCode, confirmPaymentCode, rejectPaymentCode, expirePaymentCodes, publicCode, cleanPack, cleanCountryPack, niceLocal, settings, settingsFor, recordOfflineTopUp, OFFLINE_METHODS, balance, ledgerOf, publicLine, buy, creditPurchase, checkPendingPurchases, spend, spendUpTo, refundRef, AUTOPAY_KEYS, autopayOf, chargeCashCommission, settleCashCommission, settleDebtAfterCredit, commissionRefundReason, cashCommissionRate, payCommission, payPlanInvoice, autoPayPlanInvoices, SPEND_WORDS, sweep, adminAdjust, stats, tokenError, money };

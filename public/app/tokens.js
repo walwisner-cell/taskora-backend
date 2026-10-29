@@ -28,7 +28,7 @@
 
   // If the server says the balance is too short, offer to go and buy.
   async function shortBalance(x) {
-    if (!x || !x.data || x.data.code !== 'TOKENS_SHORT') return false;
+    if (!x || !x.data || !['TOKENS_SHORT', 'OWES_TOKENS'].includes(x.data.code)) return false;
     loadMe(true);
     if (await confirmDialog(`${x.message} ${tr('Open your tokens to buy more?')}`, { confirmLabel: tr('Buy tokens') })) window.openTokensPage();
     return true;
@@ -72,9 +72,10 @@
     const buyBox = !chosen ? '' : `<div class="panel" style="border-left:4px solid var(--teal);">
       <div class="panel-title">${e(tr('Buy'))} ${e(chosen.label)}: ${e(tok(chosen.tokens))} ${e(tr('for'))} ${e(main(chosen))}</div>
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;margin:6px 0 12px;cursor:pointer;"><input type="checkbox" id="tok-agree" ${T.agree ? 'checked' : ''} onchange="tokensAgree(this.checked)" style="margin-top:3px;"/> <span>${e(tr('I have read how tokens work (below): 1 token is worth $1 on Trothen, tokens are for paying on Trothen only, and unused tokens are not paid out as cash except by arrangement with support.'))}</span></label>
-      <button class="confirm-btn" id="tok-buy-btn" onclick="tokensBuy()">🔒 ${e(tr('Pay'))} ${e(main(chosen))} ${e(tr('in the app'))}</button>
-      <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">${e(tr('Paid with your usual payment method.'))} ${e(tr('If your connection drops, just press Pay again: you will not be charged twice.'))}</div>
-      ${me.canPayByCode ? `<div style="text-align:center;color:var(--slate);font-size:13px;margin:12px 0 8px;">${e(tr('or'))}</div>
+      ${me.inAppPay ? `<button class="confirm-btn" id="tok-buy-btn" onclick="tokensBuy()">🔒 ${e(tr('Pay'))} ${e(main(chosen))} ${e(tr('in the app'))}</button>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">${e(tr('Paid with your usual payment method.'))} ${e(tr('If your connection drops, just press Pay again: you will not be charged twice.'))}</div>` : ''}
+      ${!me.inAppPay && !me.canPayByCode ? `<div class="ver-note">${e(tr('Paying in the app isn\'t available in your country yet. Pay at a Trothen office or agent (see below) and the team will add your tokens.'))}</div>` : ''}
+      ${me.canPayByCode ? `${me.inAppPay ? `<div style="text-align:center;color:var(--slate);font-size:13px;margin:12px 0 8px;">${e(tr('or'))}</div>` : ''}
       <button class="btn-sm btn-sm-outline" style="width:100%;padding:12px;font-size:15px;" id="tok-code-btn" onclick="tokensGetCode()">📱 ${e(tr('Send mobile money myself: get a payment code'))}</button>
       <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">${e(tr('Trothen gives you a code. You send'))} ${e(main(chosen))} ${e(tr('to Trothen\'s mobile money number with the code in the reference, and your tokens are added once the payment is checked.'))}</div>` : ''}
     </div>`;
@@ -106,9 +107,9 @@
       <div class="panel"><div class="panel-title">${e(tr('How tokens work'))}</div>
         <ul style="margin:0;padding-left:18px;font-size:14px;color:var(--slate);line-height:1.6;">
           <li>${e(tr('1 token pays $1 of what you owe Trothen, so your tokens keep their value even if the exchange rate changes. Bigger packs come with bonus tokens.'))}</li>
-          <li>${e(tr('Tokens pay Trothen only: job fees, commission, your plan fee, ads and driver passes. You choose which, above.'))}</li>
+          <li>${e(tr('Tokens pay Trothen only: commission on cash jobs (always), and, if you choose, commission on protected jobs, your plan fee, ads and driver passes.'))}</li>
           <li>${e(tr('Tokens never touch your customers\' money. A customer still pays for the job into Trothen\'s safe hold (escrow), and it is paid to you when they confirm the job is done, the same as always.'))}</li>
-          <li>${e(tr('A job fee comes back to you if the customer cancels, if you cancel for a reason that doesn\'t count against you (for example it became unsafe), or if Trothen cancels the job. An ad you withdraw before it runs, or one that is turned down, is given back too.'))}</li>
+          <li>${e(tr('Commission on a cash job comes back to you if the customer cancels, if you cancel for a reason that doesn\'t count against you (for example it became unsafe), or if Trothen cancels the job. If you cancel for an ordinary reason, it is kept. An ad you withdraw before it runs, or one that is turned down, is given back too.'))}</li>
           <li>${e(tr('Tokens are for paying on Trothen only. They can\'t be sent to another person, and unused tokens are not paid out as cash unless you arrange it with support.'))}</li>
           <li>${e(tr('To keep your money safe, there is a limit on how many tokens you can hold and buy in a day. Trothen staff will never ask for your PIN or a code.'))}</li>
           <li>${e(tr('Your tokens don\'t expire. Before closing your account, spend them or contact support about the rest.'))}</li>
@@ -121,19 +122,20 @@
   // What this pro's tokens pay for: the job fee (set by Trothen) and the
   // bills they choose to pay from tokens first.
   const USE_ROWS = [
-    ['commission', 'Commission when I cash out', 'Trothen\'s commission is paid from tokens, so you keep the full amount you earned. If your tokens don\'t cover all of it, the rest comes out of the payout as usual.'],
+    ['commission', 'Commission on protected jobs, when I cash out', 'Trothen\'s commission is paid from tokens, so you keep the full amount you earned. If your tokens don\'t cover all of it, the rest comes out of the payout as usual.'],
     ['plan', 'My monthly plan fee', 'Paid from tokens as soon as the month\'s invoice is made, instead of from your payouts.'],
     ['ad', 'Ads I place', 'Paid from tokens when your balance covers the whole price; otherwise the usual way.'],
     ['pass', 'Driver passes', 'Paid from tokens when your balance covers the whole price; otherwise the usual way.'],
   ];
   function usesHTML(me) {
     const a = me.autopay || {};
-    const jf = me.jobFee;
-    const jfWords = jf ? [jf.flatTokens > 0 ? `${n2(jf.flatTokens)} ${tr(jf.flatTokens === 1 ? 'token' : 'tokens')}` : '', jf.percent > 0 ? `${n2(jf.percent)}% ${tr('of the job price')}` : ''].filter(Boolean).join(' + ') + (jf.maxTokens > 0 ? ` (${tr('at most')} ${n2(jf.maxTokens)})` : '') : '';
+    const pct = Math.round((me.cashCommissionRate || 0) * 1000) / 10;
     const inv = me.planInvoices || [];
     return `<div class="panel"><div class="panel-title">${e(tr('What your tokens pay for'))}</div>
-      <div style="padding:10px 12px;border-radius:10px;background:var(--offwhite);margin-bottom:12px;font-size:14px;color:var(--slate);">
-        <strong style="color:var(--navy);">${e(tr('Job fee'))}:</strong> ${jf ? `${e(jfWords)} ${e(tr('for each job you accept. It is taken from your tokens when you press Accept, so keep some in your balance.'))}` : e(tr('There is no job fee in your country right now. You can accept jobs without tokens.'))}
+      <div style="padding:10px 12px;border-radius:10px;background:var(--offwhite);margin-bottom:12px;font-size:14px;color:var(--slate);line-height:1.55;">
+        <strong style="color:var(--navy);">💵 ${e(tr('Cash jobs'))}:</strong> ${me.cashJobsOn === false ? e(tr('Cash jobs are not on in your country right now.')) : `${e(tr('the customer pays you directly after the work, so Trothen\'s commission of'))} <strong>${e(pct)}%</strong> ${e(tr('of the job price is taken from your tokens when you press Accept. Keep enough tokens to accept cash jobs. When the customer marks the job done, the commission is corrected to what they say they paid. If they cancel, it comes back.'))}`}
+        ${me.tokenDebt > 0 ? `<div style="margin-top:8px;color:#B4472E;font-weight:600;">${e(tr('You owe'))} ${e(tok(me.tokenDebt))} ${e(tr('of commission from a cash job. It is taken first from the next tokens you buy, and you can\'t accept cash jobs until it is paid.'))}</div>` : ''}
+        <div style="margin-top:8px;"><strong style="color:var(--navy);">🛡️ ${e(tr('Protected jobs'))}:</strong> ${e(tr('the customer pays Trothen first and Trothen holds it until they confirm the job is done. Commission comes out of your payout, or from your tokens if you tick the first box below.'))}</div>
       </div>
       <div style="font-size:14px;color:var(--slate);margin-bottom:8px;">${e(tr('Choose what else to pay from your tokens first:'))}</div>
       ${USE_ROWS.map(([k, label, sub]) => `<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border);cursor:pointer;">
@@ -252,7 +254,7 @@
     apiFetch = async function (method, path) {
       try { return await f.apply(this, arguments); }
       catch (x) {
-        if (x && x.data && x.data.code === 'TOKENS_SHORT' && method === 'POST' && /^\/contracts\/[^/]+\/respond-offer/.test(path)) setTimeout(() => shortBalance(x), 1200); // v118: a job fee the pro can't pay yet
+        if (x && x.data && ['TOKENS_SHORT', 'OWES_TOKENS'].includes(x.data.code) && method === 'POST' && /^\/contracts\/[^/]+\/respond-offer/.test(path)) setTimeout(() => shortBalance(x), 1200); // v119: commission on a cash job the pro can't pay yet
         throw x;
       }
     };
@@ -295,7 +297,9 @@
       <div class="ver-note" style="margin-bottom:14px;">${e(tr('Money paid for tokens is not revenue until the tokens are spent. Until then it is a balance Trothen owes its pros. Bonus tokens are a discount Trothen pays for when they are spent.'))}</div>
       <div class="panel"><div class="panel-title">${e(tr('Settings'))}${edit ? '' : ` <small style="font-weight:400;color:var(--slate);">${e(tr('(only a super admin can change these)'))}</small>`}</div>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-enabled" ${s.enabled ? 'checked' : ''} ${edit ? '' : 'disabled'}/> ${e(tr('Tokens are on (pros can buy them and pay Trothen with them)'))}</label>
-        ${jobFeeEditor('tka', s.jobFeeDefault, edit, 'Job fee (default for every country)')}
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-realonly" ${s.payoutsRealOnly ? 'checked' : ''} ${edit ? '' : 'disabled'}/> <span>${e(tr('LIVE SITE: pay out only money Trothen really received (bookings paid by code or mobile money). Test-mode bookings are left out of payouts.'))}</span></label>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-test" ${s.testPurchases ? 'checked' : ''} ${edit ? '' : 'disabled'}/> <span>${e(tr('TEST SITES ONLY: "Pay in the app" adds tokens without a real payment'))} <span style="color:#B4472E;">${e(tr('(leave this off on the live site, or pros get tokens for free)'))}</span></span></label>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-cash" ${s.cashJobsEnabled !== false ? 'checked' : ''} ${edit ? '' : 'disabled'}/> ${e(tr('Cash jobs are on (customers may pay the pro directly after the job; the pro\'s commission is taken from their tokens at their plan rate)'))}</label>
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <div class="form-group" style="flex:1;min-width:200px;max-width:280px;"><label class="form-label" for="tka-max">${e(tr('Most tokens one pro can hold'))}</label><input class="form-input" type="number" min="10" max="10000" step="1" id="tka-max" value="${e(s.maxBalance)}" ${edit ? '' : 'disabled'}/></div>
           <div class="form-group" style="flex:1;min-width:200px;max-width:280px;"><label class="form-label" for="tka-day">${e(tr('Most a pro can buy in 24 hours (US$)'))}</label><input class="form-input" type="number" min="1" max="10000" step="1" id="tka-day" value="${e(s.dailyLimitUsd)}" ${edit ? '' : 'disabled'}/></div>
@@ -372,24 +376,6 @@
     try { await apiFetch('POST', '/admin/tokens/codes/reject', { code, reason: why }); showToast(tr('Pro told')); window.tokensAdminCodes(); }
     catch (x) { showToast(x.message || 'Could not update'); }
   };
-  // The job fee: a small number of tokens a pro pays for each job they accept.
-  function jobFeeEditor(prefix, f, edit, title) {
-    f = f || { enabled: false, flatTokens: 1, percent: 0, maxTokens: 0 };
-    const dis = edit ? '' : 'disabled';
-    return `<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:10px 0;">
-      <div style="font-weight:700;color:var(--navy);margin-bottom:4px;">${e(tr(title))}</div>
-      <div style="font-size:12.5px;color:var(--slate);margin-bottom:8px;">${e(tr('Tokens a pro pays when they accept a job (not rides or deliveries). Charged only for jobs the pro actually accepts, and given back if the customer cancels. Keep it small: pros already pay commission on what they earn.'))}</div>
-      <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="${prefix}-jf-on" ${f.enabled ? 'checked' : ''} ${dis}/> ${e(tr('Charge a job fee'))}</label>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <div class="form-group" style="margin:0;"><label class="form-label" for="${prefix}-jf-flat">${e(tr('Flat tokens per job'))}</label><input class="form-input" style="width:140px;" type="number" min="0" max="100" step="0.5" id="${prefix}-jf-flat" value="${e(f.flatTokens)}" ${dis}/></div>
-        <div class="form-group" style="margin:0;"><label class="form-label" for="${prefix}-jf-pct">${e(tr('Plus % of job price'))}</label><input class="form-input" style="width:140px;" type="number" min="0" max="20" step="0.5" id="${prefix}-jf-pct" value="${e(f.percent)}" ${dis}/></div>
-        <div class="form-group" style="margin:0;"><label class="form-label" for="${prefix}-jf-max">${e(tr('Most per job (0 = no cap)'))}</label><input class="form-input" style="width:140px;" type="number" min="0" max="200" step="0.5" id="${prefix}-jf-max" value="${e(f.maxTokens)}" ${dis}/></div>
-      </div></div>`;
-  }
-  function readJobFee(prefix) {
-    const on = el(prefix + '-jf-on'); if (!on) return undefined;
-    return { enabled: !!on.checked, flatTokens: Number((el(prefix + '-jf-flat') || {}).value) || 0, percent: Number((el(prefix + '-jf-pct') || {}).value) || 0, maxTokens: Number((el(prefix + '-jf-max') || {}).value) || 0 };
-  }
   function readPacks() {
     return [...document.querySelectorAll('#tka-packs tbody tr')].map(tr_ => {
       const g = (f) => tr_.querySelector(`[data-f="${f}"]`).value;
@@ -404,7 +390,7 @@
   window.tokensAdminRemovePack = function (i) { const row = document.querySelector(`#tka-packs tr[data-pack-row="${i}"]`); if (row) row.remove(); };
   window.tokensAdminSave = async function () {
     const countries = ((el('tka-countries') || {}).value || '').split(',').map(x => x.trim()).filter(Boolean);
-    const body = { enabled: !!(el('tka-enabled') || {}).checked, jobFeeDefault: readJobFee('tka'), maxBalance: Number((el('tka-max') || {}).value), dailyLimitUsd: Number((el('tka-day') || {}).value), countries, packs: readPacks() };
+    const body = { enabled: !!(el('tka-enabled') || {}).checked, cashJobsEnabled: !!(el('tka-cash') || {}).checked, testPurchases: !!(el('tka-test') || {}).checked, payoutsRealOnly: !!(el('tka-realonly') || {}).checked, maxBalance: Number((el('tka-max') || {}).value), dailyLimitUsd: Number((el('tka-day') || {}).value), countries, packs: readPacks() };
     if (T.admin && T.admin.settings.enabled && !body.enabled && !(await confirmDialog(tr('Turn tokens off? Pros keep their balances but can\'t buy or pay with tokens until you turn them back on.'), { confirmLabel: tr('Turn off') }))) return;
     try { await apiFetch('PATCH', '/admin/tokens/settings', body); showToast(tr('Token settings saved')); drawAdminPage(); }
     catch (x) { showToast(x.message || 'Could not save'); }
@@ -469,10 +455,19 @@
         <td>${edit ? `<button class="btn-sm btn-sm-outline" onclick="this.closest('tr').remove()">${e(tr('Remove'))}</button>` : ''}</td></tr>`; }).join('')}
       </tbody></table></div>
       ${isUsd ? '' : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">${e(tr('Leave "Fixed local price" empty to work it out from the exchange rate each day (rounded). Fill it in for a round price that never moves; then check it when the rate changes.'))}</div>`}
-      ${jobFeeEditor('tkc', r.jobFee, edit, `Job fee in ${country}`)}
+      <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:10px 0;">
+        <div style="font-weight:700;color:var(--navy);margin-bottom:6px;">${e(tr('How customers in'))} ${e(country)} ${e(tr('pay for jobs'))}</div>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tkc-cash" ${(r.rule && r.rule.cashJobs === false) ? '' : 'checked'} ${edit ? '' : 'disabled'}/> ${e(tr('Cash jobs allowed'))}</label>
+        <div class="form-group" style="margin:0;"><label class="form-label" for="tkc-ppm">${e(tr('Protected payments'))}</label>
+          <select class="form-input form-select" id="tkc-ppm" ${edit ? '' : 'disabled'} style="max-width:520px;">
+            <option value="simulated" ${(r.payments && r.payments.protectedMode) !== 'code' ? 'selected' : ''}>${e(tr('As now (test mode until real payments are on)'))}</option>
+            <option value="code" ${(r.payments && r.payments.protectedMode) === 'code' ? 'selected' : ''}>${e(tr('Payment code: customer sends mobile money to Trothen\'s number'))}</option>
+          </select>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:4px;">${e(tr('Payment codes need at least one Trothen mobile money number below. Confirm the payments in Admin → Customer Payments.'))}</div></div>
+      </div>
       <div style="font-weight:700;color:var(--navy);margin:14px 0 4px;">📱 ${e(tr('Trothen\'s mobile money numbers in'))} ${e(country)}</div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">${e(tr('Pros who choose "Send mobile money myself" get a code and are told to send to these numbers. Use only official Trothen merchant or business numbers. Leave empty to switch this way of paying off in this country.'))}</div>
-      <div class="data-table-wrap"><table class="data-table" id="tkc-momo"><thead><tr><th>${e(tr('Network'))}</th><th>${e(tr('Number'))}</th><th>${e(tr('Account name pros see'))}</th></tr></thead><tbody>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">${e(tr('Pros buying tokens and customers paying for a protected job by code are told to send money to these numbers. Use only official Trothen merchant or business numbers registered to the company. Leave empty to switch paying by code off in this country.'))}</div>
+      <div class="data-table-wrap"><table class="data-table" id="tkc-momo"><thead><tr><th>${e(tr('Network'))}</th><th>${e(tr('Number'))}</th><th>${e(tr('Account name people see when sending'))}</th></tr></thead><tbody>
       ${[0, 1, 2, 3].map(i => { const a = (rule.momoAccounts || [])[i] || {}; return `<tr><td><input class="form-input" data-f="network" value="${e(a.network || '')}" placeholder="${i === 0 ? e(tr('e.g. MTN MoMo')) : ''}" ${edit ? '' : 'disabled'}/></td><td><input class="form-input" data-f="number" value="${e(a.number || '')}" ${edit ? '' : 'disabled'}/></td><td><input class="form-input" data-f="accountName" value="${e(a.accountName || '')}" placeholder="${i === 0 ? e(tr('e.g. Trothen Tech Group')) : ''}" ${edit ? '' : 'disabled'}/></td></tr>`; }).join('')}
       </tbody></table></div>
       ${edit ? `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;align-items:flex-end;">
@@ -500,7 +495,7 @@
         return { id: g('id').trim().toLowerCase(), label: g('label').trim(), priceUsd: Number(g('priceUsd')), tokens: Number(g('tokens')), localPrice: g('localPrice') === '' ? undefined : Number(g('localPrice')) };
       });
       const momoAccounts = [...document.querySelectorAll('#tkc-momo tbody tr')].map(row => ({ network: row.querySelector('[data-f="network"]').value.trim(), number: row.querySelector('[data-f="number"]').value.trim(), accountName: row.querySelector('[data-f="accountName"]').value.trim() })).filter(a => a.network || a.number || a.accountName);
-      rule = { country: c.country, enabled: !!(el('tkc-on') || {}).checked, maxBalance: (el('tkc-max') || {}).value, dailyLimitUsd: (el('tkc-day') || {}).value, packs, momoAccounts, jobFee: readJobFee('tkc') };
+      rule = { country: c.country, enabled: !!(el('tkc-on') || {}).checked, maxBalance: (el('tkc-max') || {}).value, dailyLimitUsd: (el('tkc-day') || {}).value, packs, momoAccounts, cashJobs: !!(el('tkc-cash') || {}).checked, protectedPayMode: (el('tkc-ppm') || {}).value || 'simulated' };
     }
     try { await apiFetch('PATCH', '/admin/tokens/settings', { countryRule: rule }); showToast(tr('Saved')); window.tokensAdminCountry(); }
     catch (x) { showToast(x.message || 'Could not save'); }

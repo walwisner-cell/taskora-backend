@@ -123,7 +123,7 @@ async function afterCancel(contract, byUserId) {
         await notify(d.providerId, '⚠️', `Store order #${contract.bookingNumber} was cancelled after you collected it. Do not deliver it. Take the goods back to the seller and record that with a photo. Contact support if you need help.`, 'bookingUpdates', { section: 'bookings' });
       } else {
         const esc = await db.find('escrowTransactions', e => e.contractId === d.id);
-        if (esc && esc.status === 'held') await db.update('escrowTransactions', esc.id, { status: 'refunded' }); await require('./tokens').refundEscrow(esc && esc.id); // v115: tokens back
+        if (esc && esc.status === 'held') await db.update('escrowTransactions', esc.id, { status: 'refunded' });
         await db.update('contracts', d.id, { status: 'cancelled', cancelledByRole: 'order_cancelled', cancelReasonCategory: 'other' });
         await notify(d.providerId, '🚫', `The store order you were going to deliver (#${contract.bookingNumber}) was cancelled, so the delivery is cancelled too.`, 'bookingUpdates', { section: 'bookings' });
       }
@@ -154,7 +154,7 @@ async function afterComplete(order, customerId) {
   if (d.status === 'pending_provider_confirmation') {
     // The customer already has the goods and the driver never accepted: nothing to deliver.
     const esc = await db.find('escrowTransactions', e => e.contractId === d.id);
-    if (esc && esc.status === 'held') await db.update('escrowTransactions', esc.id, { status: 'refunded' }); await require('./tokens').refundEscrow(esc && esc.id); // v115: tokens back
+    if (esc && esc.status === 'held') await db.update('escrowTransactions', esc.id, { status: 'refunded' });
     await db.update('contracts', d.id, { status: 'cancelled', cancelledByRole: 'order_completed', cancelReasonCategory: 'other' });
     await notify(d.providerId, '🚫', `The delivery request for store order #${order.bookingNumber} is no longer needed. The customer already has the goods.`, 'bookingUpdates', { section: 'bookings' });
   }

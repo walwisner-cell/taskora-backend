@@ -80,6 +80,7 @@ async function closureBlockers(user) {
   }
   // v115: unspent tokens are the customer's stored money; closing would strand them.
   const tokenBal = Math.round((await safeAll('tokenLedger')).filter(l => l.userId === user.id).reduce((t, l) => t + (Number(l.tokens) || 0), 0) * 100) / 100;
+  if ((user.tokenDebt || 0) > 0.004) reasons.push(`You owe ${Math.round(user.tokenDebt * 100) / 100} tokens of commission from a cash job. Buy tokens to pay it, or contact support, before closing your account.`); // v119
   if (tokenBal > 0.004) reasons.push(`You still have ${tokenBal} tokens. Spend them, or contact support to arrange a refund of the unspent tokens, before closing your account.`);
   const openJobs = (await safeAll('jobs')).filter(j => j.customerId === user.id && ['open', 'pending', 'matching'].includes(j.status));
   if (openJobs.length) reasons.push(`You have ${openJobs.length} job${openJobs.length === 1 ? '' : 's'} still posted. Cancel ${openJobs.length === 1 ? 'it' : 'them'} first.`);

@@ -168,7 +168,7 @@
       ? tr('Request this ride and pay the driver in cash? You pay exactly') + ' ' + money(fare) + ' ' + tr('at the end of the trip. Nothing is held by Trothen, so there is no automatic refund. If the driver asks for more, say no and report it.')
       : tr('Request this ride? The fare is held now and refunded if the driver does not answer or you cancel before the trip starts.'), { confirmLabel: tr('Request ride') }))) return;
     try {
-      await apiFetch('POST', '/rides', { driverId, passengers: q.pax, expectedFare: fare, payment: cash ? 'cash' : 'app', payWith: !cash && typeof tokenPayWith === 'function' ? tokenPayWith('ride') : undefined, pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
+      await apiFetch('POST', '/rides', { driverId, passengers: q.pax, expectedFare: fare, payment: cash ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
       showToast(tr('Ride requested. Waiting for the driver.')); loadRiderPage();
     } catch (x) { showToast(x.message || 'Could not request the ride'); if (x.data && (x.data.code === 'PRICE_CHANGED' || x.data.code === 'CASH_NOT_AVAILABLE')) window.ridesFindDrivers(); }
   };
