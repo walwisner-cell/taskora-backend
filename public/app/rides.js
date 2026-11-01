@@ -10,7 +10,7 @@
   const body = () => el('rides-body');
   const km = (x) => (x == null ? '' : x + ' km');
   const when = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const STATUS_WORDS = { pending_provider_confirmation: 'Waiting for the driver to answer', active: 'Confirmed', completed: 'Finished', cancelled: 'Cancelled', declined: 'The driver said no', expired: 'No answer, refunded' };
+  const STATUS_WORDS = { pending_agreement: 'Agreeing the fare', awaiting_payment: 'Waiting for payment', pending_provider_confirmation: 'Waiting for the driver to answer', active: 'Confirmed', completed: 'Finished', cancelled: 'Cancelled', declined: 'The driver said no', expired: 'No answer, refunded' };
 
   function section(title, sub) {
     return `<div class="dash-header"><div><div class="dash-title">${e(tr(title))}</div><div class="dash-sub">${e(tr(sub))}</div></div></div><div id="rides-body"><div class="panel">${e(tr('Loading…'))}</div></div>`;
@@ -90,6 +90,18 @@
   { const f = updateCustomerSidebar; updateCustomerSidebar = function () { const r = f.apply(this, arguments); checkRidesMenu(); return r; }; }
   { const f = updateProviderSidebar; updateProviderSidebar = function () { const r = f.apply(this, arguments); checkRidesMenu(); return r; }; }
 
+  // v125: live updates (live.js) call this when a ride changes. A rider still choosing a driver isn't disturbed.
+  window.ridesRefresh = function () {
+    if (!body()) return;
+    const role = AUTH.user && AUTH.user.role;
+    const a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim() && body().contains(a)) return; // typing a PIN or a fare: wait
+    if (role === 'provider') { stopTimers(); loadDriverPage(); }
+    else if (role === 'customer') {
+      const hasOpen = (R.list || []).some(r => ['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status));
+      if (hasOpen) { stopTimers(); loadRiderPage(); } // a rider filling in "Where to?" is never redrawn under them
+    }
+  };
   function stopTimers() { clearInterval(R.poll); clearInterval(R.hb); clearInterval(R.track); R.poll = R.hb = R.track = null; }
   function here() { return new Promise(res => { getBestLocation({ goodEnoughM: 80, maxWaitMs: 8000 }).then(r => res(r && !r.error ? r : null)).catch(() => res(null)); }); }
 
@@ -117,7 +129,7 @@
     let list = [];
     try { list = (await apiFetch('GET', '/rides/mine')).rides; } catch (x) { body().innerHTML = `<div class="panel">${e(x.message || 'Could not load')}</div>`; return; }
     R.list = list;
-    const open = list.find(r => r.status === 'active' || r.status === 'pending_provider_confirmation');
+    const open = list.find(r => ['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status)); // v125
     const past = list.filter(r => r !== open);
     body().innerHTML = (open ? riderTrip(open) : riderForm()) + (past.length ? `<div class="panel"><div class="panel-title">${e(tr('Past rides'))}</div>${past.slice(0, 15).map(pastRow).join('')}</div>` : '');
     if (open) { R.poll = setInterval(() => { if (!body()) return stopTimers(); loadRiderPage(); }, 8000); } else { renderPins(); }
@@ -149,31 +161,111 @@
     try {
       const pax = Number(el('ride-pax').value) || 1;
       const r = await apiFetch('GET', `/rides/drivers?pLat=${a.latitude}&pLng=${a.longitude}&dLat=${b.latitude}&dLng=${b.longitude}&passengers=${pax}`);
-      R.quote = { a, b, pax, an: (el('ridefrom-name').value || '').trim() || 'Pickup', bn: (el('rideto-name').value || '').trim() || 'Destination', fee: r.feePercent };
+      R.quote = { a, b, pax, an: (el('ridefrom-name').value || '').trim() || 'Pickup', bn: (el('rideto-name').value || '').trim() || 'Destination', fee: r.feePercent, appPay: r.appPay !== false, payMode: r.payMode };
       if (!r.drivers.length) { out.innerHTML = `<div class="ver-note">${e(tr('No drivers are online near you right now. Try again in a few minutes.'))}</div>`; return; }
       out.innerHTML = `<div style="color:var(--slate);font-size:13.5px;margin-bottom:6px;">${e(tr('About'))} ${e(km(r.tripKm))}. ${e(tr('Fares are estimates from the distance; the driver sets their own price.'))}</div>` + r.drivers.map(d => `
         <div style="display:flex;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--border);flex-wrap:wrap;">
           <div style="flex:1;min-width:180px;"><div style="font-weight:700;color:var(--navy);">${e(d.name)} <span style="font-weight:400;color:var(--slate);">· ${d.rating ? '★ ' + e(d.rating) : e(tr('New'))}</span></div>
           <div style="font-size:13.5px;color:var(--slate);">${e(tr(d.vehicle))}${d.make ? ' · ' + e(d.make) : ''} · ${e(km(d.awayKm))} ${e(tr('away'))}${d.helmet ? ' · ' + e(tr('helmet provided')) : ''}</div></div>
           <div style="text-align:right;"><div style="font-weight:700;font-size:18px;">${money(d.fare)}</div><div style="font-size:12px;color:var(--slate);">+ ${e(r.feePercent)}% ${e(tr('Trothen fee'))}</div></div>
-          <div style="display:flex;flex-direction:column;gap:6px;"><button class="btn-sm btn-sm-primary" onclick="ridesRequest(${jsArg(d.id)},${d.fare},'app')">${e(tr('Request'))}</button>
-          ${d.cashOk ? `<button class="btn-sm btn-sm-outline" onclick="ridesRequest(${jsArg(d.id)},${d.fare},'cash')">💵 ${e(tr('Pay cash'))}</button><div style="font-size:11.5px;color:var(--slate);max-width:120px;">${e(tr('no Trothen fee'))}</div>` : ''}</div>
-        </div>`).join('');
+          <div style="display:flex;flex-direction:column;gap:6px;">${r.appPay !== false ? `<button class="btn-sm btn-sm-primary" onclick="ridesRequest(${jsArg(d.id)},${d.fare},'app')">${e(tr('Request'))} · ${e(tr(r.payMode === 'card' ? 'pay by card' : 'pay in app'))}</button>` : ''}
+          ${d.cashOk ? `<button class="btn-sm btn-sm-outline" onclick="ridesRequest(${jsArg(d.id)},${d.fare},'cash')">💵 ${e(tr('Pay cash'))}</button><div style="font-size:11.5px;color:var(--slate);max-width:120px;">${e(tr('no Trothen fee'))}</div>` : ''}
+          ${r.appPay === false && !d.cashOk ? `<div style="font-size:12px;color:var(--slate);max-width:150px;">${e(tr('Paying in the app isn\'t available here yet, and this driver doesn\'t take cash.'))}</div>` : ''}</div>
+          ${r.appPay !== false || d.cashOk ? `<div style="flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13.5px;"><span>${e(tr('Or offer your own fare:'))}</span><input class="form-input" type="number" min="1" step="0.5" id="ride-offer-${e(d.id)}" placeholder="$" style="width:100px;"/>
+            ${r.appPay !== false ? `<button class="btn-sm btn-sm-outline" onclick="ridesOffer(${jsArg(d.id)},'app')">${e(tr('Offer'))}</button>` : ''}${d.cashOk ? `<button class="btn-sm btn-sm-outline" onclick="ridesOffer(${jsArg(d.id)},'cash')">💵 ${e(tr('Offer, pay cash'))}</button>` : ''}</div>` : ''}
+        </div>`).join('') + (r.appPay === false ? `<div class="ver-note" style="margin-top:8px;">${e(tr('Paying for rides in the app isn\'t switched on in your country yet, so rides are paid to the driver in cash.'))}</div>` : '');
     } catch (x) { out.innerHTML = `<div class="ver-note">${e(x.message || 'Could not find drivers')}</div>`; }
   };
+  // v125: a clear pay step: the fare, the fee and the total, and how it's paid.
+  function rideFee(amount) { const pct = Number(R.quote && R.quote.fee != null ? R.quote.fee : (R.cfg && R.cfg.feePercent) || 9); return Math.round(Math.max(0.25, amount * pct / 100) * 100) / 100; }
+  async function rideCheckout({ title, sub, price, cash, onConfirm }) {
+    if (typeof openCheckout !== 'function') return onConfirm();
+    return openCheckout({ title, sub, price, priceLabel: tr('Fare'), cash, ride: true, fee: cash ? 0 : rideFee(price), feeNote: (R.quote && R.quote.fee != null ? R.quote.fee : (R.cfg && R.cfg.feePercent) || 9) + '%', onConfirm });
+  }
   window.ridesRequest = async function (driverId, fare, payment) {
     const q = R.quote; if (!q) return;
     const cash = payment === 'cash';
-    if (!(await confirmDialog(cash
-      ? tr('Request this ride and pay the driver in cash? You pay exactly') + ' ' + money(fare) + ' ' + tr('at the end of the trip. Nothing is held by Trothen, so there is no automatic refund. If the driver asks for more, say no and report it.')
-      : tr('Request this ride? The fare is held now and refunded if the driver does not answer or you cancel before the trip starts.'), { confirmLabel: tr('Request ride') }))) return;
-    try {
-      await apiFetch('POST', '/rides', { driverId, passengers: q.pax, expectedFare: fare, payment: cash ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
-      showToast(tr('Ride requested. Waiting for the driver.')); loadRiderPage();
-    } catch (x) { showToast(x.message || 'Could not request the ride'); if (x.data && (x.data.code === 'PRICE_CHANGED' || x.data.code === 'CASH_NOT_AVAILABLE')) window.ridesFindDrivers(); }
+    rideCheckout({ title: tr('Request this ride'), sub: `${q.an} → ${q.bn}`, price: fare, cash, onConfirm: async () => {
+      try {
+        const res = await apiFetch('POST', '/rides', { driverId, passengers: q.pax, expectedFare: fare, payment: cash ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
+        const c = el('checkout'); if (c) c.remove();
+        if (typeof handlePaymentStep === 'function' && handlePaymentStep(res && res.payment)) return;
+        if (typeof showResult === 'function') showResult({ icon: '🛵', title: tr('Ride requested'), lines: [cash ? tr('Pay the driver in cash at the end of the trip, exactly the fare shown.') : tr('Your fare is held by Trothen and only paid to the driver when you confirm you arrived.'), tr('Waiting for the driver to answer. You\'ll see it here the moment they do.')] });
+        loadRiderPage();
+      } catch (x) { const c = el('checkout'); if (c) c.remove(); showToast(x.message || 'Could not request the ride'); if (x.data && (x.data.code === 'PRICE_CHANGED' || x.data.code === 'CASH_NOT_AVAILABLE')) window.ridesFindDrivers(); }
+    } });
   };
+  // Offer your own fare (the driver accepts, suggests another, or declines).
+  window.ridesOffer = async function (driverId, payment) {
+    const q = R.quote; if (!q) return;
+    const amount = Number((el('ride-offer-' + driverId) || {}).value);
+    if (!(amount >= 1)) return showToast(tr('Type the fare you want to offer'));
+    try {
+      await apiFetch('POST', '/rides', { driverId, passengers: q.pax, offerFare: amount, payment: payment === 'cash' ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
+      if (typeof showResult === 'function') showResult({ icon: '📨', title: tr('Fare offered'), lines: [`${tr('You offered')} ${money(amount)}.`, tr('The driver can accept it, suggest a different fare, or decline, within a few minutes. You\'ll see the answer here straight away.'), tr('Nothing is paid until you both agree the fare.')] });
+      loadRiderPage();
+    } catch (x) { showToast(x.message || 'Could not send your offer'); }
+  };
+  // Accept the driver's suggested fare.
+  window.ridesAgree = function (id) {
+    const r = (R.list || []).find(x => x.id === id); if (!r) return;
+    rideCheckout({ title: tr('Accept the driver\'s fare'), sub: `${r.pickup.address} → ${r.dropoff.address}`, price: r.fare, cash: r.cash, onConfirm: async () => {
+      try {
+        const res = await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/agree`, { amount: r.fare });
+        const c = el('checkout'); if (c) c.remove();
+        if (typeof handlePaymentStep === 'function' && handlePaymentStep(res && res.payment)) return;
+        if (typeof showResult === 'function') showResult({ title: tr('Fare agreed'), lines: [r.cash ? tr('Pay the driver in cash at the end of the trip.') : tr('Trothen is holding your fare until you confirm you arrived.'), tr('Your driver is on the way. Your PIN is on this page.')] });
+        loadRiderPage();
+      } catch (x) { const c = el('checkout'); if (c) c.remove(); showToast(x.message || 'Could not accept'); loadRiderPage(); }
+    } });
+  };
+  // Pay a fare the driver accepted.
+  window.ridesPay = function (id) {
+    const r = (R.list || []).find(x => x.id === id); if (!r) return;
+    rideCheckout({ title: tr('Pay for your ride'), sub: `${r.pickup.address} → ${r.dropoff.address}`, price: r.fare, cash: false, onConfirm: async () => {
+      try {
+        const res = await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/pay`, { total: r.totalPaid });
+        const c = el('checkout'); if (c) c.remove();
+        if (typeof handlePaymentStep === 'function' && handlePaymentStep(res && res.payment)) return;
+        if (typeof showResult === 'function') showResult({ title: tr('Paid'), lines: [tr('Your fare is held by Trothen until you confirm you arrived. Your driver is on the way.')] });
+        loadRiderPage();
+      } catch (x) { const c = el('checkout'); if (c) c.remove(); showToast(x.message || 'Could not pay'); loadRiderPage(); }
+    } });
+  };
+  // Suggest a different fare (rider or driver).
+  window.ridesSuggest = function (id) {
+    const r = (R.list || []).find(x => x.id === id); if (!r) return;
+    v105Overlay('ride-suggest', `<div class="modal-header"><button class="modal-close" onclick="v105Close('ride-suggest')" aria-label="Close">✕</button><h3>${e(tr('Suggest a fare'))}</h3><p>${e(r.pickup.address)} → ${e(r.dropoff.address)} · ${e(km(r.km))}</p></div>
+      <div class="modal-body"><div class="summary-row"><span>${e(tr('Fare on the table now'))}</span><span><strong>${money(r.fare)}</strong></span></div>
+      <div class="form-group" style="margin-top:10px;"><label class="form-label" for="rs-amount">${e(tr('Your fare ($)'))}</label><input class="form-input" type="number" min="1" step="0.5" id="rs-amount"/></div></div>
+      <div class="modal-footer"><button class="confirm-btn" onclick="ridesSendSuggest(${jsArg(id)})">${e(tr('Send'))}</button></div>`);
+  };
+  window.ridesSendSuggest = async function (id) {
+    const amount = Number((el('rs-amount') || {}).value);
+    if (!(amount >= 1)) return showToast(tr('Type a fare of at least $1'));
+    try { await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/propose`, { amount }); v105Close('ride-suggest'); showToast(tr('Sent')); (R.drv ? loadDriverPage : loadRiderPage)(); }
+    catch (x) { showToast(x.message || 'Could not send'); }
+  };
+  function fareTalkHTML(r, viewer) {
+    const lines = (r.negotiation || []).map((h, i, all) => `<div style="font-size:13.5px;${i === all.length - 1 ? 'font-weight:700;color:var(--navy);' : 'color:var(--slate);'}">${e(h.by === viewer ? tr('You') : (h.by === 'provider' ? tr('Driver') : tr('Rider')))} ${e(tr(i === 0 ? 'offered' : 'suggested'))} ${money(h.amount)}</div>`).join('');
+    return `<div style="margin:8px 0;padding:8px 10px;background:var(--offwhite, #F6F4EF);border-radius:8px;">${r.driverFare && viewer === 'customer' ? `<div style="font-size:12.5px;color:var(--slate);">${e(tr('Driver\'s usual fare'))}: ${money(r.driverFare)}</div>` : ''}${lines}</div>`;
+  }
+
   function riderTrip(r) {
     const d = r.driver || {};
+    if (r.status === 'pending_agreement' || r.status === 'awaiting_payment') { // v125
+      const myTurn = r.status === 'pending_agreement' && r.waitingOn === 'customer';
+      return `<div class="panel" style="border:2px solid var(--gold, #C9A227);">
+        <div class="panel-title">${e(tr(r.status === 'awaiting_payment' ? 'Fare agreed: pay to confirm' : myTurn ? 'The driver suggests a fare' : 'Waiting for the driver to answer your fare'))} <small>#${e(r.number)}</small></div>
+        <div style="font-size:15px;"><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(d.name || '')}</div>
+        ${r.negotiation ? fareTalkHTML(r, 'customer') : ''}
+        ${r.answerBy && r.status === 'pending_agreement' ? `<div class="ver-note">${e(tr(myTurn ? 'Answer by' : 'The driver answers by'))} ${e(when(r.answerBy))}. ${e(tr('Nothing is paid until you both agree the fare.'))}</div>` : ''}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          ${myTurn ? `<button class="confirm-btn" style="max-width:280px;" onclick="ridesAgree(${jsArg(r.id)})">${e(tr('Accept'))} ${money(r.fare)}</button><button class="btn-sm btn-sm-outline" onclick="ridesSuggest(${jsArg(r.id)})">${e(tr('Suggest a fare'))}</button>` : ''}
+          ${r.status === 'awaiting_payment' ? `<button class="confirm-btn" style="max-width:280px;" onclick="ridesPay(${jsArg(r.id)})">💳 ${e(tr('Pay'))} ${money(r.totalPaid)}</button>` : ''}
+          ${r.canCancel ? `<button class="btn-sm btn-sm-outline" onclick="ridesCancel(${jsArg(r.id)})">${e(tr('Cancel'))}</button>` : ''}
+        </div></div>`;
+    }
     const waiting = r.status === 'pending_provider_confirmation';
     return `<div class="panel" style="border:2px solid ${r.sosCount ? '#C0392B' : 'var(--teal)'};">
       <div class="panel-title">${e(tr(waiting ? 'Waiting for your driver' : r.startedAt ? 'You are on your way' : 'Your driver is coming'))} <small>#${e(r.number)}</small></div>
@@ -233,7 +325,7 @@
     let html = '';
     if (d.status === 'approved') html += driverOps(d, list) + driverPass(d) + driverRates(d);
     else html += driverApply(d);
-    const past = list.filter(r => !['active', 'pending_provider_confirmation'].includes(r.status));
+    const past = list.filter(r => !['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status)); // v125
     if (past.length) html += `<div class="panel"><div class="panel-title">${e(tr('Past rides'))}</div>${past.slice(0, 15).map(pastRow).join('')}</div>`;
     body().innerHTML = html;
     if (d.status === 'approved') {
@@ -326,10 +418,15 @@
   };
   function driverOps(d, list) {
     const incoming = list.filter(r => r.status === 'pending_provider_confirmation'), active = list.filter(r => r.status === 'active');
+    const offers = list.filter(r => r.status === 'pending_agreement' || r.status === 'awaiting_payment'); // v125
     return `<div class="panel"><div class="panel-title">${e(tr('Rides'))}</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span style="font-weight:700;color:${d.online ? '#2E8C6F' : 'var(--slate)'};">● ${e(tr(d.online ? 'You are online. Riders near you can see you.' : 'You are offline'))}</span>
       <button class="btn-sm ${d.online ? 'btn-sm-outline' : 'btn-sm-primary'}" onclick="ridesToggleOnline(${d.online ? 'false' : 'true'})">${e(tr(d.online ? 'Go offline' : 'Go online'))}</button></div>
       <div class="ver-note" style="margin-top:8px;">${e(tr('Keep this page open while you are online so riders can find you. You go offline by yourself after 12 hours.'))}</div></div>
+      ${offers.map(r => { const myTurn = r.status === 'pending_agreement' && r.waitingOn === 'provider'; return `<div class="panel" style="border:2px solid #E0A526;"><div class="panel-title">${e(tr(r.status === 'awaiting_payment' ? 'Fare agreed: waiting for the rider to pay' : myTurn ? 'A rider offers a fare' : 'Waiting for the rider'))} <small>#${e(r.number)}</small></div>
+        <div><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(r.passengers)} ${e(tr('passenger(s)'))}${r.cash ? ' · 💵 ' + e(tr('cash')) : ''}</div>
+        ${r.negotiation ? fareTalkHTML(r, 'provider') : ''}
+        ${myTurn ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-sm-primary" onclick="ridesAnswer(${jsArg(r.id)},'accept')">${e(tr('Accept'))} ${money(r.fare)}</button><button class="btn-sm btn-sm-outline" onclick="ridesSuggest(${jsArg(r.id)})">${e(tr('Suggest a fare'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAnswer(${jsArg(r.id)},'decline')">${e(tr('Decline'))}</button></div><div style="font-size:13px;color:var(--slate);margin-top:4px;">${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>` : `<div style="font-size:13.5px;color:var(--slate);">${e(tr(r.status === 'awaiting_payment' ? 'You\'ll be told the moment the rider pays. Then go to them.' : 'The rider answers your fare next.'))}</div>`}</div>`; }).join('')}
       ${incoming.map(r => `<div class="panel" style="border:2px solid #E0A526;"><div class="panel-title">${e(tr('New ride request'))} <small>#${e(r.number)}</small></div>
         <div><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(r.passengers)} ${e(tr('passenger(s)'))}</div>
         <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(tr('Fare'))}: <strong>${money(r.fare)}</strong>${r.cash ? ' · 💵 <strong>' + e(tr('paid in CASH by the rider')) + '</strong>' : ''} · ${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>
@@ -358,7 +455,7 @@
     } catch (x) { showToast(x.message || 'Could not change'); }
   };
   window.ridesAnswer = async function (id, decision) {
-    try { await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/respond-offer`, { decision }); showToast(tr(decision === 'accept' ? 'Accepted. Go to your rider.' : 'Declined')); loadDriverPage(); } catch (x) { showToast(x.message || 'Could not answer'); loadDriverPage(); }
+    try { const res = await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/respond-offer`, { decision }); const st = res && res.contract && res.contract.status; showToast(tr(decision !== 'accept' ? 'Declined' : st === 'awaiting_payment' ? 'Accepted. The rider is asked to pay; you\'ll be told when they do.' : 'Accepted. Go to your rider.')); loadDriverPage(); } catch (x) { showToast(x.message || 'Could not answer'); loadDriverPage(); }
   };
   window.ridesArrived = async function (id) { try { await apiFetch('POST', `/rides/${encodeURIComponent(id)}/arrived`, {}); showToast(tr('The rider has been told')); loadDriverPage(); } catch (x) { showToast(x.message || 'Error'); } };
   window.ridesStart = async function (id) {

@@ -13,7 +13,7 @@ const limiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true,
 router.get('/customer-payments/options', requireAuth, requireRole('customer'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   const o = await cp.optionsFor(me && me.country);
-  res.json({ protectedMode: o.protectedMode, cashJobs: o.cashJobs, payTo: o.payTo, currency: { code: o.currency.code, symbol: o.currency.symbol } });
+  res.json({ protectedMode: o.protectedMode, cardAvailable: o.cardAvailable, cashJobs: o.cashJobs, payTo: o.payTo, currency: { code: o.currency.code, symbol: o.currency.symbol } });
 });
 
 // GET /api/customer-payments/cash-check?providerId=&amount= (v121)
@@ -29,6 +29,27 @@ router.get('/customer-payments/cash-check', requireAuth, requireRole('customer')
   const check = await tokens.cashReady(pro, amount);
   if (!check.ok) await tokens.nudgeCashNotReady(pro, check, amount);
   res.json({ ok: check.ok, message: check.ok ? null : `${String(pro.name || 'This pro').split(' ')[0]} can't take cash jobs at the moment. Choose "Protected by Trothen", or book another pro.` });
+});
+
+// v125: card payments (Stripe). The webhook is how Stripe tells Trothen a
+// payment really went through; it is checked against STRIPE_WEBHOOK_SECRET
+// so nobody else can pretend to be Stripe. Add this address in Stripe:
+//   https://trothenpro.com/api/webhooks/stripe
+// with the events checkout.session.completed and
+// checkout.session.async_payment_succeeded.
+router.post('/webhooks/stripe', async (req, res) => {
+  const event = require('../stripe-pay').verifyWebhook(req.rawBody, req.headers['stripe-signature']);
+  if (!event) return res.status(400).json({ error: 'Bad signature' });
+  try {
+    if (['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(event.type)) await cp.confirmCardSession(event.data && event.data.object);
+  } catch (e) { console.error('[stripe webhook]', e.message); return res.status(500).json({ error: 'Could not record it yet; Stripe will retry.' }); }
+  res.json({ received: true });
+});
+// GET /api/customer-payments/:contractId/card-status — after coming back from Stripe.
+router.get('/customer-payments/:contractId/card-status', requireAuth, requireRole('customer'), async (req, res) => {
+  const r = await cp.cardStatus(req.params.contractId, req.user.sub);
+  if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+  res.json(r);
 });
 
 // POST /api/customer-payments/:contractId/paid { transactionId } — "I have sent it".

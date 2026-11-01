@@ -85,10 +85,15 @@
   function schedule() { clearTimeout(LV.timer); LV.timer = setTimeout(run, 150); }
 
   // Someone typing in the page (not in a pop-up window): wait for them.
+  // v125: only when something has actually been typed. A cursor sitting in an
+  // empty box (as in the "Message JAMES" box) no longer holds updates back.
+  // Pop-up windows like "Responses to Your Job" are never held back: what's
+  // typed there is kept while they redraw.
   function typingInPage() {
     const a = document.activeElement;
     if (!a || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return false;
-    return !!a.closest('#customer-main, #provider-main, #admin-main, #job-candidates-modal');
+    if (a.tagName !== 'SELECT' && !String(a.value || '').trim()) return false;
+    return !!a.closest('#customer-main, #provider-main, #admin-main');
   }
 
   async function run() {
@@ -140,6 +145,7 @@
       selectAdminSection('custpay');
     }
     window.scrollTo(0, y);
+    if (typeof ridesRefresh === 'function' && document.getElementById('rides-body')) { try { ridesRefresh(); } catch (x) {} } // v125: the Rides page
     await redrawOpenWindows();
   }
 
@@ -156,12 +162,14 @@
       const data = await apiFetch('GET', `/jobs/${CURRENT_JOB_CANDIDATES_JOBID}/candidates`);
       renderJobCandidates(data);
       for (const [id, v] of Object.entries(keep)) { const i = el(id); if (i) { i.value = v; if (/^job-hire-amount-/.test(id)) { i.dataset.touched = '1'; i.dispatchEvent(new Event('input')); } } }
-      if (focused && el(focused)) el(focused).focus();
+      if (focused && el(focused)) { const f = el(focused); f.focus(); try { const n = String(f.value || '').length; f.setSelectionRange(n, n); } catch (x) {} }
+      const chat = modal.querySelectorAll('.cand-chat'); chat.forEach(cd => { cd.scrollTop = cd.scrollHeight; }); // newest message in view
       markHireTouched();
     }
     // The pro's job chat with a customer.
     if (typeof CURRENT_JOB_NEGOTIATION !== 'undefined' && CURRENT_JOB_NEGOTIATION && typeof loadJobNegotiationThread === 'function') {
       try { await loadJobNegotiationThread(); } catch (x) {}
+      try { if (typeof drawProPriceBox === 'function' && typeof providerData === 'object') drawProPriceBox((providerData.matches || []).find(m => m.jobId === CURRENT_JOB_NEGOTIATION.jobId)); } catch (x) {}
     }
   }
   function markHireTouched() {

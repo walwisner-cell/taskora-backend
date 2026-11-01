@@ -192,7 +192,7 @@ app.get('/api/health', async (req, res) => {
 // every page is built from this, so it can't drift out of date again the
 // way the old fixed "codes appear on-screen" wording did once real email
 // sending was connected. Only yes/no flags are returned, never any key.
-app.get('/api/system-status', (req, res) => {
+app.get('/api/system-status', async (req, res) => {
   const delivery = require('./src/delivery');
   let liberiaMoMoLive = false;
   try {
@@ -209,7 +209,11 @@ app.get('/api/system-status', (req, res) => {
     // Card payments and payouts have no real payment processor behind them
     // (Stripe Connect is waiting on attorney sign-off), so this is false
     // until that code exists — not a setting anyone can flip by accident.
-    cardPaymentsLive: false,
+    // v125: real card payments when the Stripe keys are set; countries where
+    // customers pay to Trothen's own accounts; and whether this is a test site.
+    cardPaymentsLive: require('./src/stripe-pay').isOn(),
+    accountPaymentCountries: await (async () => { try { const all = await require('./src/tokens').settings(); return Object.entries(all.countryRules || {}).filter(([, r]) => r && r.protectedPayMode === 'code' && Array.isArray(r.momoAccounts) && r.momoAccounts.some(a => a && a.number)).map(([c]) => c); } catch (e) { return []; } })(),
+    testPayments: (await require('./src/platform-settings').getSetting('allowTestPayments')) === true,
     liberiaMoMoLive,
   });
 });

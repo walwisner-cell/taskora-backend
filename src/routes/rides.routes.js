@@ -54,7 +54,7 @@ const money = (n) => Math.round(Number(n) * 100) / 100;
 const today = () => new Date().toISOString().slice(0, 10);
 const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || 'Rider';
 const sameText = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
-const OPEN_STATUSES = ['pending_provider_confirmation', 'active'];
+const OPEN_STATUSES = ['pending_provider_confirmation', 'active', 'pending_agreement', 'awaiting_payment']; // v125: a fare being agreed or paid also counts as open
 
 function kmBetween(a, b) {
   if (!a || !b || !isValidCoordinate(a.latitude, a.longitude) || !isValidCoordinate(b.latitude, b.longitude)) return null;
@@ -181,7 +181,8 @@ router.get('/rides/drivers', requireAuth, requireRole('customer'), lookupLimiter
     rows.push({ ...publicDriver(u), awayKm: away, fare: quote(u, km), seats: RIDE_VEHICLES[u.rideDriver.vehicle], cashOk: cashOn && u.rideDriver.acceptsCash === true && !!(await ridePass.activePass(u.id)) });
   }
   rows.sort((a, b) => a.awayKm - b.awayKm || (b.rating || 0) - (a.rating || 0));
-  res.json({ available: true, tripKm: Math.round(km * ROAD_FACTOR * 10) / 10, drivers: rows.slice(0, 10), feePercent: await getSetting('rideFeePercent') });
+  const po = await require('../customer-payments').optionsFor(me.country);
+  res.json({ available: true, tripKm: Math.round(km * ROAD_FACTOR * 10) / 10, drivers: rows.slice(0, 10), feePercent: await getSetting('rideFeePercent'), appPay: ['card', 'simulated'].includes(po.protectedMode), payMode: po.protectedMode }); // v125
 });
 
 const bookInFlight = new Set();
@@ -213,7 +214,12 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
     if (km === null || km * ROAD_FACTOR > maxKm) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km.` });
     if (km < 0.1) return res.status(400).json({ error: 'The pickup and the destination are the same place.' });
     const fare = quote(driver, km);
-    if (b.expectedFare === undefined || Math.abs(Number(b.expectedFare) - fare) > 0.009) {
+    // v125: the rider can offer their own fare instead (the driver accepts, suggests another, or declines).
+    const offerRaw = b.offerFare;
+    const offerFare = offerRaw === undefined || offerRaw === null || offerRaw === '' ? null : money(Number(offerRaw));
+    if (offerFare !== null && !(offerFare >= 1 && offerFare <= 100000)) return res.status(400).json({ error: 'Offer a fare of at least $1.' });
+    const isOffer = offerFare !== null && Math.abs(offerFare - fare) > 0.009;
+    if (!isOffer && (b.expectedFare === undefined || Math.abs(Number(b.expectedFare) - fare) > 0.009)) {
       return res.status(409).json({ code: 'PRICE_CHANGED', fare, error: `${driver.name}'s fare for this trip is now $${fare.toFixed(2)}. Check it and approve again.` });
     }
     // v113: cash rides. Allowed only when a super admin has switched cash on, the driver has said they take
@@ -221,6 +227,13 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
     const cash = b.payment === 'cash';
     if (cash && !((await getSetting('rideCashEnabled')) === true && driver.rideDriver.acceptsCash === true && await ridePass.activePass(driver.id))) {
       return res.status(400).json({ code: 'CASH_NOT_AVAILABLE', error: 'This driver does not take cash rides right now. Pay in the app, or choose another driver.' });
+    }
+    // v125: paying in the app is a real card payment (or a test payment on a test site). A ride can't wait
+    // for a payment code to be checked by hand, so codes aren't used for rides.
+    const custPay = require('../customer-payments');
+    const po = await custPay.optionsFor(me.country);
+    if (!cash && !['card', 'simulated'].includes(po.protectedMode)) {
+      return res.status(400).json({ code: 'APP_PAY_UNAVAILABLE', error: 'Paying for rides in the app isn\'t available in your country yet. Choose a driver who takes cash.' });
     }
     // One open ride at a time per rider: stops stacking requests on many drivers.
     const open = await db.find('contracts', c => c.customerId === me.id && c.ride && OPEN_STATUSES.includes(c.status));
@@ -234,10 +247,12 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
       date: today(), time: 'Ride now', address: dp.point.address,
       jobLocation: { latitude: pk.point.latitude, longitude: pk.point.longitude, accuracyM: null, source: 'map', capturedAt: new Date().toISOString() },
       landmark: null,
-      amount: fare, serviceFee: cash ? 0 : await feeFor(fare), laborAmount: fare,
+      amount: isOffer ? offerFare : fare, serviceFee: cash ? 0 : await feeFor(isOffer ? offerFare : fare), laborAmount: isOffer ? offerFare : fare,
+      payMethod: cash ? 'cash' : 'protected', driverFare: fare, // v125
       storeItems: [], storeGoodsTotal: 0, goodsOnly: false, materialsCost: null, storeStockHeld: false,
       loyaltyPointsRedeemed: 0, materialsAdvance: 0, materialsOnHand: null, photoUrls: [],
-      status: 'pending_provider_confirmation', signedAt: null,
+      status: isOffer ? 'pending_agreement' : 'pending_provider_confirmation', signedAt: null,
+      ...(isOffer ? { negotiation: [{ by: 'customer', amount: offerFare, note: null, at: new Date().toISOString() }], waitingOn: 'provider' } : {}), // v125
       payCurrency: b.payCurrency === 'local' ? 'local' : 'usd',
       providerResponseDeadline: new Date(Date.now() + minutes * 60 * 1000).toISOString(),
       createdAt: new Date().toISOString(),
@@ -248,14 +263,18 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
         cash, shareToken: nanoid(24), startedAt: null, endedAt: null, driverArrivedAt: null, live: null, sos: [],
       },
     };
-    if (!cash) try { await fundEscrowForContract(contract, me.id, contract.payCurrency); }
+    // v125: with card payments the rider pays first; the driver is asked once the payment is confirmed.
+    if (!cash && !isOffer && po.protectedMode === 'card') { contract.statusAfterPayment = 'pending_provider_confirmation'; contract.status = 'awaiting_payment'; }
+    let escrow = null;
+    if (!cash && !isOffer) try { escrow = await fundEscrowForContract(contract, me.id, contract.payCurrency); }
     catch (e) {
       console.error('[ride] payment failed:', e.message);
-      return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be completed, so you were not charged and no ride was requested. Please try again.' });
+      return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be started, so you were not charged and no ride was requested. Please try again.' });
     }
     await db.insert('contracts', contract);
-    await notify(driver.id, '🛵', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km, $${fare.toFixed(2)}${cash ? ', the rider pays you in CASH' : ''}). Answer within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
-    res.status(201).json({ ride: await rideView(contract, me.id) });
+    if (contract.status === 'pending_provider_confirmation') await notify(driver.id, '🛵', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km, $${fare.toFixed(2)}${cash ? ', the rider pays you in CASH' : ''}). Answer within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
+    else if (isOffer) await notify(driver.id, '💬', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km). The rider offers $${offerFare.toFixed(2)} (your fare is $${fare.toFixed(2)})${cash ? ', paid in CASH' : ''}. Accept it, suggest a fare, or decline within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
+    res.status(201).json({ ride: await rideView(contract, me.id), payment: escrow ? custPay.publicPayment(escrow) : null });
   } finally {
     bookInFlight.delete(me.id);
   }
@@ -272,7 +291,12 @@ async function rideView(c, viewerId) {
   const live = c.status === 'active' && r.live && (Date.now() - new Date(r.live.at).getTime()) < 10 * 60 * 1000 ? r.live : null;
   return {
     id: c.id, number: c.bookingNumber, status: c.status, createdAt: c.createdAt, role: isRider ? 'rider' : 'driver',
-    answerBy: c.status === 'pending_provider_confirmation' ? c.providerResponseDeadline : null,
+    answerBy: ['pending_provider_confirmation', 'pending_agreement'].includes(c.status) ? c.providerResponseDeadline : null,
+    // v125: agreeing the fare, and paying for it
+    negotiation: c.status === 'pending_agreement' ? (Array.isArray(c.negotiation) && c.negotiation.length ? c.negotiation : [{ by: 'customer', amount: c.amount, at: c.createdAt }]) : null,
+    waitingOn: c.status === 'pending_agreement' ? (c.waitingOn || 'provider') : null,
+    driverFare: c.driverFare || null,
+    payDueAt: c.status === 'awaiting_payment' ? (c.paymentDueAt || null) : null,
     pickup: r.pickup, dropoff: r.dropoff, km: r.km, passengers: r.passengers,
     fare: c.amount, fee: c.serviceFee, totalPaid: money((c.amount || 0) + (c.serviceFee || 0)), cash: r.cash === true, payInCash: r.cash === true ? c.amount : null,
     // the PIN is for the rider only, and only until the trip starts
@@ -292,7 +316,7 @@ async function rideView(c, viewerId) {
     shareUrl: isRider && c.status === 'active' ? `/ride-share/${r.shareToken}` : null,
     sosCount: (r.sos || []).length,
     canConfirm: isRider && c.status === 'active' && !!r.startedAt,
-    canCancel: c.status === 'pending_provider_confirmation' || (c.status === 'active' && !r.startedAt),
+    canCancel: ['pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(c.status) || (c.status === 'active' && !r.startedAt),
     // v112: waiting for a rider who does not come, and money released if the rider says nothing
     noShowOpensAt: !isRider && c.status === 'active' && !r.startedAt && r.driverArrivedAt ? new Date(new Date(r.driverArrivedAt).getTime() + waitMin * 60000).toISOString() : null,
     canNoShow: !isRider && c.status === 'active' && !r.startedAt && !!r.driverArrivedAt && Date.now() >= new Date(r.driverArrivedAt).getTime() + waitMin * 60000,

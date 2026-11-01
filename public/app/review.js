@@ -32,6 +32,7 @@
   }
 
   const codeMode = () => !!(window.PAYWAYS_OPTS && window.PAYWAYS_OPTS.protectedMode === 'code');
+  const cardMode = () => !!(window.PAYWAYS_OPTS && window.PAYWAYS_OPTS.protectedMode === 'card'); // v125
 
   function payWay() {
     const r = document.querySelector('input[name="pw-booking"]:checked');
@@ -154,10 +155,11 @@
 
     let what;
     if (offer && cash) what = `${first} ${tr('sees your offer and can accept it, suggest a different price, or decline. You agree one final price together, then you pay the pro in cash, only after the work is done.')}`;
-    else if (offer && codeMode()) what = `${first} ${tr('sees your offer and can accept it, suggest a different price, or decline. Nothing is paid until you both agree one final price. Then you get a payment code to pay Trothen by mobile money, and Trothen holds the money until you say the job is done.')}`;
+    else if (offer && codeMode()) what = `${first} ${tr('sees your offer and can accept it, suggest a different price, or decline. Nothing is paid until you both agree one final price. Then you get a payment code to pay Trothen\'s account, and Trothen holds the money until you say the job is done.')}`;
     else if (offer) what = `${first} ${tr('sees your offer and can accept it, suggest a different price, or decline. Nothing is charged until you both agree one final price. Then Trothen holds your money until you say the job is done.')}`;
     else if (cash) what = tr('Nothing is paid now. You pay the pro directly, only once the work is done. Trothen does not hold this money, so it can\'t refund it.');
-    else if (codeMode()) what = tr('Next you get a payment code. Send the total by mobile money to Trothen\'s number with the code in the reference. Your pro is asked to confirm once we see your payment. Trothen holds it until you say the job is done, and you get it back if the pro doesn\'t come or something goes wrong.');
+    else if (cardMode()) what = tr('Next you pay by card on Stripe\'s secure page; your card details never touch Trothen. Trothen holds the money until you say the job is done, and you get it back if the pro doesn\'t come or something goes wrong.');
+    else if (codeMode()) what = tr('Next you get a payment code. Send the total to Trothen\'s account with the code in the reference. Your pro is asked to confirm once we see your payment. Trothen holds it until you say the job is done, and you get it back if the pro doesn\'t come or something goes wrong.');
     else what = tr('Trothen holds your payment until you say the job is done. If the pro doesn\'t come or something goes wrong, you get it back.');
 
     const box = ensureReviewBox();
@@ -225,7 +227,7 @@
       }
       back.textContent = '← ' + tr('Change something');
       back.style.display = '';
-      btn.textContent = offer ? tr('Send my offer') : cash ? tr('Confirm cash booking') : codeMode() ? tr('Book and get my payment code') : '🔒 ' + tr('Confirm & Pay Securely');
+      btn.textContent = offer ? tr('Send my offer') : cash ? tr('Confirm cash booking') : codeMode() ? tr('Book and get my payment code') : cardMode() ? '🔒 ' + tr('Continue to secure card payment') : '🔒 ' + tr('Confirm & Pay Securely');
       footer.dataset.reviewing = '1';
       const modal = document.querySelector('#booking-modal .modal'); if (modal) modal.scrollTop = 0;
       box.scrollTop = 0;

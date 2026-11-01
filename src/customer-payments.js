@@ -27,19 +27,35 @@ const money = (n) => Math.round(Number(n) * 100) / 100;
 const PAY_METHODS = ['protected', 'cash'];
 function cleanPayMethod(v) { return PAY_METHODS.includes(v) ? v : 'protected'; }
 
-// What a customer in this country can choose.
+// What a customer in this country can choose (v125).
+// protectedMode is how a PROTECTED payment really works here:
+//   'card'      Stripe card checkout (when the Stripe keys are set; the default then)
+//   'code'      the customer sends money to one of Trothen's own accounts with a code
+//   'simulated' test payments: only when "Test payments" is switched on (test sites)
+//   'none'      no real way to pay Trothen here yet: Protected isn't offered
 async function optionsFor(country) {
   const tokens = require('./tokens');
   const s = await tokens.settingsFor(country);
   const all = await tokens.settings();
   const rule = (country && all.countryRules[country]) || {};
-  const codesOn = rule.protectedPayMode === 'code' && s.momoAccounts.length > 0;
+  const wanted = rule.protectedPayMode || 'auto';
+  const stripeOn = require('./stripe-pay').isOn();
+  let mode;
+  if (wanted === 'code' && s.momoAccounts.length > 0) mode = 'code';
+  else if ((wanted === 'card' || wanted === 'auto') && stripeOn) mode = 'card';
+  else if (wanted === 'auto' && s.momoAccounts.length > 0 && rule.payToAccountsForJobs === true) mode = 'code';
+  else mode = (await getSetting('allowTestPayments')) === true ? 'simulated' : 'none';
   return {
-    protectedMode: codesOn ? 'code' : 'simulated',
+    protectedMode: mode,
+    cardAvailable: stripeOn,
     cashJobs: rule.cashJobs !== false && (await getSetting('cashJobsEnabled')) !== false,
-    payTo: codesOn ? s.momoAccounts : [],
+    payTo: mode === 'code' ? s.momoAccounts : [],
     currency: s.currency, rate: s.rate,
   };
+}
+// Thrown when a protected payment is asked for where none is possible.
+function noProtectedError() {
+  return Object.assign(new Error('Paying through Trothen isn\'t available in your country yet. Choose "Cash to the pro after the job", or contact support.'), { status: 400, expose: true, code: 'PROTECTED_UNAVAILABLE' });
 }
 async function usesCodes(country) { return (await optionsFor(country)).protectedMode === 'code'; }
 async function codeHours() { return Number(await getSetting('customerPaymentCodeHours')) || 24; }
@@ -69,9 +85,33 @@ async function codeFieldsFor(contract, customer) {
   };
 }
 
+// v125: the payment fields for a protected booking in this customer's
+// country: a payment code, a card checkout, nothing (test payments), or an
+// error when there's no real way to pay here.
+async function paymentFieldsFor(contract, customer, escrowId) {
+  const o = await optionsFor(customer && customer.country);
+  if (o.protectedMode === 'code') return codeFieldsFor(contract, customer);
+  if (o.protectedMode === 'card') {
+    const usd = money((contract.amount || 0) + (contract.serviceFee || 0));
+    const expiresAt = new Date(Date.now() + (contract.ride ? 0.5 : await codeHours()) * 60 * 60 * 1000).toISOString(); // v125: a ride's card page runs out after about half an hour
+    const session = await require('./stripe-pay').createCheckout({ contract, escrowId, amountUsd: usd, customerEmail: customer && customer.email, expiresAt });
+    return { status: 'awaiting_payment', paidBy: 'card', cardSessionId: session.id, cardUrl: session.url, amountDueUsd: usd, amountDue: usd, dueCurrency: 'USD', paymentExpiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : expiresAt };
+  }
+  if (o.protectedMode === 'none') throw noProtectedError();
+  return null; // simulated: held at once (test sites only)
+}
+
+// v125: what to tell the customer to do to pay, for a code or a card.
+function howToPayWords(e) {
+  if (!e) return 'pay in My Bookings.';
+  if (e.paidBy === 'card') return `pay $${Number(e.amountDueUsd).toFixed(2)} by card: open My Bookings and press Pay now. Nothing is booked until you pay.`;
+  return `send ${e.dueCurrency} ${Number(e.amountDue).toLocaleString()} to ${(e.payTo || []).map(a => `${a.network} ${a.number} (${a.accountName})`).join(' or ')} with code ${e.paymentCode} in the reference, then press "I have sent it" in My Bookings.`;
+}
+
 function publicPayment(e) {
+  if (e && e.paidBy === 'card') return { method: 'card', url: e.cardUrl, status: e.status, amountDue: e.amountDue, currency: 'USD', amountDueUsd: e.amountDueUsd, expiresAt: e.paymentExpiresAt, receipt: e.receipt || null };
   if (!e || e.paidBy !== 'code') return null;
-  return { code: e.paymentCode, status: e.status, amountDue: e.amountDue, currency: e.dueCurrency, amountDueUsd: e.amountDueUsd, payTo: e.payTo || [], expiresAt: e.paymentExpiresAt, customerSaysPaidAt: e.customerSaysPaidAt || null, customerTransactionId: e.customerTransactionId || null, receipt: e.receipt || null };
+  return { method: 'code', code: e.paymentCode, status: e.status, amountDue: e.amountDue, currency: e.dueCurrency, amountDueUsd: e.amountDueUsd, payTo: e.payTo || [], expiresAt: e.paymentExpiresAt, customerSaysPaidAt: e.customerSaysPaidAt || null, customerTransactionId: e.customerTransactionId || null, receipt: e.receipt || null };
 }
 
 async function findAwaiting(contractId, customerId) {
@@ -112,8 +152,15 @@ async function confirm(admin, code, transactionId, amountReceived) {
   const got = Number(amountReceived);
   if (!Number.isFinite(got) || got <= 0) return { status: 400, error: `Enter the amount that arrived (${e.dueCurrency}).` };
   if (got + 0.009 < e.amountDue) return { status: 400, code: 'UNDERPAID', error: `Only ${got} arrived but the booking needs ${e.amountDue}. Don't confirm it: ask the customer to send the rest, or cancel the booking and refund what arrived.` };
+  return finishPayment(e, c, { receipt: tx, amountReceived: got, confirmedBy: admin.id, confirmedByName: admin.name });
+}
+
+// v125: the money for a booking really arrived (finance confirmed a code,
+// or Stripe confirmed a card payment). Holds it and moves the booking on.
+async function finishPayment(e, c, { receipt, amountReceived, confirmedBy, confirmedByName }) {
+  const got = amountReceived, tx = receipt;
   const now = new Date().toISOString();
-  await db.update('escrowTransactions', e.id, { status: 'held', receipt: tx, amountReceived: got, overpaid: got > e.amountDue + 0.009 ? money(got - e.amountDue) : 0, confirmedBy: admin.id, confirmedByName: admin.name, confirmedAt: now });
+  await db.update('escrowTransactions', e.id, { status: 'held', receipt: tx, amountReceived: got, overpaid: got > e.amountDue + 0.009 ? money(got - e.amountDue) : 0, confirmedBy: confirmedBy || null, confirmedByName: confirmedByName || null, confirmedAt: now });
   const next = c.statusAfterPayment || 'pending_provider_confirmation';
   const patch = { status: next, paidAt: now };
   if (next === 'pending_provider_confirmation') {
@@ -126,7 +173,7 @@ async function confirm(admin, code, transactionId, amountReceived) {
     if (e.materialsAdvanceAmount > 0) await db.update('escrowTransactions', e.id, { materialsAdvanceReleased: true });
   }
   const updated = await db.update('contracts', c.id, patch);
-  await notify(c.customerId, '✅', `We received your payment for booking #${c.bookingNumber} (${e.dueCurrency} ${got}). Trothen is holding it safely until you confirm the job is done.${next === 'pending_provider_confirmation' ? ' Your pro has been asked to confirm.' : ''}`, 'bookingUpdates', { section: 'bookings' });
+  await notify(c.customerId, '✅', `We received your payment for booking #${c.bookingNumber} (${e.paidBy === 'card' ? `$${Number(got).toFixed(2)} by card` : `${e.dueCurrency} ${got}`}). Trothen is holding it safely until you confirm the job is done.${next === 'pending_provider_confirmation' ? ' Your pro has been asked to confirm.' : ''}`, 'bookingUpdates', { section: 'bookings' });
   if (next === 'pending_provider_confirmation') {
     const by = new Date(patch.providerResponseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
     await notify(c.providerId, '📋', `New paid booking: "${c.service}" on ${c.date || 'a date to agree'}. The customer has paid and Trothen is holding the money. Confirm by ${by} or it is cancelled and refunded.`, null, { section: 'bookings' });
@@ -134,6 +181,73 @@ async function confirm(admin, code, transactionId, amountReceived) {
     await notify(c.providerId, '✅', `The customer paid for "${c.service}". Trothen is holding the money; the job is now active.`, null, { section: 'contracts' });
   }
   return { ok: true, contract: updated };
+}
+
+// v125: Stripe says a Checkout page was paid. Safe to call more than once.
+async function confirmCardSession(session) {
+  if (!session || session.payment_status !== 'paid') return { ok: false, status: 'unpaid' };
+  const escrowId = session.metadata && session.metadata.escrowId;
+  // Trothen's own payment record (named on the Stripe page) first; the page id only as a fallback.
+  const e = (escrowId && await db.find('escrowTransactions', x => x.paidBy === 'card' && x.id === escrowId && x.cardSessionId === session.id))
+    || await db.find('escrowTransactions', x => x.paidBy === 'card' && x.cardSessionId === session.id && x.status === 'awaiting_payment');
+  if (!e) return { ok: false, status: 'unknown' };
+  if (e.status !== 'awaiting_payment') {
+    // v125: the booking was cancelled or ran out, but the card was charged anyway: give it back.
+    if (['payment_cancelled', 'payment_expired', 'payment_rejected'].includes(e.status) && !e.receipt) {
+      await db.update('escrowTransactions', e.id, { status: 'refunded', receipt: session.payment_intent, amountReceived: money((session.amount_total || 0) / 100), refundReason: 'paid after the booking was cancelled' });
+      try { await sweepCardRefunds(); } catch (x) { /* the 5-minute sweep tries again */ }
+      return { ok: false, status: 'refunding' };
+    }
+    return { ok: true, status: 'already' };
+  }
+  const c = await db.find('contracts', x => x.id === e.contractId);
+  const got = money((session.amount_total || 0) / 100);
+  if (!c || c.status !== 'awaiting_payment' || got + 0.009 < e.amountDueUsd) {
+    // Paid, but the booking was cancelled meanwhile (or paid short): give it back.
+    await db.update('escrowTransactions', e.id, { status: 'refunded', receipt: session.payment_intent, amountReceived: got, refundReason: !c || c.status !== 'awaiting_payment' ? 'booking no longer waiting for payment' : 'paid less than due' });
+    try { await sweepCardRefunds(); } catch (x) { /* the 5-minute sweep tries again */ }
+    return { ok: false, status: 'refunding' };
+  }
+  await finishPayment(e, c, { receipt: session.payment_intent, amountReceived: got, confirmedByName: 'Stripe' });
+  return { ok: true, status: 'paid' };
+}
+// The customer came back from Stripe: ask Stripe directly, in case the webhook is late.
+async function cardStatus(contractId, customerId) {
+  const c = await db.find('contracts', x => x.id === contractId && x.customerId === customerId);
+  if (!c) return { status: 404, error: 'Booking not found' };
+  const e = await db.find('escrowTransactions', x => x.contractId === c.id && x.paidBy === 'card');
+  if (!e) return { status: 404, error: 'No card payment for this booking' };
+  if (e.status === 'awaiting_payment' && e.cardSessionId) {
+    const session = await require('./stripe-pay').getSession(e.cardSessionId);
+    await confirmCardSession(session);
+  }
+  const now = await db.find('escrowTransactions', x => x.id === e.id);
+  const cNow = await db.find('contracts', x => x.id === c.id);
+  return { ok: true, paid: now.status !== 'awaiting_payment' && now.status !== 'payment_expired', escrowStatus: now.status, bookingStatus: cNow.status, bookingNumber: cNow.bookingNumber, isRide: !!cNow.ride };
+}
+// Card refunds go back to the card by themselves. Runs every few minutes;
+// the idempotency key means a refund is never sent twice.
+async function sweepCardRefunds() {
+  const sp = require('./stripe-pay');
+  if (!process.env.STRIPE_SECRET_KEY) return 0;
+  const rows = await db.filter('escrowTransactions', e => e.paidBy === 'card' && e.receipt && !e.refundSentAt && !e.refundNotNeeded && (e.status === 'refunded' || (e.refundedAmount || 0) > 0));
+  let n = 0;
+  for (const e of rows) {
+    const full = e.status === 'refunded';
+    const usd = full ? money(e.amountReceived || ((e.originalAmount || e.amount) + (e.serviceFee || 0))) : money(e.refundedAmount);
+    if (!(usd > 0)) continue;
+    try {
+      const r = await sp.refund(e.receipt, Math.round(usd * 100), `refund-${e.id}-${Math.round(usd * 100)}`);
+      await db.update('escrowTransactions', e.id, { refundSentAt: new Date().toISOString(), refundSentTx: r.id, refundSentByName: 'Stripe', refundError: null });
+      const c = await db.find('contracts', x => x.id === e.contractId);
+      if (c) await notify(c.customerId, '↩️', `$${usd.toFixed(2)} for booking #${c.bookingNumber} has been refunded to your card. Banks usually show it within 5 to 10 days.`, 'bookingUpdates', { section: 'bookings' });
+      n++;
+    } catch (x) {
+      await db.update('escrowTransactions', e.id, { refundError: String(x.message || x).slice(0, 300) });
+      console.error('[card refunds] failed:', e.id, x.message);
+    }
+  }
+  return n;
 }
 
 // No payment found for this code: the booking is cancelled.
@@ -161,11 +275,36 @@ async function endUnpaid(e, why, message, extra) {
 async function expireUnpaid() {
   const now = Date.now();
   const due = await db.filter('escrowTransactions', e => e.paidBy === 'code' && e.status === 'awaiting_payment' && !e.customerSaysPaidAt && e.paymentExpiresAt && new Date(e.paymentExpiresAt).getTime() < now);
+  // v125: card pages that ran out. Ask Stripe first, in case it was paid and the webhook was missed.
+  const cardDue = await db.filter('escrowTransactions', e => e.paidBy === 'card' && e.status === 'awaiting_payment' && e.paymentExpiresAt && new Date(e.paymentExpiresAt).getTime() < now);
+  for (const e of cardDue) {
+    try {
+      const sp = require('./stripe-pay');
+      const session = e.cardSessionId ? await sp.getSession(e.cardSessionId) : null;
+      if (session && session.payment_status === 'paid') { await confirmCardSession(session); continue; }
+      if (session && session.status === 'open') { try { await sp.expireSession(e.cardSessionId); } catch (x) { /* already closed */ } }
+      await endUnpaid(e, 'expired', 'Your booking was cancelled because it wasn\'t paid in time. Nothing was charged. Book again if you still need it.');
+    } catch (x) { console.error('[customer-payments] card expire failed:', e.id, x.message); }
+  }
+  try { await sweepCardRefunds(); } catch (x) { console.error('[card refunds] sweep failed:', x.message); }
   for (const e of due) {
     try { await endUnpaid(e, 'expired', `Your booking with payment code ${e.paymentCode} was cancelled because no payment was reported in time. If you already sent the money, contact support with your transaction ID.`); }
     catch (x) { console.error('[customer-payments] expire failed:', e.id, x.message); }
   }
-  return due.length;
+  // v125: a price the pro accepted that the customer never paid (test-mode
+  // countries; payment-code countries are handled above).
+  const unpaid = await db.filter('contracts', c => c.status === 'awaiting_payment' && c.paymentDueAt && new Date(c.paymentDueAt).getTime() < now);
+  for (const c of unpaid) {
+    try {
+      if (await db.find('escrowTransactions', e => e.contractId === c.id)) continue;
+      await db.update('contracts', c.id, { status: 'cancelled', cancelledByRole: 'system', cancelReason: 'Not paid', cancelledAt: new Date().toISOString() });
+      try { await require('./store').giveBackStock(c); } catch (x) { /* nothing held */ }
+      if (c.jobId) { const job = await db.find('jobs', j => j.id === c.jobId); if (job && job.status === 'matched') await db.update('jobs', job.id, { status: 'open' }); }
+      await notify(c.customerId, '⌛', `Your booking for "${c.service}" was cancelled because it wasn't paid in time. Nothing was charged. Book again if you still need it.`, 'bookingUpdates', { section: 'bookings' });
+      await notify(c.providerId, '⌛', `The customer didn't pay for "${c.service}" in time, so the booking was cancelled.`, null, { section: 'contracts' });
+    } catch (x) { console.error('[customer-payments] unpaid expire failed:', c.id, x.message); }
+  }
+  return due.length + unpaid.length;
 }
 
 // Refunds the finance team must send back by mobile money: payments that
@@ -197,7 +336,7 @@ async function markRefundSent(admin, escrowId, transactionId) {
 // refunded and paid again. Returns the new escrow, or null.
 async function transferToReassignment(job, newContract) {
   const prior = (await db.filter('contracts', c => c.jobId === job.id && c.id !== newContract.id)).map(c => c.id);
-  const old = (await db.filter('escrowTransactions', e => prior.includes(e.contractId) && e.paidBy === 'code' && e.status === 'refunded' && e.receipt && !e.refundSentAt && !e.refundNotNeeded))
+  const old = (await db.filter('escrowTransactions', e => prior.includes(e.contractId) && (e.paidBy === 'code' || e.paidBy === 'card') && e.status === 'refunded' && e.receipt && !e.refundSentAt && !e.refundNotNeeded))
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
   if (!old) return null;
   const esc = {
@@ -212,4 +351,4 @@ async function transferToReassignment(job, newContract) {
   return esc;
 }
 
-module.exports = { PAY_METHODS, cleanPayMethod, optionsFor, usesCodes, codeFieldsFor, publicPayment, customerReportsPaid, confirm, reject, expireUnpaid, refundsToSend, markRefundSent, transferToReassignment, localDue };
+module.exports = { howToPayWords, PAY_METHODS, cleanPayMethod, optionsFor, noProtectedError, paymentFieldsFor, confirmCardSession, cardStatus, sweepCardRefunds, usesCodes, codeFieldsFor, publicPayment, customerReportsPaid, confirm, reject, expireUnpaid, refundsToSend, markRefundSent, transferToReassignment, localDue };

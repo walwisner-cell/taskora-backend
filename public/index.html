@@ -606,6 +606,7 @@
   .msg-bubble { max-width:70%; padding:10px 14px; border-radius:10px; font-size:14px; line-height:1.5; }
   .msg-bubble.them { background:#fff; border:1px solid var(--border); align-self:flex-start; }
   .msg-bubble.me { background:var(--navy); color:#fff; align-self:flex-end; }
+  .msg-bubble.me .msg-time { color:rgba(255,255,255,.78) !important; } /* v124: readable on the dark bubble */
   .msg-input-row { display:flex; gap:10px; padding:14px; background:#fff; border-top:1px solid var(--border); }
   .msg-input-row input { flex:1; border:1.5px solid var(--border); border-radius:12px; padding:10px 16px; font-size:14px; outline:none; font-family:var(--font-body); }
   .msg-input-row button { background:var(--navy); color:#fff; border:none; border-radius:12px; padding:10px 20px; font-weight:600; font-size:14px; cursor:pointer; }
@@ -2668,6 +2669,7 @@
       <p id="job-negotiation-sub"></p>
     </div>
     <div class="modal-body">
+      <div id="job-negotiation-price"></div>
       <div id="job-negotiation-thread" style="max-height:320px;overflow-y:auto;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input class="form-input" style="flex:1;" id="job-negotiation-input" placeholder="Type a message…" onkeydown="if(event.key==='Enter')sendJobNegotiationReply()"/>
@@ -3171,12 +3173,12 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=d05c295bcf" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
-<script src="/app/rides.js?v=a295e3655d"></script>
-<script src="/app/tokens.js?v=17b212bf61"></script>
-<script src="/app/payways.js?v=e044b21b7d"></script>
-<script src="/app/review.js?v=a21ca62518"></script>
-<script src="/app/pricing.js?v=56feb3cdf9"></script>
-<script src="/app/live.js?v=14e57bea12"></script>
+<script src="/app/trothen.js?v=46370efa3a" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/rides.js?v=edd40cebc9"></script>
+<script src="/app/tokens.js?v=9965b7e8d8"></script>
+<script src="/app/payways.js?v=0e08e64239"></script>
+<script src="/app/review.js?v=996eb029fc"></script>
+<script src="/app/pricing.js?v=23981269ff"></script>
+<script src="/app/live.js?v=c3fbad75da"></script>
 </body>
 </html>

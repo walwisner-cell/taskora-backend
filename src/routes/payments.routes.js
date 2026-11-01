@@ -304,7 +304,7 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   // mobile money. Test-mode bookings stay out, so no real money is sent
   // for money that was never paid in.
   const realOnly = (await require('../platform-settings').getSetting('payoutsRequireRealPayment')) === true;
-  const reallyPaid = (e) => !realOnly || e.paidBy === 'code' || !!e.liberiaMoMoReference;
+  const reallyPaid = (e) => !realOnly || e.paidBy === 'code' || e.paidBy === 'card' || !!e.liberiaMoMoReference; // v125: card payments are real money too
   const payableEscrow = releasedEscrow.filter(e => contractIds.has(e.contractId) && reallyPaid(e));
 
   // Materials advances release the moment they're agreed, independent of
@@ -1001,7 +1001,11 @@ async function handleContractCancel(req, res) {
   if (contract.status === 'awaiting_payment') {
     if (contract.customerId !== req.user.sub) return res.status(403).json({ error: 'Only the customer can cancel a booking that isn\'t paid yet.' });
     if (escrow && escrow.customerSaysPaidAt) return res.status(409).json({ code: 'USE_SUPPORT', error: 'You told us you have sent the payment, so this can\'t be cancelled here. Contact support: if the money arrived, it will be refunded.' });
-    if (escrow && escrow.status === 'awaiting_payment') await db.update('escrowTransactions', escrow.id, { status: 'payment_cancelled' });
+    if (escrow && escrow.status === 'awaiting_payment') {
+      await db.update('escrowTransactions', escrow.id, { status: 'payment_cancelled' });
+      // v125: close the card page so it can't be paid any more.
+      if (escrow.paidBy === 'card' && escrow.cardSessionId) { try { await require('../stripe-pay').expireSession(escrow.cardSessionId); } catch (x) { /* already closed or paid: a late payment is refunded automatically */ } }
+    }
     const gone = await db.update('contracts', contract.id, { status: 'cancelled', cancelledByRole: 'customer', cancelReasonCategory: 'not_paid', cancelledAt: new Date().toISOString() });
     await require('../store').giveBackStock(contract);
     await require('../loyalty').givePointsBack(contract);

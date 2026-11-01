@@ -137,7 +137,7 @@ router.get('/admin/tokens', gate, async (req, res) => {
   const users = await db.filter('users', u => userIds.includes(u.id));
   const nameOf = (id) => { const u = users.find(x => x.id === id); return u ? u.name : 'Unknown'; };
   res.json({
-    settings: { ...(await tokens.settings()), cashJobsEnabled: (await getSetting('cashJobsEnabled')) !== false, testPurchases: (await getSetting('tokenTestPurchases')) === true, payoutsRealOnly: (await getSetting('payoutsRequireRealPayment')) === true },
+    settings: { ...(await tokens.settings()), cashJobsEnabled: (await getSetting('cashJobsEnabled')) !== false, testPurchases: (await getSetting('tokenTestPurchases')) === true, allowTestPayments: (await getSetting('allowTestPayments')) === true, cardPaymentsOn: require('../stripe-pay').isOn(), payoutsRealOnly: (await getSetting('payoutsRequireRealPayment')) === true },
     canEdit: req.adminUser.isSuperAdmin === true,
     canRecordPayments: req.adminUser.isSuperAdmin === true || ['financial', 'accountant', 'controller'].includes(req.adminUser.adminDepartment),
     offlineMethods: tokens.OFFLINE_METHODS,
@@ -160,6 +160,7 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
   if (b.feeOnlyEnabled !== undefined) await setSetting('tokensFeeOnlyEnabled', b.feeOnlyEnabled === true);
   if (b.cashJobsEnabled !== undefined) await setSetting('cashJobsEnabled', b.cashJobsEnabled === true); // v119: cash jobs anywhere
   if (b.testPurchases !== undefined) await setSetting('tokenTestPurchases', b.testPurchases === true); // v119: test sites only
+  if (b.allowTestPayments !== undefined) await setSetting('allowTestPayments', b.allowTestPayments === true); // v125: test sites only
   if (b.payoutsRealOnly !== undefined) await setSetting('payoutsRequireRealPayment', b.payoutsRealOnly === true); // v119: live site
   if (b.dailyLimitUsd !== undefined) {
     const n = Number(b.dailyLimitUsd);
@@ -195,7 +196,7 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
       if (r.cashJobs === false || (r.cashJobs === undefined && prev.cashJobs === false)) rule.cashJobs = false;
       const mode = r.protectedPayMode !== undefined ? r.protectedPayMode : prev.protectedPayMode;
       if (mode !== undefined && mode !== null) {
-        if (!['simulated', 'code'].includes(mode)) return res.status(400).json({ error: `${country}: protected payments must be "simulated" or "code".` });
+        if (!['auto', 'card', 'code', 'simulated'].includes(mode)) return res.status(400).json({ error: `${country}: protected payments must be auto, card, code or simulated.` });
         rule.protectedPayMode = mode;
       }
       if (r.maxBalance !== undefined && r.maxBalance !== null && r.maxBalance !== '') {
@@ -210,8 +211,9 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
       }
       if (Array.isArray(r.momoAccounts)) {
         const accs = r.momoAccounts.map(a => ({ network: String(a.network || '').trim(), number: String(a.number || '').trim(), accountName: String(a.accountName || '').trim() })).filter(a => a.network || a.number || a.accountName);
-        if (accs.length > 4 || accs.some(a => a.network.length < 2 || a.network.length > 40 || !/^[0-9+ ()-]{6,20}$/.test(a.number) || a.accountName.length < 2 || a.accountName.length > 60)) {
-          return res.status(400).json({ error: `${country}: up to 4 mobile money numbers, each with a network (e.g. MTN MoMo), a number (digits only, 6 to 20) and the account name pros will see when they send.` });
+        // v125: any kind of account: mobile money, Zelle (email or phone), Cash App ($cashtag), bank (account number).
+        if (accs.length > 4 || accs.some(a => a.network.length < 2 || a.network.length > 40 || !/^[A-Za-z0-9@$+._ ()\/#:-]{3,60}$/.test(a.number) || a.accountName.length < 2 || a.accountName.length > 60)) {
+          return res.status(400).json({ error: `${country}: up to 4 accounts, each with a type (e.g. MTN MoMo, Zelle, Cash App, Bank: Ecobank), the number, email, $cashtag or account number (3 to 60 characters), and the account name people see when they send.` });
         }
         rule.momoAccounts = accs;
       } else if (before.countryRules[country] && before.countryRules[country].momoAccounts) rule.momoAccounts = before.countryRules[country].momoAccounts;

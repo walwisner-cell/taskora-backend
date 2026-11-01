@@ -34,17 +34,22 @@
   };
   function choiceHTML(scope) {
     const o = PW.opts; if (!o) return '';
-    const c = o.cashJobs ? PW.choice[scope] : 'protected';
+    // v125: Protected is only offered where a real payment exists (card or Trothen's account).
+    const protOn = o.protectedMode !== 'none';
+    if (!protOn && !o.cashJobs) { PW.choice[scope] = 'protected'; return `<div class="ver-note" style="margin-top:12px;">${e(tr('Paying through Trothen isn\'t available in your country yet, and cash jobs are switched off. Please contact support.'))}</div>`; }
+    const c = !protOn ? 'cash' : (o.cashJobs ? PW.choice[scope] : 'protected');
     PW.choice[scope] = c;
     const opt = (v, title, sub, badge) => `<label class="pw-opt" style="display:flex;gap:10px;align-items:flex-start;border:2px solid ${c === v ? 'var(--teal)' : 'var(--border)'};border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;">
       <input type="radio" name="pw-${scope}" value="${v}" ${c === v ? 'checked' : ''} onchange="setPayWay('${scope}', this.value)" style="width:18px;height:18px;margin-top:2px;flex-shrink:0;"/>
       <span><strong style="color:var(--navy);">${e(tr(title))}</strong>${badge ? ` <span class="badge badge-success">${e(tr(badge))}</span>` : ''}<br><span style="font-size:13px;color:var(--slate);">${e(tr(sub))}</span></span></label>`;
     const protSub = o.protectedMode === 'code'
-      ? 'You pay Trothen by mobile money with a code we give you. We hold the money until you say the job is done. If the pro doesn\'t come or something goes wrong, you get it back.'
-      : 'Your payment is held by Trothen until you say the job is done. If the pro doesn\'t come or something goes wrong, you get it back.';
+      ? 'You pay to Trothen\'s account with a code we give you. We hold the money until you say the job is done. If the pro doesn\'t come or something goes wrong, you get it back.'
+      : o.protectedMode === 'card'
+        ? 'You pay by card on Stripe\'s secure page. Trothen holds the money until you say the job is done. If the pro doesn\'t come or something goes wrong, you get it back.'
+        : o.protectedMode === 'simulated' ? 'TEST SITE: no real money moves.' : '';
     return `<div class="form-group" data-payway="${scope}" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
       <label class="form-label">${e(tr('How will you pay?'))}</label>
-      ${opt('protected', '🛡️ Protected by Trothen', protSub, 'Recommended')}
+      ${protOn ? opt('protected', '🛡️ Protected by Trothen', protSub, 'Recommended') : `<div class="ver-note" style="margin-bottom:8px;">${e(tr('Paying through Trothen isn\'t available in your country yet, so jobs are paid to the pro in cash after the work.'))}</div>`}
       ${o.cashJobs ? opt('cash', '💵 Cash to the pro after the job', 'Nothing to pay now. Pay the pro directly, only once the work is done.') : ''}
       <div id="pw-cash-warn-${scope}" class="ver-note" style="display:${c === 'cash' ? 'block' : 'none'};margin-top:4px;">${e(tr('No Trothen service fee: you pay the pro the job price directly, after the work.'))} ${e(tr('A cash job is not covered by Trothen\'s payment protection: Trothen never holds the money, so it can\'t refund cash. You still get an ID-checked pro, a written agreement, ratings and our dispute team. Never pay before the work is done, and don\'t pay more than agreed in the app.'))}</div>
     </div>`;
@@ -87,8 +92,10 @@
       }
       try {
         const res = await f.apply(this, [method, path, body]);
+        if (method === 'POST' && /^\/contracts\/[^/]+\/(agree|pay)$/.test(path) && res && res.payment && res.payment.method !== 'card') setTimeout(() => showPaymentCode(res.contract, res.payment), 300); // v125
         if (method === 'POST' && (path === '/contracts' || /^\/jobs\/[^/]+\/select-provider$/.test(path)) && res) {
-          if (res.payment) setTimeout(() => { setConfirmWords('code'); showPaymentCode(res.contract, res.payment); }, 500);
+          if (res.payment && res.payment.method === 'card') setTimeout(() => { if (typeof handlePaymentStep === 'function') handlePaymentStep(res.payment, res.contract); }, 400); // v125
+          else if (res.payment) setTimeout(() => { setConfirmWords('code'); showPaymentCode(res.contract, res.payment); }, 500);
           else if (res.contract && res.contract.payMethod === 'cash') setTimeout(() => { setConfirmWords('cash'); fixConfirmForCash(); }, 300);
           else setTimeout(() => setConfirmWords('normal'), 300);
         }
@@ -126,9 +133,9 @@
     return `<div style="text-align:center;margin:6px 0 12px;"><div style="font-size:13px;color:var(--slate);">${e(tr('Your payment code'))}</div>
         <div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:30px;font-weight:800;letter-spacing:.14em;color:var(--navy);">${e(p.code)}</div></div>
       <ol style="margin:0;padding-left:20px;font-size:14.5px;color:var(--slate);line-height:1.7;">
-        <li>${e(tr('Send exactly'))} <strong style="color:var(--navy);">${e(amountText(p))}</strong> ${e(tr('by mobile money to'))} ${(p.payTo || []).map(a => `<strong>${e(a.network)} ${e(a.number)}</strong> (${e(a.accountName)})`).join(' ' + e(tr('or')) + ' ')}.</li>
+        <li>${e(tr('Send exactly'))} <strong style="color:var(--navy);">${e(amountText(p))}</strong> ${e(tr('to'))} ${(p.payTo || []).map(a => `<strong>${e(a.network)} ${e(a.number)}</strong> (${e(a.accountName)})`).join(' ' + e(tr('or')) + ' ')}.</li>
         <li>${e(tr('Write'))} <strong>${e(p.code)}</strong> ${e(tr('in the reference or note.'))}</li>
-        <li>${e(tr('Check the name on your phone before you confirm. It must be the account name above.'))}</li>
+        <li>${e(tr('Check the account name before you confirm. It must be the name above.'))}</li>
         <li>${e(tr('Press "I have sent it". Your pro is asked to confirm once we see your payment.'))}</li>
       </ol>
       <div style="font-size:12.5px;color:var(--muted);margin-top:8px;">${e(tr('If you don\'t pay by'))} ${e(new Date(p.expiresAt).toLocaleString())}, ${e(tr('the booking is cancelled. Trothen will never ask you to pay any other number or person, or for your PIN.'))}</div>
@@ -168,7 +175,7 @@
 
   // Bookings still waiting for the customer's payment, at the top of My Bookings and Overview.
   function waitingList() {
-    return Object.values(typeof RAW_CONTRACTS === 'object' ? RAW_CONTRACTS : {}).filter(c => c.status === 'awaiting_payment' && c.escrow && c.escrow.paidBy === 'code');
+    return Object.values(typeof RAW_CONTRACTS === 'object' ? RAW_CONTRACTS : {}).filter(c => c.status === 'awaiting_payment' && c.customerId === (AUTH.user && AUTH.user.id)); // v125: codes, card pages and price-agreed bookings
   }
   function drawWaiting() {
     const main = el('customer-main'); if (!main) return;
@@ -178,6 +185,10 @@
     if (!box) { main.insertAdjacentHTML('afterbegin', '<div id="pw-waiting"></div>'); box = el('pw-waiting'); }
     box.innerHTML = list.map(c => {
       const es = c.escrow;
+      if (!es || es.paidBy !== 'code') { // v125: pay by card, or a test payment
+        const total = Math.round(((c.amount || 0) + (c.serviceFee || 0)) * 100) / 100;
+        return `<div class="panel" style="border-left:4px solid var(--gold);"><div class="panel-title">💳 ${e(tr('Waiting for your payment'))}: #${e(c.bookingNumber)} · ${e(c.service)}</div><div style="font-size:14px;margin-bottom:10px;">${e(tr('The price is agreed. Pay to confirm the booking; nothing is booked until you pay.'))}</div><button class="confirm-btn" style="max-width:320px;" onclick="payNow(${jsArg(c.id)})">💳 ${e(tr('Pay'))} $${total.toFixed(2)}</button></div>`;
+      }
       const p = { code: es.paymentCode, amountDue: es.amountDue, currency: es.dueCurrency, payTo: es.payTo, expiresAt: es.paymentExpiresAt, customerSaysPaidAt: es.customerSaysPaidAt };
       return `<div class="panel" style="border-left:4px solid var(--gold);"><div class="panel-title">💳 ${e(tr('Waiting for your payment'))}: #${e(c.bookingNumber)} · ${e(c.service)}</div>${codeBoxHTML(c, p)}</div>`;
     }).join('');
@@ -254,7 +265,7 @@
       ${can ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"><input class="form-input" style="flex:1;min-width:200px;" id="cpr-tx-${e(r.escrowId)}" maxlength="60" placeholder="${e(tr('Transaction ID of the refund you sent'))}"/><button class="btn-sm btn-sm-primary" onclick="custPayRefundSent(${jsArg(r.escrowId)})">${e(tr('Mark refund sent'))}</button></div>` : ''}
     </div>`;
     box.innerHTML = `
-      <div class="ver-note" style="margin-bottom:12px;">${e(tr('Turn payment codes on per country in Admin → Tokens → Countries ("Protected payments"), with Trothen\'s official mobile money number. Only confirm a payment once you can see it on Trothen\'s statement with the code in the reference.'))}</div>
+      <div class="ver-note" style="margin-bottom:12px;">${e(tr('Turn payment codes on per country in Admin → Tokens → Countries ("Protected payments"), with Trothen\'s official accounts. Only confirm a payment once you can see it on Trothen\'s statement with the code in the reference.'))}</div>
       <div class="panel"><div class="panel-title">${e(tr('Payments to confirm'))}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;"><input class="form-input" style="flex:1;min-width:200px;text-transform:uppercase;" id="cp-q" value="${e(q || '')}" placeholder="${e(tr('Code, or a transaction ID'))}" onkeydown="if(event.key==='Enter')custPayFind()"/><button class="btn-sm btn-sm-primary" onclick="custPayFind()">${e(tr('Find'))}</button><button class="btn-sm btn-sm-outline" onclick="custPayFind(true)">${e(tr('Show all waiting'))}</button></div>
         ${d.payments.length ? d.payments.map(pay).join('') : `<div style="color:var(--slate);font-size:14px;margin-top:10px;">${e(tr(q ? 'Nothing matches that.' : 'No payments waiting.'))}</div>`}
@@ -267,7 +278,7 @@
   window.custPayFind = function (all) { drawAdmin(all === true ? '' : ((el('cp-q') || {}).value || '').trim()); };
   window.custPayConfirm = async function (code) {
     const tx = ((el('cpx-tx-' + code) || {}).value || '').trim(), amt = Number((el('cpx-amt-' + code) || {}).value);
-    if (tx.length < 4) return showToast(tr('Enter the transaction ID from Trothen\'s mobile money statement'));
+    if (tx.length < 4) return showToast(tr('Enter the transaction ID from Trothen\'s statement'));
     if (!(amt > 0)) return showToast(tr('Enter the amount that arrived'));
     if (!(await confirmDialog(`${tr('Confirm code')} ${code} ${tr('with transaction')} ${tx}? ${tr('Only do this once you can see the money on Trothen\'s statement with this code in the reference.')}`, { confirmLabel: tr('Confirm payment') }))) return;
     try { await apiFetch('POST', '/admin/customer-payments/confirm', { code, transactionId: tx, amountReceived: amt }); showToast(tr('Confirmed. The pro has been asked to confirm the booking.')); drawAdmin(); }

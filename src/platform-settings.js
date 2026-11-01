@@ -109,6 +109,7 @@ const DEFAULTS = {
   // also turn on payment codes for protected (escrow) jobs.
   cashJobsEnabled: true,
   payoutsRequireRealPayment: false, // turn ON for the live site: payouts only include bookings whose money really arrived (payment code or mobile money)
+  allowTestPayments: false, // v125: TEST SITES ONLY. Off = protected jobs are offered only where a real payment exists (card or pay-to-account)
   tokenTestPurchases: false, // TEST SITES ONLY: lets "Pay in the app" add tokens without any real payment
   customerPaymentCodeHours: 24, // how long a customer has to pay a booking by code
   tokenPaymentCodeHours: 48, // v117: how long a mobile money payment code stays open if no payment is reported       // countries where tokens are on; empty = every country

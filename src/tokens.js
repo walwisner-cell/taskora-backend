@@ -402,6 +402,7 @@ async function takenFor(ref) {
 // with a message the page shows; nothing changes in that case.
 async function chargeCashCommission(provider, contract) {
   if (!contract || contract.payMethod !== 'cash') return null;
+  if (contract.ride) return null; // v125: a cash ride is covered by the driver's ride pass, not tokens
   const ref = cashRef(contract.id);
   if (await db.find('tokenLedger', l => l.ref === ref && l.kind === 'spend')) return null; // already taken for this job
   const debt = money(provider.tokenDebt || 0);

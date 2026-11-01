@@ -240,8 +240,18 @@ async function readinessReport(requestingUser) {
       personaOk ? 'Connected' : 'Optional. Without it, a person compares each ID with the face photo.', 'optional'),
     item('plan_fee', 'Monthly plan fee', true,
       planBilling.active ? 'Switched ON. Pros are invoiced monthly from their payouts.' : 'Switched off (as it should be until real payments are live).', 'optional'),
-    item('payments', 'Real payments are connected', false,
-      'Not yet — every payment and payout is simulated. Real people can sign up, verify and be found, but no real money can move through Trothen until payment processing is built and approved.', 'business'),
+    // v125: card (Stripe) and pay-to-account are real; test payments are not.
+    await (async () => {
+      const cardOn = require('./stripe-pay').isOn();
+      let acct = [];
+      try { const all = await require('./tokens').settings(); acct = Object.entries(all.countryRules || {}).filter(([, r]) => r && r.protectedPayMode === 'code' && Array.isArray(r.momoAccounts) && r.momoAccounts.some(a => a && a.number)).map(([c]) => c); } catch (e) { /* none */ }
+      const testOn = (await require('./platform-settings').getSetting('allowTestPayments')) === true;
+      return item('payments', 'Real payments are connected', (cardOn || acct.length > 0) && !testOn,
+        testOn ? 'Test payments are switched ON (Admin → Tokens → Settings). Turn them off on the live site: customers would think they paid.'
+          : cardOn ? `Card payments (Stripe) are on${acct.length ? `, and customers in ${acct.join(', ')} can pay to Trothen's account with a code` : ''}. Pros are still paid out by your finance team, not automatically.`
+          : acct.length ? `Customers in ${acct.join(', ')} pay to Trothen's account with a code, confirmed by finance. Card payments are off until the Stripe keys are added on Render.`
+          : 'Not yet. Add the Stripe keys on Render for card payments, or add Trothen\'s accounts for a country in Admin → Tokens → Countries. Until then, jobs are cash only.', 'business');
+    })(),
   ];
   return {
     items,

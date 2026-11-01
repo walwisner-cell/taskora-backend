@@ -104,42 +104,203 @@
     } catch (x) { showToast(x.message || tr('Could not send your price')); }
   };
 
-  // The customer accepts the pro's price: show exactly what will happen first.
+  // ── one checkout screen for every way of paying (v125) ─────────────────
+  async function ensureOpts() {
+    if (window.PAYWAYS_OPTS) return window.PAYWAYS_OPTS;
+    try { window.PAYWAYS_OPTS = await apiFetch('GET', '/customer-payments/options'); } catch (x) { window.PAYWAYS_OPTS = null; }
+    return window.PAYWAYS_OPTS;
+  }
+  window.ensurePayOpts = ensureOpts;
+  const modeNow = () => (window.PAYWAYS_OPTS && window.PAYWAYS_OPTS.protectedMode) || 'none';
+  function payPanel(cash, total, ride) {
+    const until = ride ? tr('until you confirm you arrived') : tr('until you say the job is done');
+    if (cash) return { note: tr('💵 Cash: nothing to pay now. You pay the pro directly, only after the work is done. Trothen doesn\'t hold this money.'), btn: tr('Confirm') };
+    const m = modeNow();
+    if (m === 'card') return { note: `💳 ${tr('Card: next you pay on Stripe\'s secure page. Your card details never touch Trothen.')} ${tr('Trothen holds the money')} ${until}, ${tr('and you get it back if the pro doesn\'t come or something goes wrong.')}`, btn: `${tr('Continue to secure payment')} · ${money(total)}` };
+    if (m === 'code') return { note: `🏦 ${tr('Pay to Trothen\'s account: next you get a payment code and Trothen\'s account details. Send the exact amount with the code.')} ${tr('Trothen holds it')} ${until}.`, btn: tr('Get my payment code') };
+    if (m === 'simulated') return { note: tr('🧪 Test payment: this site is in test mode, so no real money moves.'), btn: `${tr('Pay')} ${money(total)} (${tr('test')})` };
+    return { note: tr('Paying through Trothen isn\'t available in your country yet. Choose a cash job instead.'), btn: null };
+  }
+  // rows: [[label, value], ...]
+  window.openCheckout = async function ({ title, sub, price, priceLabel, cash, goods, onConfirm, fee: feeGiven, feeNote, ride: isRide }) {
+    await ensureOpts();
+    const off = feeGiven != null ? 0 : (TIER_FEE_OFF[(AUTH.user && AUTH.user.membershipTier) || 'free'] || 0); // v125: rides pass their own fee
+    const fee = cash ? 0 : feeGiven != null ? feeGiven : Math.round(feeFor(price) * (1 - off) * 100) / 100;
+    const total = Math.round((price + fee + (goods || 0)) * 100) / 100;
+    const pp = payPanel(cash, total, isRide);
+    overlay('checkout', e(title), e(sub || ''), `
+      <div class="booking-summary">
+        <div class="summary-row"><span>${e(priceLabel || tr('Agreed price'))}</span><span><strong>${money(price)}</strong></span></div>
+        ${cash ? `<div class="summary-row"><span>${e(tr('Trothen service fee'))}</span><span>${e(tr('None, cash job'))}</span></div>`
+          : `<div class="summary-row"><span>${e(tr('Trothen service fee'))} <small style="color:var(--muted);">(${feeNote ? e(feeNote) : '9%, $2.99–$25'}${off ? `, ${Math.round(off * 100)}% ${e(tr('off for members'))}` : ''})</small></span><span>${money(fee)}</span></div>`}
+        ${goods ? `<div class="summary-row"><span>${e(tr('Goods from the store'))}</span><span>${money(goods)}</span></div>` : ''}
+        <div class="summary-row total"><span>${e(tr(cash ? 'You pay the pro after the job' : 'Total to pay'))}</span><span>${money(cash ? price : total)}</span></div>
+      </div>
+      <div class="ver-note" style="margin-top:10px;">${e(pp.note)}</div>`,
+      pp.btn ? `<button class="confirm-btn" id="checkout-go">${e(pp.btn)}</button>` : `<button class="btn-sm btn-sm-outline" onclick="document.getElementById('checkout').remove()">${e(tr('Close'))}</button>`);
+    const go = el('checkout-go');
+    if (go) go.onclick = async () => { go.disabled = true; go.textContent = tr('Working…'); try { await onConfirm(total); } finally { const g = el('checkout-go'); if (g) { g.disabled = false; g.textContent = pp.btn; } } };
+  };
+  // After a step: say plainly what happened and what comes next, in front.
+  window.showResult = function ({ icon, title, lines, then }) {
+    overlay('step-result', `${icon || '✅'} ${e(title)}`, '', `<div style="font-size:14.5px;line-height:1.6;color:var(--navy);">${(lines || []).map(l => `<p style="margin:0 0 8px;">${e(l)}</p>`).join('')}</div>`,
+      `<button class="confirm-btn" onclick="document.getElementById('step-result').remove()${then ? `;${then}` : ''}">${e(tr('OK'))}</button>`);
+  };
+  // A payment that needs the card page or a code: take the customer there.
+  window.handlePaymentStep = function (payment, contract) {
+    if (!payment) return false;
+    if (payment.method === 'card' && payment.url) {
+      overlay('checkout', `💳 ${e(tr('Taking you to the secure card page'))}`, '', `<p style="font-size:14.5px;">${e(tr('You\'ll pay on Stripe. When you\'re done you come straight back here.'))}</p>`, `<a class="confirm-btn" style="display:block;text-align:center;text-decoration:none;" href="${e(payment.url)}">${e(tr('Continue'))}</a>`);
+      setTimeout(() => { window.location.href = payment.url; }, 900);
+      return true;
+    }
+    return false; // a code: payways.js shows the code screen
+  };
+
+  // The customer accepts the pro's suggested price.
   window.agreeToPrice = function (contractId) {
     const c = RAW_CONTRACTS[contractId]; if (!c) return;
     const n = names(c);
     const price = currentPrice(c);
-    const cash = c.payMethod === 'cash';
-    const off = TIER_FEE_OFF[(AUTH.user && AUTH.user.membershipTier) || 'free'] || 0;
-    const fee = cash || c.loyaltyPointsRedeemed ? 0 : Math.round(feeFor(price) * (1 - off) * 100) / 100;
     const goods = Number(c.storeGoodsTotal || 0) + (c.storeFeePaidBy === 'customer' ? Number(c.storeFee || 0) : 0);
-    const total = Math.round((price + fee + goods) * 100) / 100;
-    const codeMode = !!(window.PAYWAYS_OPTS && window.PAYWAYS_OPTS.protectedMode === 'code');
-    const next = cash
-      ? tr('The booking is confirmed. You pay the pro in cash, only once the work is done.')
-      : codeMode
-        ? tr('Next you get a payment code in My Bookings. Send the total by mobile money with the code in the reference. Trothen holds it until you say the job is done.')
-        : tr('Your payment is held by Trothen until you say the job is done. If the pro doesn\'t come or something goes wrong, you get it back.');
-    overlay('price-agree', `${e(tr('Accept'))} ${e(first(n.pro))}${e(tr('\'s price?'))}`, e(c.service || ''), `
-      <div class="booking-summary">
-        <div class="summary-row"><span>${e(tr('Agreed price'))}</span><span><strong>${money(price)}</strong></span></div>
-        ${cash ? `<div class="summary-row"><span>${e(tr('Trothen service fee'))}</span><span>${e(tr('None, cash job'))}</span></div>`
-          : `<div class="summary-row"><span>${e(tr('Trothen service fee'))} <small style="color:var(--muted);">(9%, $2.99–$25${off ? `, ${Math.round(off * 100)}% ${e(tr('off for members'))}` : ''})</small></span><span>${money(fee)}</span></div>`}
-        ${goods ? `<div class="summary-row"><span>${e(tr('Goods from the store'))}</span><span>${money(goods)}</span></div>` : ''}
-        <div class="summary-row total"><span>${e(tr(cash ? 'You pay the pro after the job' : 'Total to pay'))}</span><span>${money(cash ? price : total)}</span></div>
-      </div>
-      <div class="ver-note" style="margin-top:10px;">${e(next)}</div>`,
-      `<button class="confirm-btn" onclick="sendAgree(${jsArg(contractId)}, ${price})">${e(tr('Accept and book'))}</button>`);
+    openCheckout({ title: `${tr('Accept')} ${first(n.pro)}${tr('\'s price')}`, sub: c.service, price, cash: c.payMethod === 'cash', goods, onConfirm: async (total) => {
+      try {
+        const r = await apiFetch('POST', `/contracts/${encodeURIComponent(contractId)}/agree`, { amount: price });
+        closeOverlay('checkout');
+        if (handlePaymentStep(r && r.payment, r && r.contract)) return;
+        await refreshAfterPriceChange();
+        const st = r && r.contract && r.contract.status;
+        if (st === 'awaiting_payment') return; // the payment code screen is showing
+        showResult({ title: tr('Booked'), lines: [`${tr('You agreed')} ${money(price)} ${tr('with')} ${first(n.pro)}.`, c.payMethod === 'cash' ? tr('Pay the pro in cash after the work is done.') : tr('Trothen is holding your payment until you say the job is done.'), tr('You\'ll find it in My Bookings.')] });
+      } catch (x) { showToast(x.message || tr('Could not accept this price')); }
+    } });
   };
-  window.sendAgree = async function (contractId, price) {
+  // Pay a price the pro accepted (test payment, or the card page).
+  window.payNow = function (contractId) {
+    const c = RAW_CONTRACTS[contractId]; if (!c) return;
+    const n = names(c);
+    const price = currentPrice(c);
+    const goods = Number(c.storeGoodsTotal || 0) + (c.storeFeePaidBy === 'customer' ? Number(c.storeFee || 0) : 0);
+    openCheckout({ title: tr('Pay to confirm your booking'), sub: c.service, price, cash: false, goods, onConfirm: async (total) => {
+      try {
+        const r = await apiFetch('POST', `/contracts/${encodeURIComponent(contractId)}/pay`, { total });
+        closeOverlay('checkout');
+        if (handlePaymentStep(r && r.payment, r && r.contract)) return;
+        await refreshAfterPriceChange();
+        showResult({ title: tr('Paid'), lines: [`${money(total)} ${tr('paid. Trothen is holding it until you say the job is done.')}`, `${first(n.pro)} ${tr('has been told. Your booking is confirmed.')}`] });
+      } catch (x) {
+        if (x && /payment code/i.test(x.message || '')) { await refreshAfterPriceChange(); if (typeof payWaysShow === 'function') return payWaysShow(contractId); }
+        showToast(x.message || tr('Could not pay'));
+      }
+    } });
+  };
+
+  // ── the price box on each pro's card in "Responses to Your Job" ──────────
+  window.candidateDealHTML = function (c, job, canAct) {
+    const p = c.provider || {}; const fn = first(p.name); const id = jsArg(p.id);
+    const o = c.offer;
+    if (o) RAW_CONTRACTS[o.id] = { ...(RAW_CONTRACTS[o.id] || {}), ...o };
+    const box = (inner, color) => `<div style="margin-top:12px;padding:12px 14px;border:2px solid ${color || 'var(--teal)'};border-radius:10px;background:var(--offwhite, #FAF8F4);">${inner}</div>`;
+    const head = (t) => `<div style="font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--slate);margin-bottom:6px;">${e(t)}</div>`;
+    if (o && o.status === 'pending_agreement') {
+      return box(`${head(tr('Agreeing the price'))}${priceTalkHTML(o.id, 'customer')}<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">${priceActionsHTML(o.id, 'customer')}</div><div style="font-size:12.5px;color:var(--muted);margin-top:6px;">${e(tr('Nothing is paid until you both agree one price.'))}</div>`);
+    }
+    if (o && o.status === 'awaiting_payment') {
+      const total = Math.round(((o.amount || 0) + (o.serviceFee || 0)) * 100) / 100;
+      return box(`${head(tr('Price agreed'))}<div style="font-size:20px;font-weight:800;color:var(--navy);">${money(o.laborAmount != null ? o.laborAmount : o.amount)}</div><div style="font-size:13.5px;margin:4px 0 10px;">${e(tr('Pay to confirm the booking. Nothing is booked until you pay.'))}</div><button class="confirm-btn" onclick="payNow(${jsArg(o.id)})">💳 ${e(tr('Pay'))} ${money(total)}</button>`, 'var(--gold, #C9A227)');
+    }
+    if (o && o.status === 'pending_provider_confirmation') return box(`${head(tr('Paid'))}<div style="font-size:14px;">${e(tr('You paid'))} ${money(o.laborAmount != null ? o.laborAmount : o.amount)}. ${e(tr('Waiting for'))} ${e(fn)} ${e(tr('to confirm. If they don\'t, you get your money back.'))}</div>`);
+    if (o && o.status === 'active') return box(`${head(tr('Booked'))}<div style="font-size:14px;">✅ ${e(tr('Booked with'))} ${e(fn)} ${e(tr('at'))} ${money(o.laborAmount != null ? o.laborAmount : o.amount)}. ${e(tr('See it in My Bookings.'))}</div>`);
+    if (o && o.status === 'completed') return box(`${head(tr('Done'))}<div style="font-size:14px;">${e(tr('This job is done.'))}</div>`);
+    if (!canAct) return '';
+    if (c.cashReady === false) return box(`<div style="font-size:13.5px;">${e(fn)} ${e(tr('can\'t take cash jobs at the moment, so you can\'t hire them for this cash job. Choose another pro, or post the job again with "Protected by Trothen".'))}</div>`, 'var(--border)');
+    const offerRow = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;"><span style="font-size:13.5px;">${e(tr(c.price ? 'Or offer a different price:' : 'Offer a price:'))}</span><input class="form-input" type="number" min="1" step="0.01" style="width:120px;" id="job-offer-amount-${e(p.id)}" placeholder="$"/><button class="btn-sm btn-sm-outline" onclick="sendJobOffer(${id})">${e(tr('Send offer'))}</button></div>`;
+    if (c.price) {
+      return box(`${head(fn + tr('\'s price'))}<div style="font-size:24px;font-weight:800;color:var(--navy);">${money(c.price)}</div>${c.priceNote ? `<div style="font-size:13px;color:var(--slate);">${e(c.priceNote)}</div>` : ''}
+        <button class="confirm-btn" style="margin-top:10px;" onclick="acceptQuote(${id})">${e(tr(job && job.payMethod === 'cash' ? 'Accept and book' : 'Accept and pay'))} ${money(c.price)}</button>${offerRow}`);
+    }
+    return box(`${head(tr('Price'))}<div style="font-size:14px;">${e(fn)} ${e(tr('hasn\'t given a price yet.'))}</div><button class="btn-sm btn-sm-primary" style="margin-top:8px;" onclick="askForPrice(${id})">${e(tr('Ask'))} ${e(fn)} ${e(tr('for a price'))}</button>${offerRow}`, 'var(--border)');
+  };
+  window.acceptQuote = function (providerId) {
+    const c = CANDIDATE_ROWS[providerId]; const job = CANDIDATE_JOB; if (!c || !job) return;
+    const fn = first(c.provider.name);
+    openCheckout({ title: `${tr('Book')} ${fn} ${tr('at their price')}`, sub: job.description, price: Number(c.price), priceLabel: fn + tr('\'s price'), cash: job.payMethod === 'cash', onConfirm: async () => {
+      try {
+        const r = await apiFetch('POST', `/jobs/${encodeURIComponent(job.id)}/select-provider`, { providerId });
+        closeOverlay('checkout');
+        if (handlePaymentStep(r && r.payment, r && r.contract)) return;
+        if (r && r.contract && r.contract.status === 'awaiting_payment') return; // the payment code screen is showing
+        await viewJobCandidates(job.id);
+        showResult({ title: job.payMethod === 'cash' ? tr('Booking sent') : tr('Paid'), lines: [
+          job.payMethod === 'cash' ? `${tr('You booked')} ${fn} ${tr('at')} ${money(c.price)}, ${tr('paid in cash after the job.')}` : `${tr('You paid for')} ${fn} ${tr('at')} ${money(c.price)}. ${tr('Trothen is holding the money until you say the job is done.')}`,
+          `${fn} ${tr('has been asked to confirm. If they don\'t, the job goes to the next pro, or you get your money back.')}`] });
+      } catch (x) { showToast(x.message || tr('Could not book')); }
+    } });
+  };
+  window.sendJobOffer = async function (providerId) {
+    const c = CANDIDATE_ROWS[providerId]; const job = CANDIDATE_JOB; if (!c || !job) return;
+    const amount = Number((el('job-offer-amount-' + providerId) || {}).value);
+    if (!(amount >= 1)) return showToast(tr('Type your price first'));
+    const fn = first(c.provider.name);
     try {
-      const r = await apiFetch('POST', `/contracts/${encodeURIComponent(contractId)}/agree`, { amount: price });
-      closeOverlay('price-agree');
-      const st = r && r.contract && r.contract.status;
-      showToast(st === 'awaiting_payment' ? tr('Agreed. Your payment code is in My Bookings.') : tr('Agreed. Your booking is confirmed.'));
-      await refreshAfterPriceChange();
-    } catch (x) { showToast(x.message || tr('Could not accept this price')); }
+      await apiFetch('POST', `/jobs/${encodeURIComponent(job.id)}/select-provider`, { providerId, amount });
+      await viewJobCandidates(job.id);
+      showResult({ icon: '📨', title: tr('Offer sent'), lines: [`${tr('You offered')} ${fn} ${money(amount)}.`, `${fn} ${tr('can accept it, suggest a different price, or decline. You\'ll see the answer right here, straight away.')}`, tr('Nothing is paid until you both agree one price.')] });
+    } catch (x) { showToast(x.message || tr('Could not send your offer')); }
   };
+  window.askForPrice = async function (providerId) {
+    const c = CANDIDATE_ROWS[providerId]; const job = CANDIDATE_JOB; if (!c || !job) return;
+    try {
+      await apiFetch('POST', '/messages', { toId: providerId, text: `Hi ${first(c.provider.name)}, what is your price for this job? Please send it with "Send my price" so I can accept it.`, jobId: job.id });
+      showToast(tr('Asked. You\'ll see their price here as soon as they send it.'));
+      await viewJobCandidates(job.id);
+    } catch (x) { showToast(x.message || tr('Could not send')); }
+  };
+
+  // ── the pro's chat window: a price box above the messages ───────────────
+  window.drawProPriceBox = function (match) {
+    const slot = el('job-negotiation-price'); if (!slot) return;
+    if (!match) { slot.innerHTML = ''; return; }
+    if (match.offerContractId) {
+      slot.innerHTML = `<div class="ver-note" style="margin-bottom:10px;">💬 ${e(tr('The customer offered you a price for this job.'))} <a style="color:var(--teal);font-weight:600;cursor:pointer;" onclick="document.getElementById('job-negotiation-modal').classList.remove('open');selectProviderSection('contracts')">${e(tr('Answer it in My Contracts'))}</a></div>`;
+      return;
+    }
+    if (match.matchStatus && match.matchStatus !== 'interested') { slot.innerHTML = ''; return; }
+    slot.innerHTML = `<div style="border:2px solid var(--teal);border-radius:10px;padding:10px 12px;margin-bottom:10px;">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--slate);margin-bottom:4px;">${e(tr('Your price for this job'))}</div>
+      ${match.price ? `<div style="font-size:20px;font-weight:800;color:var(--navy);">${money(match.price)}</div>` : `<div style="font-size:13.5px;color:var(--slate);">${e(tr('Not sent yet. Send it here, not as a chat message, so the customer can accept it with one press.'))}</div>`}
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;"><input class="form-input" type="number" min="1" step="0.01" style="width:130px;" id="pp-price" placeholder="$"/><input class="form-input" style="flex:1;min-width:140px;" maxlength="300" id="pp-note" placeholder="${e(tr('What it covers (optional)'))}"/><button class="btn-sm btn-sm-primary" onclick="sendProPriceFromChat(${jsArg(match.id)})">${e(tr(match.price ? 'Change my price' : 'Send my price'))}</button></div></div>`;
+  };
+  window.sendProPriceFromChat = async function (matchId) {
+    const price = Number((el('pp-price') || {}).value);
+    if (!(price >= 1)) return showToast(tr('Enter a price of at least $1'));
+    const note = ((el('pp-note') || {}).value || '').trim();
+    try {
+      await apiFetch('POST', `/matches/${encodeURIComponent(matchId)}/price`, { price, note: note || undefined });
+      showToast(tr('Price sent. The customer sees it now and can accept it.'));
+      await loadProviderData();
+      const m = (providerData.matches || []).find(x => x.id === matchId); drawProPriceBox(m);
+    } catch (x) { showToast(x.message || tr('Could not send your price')); }
+  };
+
+  // ── coming back from the card page ───────────────────────────────────────
+  (function returnFromCard() {
+    const q = new URLSearchParams(window.location.search);
+    const paid = q.get('paid'), cancelled = q.get('paycancel');
+    if (!paid && !cancelled) return;
+    try { history.replaceState(null, '', window.location.pathname); } catch (x) {}
+    let tries = 0;
+    const wait = setInterval(async () => {
+      if (!(AUTH && AUTH.token && AUTH.user) && tries++ < 40) return;
+      clearInterval(wait);
+      if (!AUTH.token) return;
+      if (cancelled) return showResult({ icon: '↩️', title: tr('Payment not finished'), lines: [tr('Nothing was charged. You can pay any time from My Bookings with Pay now, until the booking runs out.')], then: "goToCustomerDashboard('bookings')" });
+      let r = null;
+      for (let i = 0; i < 6 && !(r && r.paid); i++) { try { r = await apiFetch('GET', `/customer-payments/${encodeURIComponent(paid)}/card-status`); } catch (x) {} if (!(r && r.paid)) await new Promise(res => setTimeout(res, 1500)); }
+      if (r && r.paid) showResult({ title: tr('Payment received'), lines: [`${tr('Booking')} #${r.bookingNumber || ''}: ${tr('your card payment went through. Trothen is holding it')} ${tr(r.isRide ? 'until you confirm you arrived.' : 'until you say the job is done.')}`, r.bookingStatus === 'pending_provider_confirmation' ? tr('Your pro has been asked to confirm.') : tr('Your booking is confirmed.')], then: r.isRide ? "goToCustomerDashboard('rides')" : "goToCustomerDashboard('bookings')" });
+      else showResult({ icon: '⏳', title: tr('Checking your payment'), lines: [tr('Stripe hasn\'t confirmed it yet. This page updates by itself as soon as it does. Nothing is booked until it\'s confirmed.')], then: "goToCustomerDashboard('bookings')" });
+    }, 250);
+  })();
 
   async function refreshAfterPriceChange() {
     const role = AUTH.user && AUTH.user.role;

@@ -1109,6 +1109,24 @@ const MATCH_STATUS_LABEL = {
   not_selected: 'Not selected',
 };
 
+// v124: when a message was sent, in the reader's own time: "Today, 4:32 PM",
+// "Yesterday, 9:10 AM", "Oct 28, 4:32 PM", or with the year if it isn't this
+// year. Hovering shows the full date and time.
+function msgTimeHTML(iso) {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(d)) return '';
+  const now = new Date();
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((day(now) - day(d)) / 86400000);
+  const clock = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const when = diffDays === 0 ? `${tr('Today')}, ${clock}`
+    : diffDays === 1 ? `${tr('Yesterday')}, ${clock}`
+    : d.getFullYear() === now.getFullYear() ? `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${clock}`
+    : `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}, ${clock}`;
+  const full = d.toLocaleString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return `<span class="msg-time" title="${escapeHtml(full)}" style="font-size:11.5px;color:var(--muted, #7A808C);font-weight:400;white-space:nowrap;">${escapeHtml(when)}</span>`;
+}
+
 async function viewJobCandidates(jobId) {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   CURRENT_JOB_CANDIDATES_JOBID = jobId;
@@ -1131,7 +1149,8 @@ function renderJobCandidates(data) {
   const { job, candidates } = data;
   document.getElementById('job-candidates-sub').textContent = job.description;
   if (job.status !== 'open') {
-    document.getElementById('job-candidates-body').innerHTML = `<div style="padding:20px 0;text-align:center;color:var(--slate);">This job has already been ${job.status} — responses are shown for reference only.</div>` + candidates.map(candidateRowHTML).join('');
+    CANDIDATE_ROWS = {}; for (const c of candidates) if (c.provider) CANDIDATE_ROWS[c.provider.id] = c; CANDIDATE_JOB = job; // v125
+    document.getElementById('job-candidates-body').innerHTML = `<div style="padding:12px 0;text-align:center;color:var(--slate);">${job.status === 'matched' ? 'You agreed a price with a pro for this job. Other pros can no longer be hired for it.' : `This job has already been ${job.status} — responses are shown for reference only.`}</div>` + candidates.map(c => candidateRowHTML(c, job)).join('');
     return;
   }
   if (!candidates.length) {
@@ -1139,9 +1158,12 @@ function renderJobCandidates(data) {
     return;
   }
   document.getElementById('job-candidates-body').innerHTML = candidates.map(c => candidateRowHTML(c, job)).join('');
-  CANDIDATE_PRICES = {}; for (const c of candidates) if (c.provider) CANDIDATE_PRICES[c.provider.id] = c.price || null; // v122
+  CANDIDATE_PRICES = {}; CANDIDATE_ROWS = {}; for (const c of candidates) if (c.provider) { CANDIDATE_PRICES[c.provider.id] = c.price || null; CANDIDATE_ROWS[c.provider.id] = c; } // v122, v125
+  CANDIDATE_JOB = job;
 }
 let CANDIDATE_PRICES = {};
+let CANDIDATE_ROWS = {}; // v125: each pro's row, for the price box
+let CANDIDATE_JOB = null;
 
 function candidateRowHTML(c, job) {
   const p = c.provider;
@@ -1158,23 +1180,16 @@ function candidateRowHTML(c, job) {
         </div>
         <span class="badge ${c.status === 'interested' ? 'badge-success' : c.status === 'accepted' ? 'badge-success' : c.status === 'declined' || c.status === 'not_selected' ? 'badge-neutral' : 'badge-warn'}">${MATCH_STATUS_LABEL[c.status] || c.status}</span>
       </div>
-      ${c.price ? `<div style="margin-top:10px;padding:10px 12px;border:2px solid var(--teal);border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;"><div><div style="font-size:12.5px;color:var(--slate);">${escapeHtml(p.name.split(' ')[0])}${escapeHtml(tr('\'s price'))}</div><div style="font-size:22px;font-weight:800;color:var(--navy);">$${Number(c.price).toFixed(2)}</div>${c.priceNote ? `<div style="font-size:13px;color:var(--slate);">${escapeHtml(c.priceNote)}</div>` : ''}</div><div style="font-size:12.5px;color:var(--muted);max-width:220px;">${escapeHtml(tr(job && job.payMethod === 'cash' ? 'Paid to the pro in cash after the job. No Trothen fee.' : 'Plus Trothen\'s service fee. Held by Trothen until you say the job is done.'))}</div></div>`
-        : `<div style="margin-top:10px;font-size:13px;color:var(--slate);">${escapeHtml(tr('No price yet. Message them to ask, or offer an amount below.'))}</div>`}
       ${c.coverLetter ? `<div style="margin-top:10px;padding:10px 12px;background:var(--cream, #FAF8F4);border-radius:8px;font-size:13.5px;color:var(--navy);"><strong>Cover letter:</strong> ${escapeHtml(c.coverLetter)}</div>` : ''}
-      ${c.messages.length ? `<div style="margin-top:10px;max-height:160px;overflow-y:auto;border-top:1px solid var(--border);padding-top:10px;">
-        ${c.messages.map(m => `<div style="margin-bottom:8px;font-size:13.5px;"><strong style="color:var(--navy);">${m.fromId === p.id ? escapeHtml(p.name) : 'You'}:</strong> ${escapeHtml(m.text)}</div>`).join('')}
+      ${c.messages.length ? `<div class="cand-chat" style="margin-top:10px;max-height:200px;overflow-y:auto;border-top:1px solid var(--border);padding-top:10px;">
+        ${c.messages.map(m => `<div style="margin-bottom:8px;font-size:13.5px;"><strong style="color:var(--navy);">${m.fromId === p.id ? escapeHtml(p.name) : 'You'}:</strong> ${escapeHtml(m.text)} <span style="margin-left:4px;">${msgTimeHTML(m.createdAt)}</span></div>`).join('')}
       </div>` : ''}
       ${canAct ? `
       <div style="display:flex;gap:8px;margin-top:10px;">
-        <input class="form-input" style="flex:1;" id="job-msg-input-${p.id}" placeholder="Message ${escapeHtml(p.name.split(' ')[0])} to negotiate…" onkeydown="if(event.key==='Enter')sendJobNegotiationMessage('${p.id}')"/>
+        <input class="form-input" style="flex:1;" id="job-msg-input-${p.id}" placeholder="Message ${escapeHtml(p.name.split(' ')[0])}…" onkeydown="if(event.key==='Enter')sendJobNegotiationMessage('${p.id}')"/>
         <button class="btn-sm btn-sm-outline" onclick="sendJobNegotiationMessage('${p.id}')">Send</button>
-      </div>
-      ${c.cashReady === false
-        ? `<div class="ver-note" style="margin-top:10px;">${escapeHtml(p.name.split(' ')[0])} ${escapeHtml(tr('can\'t take cash jobs at the moment, so you can\'t hire them for this cash job. Choose another pro, or post the job again with "Protected by Trothen".'))}</div>`
-        : `<div style="display:flex;gap:8px;margin-top:10px;">
-        <input class="form-input" type="number" min="1" step="0.01" style="width:120px;" id="job-hire-amount-${p.id}" placeholder="$ Amount" value="${c.price ? Number(c.price).toFixed(2) : ''}" oninput="const b=document.getElementById('job-hire-btn-${p.id}');if(b)b.textContent='Hire ${escapeHtml(p.name.split(' ')[0]).replace(/'/g, '')}'+(this.value?' for $'+Number(this.value).toFixed(2):'')"/>
-        <button class="btn-sm btn-sm-primary" style="flex:1;" id="job-hire-btn-${p.id}" onclick="hireProviderForJob('${p.id}')">Hire ${escapeHtml(p.name.split(' ')[0])}${c.price ? ` for $${Number(c.price).toFixed(2)}` : ''}</button>
-      </div>`}` : ''}
+      </div>` : ''}
+      ${typeof candidateDealHTML === 'function' ? candidateDealHTML(c, job, canAct) : ''}
     </div>`;
 }
 
@@ -4052,7 +4067,7 @@ async function loadMessageThread() {
   try {
     const { messages } = await apiFetch('GET', `/messages/${activeMessageContact.id}`);
     body.innerHTML = messages.length
-      ? messages.map(m => `<div class="msg-bubble ${m.fromId === AUTH.user.id ? 'me' : 'them'}">${escapeHtml(m.text)}</div>`).join('')
+      ? messages.map(m => `<div class="msg-bubble ${m.fromId === AUTH.user.id ? 'me' : 'them'}">${escapeHtml(m.text)}<div style="text-align:${m.fromId === AUTH.user.id ? 'right' : 'left'};margin-top:3px;line-height:1;opacity:.85;">${msgTimeHTML(m.createdAt)}</div></div>`).join('')
       : `<div style="text-align:center;color:var(--slate);font-size:13.5px;padding:20px;">No messages yet — say hello.</div>`;
     body.scrollTop = body.scrollHeight;
   } catch (e) {
@@ -4620,7 +4635,9 @@ function responseDeadlineNote(b) {
 function bookingActionHTML(b) {
   const downloadBtn = `<button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${b.id}')" title="Download a PDF record of this contract">📄 PDF</button>`;
   if (b.status === 'awaiting_payment') { // v119: a protected booking waiting for the customer's mobile money payment
-    return `<button class="btn-sm btn-sm-primary" onclick="payWaysShow('${b.id}')">💳 ${escapeHtml(tr('Pay now'))}</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">${escapeHtml(tr('Cancel'))}</button>`;
+    const rawB = typeof RAW_CONTRACTS === 'object' ? RAW_CONTRACTS[b.id] : null; // v125: a code payment, or a test-mode Pay
+    const payFn = rawB && rawB.escrow && rawB.escrow.paidBy === 'code' ? 'payWaysShow' : 'payNow';
+    return `<button class="btn-sm btn-sm-primary" onclick="${payFn}('${b.id}')">💳 ${escapeHtml(tr('Pay now'))}</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">${escapeHtml(tr('Cancel'))}</button>`;
   }
   if (b.status === 'pending_agreement') { // v122: the price goes back and forth until one side accepts
     if (typeof priceActionsHTML === 'function') return `${priceActionsHTML(b.id, 'customer')} <button class="btn-sm btn-sm-ghost" onclick="selectCustomerSection('messages');setTimeout(()=>selectMessageContact('${b.providerId}'),50)">💬 Discuss</button>${priceTalkHTML(b.id, 'customer')}`;
@@ -6125,6 +6142,7 @@ async function loadProviderData() {
       materialsOnHand: (m.job && m.job.materialsOnHand) || null,
       materialsCost: (m.job && m.job.materialsCost) != null ? m.job.materialsCost : null,
       price: m.price || null, priceNote: m.priceNote || null, // v122: the pro's own price for this job
+      offerContractId: m.offerContractId || null, matchStatus: m.status, // v125
     }));
     resumeLiveTripIfAny(contracts); // v93
     cacheRawContracts(contracts); resumeCarryIfAny(contracts); // v105
@@ -7251,6 +7269,7 @@ function messageCustomerAboutJob(customerId, jobId) {
   document.getElementById('job-negotiation-title').textContent = `Message ${match ? match.customer : 'Customer'}`;
   document.getElementById('job-negotiation-sub').textContent = match ? match.service : '';
   document.getElementById('job-negotiation-modal').classList.add('open');
+  if (typeof drawProPriceBox === 'function') drawProPriceBox(match); // v125
   loadJobNegotiationThread();
 }
 
@@ -7266,7 +7285,7 @@ async function loadJobNegotiationThread() {
   try {
     const { messages } = await apiFetch('GET', `/messages/${CURRENT_JOB_NEGOTIATION.customerId}?jobId=${encodeURIComponent(CURRENT_JOB_NEGOTIATION.jobId)}`);
     body.innerHTML = messages.length
-      ? messages.map(m => `<div class="msg-bubble ${m.fromId === AUTH.user.id ? 'me' : 'them'}">${escapeHtml(m.text)}</div>`).join('')
+      ? messages.map(m => `<div class="msg-bubble ${m.fromId === AUTH.user.id ? 'me' : 'them'}">${escapeHtml(m.text)}<div style="text-align:${m.fromId === AUTH.user.id ? 'right' : 'left'};margin-top:3px;line-height:1;opacity:.85;">${msgTimeHTML(m.createdAt)}</div></div>`).join('')
       : `<div style="text-align:center;color:var(--slate);font-size:13.5px;padding:20px;">No messages yet — say hello and start negotiating a price.</div>`;
     body.scrollTop = body.scrollHeight;
   } catch (e) {
@@ -7304,6 +7323,8 @@ function contractsTable(list) {
           ? `<button class="btn-sm btn-sm-primary" onclick="openTripTracking('${c.id}')">${escapeHtml(tr('Trip map'))}</button> <button class="btn-sm btn-sm-outline" onclick="markContractArrived('${c.id}')">📍 Arrived</button> `
           : `<span style="font-size:12.5px;color:var(--slate);margin-right:6px;">🚗 On the way · 📍 Arrived</span>`;
       actions = `${gpsButtons}<button class="btn-sm btn-sm-outline" onclick="openScopeChangeRequestForm('${c.id}')">➕ Request Additional Payment</button> <button class="btn-sm btn-sm-outline" onclick="cancelProviderContract('${c.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${c.id}')">Report a Problem</button>`;
+    } else if (c.status === 'awaiting_payment') { // v125
+      actions = `<span style="font-size:13px;color:var(--slate);">${escapeHtml(tr('Price agreed. Waiting for the customer to pay. You\'ll be told the moment they do.'))}</span>`;
     } else if (c.status === 'expired') {
       actions = `<span style="font-size:13px;color:var(--slate);">You didn't respond in time — automatically cancelled</span>`;
     }
@@ -12617,12 +12638,16 @@ async function loadSystemStatusBanner() {
   try {
     const st = await apiFetch('GET', '/system-status');
     const parts = [];
-    if (st.cardPaymentsLive) {
-      // Nothing left to warn about for payments.
-    } else if (st.liberiaMoMoLive) {
-      parts.push('Card payments aren\'t live yet — card payments and payouts are simulated. Liberia mobile money payments are real.');
+    // v125: say what is really true about payments right now.
+    const acct = Array.isArray(st.accountPaymentCountries) ? st.accountPaymentCountries : [];
+    if (st.testPayments) {
+      parts.push('TEST SITE: payments here are test payments and no real money moves.');
+    } else if (st.cardPaymentsLive) {
+      // Real card payments: nothing to warn about.
+    } else if (acct.length) {
+      parts.push(`Paying through Trothen works by sending money to Trothen's account in ${acct.join(', ')}. Elsewhere, jobs are paid to the pro in cash after the work for now.`);
     } else {
-      parts.push('Payments aren\'t live yet — every payment and payout is simulated and no real money moves.');
+      parts.push('Paying through Trothen isn\'t switched on yet, so jobs are paid to the pro in cash after the work.');
     }
     if (!st.emailLive) parts.push('Email sending isn\'t connected, so account codes appear on-screen instead of being emailed.');
     if (!st.smsLive) parts.push('Text-message codes aren\'t connected, so phone codes appear on-screen.');

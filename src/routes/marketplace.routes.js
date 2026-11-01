@@ -84,7 +84,9 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   // customer is given a code to pay Trothen's mobile money number. Nothing
   // is held until the finance team confirms the money arrived.
   const custPay = require('../customer-payments');
-  const codeFields = contract.payMethod === 'protected' && await custPay.usesCodes(customer && customer.country) ? await custPay.codeFieldsFor(contract, customer) : null;
+  const escrowId = `esc_${nanoid(10)}`;
+  // v125: a code, a card checkout page, nothing (test sites), or an error where no real payment exists.
+  const codeFields = contract.payMethod === 'protected' ? await custPay.paymentFieldsFor(contract, customer, escrowId) : null;
 
   let liberiaMoMoReference = null;
   if (!codeFields && customer && customer.country === 'Liberia') {
@@ -108,7 +110,7 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   const advance = Math.min(contract.materialsAdvance || 0, contract.amount);
 
   const escrow = {
-    id: `esc_${nanoid(10)}`,
+    id: escrowId,
     contractId: contract.id,
     amount: contract.amount, // canonical USD amount — always the accounting figure of record
     serviceFee: contract.serviceFee || 0, // tracked separately — real revenue tied to this booking, distinct from the provider's commission
@@ -995,6 +997,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
     createdAt: new Date().toISOString(),
   };
   // v119: a cash job must be allowed in the customer's country.
+  if (job.payMethod === 'protected' && (await require('../customer-payments').optionsFor(customer.country)).protectedMode === 'none') return res.status(400).json({ code: 'PROTECTED_UNAVAILABLE', error: require('../customer-payments').noProtectedError().message }); // v125
   if (job.payMethod === 'cash' && !(await require('../customer-payments').optionsFor(customer.country)).cashJobs) return res.status(400).json({ code: 'CASH_OFF', error: 'Cash jobs aren\'t available in your country right now. Choose a protected payment.' });
   await db.insert('jobs', job);
 
@@ -1286,7 +1289,11 @@ router.get('/jobs/:id/candidates', requireAuth, requireRole('customer'), async (
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     // v121: on a cash job, whether this pro can take it at the job's budget (yes/no only).
     const cashReady = job.payMethod === 'cash' ? (await require('../tokens').cashReady(provider, m.price || parseBudgetAmount(job.budget, 100))).ok : undefined;
-    return { matchId: m.id, status: m.status, score: m.score, sameCommunity: m.sameCommunity, coverLetter: m.coverLetter || null, price: m.price || null, priceAt: m.priceAt || null, priceNote: m.priceNote || null, provider: publicProvider(provider), messages, cashReady };
+    // v125: the price being agreed with this pro, if any (latest first).
+    const offers = (await db.filter('contracts', c => c.jobId === job.id && c.providerId === m.providerId && c.customerId === req.user.sub)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    const o = offers.find(c => ['pending_agreement', 'awaiting_payment', 'pending_provider_confirmation', 'active', 'completed'].includes(c.status)) || null;
+    const offer = o ? { id: o.id, bookingNumber: o.bookingNumber, status: o.status, amount: o.amount, laborAmount: o.laborAmount, serviceFee: o.serviceFee, payMethod: o.payMethod, negotiation: o.negotiation || null, waitingOn: o.waitingOn || null, providerName: provider.name, customerName: null, service: o.service, providerResponseDeadline: o.providerResponseDeadline, paymentDueAt: o.paymentDueAt || null, createdAt: o.createdAt, storeGoodsTotal: o.storeGoodsTotal || 0, storeFee: o.storeFee || 0, storeFeePaidBy: o.storeFeePaidBy || null, loyaltyPointsRedeemed: o.loyaltyPointsRedeemed || 0 } : null;
+    return { matchId: m.id, status: m.status, score: m.score, sameCommunity: m.sameCommunity, coverLetter: m.coverLetter || null, price: m.price || null, priceAt: m.priceAt || null, priceNote: m.priceNote || null, provider: publicProvider(provider), messages, cashReady, offer };
   }));
   res.json({ job, candidates: candidates.filter(Boolean) });
 });
@@ -1319,6 +1326,14 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
     if (typeof amount !== 'number' || amount <= 0) return res.status(400).json({ error: 'Amount must be a positive number' });
     finalAmount = amount;
   }
+
+  // v125: one way to agree a price everywhere. Accepting the pro's own price
+  // books and pays now (below). Any other amount, or a pro who hasn't given a
+  // price, starts the same back-and-forth as a "Make an Offer" booking: the
+  // pro can accept, suggest a price or decline, and nothing is paid until a
+  // price is agreed.
+  const acceptingQuote = !!match.price && (amount === undefined || Math.abs(amount - match.price) < 0.005);
+  if (!acceptingQuote) return startJobOffer(req, res, { job, match, provider, amount: finalAmount, note: (req.body || {}).note });
 
   // The actual negotiation — every message either side sent about this
   // specific job — frozen onto the contract right now, exactly as it
@@ -1386,7 +1401,8 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
       return res.status(409).json({ code: 'PRO_CASH_NOT_READY', error: `${String(provider.name || 'This pro').split(' ')[0]} can't take cash jobs at the moment. Choose another pro, or post the job again with "Protected by Trothen".` });
     }
   }
-  if (contract.payMethod === 'protected' && payOpts.protectedMode === 'code') { contract.statusAfterPayment = contract.status; contract.status = 'awaiting_payment'; }
+  if (contract.payMethod === 'protected' && payOpts.protectedMode === 'none') return res.status(400).json({ code: 'PROTECTED_UNAVAILABLE', error: custPay.noProtectedError().message });
+  if (contract.payMethod === 'protected' && ['code', 'card'].includes(payOpts.protectedMode)) { contract.statusAfterPayment = contract.status; contract.status = 'awaiting_payment'; }
   // Charging the customer happens FIRST, before this contract exists on
   // record — the same money-ordering fix applied to store orders in v110.
   // fundEscrowForContract can genuinely fail (today, only a Liberian
@@ -1399,7 +1415,7 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
   await db.update('jobs', job.id, { status: 'matched' });
   await db.update('matches', match.id, { status: 'accepted' });
   if (contract.status === 'awaiting_payment') {
-    await notify(req.user.sub, '💳', `To book "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}", send ${escrow.dueCurrency} ${Number(escrow.amountDue).toLocaleString()} by mobile money to ${escrow.payTo.map(a => `${a.network} ${a.number} (${a.accountName})`).join(' or ')} with code ${escrow.paymentCode} in the reference. The pro is asked to confirm once we see your payment.`, 'bookingUpdates', { section: 'bookings' });
+    await notify(req.user.sub, '💳', `To book "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}", ${custPay.howToPayWords(escrow)}`, 'bookingUpdates', { section: 'bookings' }); // v125
     return res.status(201).json({ contract, escrow, payment: custPay.publicPayment(escrow) });
   }
 
@@ -1422,6 +1438,76 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
 // Called once a job-originated hire is actually confirmed (see
 // handleRespondOffer): this is the real "job's filled" moment, so this is
 // when other candidates who responded actually get dismissed and told.
+// v125: the customer offers a price to a pro who answered their posted job.
+async function startJobOffer(req, res, { job, match, provider, amount, note }) {
+  const providerId = provider.id;
+  const open = await db.find('contracts', c => c.jobId === job.id && c.providerId === providerId && ['pending_agreement', 'awaiting_payment', 'pending_provider_confirmation', 'active'].includes(c.status));
+  if (open) return res.status(409).json({ code: 'OFFER_OPEN', error: `You already have a price going with ${String(provider.name).split(' ')[0]} for this job. Answer it on their card.` });
+  const customer = await db.find('users', u => u.id === req.user.sub);
+  const custPay = require('../customer-payments');
+  const payOpts = await custPay.optionsFor(customer && customer.country);
+  const payMethod = job.payMethod === 'cash' ? 'cash' : 'protected';
+  if (payMethod === 'cash' && !payOpts.cashJobs) return res.status(400).json({ code: 'CASH_OFF', error: 'Cash jobs aren\'t available in your country right now. Post the job again with a protected payment.' });
+  if (payMethod === 'protected' && payOpts.protectedMode === 'none') return res.status(400).json({ code: 'PROTECTED_UNAVAILABLE', error: custPay.noProtectedError().message });
+  if (payMethod === 'cash') {
+    const tokensMod = require('../tokens');
+    const check = await tokensMod.cashReady(provider, amount);
+    if (!check.ok) {
+      await tokensMod.nudgeCashNotReady(provider, check, amount);
+      return res.status(409).json({ code: 'PRO_CASH_NOT_READY', error: `${String(provider.name || 'This pro').split(' ')[0]} can't take cash jobs at the moment. Choose another pro, or post the job again with "Protected by Trothen".` });
+    }
+  }
+  const { feeDiscountForTier } = require('../membership');
+  const fee = payMethod === 'cash' ? 0 : Math.round(computeServiceFee(amount) * (1 - feeDiscountForTier(customer && customer.membershipTier)) * 100) / 100;
+  const { getSetting, computeResponseWindowHours } = require('../platform-settings');
+  const hours = computeResponseWindowHours({ now: new Date(), jobDateTime: null, tiers: await getSetting('bookingResponseTiers'), categoryOverrideHours: null });
+  const cleanNote = typeof note === 'string' && note.trim() ? note.trim().slice(0, 300) : null;
+  const now = new Date().toISOString();
+  const contract = {
+    id: `ct_${nanoid(10)}`,
+    bookingNumber: await generateBookingNumber(),
+    customerId: req.user.sub,
+    providerId,
+    jobId: job.id,
+    service: job.description,
+    jobLocation: job.jobLocation || null,
+    landmark: job.landmark || null,
+    address: job.landmark || null,
+    amount, laborAmount: amount, serviceFee: fee,
+    payMethod,
+    payCurrency: job.payCurrency === 'local' ? 'local' : 'usd',
+    photoUrls: job.photoUrls || [],
+    materialsOnHand: job.materialsOnHand || null,
+    status: 'pending_agreement',
+    negotiation: [{ by: 'customer', amount, note: cleanNote, at: now }],
+    waitingOn: 'provider',
+    signedAt: null,
+    providerResponseDeadline: new Date(Date.now() + hours * 60 * 60 * 1000).toISOString(),
+    createdAt: now,
+  };
+  await db.insert('contracts', contract);
+  await db.update('matches', match.id, { offerContractId: contract.id });
+  await notify(providerId, '💬', `${customer ? customer.name : 'The customer'} offers $${amount.toFixed(2)} for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}"${match.price ? ` (you asked $${Number(match.price).toFixed(2)})` : ''}.${cleanNote ? ` "${cleanNote}"` : ''} Open My Contracts to accept it, suggest a different price, or decline.`, null, { section: 'contracts' });
+  return res.status(201).json({ contract, negotiating: true });
+}
+
+// v125: when a price for a posted job is agreed, the job is taken: the other
+// pros are told, and any other price still being discussed for it is closed.
+async function settleJobAfterAgreement(contract) {
+  if (!contract || !contract.jobId) return;
+  const job = await db.find('jobs', j => j.id === contract.jobId);
+  if (!job) return;
+  const match = await db.find('matches', m => m.jobId === job.id && m.providerId === contract.providerId);
+  if (job.status === 'open') await db.update('jobs', job.id, { status: 'matched' });
+  if (match) await db.update('matches', match.id, { status: 'accepted' });
+  await finalizeJobSelection(job, match ? match.id : null);
+  const others = await db.filter('contracts', c => c.jobId === job.id && c.id !== contract.id && c.status === 'pending_agreement');
+  for (const o of others) {
+    await db.update('contracts', o.id, { status: 'cancelled', cancelledByRole: 'system', cancelReason: 'The customer agreed a price with another pro', cancelledAt: new Date().toISOString() });
+    await notify(o.providerId, '📋', `The customer agreed a price with another pro for "${o.service}", so your price talk for it has closed.`, null, { section: 'contracts' });
+  }
+}
+
 async function finalizeJobSelection(job, confirmedMatchId) {
   const otherMatches = await db.filter('matches', m => m.jobId === job.id && m.id !== confirmedMatchId && ['pending', 'interested'].includes(m.status));
   for (const other of otherMatches) {
@@ -1699,7 +1785,9 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
       return res.status(409).json({ code: 'PRO_CASH_NOT_READY', error: `${String(provider.name || 'This pro').split(' ')[0]} can't take cash jobs at the moment. Choose "Protected by Trothen", or book another pro.` });
     }
     contract.serviceFee = 0;
-  } else if (payOpts.protectedMode === 'code' && !isNegotiable) {
+  } else if (payOpts.protectedMode === 'none') {
+    return res.status(400).json({ code: 'PROTECTED_UNAVAILABLE', error: custPay.noProtectedError().message }); // v125: no pretend payments
+  } else if (['code', 'card'].includes(payOpts.protectedMode) && !isNegotiable) {
     contract.statusAfterPayment = contract.status; contract.status = 'awaiting_payment';
   }
   // v110: money-ordering fix — the same class of bug fixed in store orders
@@ -1771,7 +1859,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
 
   // v119: paying by code: the pro is only asked once the money has arrived.
   if (contract.status === 'awaiting_payment' && escrow) {
-    await notify(req.user.sub, '💳', `To book "${contract.service}", send ${escrow.dueCurrency} ${Number(escrow.amountDue).toLocaleString()} by mobile money to ${escrow.payTo.map(a => `${a.network} ${a.number} (${a.accountName})`).join(' or ')} with code ${escrow.paymentCode} in the reference. Your pro is asked to confirm once we see your payment.`, 'bookingUpdates', { section: 'bookings' });
+    await notify(req.user.sub, '💳', `To book "${contract.service}", ${custPay.howToPayWords(escrow)}`, 'bookingUpdates', { section: 'bookings' }); // v125
     return res.status(201).json({ contract, escrow, payment: custPay.publicPayment(escrow), sameDayConflict: !!sameDayConflict });
   }
   const cashNote = contract.payMethod === 'cash' ? ' CASH job: the customer pays you directly after the work. Trothen\'s commission is taken from your tokens when you accept.' : '';
@@ -1842,16 +1930,22 @@ router.post('/contracts/:id/propose', requireAuth, requireCurrentTerms, async (r
     if ((contract.materialsAdvance || 0) > amount) return { status: 400, body: { error: `The price can't be less than the materials advance of $${Number(contract.materialsAdvance).toFixed(2)}.` } };
     const provider = await db.find('users', u => u.id === contract.providerId);
     const customer = await db.find('users', u => u.id === contract.customerId);
-    if (contract.payMethod === 'cash' && role === 'provider') {
+    if (contract.ride && history.filter(h => h.by === role).length >= 3) return { status: 400, body: { code: 'PRICE_LIMIT', error: 'A ride fare can go back and forth only a few times. Accept the last fare, or cancel.' } }; // v125
+    if (contract.payMethod === 'cash' && role === 'provider' && !contract.ride) {
       const check = await require('../tokens').cashReady(provider, amount);
       if (!check.ok) return { status: 402, body: { code: 'TOKENS_SHORT', error: check.debt ? `You still owe ${check.debt} tokens of commission from an earlier cash job. Buy tokens on your Tokens page first.` : `At $${amount.toFixed(2)} Trothen's commission on this cash job is ${check.need} tokens and you have ${check.have}. Buy tokens on your Tokens page first, so you can accept if the customer agrees.` } };
     }
     // Same fee rule as booking: 9% ($2.99-$25), the member discount, none on cash or with points.
     const { feeDiscountForTier } = require('../membership');
     const storeFeeFromCustomer = contract.storeFeePaidBy === 'customer' ? (contract.storeFee || 0) : 0;
-    const laborFee = contract.payMethod === 'cash' || contract.loyaltyPointsRedeemed ? 0 : Math.round(computeServiceFee(amount) * (1 - feeDiscountForTier(customer && customer.membershipTier)) * 100) / 100;
     const { getSetting, computeResponseWindowHours } = require('../platform-settings');
-    const hours = computeResponseWindowHours({ now: new Date(), jobDateTime: null, tiers: await getSetting('bookingResponseTiers'), categoryOverrideHours: null });
+    let laborFee = contract.payMethod === 'cash' || contract.loyaltyPointsRedeemed ? 0 : Math.round(computeServiceFee(amount) * (1 - feeDiscountForTier(customer && customer.membershipTier)) * 100) / 100;
+    let hours = computeResponseWindowHours({ now: new Date(), jobDateTime: null, tiers: await getSetting('bookingResponseTiers'), categoryOverrideHours: null });
+    if (contract.ride) { // v125: rides use the ride fee and answer in minutes
+      const pct = Number(await getSetting('rideFeePercent'));
+      laborFee = contract.payMethod === 'cash' ? 0 : Math.round(Math.max(0.25, amount * (Number.isFinite(pct) ? pct : 9) / 100) * 100) / 100;
+      hours = (Number(await getSetting('rideAnswerMinutes')) || 5) / 60;
+    }
     const entry = { by: role, amount, note: note || null, at: new Date().toISOString() };
     const updated = await db.update('contracts', contract.id, {
       negotiation: [...history, entry],
@@ -1864,6 +1958,38 @@ router.post('/contracts/:id/propose', requireAuth, requireCurrentTerms, async (r
     if (role === 'provider') await notify(contract.customerId, '💬', `${provider ? provider.name : 'Your pro'} suggests $${amount.toFixed(2)} for "${contract.service}" (you offered $${Number(last.amount).toFixed(2)}).${note ? ` "${note}"` : ''} Open the booking to accept it or suggest another price.`, 'bookingUpdates', { section: 'bookings' });
     else await notify(contract.providerId, '💬', `${customer ? customer.name : 'The customer'} suggests $${amount.toFixed(2)} for "${contract.service}" (you asked $${Number(last.amount).toFixed(2)}).${note ? ` "${note}"` : ''} Open the booking to accept it, suggest another price, or decline.`, null, { section: 'bookings' });
     return { status: 200, body: { contract: updated } };
+  });
+  res.status(out.status).json(out.body);
+});
+
+// POST /api/contracts/:id/pay (v125) — the customer pays a price the pro
+// accepted. In a test-mode country this is the test payment; real card or
+// mobile money payments plug in here when they're switched on.
+router.post('/contracts/:id/pay', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
+  const out = await priceLock(req.params.id, async () => {
+    const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
+    if (!contract) return { status: 404, body: { error: 'Booking not found' } };
+    if (contract.status !== 'awaiting_payment') return { status: 400, body: { error: 'This booking isn\'t waiting for a payment.' } };
+    const existing = await db.find('escrowTransactions', e => e.contractId === contract.id);
+    if (existing && existing.paidBy === 'code') return { status: 400, body: { code: 'USE_CODE', error: 'Pay this booking with your payment code (Pay now in My Bookings).' } };
+    // v125: a card page that was opened but not finished: send the customer back to it.
+    if (existing && existing.paidBy === 'card' && existing.status === 'awaiting_payment') return { status: 200, body: { contract, escrow: null, payment: require('../customer-payments').publicPayment(existing) } };
+    if (existing) return { status: 400, body: { error: 'This booking is already paid.' } };
+    const expected = Number((req.body || {}).total);
+    const total = Math.round(((contract.amount || 0) + (contract.serviceFee || 0)) * 100) / 100;
+    if (expected && Math.abs(expected - total) > 0.005) return { status: 409, body: { code: 'PRICE_CHANGED', error: `The total is now $${total.toFixed(2)}. Check it and pay again.` } };
+    if (contract.paymentDueAt && new Date(contract.paymentDueAt) < new Date()) {
+      await require('../customer-payments').expireUnpaid();
+      return { status: 400, body: { error: 'The time to pay for this booking ran out, so it was cancelled. Book again if you still need it.' } };
+    }
+    const escrow = await fundEscrowForContract({ ...contract, status: 'active' }, contract.customerId, contract.payCurrency);
+    if (escrow && escrow.status === 'awaiting_payment') {
+      return { status: 200, body: { contract, escrow: null, payment: require('../customer-payments').publicPayment(escrow) } };
+    }
+    const updated = await db.update('contracts', contract.id, { status: contract.statusAfterPayment || 'active', signedAt: new Date().toISOString().slice(0, 10), paymentDueAt: null, paidAt: new Date().toISOString() });
+    const customer = await db.find('users', u => u.id === contract.customerId);
+    await notify(contract.providerId, '✅', `${customer ? customer.name : 'The customer'} paid for "${contract.service}" ($${Number(contract.laborAmount != null ? contract.laborAmount : contract.amount).toFixed(2)}). Trothen holds it until the job is done. The booking is confirmed.`, null, { section: 'contracts' });
+    return { status: 200, body: { contract: updated, escrow } };
   });
   res.status(out.status).json(out.body);
 });
@@ -1883,7 +2009,7 @@ router.post('/contracts/:id/agree', requireAuth, requireRole('customer'), requir
       return { status: 400, body: { error: 'This price ran out of time, so the booking expired. Book again if you still need the job done.' } };
     }
     const provider = await db.find('users', u => u.id === contract.providerId);
-    if (contract.payMethod === 'cash') {
+    if (contract.payMethod === 'cash' && !contract.ride) { // v125: rides use the driver's pass, not tokens
       const check = await require('../tokens').cashReady(provider, price);
       if (!check.ok) {
         await require('../tokens').nudgeCashNotReady(provider, check, price);
@@ -1998,18 +2124,36 @@ async function acceptAndStart(contract, acceptingProvider, { isDirectBooking, is
   const tokens = require('../tokens');
   const cashLine = await tokens.chargeCashCommission(acceptingProvider, contract);
   let escrow;
+  // v125: when the PRO accepts the customer's price, the customer pays next,
+  // as a step they can see ("Pay $X"), instead of money moving silently. In
+  // a payment-code country the code below is that step; in a test-mode
+  // country the customer presses Pay in the app.
+  if (!isDirectBooking && !isJobSelection && contract.payMethod !== 'cash' && !customerAgreed) {
+    const customerNow = await db.find('users', u => u.id === contract.customerId);
+    const opts = await require('../customer-payments').optionsFor(customerNow && customerNow.country);
+    if (opts.protectedMode === 'simulated' || opts.protectedMode === 'card') {
+      const due = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const waiting = await db.update('contracts', contract.id, { status: 'awaiting_payment', statusAfterPayment: 'active', paymentDueAt: due, waitingOn: null, agreedBy: 'provider', agreedAt: new Date().toISOString() });
+      await settleJobAfterAgreement(waiting);
+      const total = Math.round(((contract.amount || 0) + (contract.serviceFee || 0)) * 100) / 100;
+      await notify(contract.customerId, '💳', `${acceptingProvider ? acceptingProvider.name : 'Your pro'} accepted your price of $${Number(contract.laborAmount != null ? contract.laborAmount : contract.amount).toFixed(2)} for "${contract.service}". Pay $${total.toFixed(2)} in My Bookings to confirm it. Nothing is booked until you pay.`, 'bookingUpdates', { section: 'bookings' });
+      return reply(200, { contract: waiting, escrow: null, needsPayment: true });
+    }
+  }
   if (!isDirectBooking && !isJobSelection && contract.payMethod !== 'cash') {
     // Pass a would-be-active copy (not yet written) so fundEscrowForContract
     // sees the right status for its materials-advance-release check.
     escrow = await fundEscrowForContract({ ...contract, status: 'active' }, contract.customerId, contract.payCurrency);
     // v119: in a payment-code country the accepted offer waits for the customer's payment.
     if (escrow && escrow.status === 'awaiting_payment') {
-      const waiting = await db.update('contracts', contract.id, { status: 'awaiting_payment', statusAfterPayment: 'active' });
-      await notify(contract.customerId, '💳', `${agreedWords} To start, send ${escrow.dueCurrency} ${Number(escrow.amountDue).toLocaleString()} by mobile money to ${escrow.payTo.map(a => `${a.network} ${a.number} (${a.accountName})`).join(' or ')} with code ${escrow.paymentCode} in the reference.`, 'bookingUpdates', { section: 'bookings' });
-      return reply(200, { contract: waiting, escrow: null });
+      const waiting = await db.update('contracts', contract.id, { status: 'awaiting_payment', statusAfterPayment: 'active', waitingOn: null });
+      await settleJobAfterAgreement(waiting); // v125
+      await notify(contract.customerId, '💳', `${agreedWords} To start, ${require('../customer-payments').howToPayWords(escrow)}`, 'bookingUpdates', { section: 'bookings' }); // v125
+      return reply(200, { contract: waiting, escrow: null, payment: require('../customer-payments').publicPayment(escrow) });
     }
   }
-  const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10) });
+  const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10), ...(contract.status === 'pending_agreement' ? { waitingOn: null } : {}) });
+  if (contract.status === 'pending_agreement') await settleJobAfterAgreement(updated); // v125: a price agreed for a posted job
   if (cashLine && !cashLine.free) await notify(acceptingProvider.id, '🪙', `${-cashLine.tokens} tokens of commission were taken for cash job "${contract.service}". Balance: ${cashLine.balanceAfter} tokens. Collect the agreed price from the customer after the work.`, null, { section: 'tokens' });
   if (isDirectBooking) {
     // Already funded at booking time — but the materials advance was
