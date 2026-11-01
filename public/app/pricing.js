@@ -118,7 +118,7 @@
     const m = modeNow();
     if (m === 'card') return { note: `💳 ${tr('Card: next you pay on Stripe\'s secure page. Your card details never touch Trothen.')} ${tr('Trothen holds the money')} ${until}, ${tr('and you get it back if the pro doesn\'t come or something goes wrong.')}`, btn: `${tr('Continue to secure payment')} · ${money(total)}` };
     if (m === 'code') return { note: `🏦 ${tr('Pay to Trothen\'s account: next you get a payment code and Trothen\'s account details. Send the exact amount with the code.')} ${tr('Trothen holds it')} ${until}.`, btn: tr('Get my payment code') };
-    if (m === 'simulated') return { note: tr('🧪 Test payment: this site is in test mode, so no real money moves.'), btn: `${tr('Pay')} ${money(total)} (${tr('test')})` };
+    if (m === 'simulated') return { note: `🛡️ ${tr('Escrow: Trothen holds this payment')} ${until}, ${tr('and you get it back if something goes wrong.')} ${tr('Payments aren\'t connected yet, so no real money moves for now.')}`, btn: `${tr('Pay')} ${money(total)}` };
     return { note: tr('Paying through Trothen isn\'t available in your country yet. Choose a cash job instead.'), btn: null };
   }
   // rows: [[label, value], ...]

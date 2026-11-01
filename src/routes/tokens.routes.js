@@ -137,7 +137,7 @@ router.get('/admin/tokens', gate, async (req, res) => {
   const users = await db.filter('users', u => userIds.includes(u.id));
   const nameOf = (id) => { const u = users.find(x => x.id === id); return u ? u.name : 'Unknown'; };
   res.json({
-    settings: { ...(await tokens.settings()), cashJobsEnabled: (await getSetting('cashJobsEnabled')) !== false, testPurchases: (await getSetting('tokenTestPurchases')) === true, allowTestPayments: (await getSetting('allowTestPayments')) === true, cardPaymentsOn: require('../stripe-pay').isOn(), payoutsRealOnly: (await getSetting('payoutsRequireRealPayment')) === true },
+    settings: { ...(await tokens.settings()), cashJobsEnabled: (await getSetting('cashJobsEnabled')) !== false, testPurchases: (await getSetting('tokenTestPurchases')) === true, allowTestPayments: (await getSetting('allowTestPayments')) === true, realPaymentsOnly: (await getSetting('realPaymentsOnly')) === true, cardPaymentsOn: require('../stripe-pay').isOn(), payoutsRealOnly: (await getSetting('payoutsRequireRealPayment')) === true },
     canEdit: req.adminUser.isSuperAdmin === true,
     canRecordPayments: req.adminUser.isSuperAdmin === true || ['financial', 'accountant', 'controller'].includes(req.adminUser.adminDepartment),
     offlineMethods: tokens.OFFLINE_METHODS,
@@ -160,7 +160,8 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
   if (b.feeOnlyEnabled !== undefined) await setSetting('tokensFeeOnlyEnabled', b.feeOnlyEnabled === true);
   if (b.cashJobsEnabled !== undefined) await setSetting('cashJobsEnabled', b.cashJobsEnabled === true); // v119: cash jobs anywhere
   if (b.testPurchases !== undefined) await setSetting('tokenTestPurchases', b.testPurchases === true); // v119: test sites only
-  if (b.allowTestPayments !== undefined) await setSetting('allowTestPayments', b.allowTestPayments === true); // v125: test sites only
+  if (b.allowTestPayments !== undefined) await setSetting('allowTestPayments', b.allowTestPayments === true); // v125 (kept for old pages)
+  if (b.realPaymentsOnly !== undefined) await setSetting('realPaymentsOnly', b.realPaymentsOnly === true); // v126
   if (b.payoutsRealOnly !== undefined) await setSetting('payoutsRequireRealPayment', b.payoutsRealOnly === true); // v119: live site
   if (b.dailyLimitUsd !== undefined) {
     const n = Number(b.dailyLimitUsd);

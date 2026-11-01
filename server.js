@@ -213,7 +213,7 @@ app.get('/api/system-status', async (req, res) => {
     // customers pay to Trothen's own accounts; and whether this is a test site.
     cardPaymentsLive: require('./src/stripe-pay').isOn(),
     accountPaymentCountries: await (async () => { try { const all = await require('./src/tokens').settings(); return Object.entries(all.countryRules || {}).filter(([, r]) => r && r.protectedPayMode === 'code' && Array.isArray(r.momoAccounts) && r.momoAccounts.some(a => a && a.number)).map(([c]) => c); } catch (e) { return []; } })(),
-    testPayments: (await require('./src/platform-settings').getSetting('allowTestPayments')) === true,
+    realPaymentsOnly: (await require('./src/platform-settings').getSetting('realPaymentsOnly')) === true, // v126
     liberiaMoMoLive,
   });
 });

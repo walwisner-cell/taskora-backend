@@ -31,8 +31,8 @@ function cleanPayMethod(v) { return PAY_METHODS.includes(v) ? v : 'protected'; }
 // protectedMode is how a PROTECTED payment really works here:
 //   'card'      Stripe card checkout (when the Stripe keys are set; the default then)
 //   'code'      the customer sends money to one of Trothen's own accounts with a code
-//   'simulated' test payments: only when "Test payments" is switched on (test sites)
-//   'none'      no real way to pay Trothen here yet: Protected isn't offered
+//   'simulated' escrow shown, no real money moves yet (until payments are connected)
+//   'none'      "Real payments only" is ticked and nothing is set up here: Protected isn't offered
 async function optionsFor(country) {
   const tokens = require('./tokens');
   const s = await tokens.settingsFor(country);
@@ -44,7 +44,10 @@ async function optionsFor(country) {
   if (wanted === 'code' && s.momoAccounts.length > 0) mode = 'code';
   else if ((wanted === 'card' || wanted === 'auto') && stripeOn) mode = 'card';
   else if (wanted === 'auto' && s.momoAccounts.length > 0 && rule.payToAccountsForJobs === true) mode = 'code';
-  else mode = (await getSetting('allowTestPayments')) === true ? 'simulated' : 'none';
+  // v126: until real payments are connected, escrow is still offered and shown,
+  // with no real money moving. Only when a super admin ticks "Real payments only"
+  // is escrow hidden where no card or account is set up.
+  else mode = (await getSetting('realPaymentsOnly')) === true ? 'none' : 'simulated';
   return {
     protectedMode: mode,
     cardAvailable: stripeOn,

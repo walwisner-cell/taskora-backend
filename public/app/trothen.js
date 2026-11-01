@@ -12640,10 +12640,10 @@ async function loadSystemStatusBanner() {
     const parts = [];
     // v125: say what is really true about payments right now.
     const acct = Array.isArray(st.accountPaymentCountries) ? st.accountPaymentCountries : [];
-    if (st.testPayments) {
-      parts.push('TEST SITE: payments here are test payments and no real money moves.');
-    } else if (st.cardPaymentsLive) {
+    if (st.cardPaymentsLive) {
       // Real card payments: nothing to warn about.
+    } else if (!st.realPaymentsOnly) { // v126: escrow is shown; payments aren't connected yet
+      parts.push(acct.length ? `Payments aren't connected yet, except paying to Trothen's account in ${acct.join(', ')}. Elsewhere escrow is shown but no real money moves.` : 'Payments aren\'t connected yet: escrow is shown, but no real money moves.');
     } else if (acct.length) {
       parts.push(`Paying through Trothen works by sending money to Trothen's account in ${acct.join(', ')}. Elsewhere, jobs are paid to the pro in cash after the work for now.`);
     } else {

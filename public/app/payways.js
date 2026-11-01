@@ -46,7 +46,7 @@
       ? 'You pay to Trothen\'s account with a code we give you. We hold the money until you say the job is done. If the pro doesn\'t come or something goes wrong, you get it back.'
       : o.protectedMode === 'card'
         ? 'You pay by card on Stripe\'s secure page. Trothen holds the money until you say the job is done. If the pro doesn\'t come or something goes wrong, you get it back.'
-        : o.protectedMode === 'simulated' ? 'TEST SITE: no real money moves.' : '';
+        : o.protectedMode === 'simulated' ? 'Your payment is held by Trothen until you say the job is done. If the pro doesn\'t come or something goes wrong, you get it back. (Payments aren\'t connected yet, so no real money moves for now.)' : '';
     return `<div class="form-group" data-payway="${scope}" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
       <label class="form-label">${e(tr('How will you pay?'))}</label>
       ${protOn ? opt('protected', '🛡️ Protected by Trothen', protSub, 'Recommended') : `<div class="ver-note" style="margin-bottom:8px;">${e(tr('Paying through Trothen isn\'t available in your country yet, so jobs are paid to the pro in cash after the work.'))}</div>`}
