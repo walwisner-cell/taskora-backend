@@ -1255,19 +1255,55 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), requir
   res.json({ match: updated });
 });
 
+// POST /api/matches/:id/accept-budget (v127) — the pro reviews the posted
+// job and accepts it at the customer's own budget. The first pro to accept
+// gets the job (the others are told it's taken); the customer then pays to
+// confirm (or, for cash, it's booked straight away).
+router.post('/matches/:id/accept-budget', requireAuth, requireRole('provider'), requireCurrentTerms, async (req, res) => {
+  const match = await db.find('matches', m => m.id === req.params.id && m.providerId === req.user.sub);
+  if (!match) return res.status(404).json({ error: 'Match not found' });
+  if (match.status === 'not_selected') return res.status(409).json({ code: 'JOB_TAKEN', error: 'Another pro has already taken this job.' });
+  if (match.status === 'declined') return res.status(400).json({ error: 'You declined this job.' });
+  const job = await db.find('jobs', j => j.id === match.jobId);
+  if (!job || job.status !== 'open') return res.status(409).json({ code: 'JOB_TAKEN', error: 'Another pro has already taken this job, or the customer closed it.' });
+  const amount = singleBudget(job.budget);
+  if (!amount) return res.status(400).json({ code: 'NO_SINGLE_BUDGET', error: 'This job has no single budget to accept. Send your price instead.' });
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  if (provider.onHold) return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review.' });
+  if (LICENSED_TRADE_CATEGORIES.has(provider.category) && !hasValidLicense(provider)) return res.status(403).json({ error: `${provider.category} requires a current, verified license on file before you can accept jobs.` });
+  if (job.payMethod === 'cash') { // the pro's own words: what they need to accept a cash job
+    const check = await require('../tokens').cashReady(provider, amount);
+    if (!check.ok) return res.status(402).json({ code: 'TOKENS_SHORT', error: check.debt ? `You still owe ${check.debt} tokens of commission from an earlier cash job. Buy tokens on your Tokens page, then accept.` : `This is a cash job: Trothen's commission on $${amount.toFixed(2)} is ${check.need} tokens, taken from your tokens when you accept. You have ${check.have}. Buy tokens on your Tokens page, then accept it.` });
+  }
+  if (!contractStatusLocks.has('job:' + job.id)) contractStatusLocks.add('job:' + job.id); else return res.status(409).json({ code: 'JOB_TAKEN', error: 'Another pro is accepting this job right now. Try again in a moment.' });
+  try {
+    let built = await buildJobOffer(job.customerId, { job, match, provider, amount, note: null });
+    let contract = built.contract;
+    if (built.error) {
+      // A price talk with this customer already exists: accept the customer's latest price there instead.
+      if (built.existing && built.existing.status === 'pending_agreement' && (built.existing.waitingOn || 'provider') === 'provider') contract = built.existing;
+      else return res.status(built.status).json(built.error);
+    }
+    if (match.status !== 'interested') await db.update('matches', match.id, { status: 'interested' });
+    const out = await acceptAndStart(contract, provider, { isDirectBooking: false, isJobSelection: false });
+    if (out.status !== 200) return res.status(out.status).json(out.body);
+    return res.json({ ...out.body, accepted: true });
+  } finally { contractStatusLocks.delete('job:' + job.id); }
+});
+
 // POST /api/matches/:id/price { price, note } (v122): the pro sets or changes
 // their price for a job they're interested in, while the job is still open.
 router.post('/matches/:id/price', requireAuth, requireRole('provider'), requireCurrentTerms, async (req, res) => {
   const match = await db.find('matches', m => m.id === req.params.id && m.providerId === req.user.sub);
   if (!match) return res.status(404).json({ error: 'Match not found' });
-  if (match.status !== 'interested') return res.status(400).json({ error: 'Say you\'re interested in this job first.' });
+  if (!['interested', 'pending'].includes(match.status)) return res.status(400).json({ error: 'This job is no longer open to you.' }); // v127: sending a price is also saying you're interested
   const job = await db.find('jobs', j => j.id === match.jobId);
   if (!job || job.status !== 'open') return res.status(400).json({ error: 'This job is no longer open, so the price can\'t be changed.' });
   const price = Math.round(Number((req.body || {}).price) * 100) / 100;
   if (!(price >= 1 && price <= 1000000)) return res.status(400).json({ error: 'Your price must be at least $1.' });
   const note = typeof (req.body || {}).note === 'string' ? req.body.note.trim().slice(0, 300) : '';
   const before = match.price;
-  const updated = await db.update('matches', match.id, { price, priceAt: new Date().toISOString(), ...(note ? { priceNote: note } : {}) });
+  const updated = await db.update('matches', match.id, { status: 'interested', price, priceAt: new Date().toISOString(), ...(note ? { priceNote: note } : {}) });
   const provider = await db.find('users', u => u.id === req.user.sub);
   await notify(match.customerId, '💬', `${provider ? provider.name : 'A pro'} ${before ? `changed their price from $${Number(before).toFixed(2)} to` : 'asks'} $${price.toFixed(2)} for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}".${note ? ` "${note}"` : ''} Open Responses to hire them at this price or message them.`, 'newMatches', { section: 'bookings' });
   res.json({ match: updated });
@@ -1439,22 +1475,32 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
 // handleRespondOffer): this is the real "job's filled" moment, so this is
 // when other candidates who responded actually get dismissed and told.
 // v125: the customer offers a price to a pro who answered their posted job.
-async function startJobOffer(req, res, { job, match, provider, amount, note }) {
+async function startJobOffer(req, res, opts) {
+  const out = await buildJobOffer(req.user.sub, opts);
+  if (out.error) return res.status(out.status).json(out.error);
+  await notify(opts.provider.id, '💬', out.proNotice, null, { section: 'contracts' });
+  return res.status(201).json({ contract: out.contract, negotiating: true });
+}
+// v127: creates the price talk for a posted job at the customer's amount.
+// Used when the customer offers a price, and when a pro accepts the job at
+// the customer's posted budget (see POST /matches/:id/accept-budget).
+async function buildJobOffer(customerId, { job, match, provider, amount, note }) {
   const providerId = provider.id;
+  const err = (status, body) => ({ status, error: body });
   const open = await db.find('contracts', c => c.jobId === job.id && c.providerId === providerId && ['pending_agreement', 'awaiting_payment', 'pending_provider_confirmation', 'active'].includes(c.status));
-  if (open) return res.status(409).json({ code: 'OFFER_OPEN', error: `You already have a price going with ${String(provider.name).split(' ')[0]} for this job. Answer it on their card.` });
-  const customer = await db.find('users', u => u.id === req.user.sub);
+  if (open) return { existing: open, ...err(409, { code: 'OFFER_OPEN', error: `You already have a price going with ${String(provider.name).split(' ')[0]} for this job. Answer it on their card.` }) };
+  const customer = await db.find('users', u => u.id === customerId);
   const custPay = require('../customer-payments');
   const payOpts = await custPay.optionsFor(customer && customer.country);
   const payMethod = job.payMethod === 'cash' ? 'cash' : 'protected';
-  if (payMethod === 'cash' && !payOpts.cashJobs) return res.status(400).json({ code: 'CASH_OFF', error: 'Cash jobs aren\'t available in your country right now. Post the job again with a protected payment.' });
-  if (payMethod === 'protected' && payOpts.protectedMode === 'none') return res.status(400).json({ code: 'PROTECTED_UNAVAILABLE', error: custPay.noProtectedError().message });
+  if (payMethod === 'cash' && !payOpts.cashJobs) return err(400, { code: 'CASH_OFF', error: 'Cash jobs aren\'t available in your country right now. Post the job again with a protected payment.' });
+  if (payMethod === 'protected' && payOpts.protectedMode === 'none') return err(400, { code: 'PROTECTED_UNAVAILABLE', error: custPay.noProtectedError().message });
   if (payMethod === 'cash') {
     const tokensMod = require('../tokens');
     const check = await tokensMod.cashReady(provider, amount);
     if (!check.ok) {
       await tokensMod.nudgeCashNotReady(provider, check, amount);
-      return res.status(409).json({ code: 'PRO_CASH_NOT_READY', error: `${String(provider.name || 'This pro').split(' ')[0]} can't take cash jobs at the moment. Choose another pro, or post the job again with "Protected by Trothen".` });
+      return err(409, { code: 'PRO_CASH_NOT_READY', error: `${String(provider.name || 'This pro').split(' ')[0]} can't take cash jobs at the moment. Choose another pro, or post the job again with "Protected by Trothen".` });
     }
   }
   const { feeDiscountForTier } = require('../membership');
@@ -1466,7 +1512,7 @@ async function startJobOffer(req, res, { job, match, provider, amount, note }) {
   const contract = {
     id: `ct_${nanoid(10)}`,
     bookingNumber: await generateBookingNumber(),
-    customerId: req.user.sub,
+    customerId,
     providerId,
     jobId: job.id,
     service: job.description,
@@ -1487,8 +1533,12 @@ async function startJobOffer(req, res, { job, match, provider, amount, note }) {
   };
   await db.insert('contracts', contract);
   await db.update('matches', match.id, { offerContractId: contract.id });
-  await notify(providerId, '💬', `${customer ? customer.name : 'The customer'} offers $${amount.toFixed(2)} for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}"${match.price ? ` (you asked $${Number(match.price).toFixed(2)})` : ''}.${cleanNote ? ` "${cleanNote}"` : ''} Open My Contracts to accept it, suggest a different price, or decline.`, null, { section: 'contracts' });
-  return res.status(201).json({ contract, negotiating: true });
+  return { contract, proNotice: `${customer ? customer.name : 'The customer'} offers $${amount.toFixed(2)} for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}"${match.price ? ` (you asked $${Number(match.price).toFixed(2)})` : ''}.${cleanNote ? ` "${cleanNote}"` : ''} Open My Contracts to accept it, suggest a different price, or decline.` };
+}
+// The customer's posted budget as one amount ("50", "$50"), or null for a range or nothing.
+function singleBudget(budget) {
+  const m = String(budget || '').replace(/,/g, '').match(/^\s*\$?\s*(\d+(?:\.\d{1,2})?)\s*\$?\s*$/);
+  return m && Number(m[1]) > 0 ? Number(m[1]) : null;
 }
 
 // v125: when a price for a posted job is agreed, the job is taken: the other

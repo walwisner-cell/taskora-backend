@@ -1127,6 +1127,41 @@ function msgTimeHTML(iso) {
   return `<span class="msg-time" title="${escapeHtml(full)}" style="font-size:11.5px;color:var(--muted, #7A808C);font-weight:400;white-space:nowrap;">${escapeHtml(when)}</span>`;
 }
 
+// v127: on the match screen right after posting a job, each pro gets the
+// posted budget as a one-press offer, using everything already typed in the
+// job (no second form). A range ("$80-150") or no budget opens the
+// Responses window to choose the amount there.
+async function acceptPostedBudget(matchId, amount) {
+  const m = (providerData.matches || []).find(x => x.id === matchId) || {};
+  if (!(await confirmDialog(`${tr('Accept')} "${m.service || tr('this job')}" ${tr('at the customer\'s price of')} $${Number(amount).toFixed(2)}? ${tr('If you\'re the first to accept, the job is yours: the customer is asked to pay, and you\'re told the moment they do. Only accept if you can do the whole job for this price.')}`, { confirmLabel: `${tr('Accept at')} $${Number(amount).toFixed(2)}` }))) return;
+  try {
+    const r = await apiFetch('POST', `/matches/${encodeURIComponent(matchId)}/accept-budget`, {});
+    const st = r && r.contract && r.contract.status;
+    showToast(st === 'active' ? tr('The job is yours. It\'s in My Contracts.') : tr('The job is yours. The customer is asked to pay now; you\'ll be told the moment they do.'));
+    await loadProviderData(); selectProviderSection('contracts');
+  } catch (e) { showToast(e.message || tr('Could not accept this job')); await loadProviderData(); selectProviderSection('matches'); }
+}
+function postedBudgetAmount(budget) {
+  const m = String(budget || '').replace(/,/g, '').match(/^\s*\$?\s*(\d+(?:\.\d{1,2})?)\s*\$?\s*$/);
+  return m ? Number(m[1]) : null;
+}
+function jobMatchOfferButtonHTML(job, p) {
+  const amt = postedBudgetAmount(job.budget);
+  const first = escapeHtml(String(p.name || '').split(' ')[0]);
+  return amt
+    ? `<button class="btn-sm btn-sm-primary" onclick="offerPostedBudget(${jsArg(job.id)}, ${jsArg(p.id)}, ${amt}, ${jsArg(String(p.name || ''))})">${escapeHtml(tr('Offer my'))} $${amt.toFixed(2)} ${escapeHtml(tr('to'))} ${first}</button>`
+    : `<button class="btn-sm btn-sm-primary" onclick="closePostJobModal();viewJobCandidates(${jsArg(job.id)})">${escapeHtml(tr('Make an offer'))}</button>`;
+}
+async function offerPostedBudget(jobId, providerId, amount, name) {
+  const first = String(name || '').split(' ')[0] || tr('the pro');
+  try {
+    await apiFetch('POST', `/jobs/${encodeURIComponent(jobId)}/select-provider`, { providerId, amount });
+    closePostJobModal();
+    await viewJobCandidates(jobId);
+    if (typeof showResult === 'function') showResult({ icon: '📨', title: tr('Offer sent'), lines: [`${tr('You offered')} ${first} $${Number(amount).toFixed(2)}, ${tr('with your job details.')}`, `${first} ${tr('can accept it, suggest a different price, or decline. You\'ll see the answer right here, straight away.')}`, tr('Nothing is paid until you both agree one price.')] });
+  } catch (e) { showToast(e.message || 'Could not send your offer'); }
+}
+
 async function viewJobCandidates(jobId) {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   CURRENT_JOB_CANDIDATES_JOBID = jobId;
@@ -6035,10 +6070,12 @@ async function runAIMatch() {
   let realCallSucceeded = false;
   let isKnownCategory = true;
   let matchScope = 'city';
+  let postedJob = null; // v127: the job just posted; the match screen uses it instead of asking again
   if (BACKEND_AVAILABLE && AUTH.token && AUTH.user && AUTH.user.role === 'customer') {
     try {
       const result = await apiFetch('POST', '/jobs', { category: cat, description: desc, materialsOnHand, materialsCost, budget, payCurrency: 'local', photoUrls, ...readJobWhere('pj') });
       realCallSucceeded = true;
+      postedJob = result.job || null;
       isKnownCategory = result.isKnownCategory !== false;
       matchScope = result.matchScope || 'city';
       pool = result.matches.map(m => ({ id: m.providerId, name: m.provider.name, initials: m.provider.initials, role: m.provider.role, price: m.provider.price, rating: m.provider.rating, color: m.provider.color, score: m.score, profilePhotoUrl: m.provider.profilePhotoUrl || null }));
@@ -6093,10 +6130,19 @@ async function runAIMatch() {
             <div style="font-weight:600;font-size:13.5px;color:var(--navy);">${escapeHtml(p.name)} <span class="badge badge-success" style="margin-left:4px;">${escapeHtml(p.score)}% match</span></div>
             <div style="font-size:13px;color:var(--slate);">${escapeHtml(p.role)} · $${p.price}/hr · ★ ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           </div>
-          <button class="btn-sm btn-sm-primary" onclick="closePostJobModal();openBooking('${p.id}');">Book</button>
+          ${postedJob ? `<span class="badge badge-warn">${escapeHtml(tr('Reviewing your job'))}</span>` : `<button class="btn-sm btn-sm-primary" onclick="closePostJobModal();openBooking('${p.id}');">Book</button>`}
         </div>`).join('')}
     `;
-    document.querySelector('#postjob-modal .modal-footer').innerHTML = `<button class="pricing-cta" style="border-color:var(--border);" onclick="openPostJobModal()">Post a Different Job</button>`;
+    // v127: the job you posted is already on its way to these pros, so nothing is asked twice.
+    if (postedJob) {
+      const amt = postedBudgetAmount(postedJob.budget);
+      body.insertAdjacentHTML('afterbegin', `<div class="ver-note" style="margin-bottom:12px;">${escapeHtml(amt
+        ? `${tr('Your job and your price of')} $${amt.toFixed(2)} ${tr('have been sent to these pros. Each one reviews it. The first pro to accept gets the job, and you\'re asked to pay to confirm it. A pro can also answer with a different price, and you choose. You\'ll see every answer straight away in View Responses.')}`
+        : tr('Your job has been sent to these pros. Each one reviews it and answers with their price. You choose the one you want in View Responses, and see every answer there straight away.'))}</div>`);
+    }
+    document.querySelector('#postjob-modal .modal-footer').innerHTML = postedJob
+      ? `<button class="confirm-btn" style="margin-bottom:8px;" onclick="closePostJobModal();viewJobCandidates(${jsArg(postedJob.id)})">${escapeHtml(tr('See responses'))}</button><button class="pricing-cta" style="border-color:var(--border);" onclick="openPostJobModal()">Post a Different Job</button>`
+      : `<button class="pricing-cta" style="border-color:var(--border);" onclick="openPostJobModal()">Post a Different Job</button>`;
   }, 700);
 }
 
@@ -7248,9 +7294,11 @@ function matchesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No pending matches right now.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Budget</th><th>Match Score</th><th>Distance</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}${m.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(m.materialsOnHand)}</div>` : ''}${m.materialsCost != null ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">💵 Materials budget: $${m.materialsCost}</div>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${escapeHtml(m.distance)}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
-  <td class="row-actions">${m.status === 'interested'
-    ? `${m.price ? `<div style="font-size:13px;margin-bottom:6px;"><strong>${escapeHtml(tr('Your price'))}: $${Number(m.price).toFixed(2)}</strong>${m.priceNote ? `<div style="color:var(--slate);">${escapeHtml(m.priceNote)}</div>` : ''}</div>` : ''}<button class="btn-sm btn-sm-outline" onclick="changeMatchPrice('${m.id}')">${escapeHtml(tr(m.price ? 'Change price' : 'Add your price'))}</button> <button class="btn-sm btn-sm-outline" onclick="messageCustomerAboutJob('${m.customerId}','${m.jobId}')">💬 Message</button>`
-    : `<button class="btn-sm btn-sm-primary" onclick="respondToMatch('${m.id}','accept')">I'm Interested</button><button class="btn-sm btn-sm-outline" onclick="respondToMatch('${m.id}','decline')">Decline</button>`
+  <td class="row-actions">${m.offerContractId
+    ? `<div style="font-size:13px;margin-bottom:6px;">${escapeHtml(tr('The customer offered you a price.'))}</div><button class="btn-sm btn-sm-primary" onclick="selectProviderSection('contracts')">${escapeHtml(tr('Answer it in My Contracts'))}</button>`
+    : `${postedBudgetAmount(m.budget) ? `<button class="btn-sm btn-sm-primary" onclick="acceptPostedBudget('${m.id}', ${postedBudgetAmount(m.budget)})">${escapeHtml(tr('Accept the job at'))} $${postedBudgetAmount(m.budget).toFixed(2)}</button> ` : ''}${m.status === 'interested'
+    ? `${m.price ? `<div style="font-size:13px;margin:6px 0;"><strong>${escapeHtml(tr('Your price'))}: $${Number(m.price).toFixed(2)}</strong>${m.priceNote ? `<div style="color:var(--slate);">${escapeHtml(m.priceNote)}</div>` : ''}</div>` : ''}<button class="btn-sm btn-sm-outline" onclick="changeMatchPrice('${m.id}')">${escapeHtml(tr(m.price ? 'Change my price' : (postedBudgetAmount(m.budget) ? 'Send a different price' : 'Send my price')))}</button> <button class="btn-sm btn-sm-outline" onclick="messageCustomerAboutJob('${m.customerId}','${m.jobId}')">💬 Message</button>`
+    : `<button class="btn-sm ${postedBudgetAmount(m.budget) ? 'btn-sm-outline' : 'btn-sm-primary'}" onclick="respondToMatch('${m.id}','accept')">${escapeHtml(tr(postedBudgetAmount(m.budget) ? 'Send a different price' : 'Send my price'))}</button><button class="btn-sm btn-sm-outline" onclick="respondToMatch('${m.id}','decline')">Decline</button>`}`
   }</td></tr>`).join('')}
   </tbody></table></div>`;
 }

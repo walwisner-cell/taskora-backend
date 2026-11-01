@@ -265,9 +265,11 @@
       slot.innerHTML = `<div class="ver-note" style="margin-bottom:10px;">💬 ${e(tr('The customer offered you a price for this job.'))} <a style="color:var(--teal);font-weight:600;cursor:pointer;" onclick="document.getElementById('job-negotiation-modal').classList.remove('open');selectProviderSection('contracts')">${e(tr('Answer it in My Contracts'))}</a></div>`;
       return;
     }
-    if (match.matchStatus && match.matchStatus !== 'interested') { slot.innerHTML = ''; return; }
+    if (match.matchStatus && !['interested', 'pending'].includes(match.matchStatus)) { slot.innerHTML = ''; return; }
+    const budgetAmt = typeof postedBudgetAmount === 'function' ? postedBudgetAmount(match.budget) : null; // v127
     slot.innerHTML = `<div style="border:2px solid var(--teal);border-radius:10px;padding:10px 12px;margin-bottom:10px;">
-      <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--slate);margin-bottom:4px;">${e(tr('Your price for this job'))}</div>
+      ${budgetAmt ? `<div style="margin-bottom:10px;"><div style="font-size:13.5px;margin-bottom:6px;">${e(tr('The customer\'s price:'))} <strong>${money(budgetAmt)}</strong></div><button class="confirm-btn" onclick="acceptPostedBudget(${jsArg(match.id)}, ${budgetAmt})">${e(tr('Accept the job at'))} ${money(budgetAmt)}</button><div style="font-size:12.5px;color:var(--slate);margin-top:6px;">${e(tr('Or send a different price below.'))}</div></div>` : ''}
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--slate);margin-bottom:4px;">${e(tr(budgetAmt ? 'A different price' : 'Your price for this job'))}</div>
       ${match.price ? `<div style="font-size:20px;font-weight:800;color:var(--navy);">${money(match.price)}</div>` : `<div style="font-size:13.5px;color:var(--slate);">${e(tr('Not sent yet. Send it here, not as a chat message, so the customer can accept it with one press.'))}</div>`}
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;"><input class="form-input" type="number" min="1" step="0.01" style="width:130px;" id="pp-price" placeholder="$"/><input class="form-input" style="flex:1;min-width:140px;" maxlength="300" id="pp-note" placeholder="${e(tr('What it covers (optional)'))}"/><button class="btn-sm btn-sm-primary" onclick="sendProPriceFromChat(${jsArg(match.id)})">${e(tr(match.price ? 'Change my price' : 'Send my price'))}</button></div></div>`;
   };
