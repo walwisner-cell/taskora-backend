@@ -16,6 +16,21 @@ router.get('/customer-payments/options', requireAuth, requireRole('customer'), a
   res.json({ protectedMode: o.protectedMode, cashJobs: o.cashJobs, payTo: o.payTo, currency: { code: o.currency.code, symbol: o.currency.symbol } });
 });
 
+// GET /api/customer-payments/cash-check?providerId=&amount= (v121)
+// Yes or no: can this pro take a cash job of this price right now? Only
+// the answer is returned, never the pro's token balance.
+router.get('/customer-payments/cash-check', requireAuth, requireRole('customer'), async (req, res) => {
+  const providerId = String(req.query.providerId || '');
+  const amount = Number(req.query.amount);
+  if (!providerId || !(amount > 0) || amount > 1000000) return res.status(400).json({ error: 'Choose a pro and a price.' });
+  const pro = await db.find('users', u => u.id === providerId && u.role === 'provider');
+  if (!pro) return res.status(404).json({ error: 'Pro not found.' });
+  const tokens = require('../tokens');
+  const check = await tokens.cashReady(pro, amount);
+  if (!check.ok) await tokens.nudgeCashNotReady(pro, check, amount);
+  res.json({ ok: check.ok, message: check.ok ? null : `${String(pro.name || 'This pro').split(' ')[0]} can't take cash jobs at the moment. Choose "Protected by Trothen", or book another pro.` });
+});
+
 // POST /api/customer-payments/:contractId/paid { transactionId } — "I have sent it".
 router.post('/customer-payments/:contractId/paid', requireAuth, requireRole('customer'), limiter, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);

@@ -18,6 +18,7 @@
   async function loadOpts() {
     if (!isCustomer()) return null;
     try { PW.opts = await apiFetch('GET', '/customer-payments/options'); } catch (x) { PW.opts = null; }
+    window.PAYWAYS_OPTS = PW.opts; // v121: the booking review reads how protected payments work here
     return PW.opts;
   }
 

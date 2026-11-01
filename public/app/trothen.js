@@ -1139,7 +1139,9 @@ function renderJobCandidates(data) {
     return;
   }
   document.getElementById('job-candidates-body').innerHTML = candidates.map(c => candidateRowHTML(c, job)).join('');
+  CANDIDATE_PRICES = {}; for (const c of candidates) if (c.provider) CANDIDATE_PRICES[c.provider.id] = c.price || null; // v122
 }
+let CANDIDATE_PRICES = {};
 
 function candidateRowHTML(c, job) {
   const p = c.provider;
@@ -1150,12 +1152,14 @@ function candidateRowHTML(c, job) {
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="background:${p.color || '#5A5F6C'};width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0;">${escapeHtml(p.initials || '')}</div>
           <div>
-            <div style="font-weight:700;color:var(--navy);font-size:13.5px;">${escapeHtml(p.name)} <span style="font-weight:400;color:var(--slate);font-size:13px;">· ${p.score}% fit</span></div>
+            <div style="font-weight:700;color:var(--navy);font-size:13.5px;">${escapeHtml(p.name)} ${(c.score != null ? c.score : p.score) != null ? `<span style="font-weight:400;color:var(--slate);font-size:13px;">· ${c.score != null ? c.score : p.score}% fit</span>` : ''}</div>
             <div style="font-size:13px;color:var(--slate);">⭐ ${p.rating || 0} · ${p.jobs || 0} jobs · $${p.price}/hr starting</div>
           </div>
         </div>
         <span class="badge ${c.status === 'interested' ? 'badge-success' : c.status === 'accepted' ? 'badge-success' : c.status === 'declined' || c.status === 'not_selected' ? 'badge-neutral' : 'badge-warn'}">${MATCH_STATUS_LABEL[c.status] || c.status}</span>
       </div>
+      ${c.price ? `<div style="margin-top:10px;padding:10px 12px;border:2px solid var(--teal);border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;"><div><div style="font-size:12.5px;color:var(--slate);">${escapeHtml(p.name.split(' ')[0])}${escapeHtml(tr('\'s price'))}</div><div style="font-size:22px;font-weight:800;color:var(--navy);">$${Number(c.price).toFixed(2)}</div>${c.priceNote ? `<div style="font-size:13px;color:var(--slate);">${escapeHtml(c.priceNote)}</div>` : ''}</div><div style="font-size:12.5px;color:var(--muted);max-width:220px;">${escapeHtml(tr(job && job.payMethod === 'cash' ? 'Paid to the pro in cash after the job. No Trothen fee.' : 'Plus Trothen\'s service fee. Held by Trothen until you say the job is done.'))}</div></div>`
+        : `<div style="margin-top:10px;font-size:13px;color:var(--slate);">${escapeHtml(tr('No price yet. Message them to ask, or offer an amount below.'))}</div>`}
       ${c.coverLetter ? `<div style="margin-top:10px;padding:10px 12px;background:var(--cream, #FAF8F4);border-radius:8px;font-size:13.5px;color:var(--navy);"><strong>Cover letter:</strong> ${escapeHtml(c.coverLetter)}</div>` : ''}
       ${c.messages.length ? `<div style="margin-top:10px;max-height:160px;overflow-y:auto;border-top:1px solid var(--border);padding-top:10px;">
         ${c.messages.map(m => `<div style="margin-bottom:8px;font-size:13.5px;"><strong style="color:var(--navy);">${m.fromId === p.id ? escapeHtml(p.name) : 'You'}:</strong> ${escapeHtml(m.text)}</div>`).join('')}
@@ -1165,10 +1169,12 @@ function candidateRowHTML(c, job) {
         <input class="form-input" style="flex:1;" id="job-msg-input-${p.id}" placeholder="Message ${escapeHtml(p.name.split(' ')[0])} to negotiate…" onkeydown="if(event.key==='Enter')sendJobNegotiationMessage('${p.id}')"/>
         <button class="btn-sm btn-sm-outline" onclick="sendJobNegotiationMessage('${p.id}')">Send</button>
       </div>
-      <div style="display:flex;gap:8px;margin-top:10px;">
-        <input class="form-input" type="number" min="1" step="1" style="width:120px;" id="job-hire-amount-${p.id}" placeholder="$ Amount"/>
-        <button class="btn-sm btn-sm-primary" style="flex:1;" onclick="hireProviderForJob('${p.id}')">Hire ${escapeHtml(p.name.split(' ')[0])}</button>
-      </div>` : ''}
+      ${c.cashReady === false
+        ? `<div class="ver-note" style="margin-top:10px;">${escapeHtml(p.name.split(' ')[0])} ${escapeHtml(tr('can\'t take cash jobs at the moment, so you can\'t hire them for this cash job. Choose another pro, or post the job again with "Protected by Trothen".'))}</div>`
+        : `<div style="display:flex;gap:8px;margin-top:10px;">
+        <input class="form-input" type="number" min="1" step="0.01" style="width:120px;" id="job-hire-amount-${p.id}" placeholder="$ Amount" value="${c.price ? Number(c.price).toFixed(2) : ''}" oninput="const b=document.getElementById('job-hire-btn-${p.id}');if(b)b.textContent='Hire ${escapeHtml(p.name.split(' ')[0]).replace(/'/g, '')}'+(this.value?' for $'+Number(this.value).toFixed(2):'')"/>
+        <button class="btn-sm btn-sm-primary" style="flex:1;" id="job-hire-btn-${p.id}" onclick="hireProviderForJob('${p.id}')">Hire ${escapeHtml(p.name.split(' ')[0])}${c.price ? ` for $${Number(c.price).toFixed(2)}` : ''}</button>
+      </div>`}` : ''}
     </div>`;
 }
 
@@ -1199,7 +1205,16 @@ async function hireProviderForJob(providerId) {
   }
   const jobNow = (customerData.openJobs || []).find(j => j.id === jobId) || {}; // v119: say what happens for this job's way of paying
   const payWords = jobNow.payMethod === 'cash' ? 'This is a cash job: nothing is paid now, and you pay the pro directly after the work.' : 'Your payment is held by Trothen until the job is done (if Trothen gives you a payment code, the pro is asked once your payment arrives).';
-  if (!(await confirmDialog(`Select this provider${body.amount ? ` at $${body.amount}` : ''}? ${payWords} The job stays open to other candidates until this provider actually confirms — if they decline or don't respond in time, it's automatically offered to the next one.`))) return;
+  // v120: show the price, the fee and the total before hiring, not just the amount typed.
+  const budgetFirst = String(jobNow.budget || '').match(/\d+/); // same as the server's parseBudgetAmount: first number, else $100
+  const proPrice = CANDIDATE_PRICES[providerId] || null; // v122: the pro's own price comes first, as on the server
+  const hireAmount = body.amount || proPrice || (budgetFirst && parseInt(budgetFirst[0], 10) > 0 ? parseInt(budgetFirst[0], 10) : 100);
+  const differs = proPrice && body.amount && Math.abs(body.amount - proPrice) > 0.005;
+  const hireFee = jobNow.payMethod === 'cash' || !hireAmount ? 0 : Math.round(Math.min(Math.max(hireAmount * 0.09, 2.99), 25) * 100) / 100;
+  const priceWords = !hireAmount ? '' : jobNow.payMethod === 'cash'
+    ? ` Price: $${hireAmount.toFixed(2)}, paid to the pro in cash after the job (no Trothen service fee).`
+    : ` Price: $${hireAmount.toFixed(2)} + Trothen service fee $${hireFee.toFixed(2)} = $${(hireAmount + hireFee).toFixed(2)} total.`;
+  if (!(await confirmDialog(`Select this provider${body.amount ? ` at $${body.amount}` : ''}?${differs ? ` They asked $${Number(proPrice).toFixed(2)}, so they can confirm your price or say no.` : ''}${priceWords} ${payWords} The job stays open to other candidates until this provider actually confirms — if they decline or don't respond in time, it's automatically offered to the next one.`))) return;
   try {
     const { contract } = await apiFetch('POST', `/jobs/${jobId}/select-provider`, body);
     showToast(contract.status === 'awaiting_payment' ? `Selected — booking ${contract.bookingNumber || contract.id} is waiting for your payment` : contract.payMethod === 'cash' ? `Selected — cash booking ${contract.bookingNumber || contract.id} created, awaiting provider confirmation` : `Selected — contract ${contract.bookingNumber || contract.id} created, escrow funded, awaiting provider confirmation`);
@@ -4590,9 +4605,15 @@ function responseDeadlineNote(b) {
   if (!b.providerResponseDeadline || !['pending_agreement', 'pending_provider_confirmation'].includes(b.status)) return '';
   const deadline = new Date(b.providerResponseDeadline);
   const hoursLeft = (deadline - new Date()) / (1000 * 60 * 60);
-  const label = hoursLeft > 0
-    ? `Responds by ${deadline.toLocaleString(undefined, { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' })}`
-    : `Response window has passed`;
+  const when = deadline.toLocaleString(undefined, { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
+  // v122: during a price back-and-forth it can be the customer's turn to answer.
+  const raw = typeof RAW_CONTRACTS === 'object' ? RAW_CONTRACTS[b.id] : null;
+  const customerTurn = b.status === 'pending_agreement' && raw && raw.waitingOn === 'customer';
+  const meCustomer = AUTH.user && AUTH.user.role === 'customer';
+  const label = hoursLeft <= 0 ? `Response window has passed`
+    : customerTurn ? (meCustomer ? `${tr('Answer by')} ${when}` : `${tr('Customer answers by')} ${when}`)
+    : (!meCustomer && b.status === 'pending_agreement') ? `${tr('Answer by')} ${when}`
+    : `Responds by ${when}`;
   return `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">${label}</div>`;
 }
 
@@ -4601,7 +4622,8 @@ function bookingActionHTML(b) {
   if (b.status === 'awaiting_payment') { // v119: a protected booking waiting for the customer's mobile money payment
     return `<button class="btn-sm btn-sm-primary" onclick="payWaysShow('${b.id}')">💳 ${escapeHtml(tr('Pay now'))}</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">${escapeHtml(tr('Cancel'))}</button>`;
   }
-  if (b.status === 'pending_agreement') {
+  if (b.status === 'pending_agreement') { // v122: the price goes back and forth until one side accepts
+    if (typeof priceActionsHTML === 'function') return `${priceActionsHTML(b.id, 'customer')} <button class="btn-sm btn-sm-ghost" onclick="selectCustomerSection('messages');setTimeout(()=>selectMessageContact('${b.providerId}'),50)">💬 Discuss</button>${priceTalkHTML(b.id, 'customer')}`;
     return `<span style="font-size:13px;color:var(--slate);">Awaiting response</span> <button class="btn-sm btn-sm-ghost" onclick="selectCustomerSection('messages');setTimeout(()=>selectMessageContact('${b.providerId}'),50)">💬 Discuss</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Withdraw Offer</button>`;
   }
   if (b.status === 'pending_provider_confirmation') {
@@ -6102,6 +6124,7 @@ async function loadProviderData() {
       photoUrls: (m.job && m.job.photoUrls) || [],
       materialsOnHand: (m.job && m.job.materialsOnHand) || null,
       materialsCost: (m.job && m.job.materialsCost) != null ? m.job.materialsCost : null,
+      price: m.price || null, priceNote: m.priceNote || null, // v122: the pro's own price for this job
     }));
     resumeLiveTripIfAny(contracts); // v93
     cacheRawContracts(contracts); resumeCarryIfAny(contracts); // v105
@@ -7208,7 +7231,7 @@ function matchesTable(list) {
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Budget</th><th>Match Score</th><th>Distance</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}${m.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(m.materialsOnHand)}</div>` : ''}${m.materialsCost != null ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">💵 Materials budget: $${m.materialsCost}</div>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${escapeHtml(m.distance)}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
   <td class="row-actions">${m.status === 'interested'
-    ? `<button class="btn-sm btn-sm-outline" onclick="messageCustomerAboutJob('${m.customerId}','${m.jobId}')">💬 Message</button>`
+    ? `${m.price ? `<div style="font-size:13px;margin-bottom:6px;"><strong>${escapeHtml(tr('Your price'))}: $${Number(m.price).toFixed(2)}</strong>${m.priceNote ? `<div style="color:var(--slate);">${escapeHtml(m.priceNote)}</div>` : ''}</div>` : ''}<button class="btn-sm btn-sm-outline" onclick="changeMatchPrice('${m.id}')">${escapeHtml(tr(m.price ? 'Change price' : 'Add your price'))}</button> <button class="btn-sm btn-sm-outline" onclick="messageCustomerAboutJob('${m.customerId}','${m.jobId}')">💬 Message</button>`
     : `<button class="btn-sm btn-sm-primary" onclick="respondToMatch('${m.id}','accept')">I'm Interested</button><button class="btn-sm btn-sm-outline" onclick="respondToMatch('${m.id}','decline')">Decline</button>`
   }</td></tr>`).join('')}
   </tbody></table></div>`;
@@ -7268,7 +7291,9 @@ function contractsTable(list) {
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Customer</th><th>Service</th><th>Amount</th><th>Signed</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${list.map(c => {
     let actions = '';
-    if (c.status === 'pending_agreement') {
+    if (c.status === 'pending_agreement' && typeof priceActionsHTML === 'function') { // v122
+      actions = `${priceActionsHTML(c.id, 'provider')} <button class="btn-sm btn-sm-ghost" onclick="selectProviderSection('messages');setTimeout(()=>selectMessageContact('${c.customerId}'),50)">💬 Discuss</button>${priceTalkHTML(c.id, 'provider')}`;
+    } else if (c.status === 'pending_agreement') {
       actions = `<button class="btn-sm btn-sm-primary" onclick="respondToOffer('${c.id}','accept')">Accept Offer</button> <button class="btn-sm btn-sm-outline" onclick="respondToOffer('${c.id}','decline')">Decline</button> <button class="btn-sm btn-sm-ghost" onclick="selectProviderSection('messages');setTimeout(()=>selectMessageContact('${c.customerId}'),50)">💬 Discuss</button>`;
     } else if (c.status === 'pending_provider_confirmation') {
       actions = `<button class="btn-sm btn-sm-primary" onclick="respondToOffer('${c.id}','accept')">Confirm Booking</button> <button class="btn-sm btn-sm-outline" onclick="respondToOffer('${c.id}','decline')">Can't Take This</button>`;

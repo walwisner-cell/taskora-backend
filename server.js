@@ -149,6 +149,11 @@ app.use(express.json({
 app.use(morgan('dev'));
 
 // ---- API routes ----
+// v123: live updates. Installed before any route runs, so every save in the
+// app tells the people it belongs to (see src/live.js).
+const live = require('./src/live');
+live.install(require('./src/db'));
+app.use('/api', live.router);
 app.use('/api/auth', authRoutes);
 // v105: pro stores, extra skills, pick-up/drop-off, and the pro's business tools.
 // These come first so their /api/admin/store addresses are reached before the main admin routes.

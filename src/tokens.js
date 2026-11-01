@@ -425,6 +425,36 @@ async function chargeCashCommission(provider, contract) {
   }
 }
 
+// v121: can this pro take a cash job of this price right now? Checked
+// BEFORE a cash booking or hire is created, so the customer is told at
+// once instead of waiting hours for a pro who can't press Accept.
+// Returns { ok } only; the customer never sees the pro's balance.
+async function cashReady(provider, jobPrice) {
+  if (!provider) return { ok: false };
+  const debt = money(provider.tokenDebt || 0);
+  if (debt > 0) return { ok: false, debt };
+  if ((provider.freeCommissionCredits || 0) > 0) return { ok: true, free: true };
+  const rate = await cashCommissionRate(provider);
+  const need = money((Number(jobPrice) || 0) * rate);
+  if (!(need > 0)) return { ok: true };
+  const have = await balance(provider.id);
+  return { ok: have + 0.001 >= need, need, have, rate };
+}
+// Tells the pro, at most once every 6 hours, that a customer wanted them
+// for a cash job they couldn't cover.
+async function nudgeCashNotReady(provider, check, jobPrice) {
+  try {
+    if (!provider || !check || check.ok) return;
+    const last = provider.cashNudgeAt ? new Date(provider.cashNudgeAt).getTime() : 0;
+    if (Date.now() - last < 6 * 60 * 60 * 1000) return;
+    await db.update('users', provider.id, { cashNudgeAt: new Date().toISOString() });
+    const msg = check.debt
+      ? `A customer wanted to book you for a cash job, but you still owe ${check.debt} tokens of commission from an earlier cash job. Buy tokens on your Tokens page so customers can book you for cash.`
+      : `A customer wanted to book you for a $${money(jobPrice).toFixed(2)} cash job, but Trothen's commission on it is ${check.need} tokens and you have ${check.have}. Buy tokens on your Tokens page so customers can book you for cash. Protected bookings don't need tokens.`;
+    await notify(provider.id, '🪙', msg, null, { section: 'tokens' });
+  } catch (e) { /* a missed nudge never blocks the customer */ }
+}
+
 // Called when the customer confirms a cash job is done and how much they paid.
 async function settleCashCommission(contract, paidAmount) {
   const c = await db.find('contracts', x => x.id === contract.id);
@@ -753,4 +783,4 @@ async function stats() {
   };
 }
 
-module.exports = { inAppPaymentAvailable, newPaymentCode, OPEN_STATUSES, createPaymentCode, customerReportsPaid, customerCancelsCode, confirmPaymentCode, rejectPaymentCode, expirePaymentCodes, publicCode, cleanPack, cleanCountryPack, niceLocal, settings, settingsFor, recordOfflineTopUp, OFFLINE_METHODS, balance, ledgerOf, publicLine, buy, creditPurchase, checkPendingPurchases, spend, spendUpTo, refundRef, AUTOPAY_KEYS, autopayOf, chargeCashCommission, settleCashCommission, settleDebtAfterCredit, commissionRefundReason, cashCommissionRate, payCommission, payPlanInvoice, autoPayPlanInvoices, SPEND_WORDS, sweep, adminAdjust, stats, tokenError, money };
+module.exports = { inAppPaymentAvailable, newPaymentCode, OPEN_STATUSES, createPaymentCode, customerReportsPaid, customerCancelsCode, confirmPaymentCode, rejectPaymentCode, expirePaymentCodes, publicCode, cleanPack, cleanCountryPack, niceLocal, settings, settingsFor, recordOfflineTopUp, OFFLINE_METHODS, balance, ledgerOf, publicLine, buy, creditPurchase, checkPendingPurchases, spend, spendUpTo, refundRef, AUTOPAY_KEYS, autopayOf, chargeCashCommission, cashReady, nudgeCashNotReady, settleCashCommission, settleDebtAfterCredit, commissionRefundReason, cashCommissionRate, payCommission, payPlanInvoice, autoPayPlanInvoices, SPEND_WORDS, sweep, adminAdjust, stats, tokenError, money };

@@ -28,6 +28,14 @@ async function expireOneBooking(contract) {
     return updated;
   }
 
+  // v122: during a price back-and-forth it may be the customer who didn't answer.
+  if (contract.status === 'pending_agreement' && contract.waitingOn === 'customer') {
+    const price = Number(contract.laborAmount != null ? contract.laborAmount : contract.amount).toFixed(2);
+    await notify(contract.providerId, '⏰', `The customer didn't answer your price of $${price} for "${contract.service}" in time, so the booking request expired. Nothing was charged.`, null, { section: 'bookings' });
+    await notify(contract.customerId, '⏰', `You didn't answer ${provider ? provider.name : 'the pro'}'s price of $${price} for "${contract.service}" in time, so the booking request expired. Nothing was charged. Book again if you still need it.`, null, { section: 'bookings' });
+    return updated;
+  }
+
   await notify(contract.providerId, '⏰', `You didn't respond to the booking request for "${contract.service}" in time, so it expired automatically${contract.payMethod === 'cash' ? '' : ' and the customer was refunded'}.`, null, { section: 'bookings' }); // v119: nothing to refund on a cash job
 
   if (isJobSelection) {
