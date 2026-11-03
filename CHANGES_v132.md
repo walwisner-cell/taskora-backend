@@ -1,5 +1,7 @@
 # Trothen v132: how commission is paid, shown clearly, and tokens used for it
 
+> **Changed in v134:** on escrow jobs, Trothen's commission is again taken out of the job money first, as you asked. Tokens are for cash-job commission. The "tokens first" default described below no longer applies; a pro can still opt in on their Tokens page. See `CHANGES_v134.md`.
+
 This one package includes everything since the version on your GitHub `main` before v128: v128, v129, v130 and v131. Deploy only this one. It works whether or not v128 is already live.
 
 ## What I asked about

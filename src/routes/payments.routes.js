@@ -214,6 +214,32 @@ router.get('/payouts/commission', requireAuth, requireRole('provider'), async (r
   res.json(await require('../commission-statement').providerCommissionSummary(provider));
 });
 
+// GET /api/payouts/commission-quote?contractId=…[&amount=…] or ?matchId=…&amount=…
+// v134: before a pro accepts a job, what Trothen's commission on it will be,
+// how it will be paid and what they will receive. Only for the pro's own
+// booking or job match. Nothing is charged by asking.
+router.get('/payouts/commission-quote', requireAuth, requireRole('provider'), async (req, res) => {
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  const { contractId, matchId } = req.query;
+  const amount = req.query.amount !== undefined ? Math.round(Number(req.query.amount) * 100) / 100 : null;
+  if (amount !== null && !(amount > 0 && amount < 1e7)) return res.status(400).json({ error: 'Enter a valid amount.' });
+  let contract = null, payMethod = null, price = amount;
+  if (contractId) {
+    contract = await db.find('contracts', c => c.id === contractId && c.providerId === provider.id);
+    if (!contract) return res.status(404).json({ error: 'Booking not found.' });
+    if (price === null) price = Number(contract.laborAmount != null ? contract.laborAmount : Math.max(0, (contract.amount || 0) - (contract.storeGoodsTotal || 0))) || 0;
+  } else if (matchId) {
+    const match = await db.find('matches', m => m.id === matchId && m.providerId === provider.id);
+    if (!match) return res.status(404).json({ error: 'Job not found.' });
+    const job = await db.find('jobs', j => j.id === match.jobId);
+    payMethod = (job && job.payMethod) || 'protected';
+    if (price === null) return res.status(400).json({ error: 'Enter an amount.' });
+  } else if (price === null) {
+    return res.status(400).json({ error: 'Enter an amount.' });
+  }
+  res.json({ quote: await require('../commission-statement').quoteForPro(provider, { contract, price, payMethod }) });
+});
+
 // GET /api/payouts/pdf — a real, downloadable payout history report for a
 // provider, honoring the same from/to date range as the on-screen history.
 // Built so "who paid me, and when" is answerable from a document alone,

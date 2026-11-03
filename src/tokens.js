@@ -370,16 +370,14 @@ async function refundRef(ref, why) {
 
 // The pro's own choices: which bills to pay from tokens first.
 const AUTOPAY_KEYS = ['commission', 'plan', 'ad', 'pass'];
-// v132: commission is paid from tokens first unless the pro has turned it
-// off themselves. This is how a prepaid balance normally works: a pro who
-// bought tokens expects them to be used, and the payout is then kept whole.
-// Before v132 the box started unticked and almost no one found it, so no
-// token was ever spent on commission. `tokenAutoPayChosen.commission` marks
-// a pro who has made their own choice; their choice is always kept.
+// v134: on jobs paid through Trothen (escrow), the commission is taken out of
+// the job money before the rest is paid to the pro. Tokens are what a pro
+// buys to cover the commission on cash jobs. A pro may still choose to pay
+// escrow commission with tokens (the box on their Tokens page), but it is
+// off unless they turn it on. (v132 briefly made it on by default.)
 function autopayOf(u) {
   const a = (u && u.tokenAutoPay) || {};
-  const chosen = (u && u.tokenAutoPayChosen) || {};
-  return Object.fromEntries(AUTOPAY_KEYS.map(k => [k, k === 'commission' && !chosen.commission ? true : a[k] === true]));
+  return Object.fromEntries(AUTOPAY_KEYS.map(k => [k, a[k] === true]));
 }
 
 // ── v119: commission on CASH jobs, paid from tokens ─────────────────────

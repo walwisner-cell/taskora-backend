@@ -250,15 +250,26 @@ function parseBudgetAmount(budget, fallback = 100) {
 // GET /api/categories — public directory of active categories with real,
 // live counts of verified providers in each (no auth required; this powers
 // the marketing homepage and the full "Browse Categories" page).
+// v135: ?country=…&city=… gives the categories offered in that country, each
+// with how many pros customers can find there and in that city. Without a
+// country, every active category with its worldwide count (the homepage).
 router.get('/categories', async (req, res) => {
-  const categories = await db.filter('categories', c => c.active);
-  const withCounts = await Promise.all(categories.map(async c => ({
-    id: c.id,
-    name: c.name,
-    icon: c.icon || '🛠️',
-    proCount: (await db.filter('users', u => isListedPro(u) && proStore.hasSkill(u, c.name))).length, // v105: counts extra skills too; v133: only pros customers can find
-  })));
-  res.json({ categories: withCounts });
+  const { groupFor, offeredIn, sameText } = require('../category-groups');
+  const country = typeof req.query.country === 'string' ? req.query.country.trim().slice(0, 80) : '';
+  const city = typeof req.query.city === 'string' ? req.query.city.trim().slice(0, 80) : '';
+  const categories = (await db.filter('categories', c => c.active)).filter(c => offeredIn(c, country));
+  const listed = await db.filter('users', u => isListedPro(u));
+  const withCounts = categories.map(c => {
+    const pros = listed.filter(u => proStore.hasSkill(u, c.name)); // v105: counts extra skills too; v133: only pros customers can find
+    const out = { id: c.id, name: c.name, icon: c.icon || '🛠️', group: groupFor(c.name), proCount: pros.length };
+    if (country) {
+      const inCountry = pros.filter(u => sameText(u.country, country));
+      out.countryCount = inCountry.length;
+      if (city) out.cityCount = inCountry.filter(u => sameText(u.city, city)).length;
+    }
+    return out;
+  });
+  res.json({ categories: withCounts, country: country || null });
 });
 
 // GET /api/popular-projects — real categories, ranked by real provider
@@ -948,7 +959,8 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   if (customer.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review. You\'ll be able to post a job again shortly. Contact support if you need this resolved sooner.' });
   }
-  const { category, description, materialsOnHand, materialsCost, budget, payCurrency, photoUrls } = req.body || {};
+  let { category } = req.body || {}; // v134: may be corrected to the listed name below
+  const { description, materialsOnHand, materialsCost, budget, payCurrency, photoUrls } = req.body || {};
   const jobWhere = readJobLocation(req.body); // v92
   if (jobWhere.error) return res.status(400).json({ error: jobWhere.error });
   // v128: a job must say where it is. Without a pin or at least a landmark,
@@ -976,7 +988,19 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   if (validPhotoUrls === null) return res.status(400).json({ error: 'Invalid photo. Please re-upload your photos and try again' });
 
   const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
+  // v134: "Land Scaping" is Landscaping. Without this, a category typed a
+  // little differently was treated as a new kind of work and matched no pros.
+  const canonical = require('../search-synonyms').canonicalCategory(category, activeCategories);
+  if (canonical) category = canonical;
   const isKnownCategory = activeCategories.includes(category);
+  // v135: a category the super admin has switched off in this country (local
+  // rules or licensing) can't be booked here.
+  if (isKnownCategory) {
+    const catRow = await db.find('categories', c => c.name === category);
+    if (catRow && !require('../category-groups').offeredIn(catRow, customer.country)) {
+      return res.status(400).json({ code: 'CATEGORY_NOT_OFFERED', error: `${category} isn't offered in ${customer.country} yet. Choose another kind of work.` });
+    }
+  }
   // A job in a category we don't currently list is still a real request —
   // rejecting it here would mean "sorry, we can't help you" the moment a
   // customer's actual need doesn't match our current catalog. It posts

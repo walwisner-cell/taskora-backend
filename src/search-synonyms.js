@@ -81,4 +81,20 @@ function categoriesForSearchTerm(query) {
   return Array.from(matches);
 }
 
-module.exports = { SEARCH_SYNONYMS, categoriesForSearchTerm };
+// v134: the listed category a customer meant, when they typed it slightly
+// differently: "Land Scaping", "landscaping", "Land-scaping" or "landscaper"
+// all mean Landscaping. Only an exact match (ignoring capitals, spaces and
+// punctuation) or a whole-word synonym counts, so a genuinely new kind of
+// work is never forced into the wrong category. Returns null when unsure.
+function canonicalCategory(typed, activeNames) {
+  const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const n = norm(typed);
+  if (!n) return null;
+  const exact = (activeNames || []).find(c => norm(c) === n);
+  if (exact) return exact;
+  const syn = Object.entries(SEARCH_SYNONYMS).find(([term]) => norm(term) === n);
+  if (syn && (activeNames || []).includes(syn[1])) return syn[1];
+  return null;
+}
+
+module.exports = { SEARCH_SYNONYMS, categoriesForSearchTerm, canonicalCategory };

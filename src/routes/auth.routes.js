@@ -115,7 +115,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
   ]);
   if (role === 'provider') {
     errors.push(...validate([
-      ['category', isNonEmptyString(category), 'Select your primary service category'],
+      ['category', isNonEmptyString(categoryTyped), 'Select your primary service category'],
       ['skills', isNonEmptyString(skills, { min: 2, max: 300 }), 'List at least one skill or specialty'],
     ]));
   }
@@ -271,6 +271,8 @@ async function completeSignupVerify(req, res, pending) {
   let categoryApprovalStatus = 'approved';
   if (payload.role === 'provider') {
     const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
+    const canonical = require('../search-synonyms').canonicalCategory(payload.category, activeCategories); // v134: "Land Scaping" is Landscaping
+    if (canonical) payload.category = canonical;
     if (!activeCategories.includes(payload.category)) categoryApprovalStatus = 'pending';
   }
 
@@ -669,7 +671,7 @@ router.post('/google', async (req, res) => {
 // same org invite / referral handling — a Google signup is a full,
 // first-class account, not a lesser one.
 router.post('/google/signup', signupLimiter, async (req, res) => {
-  const { idToken, role, country, state, city, phone, address, zipCode, category, skills, inviteCode, referralCode } = req.body || {};
+  const { idToken, role, country, state, city, phone, address, zipCode, category: categoryTyped, skills, inviteCode, referralCode } = req.body || {};
   const { verifyGoogleIdToken } = require('../google-auth');
   const google = await verifyGoogleIdToken(idToken);
   if (!google) return res.status(401).json({ error: 'Could not verify that Google sign-in. Please try again' });
@@ -688,7 +690,7 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
   ]);
   if (role === 'provider') {
     errors.push(...validate([
-      ['category', isNonEmptyString(category), 'Select your primary service category'],
+      ['category', isNonEmptyString(categoryTyped), 'Select your primary service category'],
       ['skills', isNonEmptyString(skills, { min: 2, max: 300 }), 'List at least one skill or specialty'],
     ]));
   }
@@ -719,8 +721,11 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
   }
 
   let categoryApprovalStatus = 'approved';
+  let category = categoryTyped;
   if (role === 'provider') {
     const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
+    const canonical = require('../search-synonyms').canonicalCategory(category, activeCategories); // v134: "Land Scaping" is Landscaping
+    if (canonical) category = canonical;
     if (!activeCategories.includes(category)) categoryApprovalStatus = 'pending';
   }
 
@@ -1111,7 +1116,8 @@ router.patch('/me', requireAuth, async (req, res) => {
     // already a listed category.
     const normalize = (s) => s.toLowerCase().replace(/&/g, 'and').replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
     const activeCategories = await db.filter('categories', c => c.active);
-    const matchedCategory = activeCategories.find(c => normalize(c.name) === normalize(patch.category));
+    const canonicalName = require('../search-synonyms').canonicalCategory(patch.category, activeCategories.map(c => c.name)); // v134: also ignores spaces ("Land Scaping")
+    const matchedCategory = activeCategories.find(c => normalize(c.name) === normalize(patch.category)) || (canonicalName && activeCategories.find(c => c.name === canonicalName));
 
     if (matchedCategory) {
       patch.category = matchedCategory.name; // use the real, correctly-formatted name

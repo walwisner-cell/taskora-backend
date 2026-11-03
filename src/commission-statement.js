@@ -285,6 +285,54 @@ async function providerCommissionSummary(provider) {
   };
 }
 
+// v134: what the pro will pay and receive on one job, shown before they
+// accept it. Uses the same rates as payouts (ratesFor) and, for cash jobs,
+// the same check the server makes when the pro accepts (tokens.cashReady).
+// `price` is the labour price being agreed (store goods are separate and
+// carry no commission). Read-only: nothing is charged by asking.
+async function quoteForPro(provider, { contract, price, payMethod }) {
+  const tokens = require('./tokens');
+  const rates = await ratesFor(provider);
+  const ride = !!(contract && contract.ride);
+  const passFree = ride && contract.ride.commissionFree === true;
+  const rate = passFree ? 0 : ride ? rates.baseRideRate : rates.baseRate;
+  const labour = cents(price);
+  const goods = cents(contract ? (contract.storeGoodsTotal || 0) : 0);
+  const storeFee = cents(contract && contract.storeFeePaidBy === 'pro' ? Math.min(contract.storeFee || 0, goods) : 0);
+  const method = payMethod || (contract && contract.payMethod) || 'protected';
+  let enabled = false, balance = 0;
+  try { enabled = !!(await tokens.settingsFor(provider.country)).enabled; balance = await tokens.balance(provider.id); } catch (e) { /* tokens are optional */ }
+  const out = {
+    payMethod: method, price: labour, goods, storeFee, rate, rateSource: rates.rateSource, ride, passFree,
+    planLabel: ({ starter: 'Starter', pro: 'Pro', superpro: 'Super Pro' })[provider.plan] || 'Starter',
+    organizationName: rates.rateSource === 'organization' && rates.organization ? rates.organization.name : null,
+    freeCredits: provider.freeCommissionCredits || 0,
+    tokens: { enabled, balance, autopay: tokens.autopayOf(provider).commission, debt: cents(provider.tokenDebt || 0) },
+  };
+  if (method === 'cash' && !ride) {
+    // The customer pays the pro directly. The commission is paid with tokens
+    // the moment the pro accepts (a free-commission credit covers it instead).
+    const check = await tokens.cashReady(provider, labour);
+    const free = !!check.free;
+    out.commission = free ? 0 : cents(labour * rates.baseRate);
+    out.rate = free ? 0 : rates.baseRate;
+    out.when = 'accept';
+    out.freeCreditUsed = free;
+    out.tokensNeeded = free ? 0 : (check.need != null ? check.need : out.commission);
+    out.tokensEnough = !!check.ok;
+    out.customerPaysYou = cents(labour + goods);
+    out.youReceive = cents(labour + goods - storeFee); // in cash, from the customer
+    return out;
+  }
+  // Paid through Trothen: the commission is taken when the pro requests a payout.
+  out.commission = cents((labour) * rate);
+  out.when = 'payout';
+  out.tokensWouldCover = out.tokens.autopay && enabled ? cents(Math.max(0, Math.min(balance, out.commission))) : 0;
+  out.fromPayout = cents(out.commission - out.tokensWouldCover);
+  out.youReceive = cents(labour + goods - out.fromPayout - storeFee);
+  return out;
+}
+
 // For admins: every commission Trothen has received, and how it was paid.
 // `inScope(provider)` limits it to an admin's region.
 async function commissionLedger(inScope, { from, to } = {}) {
@@ -330,4 +378,4 @@ async function commissionLedger(inScope, { from, to } = {}) {
   return { rows, totals: { commission: sum('commission'), fromPayout: sum('fromPayout'), withTokens: sum('withTokens'), storeFee: sum('storeFee') } };
 }
 
-module.exports = { calcPayout, previewPayout, providerCommissionSummary, commissionLedger, escrowLineCommission, ratesFor, rateSourceOf, cents };
+module.exports = { calcPayout, previewPayout, providerCommissionSummary, commissionLedger, quoteForPro, escrowLineCommission, ratesFor, rateSourceOf, cents };

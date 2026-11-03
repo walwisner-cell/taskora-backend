@@ -2750,6 +2750,26 @@ router.patch('/categories/:id', requireSuperAdmin, async (req, res) => {
   res.json({ category: updated });
 });
 
+// PATCH /api/admin/categories/:id/countries { notOfferedIn: [country names] }
+// v135: switch a category off in particular countries (local law, licensing
+// or rules), while it stays offered everywhere else. An empty list means it
+// is offered in every country.
+router.patch('/categories/:id/countries', requireSuperAdmin, async (req, res) => {
+  const cat = await db.find('categories', c => c.id === req.params.id);
+  if (!cat) return res.status(404).json({ error: 'Category not found' });
+  const list = (req.body || {}).notOfferedIn;
+  if (!Array.isArray(list) || list.length > 250) return res.status(400).json({ error: 'Send a list of country names.' });
+  const known = await db.all('countries');
+  const out = [], unknown = [];
+  for (const raw of list) {
+    const hit = known.find(k => String(k.name).trim().toLowerCase() === String(raw || '').trim().toLowerCase());
+    if (hit) { if (!out.includes(hit.name)) out.push(hit.name); } else if (String(raw || '').trim()) unknown.push(String(raw).trim());
+  }
+  if (unknown.length) return res.status(400).json({ error: `Not a country on Trothen: ${unknown.join(', ')}. Check the spelling.` });
+  const updated = await db.update('categories', cat.id, { notOfferedIn: out.sort() });
+  res.json({ category: updated });
+});
+
 // PATCH /api/admin/categories/:id/response-window — sets (or clears, with
 // hours: null) this category's own booking-confirmation window, overriding
 // the tiered lead-time default for every booking in this category

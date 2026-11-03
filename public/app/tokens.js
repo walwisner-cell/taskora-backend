@@ -122,7 +122,7 @@
   // What this pro's tokens pay for: the job fee (set by Trothen) and the
   // bills they choose to pay from tokens first.
   const USE_ROWS = [
-    ['commission', 'Commission on protected jobs, when I cash out', 'On unless you turn it off. Trothen\'s commission is paid from tokens, so you keep the full amount you earned. If your tokens don\'t cover all of it, the rest comes out of the payout as usual.'],
+    ['commission', 'Commission on protected jobs, when I cash out', 'Trothen\'s commission is paid from tokens, so you keep the full amount you earned. If your tokens don\'t cover all of it, the rest comes out of the payout as usual.'],
     ['plan', 'My monthly plan fee', 'Paid from tokens as soon as the month\'s invoice is made, instead of from your payouts.'],
     ['ad', 'Ads I place', 'Paid from tokens when your balance covers the whole price; otherwise the usual way.'],
     ['pass', 'Driver passes', 'Paid from tokens when your balance covers the whole price; otherwise the usual way.'],
