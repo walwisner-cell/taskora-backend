@@ -15,6 +15,7 @@ const { contractStatusLocks } = require('../contract-locks');
 const proStore = require('../store'); // v105: pro stores and extra skills
 
 const router = express.Router();
+const { isListedPro } = require('../listing'); // v133
 
 // A genuine dispute should be rare — this is defense against spam
 // (someone opening dozens in a row), not a barrier to legitimate use. The
@@ -255,7 +256,7 @@ router.get('/categories', async (req, res) => {
     id: c.id,
     name: c.name,
     icon: c.icon || '🛠️',
-    proCount: (await db.filter('users', u => u.role === 'provider' && u.verified && proStore.hasSkill(u, c.name))).length, // v105: counts extra skills too
+    proCount: (await db.filter('users', u => isListedPro(u) && proStore.hasSkill(u, c.name))).length, // v105: counts extra skills too; v133: only pros customers can find
   })));
   res.json({ categories: withCounts });
 });
@@ -273,7 +274,7 @@ router.get('/popular-projects', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || 8, 20);
   const [categories, providers, images] = await Promise.all([
     db.filter('categories', c => c.active),
-    db.filter('users', u => u.role === 'provider' && u.verified && u.acceptingBookings !== false),
+    db.filter('users', u => isListedPro(u) && u.acceptingBookings !== false), // v133: only pros customers can find
     db.all('categoryImages'),
   ]);
   const imageByCategory = new Map(images.map(img => [img.categoryId, img.url]));
@@ -569,7 +570,7 @@ function showcaseShortName(name) {
   return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.` : parts[0];
 }
 router.get('/showcase', async (req, res) => {
-  const pros = await db.filter('users', u => u.role === 'provider' && u.verified && u.profilePhotoUrl);
+  const pros = await db.filter('users', u => isListedPro(u));
   const byId = new Map(pros.map(p => [p.id, p]));
   const proInfo = p => ({ id: p.id, name: p.name, category: p.category, role: p.providerRole || null, profilePhotoUrl: p.profilePhotoUrl || null, initials: p.initials || null, color: p.color || null });
   const newestFirst = (a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
@@ -710,7 +711,7 @@ router.get('/currency/mine', requireAuth, async (req, res) => {
 // schedule.
 router.get('/providers/featured', async (req, res) => {
   const { country } = req.query;
-  const paid = await db.filter('users', u => u.role === 'provider' && u.verified && ['pro', 'superpro'].includes(u.plan));
+  const paid = await db.filter('users', u => isListedPro(u) && ['pro', 'superpro'].includes(u.plan)); // v133: only pros customers can find
 
   // If we actually know the customer's country, showing a plumber from a
   // completely different one on their very first screen isn't a
@@ -761,7 +762,7 @@ router.get('/providers', async (req, res) => {
   // picture (item 6 / Mandatory Profile Picture) — a verified provider
   // with no photo yet isn't "fully active" for discovery purposes; they
   // still have a working account and can add one in Settings any time.
-  let providers = await db.filter('users', u => u.role === 'provider' && u.verified && u.profilePhotoUrl);
+  let providers = await db.filter('users', u => isListedPro(u)); // v133: the shared rule in src/listing.js
   if (category) providers = providers.filter(p => proStore.hasSkill(p, category)); // v105: main skill or an approved extra one
   if (q) {
     const needle = q.toLowerCase();
@@ -1030,7 +1031,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   // state/region; only if THAT comes up empty does it widen to the whole
   // country. A customer in Lagos is never matched to a provider in Abuja
   // over one in a different country, no matter how good that provider is.
-  const inCategoryUnfiltered = await db.filter('users', u => u.role === 'provider' && proStore.hasSkill(u, category) && u.verified && u.profilePhotoUrl); // v105: main skill or an approved extra one
+  const inCategoryUnfiltered = await db.filter('users', u => isListedPro(u) && proStore.hasSkill(u, category)); // v105: main skill or an approved extra one
   const weeklyCounts = await weeklyMatchCountsForProviders(inCategoryUnfiltered.map(u => u.id));
   // Lazy require — provider-score.js requires this file back (for
   // LICENSED_TRADE_CATEGORIES/hasValidLicense), so a top-level require

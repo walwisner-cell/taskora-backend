@@ -7390,12 +7390,17 @@ function contractsTable(list) {
 // The exact thresholds from the published Fees and Payment Policy — if
 // those numbers ever change, update them here to match, not the other
 // way around.
+// v133: the rates come from the server (PLAN_COMMISSION, the same numbers
+// payouts charge). They were typed in here as 13% / 9% / 7%, which did not
+// match what payouts actually take (13% / 12% / 10%).
 const TIER_THRESHOLDS = {
-  starter: { next: 'pro', nextLabel: 'Pro', nextRate: '9%', jobs: 50, rating: 4.7, cancellationRate: 5 },
-  pro: { next: 'superpro', nextLabel: 'Super-Pro', nextRate: '7%', jobs: 500, rating: 4.85, cancellationRate: 2 },
+  starter: { next: 'pro', nextLabel: 'Pro', jobs: 50, rating: 4.7, cancellationRate: 5 },
+  pro: { next: 'superpro', nextLabel: 'Super-Pro', jobs: 500, rating: 4.85, cancellationRate: 2 },
 };
 const TIER_LABELS = { starter: 'Starter', pro: 'Pro', superpro: 'Super-Pro' };
-const TIER_RATES = { starter: '13%', pro: '9%', superpro: '7%' };
+const tierRate = (plan) => { const fb = { starter: 13, pro: 12, superpro: 10 }; const v = (typeof PLAN_COMMISSION === 'object' && typeof PLAN_COMMISSION[plan] === 'number') ? PLAN_COMMISSION[plan] : fb[plan]; return `${v != null ? v : 13}%`; };
+const TIER_RATES = { get starter() { return tierRate('starter'); }, get pro() { return tierRate('pro'); }, get superpro() { return tierRate('superpro'); } };
+for (const k of Object.keys(TIER_THRESHOLDS)) Object.defineProperty(TIER_THRESHOLDS[k], 'nextRate', { get() { return tierRate(TIER_THRESHOLDS[k].next); }, enumerable: true });
 
 function renderTierProgress(currentPlan, jobsCompleted, rating, cancellationRate) {
   const currentLabel = TIER_LABELS[currentPlan] || 'Starter';
@@ -7956,7 +7961,7 @@ async function loadAdminData() {
   adminData.verificationQueueBlocked = !verQueue; // v107: this account isn't allowed to open the queue
   if (verQueue) adminData.verificationQueue = verQueue.queue.map(v => ({ id: v.id, name: v.userName, role: v.role, doc: v.docType, country: v.country, city: v.city, status: v.status, reviewDeadline: v.reviewDeadline, idLegalName: v.idLegalName || null, nameMatch: v.nameMatch, hasDocument: !!v.hasDocument, hasSelfie: !!v.hasSelfie, hasBack: !!v.hasBack, source: v.source || 'upload', createdAt: v.createdAt }));
   if (disputes) adminData.disputes = disputes.disputes.map(d => ({ id: d.id, parties: d.parties, reason: d.reason, amount: d.amount, status: d.status, createdAt: d.createdAt }));
-  if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, active: c.active, responseWindowOverrideHours: c.responseWindowOverrideHours }));
+  if (cats) adminData.categories = cats.categories.map(c => ({ id: c.id, name: c.name, pros: c.pros, listedPros: c.listedPros, active: c.active, responseWindowOverrideHours: c.responseWindowOverrideHours }));
   if (countries) adminData.countries = countries.countries.map(c => ({ id: c.id, name: c.name, status: c.status }));
   if (escrow) adminData.escrow = escrow;
   if (catRequests) adminData.categoryRequests = catRequests.requests;
@@ -8382,8 +8387,8 @@ const ADMIN_SECTIONS = {
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitNewCountry()">Create Country</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-country-panel').style.display='none'">Cancel</button></div>
     </div>` : ''}
     <div class="panel"><div class="panel-title">Service Categories <small style="font-weight:400;color:var(--slate);">${adminData.categories.length} total</small></div>
-      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Response Window</th><th>Active</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
-      ${adminData.categories.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.pros)}</td><td>${categoryResponseWindowCell(c, isSuper)}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${escapeHtml(c.name)}" onclick="deleteCategory(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
+      <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Verified Pros</th><th>Customers Can Find</th><th>Response Window</th><th>Active</th>${isSuper ? '<th>Action</th>' : ''}</tr></thead><tbody>
+      ${adminData.categories.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.pros)}</td><td>${c.listedPros == null ? '' : c.listedPros < c.pros ? `<span title="Pros without a profile photo do not appear in search or get job matches.">${escapeHtml(c.listedPros)} <span style="color:#B42318;font-size:12.5px;">(${c.pros - c.listedPros} with no profile photo)</span></span>` : escapeHtml(c.listedPros)}</td><td>${categoryResponseWindowCell(c, isSuper)}</td><td>${catCell(c)}</td>${isSuper ? `<td><button class="btn-sm btn-sm-outline" data-id="${c.id}" data-name="${escapeHtml(c.name)}" onclick="deleteCategory(this.dataset.id, this.dataset.name)">Delete</button></td>` : ''}</tr>`).join('')}
       </tbody></table></div>
     </div>
     <div class="panel"><div class="panel-title">Countries <small style="font-weight:400;color:var(--slate);">${adminData.countries.length} total</small></div>

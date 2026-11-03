@@ -2067,6 +2067,8 @@ router.get('/categories', async (req, res) => {
   const categories = await Promise.all(cats.map(async c => ({
     ...c,
     pros: (await db.filter('users', u => u.role === 'provider' && u.verified && u.category === c.name)).length,
+    // v133: how many of them customers can actually find (verified and with a profile photo)
+    listedPros: (await db.filter('users', u => require('../listing').isListedPro(u) && u.category === c.name)).length,
   })));
   res.json({ categories });
 });
