@@ -86,6 +86,12 @@ async function peopleFor(db, collection, rec) {
   }
 }
 
+// v128: marks an update so it doesn't send a "this changed" note. The mark
+// is invisible to the database (not an own enumerable field), so it is
+// never saved.
+const QUIET = Symbol('quiet');
+function quiet(patch) { Object.defineProperty(patch, QUIET, { value: true, enumerable: false }); return patch; }
+
 // Wraps the database's insert and update once, at start-up, so every save
 // anywhere in the app is noticed without touching each route.
 let installed = false;
@@ -97,6 +103,12 @@ function install(db) {
     db[op] = async function (collection, ...rest) {
       const result = await original(collection, ...rest);
       const section = SECTION_OF[collection];
+      // v128: a save marked quiet (see quiet() below) tells nobody. Used for
+      // the live position on a trip, which changes every few seconds: the
+      // trip map asks for it by itself, and telling the whole page each time
+      // made both dashboards reload and redraw all through the trip.
+      const patch = op === 'update' ? rest[1] : null;
+      if (patch && patch[QUIET]) return result;
       if (section && streams.size) {
         // Never let a live note slow down or break the save itself.
         peopleFor(db, collection, result).then(ids => { for (const id of new Set(ids.filter(Boolean))) queue(id, section); }).catch(() => {});
@@ -145,4 +157,4 @@ setInterval(() => { const now = Date.now(); for (const [k, v] of tickets) if (v.
 
 function stats() { let open = 0; for (const s of streams.values()) open += s.size; return { people: streams.size, connections: open }; }
 
-module.exports = { install, router, queue, stats };
+module.exports = { install, router, queue, stats, quiet };

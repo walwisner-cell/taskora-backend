@@ -950,6 +950,11 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   const { category, description, materialsOnHand, materialsCost, budget, payCurrency, photoUrls } = req.body || {};
   const jobWhere = readJobLocation(req.body); // v92
   if (jobWhere.error) return res.status(400).json({ error: jobWhere.error });
+  // v128: a job must say where it is. Without a pin or at least a landmark,
+  // the pro who takes it has nowhere to go (a direct booking already needed this).
+  if (!jobWhere.jobLocation && !(jobWhere.landmark && jobWhere.landmark.length >= 5)) {
+    return res.status(400).json({ code: 'WHERE_NEEDED', error: 'Tell the pro where the job is: pin your location, choose the spot on a map, or describe a landmark (at least 5 characters).' });
+  }
   const errors = validate([
     ['category', isNonEmptyString(category, { min: 2, max: 60 }), 'Category is required'],
     ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
@@ -1615,6 +1620,9 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
     providerId: next.providerId,
     jobId: job.id,
     service: job.description,
+    jobLocation: job.jobLocation || null, // v128: the next pro gets the location too (it used to be dropped here)
+    landmark: job.landmark || null,
+    address: job.landmark || null,
     amount: failedAmount,
     serviceFee: job.payMethod === 'cash' ? 0 : computeServiceFee(failedAmount), // v119
     payMethod: job.payMethod === 'cash' ? 'cash' : 'protected',
@@ -2231,6 +2239,40 @@ async function acceptAndStart(contract, acceptingProvider, { isDirectBooking, is
   else await notify(contract.customerId, '🤝', confirmMessage, null, { section: 'bookings' });
   return reply(200, { contract: updated, escrow });
 }
+
+// v128: PATCH /api/contracts/:id/job-location { jobLocation, landmark }
+// The customer sets or corrects where the job is, any time before the pro
+// arrives. Many bookings were made with no pin at all, which left the pro
+// with nowhere to navigate to. The pro is told straight away, and the trip
+// map uses the new spot on its next refresh.
+router.patch('/contracts/:id/job-location', requireAuth, requireRole('customer'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  if (contract.ride) return res.status(400).json({ error: 'Rides set their pick-up when they are requested.' });
+  if (contract.arrivedAt || !['pending_agreement', 'pending_provider_confirmation', 'awaiting_payment', 'active'].includes(contract.status)) {
+    return res.status(400).json({ error: 'The location can only be changed before the pro arrives.' });
+  }
+  const where = readJobLocation(req.body);
+  if (where.error) return res.status(400).json({ error: where.error });
+  if (!where.jobLocation && !(where.landmark && where.landmark.length >= 5)) {
+    return res.status(400).json({ error: 'Pin the location, choose it on a map, or describe a landmark (at least 5 characters).' });
+  }
+  const patch = {
+    jobLocation: where.jobLocation || contract.jobLocation || null, // a landmark alone keeps an existing pin
+    landmark: where.landmark || contract.landmark || null,
+    locationUpdatedAt: new Date().toISOString(),
+  };
+  // The address shown on the booking follows the new landmark when there was no real street address.
+  if (where.landmark && (!contract.address || contract.address === contract.landmark || contract.address === 'Location pinned on the map')) patch.address = where.landmark;
+  if (!patch.address && !contract.address) patch.address = patch.landmark || 'Location pinned on the map';
+  const updated = await db.update('contracts', contract.id, patch);
+  if (contract.jobId) { try { await db.update('jobs', contract.jobId, { jobLocation: patch.jobLocation, landmark: patch.landmark }); } catch (e) { /* the booking is what counts */ } }
+  if (!['pending_agreement', 'awaiting_payment'].includes(contract.status) || contract.statusAfterPayment === 'active') {
+    const customer = await db.find('users', u => u.id === req.user.sub);
+    await notify(contract.providerId, '📍', `${customer ? customer.name : 'The customer'} ${contract.jobLocation ? 'changed' : 'set'} the job location for "${contract.service}". Open My Contracts or the Trip map to see it.`, 'bookingUpdates', { section: 'contracts' });
+  }
+  res.json({ contract: updated });
+});
 
 // GET /api/contracts/mine — works for both customers and providers
 router.get('/contracts/mine', requireAuth, async (req, res) => {

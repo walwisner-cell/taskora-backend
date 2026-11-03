@@ -28,11 +28,11 @@ async function sweepLocationRetention(now = new Date()) {
   for (const c of await safe('contracts')) {
     if (!ENDED.includes(c.status) || openDisputeContracts.has(c.id)) continue;
     const carried = c.handover && ((c.handover.trail || []).length || [...(c.handover.pickup || []), ...(c.handover.dropoff || [])].some(e => e.location)); // v105
-    if (!c.jobLocation && !c.onMyWayLocation && !c.arrivedLocation && !c.liveLocation && !carried) continue;
+    if (!c.jobLocation && !c.onMyWayLocation && !c.arrivedLocation && !c.liveLocation && !c.customerLiveLocation && !carried) continue;
     const endedAt = c.completedAt || c.cancelledAt || c.updatedAt || c.createdAt;
     if (!endedAt || String(endedAt) > bookingCutoff) continue;
     try {
-      const patch = { jobLocation: null, onMyWayLocation: null, arrivedLocation: null, liveLocation: null, locationRemovedAt: now.toISOString() };
+      const patch = { jobLocation: null, onMyWayLocation: null, arrivedLocation: null, liveLocation: null, customerLiveLocation: null, locationRemovedAt: now.toISOString() };
       // v105: the recorded route and the positions on pick-up and drop-off
       // records go too. The photos and times stay as the record of the hand-over.
       if (carried) {
@@ -66,4 +66,21 @@ async function sweepLocationRetention(now = new Date()) {
   return { bookings, jobs };
 }
 
-module.exports = { sweepLocationRetention, PIN_DAYS_AFTER_BOOKING, PIN_DAYS_UNHIRED_JOB };
+// v128: live trip positions (the pro's, and the customer's if they shared
+// it) are only for while the pro is on the way. Arrival already wipes them;
+// this catches every other way a trip can end (cancelled, completed without
+// tapping Arrived, the 6-hour limit). Runs every 10 minutes.
+const TRIP_MAX_MS = 6 * 60 * 60 * 1000;
+async function clearEndedTripPositions(now = Date.now()) {
+  let cleared = 0;
+  let list = [];
+  try { list = await db.filter('contracts', c => (c.liveLocation || c.customerLiveLocation) && !c.ride); } catch (e) { return 0; }
+  for (const c of list) {
+    const open = c.status === 'active' && c.onMyWayAt && !c.arrivedAt && (now - new Date(c.onMyWayAt).getTime()) < TRIP_MAX_MS;
+    if (open) continue;
+    try { await db.update('contracts', c.id, require('./live').quiet({ liveLocation: null, customerLiveLocation: null })); cleared += 1; } catch (e) { /* next sweep tries again */ }
+  }
+  return cleared;
+}
+
+module.exports = { sweepLocationRetention, clearEndedTripPositions, PIN_DAYS_AFTER_BOOKING, PIN_DAYS_UNHIRED_JOB };

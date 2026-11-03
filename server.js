@@ -408,6 +408,9 @@ seedIfEmpty()
     const { sweepLocationRetention } = require('./src/location-retention-scheduler');
     setTimeout(() => { sweepLocationRetention().catch(e => console.error('[location-retention] sweep failed:', e)); }, 34000);
     setInterval(() => { sweepLocationRetention().catch(e => console.error('[location-retention] sweep failed:', e)); }, ONE_DAY_MS);
+    // v128: live trip positions are cleared soon after a trip ends, not after 90 days.
+    const { clearEndedTripPositions } = require('./src/location-retention-scheduler');
+    setInterval(() => { clearEndedTripPositions().catch(e => console.error('[location-retention] trip cleanup failed:', e)); }, 10 * 60 * 1000);
 
     // v82: nightly copy of the data files (see src/backup-scheduler.js).
     // A minute after boot if today's copy doesn't exist yet, then daily.

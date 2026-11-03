@@ -611,6 +611,57 @@
   .msg-input-row input { flex:1; border:1.5px solid var(--border); border-radius:12px; padding:10px 16px; font-size:14px; outline:none; font-family:var(--font-body); }
   .msg-input-row button { background:var(--navy); color:#fff; border:none; border-radius:12px; padding:10px 20px; font-weight:600; font-size:14px; cursor:pointer; }
 
+  /* ── v128: Messages with every past conversation (public/app/chats.js) ── */
+  .chat-layout { display:flex; height:600px; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--white); }
+  .chat-side { width:320px; flex-shrink:0; display:flex; flex-direction:column; border-right:1px solid var(--border); min-height:0; }
+  .chat-tools { padding:10px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:8px; }
+  .chat-tools .form-input { margin:0; padding:9px 12px; font-size:14px; }
+  .chat-filters { display:flex; gap:6px; }
+  .chat-filter { border:1px solid var(--border); background:#fff; color:var(--slate); border-radius:999px; padding:4px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+  .chat-filter.on { background:var(--navy); border-color:var(--navy); color:#fff; }
+  .chat-list { overflow-y:auto; flex:1; min-height:0; }
+  .chat-item { display:flex; gap:10px; align-items:flex-start; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid var(--border); padding:12px 12px; cursor:pointer; font:inherit; color:inherit; }
+  .chat-item:hover, .chat-item.active { background:var(--offwhite); }
+  .chat-item.active { box-shadow:inset 3px 0 0 var(--teal); }
+  .chat-avatar { width:38px; height:38px; flex-shrink:0; border-radius:50%; background:var(--navy); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:13.5px; }
+  .chat-item-main { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .chat-item-top { display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+  .chat-name { font-weight:700; font-size:14px; color:var(--navy); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chat-when { font-size:12px; color:var(--muted, #7A808C); white-space:nowrap; flex-shrink:0; }
+  .chat-preview { font-size:13px; color:var(--slate); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chat-item.has-unread .chat-preview { color:var(--navy); font-weight:600; }
+  .chat-ctx { font-size:12px; color:var(--muted, #7A808C); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chat-unread { align-self:center; min-width:22px; height:22px; padding:0 6px; border-radius:11px; background:var(--teal); color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+  .chat-main { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--offwhite); min-height:0; }
+  .chat-head { background:#fff; border-bottom:1px solid var(--border); padding:10px 14px; }
+  .chat-head-row { display:flex; align-items:center; gap:10px; }
+  .chat-head-name { font-weight:700; color:var(--navy); font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chat-head-sub { font-size:12.5px; color:var(--slate); }
+  .chat-head-empty { color:var(--slate); font-size:13.5px; padding:6px 0; }
+  .chat-back { display:none; background:none; border:none; color:var(--teal); font-weight:700; font-size:14px; cursor:pointer; padding:4px 6px 4px 0; white-space:nowrap; }
+  .chat-chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .chat-chip { border:1px solid var(--border); background:var(--offwhite); color:var(--slate); border-radius:999px; padding:3px 10px; font-size:12px; cursor:pointer; font-family:inherit; }
+  .chat-body { min-height:0; }
+  #chat-input-row { padding-right:92px !important; }
+  #chat-input-row input { min-width:0; }
+  #chat-input-row button { flex-shrink:0; } /* the floating help button sits over the bottom-right corner */
+  .chat-day { text-align:center; margin:6px 0 2px; }
+  .chat-day span { display:inline-block; background:#fff; border:1px solid var(--border); color:var(--slate); font-size:12px; font-weight:600; padding:2px 10px; border-radius:999px; }
+  .chat-about { align-self:center; font-size:12px; color:var(--slate); background:rgba(31,111,178,.08); border-radius:8px; padding:3px 10px; max-width:90%; text-align:center; }
+  .chat-empty { text-align:center; color:var(--slate); font-size:13.5px; padding:24px 14px; line-height:1.55; }
+  .chat-nav-badge { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; padding:0 6px; margin-left:8px; border-radius:10px; background:#C0392B; color:#fff; font-size:11.5px; font-weight:700; line-height:1; }
+  /* v128: location warnings on bookings and in the trip window (public/app/where.js) */
+  .where-warn { margin-top:5px; padding:7px 10px; border-radius:8px; background:#FBF3E4; border:1px solid #E9D6A8; color:#5C4A12; font-size:12.5px; line-height:1.45; }
+  @media (max-width: 860px) {
+    .chat-layout { display:block; height:auto; }
+    .chat-side { width:100%; border-right:none; }
+    .chat-list { max-height:none; }
+    .chat-main { display:none; height:min(78vh, 640px); }
+    .chat-layout.show-thread .chat-side { display:none; }
+    .chat-layout.show-thread .chat-main { display:flex; }
+    .chat-back { display:inline-block; }
+  }
+
   @media (max-width: 860px) {
     .dash-layout { flex-direction:column; }
     .dash-sidebar { width:100%; border-right:none; border-bottom:1px solid var(--border); padding:12px; }
@@ -3173,12 +3224,14 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=4b5073c4d2" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/trothen.js?v=e196bf53f0" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
 <script src="/app/rides.js?v=edd40cebc9"></script>
 <script src="/app/tokens.js?v=fb304f7b76"></script>
 <script src="/app/payways.js?v=07dd0bbda3"></script>
 <script src="/app/review.js?v=996eb029fc"></script>
 <script src="/app/pricing.js?v=99b575adbd"></script>
+<script src="/app/chats.js?v=d6d69c3d0a"></script>
+<script src="/app/where.js?v=950da6cdf1"></script>
 <script src="/app/live.js?v=c3fbad75da"></script>
 </body>
 </html>

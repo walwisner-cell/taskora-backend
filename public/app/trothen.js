@@ -6050,6 +6050,8 @@ async function runAIMatch() {
   if (budget && budget.length > 40) return showToast('Budget must be under 40 characters');
   if (materialsCostRaw && (isNaN(materialsCost) || materialsCost < 0)) return showToast('Enter a valid materials cost, or leave it blank');
   const photoUrls = getUploadedJobPhotoUrls('pj');
+  // v128: a job must say where it is, or the pro who takes it has nowhere to go.
+  { const w = readJobWhere('pj'); if (!w.jobLocation && !(w.landmark && w.landmark.length >= 5)) { const box = document.getElementById('pj-where'); if (box) box.scrollIntoView({ behavior: 'smooth', block: 'center' }); return showToast(tr('Tell the pro where the job is: pin your location, choose it on a map, or describe a landmark.')); } }
 
   const body = document.getElementById('postjob-body');
   body.innerHTML = `<div style="text-align:center;padding:40px 10px;color:var(--slate);font-size:14px;">🤖 Scanning verified pros for the best match…</div>`;

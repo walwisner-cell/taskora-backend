@@ -773,7 +773,86 @@ router.post('/webhooks/persona', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
+// v128: GET /api/messages/conversations — every conversation this person
+// has had on Trothen, newest first: the people they've exchanged messages
+// with (including pros who answered a posted job but weren't hired), plus
+// anyone they have a booking with but haven't written to yet. Each one
+// comes with the last message, how many are unread, and the bookings and
+// jobs it relates to, so old chats can be found again.
+// Messages sent before v128 have no "read" record. So an upgrade doesn't
+// suddenly show every old message as unread, the first time this runs it
+// marks them all as already dealt with (readBaseline). That isn't the same
+// as read: "Seen" only ever shows for a message the other person opened.
+let readBaselineDone = null;
+const READ_BASELINE_BEFORE = new Date().toISOString(); // only messages from before this server started
+function ensureReadBaseline() {
+  if (!readBaselineDone) readBaselineDone = (async () => {
+    if (await db.find('migrations', m => m.id === 'v128_message_read_baseline')) return;
+    const quiet = require('../live').quiet;
+    for (const m of await db.filter('messages', x => !x.readAt && !x.readBaseline && String(x.createdAt || '') < READ_BASELINE_BEFORE)) {
+      try { await db.update('messages', m.id, quiet({ readBaseline: true })); } catch (e) { /* stays unread */ }
+    }
+    await db.insert('migrations', { id: 'v128_message_read_baseline', at: new Date().toISOString() });
+  })().catch(e => { readBaselineDone = null; console.error('[messages] read baseline failed:', e.message); });
+  return readBaselineDone;
+}
+setTimeout(() => { ensureReadBaseline(); }, 15000).unref();
+const isUnreadFor = (m, me) => m.toId === me && !m.readAt && !m.readBaseline;
+
+router.get('/messages/conversations', requireAuth, async (req, res) => {
+  await ensureReadBaseline();
+  const me = req.user.sub;
+  const mine = await db.filter('messages', m => m.fromId === me || m.toId === me);
+  const contracts = await db.filter('contracts', c => (c.customerId === me || c.providerId === me) && !c.delivery);
+  const byOther = new Map();
+  const entry = (otherId) => {
+    if (!byOther.has(otherId)) byOther.set(otherId, { userId: otherId, last: null, unread: 0, total: 0, jobIds: new Set(), bookings: [] });
+    return byOther.get(otherId);
+  };
+  for (const m of mine) {
+    const other = m.fromId === me ? m.toId : m.fromId;
+    if (!other || other === me) continue;
+    const e = entry(other);
+    e.total += 1;
+    if (isUnreadFor(m, me)) e.unread += 1;
+    if (!e.last || new Date(m.createdAt) > new Date(e.last.createdAt)) e.last = m;
+    if (m.jobId) e.jobIds.add(m.jobId);
+  }
+  for (const c of contracts) {
+    const other = c.customerId === me ? c.providerId : c.customerId;
+    if (!other || other === me) continue;
+    entry(other).bookings.push({ id: c.id, bookingNumber: c.bookingNumber || null, service: c.ride ? 'Ride' : c.service, status: c.status, createdAt: c.createdAt, jobId: c.jobId || null });
+  }
+  const jobIds = new Set(); for (const e of byOther.values()) for (const j of e.jobIds) jobIds.add(j);
+  const jobs = jobIds.size ? await db.filter('jobs', j => jobIds.has(j.id)) : [];
+  const jobById = new Map(jobs.map(j => [j.id, j]));
+  const out = [];
+  for (const e of byOther.values()) {
+    const u = await db.find('users', x => x.id === e.userId);
+    if (u && u.role === 'admin') continue; // staff don't appear here; support has its own chat
+    e.bookings.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const lastAt = e.last ? e.last.createdAt : (e.bookings[0] && e.bookings[0].createdAt) || null;
+    out.push({
+      userId: e.userId,
+      name: u ? (u.closedAt ? 'Closed account' : u.name) : 'Former member',
+      role: u ? u.role : null,
+      category: u && u.role === 'provider' ? (u.category || null) : null,
+      closed: !u || !!u.closedAt,
+      lastMessage: e.last ? { text: String(e.last.text || '').slice(0, 140), fromMe: e.last.fromId === me, createdAt: e.last.createdAt, readAt: e.last.readAt || null } : null,
+      lastAt,
+      unread: e.unread,
+      total: e.total,
+      bookings: e.bookings.slice(0, 20),
+      jobs: [...e.jobIds].map(id => jobById.get(id)).filter(Boolean).map(j => ({ id: j.id, title: String(j.description || '').slice(0, 80), status: j.status, createdAt: j.createdAt })),
+    });
+  }
+  out.sort((a, b) => new Date(b.lastAt || 0) - new Date(a.lastAt || 0));
+  res.set('Cache-Control', 'no-store');
+  res.json({ conversations: out, unreadTotal: out.reduce((s, c) => s + c.unread, 0) });
+});
+
 // GET /api/messages/:withUserId — simple thread between the logged-in user and another
+// v128: ?markRead=1 marks the messages they sent you as read (opening the chat).
 router.get('/messages/:withUserId', requireAuth, async (req, res) => {
   const { jobId } = req.query;
   const all = (await db.filter('messages', m =>
@@ -782,6 +861,12 @@ router.get('/messages/:withUserId', requireAuth, async (req, res) => {
   ))
     .filter(m => !jobId || m.jobId === jobId)
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  if (req.query.markRead === '1') {
+    const now = new Date().toISOString();
+    for (const m of all) {
+      if (m.toId === req.user.sub && !m.readAt) { try { await db.update('messages', m.id, { readAt: now }); m.readAt = now; } catch (e) { /* stays unread */ } }
+    }
+  }
   res.json({ messages: all });
 });
 

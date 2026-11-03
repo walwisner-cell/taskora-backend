@@ -148,7 +148,7 @@ async function eraseAccount(closure, adminId) {
   // that belongs to the customer, not to the pro being erased.)
   if (user.role === 'customer') {
     for (const c of (await safeAll('contracts')).filter(c => c.customerId === user.id)) {
-      await db.update('contracts', c.id, { jobLocation: null, landmark: null, address: null, liveLocation: null, onMyWayLocation: null, arrivedLocation: null });
+      await db.update('contracts', c.id, { jobLocation: null, landmark: null, address: null, liveLocation: null, customerLiveLocation: null, onMyWayLocation: null, arrivedLocation: null });
     }
     for (const j of (await safeAll('jobs')).filter(j => j.customerId === user.id)) {
       await db.update('jobs', j.id, { jobLocation: null, landmark: null });

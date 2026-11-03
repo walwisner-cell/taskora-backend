@@ -567,7 +567,10 @@ router.post('/contracts/:id/on-my-way', requireAuth, requireRole('provider'), as
   });
 
   const provider = await db.find('users', u => u.id === req.user.sub);
-  await notify(contract.customerId, '🚗', `${provider ? provider.name : 'Your provider'} is on the way for "${contract.service}".`, 'bookingUpdates', { section: 'bookings' });
+  // v128: a booking with no location pin leaves the pro with nowhere to go,
+  // so the customer is asked to share where they are, straight away.
+  const hasPin = contract.jobLocation && typeof contract.jobLocation.latitude === 'number';
+  await notify(contract.customerId, '🚗', `${provider ? provider.name : 'Your provider'} is on the way for "${contract.service}".${hasPin ? '' : ' Your booking has no location pin, so they can\'t navigate to you yet. Open My Bookings, tap "Track your pro", then "Share my location" or "Set the job location".'}`, 'bookingUpdates', { section: 'bookings' });
   res.json({ contract: updated });
 });
 
@@ -607,13 +610,63 @@ router.post('/contracts/:id/live-location', requireAuth, requireRole('provider')
   const { isValidCoordinate } = require('../geo-distance');
   if (!isValidCoordinate(latitude, longitude) || (latitude === 0 && longitude === 0)) return res.status(400).json({ error: 'That isn\'t a valid position' });
   const acc = Number(accuracyM);
-  await db.update('contracts', contract.id, {
-    liveLocation: {
-      latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6,
-      accuracyM: Number.isFinite(acc) && acc > 0 && acc < 100000 ? Math.round(acc) : null,
-      at: new Date().toISOString(),
-    },
-  });
+  const point = {
+    latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6,
+    accuracyM: Number.isFinite(acc) && acc > 0 && acc < 100000 ? Math.round(acc) : null,
+    at: new Date().toISOString(),
+  };
+  // v128: a phone sometimes drops from GPS to a rough Wi-Fi or mast guess
+  // for a moment (in a building, under a roof). A rough guess (worse than
+  // 1 km) doesn't replace a good position from the last 2 minutes, so the
+  // dot doesn't jump kilometres away and back.
+  const cur = contract.liveLocation;
+  const curAge = cur && cur.at ? Date.now() - new Date(cur.at).getTime() : Infinity;
+  if (cur && cur.accuracyM != null && cur.accuracyM <= 200 && curAge < 2 * 60 * 1000 && (point.accuracyM == null || point.accuracyM > 1000)) {
+    return res.json({ ok: true, kept: false, reason: 'rough' });
+  }
+  // Quiet save: the trip map asks for the position by itself (see src/live.js).
+  await db.update('contracts', contract.id, require('../live').quiet({ liveLocation: point }));
+  res.json({ ok: true, kept: true });
+});
+
+// v128: THE CUSTOMER SHARES WHERE THEY ARE. While the pro is on the way the
+// customer can let that one pro see their live position, like a rider
+// waiting for a pick-up. It is the customer's choice, only for this trip,
+// and it is wiped when the pro arrives or the customer stops it.
+// POST /api/contracts/:id/customer-live-location  { latitude, longitude, accuracyM }
+router.post('/contracts/:id/customer-live-location', requireAuth, requireRole('customer'), liveLocationLimiter, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  const tripOpen = contract.status === 'active' && contract.onMyWayAt && !contract.arrivedAt
+    && (Date.now() - new Date(contract.onMyWayAt).getTime()) < LIVE_TRIP_MAX_MS;
+  if (!tripOpen) return res.status(409).json({ code: 'TRIP_CLOSED', error: 'Your pro isn\'t on the way right now, so your location isn\'t being shared.' });
+  const { latitude, longitude, accuracyM } = req.body || {};
+  const { isValidCoordinate } = require('../geo-distance');
+  if (!isValidCoordinate(latitude, longitude) || (latitude === 0 && longitude === 0)) return res.status(400).json({ error: 'That isn\'t a valid position' });
+  const acc = Number(accuracyM);
+  const point = {
+    latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6,
+    accuracyM: Number.isFinite(acc) && acc > 0 && acc < 100000 ? Math.round(acc) : null,
+    at: new Date().toISOString(),
+  };
+  const cur = contract.customerLiveLocation;
+  const curAge = cur && cur.at ? Date.now() - new Date(cur.at).getTime() : Infinity;
+  if (cur && cur.accuracyM != null && cur.accuracyM <= 200 && curAge < 2 * 60 * 1000 && (point.accuracyM == null || point.accuracyM > 1000)) {
+    return res.json({ ok: true, kept: false, reason: 'rough' });
+  }
+  const first = !cur;
+  await db.update('contracts', contract.id, require('../live').quiet({ customerLiveLocation: point }));
+  if (first) {
+    const customer = await db.find('users', u => u.id === req.user.sub);
+    await notify(contract.providerId, '📍', `${customer ? customer.name : 'Your customer'} is sharing their live location for "${contract.service}". Open Trip map to see where they are.`, 'bookingUpdates', { section: 'contracts' });
+  }
+  res.json({ ok: true, kept: true });
+});
+// DELETE /api/contracts/:id/customer-live-location — the customer stops sharing.
+router.delete('/contracts/:id/customer-live-location', requireAuth, requireRole('customer'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  if (contract.customerLiveLocation) await db.update('contracts', contract.id, require('../live').quiet({ customerLiveLocation: null }));
   res.json({ ok: true });
 });
 
@@ -629,7 +682,15 @@ router.get('/contracts/:id/tracking', requireAuth, async (req, res) => {
   const phase = contract.arrivedAt ? 'arrived' : tripOpen ? 'on_the_way' : (contract.onMyWayAt ? 'ended' : 'not_started');
   const live = tripOpen && contract.liveLocation && isValidCoordinate(contract.liveLocation.latitude, contract.liveLocation.longitude) ? contract.liveLocation : null;
   const job = contract.jobLocation && isValidCoordinate(contract.jobLocation.latitude, contract.jobLocation.longitude) ? contract.jobLocation : null;
-  const miles = live && job ? distanceInMiles(live.latitude, live.longitude, job.latitude, job.longitude) : null;
+  // v128: the customer's own live position, if they chose to share it on
+  // this trip. Ignored once it's 15 minutes old.
+  const cl = contract.customerLiveLocation;
+  const custLive = tripOpen && cl && isValidCoordinate(cl.latitude, cl.longitude) && (Date.now() - new Date(cl.at).getTime()) < 15 * 60 * 1000 ? cl : null;
+  // The distance is to the job pin. With no pin, it is to the customer's
+  // shared position instead, so the pro still has somewhere to go.
+  const target = job || custLive;
+  const miles = live && target ? distanceInMiles(live.latitude, live.longitude, target.latitude, target.longitude) : null;
+  const toCustomerMiles = live && custLive ? distanceInMiles(live.latitude, live.longitude, custLive.latitude, custLive.longitude) : null;
   res.set('Cache-Control', 'no-store');
   res.json({
     phase,
@@ -644,6 +705,12 @@ router.get('/contracts/:id/tracking', requireAuth, async (req, res) => {
     landmark: contract.landmark || null,
     distanceMiles: miles != null ? Math.round(miles * 100) / 100 : null,
     distanceKm: miles != null ? Math.round(miles * 1.609344 * 100) / 100 : null,
+    distanceTo: miles == null ? null : job ? 'pin' : 'customer', // v128
+    customerLocation: custLive ? { latitude: custLive.latitude, longitude: custLive.longitude, accuracyM: custLive.accuracyM } : null,
+    customerSecondsSinceUpdate: custLive ? Math.max(0, Math.round((Date.now() - new Date(custLive.at).getTime()) / 1000)) : null,
+    toCustomerMiles: toCustomerMiles != null ? Math.round(toCustomerMiles * 100) / 100 : null,
+    toCustomerKm: toCustomerMiles != null ? Math.round(toCustomerMiles * 1.609344 * 100) / 100 : null,
+    canEditLocation: contract.customerId === req.user.sub && !contract.arrivedAt && ['pending_agreement', 'pending_provider_confirmation', 'awaiting_payment', 'active'].includes(contract.status),
   });
 });
 
@@ -660,6 +727,7 @@ router.post('/contracts/:id/arrived', requireAuth, requireRole('provider'), asyn
     arrivedAt: new Date().toISOString(),
     arrivedLocation: hasValidCoords ? { latitude, longitude } : null,
     liveLocation: null, // v93: the trip is over, so the live position is wiped
+    customerLiveLocation: null, // v128: and so is the customer's, if they shared it
   });
 
   if (hasValidCoords) {
