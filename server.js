@@ -408,6 +408,9 @@ seedIfEmpty()
     const { sweepLocationRetention } = require('./src/location-retention-scheduler');
     setTimeout(() => { sweepLocationRetention().catch(e => console.error('[location-retention] sweep failed:', e)); }, 34000);
     setInterval(() => { sweepLocationRetention().catch(e => console.error('[location-retention] sweep failed:', e)); }, ONE_DAY_MS);
+    // v129: reminders before an agreed arrival time ("time to leave"), every minute.
+    const { sweepArrivalReminders } = require('./src/arrival-time');
+    setInterval(() => { sweepArrivalReminders().catch(e => console.error('[arrival-reminders] sweep failed:', e)); }, 60 * 1000);
     // v128: live trip positions are cleared soon after a trip ends, not after 90 days.
     const { clearEndedTripPositions } = require('./src/location-retention-scheduler');
     setInterval(() => { clearEndedTripPositions().catch(e => console.error('[location-retention] trip cleanup failed:', e)); }, 10 * 60 * 1000);

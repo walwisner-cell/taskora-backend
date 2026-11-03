@@ -570,7 +570,7 @@ router.post('/contracts/:id/on-my-way', requireAuth, requireRole('provider'), as
   // v128: a booking with no location pin leaves the pro with nowhere to go,
   // so the customer is asked to share where they are, straight away.
   const hasPin = contract.jobLocation && typeof contract.jobLocation.latitude === 'number';
-  await notify(contract.customerId, '🚗', `${provider ? provider.name : 'Your provider'} is on the way for "${contract.service}".${hasPin ? '' : ' Your booking has no location pin, so they can\'t navigate to you yet. Open My Bookings, tap "Track your pro", then "Share my location" or "Set the job location".'}`, 'bookingUpdates', { section: 'bookings' });
+  await notify(contract.customerId, '🚗', `${require('../arrival-time').personName(provider, 'Your pro')} is on the way for "${contract.service}". Open My Bookings and tap "Track arrival" to follow their arrival.${hasPin ? '' : ' Your booking has no job location, so they cannot navigate to you yet: tap "Share my location" or "Set job location".'}`, 'bookingUpdates', { section: 'bookings' });
   res.json({ contract: updated });
 });
 
@@ -626,7 +626,37 @@ router.post('/contracts/:id/live-location', requireAuth, requireRole('provider')
   }
   // Quiet save: the trip map asks for the position by itself (see src/live.js).
   await db.update('contracts', contract.id, require('../live').quiet({ liveLocation: point }));
+  // v129: the pro's last known position, used to work out when to remind them to leave for their next job.
+  try { await db.update('users', req.user.sub, { lastKnownLocation: { latitude: point.latitude, longitude: point.longitude, at: point.at } }); } catch (e) { /* not essential */ }
   res.json({ ok: true, kept: true });
+});
+
+// v129: AGREEING AN ARRIVAL TIME (see src/arrival-time.js).
+// POST /api/contracts/:id/arrival-time { at, tz, note } — propose a time (either side)
+router.post('/contracts/:id/arrival-time', requireAuth, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  const b = req.body || {};
+  const r = await require('../arrival-time').propose(contract, req.user.sub, b.at, b.tz, b.note);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  res.json({ contract: r.contract });
+});
+// POST /api/contracts/:id/arrival-time/accept { tz } — the other side accepts
+router.post('/contracts/:id/arrival-time/accept', requireAuth, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  const r = await require('../arrival-time').accept(contract, req.user.sub, (req.body || {}).tz);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  res.json({ contract: r.contract });
+});
+// POST /api/contracts/:id/arrival-time/adopt { at, tz } — the customer's page turns a direct booking's date and time into the agreed time
+router.post('/contracts/:id/arrival-time/adopt', requireAuth, requireRole('customer'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  const b = req.body || {};
+  const r = await require('../arrival-time').adoptBookedTime(contract, req.user.sub, b.at, b.tz);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  res.json({ contract: r.contract, unchanged: !!r.unchanged });
 });
 
 // v128: THE CUSTOMER SHARES WHERE THEY ARE. While the pro is on the way the
@@ -658,7 +688,7 @@ router.post('/contracts/:id/customer-live-location', requireAuth, requireRole('c
   await db.update('contracts', contract.id, require('../live').quiet({ customerLiveLocation: point }));
   if (first) {
     const customer = await db.find('users', u => u.id === req.user.sub);
-    await notify(contract.providerId, '📍', `${customer ? customer.name : 'Your customer'} is sharing their live location for "${contract.service}". Open Trip map to see where they are.`, 'bookingUpdates', { section: 'contracts' });
+    await notify(contract.providerId, '📍', `${require('../arrival-time').personName(customer, 'Your customer')} is sharing their live location for "${contract.service}". Open the trip to see where they are.`, 'bookingUpdates', { section: 'contracts' });
   }
   res.json({ ok: true, kept: true });
 });
@@ -694,8 +724,10 @@ router.get('/contracts/:id/tracking', requireAuth, async (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({
     phase,
-    proName: pro ? pro.name : 'Your pro',
-    customerName: customer ? customer.name : 'Customer',
+    proName: pro ? require('../arrival-time').personName(pro) : 'Your pro', // v129: "JAMES DOE" reads "James Doe"
+    customerName: customer ? require('../arrival-time').personName(customer) : 'Customer',
+    arrivalAt: contract.arrival && contract.arrival.agreed ? contract.arrival.agreed.at : null, // v129
+    status: contract.status,
     service: contract.service,
     onMyWayAt: contract.onMyWayAt || null,
     arrivedAt: contract.arrivedAt || null,
@@ -736,7 +768,7 @@ router.post('/contracts/:id/arrived', requireAuth, requireRole('provider'), asyn
   }
 
   const provider = await db.find('users', u => u.id === req.user.sub);
-  await notify(contract.customerId, '📍', `${provider ? provider.name : 'Your provider'} has arrived for "${contract.service}".`, 'bookingUpdates', { section: 'bookings' });
+  await notify(contract.customerId, '📍', `${require('../arrival-time').personName(provider, 'Your pro')} has arrived for "${contract.service}".`, 'bookingUpdates', { section: 'bookings' });
   res.json({ contract: updated });
 });
 

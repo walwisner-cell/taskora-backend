@@ -2269,7 +2269,7 @@ router.patch('/contracts/:id/job-location', requireAuth, requireRole('customer')
   if (contract.jobId) { try { await db.update('jobs', contract.jobId, { jobLocation: patch.jobLocation, landmark: patch.landmark }); } catch (e) { /* the booking is what counts */ } }
   if (!['pending_agreement', 'awaiting_payment'].includes(contract.status) || contract.statusAfterPayment === 'active') {
     const customer = await db.find('users', u => u.id === req.user.sub);
-    await notify(contract.providerId, '📍', `${customer ? customer.name : 'The customer'} ${contract.jobLocation ? 'changed' : 'set'} the job location for "${contract.service}". Open My Contracts or the Trip map to see it.`, 'bookingUpdates', { section: 'contracts' });
+    await notify(contract.providerId, '📍', `${require('../arrival-time').personName(customer, 'The customer')} ${contract.jobLocation ? 'updated' : 'set'} the job location for "${contract.service}". Open My Contracts or the trip to view it.`, 'bookingUpdates', { section: 'contracts' });
   }
   res.json({ contract: updated });
 });
