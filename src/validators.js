@@ -319,7 +319,7 @@ const POSTAL_CODE_HINTS = {
 
 function postalCodeErrorMessage(country) {
   const hint = POSTAL_CODE_HINTS[country];
-  return hint ? `Enter a valid postal/zip code — ${country} uses ${hint}` : 'Enter a valid postal/zip code';
+  return hint ? `Enter a valid postal/zip code: ${country} uses ${hint}` : 'Enter a valid postal/zip code';
 }
 
 // Real people's names: letters (Unicode-aware, so "José", "Chidinma", "Åsa"

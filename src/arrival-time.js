@@ -8,7 +8,7 @@
 //                         or earlier if the job pin is far from where the pro
 //                         last was), and the customer that the pro should be
 //                         setting off;
-//   - at the agreed time: if the pro hasn't tapped "Leave now", both are told;
+//   - at the agreed time: if the pro hasn't tapped "Leave Now", both are told;
 //   - 30 minutes late:    the customer is told and offered their options.
 // Reminders go through notify(), so they also arrive as phone notifications
 // for anyone who switched those on. Each reminder is sent once.
@@ -183,14 +183,14 @@ async function sweepArrivalReminders(nowMs = Date.now()) {
       if (minsTo <= lead && minsTo > 0) {
         s.hour = s.hour || new Date(nowMs).toISOString(); // no separate 1-hour reminder once it's already time to leave
         await tell('leave', async () => {
-          await notify(c.providerId, '🚗', `Time to leave for "${c.service}" at ${custName}'s (due ${clock(c.arrival.agreed.at, pro && pro.timeZone)}). Open Trothen and tap "Leave now" so the customer can follow your arrival.`, 'bookingUpdates', { section: 'contracts' });
+          await notify(c.providerId, '🚗', `Time to leave for "${c.service}" at ${custName}'s (due ${clock(c.arrival.agreed.at, pro && pro.timeZone)}). Open Trothen and tap "Leave Now" so the customer can follow your arrival.`, 'bookingUpdates', { section: 'contracts' });
           await notify(c.customerId, '🚗', `${proName} should be leaving now to arrive at ${clock(c.arrival.agreed.at, cust && cust.timeZone)}. You will be able to follow their arrival once they set off.`, 'bookingUpdates', { section: 'bookings' });
         });
       }
       if (minsTo <= 0 && minsTo > -30) {
         s.hour = s.hour || new Date(nowMs).toISOString(); s.leave = s.leave || new Date(nowMs).toISOString();
         await tell('due', async () => {
-          await notify(c.providerId, '⏰', `You are due now for "${c.service}" and have not set off. Tap "Leave now" when you leave, or message ${custName} if you are running late.`, 'bookingUpdates', { section: 'contracts' });
+          await notify(c.providerId, '⏰', `You are due now for "${c.service}" and have not set off. Tap "Leave Now" when you leave, or message ${custName} if you are running late.`, 'bookingUpdates', { section: 'contracts' });
           await notify(c.customerId, '⏰', `${proName} was due at ${clock(c.arrival.agreed.at, cust && cust.timeZone)} and has not set off yet. You can message them from Messages.`, 'bookingUpdates', { section: 'bookings' });
         });
       }

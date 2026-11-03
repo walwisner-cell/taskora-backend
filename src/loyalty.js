@@ -20,7 +20,7 @@ async function awardLoyaltyPoint(customerId, reason) {
     const newTotal = (customer.loyaltyPoints || 0) + 1;
     await db.update('users', customer.id, { loyaltyPoints: newTotal });
     if (newTotal > 0 && newTotal % POINTS_FOR_FREE_BOOKING === 0) {
-      await notify(customer.id, '🎁', `You've earned ${POINTS_FOR_FREE_BOOKING} loyalty points — you have a free booking credit ready to use on your next job!`, null, { section: 'settings' });
+      await notify(customer.id, '🎁', `You've earned ${POINTS_FOR_FREE_BOOKING} loyalty points. You have a free booking credit for your next job.`, null, { section: 'settings' });
     }
   } catch (e) {
     console.error('[loyalty] Failed to award a point:', e.message);

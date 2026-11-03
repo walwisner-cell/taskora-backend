@@ -157,13 +157,15 @@ const DEFAULTS = {
   // super admin ever edits; this gives genuine structure (headings,
   // emphasis, lists) with a parser simple enough to reason about
   // completely.
-  aboutUsContent: `# Built to make hiring someone feel safe again
+  aboutUsContent: `# About Trothen
 
-Trothen started with a simple frustration: hiring a plumber, a tutor, or a mover in your own neighborhood shouldn't feel like a gamble. Across every market we operate in — Atlanta to Lagos to Accra — the same problem kept coming up: no way to know who's really showing up, and no real recourse if something goes wrong.
+Trothen is a marketplace for local services: plumbing, cleaning, tutoring, moving, repairs and more. It connects customers with independent professionals in the United States, Liberia, Ghana and Nigeria.
 
-So we built a platform where every professional is identity-verified before they can accept a single job, every booking runs on an auto-generated contract, and your payment sits safely in escrow until the work is actually done. Trust shouldn't be something you hope for — it should be the default.
+Hiring someone to work in your home should not be a gamble. In every market we serve, the same problems come up: it is hard to know who will arrive, and there is little recourse if the work is not done.
 
-We're a small, distributed team building this because we've personally been on both sides of a bad hire and a missed payment. We're still early, and we're building this in the open — if something's not working the way it should, we want to hear about it.`,
+Trothen addresses this in three ways. Every professional's identity is verified before they can accept a job. Every booking has a written agreement covering the work and the price. Payment for protected bookings is held in escrow until the customer confirms the work is complete.
+
+We are a small, distributed team. If something is not working as it should, please contact us. We read every message.`,
 
   termsOfServiceCustomerContent: `Trothen Terms of Service — Customers
 

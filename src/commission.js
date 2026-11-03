@@ -88,7 +88,7 @@ async function checkAndAdvanceProviderTier(providerId) {
     const t = TIER_THRESHOLDS.pro;
     if (jobsCompleted >= t.jobs && rating >= t.rating && cancellationRate <= t.cancellationRate) {
       await db.update('users', provider.id, { plan: 'pro' });
-      await notify(provider.id, '🎉', `You've been automatically moved to the Pro tier — 12% commission, priority placement, and portfolio boosts, effective now.`, null, { section: 'settings' });
+      await notify(provider.id, '🎉', `You have been moved to the Pro tier: 12% commission, priority placement and portfolio boosts, effective immediately.`, null, { section: 'settings' });
       return;
     }
   }

@@ -91,7 +91,7 @@ router.post('/job-photos/upload', requireAuth, requireRole('customer'), (req, re
       : verifyImageMagicBytes(req.file.path, req.file.mimetype);
     if (!verified) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: `This file does not appear to be a genuine ${isVideo ? 'video' : 'image'} — please upload a real ${isVideo ? 'video' : 'photo'}.` });
+      return res.status(400).json({ error: `This file is not a valid ${isVideo ? 'video' : 'image'}. Please upload a ${isVideo ? 'video' : 'photo'}.` });
     }
 
     res.status(201).json({ url: `/uploads/${req.file.filename}`, isVideo });
@@ -130,13 +130,13 @@ router.post('/portfolio/upload', requireAuth, requireRole('provider'), (req, res
     // identify a file, not trusting what the upload claimed about itself.
     if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
+      return res.status(400).json({ error: 'This file is not a valid image. Please upload a photo.' });
     }
 
     const existing = await db.filter('portfolioPhotos', p => p.providerId === req.user.sub);
     if (existing.length >= MAX_PHOTOS_PER_PROVIDER) {
       fs.unlink(req.file.path, () => {}); // clean up the file we just saved, since we're rejecting it
-      return res.status(400).json({ error: `You can have at most ${MAX_PHOTOS_PER_PROVIDER} portfolio photos — remove one first` });
+      return res.status(400).json({ error: `You can have at most ${MAX_PHOTOS_PER_PROVIDER} portfolio photos. Remove one first.` });
     }
 
     const photo = {
@@ -191,7 +191,7 @@ router.post('/profile-photo/upload', requireAuth, (req, res) => {
 
     if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
+      return res.status(400).json({ error: 'This file is not a valid image. Please upload a photo.' });
     }
 
     const user = await db.find('users', u => u.id === req.user.sub);

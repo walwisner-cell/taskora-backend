@@ -34,8 +34,8 @@ async function sendVerificationInviteEmail(req, user) {
     const isPro = user.role === 'provider';
     const subject = isPro ? 'One last step to become a Trothen Pro' : 'Verify your identity on Trothen';
     const body = isPro
-      ? `Hi ${firstName},\n\nBefore you can show up in customer searches, we need to verify your identity. It takes about two minutes: upload a clear photo of a government-issued ID and enter your full legal name.\n\nStart here: ${link}\n\nOur team reviews every submission, usually within 48 hours, and you'll get a notification the moment it's done.\n\n— The Trothen Team`
-      : `Hi ${firstName},\n\nVerifying your identity helps keep everyone on Trothen safe, and it only takes about two minutes: upload a clear photo of a government-issued ID and enter your full legal name.\n\nStart here: ${link}\n\nOur team reviews every submission, usually within 48 hours.\n\n— The Trothen Team`;
+      ? `Hi ${firstName},\n\nBefore you can show up in customer searches, we need to verify your identity. It takes about two minutes: upload a clear photo of a government-issued ID and enter your full legal name.\n\nStart here: ${link}\n\nOur team reviews every submission, usually within 48 hours, and you'll get a notification the moment it's done.\n\nKind regards,\nThe Trothen Team`
+      : `Hi ${firstName},\n\nVerifying your identity helps keep everyone on Trothen safe, and it only takes about two minutes: upload a clear photo of a government-issued ID and enter your full legal name.\n\nStart here: ${link}\n\nOur team reviews every submission, usually within 48 hours.\n\nKind regards,\nThe Trothen Team`;
     await sendEmail(user.email, subject, body);
   } catch (e) {
     // Never let a failed invite email break account creation itself.
@@ -100,18 +100,18 @@ function generateSixDigitCode() {
 router.post('/signup/start', signupLimiter, async (req, res) => {
   const { name, email, password, role, country, state, city, phone, address, zipCode, category, skills, inviteCode, referralCode } = req.body || {};
   const errors = validate([
-    ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
+    ['name', isValidName(name), 'Enter a valid name using letters, spaces, hyphens and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
     ['password', isValidPassword(password), 'Choose a password of 8 to 72 characters that isn\'t a common one (like "password123")'],
-    ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
+    ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider. Admin accounts are created by a super admin.'],
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
     ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
     ['address', isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address'],
     ['country', isNonEmptyString(country, { min: 2, max: 100 }), 'Select your country'],
     ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
     ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
-    ['state', typeof country !== 'string' || typeof state !== 'string' || isValidStateForCountry(country.trim(), state.trim()), 'That state/region doesn\'t belong to the selected country — please re-select both'],
-    ['city', typeof country !== 'string' || typeof city !== 'string' || isPlausibleCityForCountry(country.trim(), city.trim()), 'That city is a known city in a different country — please double check your country and city'],
+    ['state', typeof country !== 'string' || typeof state !== 'string' || isValidStateForCountry(country.trim(), state.trim()), 'That state/region doesn\'t belong to the selected country. Please re-select both'],
+    ['city', typeof country !== 'string' || typeof city !== 'string' || isPlausibleCityForCountry(country.trim(), city.trim()), 'That city is a known city in a different country. Please double check your country and city'],
   ]);
   if (role === 'provider') {
     errors.push(...validate([
@@ -192,7 +192,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
   // is only for a server that has no email provider connected at all.
   if (isEmailConfigured()) {
     await db.remove('pendingRegistrations', pending.id);
-    return res.status(502).json({ error: "We couldn't send your code just now. Please wait a minute and try again." });
+    return res.status(502).json({ error: "We could not send your code. Please wait a minute and try again." });
   }
 
   // No email provider connected at all — test-mode fallback so signup
@@ -203,7 +203,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
     pendingId: pending.id,
     message: `Enter the code sent to ${email.trim()} to finish creating your account.`,
     testMode: true,
-    testModeNote: 'No real email provider is configured yet — the code is returned directly instead of being sent. Do not do this in production.',
+    testModeNote: 'No real email provider is configured yet. The code is returned directly instead of being sent. Do not do this in production.',
     emailCode,
     joiningOrganization: inviteOrgId ? true : false,
   });
@@ -218,10 +218,10 @@ router.post('/signup/verify', otpLimiter, async (req, res) => {
     return res.status(400).json({ error: 'pendingId and emailCode are required' });
   }
   const pending = await db.find('pendingRegistrations', p => p.id === pendingId);
-  if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found — please start again' });
+  if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found. Please start again' });
   if (new Date(pending.expiresAt) < new Date()) {
     await db.remove('pendingRegistrations', pending.id);
-    return res.status(400).json({ error: 'This registration has expired — please start again' });
+    return res.status(400).json({ error: 'This registration has expired. Please start again' });
   }
 
   // Locking on the email (not the pendingId) is what actually closes the
@@ -230,7 +230,7 @@ router.post('/signup/verify', otpLimiter, async (req, res) => {
   // pendingIds by definition.
   const emailKey = pending.payload.email.toLowerCase();
   if (signupVerifyLocks.has(emailKey)) {
-    return res.status(409).json({ error: 'This email is already completing signup elsewhere — please wait a moment and try again.' });
+    return res.status(409).json({ error: 'This email is already completing signup elsewhere. Please wait a moment and try again.' });
   }
   signupVerifyLocks.add(emailKey);
   try {
@@ -315,12 +315,12 @@ async function completeSignupVerify(req, res, pending) {
   const firstNameForWelcome = trimmedName.split(' ')[0];
   const welcomeSubject = `Welcome to Trothen, ${firstNameForWelcome}!`;
   const welcomeBody = user.role === 'provider'
-    ? `Hi ${firstNameForWelcome},\n\nWelcome to Trothen — you're now set up as a ${user.category} provider.\n\nHere's how it works: customers post jobs or search for pros like you, you get matched based on your category and location, and every job runs on an auto-generated contract with the payment held safely in escrow until the work is confirmed done. You'll need a verified profile photo and ID before you start showing up in customer searches — you can take care of both from your dashboard.\n\nGlad to have you on board.\n\n— The Trothen Team`
-    : `Hi ${firstNameForWelcome},\n\nWelcome to Trothen — real local pros, verified before they ever show up.\n\nHere's how it works: tell us what you need done, we match you with verified, ID-checked professionals nearby, and every booking runs on an auto-generated contract with your payment held safely in escrow until you're satisfied with the work. No guessing who's really coming to your door.\n\nReady when you are — just search for what you need on your dashboard.\n\n— The Trothen Team`;
+    ? `Hi ${firstNameForWelcome},\n\nWelcome to Trothen. You're now set up as a ${user.category} provider.\n\nHere's how it works: customers post jobs or search for pros like you, you get matched based on your category and location, and every job runs on an auto-generated contract with the payment held safely in escrow until the work is confirmed done. You'll need a verified profile photo and ID before you start showing up in customer searches. You can take care of both from your dashboard.\n\nGlad to have you on board.\n\nKind regards,\nThe Trothen Team`
+    : `Hi ${firstNameForWelcome},\n\nWelcome to Trothen.\n\nHow it works: tell us what you need, and we match you with ID-verified professionals near you. Every booking has a written contract, and your payment is held in escrow until you confirm the work is complete.\n\nTo get started, search for a service from your dashboard.\n\nKind regards,\nThe Trothen Team`;
   const { sendEmail } = require('../delivery');
   await sendEmail(user.email, welcomeSubject, welcomeBody);
   await sendVerificationInviteEmail(req, user);
-  await notify(user.id, '👋', `Welcome to Trothen, ${firstNameForWelcome}! Here's how it works: ${user.role === 'provider' ? 'get matched to jobs in your category, and every payment is held safely in escrow until the work is confirmed done.' : 'tell us what you need, we match you with a verified local pro, and your payment stays safely in escrow until you\'re satisfied.'}`);
+  await notify(user.id, '👋', `Welcome to Trothen, ${firstNameForWelcome}. Here's how it works: ${user.role === 'provider' ? 'You will be matched to jobs in your category, and payments are held in escrow until the work is confirmed complete.' : 'Tell us what you need and we will match you with a verified local pro. Your payment is held in escrow until you confirm the work is complete.'}`);
 
   if (payload.referredByUserId) {
     await db.insert('referrals', {
@@ -332,7 +332,7 @@ async function completeSignupVerify(req, res, pending) {
     });
     const firstName = trimmedName.split(' ')[0];
     const lastInitial = trimmedName.split(' ')[1] ? ` ${trimmedName.split(' ')[1][0]}.` : '';
-    await notify(payload.referredByUserId, '🎉', `${firstName}${lastInitial} just joined Trothen as a ${user.role} using your referral link!`, null, { section: 'referrals' });
+    await notify(payload.referredByUserId, '🎉', `${firstName}${lastInitial} joined Trothen as a ${user.role} using your referral link.`, null, { section: 'referrals' });
     const { awardLoyaltyPoint } = require('../loyalty');
     await awardLoyaltyPoint(payload.referredByUserId, 'referral');
   }
@@ -378,7 +378,7 @@ async function completeSignupVerify(req, res, pending) {
     // test-mode rather than silently not happening).
     const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
     for (const admin of superAdmins) {
-      await notify(admin.id, '🆕', `${user.name} signed up wanting to offer "${user.category}" — not a current category. Review within 24 hours in Categories & Countries → Category Requests.`, null, { section: 'categories' });
+      await notify(admin.id, '🆕', `${user.name} signed up wanting to offer "${user.category}" is not a listed category. Review it within 24 hours in Categories & Countries → Category Requests.`, null, { section: 'categories' });
       console.log(`[TEST MODE — no email provider connected] Would email ${admin.email}: New category request "${user.category}" from ${user.name} needs review within 24 hours.`);
     }
   }
@@ -404,7 +404,7 @@ router.post('/signup/resend', otpLimiter, async (req, res) => {
   const { pendingId } = req.body || {};
   if (!isNonEmptyString(pendingId)) return res.status(400).json({ error: 'pendingId is required' });
   const pending = await db.find('pendingRegistrations', p => p.id === pendingId);
-  if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found — please start again' });
+  if (!pending) return res.status(400).json({ error: 'This registration has expired or was not found. Please start again' });
   if ((pending.resendCount || 0) >= 5) return res.status(429).json({ error: 'That\'s the most codes we can send for one sign-up. Please start again.' });
   if (pending.lastResendAt && Date.now() - new Date(pending.lastResendAt).getTime() < 30 * 1000) {
     return res.status(429).json({ error: 'Please wait 30 seconds before asking for another code.' });
@@ -430,7 +430,7 @@ router.post('/signup/resend', otpLimiter, async (req, res) => {
   if (isEmailConfigured()) {
     // Same rule as /signup/start: a configured-but-failed send never falls
     // back to showing the code.
-    return res.status(502).json({ error: "We couldn't send your code just now. Please wait a minute and try again." });
+    return res.status(502).json({ error: "We could not send your code. Please wait a minute and try again." });
   }
 
   console.log(`[TEST MODE] Resent registration code for ${pending.payload.email}: ${emailCode}`);
@@ -491,13 +491,13 @@ async function issueSessionOrRequire2FA(user, req, res) {
     // nothing, so the sign-in stops here instead.
     if (isEmailConfigured() || (isSmsConfigured() && user.phone)) {
       await db.remove('pendingLogins', pendingLogin.id);
-      return res.status(502).json({ error: `We couldn't send your sign-in code to ${maskEmail(user.email)}. Check that this email address is real and can receive mail, then try again. If it still doesn't arrive, ask the super admin to check the email address on your account.` });
+      return res.status(502).json({ error: `We couldn't send your sign-in code to ${maskEmail(user.email)}. Check that this email address exists and can receive mail, then try again. If it still doesn't arrive, ask the super admin to check the email address on your account.` });
     }
     return res.json({
       requires2FA: true,
       pendingLoginId: pendingLogin.id,
       testMode: true,
-      testModeNote: 'No real SMS or email provider is configured yet — the code is returned directly instead of being sent. Do not do this in production.',
+      testModeNote: 'No real SMS or email provider is configured yet. The code is returned directly instead of being sent. Do not do this in production.',
       code,
     });
   }
@@ -639,8 +639,8 @@ router.post('/google', async (req, res) => {
   const { idToken } = req.body || {};
   const { verifyGoogleIdToken } = require('../google-auth');
   const google = await verifyGoogleIdToken(idToken);
-  if (!google) return res.status(401).json({ error: 'Could not verify that Google sign-in — please try again' });
-  if (!google.emailVerified) return res.status(401).json({ error: 'That Google account\'s email isn\'t verified — please verify it with Google first' });
+  if (!google) return res.status(401).json({ error: 'Could not verify that Google sign-in. Please try again' });
+  if (!google.emailVerified) return res.status(401).json({ error: 'That Google account\'s email isn\'t verified. Please verify it with Google first' });
 
   let user = await db.find('users', u => u.googleId === google.googleId);
   if (!user) {
@@ -672,19 +672,19 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
   const { idToken, role, country, state, city, phone, address, zipCode, category, skills, inviteCode, referralCode } = req.body || {};
   const { verifyGoogleIdToken } = require('../google-auth');
   const google = await verifyGoogleIdToken(idToken);
-  if (!google) return res.status(401).json({ error: 'Could not verify that Google sign-in — please try again' });
-  if (!google.emailVerified) return res.status(401).json({ error: 'That Google account\'s email isn\'t verified — please verify it with Google first' });
+  if (!google) return res.status(401).json({ error: 'Could not verify that Google sign-in. Please try again' });
+  if (!google.emailVerified) return res.status(401).json({ error: 'That Google account\'s email isn\'t verified. Please verify it with Google first' });
 
   const errors = validate([
-    ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider — admin accounts are created by a super admin'],
+    ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider. Admin accounts are created by a super admin.'],
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
     ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
     ['address', isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address'],
     ['country', isNonEmptyString(country, { min: 2, max: 100 }), 'Select your country'],
     ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
     ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
-    ['state', typeof country !== 'string' || typeof state !== 'string' || isValidStateForCountry(country.trim(), state.trim()), 'That state/region doesn\'t belong to the selected country — please re-select both'],
-    ['city', typeof country !== 'string' || typeof city !== 'string' || isPlausibleCityForCountry(country.trim(), city.trim()), 'That city is a known city in a different country — please double check your country and city'],
+    ['state', typeof country !== 'string' || typeof state !== 'string' || isValidStateForCountry(country.trim(), state.trim()), 'That state/region doesn\'t belong to the selected country. Please re-select both'],
+    ['city', typeof country !== 'string' || typeof city !== 'string' || isPlausibleCityForCountry(country.trim(), city.trim()), 'That city is a known city in a different country. Please double check your country and city'],
   ]);
   if (role === 'provider') {
     errors.push(...validate([
@@ -695,9 +695,9 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
 
   const existingByEmail = await db.find('users', u => u.email.toLowerCase() === google.email.toLowerCase());
-  if (existingByEmail) return res.status(409).json({ error: 'An account with that email already exists — try signing in with Google instead' });
+  if (existingByEmail) return res.status(409).json({ error: 'An account with that email already exists. Try signing in with Google instead' });
   const existingByGoogleId = await db.find('users', u => u.googleId === google.googleId);
-  if (existingByGoogleId) return res.status(409).json({ error: 'That Google account is already linked to a Trothen account — try signing in instead' });
+  if (existingByGoogleId) return res.status(409).json({ error: 'That Google account is already linked to a Trothen account. Try signing in instead' });
 
   let inviteOrgId = null;
   const trimmedInviteCode = (inviteCode || '').trim().toUpperCase();
@@ -767,12 +767,12 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
     const firstNameForWelcome = trimmedName.split(' ')[0];
     const welcomeSubject = `Welcome to Trothen, ${firstNameForWelcome}!`;
     const welcomeBody = user.role === 'provider'
-      ? `Hi ${firstNameForWelcome},\n\nWelcome to Trothen — you're now set up as a ${user.category} provider.\n\nHere's how it works: customers post jobs or search for pros like you, you get matched based on your category and location, and every job runs on an auto-generated contract with the payment held safely in escrow until the work is confirmed done. You'll need a verified profile photo and ID before you start showing up in customer searches — you can take care of both from your dashboard.\n\nGlad to have you on board.\n\n— The Trothen Team`
-      : `Hi ${firstNameForWelcome},\n\nWelcome to Trothen — real local pros, verified before they ever show up.\n\nHere's how it works: tell us what you need done, we match you with verified, ID-checked professionals nearby, and every booking runs on an auto-generated contract with your payment held safely in escrow until you're satisfied with the work. No guessing who's really coming to your door.\n\nReady when you are — just search for what you need on your dashboard.\n\n— The Trothen Team`;
+      ? `Hi ${firstNameForWelcome},\n\nWelcome to Trothen. You're now set up as a ${user.category} provider.\n\nHere's how it works: customers post jobs or search for pros like you, you get matched based on your category and location, and every job runs on an auto-generated contract with the payment held safely in escrow until the work is confirmed done. You'll need a verified profile photo and ID before you start showing up in customer searches. You can take care of both from your dashboard.\n\nGlad to have you on board.\n\nKind regards,\nThe Trothen Team`
+      : `Hi ${firstNameForWelcome},\n\nWelcome to Trothen.\n\nHow it works: tell us what you need, and we match you with ID-verified professionals near you. Every booking has a written contract, and your payment is held in escrow until you confirm the work is complete.\n\nTo get started, search for a service from your dashboard.\n\nKind regards,\nThe Trothen Team`;
     const { sendEmail } = require('../delivery');
     await sendEmail(user.email, welcomeSubject, welcomeBody);
     await sendVerificationInviteEmail(req, user);
-    await notify(user.id, '👋', `Welcome to Trothen, ${firstNameForWelcome}! Here's how it works: ${user.role === 'provider' ? 'get matched to jobs in your category, and every payment is held safely in escrow until the work is confirmed done.' : 'tell us what you need, we match you with a verified local pro, and your payment stays safely in escrow until you\'re satisfied.'}`);
+    await notify(user.id, '👋', `Welcome to Trothen, ${firstNameForWelcome}. Here's how it works: ${user.role === 'provider' ? 'You will be matched to jobs in your category, and payments are held in escrow until the work is confirmed complete.' : 'Tell us what you need and we will match you with a verified local pro. Your payment is held in escrow until you confirm the work is complete.'}`);
   }
 
   if (referrer) {
@@ -785,7 +785,7 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
     });
     const firstName = trimmedName.split(' ')[0];
     const lastInitial = trimmedName.split(' ')[1] ? ` ${trimmedName.split(' ')[1][0]}.` : '';
-    await notify(referrer.id, '🎉', `${firstName}${lastInitial} just joined Trothen as a ${user.role} using your referral link!`, null, { section: 'referrals' });
+    await notify(referrer.id, '🎉', `${firstName}${lastInitial} joined Trothen as a ${user.role} using your referral link.`, null, { section: 'referrals' });
     const { awardLoyaltyPoint } = require('../loyalty');
     await awardLoyaltyPoint(referrer.id, 'referral');
   }
@@ -878,7 +878,7 @@ const { CURRENT_TERMS_VERSION } = require('../terms'); // v81: one shared defini
 router.post('/accept-terms', requireAuth, async (req, res) => {
   const { version, viewedFullTerms, acknowledgedAll } = req.body || {};
   if (version !== CURRENT_TERMS_VERSION) {
-    return res.status(400).json({ error: 'This isn\'t the current version of the agreement — please refresh and try again.' });
+    return res.status(400).json({ error: 'This isn\'t the current version of the agreement. Please refresh and try again.' });
   }
   // v76: agreement is a tick box per promise plus one for the full Terms
   // of Service, which are linked right beside that box. The server refuses
@@ -964,16 +964,16 @@ router.patch('/me', requireAuth, async (req, res) => {
     const effectiveState = 'state' in patch ? patch.state : (existingUser && existingUser.state);
     const effectiveCity = 'city' in patch ? patch.city : (existingUser && existingUser.city);
     if (effectiveCountry && effectiveState && !isValidStateForCountry(effectiveCountry, effectiveState)) {
-      return res.status(400).json({ error: 'That state/region doesn\'t belong to the selected country — please re-select both' });
+      return res.status(400).json({ error: 'That state/region doesn\'t belong to the selected country. Please re-select both' });
     }
     if (effectiveCountry && effectiveCity && !isPlausibleCityForCountry(effectiveCountry, effectiveCity)) {
-      return res.status(400).json({ error: 'That city is a known city in a different country — please double check your country and city' });
+      return res.status(400).json({ error: 'That city is a known city in a different country. Please double check your country and city' });
     }
   }
   for (const dateField of ['licenseExpiryDate', 'insuranceExpiryDate']) {
     if (dateField in patch && patch[dateField] !== null) {
       if (typeof patch[dateField] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(patch[dateField]) || isNaN(new Date(patch[dateField]).getTime())) {
-        return res.status(400).json({ error: `${dateField === 'licenseExpiryDate' ? 'License' : 'Insurance'} expiry must be a real date` });
+        return res.status(400).json({ error: `${dateField === 'licenseExpiryDate' ? 'License' : 'Insurance'} expiry must be a valid date` });
       }
     }
   }
@@ -983,7 +983,7 @@ router.patch('/me', requireAuth, async (req, res) => {
   if ('latitude' in patch && patch.latitude !== null) {
     const { isValidCoordinate } = require('../geo-distance');
     if (!isValidCoordinate(patch.latitude, patch.longitude)) {
-      return res.status(400).json({ error: 'That doesn\'t look like a real GPS location' });
+      return res.status(400).json({ error: 'That is not a valid GPS location' });
     }
   }
   if ('serviceRadiusMiles' in patch && patch.serviceRadiusMiles !== null) {
@@ -995,7 +995,7 @@ router.patch('/me', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'payoutMethodIntl must be PayPal, Bank Transfer, or left blank' });
   }
   if ('name' in patch && !isValidName(patch.name)) {
-    return res.status(400).json({ error: 'Enter a real name — letters, spaces, hyphens, and apostrophes only' });
+    return res.status(400).json({ error: 'Enter a valid name using letters, spaces, hyphens and apostrophes only' });
   }
   // Once someone's ID has been checked, their name is tied to it: a
   // verified pro can't rename their account to someone else and keep the
@@ -1129,7 +1129,7 @@ router.patch('/me', requireAuth, async (req, res) => {
       await db.insert('categoryRequests', request);
       const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
       for (const admin of superAdmins) {
-        await notify(admin.id, '🆕', `${current.name} updated their category to "${patch.category}" — not a current category. Review within 24 hours in Categories & Countries → Category Requests.`, null, { section: 'categories' });
+        await notify(admin.id, '🆕', `${current.name} updated their category to "${patch.category}" is not a listed category. Review it within 24 hours in Categories & Countries → Category Requests.`, null, { section: 'categories' });
         console.log(`[TEST MODE — no email provider connected] Would email ${admin.email}: category update request "${patch.category}" from ${current.name} needs review within 24 hours.`);
       }
     }
@@ -1240,7 +1240,7 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
     return res.json({
       ...genericResponse,
       testMode: true,
-      testModeNote: 'No real email service is configured yet — this token is returned directly instead of being emailed. Do not do this in production.',
+      testModeNote: 'No real email service is configured yet. This token is returned directly instead of being emailed. Do not do this in production.',
       resetToken: decoyToken,
     });
   }
@@ -1279,7 +1279,7 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
   if (isEmailConfigured()) {
     delivered = (await sendEmail(
       user.email, 'Reset your Trothen password',
-      `Someone requested a password reset for your Trothen account. If this was you, use this link within 30 minutes: ${resetLink}\n\nIf you didn't request this, you can safely ignore this email — your password hasn't been changed.`
+      `Someone requested a password reset for your Trothen account. If this was you, use this link within 30 minutes: ${resetLink}\n\nIf you didn't request this, you can safely ignore this email. Your password hasn't been changed.`
     )).sent;
   }
   if (delivered) {
@@ -1299,7 +1299,7 @@ router.post('/forgot-password', otpLimiter, async (req, res) => {
   res.json({
     ...genericResponse,
     testMode: true,
-    testModeNote: 'No real email service is configured yet — this token is returned directly instead of being emailed. Do not do this in production.',
+    testModeNote: 'No real email service is configured yet. This token is returned directly instead of being emailed. Do not do this in production.',
     resetToken: rawToken,
   });
 });
@@ -1322,7 +1322,7 @@ router.post('/reset-password', otpLimiter, async (req, res) => {
   await db.update('users', user.id, { passwordHash: hashPassword(newPassword), tokenVersion: (user.tokenVersion || 0) + 1 });
   await db.update('passwordResets', record.id, { used: true });
 
-  res.json({ message: 'Password reset successfully — you can now sign in with your new password.' });
+  res.json({ message: 'Password reset successfully. You can now sign in with your new password.' });
 });
 
 // ── PHONE VERIFICATION (test mode — same honest pattern as password reset) ──
@@ -1381,7 +1381,7 @@ router.post('/send-phone-otp', requireAuth, async (req, res) => {
   if (usingVerify || isSmsConfigured()) {
     // Text messaging is connected but this send failed — never fall back
     // to showing the code, or "verified phone" would mean nothing.
-    return res.status(502).json({ error: "We couldn't send your code just now. Please wait a minute and try again." });
+    return res.status(502).json({ error: "We could not send your code. Please wait a minute and try again." });
   }
 
   console.log(`[TEST MODE] Phone verification code for ${user.phone}: ${code || 'sent via Twilio Verify'} (expires in 10 min)`);
@@ -1389,7 +1389,7 @@ router.post('/send-phone-otp', requireAuth, async (req, res) => {
   res.json({
     message: `A verification code would be sent to ${user.phone}.`,
     testMode: true,
-    testModeNote: 'No real SMS provider is configured yet — this code is returned directly instead of being texted. Do not do this in production.',
+    testModeNote: 'No real SMS provider is configured yet. This code is returned directly instead of being texted. Do not do this in production.',
     code: code || undefined,
   });
 });

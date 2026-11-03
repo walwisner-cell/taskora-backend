@@ -38,7 +38,7 @@ function handlePhotoUpload(uploader, req, res) {
     // The real bytes are checked, not what the upload claimed to be.
     if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'This file does not appear to be a real photo. Please choose a photo.' });
+      return res.status(400).json({ error: 'This file is not a valid photo. Please choose a photo.' });
     }
     res.status(201).json({ url: `/uploads/${req.file.filename}` });
   });
@@ -472,7 +472,7 @@ router.post('/skills/licence/upload', requireAuth, requireRole('provider'), uplo
     const real = req.file.mimetype === 'application/pdf' ? verifyPdfMagicBytes(req.file.path) : verifyImageMagicBytes(req.file.path, req.file.mimetype);
     if (!real) { drop(); return res.status(400).json({ error: 'This file does not appear to be a real photo or PDF.' }); }
     const { category, expiry } = req.body || {};
-    if (expiry && !/^\d{4}-\d{2}-\d{2}$/.test(expiry)) { drop(); return res.status(400).json({ error: 'Enter the expiry date as a real date' }); }
+    if (expiry && !/^\d{4}-\d{2}-\d{2}$/.test(expiry)) { drop(); return res.status(400).json({ error: 'Enter the expiry date as a valid date' }); }
     if (expiry && expiry <= new Date().toISOString().slice(0, 10)) { drop(); return res.status(400).json({ error: 'That licence has already expired.' }); }
     const me = await freshUser(req);
     const skills = Array.isArray(me.extraSkills) ? me.extraSkills.slice() : [];

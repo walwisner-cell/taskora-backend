@@ -389,9 +389,9 @@ router.post('/rides/driver/apply', requireAuth, requireRole('provider'), async (
   const needIns = needDocs.includes('insurance'), needRw = needDocs.includes('roadworthy');
   const insOk = DATE_RX.test(String(insuranceExpiry || '')), rwOk = DATE_RX.test(String(roadworthyExpiry || ''));
   if (needIns && (!insOk || insuranceExpiry < today())) return res.status(400).json({ error: 'Enter the date your insurance or road permit runs out. It must not be expired.' });
-  if (!needIns && insuranceExpiry && (!insOk || insuranceExpiry < today())) return res.status(400).json({ error: 'The insurance or permit date must be a real date that has not passed.' });
+  if (!needIns && insuranceExpiry && (!insOk || insuranceExpiry < today())) return res.status(400).json({ error: 'The insurance or permit date must be a valid date that has not passed.' });
   if (needRw && (!rwOk || roadworthyExpiry < today())) return res.status(400).json({ error: 'Enter the date your roadworthiness or inspection certificate runs out. It must not be expired.' });
-  if (!needRw && roadworthyExpiry && (!rwOk || roadworthyExpiry < today())) return res.status(400).json({ error: 'The roadworthiness date must be a real date that has not passed.' });
+  if (!needRw && roadworthyExpiry && (!rwOk || roadworthyExpiry < today())) return res.status(400).json({ error: 'The roadworthiness date must be a valid date that has not passed.' });
   if (vehicle === 'motorbike' && helmet !== true) return res.status(400).json({ error: 'A motorbike rider must carry a helmet for the passenger. Tick the box to confirm you do.' });
   const rideDriver = { ...cur, status: 'draft', vehicle, make: String(make || '').trim().slice(0, 40), plate: cleanPlate, licenceNumber: lic, licenceExpiry, insuranceExpiry: insOk ? insuranceExpiry : null, roadworthyExpiry: rwOk ? roadworthyExpiry : null, expiryWarned: {}, helmet: helmet === true, online: false, onlineUntil: null, updatedAt: new Date().toISOString() };
   await db.update('users', u.id, { rideDriver });

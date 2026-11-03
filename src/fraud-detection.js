@@ -35,7 +35,7 @@ async function createFlag({ type, severity, userId, relatedUserId, contractId, d
   // automatically" true rather than a flag nobody ever sees.
   const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
   for (const admin of superAdmins) {
-    await require('./notify').notify(admin.id, '🚩', `${severity === 'high' ? 'URGENT — review within 2hrs: ' : ''}Fraud check flagged: ${details}`);
+    await require('./notify').notify(admin.id, '🚩', `${severity === 'high' ? 'Urgent, review within 2 hours: ' : ''}Fraud check flagged: ${details}`);
   }
 
   // The actual new protection: a high-severity flag with a specific
@@ -49,7 +49,7 @@ async function createFlag({ type, severity, userId, relatedUserId, contractId, d
     const user = await db.find('users', u => u.id === userId);
     if (user && !user.onHold && user.active !== false) {
       await db.update('users', userId, { onHold: true, holdReason: details, holdSince: new Date().toISOString() });
-      await require('./notify').notify(userId, '⏸️', `Your account has been temporarily paused pending a quick review — you can still log in and see your history, but can't start new bookings or request payouts until this is cleared, usually within a couple hours. Contact support if you believe this is a mistake.`, null, { section: 'settings' });
+      await require('./notify').notify(userId, '⏸️', `Your account has been temporarily paused pending a quick review. You can still log in and see your history, but can't start new bookings or request payouts until this is cleared, usually within a couple hours. Contact support if you believe this is a mistake.`, null, { section: 'settings' });
     }
   }
 
@@ -126,7 +126,7 @@ async function checkRapidDisputes(userId) {
       type: 'repeat_disputes',
       severity: 'high',
       userId,
-      details: `This account has been party to ${recentDisputes.length} disputes in the last 30 days — worth a closer look.`,
+      details: `This account has been party to ${recentDisputes.length} disputes in the last 30 days. Worth a closer look.`,
     });
   }
   return null;
@@ -145,7 +145,7 @@ async function checkNewAccountHighValue(userId, amount, threshold = 500) {
       type: 'new_account_high_value',
       severity: 'medium',
       userId,
-      details: `Account created less than 24 hours ago attempted a $${amount} transaction — above the $${threshold} threshold for new-account review.`,
+      details: `Account created less than 24 hours ago attempted a $${amount} transaction, above the $${threshold} threshold for new-account review.`,
     });
   }
   return null;
@@ -169,7 +169,7 @@ async function checkProtectedCancellationAbuse(providerId) {
       type: 'protected_cancellation_pattern',
       severity: 'high',
       userId: providerId,
-      details: `This provider has cited a protected cancellation reason ${contracts.length} times in the last 30 days — worth checking whether these are genuine or a pattern of avoiding real jobs.`,
+      details: `This provider has cited a protected cancellation reason ${contracts.length} times in the last 30 days. Worth checking whether these are genuine or a pattern of avoiding jobs.`,
     });
   }
   return null;
@@ -187,7 +187,7 @@ async function checkPayoutVelocity(providerId) {
       type: 'payout_velocity',
       severity: 'high',
       userId: providerId,
-      details: `${recentPayouts.length} payout requests from this account in the last hour — unusually fast, worth a look before more go through.`,
+      details: `${recentPayouts.length} payout requests from this account in the last hour. Unusually fast, worth a look before more go through.`,
     });
   }
   return null;
@@ -225,7 +225,7 @@ async function checkImplausibleTravelSpeed(contract) {
       severity: 'medium',
       userId: contract.providerId,
       contractId: contract.id,
-      details: `"On my way" and "arrived" locations for this booking are ${Math.round(miles)} miles apart, ${hours.toFixed(2)} hours apart — implies ~${Math.round(impliedMph)} mph average, which isn't realistic. Could be a genuine GPS/clock glitch, or could be a spoofed location — worth a quick look.`,
+      details: `"On my way" and "arrived" locations for this booking are ${Math.round(miles)} miles apart, ${hours.toFixed(2)} hours apart, which implies ~${Math.round(impliedMph)} mph average, which isn't realistic. Could be a genuine GPS/clock glitch, or could be a spoofed location. Worth a quick look.`,
     });
   }
   return null;

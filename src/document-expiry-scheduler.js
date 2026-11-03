@@ -56,7 +56,7 @@ async function sweepExpiringDocuments() {
     for (const admin of [...superAdmins, ...regionalAdmins]) {
       await notify(
         admin.id, '📄',
-        `${provider.name}'s license expires ${daysLabel} (${expiryLabel}) — they've been notified, but you may want to follow up if it lapses.`,
+        `${provider.name}'s license expires ${daysLabel} (${expiryLabel}). They've been notified, but you may want to follow up if it lapses.`,
         null, { section: 'verification' }
       );
     }

@@ -72,7 +72,7 @@ function readTool(b, existing) {
   if (has('notes')) out.notes = text(b.notes, 300);
   if (has('condition')) { if (!TOOL_CONDITIONS.includes(b.condition)) return { error: 'Choose the tool\'s condition from the list' }; out.condition = b.condition; }
   if (has('value')) { if (b.value === null || b.value === '') out.value = null; else if (typeof b.value !== 'number' || b.value < 0 || b.value > 10000000) return { error: 'The value must be zero or more' }; else out.value = money(b.value); }
-  for (const k of ['boughtOn', 'serviceDue']) if (has(k)) { if (!b[k]) out[k] = null; else if (!isDay(b[k])) return { error: 'Enter the date as a real date' }; else out[k] = b[k]; }
+  for (const k of ['boughtOn', 'serviceDue']) if (has(k)) { if (!b[k]) out[k] = null; else if (!isDay(b[k])) return { error: 'Enter the date as a valid date' }; else out[k] = b[k]; }
   return { out };
 }
 router.get('/business/tools', pro, async (req, res) => {
@@ -115,7 +115,7 @@ router.post('/business/receipt/upload', pro, (req, res) => {
   receiptUpload.single('photo')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That photo is too big. The limit is 12MB.' : (err.message || 'Upload failed') });
     if (!req.file) return res.status(400).json({ error: 'No photo was provided' });
-    if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) { fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: 'This file does not appear to be a real photo.' }); }
+    if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) { fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: 'This file is not a valid photo.' }); }
     res.status(201).json({ url: `/uploads/${req.file.filename}` });
   });
 });
@@ -207,9 +207,9 @@ function readDoc(b, existing, business) {
     if (!Number.isFinite(d) || d < 0) return { error: 'The discount must be zero or more' };
     out.discount = money(d);
   }
-  for (const k of ['date', 'dueOrValidUntil']) if (has(k)) { if (!b[k]) out[k] = null; else if (!isDay(b[k])) return { error: 'Enter the date as a real date' }; else out[k] = b[k]; }
+  for (const k of ['date', 'dueOrValidUntil']) if (has(k)) { if (!b[k]) out[k] = null; else if (!isDay(b[k])) return { error: 'Enter the date as a valid date' }; else out[k] = b[k]; }
   if (has('status')) { if (!DOC_STATUSES[type].includes(b.status)) return { error: 'That status doesn\'t apply to this kind of document' }; out.status = b.status; }
-  if (has('paidOn')) { if (!b.paidOn) out.paidOn = null; else if (!isDay(b.paidOn)) return { error: 'Enter the day it was paid as a real date' }; else out.paidOn = b.paidOn; }
+  if (has('paidOn')) { if (!b.paidOn) out.paidOn = null; else if (!isDay(b.paidOn)) return { error: 'Enter the day it was paid as a valid date' }; else out.paidOn = b.paidOn; }
   return { out };
 }
 async function nextDocNumber(userId, type) {

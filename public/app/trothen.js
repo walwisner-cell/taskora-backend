@@ -186,7 +186,7 @@ async function initGoogleSignIn() {
     }
     if (!window.google || !window.google.accounts) {
       row.style.display = 'none'; divider.style.display = 'none';
-      console.warn('Google Sign-In script never became available — check network access to accounts.google.com/gsi/client, or an ad blocker may be involved.');
+      console.warn('Google Sign-In could not load. Check your network connection or disable any ad blocker, then try again.');
       return;
     }
     row.style.display = 'block';
@@ -241,7 +241,7 @@ async function onGoogleCredentialResponse(response) {
       enterGoogleSignupMode(e.data.googleName, e.data.googleEmail, idToken);
       return;
     }
-    showToast(e.message || 'Google sign-in failed — please try again');
+    showToast(e.message || 'Google sign-in failed. Please try again.');
   }
 }
 
@@ -264,7 +264,7 @@ function enterGoogleSignupMode(name, email, idToken) {
   document.getElementById('auth-password').closest('.form-group').style.display = 'none';
   document.getElementById('google-signin-row').style.display = 'none';
   document.getElementById('auth-oauth-divider').style.display = 'none';
-  document.getElementById('auth-sub').textContent = `Continuing as ${name || email} — just a few more details.`;
+  document.getElementById('auth-sub').textContent = `Continuing as ${name || email}. Please complete the remaining details.`;
   document.getElementById('auth-submit-btn').textContent = 'Create Account';
 }
 
@@ -314,9 +314,9 @@ async function submitGoogleSignup() {
     JUST_COMPLETED_SIGNUP = true; // v75: Google signups get the verify-now prompt too
     exitGoogleFlow();
     if (data.categoryApprovalStatus === 'pending') {
-      showToast(`Account created! Your category "${data.user.category}" is pending a quick admin review (within 24 hours) — you can use your account right away in the meantime.`);
+      showToast(`Account created. Your category "${data.user.category}" is pending review (usually within 24 hours). You can use your account in the meantime.`);
     } else if (data.joinedOrganizationName) {
-      showToast(`Account created — you've joined ${data.joinedOrganizationName}!`);
+      showToast(`Account created. You have joined ${data.joinedOrganizationName}!`);
     } else {
       showToast(`Welcome to Trothen, ${data.user.name.split(' ')[0]}!`);
     }
@@ -381,7 +381,7 @@ async function loadProviders() {
     if (scopeNote) {
       if (!country) {
         scopeNote.style.display = 'block';
-        scopeNote.textContent = '📍 Showing pros from across all locations — sign in or search your city to see pros near you specifically.';
+        scopeNote.textContent = '📍 Showing pros from all locations. Sign in or search for your city to see pros near you.';
       } else if (data.locationScope === 'country_empty') {
         scopeNote.style.display = 'block';
         scopeNote.textContent = `📍 No pros in ${country} yet.`;
@@ -796,7 +796,7 @@ async function refreshTripTracking() {
   if (!id || !document.getElementById('trip-overlay')) return;
   let d;
   try { d = await apiFetch('GET', `/contracts/${id}/tracking`); }
-  catch (e) { const f = document.getElementById('trip-fresh'); if (f) f.textContent = 'Couldn\'t refresh just now. Trying again…'; return; }
+  catch (e) { const f = document.getElementById('trip-fresh'); if (f) f.textContent = 'Unable to refresh. Retrying…'; return; }
   if (TRIP_VIEW.contractId !== id) return;
   const iAmPro = AUTH.user && AUTH.user.role === 'provider';
   const set = (elId, html) => { const el = document.getElementById(elId); if (el) el.innerHTML = html; };
@@ -911,7 +911,7 @@ async function pinJobLocation(prefix) {
   if (el) el.textContent = tr('This can take up to half a minute. Stay where the job is, outside if you can.');
   const r = await getBestLocation({ goodEnoughM: 30, maxWaitMs: 25000, onProgress: (b) => { if (el) el.textContent = 'Getting closer: ' + describeAccuracy(b.accuracyM) + '…'; } });
   if (btn) { btn.disabled = false; btn.textContent = tr('Pin my current location'); }
-  if (r.error) { if (el) el.textContent = locationErrorMessage(r.error) + ' ' + tr('You can also type the location or just describe a landmark below.'); return; }
+  if (r.error) { if (el) el.textContent = locationErrorMessage(r.error) + ' ' + tr('You can also type the location or describe a landmark below.'); return; }
   JOB_PIN[prefix] = { latitude: r.latitude, longitude: r.longitude, accuracyM: r.accuracyM, source: 'gps' };
   renderJobPin(prefix);
 }
@@ -1102,7 +1102,7 @@ async function cancelJobRequest(id) {
 let CURRENT_JOB_CANDIDATES_JOBID = null;
 
 const MATCH_STATUS_LABEL = {
-  pending: 'Notified — no response yet',
+  pending: 'Notified, awaiting response',
   interested: '🙋 Interested',
   declined: 'Declined',
   accepted: '✅ Hired',
@@ -1185,11 +1185,11 @@ function renderJobCandidates(data) {
   document.getElementById('job-candidates-sub').textContent = job.description;
   if (job.status !== 'open') {
     CANDIDATE_ROWS = {}; for (const c of candidates) if (c.provider) CANDIDATE_ROWS[c.provider.id] = c; CANDIDATE_JOB = job; // v125
-    document.getElementById('job-candidates-body').innerHTML = `<div style="padding:12px 0;text-align:center;color:var(--slate);">${job.status === 'matched' ? 'You agreed a price with a pro for this job. Other pros can no longer be hired for it.' : `This job has already been ${job.status} — responses are shown for reference only.`}</div>` + candidates.map(c => candidateRowHTML(c, job)).join('');
+    document.getElementById('job-candidates-body').innerHTML = `<div style="padding:12px 0;text-align:center;color:var(--slate);">${job.status === 'matched' ? 'You agreed a price with a pro for this job. Other pros can no longer be hired for it.' : `This job has already been ${job.status}. Responses are shown for reference only.`}</div>` + candidates.map(c => candidateRowHTML(c, job)).join('');
     return;
   }
   if (!candidates.length) {
-    document.getElementById('job-candidates-body').innerHTML = `<div style="padding:24px 0;text-align:center;color:var(--slate);">No providers have been matched to this job yet — check back shortly.</div>`;
+    document.getElementById('job-candidates-body').innerHTML = `<div style="padding:24px 0;text-align:center;color:var(--slate);">No providers have been matched to this job yet. Please check back shortly.</div>`;
     return;
   }
   document.getElementById('job-candidates-body').innerHTML = candidates.map(c => candidateRowHTML(c, job)).join('');
@@ -1264,10 +1264,10 @@ async function hireProviderForJob(providerId) {
   const priceWords = !hireAmount ? '' : jobNow.payMethod === 'cash'
     ? ` Price: $${hireAmount.toFixed(2)}, paid to the pro in cash after the job (no Trothen service fee).`
     : ` Price: $${hireAmount.toFixed(2)} + Trothen service fee $${hireFee.toFixed(2)} = $${(hireAmount + hireFee).toFixed(2)} total.`;
-  if (!(await confirmDialog(`Select this provider${body.amount ? ` at $${body.amount}` : ''}?${differs ? ` They asked $${Number(proPrice).toFixed(2)}, so they can confirm your price or say no.` : ''}${priceWords} ${payWords} The job stays open to other candidates until this provider actually confirms — if they decline or don't respond in time, it's automatically offered to the next one.`))) return;
+  if (!(await confirmDialog(`Select this provider${body.amount ? ` at $${body.amount}` : ''}?${differs ? ` They asked $${Number(proPrice).toFixed(2)}, so they can confirm your price or say no.` : ''}${priceWords} ${payWords} The job remains open to other candidates until this provider confirms. If they decline or do not respond in time, it is offered to the next candidate automatically.`))) return;
   try {
     const { contract } = await apiFetch('POST', `/jobs/${jobId}/select-provider`, body);
-    showToast(contract.status === 'awaiting_payment' ? `Selected — booking ${contract.bookingNumber || contract.id} is waiting for your payment` : contract.payMethod === 'cash' ? `Selected — cash booking ${contract.bookingNumber || contract.id} created, awaiting provider confirmation` : `Selected — contract ${contract.bookingNumber || contract.id} created, escrow funded, awaiting provider confirmation`);
+    showToast(contract.status === 'awaiting_payment' ? `Selected. Booking ${contract.bookingNumber || contract.id} is waiting for your payment` : contract.payMethod === 'cash' ? `Selected. Cash booking ${contract.bookingNumber || contract.id} created, awaiting provider confirmation` : `Selected. Contract ${contract.bookingNumber || contract.id} created, escrow funded, awaiting provider confirmation`);
     closeJobCandidatesModal();
     await loadCustomerData();
     selectCustomerSection('bookings');
@@ -1428,7 +1428,7 @@ async function saveCustomerLocation() {
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { country, state, city });
     AUTH.user = user;
-    showToast('Location updated — this is what matches you with pros near you now');
+    showToast('Location updated. You will now be matched with pros near this location.');
   } catch (e) { showToast(e.message || 'Could not update location'); }
 }
 
@@ -1441,7 +1441,7 @@ async function saveProviderLocation() {
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { country, state, city });
     AUTH.user = user;
-    showToast('Location updated — this is what customers see on your profile now');
+    showToast('Location updated. Customers will see this location on your profile.');
   } catch (e) { showToast(e.message || 'Could not update location'); }
 }
 
@@ -1470,7 +1470,7 @@ function populateSettingsCategory() {
   const catNames = (CATEGORIES && CATEGORIES.length) ? CATEGORIES.map(c => c.name) : [];
   const isListed = catNames.includes(current);
   select.innerHTML = catNames.map(c => `<option value="${escapeHtml(c)}" ${c === current ? 'selected' : ''}>${c}</option>`).join('')
-    + `<option value="__other__" ${!isListed ? 'selected' : ''}>Other (not listed — describe below)</option>`;
+    + `<option value="__other__" ${!isListed ? 'selected' : ''}>Other (not listed, describe below)</option>`;
   const customGroup = document.getElementById('set-prov-custom-category-group');
   const customInput = document.getElementById('set-prov-custom-category');
   if (!isListed && current) {
@@ -1521,7 +1521,7 @@ async function saveProviderCategory() {
     const { user } = await apiFetch('PATCH', '/auth/me', { category });
     AUTH.user = user;
     showToast(user.categoryApprovalStatus === 'pending'
-      ? `Category saved — "${category}" is pending a quick admin review (within 24 hours). You can keep using your account normally.`
+      ? `Category saved. "${category}" is pending review (usually within 24 hours). You can continue to use your account.`
       : `Category updated to "${user.category}"`);
     selectProviderSection('settings');
   } catch (e) { showToast(e.message || 'Could not update category'); }
@@ -1543,7 +1543,7 @@ function categoryCardsHTML(list) {
 // this section changes with it automatically; there's no second place
 // to remember to update.
 const HOMEPAGE_FAQ_ITEMS = [
-  { question: 'How does escrow actually protect me?', lookup: 'escrow' },
+  { question: 'How does escrow protect me?', lookup: 'escrow' },
   { question: 'How are pros verified?', lookup: 'verification' },
   { question: 'What if something goes wrong with a job?', lookup: 'dispute' },
   { question: 'How does matching work?', lookup: 'how does matching work' },
@@ -1584,7 +1584,7 @@ function renderHomeCategories() {
 function goCategoriesPage() {
   showScreen('screen-categories');
   renderNavbar('navbar-categories', navRoleNow());
-  document.getElementById('categories-page-sub').textContent = `${CATEGORIES.length} service type${CATEGORIES.length === 1 ? '' : 's'} available — tap any to see its providers`;
+  document.getElementById('categories-page-sub').textContent = `${CATEGORIES.length} service type${CATEGORIES.length === 1 ? '' : 's'} available. Select one to view its providers`;
   document.getElementById('categories-page-grid').innerHTML = categoryCardsHTML(CATEGORIES);
   window.scrollTo(0, 0);
 }
@@ -2001,7 +2001,7 @@ const I18N = {
     pros_sub: "Ranked by rating, distance & fit",
     plans_eyebrow: "Provider Plans",
     plans_title: "Get matched more. Keep more of what you earn.",
-    plans_sub: "Every provider starts on Starter. You're moved up automatically as you complete real jobs and build a real track record — there's no way to pay or click your way to a higher tier.",
+    plans_sub: "Every provider starts on Starter. You move up automatically as you complete jobs and build your track record. Higher tiers cannot be purchased.",
     plans_country: "Show pricing for",
     plan1_name: "Starter",
     plan1_desc: "Where every provider begins",
@@ -2011,14 +2011,14 @@ const I18N = {
     plan1_f4: "{starter_commission}% commission per job",
     plan1_f5: "Standard placement in search",
     plan2_name: "Pro",
-    plan2_desc: "Unlocked automatically — 50 completed jobs, 4.7+ rating, under 5% cancellation",
+    plan2_desc: "Unlocked automatically: 50 completed jobs, 4.7+ rating, under 5% cancellations",
     plan2_f1: "Everything in Starter",
     plan2_f2: "Priority placement in matching",
     plan2_f3: "{pro_commission}% commission per job",
     plan2_f4: "Portfolio & review boosts",
     plan2_f5: "Same-day payout option",
     plan3_name: "Super Pro",
-    plan3_desc: "500 completed jobs, 4.85+ rating, 12 months active — reviewed by our team, not automatic",
+    plan3_desc: "500 completed jobs, 4.85+ rating, 12 months active. Reviewed by our team.",
     plan3_f1: "Everything in Pro",
     plan3_f2: "Top placement in your zip code / community",
     plan3_f3: "{superpro_commission}% commission per job",
@@ -2030,20 +2030,20 @@ const I18N = {
     plan4_f2: "Centralized billing & reporting",
     plan4_f3: "Dedicated account manager",
     plan4_f4: "Volume commission discounts",
-    plan2_note: "🔒 Reached automatically once you qualify — track your progress on your dashboard.",
-    plan3_note: "🔒 Once you qualify, our team personally reviews and confirms it — this tier is never automatic.",
+    plan2_note: "🔒 Reached automatically once you qualify. Track your progress on your dashboard.",
+    plan3_note: "🔒 Once you qualify, our team reviews and confirms this tier.",
     plan3_badge: "Most Popular",
     plan1_btn: "Get Started",
-    plan4_price: "Let's talk",
+    plan4_price: "Custom pricing",
     plan4_btn: "Contact Sales",
     careers_title: "Help build the trust layer for local services",
-    careers_body: "We're a small, early-stage team — we don't have a long list of open roles posted yet, but we're always glad to hear from people who care about this problem. If you're excited about identity verification, marketplace trust & safety, or building for underserved markets across the US, Nigeria, and Ghana, we'd like to hear from you.",
+    careers_body: "We are a small, early-stage team. We have few open roles listed at the moment, but we welcome applications from people interested in this work. If you're excited about identity verification, marketplace trust & safety, or building for underserved markets across the US, Nigeria, and Ghana, we'd like to hear from you.",
     careers_form_title: "Get in touch about opportunities",
     careers_btn: "Send",
     contact_title: "We're glad to help",
     contact_intro: "For account-specific issues (a booking, a dispute, verification), signing in and using the in-app support chat gets you help fastest. For everything else, use the form below.",
     contact_btn: "Send Message",
-    faq_q1: "How does escrow actually protect me?",
+    faq_q1: "How does escrow protect me?",
     faq_a1: "",
     faq_q2: "How are pros verified?",
     faq_a2: "",
@@ -2487,7 +2487,7 @@ async function clearAllNotifications() {
   document.querySelectorAll('.notif-dot').forEach(dot => dot.remove());
   if (BACKEND_AVAILABLE) {
     try { await apiFetch('DELETE', '/notifications'); }
-    catch (e) { CURRENT_NOTIFICATIONS = previous; refreshAllNotifPanels(); showToast('Could not clear notifications — please try again'); }
+    catch (e) { CURRENT_NOTIFICATIONS = previous; refreshAllNotifPanels(); showToast('Could not clear notifications. Please try again.'); }
   }
 }
 
@@ -2678,11 +2678,11 @@ async function showAboutPageModal() {
     </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
   const body = document.getElementById('about-modal-body');
-  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable — no backend connection.</p>'; return; }
+  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable: no connection to the server.</p>'; return; }
   try {
     const { content } = await apiFetch('GET', '/about-us-content');
     body.innerHTML = renderFormattedContent(content);
-  } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
+  } catch (e) { body.innerHTML = '<p>Could not load this page. Please try again.</p>'; }
 }
 
 // v94: the Privacy Policy, shown in a window from the footer, the account
@@ -2726,22 +2726,22 @@ async function showTermsPageModal(preferredRole) {
     </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
   const body = document.getElementById('terms-modal-body');
-  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable — no backend connection.</p>'; return; }
+  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable: no connection to the server.</p>'; return; }
   try {
     const { content } = await apiFetch('GET', `/terms-of-service-${role}-content`);
     body.innerHTML = renderFormattedContent(content);
-  } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
+  } catch (e) { body.innerHTML = '<p>Could not load this page. Please try again.</p>'; }
 }
 
 async function showAboutPage() {
   showScreen('screen-about');
   renderNavbar('navbar-about', navRoleNow());
   const body = document.getElementById('about-us-body');
-  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable — no backend connection.</p>'; return; }
+  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable: no connection to the server.</p>'; return; }
   try {
     const { content } = await apiFetch('GET', '/about-us-content');
     body.innerHTML = renderFormattedContent(content);
-  } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
+  } catch (e) { body.innerHTML = '<p>Could not load this page. Please try again.</p>'; }
 }
 
 async function showTermsPage(preferredRole) {
@@ -2762,12 +2762,12 @@ async function loadTermsContent(role) {
   const body = document.getElementById('terms-of-service-body');
   document.getElementById('terms-toggle-customer').classList.toggle('active', role === 'customer');
   document.getElementById('terms-toggle-provider').classList.toggle('active', role === 'provider');
-  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable — no backend connection.</p>'; return; }
+  if (!BACKEND_AVAILABLE) { body.innerHTML = '<p>Content unavailable: no connection to the server.</p>'; return; }
   body.innerHTML = '<p style="color:var(--slate);">Loading…</p>';
   try {
     const { content } = await apiFetch('GET', `/terms-of-service-${role}-content`);
     body.innerHTML = renderFormattedContent(content);
-  } catch (e) { body.innerHTML = '<p>Could not load this page — please try again.</p>'; }
+  } catch (e) { body.innerHTML = '<p>Could not load this page. Please try again.</p>'; }
 }
 
 function showCareersPage() {
@@ -2815,14 +2815,14 @@ async function submitContactForm() {
   if (message.length < 10) return showToast('Message must be at least 10 characters');
 
   if (!BACKEND_AVAILABLE) {
-    showToast("Message sent (demo mode) — we'll be in touch");
-    document.getElementById('contact-form-panel').innerHTML = `<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:10px;">✓</div><div style="font-weight:600;color:var(--navy);">Thanks — we'll be in touch soon.</div></div>`;
+    showToast("Message sent (demo mode). We will be in touch.");
+    document.getElementById('contact-form-panel').innerHTML = `<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:10px;">✓</div><div style="font-weight:600;color:var(--navy);">Thank you. We will be in touch soon.</div></div>`;
     return;
   }
   try {
     await apiFetch('POST', '/contact', { name, email, subject, message, city: city || undefined });
-    document.getElementById('contact-form-panel').innerHTML = `<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:10px;">✓</div><div style="font-weight:600;color:var(--navy);">Thanks, ${name.split(' ')[0]} — we've received your message and will be in touch soon.</div></div>`;
-  } catch (e) { showToast(e.message || 'Could not send your message — please try again'); }
+    document.getElementById('contact-form-panel').innerHTML = `<div style="text-align:center;padding:20px;"><div style="font-size:28px;margin-bottom:10px;">✓</div><div style="font-weight:600;color:var(--navy);">Thanks, ${name.split(' ')[0]}. We have received your message and will be in touch soon.</div></div>`;
+  } catch (e) { showToast(e.message || 'Could not send your message. Please try again.'); }
 }
 
 async function submitCareersInquiry() {
@@ -2835,12 +2835,12 @@ async function submitCareersInquiry() {
   const resumeFile = document.getElementById('careers-resume').files[0];
   if (!name || !email || !phone || !role || !message) return showToast('Please fill in every field');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
-  if (phone.length < 7) return showToast('Enter a real phone number we can reach you at');
+  if (phone.length < 7) return showToast('Enter a phone number where we can reach you');
   if (message.length < 10) return showToast('Tell us a bit more about yourself (at least 10 characters)');
   if (resumeFile && resumeFile.type !== 'application/pdf') return showToast('Resume must be a PDF file');
   if (resumeFile && resumeFile.size > 8 * 1024 * 1024) return showToast('Resume must be under 8MB');
 
-  if (!BACKEND_AVAILABLE) return showToast("Inquiry sent (demo mode) — we'll be in touch");
+  if (!BACKEND_AVAILABLE) return showToast("Inquiry sent (demo mode). We will be in touch.");
   try {
     // Multipart, not the usual JSON apiFetch — same pattern as
     // uploadProfilePhoto, since a file needs FormData, not a JSON body.
@@ -2855,7 +2855,7 @@ async function submitCareersInquiry() {
     const res = await fetch(API_BASE + '/careers-inquiry', { method: 'POST', body: formData });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Could not send your application');
-    showToast(`Thanks, ${name.split(' ')[0]} — we've got your application and will reach out if there's a fit.`);
+    showToast(`Thanks, ${name.split(' ')[0]}. We have received your application and will contact you if there is a suitable role.`);
     document.getElementById('careers-name').value = '';
     document.getElementById('careers-email').value = '';
     document.getElementById('careers-phone').value = '';
@@ -2864,7 +2864,7 @@ async function submitCareersInquiry() {
     document.getElementById('careers-message').value = '';
     document.getElementById('careers-resume').value = '';
     document.getElementById('careers-resume-name').textContent = 'No file chosen';
-  } catch (e) { showToast(e.message || 'Could not send your application — please try again'); }
+  } catch (e) { showToast(e.message || 'Could not send your application. Please try again.'); }
 }
 
 function setAuthRolePreselect(role) {
@@ -2879,7 +2879,7 @@ async function selectPlan(plan) {
   // reached automatically (Pro) or by real admin review (Super-Pro), not
   // by clicking a button, which was the actual bug this replaced.
   if (AUTH.token && AUTH.user && AUTH.user.role === 'provider') {
-    return showToast(AUTH.user.plan === 'starter' ? "You're already on the Starter plan" : `You're on the ${PLAN_LABELS[AUTH.user.plan] || 'Starter'} plan — check your dashboard to see your progress toward the next tier.`);
+    return showToast(AUTH.user.plan === 'starter' ? "You're already on the Starter plan" : `You're on the ${PLAN_LABELS[AUTH.user.plan] || 'Starter'} plan. See your dashboard for your progress toward the next tier.`);
   }
   // Not signed in as a provider yet — get them signed up first, and
   // remember which plan they picked so we can apply it right after.
@@ -2935,7 +2935,7 @@ function goHome() {
         <div class="customer-welcome-banner">
           <div>
             <div class="customer-welcome-text">Welcome back, ${escapeHtml(AUTH.user.name.split(' ')[0])} 👋</div>
-            <div class="customer-welcome-sub" id="welcome-banner-stats">${AUTH.user.verified ? '✓ Verified account' : '⏳ Verification pending'} — showing pros in ${escapeHtml(AUTH.user.country || 'your area')}</div>
+            <div class="customer-welcome-sub" id="welcome-banner-stats">${AUTH.user.verified ? '✓ Verified account' : '⏳ Verification pending'} · Showing pros in ${escapeHtml(AUTH.user.country || 'your area')}</div>
           </div>
           <div class="customer-welcome-actions">
             <button class="btn-sm btn-sm-outline" onclick="goToCustomerDashboard('bookings')">My Bookings</button>
@@ -2950,7 +2950,7 @@ function goHome() {
           if (!statsEl) return; // navigated away before this resolved
           const active = customerData.bookings.filter(b => b.status === 'confirmed' || b.status === 'active').length;
           const bookingText = active > 0 ? ` · ${active} active booking${active === 1 ? '' : 's'}` : '';
-          statsEl.textContent = `${AUTH.user.verified ? '✓ Verified account' : '⏳ Verification pending'} — showing pros in ${AUTH.user.country || 'your area'}${bookingText}`;
+          statsEl.textContent = `${AUTH.user.verified ? '✓ Verified account' : '⏳ Verification pending'} · Showing pros in ${AUTH.user.country || 'your area'}${bookingText}`;
         }).catch(() => {});
       }
     } else {
@@ -3156,8 +3156,8 @@ function updatePasswordStrength(value) {
   }
   const label = document.getElementById('password-strength-label');
   label.textContent = len < 8
-    ? '8-72 characters — longer is stronger'
-    : (metCount === 4 ? '✓ Strong — great length' : `${len} characters — a longer passphrase is stronger than a short, complex one`);
+    ? '8 to 72 characters. Longer passwords are stronger.'
+    : (metCount === 4 ? '✓ Strong' : `${len} characters. A longer passphrase is stronger than a short, complex one.`);
   label.style.color = metCount === 4 ? '#2E8C6F' : 'var(--slate)';
 }
 
@@ -3220,7 +3220,7 @@ async function submitForgotPassword() {
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
 
   if (!BACKEND_AVAILABLE) {
-    showToast('Reset link sent (demo mode — no backend detected)');
+    showToast('Reset link sent (demo mode)');
     return;
   }
   try {
@@ -3259,12 +3259,12 @@ let pendingResetToken = null;
 async function submitResetPassword() {
   const newPassword = document.getElementById('reset-new-password').value;
   const confirm = document.getElementById('reset-confirm-password').value;
-  if (!pendingResetToken) return showToast('Missing reset token — request a new link');
+  if (!pendingResetToken) return showToast('This reset link is invalid. Please request a new one.');
   if (newPassword.length < 8 || newPassword.length > 72) return showToast('New password must be 8-72 characters');
   if (newPassword !== confirm) return showToast("Passwords don't match");
 
   if (!BACKEND_AVAILABLE) {
-    showToast('Password reset (demo mode — no backend detected)');
+    showToast('Password reset (demo mode)');
     showAuth('login');
     return;
   }
@@ -3312,7 +3312,7 @@ function setAuthRole(role) {
     // here too, instead of a hardcoded list going stale.
     const select = document.getElementById('auth-category');
     if (select && CATEGORIES.length) {
-      select.innerHTML = CATEGORIES.map(c => `<option>${escapeHtml(c.name)}</option>`).join('') + `<option value="__other__">Other (not listed — describe below)</option>`;
+      select.innerHTML = CATEGORIES.map(c => `<option>${escapeHtml(c.name)}</option>`).join('') + `<option value="__other__">Other (not listed, describe below)</option>`;
     }
   }
 }
@@ -3338,7 +3338,7 @@ async function mockAuth() {
   const skills = document.getElementById('auth-skills').value.trim();
 
   if (!BACKEND_AVAILABLE) {
-    showToast(authState.mode === 'login' ? 'Signed in (demo mode — no backend detected)' : 'Account created (demo mode — no backend detected)');
+    showToast(authState.mode === 'login' ? 'Signed in (demo mode)' : 'Account created (demo mode)');
     return goDashboard(authState.role);
   }
   if (authState.mode === 'login') {
@@ -3414,7 +3414,7 @@ let pendingReferralCode = null;
 async function submitSignupVerification() {
   const emailCode = document.getElementById('signup-verify-email-code').value.trim();
   if (!emailCode) return showToast('Enter the code sent to your email');
-  if (!pendingSignupId) return showToast('Something went wrong — please start signing up again');
+  if (!pendingSignupId) return showToast('Something went wrong. Please start the sign-up again.');
   try {
     const data = await apiFetch('POST', '/auth/signup/verify', { pendingId: pendingSignupId, emailCode });
     AUTH.token = data.token; AUTH.user = data.user;
@@ -3431,24 +3431,24 @@ async function submitSignupVerification() {
       // straight to Pro or Super-Pro). Only the Starter button sets this
       // now, and Starter is already the default, so there's genuinely
       // nothing left to do here except clear it.
-      showToast('Account created — welcome to Trothen!');
+      showToast('Account created. Welcome to Trothen.');
       pendingPlanSelection = null;
     } else if (data.categoryApprovalStatus === 'pending') {
-      showToast(`Account created! Your category "${data.user.category}" is pending a quick admin review (within 24 hours) — you can use your account right away in the meantime.`);
+      showToast(`Account created. Your category "${data.user.category}" is pending review (usually within 24 hours). You can use your account in the meantime.`);
     } else if (data.joinedOrganizationName) {
-      showToast(`Account created — you've joined ${data.joinedOrganizationName}!`);
+      showToast(`Account created. You have joined ${data.joinedOrganizationName}!`);
     } else {
-      showToast('Account created — welcome to Trothen!');
+      showToast('Account created. Welcome to Trothen.');
     }
     rememberLastLoginEmail(data.user.email, data.user.role);
     await completeAuthAndResumeIntent(data.user.role);
   } catch (e) {
-    showToast(e.message || 'Could not verify — check the code and try again');
+    showToast(e.message || 'Could not verify the code. Please check it and try again.');
   }
 }
 
 async function resendSignupCodes() {
-  if (!pendingSignupId) return showToast('Nothing to resend — please start signing up again');
+  if (!pendingSignupId) return showToast('There is nothing to resend. Please start the sign-up again.');
   try {
     const data = await apiFetch('POST', '/auth/signup/resend', { pendingId: pendingSignupId });
     if (data.testMode) {
@@ -3690,7 +3690,7 @@ async function submitTermsAgreement() {
     AUTH.user.termsVersion = CURRENT_TERMS_VERSION;
     const overlay = document.getElementById('terms-gate-overlay');
     if (overlay) overlay.remove();
-    showToast('Thanks, you\'re all set.');
+    showToast('Thank you. Your agreement has been saved.');
     JUST_COMPLETED_SIGNUP = false;
     maybePromptVerification(); // v75: asks on every sign-in until an ID is submitted, not only once at signup
   } catch (e) {
@@ -3730,7 +3730,7 @@ function showVerificationOnboardingPrompt() {
   const isProvider = role === 'provider';
   const title = isProvider ? 'One last step to become a Pro' : 'Verify your identity';
   const body = isProvider
-    ? `You're almost there — customers only ever book verified pros. Upload a government ID now and you'll typically be approved within a day, sometimes sooner.`
+    ? `One more step: customers can only book verified pros. Upload a government ID to be reviewed, usually within one business day.`
     : `You'll need this before you can post a job or book a pro. It takes a couple of minutes: upload a government ID and a person on our team reviews it. Your document stays private.`;
   const modalHtml = `
     <div class="modal-overlay open" id="verification-onboarding-prompt" style="z-index:4500;">
@@ -3779,8 +3779,8 @@ function renderSectionSafely(containerId, sectionKey, renderFn) {
     container.innerHTML = `
       <div class="panel" style="text-align:center;padding:40px;">
         <div style="font-size:32px;margin-bottom:12px;">⚠️</div>
-        <div style="font-weight:700;color:var(--navy);font-size:15px;margin-bottom:8px;">This section hit a problem loading</div>
-        <div style="font-size:13.5px;color:var(--slate);margin-bottom:16px;">You're still signed in — this is a display problem, not a sign-out. Try another tab, or come back to this one in a moment.</div>
+        <div style="font-weight:700;color:var(--navy);font-size:15px;margin-bottom:8px;">This section could not be loaded</div>
+        <div style="font-size:13.5px;color:var(--slate);margin-bottom:16px;">You are still signed in. This section could not be displayed. Please try another section or reload the page.</div>
         <div style="font-size:12.5px;color:var(--muted);font-family:monospace;background:var(--offwhite);padding:8px 12px;border-radius:6px;display:inline-block;max-width:100%;overflow-wrap:break-word;">${escapeHtml(err && err.message || String(err))}</div>
       </div>`;
   }
@@ -3800,7 +3800,7 @@ function statusBadge(status) {
     open: ['badge-pending', 'Open'], 'in review': ['badge-warn', 'In Review'],
     resolved: ['badge-success', 'Resolved'], active: ['badge-success', 'Active'],
     pending_agreement: ['badge-warn', 'Awaiting Response'], declined: ['badge-danger', 'Declined'],
-    pending_provider_confirmation: ['badge-warn', 'Awaiting Confirmation'], expired: ['badge-neutral', 'Expired — No Response'],
+    pending_provider_confirmation: ['badge-warn', 'Awaiting Confirmation'], expired: ['badge-neutral', 'Expired (No Response)'],
     cancelled: ['badge-neutral', 'Cancelled'], suspended: ['badge-danger', 'Suspended'],
     verified: ['badge-success', 'Verified'], unverified: ['badge-warn', 'Unverified'],
     reviewed: ['badge-success', 'Reviewed'], dismissed: ['badge-neutral', 'Dismissed'],
@@ -3815,7 +3815,7 @@ function verificationHTML(role, status) {
   const verified = status === 'verified';
   const inReview = status === 'in review';
   return `
-  <div class="dash-header"><div><div class="dash-title">Identity Verification</div><div class="dash-sub">Required for every ${role === 'provider' ? 'provider' : 'customer'} on Trothen — this is what makes the marketplace trustworthy</div></div></div>
+  <div class="dash-header"><div><div class="dash-title">Identity Verification</div><div class="dash-sub">Required for every ${role === 'provider' ? 'provider' : 'customer'} on Trothen. Verification keeps the marketplace safe for everyone.</div></div></div>
   <div class="panel">
     <div class="stepper">
       <div class="step-dot done">✓</div><div class="step-line ${inReview || verified ? 'done' : ''}"></div>
@@ -3828,9 +3828,9 @@ function verificationHTML(role, status) {
     ${verified
       ? (VERIFIED_WITHOUT_ID
           ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;white-space:normal;text-align:left;">${escapeHtml(tr("Account approved by our team. No ID has been reviewed for this account yet."))}</div>`
-          : `<div class="badge badge-success" style="font-size:14px;padding:8px 16px;">✓ Identity Verified — government ID confirmed</div>`)
+          : `<div class="badge badge-success" style="font-size:14px;padding:8px 16px;">✓ Identity verified: government ID confirmed</div>`)
       : inReview
-        ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;">⏳ Submitted — awaiting review</div>`
+        ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;">⏳ Submitted, awaiting review</div>`
         : `<div id="verification-action-area">
             <div class="form-group"><label class="form-label">${escapeHtml(tr("Document Type"))}</label>
               <select class="form-input" id="verification-doc-type-select"><option>Loading…</option></select>
@@ -3866,7 +3866,7 @@ function verificationHTML(role, status) {
   </div>
   <div class="panel">
     <div class="panel-title">Guarantors <span style="font-weight:400;color:var(--slate);font-size:13px;">(optional)</span></div>
-    <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Some regions don't have real background-check infrastructure available yet. Adding up to 3 guarantors — real people who can vouch for you, like a property owner or long-time client — gives our verification team a real way to check on you in the meantime. Our team will call each guarantor directly. Always optional, never required to work on Trothen.</div>
+    <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Formal background checks are not yet available in some regions. You can add up to 3 guarantors, such as a property owner or a long-standing client, who can vouch for you. Our verification team may contact them. Our team will call each guarantor directly. Always optional, never required to work on Trothen.</div>
     <div id="guarantors-form-area">${guarantorFormHTML()}</div>
   </div>` : ''}`;
 }
@@ -3893,7 +3893,7 @@ async function enableProviderTwoFactor() {
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { twoFactorEnabled: true });
     AUTH.user = user;
-    showToast('Two-factor authentication turned on — you\'ll be asked for a code the next time you sign in');
+    showToast('Two-factor authentication is on. You will be asked for a code the next time you sign in.');
     selectProviderSection('verification');
   } catch (e) { showToast(e.message || 'Could not turn on two-factor authentication'); }
 }
@@ -3902,7 +3902,7 @@ function guarantorBackgroundCheckStatusHTML() {
   const guarantors = (AUTH.user && AUTH.user.guarantors) || [];
   const verifiedCount = guarantors.filter(g => g.status === 'verified').length;
   if (verifiedCount > 0) return `<span class="badge badge-success">✓ Guarantor-Verified (${verifiedCount})</span>`;
-  if (guarantors.length > 0) return `<span class="badge badge-warn">⏳ Guarantors Submitted — Awaiting Contact</span>`;
+  if (guarantors.length > 0) return `<span class="badge badge-warn">⏳ Guarantors Submitted, Awaiting Contact</span>`;
   return `<span class="badge badge-neutral">Not Yet Completed</span>`;
 }
 
@@ -3918,7 +3918,7 @@ function guarantorFormHTML() {
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;">
       <div style="font-weight:600;color:var(--navy);margin-bottom:8px;">Guarantor ${i + 1}${statusNote}</div>
       <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="guarantor-${i}-name" value="${escapeHtml(g.name || '')}" placeholder="Full name"/></div>
-      <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" id="guarantor-${i}-phone" value="${escapeHtml(g.phone || '')}" placeholder="A real number our team can call"/></div>
+      <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" id="guarantor-${i}-phone" value="${escapeHtml(g.phone || '')}" placeholder="A number our team can call"/></div>
       <div class="form-group"><label class="form-label">Relationship</label><input class="form-input" id="guarantor-${i}-relationship" value="${escapeHtml(g.relationship || '')}" placeholder="e.g. Property owner, long-time client"/></div>
     </div>`;
   }).join('');
@@ -3973,7 +3973,7 @@ function showVerificationPick(input, slotId) {
 
 async function submitVerification(role) {
   if (!BACKEND_AVAILABLE) {
-    showToast('Submitted for review (demo mode — no backend detected)');
+    showToast('Submitted for review (demo mode)');
     return;
   }
   const docType = document.getElementById('verification-doc-type-select').value;
@@ -4051,7 +4051,7 @@ async function loadVerificationOptions() {
     const target = document.getElementById('verification-action-area');
     if (!target || !data.configured) return; // navigated away, or Persona isn't connected — leave manual flow as-is
     target.innerHTML = `
-      <div style="font-size:14px;color:var(--slate);margin-bottom:14px;">Verify your identity in about 2 minutes — takes a photo of your ID and a quick selfie, and confirms automatically.</div>
+      <div style="font-size:14px;color:var(--slate);margin-bottom:14px;">Verify your identity in about 2 minutes with a photo of your ID and a selfie. Verification is automatic.</div>
       <button class="btn-sm btn-sm-primary" onclick="window.location.href=${jsArg(data.hostedFlowUrl)}">🪪 Verify My Identity Now</button>
     `;
   } catch (e) { /* leave the manual flow in place — this is a nice-to-have upgrade, not a hard dependency */ }
@@ -4075,18 +4075,18 @@ function getRealContacts(role) {
 function messagingHTML(role) {
   const contacts = getRealContacts(role);
   if (!BACKEND_AVAILABLE) {
-    return `<div class="dash-header"><div><div class="dash-title">Messages</div><div class="dash-sub">Connect the backend to message your real contacts</div></div></div>
-    <div class="panel" style="text-align:center;color:var(--slate);padding:40px;">Messaging requires the backend to be running (demo mode — no backend detected).</div>`;
+    return `<div class="dash-header"><div><div class="dash-title">Messages</div><div class="dash-sub">Messaging is unavailable without a server connection</div></div></div>
+    <div class="panel" style="text-align:center;color:var(--slate);padding:40px;">Messaging requires the backend to be running (demo mode).</div>`;
   }
   if (!contacts.length) {
-    return `<div class="dash-header"><div><div class="dash-title">Messages</div><div class="dash-sub">All conversations are tied to a real booking</div></div></div>
-    <div class="panel" style="text-align:center;color:var(--slate);padding:40px;">No conversations yet — messaging unlocks once you have a booking with a ${role === 'provider' ? 'customer' : 'pro'}.</div>`;
+    return `<div class="dash-header"><div><div class="dash-title">Messages</div><div class="dash-sub">Conversations with the people you have bookings with</div></div></div>
+    <div class="panel" style="text-align:center;color:var(--slate);padding:40px;">No conversations yet. Messaging is available once you have a booking with a ${role === 'provider' ? 'customer' : 'pro'}.</div>`;
   }
   if (!activeMessageContact || !contacts.some(c => c.id === activeMessageContact.id)) {
     activeMessageContact = contacts[0];
   }
   return `
-  <div class="dash-header"><div><div class="dash-title">Messages</div><div class="dash-sub">Real conversations, tied to your actual bookings</div></div></div>
+  <div class="dash-header"><div><div class="dash-title">Messages</div><div class="dash-sub">Conversations with the people you have bookings with</div></div></div>
   <div class="msg-layout">
     <div class="msg-list" id="msg-contact-list">${contacts.map(c => `<div class="msg-item ${c.id === activeMessageContact.id ? 'active' : ''}" data-contact-id="${c.id}" onclick="selectMessageContact('${c.id}')"><div class="msg-item-name">${escapeHtml(c.name)}</div><div class="msg-item-preview">Tap to view conversation</div></div>`).join('')}</div>
     <div class="msg-thread">
@@ -4103,7 +4103,7 @@ async function loadMessageThread() {
     const { messages } = await apiFetch('GET', `/messages/${activeMessageContact.id}`);
     body.innerHTML = messages.length
       ? messages.map(m => `<div class="msg-bubble ${m.fromId === AUTH.user.id ? 'me' : 'them'}">${escapeHtml(m.text)}<div style="text-align:${m.fromId === AUTH.user.id ? 'right' : 'left'};margin-top:3px;line-height:1;opacity:.85;">${msgTimeHTML(m.createdAt)}</div></div>`).join('')
-      : `<div style="text-align:center;color:var(--slate);font-size:13.5px;padding:20px;">No messages yet — say hello.</div>`;
+      : `<div style="text-align:center;color:var(--slate);font-size:13.5px;padding:20px;">No messages yet.</div>`;
     body.scrollTop = body.scrollHeight;
   } catch (e) {
     body.innerHTML = `<div style="text-align:center;color:var(--slate);font-size:13.5px;padding:20px;">Could not load messages.</div>`;
@@ -4209,7 +4209,7 @@ function filterReportsByCategory(category, el) {
 
   const filterNote = document.getElementById('reports-filter-note');
   if (filterNote) filterNote.innerHTML = reportsySelectedCategory
-    ? `Showing <strong>${escapeHtml(reportsySelectedCategory)}</strong> only — <a href="#" onclick="filterReportsByCategory(${jsArg(reportsySelectedCategory)});return false;" style="color:var(--teal);">Clear filter</a>`
+    ? `Showing <strong>${escapeHtml(reportsySelectedCategory)}</strong> only · <a href="#" onclick="filterReportsByCategory(${jsArg(reportsySelectedCategory)});return false;" style="color:var(--teal);">Clear filter</a>`
     : '';
 }
 
@@ -4250,7 +4250,7 @@ async function runReportBuilder() {
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Service</th><th>Status</th><th>Amount</th><th>Fee</th><th>Customer</th><th>Provider</th><th>Category</th><th>Tier</th><th>City</th><th>Date</th></tr></thead><tbody>
       ${rows.slice(0, 200).map(r => `<tr><td>${escapeHtml(r.bookingNumber || '—')}</td><td>${escapeHtml((r.service || '').slice(0, 40))}</td><td>${statusBadge(r.status)}</td><td>$${r.amount}</td><td>$${r.serviceFee}</td><td>${escapeHtml(r.customerName)}</td><td>${escapeHtml(r.providerName)}</td><td>${escapeHtml(r.providerCategory) || '—'}</td><td>${tierBadgeHTML(r.providerTier)}</td><td>${escapeHtml(r.city) || '—'}</td><td>${r.createdAt ? r.createdAt.slice(0,10) : '—'}</td></tr>`).join('')}
       </tbody></table></div>
-      ${rows.length > 200 ? `<div style="font-size:13px;color:var(--slate);margin-top:8px;">Showing the first 200 of ${rows.length} — export to CSV for the complete set.</div>` : ''}
+      ${rows.length > 200 ? `<div style="font-size:13px;color:var(--slate);margin-top:8px;">Showing the first 200 of ${rows.length}. Export to CSV for the complete list.</div>` : ''}
     `;
   } catch (e) { resultsEl.innerHTML = `<div style="color:var(--red);font-size:14px;">${escapeHtml(e.message || 'Could not run this report')}</div>`; }
 }
@@ -4274,7 +4274,7 @@ function exportReportBuilderCSV() {
 }
 
 function categoryPerformanceTableHTML(rows) {
-  if (!rows.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No categories have any real bookings yet.</div>`;
+  if (!rows.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No categories have bookings yet.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Category</th><th>Jobs Booked</th><th>GMV</th><th>Avg Job Value</th><th>Providers</th><th>Avg Rating</th></tr></thead><tbody>
   ${rows.map(c => `<tr>
     <td style="font-weight:600;">${escapeHtml(c.category)}</td>
@@ -4413,7 +4413,7 @@ async function loadCustomerData() {
     customerData.notifications = notifications;
     const { methods } = await apiFetch('GET', '/payment-methods/mine');
     customerData.paymentMethods = methods;
-  } catch (e) { console.warn('Could not load bookings', e); showToast('Could not load your bookings — please refresh'); }
+  } catch (e) { console.warn('Could not load bookings', e); showToast('Could not load your bookings. Please refresh the page.'); }
   try {
     const { payments } = await apiFetch('GET', '/payments/mine');
     customerData.payments = payments;
@@ -4456,7 +4456,7 @@ function payLogoForMethod(m) {
 
 function paymentMethodsTableHTML() {
   const list = customerData.paymentMethods || [];
-  if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No payment methods yet — add one to test the booking flow.</div>`;
+  if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No payment methods have been added.</div>`;
   const methodIcon = m => payLogoForMethod(m);
   const methodDetail = m => m.type === 'apple_pay' ? 'Linked device' : m.type === 'paypal' ? escapeHtml(m.paypalEmail || '') : m.type === 'mobile_money' ? escapeHtml(m.mobileMoneyNumber || '') : `•••• ${m.last4} · exp ${m.expiry}`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Method</th><th>Details</th><th>Default</th><th>Action</th></tr></thead><tbody>
@@ -4559,7 +4559,7 @@ function openAddPaymentMethodForm() {
 
 async function submitPaymentMethod() {
   if (!BACKEND_AVAILABLE) {
-    showToast('Payment method added (demo mode — no backend detected)');
+    showToast('Payment method added (demo mode)');
     document.getElementById('add-payment-panel').style.display = 'none';
     return;
   }
@@ -4626,7 +4626,7 @@ async function removePaymentMethod(id) {
 }
 
 function bookingsTable(list) {
-  if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No bookings yet — post a job or book a pro to get started.</div>`;
+  if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">You have no bookings yet. Post a job or book a pro to get started.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Pro</th><th>Service</th><th>Date</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${escapeHtml(b.pro)}</td><td>${escapeHtml(b.service)}${whereHTML(b)}${contractGoodsHTML(b.id)}</td><td>${escapeHtml(b.date)}</td><td>${b.payMethod === 'cash' ? `💵 ${escapeHtml(tr('Cash'))}` : (b.escrow ? '$' + b.escrow : '—')}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)} ${handoverButtonHTML(b.id, b.status)}${b.status === 'completed' ? ` <button class="btn-sm btn-sm-outline" onclick="v105Download('/business/booking-invoices/${encodeURIComponent(b.id)}/pdf', ${jsArg('Invoice-TR-' + (b.bookingNumber || b.id) + '.pdf')})">🧾 ${escapeHtml(tr('Invoice'))}</button>` : ''}</td></tr>`).join('')}
   </tbody></table></div>`;
@@ -4643,7 +4643,7 @@ function gpsStatusNote(b) {
   if (!b.onMyWayAt && !b.arrivedAt) return '';
   const fmt = (iso) => new Date(iso).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
   const parts = [];
-  if (b.onMyWayAt) parts.push(`🚗 On the way — ${fmt(b.onMyWayAt)}`);
+  if (b.onMyWayAt) parts.push(`🚗 On the way: ${fmt(b.onMyWayAt)}`);
   if (b.arrivedAt) parts.push(`📍 Arrived — ${fmt(b.arrivedAt)}`);
   return `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">${parts.join(' · ')}</div>${track}`;
 }
@@ -4693,7 +4693,7 @@ function bookingActionHTML(b) {
     return `<span style="font-size:13px;color:var(--slate);">Try a new offer, or a different pro</span>`;
   }
   if (b.status === 'expired') {
-    return `<span style="font-size:13px;color:var(--slate);">No response in time — refunded. Try another pro?</span>`;
+    return `<span style="font-size:13px;color:var(--slate);">No response in time. Your payment was refunded. You can book another pro.</span>`;
   }
   return downloadBtn;
 }
@@ -4754,7 +4754,7 @@ function openDisputeForm(contractId) {
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('dispute-modal-overlay').remove()">✕</button>
           <h3>Report a Problem</h3>
-          <p>This opens a real dispute — our team will review and resolve it. The booking is frozen (can't be completed or cancelled) until it's resolved.</p>
+          <p>This opens a dispute for our team to review. The booking cannot be completed or cancelled until the dispute is resolved.</p>
         </div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">What went wrong?</label>
@@ -4775,7 +4775,7 @@ async function submitDispute(contractId) {
   if (!BACKEND_AVAILABLE) { showToast('Dispute submitted (demo mode)'); document.getElementById('dispute-modal-overlay').remove(); return; }
   try {
     const { dispute } = await apiFetch('POST', '/disputes', { contractId, reason });
-    showToast('Dispute submitted — our team will review it');
+    showToast('Dispute submitted. Our team will review it.');
     // Real evidence upload — offered right after filing, since that's
     // the natural moment someone actually has a photo or screenshot
     // ready, rather than making them hunt for a separate screen later.
@@ -4887,8 +4887,8 @@ async function openSelfServeAdConfirm() {
               <div class="modal-body" style="padding-top:28px;">
                 <div style="font-size:36px;margin-bottom:12px;">${ad.isLive ? '✅' : '⏳'}</div>
                 <h3 style="margin-bottom:10px;">${ad.isLive ? 'Your ad is live' : 'Your ad is pending review'}</h3>
-                <p style="color:var(--slate);font-size:14px;margin-bottom:6px;">"${escapeHtml(ad.displayHeadline)}"${ad.targetCity ? ` — showing in ${escapeHtml(ad.targetCity)}` : ' — platform-wide'}</p>
-                <p style="color:var(--slate);font-size:14px;">${ad.isLive ? 'Contact support if you\'d like to take it down or make changes.' : 'Usually reviewed quickly — check back soon.'}</p>
+                <p style="color:var(--slate);font-size:14px;margin-bottom:6px;">"${escapeHtml(ad.displayHeadline)}"${ad.targetCity ? ` · Showing in ${escapeHtml(ad.targetCity)}` : ' · Platform-wide'}</p>
+                <p style="color:var(--slate);font-size:14px;">${ad.isLive ? 'Contact support if you\'d like to take it down or make changes.' : 'Reviews are usually completed quickly.'}</p>
                 <button class="btn-sm btn-sm-outline" style="margin-top:16px;" onclick="document.getElementById('selfserve-status-overlay').remove()">Close</button>
               </div>
             </div>
@@ -4904,7 +4904,7 @@ async function openSelfServeAdConfirm() {
         <div class="modal-body" style="padding-top:28px;">
           <div style="font-size:36px;margin-bottom:12px;">📣</div>
           <h3 style="margin-bottom:10px;">Advertise your own profile?</h3>
-          <p style="color:var(--slate);font-size:14px;margin-bottom:20px;">You're signed in as a provider — would you like to promote your own Trothen profile as a featured ad, rather than submit a request for a different business?</p>
+          <p style="color:var(--slate);font-size:14px;margin-bottom:20px;">You are signed in as a provider. Would you like to promote your own Trothen profile as a featured listing instead of submitting a request for another business?</p>
           <div style="display:flex;gap:10px;justify-content:center;">
             <button class="btn-sm btn-sm-outline" onclick="document.getElementById('selfserve-confirm-overlay').remove()">No, never mind</button>
             <button class="confirm-btn" style="width:auto;padding:10px 20px;" onclick="document.getElementById('selfserve-confirm-overlay').remove();openSelfServeAdForm()">Yes, continue</button>
@@ -4922,7 +4922,7 @@ async function openSelfServeAdForm() {
     try {
       const data = await apiFetch('GET', `/ad-pricing?city=${encodeURIComponent(u.city || '')}`);
       price = data.price;
-    } catch (e) { console.warn('Could not load real ad pricing, showing a default', e); }
+    } catch (e) { console.warn('Could not load advertising prices. Showing the default price.', e); }
   }
   const modalHtml = `
     <div class="modal-overlay open" id="selfserve-form-overlay" onclick="if(event.target===this)this.remove()">
@@ -4930,12 +4930,12 @@ async function openSelfServeAdForm() {
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('selfserve-form-overlay').remove()">✕</button>
           <h3>Promote Your Profile</h3>
-          <p>Real cost: $${price} — reviewed for content before it goes live, usually quick</p>
+          <p>Cost: $${price}. Reviewed for content before it goes live.</p>
         </div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Headline</label><input class="form-input" id="selfserve-headline" maxlength="100" value="${escapeHtml(u.businessName || u.name)}" placeholder="e.g. Marcus T. Plumbing"/></div>
-          <div class="form-group"><label class="form-label">Short description</label><textarea class="form-input" id="selfserve-subtext" rows="2" style="resize:vertical;" maxlength="200" placeholder="e.g. Licensed plumber serving Atlanta — book me directly on Trothen">${escapeHtml(`${u.category || 'Trusted local pro'} on Trothen — ★ ${u.rating ? Number(u.rating).toFixed(1) : 'New'}`)}</textarea></div>
-          <div class="form-group"><label class="form-label">Link (optional)</label><input class="form-input" id="selfserve-link" placeholder="https://your-real-website.com"/></div>
+          <div class="form-group"><label class="form-label">Short description</label><textarea class="form-input" id="selfserve-subtext" rows="2" style="resize:vertical;" maxlength="200" placeholder="e.g. Licensed plumber serving Atlanta. Book directly on Trothen.">${escapeHtml(`${u.category || 'Trusted local pro'} on Trothen · ★ ${u.rating ? Number(u.rating).toFixed(1) : 'New'}`)}</textarea></div>
+          <div class="form-group"><label class="form-label">Link (optional)</label><input class="form-input" id="selfserve-link" placeholder="https://your-website.com"/></div>
           <div class="form-group">
             <label class="form-label">Where should this show?</label>
             <select class="form-input" id="selfserve-target">
@@ -4943,7 +4943,7 @@ async function openSelfServeAdForm() {
               <option value="">Platform-wide (reviewed by Trothen HQ)</option>
             </select>
           </div>
-          <div style="font-size:13px;color:var(--muted);">Test mode — this simulates a real $${price} charge; no actual payment is taken yet.</div>
+          <div style="font-size:13px;color:var(--muted);">Test mode. This simulates a $${price} charge; no actual payment is taken yet.</div>
         </div>
         <div class="modal-footer">
           <button class="confirm-btn" onclick="submitSelfServeAd(${price})">Pay $${price} & Submit for Review</button>
@@ -4963,7 +4963,7 @@ async function submitSelfServeAd(price) {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     await apiFetch('POST', '/advertising-inquiry/self-serve', { displayHeadline, displaySubtext, displayLink, targetCity });
-    showToast(`Paid $${price} (test mode) — submitted for a quick content review before it goes live`);
+    showToast(`Paid $${price} (test mode). Submitted for content review before it goes live.`);
     document.getElementById('selfserve-form-overlay').remove();
   } catch (e) { showToast(e.message || 'Could not submit your ad'); }
 }
@@ -4991,7 +4991,7 @@ async function openAdvertiseForm() {
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('advertise-modal-overlay').remove()">✕</button>
           <h3>Advertise on Trothen</h3>
-          <p>Tell us a bit about your business and what you're looking for — our team will follow up.</p>
+          <p>Tell us about your business and what you are looking for. Our team will follow up.</p>
         </div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Company Name</label><input class="form-input" id="advertise-company"/></div>
@@ -5027,15 +5027,15 @@ async function submitAdvertiseInquiry() {
   if (message.length < 10) return showToast('Tell us a bit more about what you have in mind (at least 10 characters)');
 
   if (!BACKEND_AVAILABLE) {
-    showToast(`Thanks, ${contactName.split(' ')[0]} — we'll be in touch (demo mode)`);
+    showToast(`Thanks, ${contactName.split(' ')[0]}. We will be in touch (demo mode).`);
     document.getElementById('advertise-modal-overlay').remove();
     return;
   }
   try {
     await apiFetch('POST', '/advertising-inquiry', { companyName, contactName, email, phone, message, targetCity });
-    showToast(`Thanks, ${contactName.split(' ')[0]} — we've got your inquiry and will be in touch.`);
+    showToast(`Thanks, ${contactName.split(' ')[0]}. We have received your inquiry and will be in touch.`);
     document.getElementById('advertise-modal-overlay').remove();
-  } catch (e) { showToast(e.message || 'Could not send your inquiry — please try again'); }
+  } catch (e) { showToast(e.message || 'Could not send your inquiry. Please try again.'); }
 }
 
 // The Custom Plan pricing card's "Contact Sales" real destination — same
@@ -5048,8 +5048,8 @@ function openSalesInquiryForm() {
       <div class="modal">
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('sales-modal-overlay').remove()">✕</button>
-          <h3>Let's talk about the Custom plan</h3>
-          <p>Tell us about your organization and what you need — our team will follow up.</p>
+          <h3>Contact us about the Custom plan</h3>
+          <p>Tell us about your organization and what you need. Our team will follow up.</p>
         </div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Company Name</label><input class="form-input" id="sales-company"/></div>
@@ -5077,25 +5077,25 @@ async function submitSalesInquiry() {
   if (message.length < 10) return showToast('Tell us a bit more about what you need (at least 10 characters)');
 
   if (!BACKEND_AVAILABLE) {
-    showToast(`Thanks, ${contactName.split(' ')[0]} — we'll be in touch (demo mode)`);
+    showToast(`Thanks, ${contactName.split(' ')[0]}. We will be in touch (demo mode).`);
     document.getElementById('sales-modal-overlay').remove();
     return;
   }
   try {
     await apiFetch('POST', '/sales-inquiry', { companyName, contactName, email, teamSize, message });
-    showToast(`Thanks, ${contactName.split(' ')[0]} — we've got your inquiry and will be in touch.`);
+    showToast(`Thanks, ${contactName.split(' ')[0]}. We have received your inquiry and will be in touch.`);
     document.getElementById('sales-modal-overlay').remove();
-  } catch (e) { showToast(e.message || 'Could not send your inquiry — please try again'); }
+  } catch (e) { showToast(e.message || 'Could not send your inquiry. Please try again.'); }
 }
 
 async function cancelBooking(contractId) {
-  if (!BACKEND_AVAILABLE) return showToast('Booking cancelled (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Booking cancelled (demo mode)');
   const rawB = RAW_CONTRACTS[contractId] || {}; // v119: say what really happens for cash and unpaid bookings
   const cancelWords = rawB.payMethod === 'cash' ? 'Cancel this cash booking? Nothing has been paid through Trothen.' : rawB.status === 'awaiting_payment' ? 'Cancel this booking? Only do this if you have NOT sent the payment.' : 'Cancel this booking? Any held escrow will be refunded, not paid to the pro.';
   if (!(await confirmDialog(cancelWords))) return;
   try {
     await apiFetch('POST', `/contracts/${contractId}/cancel`);
-    showToast(rawB.payMethod === 'cash' || rawB.status === 'awaiting_payment' ? 'Booking cancelled' : 'Booking cancelled — escrow refunded');
+    showToast(rawB.payMethod === 'cash' || rawB.status === 'awaiting_payment' ? 'Booking cancelled' : 'Booking cancelled. Your payment has been refunded.');
     await loadCustomerData();
     selectCustomerSection('bookings');
   } catch (e) { showToast(e.message || 'Could not cancel this booking'); }
@@ -5112,7 +5112,7 @@ function completeBooking(contractId) {
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">Add a tip? <span style="color:var(--slate);font-weight:400;">(optional — 100% goes to your pro, no commission taken)</span></label>
+            <label class="form-label">Add a tip? <span style="color:var(--slate);font-weight:400;">(optional; 100% goes to your pro, no commission is taken)</span></label>
             <input class="form-input" type="number" min="0" step="0.01" id="complete-booking-tip" placeholder="$0.00"/>
           </div>
         </div>
@@ -5131,12 +5131,12 @@ async function confirmCompleteBooking(contractId) {
   const overlay = document.getElementById('complete-booking-overlay');
   if (!BACKEND_AVAILABLE) {
     if (overlay) overlay.remove();
-    return showToast('Marked complete (demo mode — no backend detected)');
+    return showToast('Marked complete (demo mode)');
   }
   try {
     await apiFetch('POST', `/contracts/${contractId}/complete`, tipAmount !== undefined ? { tipAmount } : {});
     if (overlay) overlay.remove();
-    showToast(tipAmount ? `Job marked complete — escrow released, plus a $${tipAmount} tip` : 'Job marked complete — escrow released to your pro');
+    showToast(tipAmount ? `Job marked complete. Payment released, plus a $${tipAmount} tip` : 'Job marked complete. Payment released to your pro.');
     await loadCustomerData();
     selectCustomerSection('bookings');
   } catch (e) { showToast(e.message || 'Could not complete this booking'); }
@@ -5196,7 +5196,7 @@ async function submitReview(contractId) {
   if (!BACKEND_AVAILABLE) { showToast('Review submitted (demo mode)'); document.getElementById('review-modal-overlay').remove(); reviewTrustValue = null; return; }
   try {
     await apiFetch('POST', '/reviews', { contractId, stars, text, trusted: reviewTrustValue });
-    showToast('Thanks for your review!');
+    showToast('Thank you for your review.');
     document.getElementById('review-modal-overlay').remove();
     reviewTrustValue = null;
     await loadCustomerData();
@@ -5213,7 +5213,7 @@ const CUSTOMER_SECTIONS = {
     const vLabel = vStatus === 'verified' ? '✓ Verified' : vStatus === 'in review' ? '⏳ In Review' : '⚠ Not Verified';
     const vColor = vStatus === 'verified' ? '#256B54' : vStatus === 'in review' ? '#8C6423' : '#B3423A';
     return `
-    <div class="dash-header"><div><div class="dash-title">Welcome back${AUTH.user && AUTH.user.name ? ', ' + escapeHtml(AUTH.user.name.split(' ')[0]) : ''}</div><div class="dash-sub">Here's what's happening with your bookings</div></div>
+    <div class="dash-header"><div><div class="dash-title">Welcome back${AUTH.user && AUTH.user.name ? ', ' + escapeHtml(AUTH.user.name.split(' ')[0]) : ''}</div><div class="dash-sub">Your bookings and recent activity</div></div>
     <button class="btn-sm btn-sm-primary" onclick="openPostJobModal()">+ Post a New Job</button></div>
     <div id="customer-promotions-banner"></div>
     <div class="stat-cards">
@@ -5225,25 +5225,25 @@ const CUSTOMER_SECTIONS = {
     <div class="panel"><div class="panel-title">Recent Bookings <small>${customerData.bookings.length} total</small></div>${bookingsTable(customerData.bookings)}</div>`;
   },
   bookings: () => `
-    <div class="dash-header"><div><div class="dash-title">My Bookings</div><div class="dash-sub">Every job, contract, and escrow status in one place ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Live data</span>' : ''}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">My Bookings</div><div class="dash-sub">All bookings, contracts and payment status ${BACKEND_AVAILABLE ? '' : ''}</div></div></div>
     ${customerData.openJobs && customerData.openJobs.length ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--gold);">
       <div class="panel-title">Awaiting a Match <small>${customerData.openJobs.length}</small></div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">These job requests haven't been booked with a provider yet — they'll move to My Bookings automatically once matched.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">These job requests have not been booked with a provider yet. They move to My Bookings automatically once booked.</div>
       <div style="display:flex;flex-direction:column;gap:10px;">
         ${customerData.openJobs.map(j => openJobCardHTML(j)).join('')}
       </div>
     </div>` : ''}
     <div class="panel">${bookingsTable(customerData.bookings)}</div>`,
   favorites: () => `
-    <div class="dash-header"><div><div class="dash-title">Favorite Pros</div><div class="dash-sub">Providers you've saved to rebook quickly</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Favorite Pros</div><div class="dash-sub">Providers you have saved</div></div></div>
     <div class="panel" id="favorites-panel"><div style="color:var(--slate);font-size:13.5px;padding:12px 0;">Loading…</div></div>`,
   messages: () => messagingHTML('customer'),
   payments: () => `
-    <div class="dash-header"><div><div class="dash-title">Payments</div><div class="dash-sub">Payment methods & escrow history</div></div><button class="btn-sm btn-sm-primary" onclick="openAddPaymentMethodForm()">+ Add Payment Method</button></div>
+    <div class="dash-header"><div><div class="dash-title">Payments</div><div class="dash-sub">Payment methods and payment history</div></div><button class="btn-sm btn-sm-primary" onclick="openAddPaymentMethodForm()">+ Add Payment Method</button></div>
     <div class="panel" id="add-payment-panel" style="display:none;">
-      <div class="panel-title">Add Payment Method <span class="badge badge-warn" style="margin-left:8px;">TEST MODE — no real charges</span></div>
+      <div class="panel-title">Add Payment Method <span class="badge badge-warn" style="margin-left:8px;">Test mode: no charges</span></div>
       <div style="background:#FBF3E4;border:1px solid #E9D6A8;border-radius:8px;padding:10px 12px;font-size:13.5px;line-height:1.5;margin-bottom:12px;">Payments are in test mode. Please don't type a real debit or credit card number here. Use the sample number 4242 4242 4242 4242. (This is about bank cards only. Your ID is handled under Verification.)</div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:14px;">This is a sandbox for testing the booking flow — nothing is ever really charged. A real payment processor gets wired in before this goes live.</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:14px;">Payments are in test mode. No charges are made.</div>
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;" id="pm-type-tabs">
         <button class="btn-sm btn-sm-primary" id="pm-tab-card" onclick="selectPaymentMethodType('card')" style="display:inline-flex;align-items:center;gap:6px;">${payLogo('visa', 20)}${payLogo('mastercard', 20)} Card</button>
         <button class="btn-sm btn-sm-outline" id="pm-tab-apple_pay" onclick="selectPaymentMethodType('apple_pay')" style="display:inline-flex;align-items:center;gap:6px;">${payLogo('applepay', 20)} Apple Pay</button>
@@ -5258,10 +5258,10 @@ const CUSTOMER_SECTIONS = {
         </div>
         <div class="form-group"><label class="form-label">Billing Address</label><input class="form-input" id="pm-billing-address"/></div>
         <div class="form-group"><label class="form-label">Billing Zip / Postal Code</label><input class="form-input" id="pm-billing-zip"/></div>
-        <div style="font-size:12.5px;color:var(--muted);margin-top:-6px;margin-bottom:4px;">CVV is intentionally not collected or stored here — real card verification happens once, live, at the payment processor when a real processor is connected. Storing it afterward isn't allowed under card network rules (PCI-DSS).</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:-6px;margin-bottom:4px;">The security code (CVV) is not collected or stored. Card verification is handled by the payment processor, in line with card network rules (PCI DSS).</div>
       </div>
       <div id="pm-form-apple_pay" style="display:none;">
-        <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">A real Apple Pay button authenticates on your device via Face ID/Touch ID and needs a live Apple merchant account, which isn't connected yet — this simulates linking Apple Pay so the rest of the booking flow can be tested. Nothing on your device is actually accessed.</div>
+        <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Apple Pay is not connected yet. This adds Apple Pay in test mode only; nothing on your device is accessed.</div>
       </div>
       <div id="pm-form-paypal" style="display:none;">
         <div class="form-group"><label class="form-label">PayPal Email</label><input class="form-input" id="pm-paypal-email" placeholder="you@example.com"/></div>
@@ -5298,7 +5298,7 @@ const CUSTOMER_SECTIONS = {
       <button class="btn-sm btn-sm-primary" onclick="saveCustomerSettings()">Save Changes</button>
     </div>
     <div class="panel"><div class="panel-title">Location</div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">This is what matches you with pros in your community — if this is wrong (including if it says a location you've never lived in), fix it here.</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Your location is used to match you with pros near you. Update it here if it is incorrect.</div>
       <div class="form-group"><label class="form-label">Country</label>
         <select class="form-input form-select" id="set-cust-country" onchange="populateSettingsStates('cust')"></select>
       </div>
@@ -5317,7 +5317,7 @@ const CUSTOMER_SECTIONS = {
     <div class="panel">
       <div class="panel-title">Trothen Membership</div>
       ${AUTH.user && AUTH.user.membershipTier === 'vip'
-        ? `<div style="font-size:13.5px;color:var(--gold);font-weight:600;margin-bottom:10px;">💎 You're a Trothen VIP member — invited by Trothen, includes concierge support.</div>`
+        ? `<div style="font-size:13.5px;color:var(--gold);font-weight:600;margin-bottom:10px;">💎 You are a Trothen VIP member. VIP membership is by invitation and includes concierge support.</div>`
         : `<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">${AUTH.user && AUTH.user.membershipTier && AUTH.user.membershipTier !== 'free' ? `You're on ${AUTH.user.membershipTier[0].toUpperCase() + AUTH.user.membershipTier.slice(1)} — $${AUTH.user.membershipPrice}/month.` : 'Currently on the Free tier.'}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
           ${['plus', 'pro', 'elite'].map(tier => {
@@ -5337,7 +5337,7 @@ const CUSTOMER_SECTIONS = {
             </div>`;
           }).join('')}
         </div>
-        ${AUTH.user && AUTH.user.membershipTier && AUTH.user.membershipTier !== 'free' ? `<button class="btn-sm btn-sm-ghost" onclick="cancelMembership()">Cancel — back to Free</button>` : ''}`}
+        ${AUTH.user && AUTH.user.membershipTier && AUTH.user.membershipTier !== 'free' ? `<button class="btn-sm btn-sm-ghost" onclick="cancelMembership()">Cancel and return to Free</button>` : ''}`}
     </div>
     <div class="panel" id="loyalty-points-panel"><div class="panel-title">Loyalty Points</div><div id="loyalty-points-body" style="color:var(--slate);font-size:13.5px;">Loading…</div></div>
     <div class="panel" id="handbook-panel" style="display:none;"><div class="panel-title">Getting Started Guide</div><div style="font-size:13.5px;color:var(--slate);margin-bottom:10px;">A quick walkthrough of how Trothen works.</div><a class="btn-sm btn-sm-outline" id="handbook-download-link" href="#" target="_blank" rel="noopener noreferrer">📄 Download Guide</a></div>
@@ -5370,13 +5370,13 @@ function phoneVerificationPanelHTML() {
   return `<div class="panel"><div class="panel-title">Confirm your phone number ${verified ? '<span class="badge badge-success" style="margin-left:8px;">✓ Confirmed</span>' : '<span class="badge badge-warn" style="margin-left:8px;">Not confirmed yet</span>'}</div>
     ${verified
       ? `<div style="font-size:13.5px;color:var(--slate);">Your phone number is confirmed.</div>`
-      : `<div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">We text a 6-digit code to the number on your account and you type it here. That proves the number is really yours, so booking updates and sign-in codes reach you and nobody else. It takes a minute. (This is separate from the ID check, which our team does.)</div>
+      : `<div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">We text a 6-digit code to the number on your account and you type it here. This confirms the number belongs to you, so booking updates and sign-in codes reach you and nobody else. It takes a minute. (This is separate from the ID check, which our team does.)</div>
          <div id="phone-otp-step-1">
            <button class="btn-sm btn-sm-primary" onclick="sendPhoneOtp()">Text me the code</button>
          </div>
          <div id="phone-otp-step-2" style="display:none;margin-top:14px;">
            <div id="phone-otp-test-banner" style="display:none;margin-bottom:12px;padding:12px 14px;background:var(--offwhite);border:1px dashed var(--gold);border-radius:10px;font-size:13.5px;">
-             <span class="badge badge-warn" style="margin-right:6px;">TEST MODE</span>No SMS provider connected — your code: <strong id="phone-otp-test-code"></strong>
+             <span class="badge badge-warn" style="margin-right:6px;">TEST MODE</span>Text messages are not connected. Your code: <strong id="phone-otp-test-code"></strong>
            </div>
            <div class="form-group"><label class="form-label">Enter Code</label><input class="form-input" id="phone-otp-input" placeholder="6-digit code" maxlength="6"/></div>
            <button class="btn-sm btn-sm-primary" onclick="verifyPhoneOtp()">Verify</button>
@@ -5385,7 +5385,7 @@ function phoneVerificationPanelHTML() {
 }
 
 async function sendPhoneOtp() {
-  if (!BACKEND_AVAILABLE) return showToast('Code sent (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Code sent (demo mode)');
   try {
     const data = await apiFetch('POST', '/auth/send-phone-otp');
     showToast(data.message);
@@ -5401,7 +5401,7 @@ async function verifyPhoneOtp() {
   const code = document.getElementById('phone-otp-input').value.trim();
   if (!code) return showToast('Enter the code you received');
   if (!BACKEND_AVAILABLE) return showToast('Phone verified (demo mode)');
-  if (!AUTH.user) return showToast('Your session expired — please sign in again');
+  if (!AUTH.user) return showToast('Your session has expired. Please sign in again.');
   try {
     const data = await apiFetch('POST', '/auth/verify-phone-otp', { code });
     AUTH.user.phoneVerified = true;
@@ -5420,7 +5420,7 @@ function twoFactorPanelHTML(required = false) {
     </div>`;
   }
   return `<div class="panel"><div class="panel-title">Two-Factor Authentication</div>
-    <div class="switch-row"><div><div class="switch-label">Require a code at sign-in</div><div class="switch-sub">${isOn ? 'On — a 6-digit code is required every time you sign in, in addition to your password.' : 'Off — signing in only requires your password.'}</div></div><label class="switch"><input type="checkbox" ${isOn ? 'checked' : ''} onchange="toggleTwoFactor(this.checked)"><span class="switch-track"></span></label></div>
+    <div class="switch-row"><div><div class="switch-label">Require a code at sign-in</div><div class="switch-sub">${isOn ? 'On. A 6-digit code is required each time you sign in, in addition to your password.' : 'Off. Signing in requires only your password.'}</div></div><label class="switch"><input type="checkbox" ${isOn ? 'checked' : ''} onchange="toggleTwoFactor(this.checked)"><span class="switch-track"></span></label></div>
   </div>`;
 }
 
@@ -5429,7 +5429,7 @@ async function toggleTwoFactor(enabled) {
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { twoFactorEnabled: enabled });
     AUTH.user = user;
-    showToast(`Two-factor authentication ${enabled ? 'enabled — you\'ll be asked for a code next time you sign in' : 'disabled'}`);
+    showToast(`Two-factor authentication ${enabled ? 'enabled. You will be asked for a code the next time you sign in.' : 'disabled'}`);
   } catch (e) { showToast(e.message || 'Could not update two-factor setting'); }
 }
 
@@ -5443,7 +5443,7 @@ async function toggleTwoFactor(enabled) {
 // time the fetch resolves (person navigated away), this is a no-op.
 function referralPanelHTML() {
   return `<div class="panel"><div class="panel-title">Your Referral Link</div>
-    <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Invite people you trust to Trothen — share your personal link by text, WhatsApp, or on social media.</div>
+    <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Invite people to Trothen by sharing your personal link by text, WhatsApp or social media.</div>
     <div id="referral-panel-body" style="font-size:13.5px;color:var(--slate);">Loading your referral link…</div>
   </div>`;
 }
@@ -5506,7 +5506,7 @@ async function cancelMembership() {
   try {
     const { user } = await apiFetch('POST', '/membership/cancel', {});
     AUTH.user = user;
-    showToast('Membership cancelled — you\'re back on the Free tier');
+    showToast('Membership cancelled. You are now on the Free tier.');
     selectCustomerSection('settings');
   } catch (e) { showToast(e.message || 'Could not cancel membership'); }
 }
@@ -5530,7 +5530,7 @@ async function handleHandbookUpload(event) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upload failed');
-    if (status) status.textContent = '✓ Uploaded — now live for every new signup';
+    if (status) status.textContent = '✓ Uploaded. New users will now receive this guide.';
     showToast('Platform handbook updated');
   } catch (e) {
     showToast(e.message || 'Could not upload handbook');
@@ -5564,9 +5564,9 @@ async function loadLoyaltyPointsPanel() {
         <div style="font-size:24px;font-weight:800;color:var(--navy);">${data.points}</div>
         <div style="color:var(--slate);">points</div>
       </div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">1 point per booking, rebooking, referral, or review. ${data.pointsForFreeBooking} points = a free booking (waives our service fee — your provider is always paid in full).</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">1 point per booking, rebooking, referral, or review. ${data.pointsForFreeBooking} points = one free booking (the service fee is waived; your provider is paid in full).</div>
       ${data.freeBookingsAvailable > 0
-        ? `<div style="font-size:13.5px;color:var(--navy);font-weight:600;">🎁 You have ${data.freeBookingsAvailable} free booking credit${data.freeBookingsAvailable === 1 ? '' : 's'} ready — you'll see the option to use one when you book.</div>`
+        ? `<div style="font-size:13.5px;color:var(--navy);font-weight:600;">🎁 You have ${data.freeBookingsAvailable} free booking credit${data.freeBookingsAvailable === 1 ? '' : 's'} ready. You can use one when you book.</div>`
         : `<div style="font-size:13px;color:var(--muted);">${data.pointsUntilNext} more point${data.pointsUntilNext === 1 ? '' : 's'} until your next free booking.</div>`}
     `;
   } catch (e) {
@@ -5584,7 +5584,7 @@ async function loadFavoritesPanel() {
     const target = document.getElementById('favorites-panel');
     if (!target) return;
     if (!providers.length) {
-      target.innerHTML = `<div style="color:var(--slate);font-size:13.5px;padding:12px 0;">No favorites yet — tap the ❤️ on any provider's profile to save them here for next time.</div>`;
+      target.innerHTML = `<div style="color:var(--slate);font-size:13.5px;padding:12px 0;">No favorites yet. Save a provider from their profile to see them here.</div>`;
       return;
     }
     target.innerHTML = `<div class="providers-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));">${providerCardsHTML(providers)}</div>`;
@@ -5631,7 +5631,7 @@ async function loadProviderScorePanel() {
     };
     // v91: until five jobs are done, the number is provisional and says so.
     const newNote = data.isNew
-      ? `<div style="background:#EEF4FB;border:1px solid #C9DBF0;border-radius:8px;padding:10px 12px;font-size:13.5px;line-height:1.55;margin-bottom:12px;"><strong>You're new on Trothen.</strong> This number is provisional: most of it is a clean start, not a track record yet. Customers see "New on Trothen" on your profile instead of a score. A Trothen Score only counts jobs completed through Trothen itself — not work done before you joined or off the platform. After ${data.jobsUntilScored} more completed Trothen job${data.jobsUntilScored === 1 ? '' : 's'} it becomes your real score and shows on your profile. Until then you can be sent up to 10 new job matches a week.</div>`
+      ? `<div style="background:#EEF4FB;border:1px solid #C9DBF0;border-radius:8px;padding:10px 12px;font-size:13.5px;line-height:1.55;margin-bottom:12px;"><strong>You're new on Trothen.</strong> This number is provisional: most of it is a clean start, not a track record yet. Customers see "New on Trothen" on your profile instead of a score. A Trothen Score counts only jobs completed through Trothen, not work done before you joined or outside the platform. After ${data.jobsUntilScored} more completed Trothen job${data.jobsUntilScored === 1 ? '' : 's'} your score is shown on your profile. Until then you can be sent up to 10 new job matches a week.</div>`
       : '';
     body.innerHTML = `
       ${newNote}
@@ -5681,10 +5681,10 @@ function copyReferralLink() {
   if (!input) return;
   input.select();
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(input.value).then(() => showToast('Referral link copied!')).catch(() => { document.execCommand('copy'); showToast('Referral link copied!'); });
+    navigator.clipboard.writeText(input.value).then(() => showToast('Referral link copied.')).catch(() => { document.execCommand('copy'); showToast('Referral link copied.'); });
   } else {
     document.execCommand('copy');
-    showToast('Referral link copied!');
+    showToast('Referral link copied.');
   }
 }
 
@@ -5692,7 +5692,7 @@ function shareReferralLink(channel) {
   const input = document.getElementById('referral-link-input');
   if (!input) return;
   const link = input.value;
-  const text = `Join me on Trothen — trusted local pros, protected payments: ${link}`;
+  const text = `Join me on Trothen: verified local pros and protected payments. ${link}`;
   if (channel === 'whatsapp') {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
   } else if (channel === 'sms') {
@@ -5737,7 +5737,7 @@ async function changePassword(prefix) {
   if (!currentPassword || !newPassword || !confirm) return showToast('Fill in all three password fields');
   if (newPassword.length < 8 || newPassword.length > 72) return showToast('New password must be 8-72 characters');
   if (newPassword !== confirm) return showToast("New password and confirmation don't match");
-  if (!BACKEND_AVAILABLE) return showToast('Password updated (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Password updated (demo mode)');
   try {
     const data = await apiFetch('POST', '/auth/change-password', { currentPassword, newPassword });
     AUTH.token = data.token;
@@ -5758,7 +5758,7 @@ async function saveCustomerSettings() {
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
   if (phone && phone.length < 7) return showToast('Enter a valid phone number');
-  if (!BACKEND_AVAILABLE) return showToast('Settings saved (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Settings saved (demo mode)');
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { name, email, phone, address, zipCode });
     AUTH.user = user;
@@ -5831,7 +5831,7 @@ async function viewProviderProfile(id) {
   }
   const reviewsHTML = reviews.length
     ? reviews.map(r => `<div class="review-item"><div class="review-head"><span>${escapeHtml(r.authorName)}</span><span>Verified booking</span></div><div class="review-stars">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</div><div class="review-text">${escapeHtml(r.text)}</div></div>`).join('')
-    : `<div style="color:var(--slate);font-size:14px;padding:8px 0;">No reviews yet — ${escapeHtml(p.name.split(' ')[0])} hasn't completed a reviewed job yet.</div>`;
+    : `<div style="color:var(--slate);font-size:14px;padding:8px 0;">No reviews yet. ${escapeHtml(p.name.split(' ')[0])} hasn't completed a reviewed job yet.</div>`;
   const portfolioHTML = portfolio.length
     ? `<div class="cats-grid">${portfolio.map(ph => `<img src="${escapeHtml(ph.url)}" alt="Portfolio photo" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block;"/>`).join('')}</div>`
     : `<div style="color:var(--slate);font-size:14px;padding:4px 0;">No portfolio photos yet.</div>`;
@@ -5884,12 +5884,12 @@ function postJobFormHTML() {
   return `
   <div class="form-group">
     <label class="form-label">Category</label>
-    <select class="form-input form-select" id="pj-category" onchange="document.getElementById('pj-custom-category-group').style.display = this.value === '__other__' ? 'block' : 'none'">${options}<option value="__other__">Other (not listed — describe below)</option></select>
+    <select class="form-input form-select" id="pj-category" onchange="document.getElementById('pj-custom-category-group').style.display = this.value === '__other__' ? 'block' : 'none'">${options}<option value="__other__">Other (not listed, describe below)</option></select>
   </div>
   <div class="form-group" id="pj-custom-category-group" style="display:none;">
     <label class="form-label">What kind of service is it?</label>
     <input class="form-input" type="text" placeholder="e.g. Piano Tuning, Pool Maintenance, Pet Grooming" id="pj-custom-category"/>
-    <div style="font-size:13px;color:var(--muted);margin-top:5px;">We don't have pros listed under this yet, so you may not get an instant match — but we'll log the request, and our team follows up to help source someone.</div>
+    <div style="font-size:13px;color:var(--muted);margin-top:5px;">There are no pros listed in this category yet, so you may not receive an immediate match. We will record your request and our team will follow up.</div>
   </div>
   <div class="form-group">
     <label class="form-label">What do you need done?</label>
@@ -5898,7 +5898,7 @@ function postJobFormHTML() {
   <div class="form-group">
     <label class="form-label">What do you already have? <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
     <input class="form-input" type="text" placeholder="e.g. I already bought the replacement faucet" id="pj-materials-on-hand"/>
-    <div style="font-size:13px;color:var(--muted);margin-top:5px;">Helps your pro quote accurately — they won't need to bring or charge for anything you've already got.</div>
+    <div style="font-size:13px;color:var(--muted);margin-top:5px;">This helps your pro quote accurately and avoid charging for materials you already have.</div>
   </div>
   <div class="form-group">
     <label class="form-label">Materials Cost <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
@@ -5935,10 +5935,10 @@ function jobPhotoUploadHTML(prefix) {
     </label>
     <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm" multiple id="${prefix}-photo-input" style="display:none;" onchange="handleJobPhotoSelect(event, '${prefix}')"/>
     <div style="font-size:13px;color:var(--muted);margin-top:-8px;margin-bottom:10px;line-height:1.5;">
-      A clear photo or short video of the actual problem or space — e.g. the leaking pipe, the room to paint, the strange noise the machine is making. A video often explains a problem faster than a photo can. Not a screenshot or an unrelated file; it's what your pro sees before deciding whether to take the job. JPEG, PNG, WEBP, GIF (5MB max) or MP4, MOV, WEBM (50MB max) · up to 5 files.
+      A clear photo or short video of the problem or the space, for example a leaking pipe, a room to be painted or a machine making a noise. A video often explains a problem faster than a photo can. Not a screenshot or an unrelated file; it's what your pro sees before deciding whether to take the job. JPEG, PNG, WEBP, GIF (5MB max) or MP4, MOV, WEBM (50MB max) · up to 5 files.
     </div>
     <div style="font-size:13px;color:var(--slate);margin-bottom:10px;">
-      🔒 Only shared with the pro you book${prefix === 'pj' ? ' or pros matched to your job' : ''} — never made public or shown to anyone else.
+      🔒 Only shared with the pro you book${prefix === 'pj' ? ' or pros matched to your job' : ''}. It is never made public.
     </div>
     <div id="${prefix}-photo-previews" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
   </div>`;
@@ -5959,7 +5959,7 @@ async function handleJobPhotoSelect(event, prefix) {
     const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
     const isVideo = allowedVideoTypes.includes(file.type);
-    if (!isVideo && !allowedImageTypes.includes(file.type)) { showToast(`${file.name} isn't a supported type — JPEG, PNG, WEBP, GIF images or MP4, MOV, WEBM videos only`); continue; }
+    if (!isVideo && !allowedImageTypes.includes(file.type)) { showToast(`${file.name} is not a supported file type. Use JPEG, PNG, WEBP or GIF images, or MP4, MOV or WEBM videos.`); continue; }
     if (isVideo && file.size > 50 * 1024 * 1024) { showToast(`${file.name} is too large. Videos can be up to 50MB.`); continue; }
     const placeholder = { url: null, uploading: true, previewSrc: URL.createObjectURL(file), isVideo };
     existing.push(placeholder);
@@ -6062,7 +6062,7 @@ async function runAIMatch() {
       <div style="text-align:center;padding:24px 10px;">
         <div style="font-size:28px;margin-bottom:10px;">👋</div>
         <div style="font-weight:600;color:var(--navy);margin-bottom:6px;">This is for hiring, not offering work</div>
-        <div style="font-size:13.5px;color:var(--slate);line-height:1.6;">You're logged in as a ${AUTH.user.role === 'admin' ? 'admin' : 'provider'} — posting a job to find a pro is a customer feature. Sign out and create a customer account to try it, or check your own dashboard for job matches coming to you.</div>
+        <div style="font-size:13.5px;color:var(--slate);line-height:1.6;">You're logged in as a ${AUTH.user.role === 'admin' ? 'admin' : 'provider'}. Posting a job is available to customer accounts. Sign in with a customer account to post a job, or see Job Matches on your dashboard.</div>
       </div>`;
     document.querySelector('#postjob-modal .modal-footer').innerHTML = `<button class="pricing-cta" style="border-color:var(--border);" onclick="closePostJobModal()">Got it</button>`;
     return;
@@ -6090,7 +6090,7 @@ async function runAIMatch() {
         openPostJobModal();
         return;
       }
-      showToast('Could not reach the matching service — showing demo matches instead');
+      showToast('Could not reach the matching service. Showing sample matches.');
     }
   }
   // Fake demo matches are ONLY appropriate when there was no real API call
@@ -6111,17 +6111,17 @@ async function runAIMatch() {
       body.innerHTML = `
         <div style="text-align:center;padding:24px 10px;">
           <div style="font-size:28px;margin-bottom:10px;">📋</div>
-          <div style="font-weight:600;color:var(--navy);margin-bottom:6px;">Job posted — no instant match yet</div>
+          <div style="font-weight:600;color:var(--navy);margin-bottom:6px;">Job posted. No immediate match yet.</div>
           <div style="font-size:13.5px;color:var(--slate);line-height:1.6;">${isKnownCategory
             ? `We don't have a verified "${cat}" pro in your area right now. Your request is saved, and we'll notify you the moment someone's available.`
-            : `"${cat}" isn't a category we currently list, so there's no automatic match — but we've logged your request and our team follows up to help source someone.`}</div>
+            : `"${cat}" is not a category we list yet, so there is no automatic match. Your request has been recorded and our team will follow up.`}</div>
         </div>`;
       document.querySelector('#postjob-modal .modal-footer').innerHTML = `<button class="pricing-cta" style="border-color:var(--border);" onclick="closePostJobModal()">Done</button>`;
       return;
     }
     body.innerHTML = `
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Matched for "<strong style="color:var(--navy)">${desc}</strong>" in <strong style="color:var(--navy)">${cat}</strong> ${realCallSucceeded ? '<span class="badge badge-success">Live match</span>' : ''}</div>
-      ${!realCallSucceeded ? `<div style="font-size:13px;color:var(--slate);background:var(--offwhite);border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px;">📋 Example matches — sign in with a customer account and post a real job to see actual verified pros near you.</div>` : ''}
+      ${!realCallSucceeded ? `<div style="font-size:13px;color:var(--slate);background:var(--offwhite);border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px;">📋 Sample matches. Sign in with a customer account and post a job to see verified pros near you.</div>` : ''}
       ${realCallSucceeded && matchScope !== 'city' ? `<div style="font-size:13px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:12px;">📍 No verified "${cat}" pro in your exact city yet, so we widened the search to ${matchScope === 'state' ? 'your state/region' : 'your country'}.</div>` : ''}
       ${pool.map(p => `
         <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;">
@@ -6197,7 +6197,7 @@ async function loadProviderData() {
     providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, address: c.address, jobLocation: c.jobLocation || null, landmark: c.landmark || null, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt, materialsOnHand: c.materialsOnHand, createdAt: c.createdAt, payMethod: c.payMethod || 'protected' })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     providerData.payouts = payouts;
     providerData.portfolioPhotos = photos;
-  } catch (e) { console.warn('Could not load provider data', e); showToast('Could not load your dashboard data — please refresh'); }
+  } catch (e) { console.warn('Could not load provider data', e); showToast('Could not load your dashboard. Please refresh the page.'); }
   providerData.verificationStatus = await computeVerificationStatus();
 }
 // Small helper since match responses now include customerName directly from
@@ -6205,18 +6205,18 @@ async function loadProviderData() {
 
 async function respondToMatch(id, decision) {
   const coverLetter = decision === 'accept'
-    ? (prompt('Optional: add a short note to the customer about why you\'re a good fit (cover letter) — leave blank to skip.') || '').trim()
+    ? (prompt('Optional: add a short note to the customer explaining why you are a good fit.') || '').trim()
     : '';
   if (!BACKEND_AVAILABLE) {
     const m = providerData.matches.find(j => j.id === id);
     if (!m) return;
-    showToast(decision === 'accept' ? `You're marked as interested — the customer will review responses and reach out to negotiate` : 'Match declined');
+    showToast(decision === 'accept' ? `You have expressed interest. The customer will review responses and contact you.` : 'Match declined');
     if (decision === 'decline') providerData.matches = providerData.matches.filter(j => j.id !== id);
     return selectProviderSection('matches');
   }
   try {
     await apiFetch('POST', `/matches/${id}/respond`, { decision, coverLetter: coverLetter || undefined });
-    showToast(decision === 'accept' ? `You're marked as interested — message the customer to negotiate, or wait for them to reach out` : 'Match declined');
+    showToast(decision === 'accept' ? `You have expressed interest. Message the customer or wait for them to contact you.` : 'Match declined');
     await loadProviderData();
     selectProviderSection('matches');
   } catch (e) { showToast(e.message || 'Could not update match'); }
@@ -6236,7 +6236,7 @@ const PROVIDER_SECTIONS = {
     const allTimeEarnings = providerData.payouts.reduce((s, p) => s + p.amount, 0);
     const catStatus = AUTH.user && AUTH.user.categoryApprovalStatus;
     const catBanner = catStatus === 'pending'
-      ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--gold);"><div style="font-size:13.5px;color:var(--navy);">⏳ Your category "<strong>${escapeHtml(AUTH.user.category)}</strong>" is pending a quick admin review (usually within 24 hours). You can use your account normally in the meantime — we'll notify you the moment it's reviewed.</div></div>`
+      ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--gold);"><div style="font-size:13.5px;color:var(--navy);">⏳ Your category "<strong>${escapeHtml(AUTH.user.category)}</strong>" is pending review (usually within 24 hours). You can use your account in the meantime, and we will notify you when it has been reviewed.</div></div>`
       : catStatus === 'rejected'
       ? `<div class="panel" style="background:var(--offwhite);border:1px dashed var(--danger, #C1554D);"><div style="font-size:13.5px;color:var(--navy);">Your category "<strong>${escapeHtml(AUTH.user.category)}</strong>" wasn't approved as a new listed category. <a onclick="selectProviderSection('settings')" style="color:var(--gold);cursor:pointer;">Update your category in Settings</a> to one of our current categories to be fully bookable.</div></div>`
       : '';
@@ -6247,7 +6247,7 @@ const PROVIDER_SECTIONS = {
     // to be transparent about.
     const jobAccess = AUTH.user && AUTH.user.weeklyJobAccess;
     const jobAccessBanner = jobAccess && jobAccess.cap === 0
-      ? `<div class="panel" style="background:#FBEAEA;border:1px solid #D98C8C;"><div style="font-size:13.5px;color:var(--navy);">New job matches are paused while your Trust Score is under review. Completing your existing contracts well is the fastest way back — <a onclick="selectProviderSection('overview')" style="color:var(--gold);cursor:pointer;">see your Trust Score breakdown</a>.</div></div>`
+      ? `<div class="panel" style="background:#FBEAEA;border:1px solid #D98C8C;"><div style="font-size:13.5px;color:var(--navy);">New job matches are paused while your Trust Score is under review. Completing your current contracts to a high standard is the fastest way to restore matching. <a onclick="selectProviderSection('overview')" style="color:var(--gold);cursor:pointer;">see your Trust Score breakdown</a>.</div></div>`
       : jobAccess && jobAccess.cap != null
       ? `<div class="panel" style="background:var(--offwhite);"><div style="font-size:13.5px;color:var(--navy);">New job matches this week: <strong>${jobAccess.used} of ${jobAccess.cap}</strong> — ${jobAccess.isNew ? 'this is the starter allowance for new pros. After five completed jobs it follows your Trothen Score.' : 'this scales up automatically as your Trothen Score improves.'}</div></div>`
       : '';
@@ -6259,7 +6259,7 @@ const PROVIDER_SECTIONS = {
       .reduce((s, c) => s + c.escrow.amount - (c.escrow.materialsAdvancePayoutId ? (c.escrow.materialsAdvanceAmount || 0) : 0), 0);
     const payoutBanner = availableForPayout > 0
       ? `<div class="panel" style="background:#EAF4EF;border:1.5px solid var(--teal, #2E8C6F);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-          <div><div style="font-weight:700;color:var(--navy);font-size:14px;">💰 You have $${availableForPayout.toLocaleString()} available to withdraw</div><div style="font-size:13px;color:var(--slate);margin-top:2px;">From jobs customers have confirmed complete — request it whenever you're ready.</div></div>
+          <div><div style="font-weight:700;color:var(--navy);font-size:14px;">💰 You have $${availableForPayout.toLocaleString()} available to withdraw</div><div style="font-size:13px;color:var(--slate);margin-top:2px;">From jobs customers have confirmed as complete. You can request a payout at any time.</div></div>
           <button class="btn-sm btn-sm-primary" onclick="selectProviderSection('earnings')">Go to Payouts →</button>
         </div>`
       : '';
@@ -6277,11 +6277,11 @@ const PROVIDER_SECTIONS = {
     const isOrgAffiliated = !!(AUTH.user && AUTH.user.organizationId);
     const tierProgressHTML = isOrgAffiliated
       ? `<div class="panel"><div class="panel-title">Your Rate</div>
-          <div style="font-size:14px;color:var(--text);line-height:1.6;">Your organization has negotiated its own commission rate with Trothen, separate from the standard Starter/Pro/Super-Pro tiers — check with your organization admin for your exact rate, or see it reflected directly on each payout.</div>
+          <div style="font-size:14px;color:var(--text);line-height:1.6;">Your organization has a negotiated commission rate, separate from the standard Starter, Pro and Super Pro tiers. Your organization administrator can confirm the rate, and it is shown on each payout.</div>
         </div>`
       : renderTierProgress(currentPlan, jobsCompleted, rating, cancellationRate);
     return `
-    <div class="dash-header"><div><div class="dash-title">Welcome back${AUTH.user && AUTH.user.name ? ', ' + escapeHtml(AUTH.user.name.split(' ')[0]) : ''}</div><div class="dash-sub">Your matched jobs and contract activity</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Welcome back${AUTH.user && AUTH.user.name ? ', ' + escapeHtml(AUTH.user.name.split(' ')[0]) : ''}</div><div class="dash-sub">Your job matches and contracts</div></div></div>
     <div id="provider-promotions-banner"></div>
     ${payoutBanner}
     ${catBanner}
@@ -6298,10 +6298,10 @@ const PROVIDER_SECTIONS = {
     <div class="panel"><div class="panel-title">Recent Contracts</div>${contractsTableWithEscrow(providerData.contracts.slice(0, 3))}</div>`;
   },
   matches: () => `
-    <div class="dash-header"><div><div class="dash-title">Job Matches</div><div class="dash-sub">Ranked by Trothen's matching engine — fit, proximity, and how you're doing overall ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Live data</span>' : ''}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Job Matches</div><div class="dash-sub">Ranked by fit, distance and overall performance ${BACKEND_AVAILABLE ? '' : ''}</div></div></div>
     <div class="panel">${matchesTable(providerData.matches)}</div>`,
   contracts: () => `
-    <div class="dash-header"><div><div class="dash-title">My Contracts</div><div class="dash-sub">Every contract is auto-generated and stored per booking</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">My Contracts</div><div class="dash-sub">All contracts and their status</div></div></div>
     <div class="panel">${contractsTable(providerData.contracts)}</div>`,
   messages: () => messagingHTML('provider'),
   earnings: () => {
@@ -6326,8 +6326,8 @@ const PROVIDER_SECTIONS = {
     const commissionRate = freeCommissionCredits > 0 ? 0 : ({ starter: 0.13, pro: 0.12, superpro: 0.10 }[(AUTH.user && AUTH.user.plan) || 'starter']);
     const weeklyChart = weeklyEarningsChartData(providerData.payouts);
     return `
-    <div class="dash-header"><div><div class="dash-title">Earnings & Payouts</div><div class="dash-sub">Paid hourly or per job — your choice, set per contract</div></div><button class="btn-sm btn-sm-primary" onclick="openPayoutCurrencyChoice()">Request Payout</button></div>
-    ${freeCommissionCredits > 0 ? `<div class="panel" style="background:var(--offwhite);border:1px solid var(--gold);"><strong style="color:var(--navy);">🏆 You had the highest Trust Score in your region!</strong> You have ${freeCommissionCredits} free-commission credit${freeCommissionCredits === 1 ? '' : 's'} — your next payout${freeCommissionCredits === 1 ? '' : 's'} will have 0% commission.</div>` : ''}
+    <div class="dash-header"><div><div class="dash-title">Earnings & Payouts</div><div class="dash-sub">Paid hourly or per job, set for each contract</div></div><button class="btn-sm btn-sm-primary" onclick="openPayoutCurrencyChoice()">Request Payout</button></div>
+    ${freeCommissionCredits > 0 ? `<div class="panel" style="background:var(--offwhite);border:1px solid var(--gold);"><strong style="color:var(--navy);">🏆 You had the highest Trust Score in your region.</strong> You have ${freeCommissionCredits} free-commission credit${freeCommissionCredits === 1 ? '' : 's'} · Your next payout${freeCommissionCredits === 1 ? '' : 's'} will have 0% commission.</div>` : ''}
     <div class="panel" id="payout-currency-panel" style="display:none;">
       <div class="panel-title">Choose Payout Currency</div>
       <div id="payout-currency-body"></div>
@@ -6346,7 +6346,7 @@ const PROVIDER_SECTIONS = {
       </div>
     </div>
     <div class="panel" id="earnings-breakdown-panel" style="display:none;"></div>
-    <div class="panel"><div class="panel-title">Recent Payout History (by week)</div>${weeklyChart.length ? barChart(weeklyChart) : '<div style="color:var(--slate);font-size:14px;padding:12px 0;">No payouts yet — request one once you have completed jobs.</div>'}</div>
+    <div class="panel"><div class="panel-title">Recent Payout History (by week)</div>${weeklyChart.length ? barChart(weeklyChart) : '<div style="color:var(--slate);font-size:14px;padding:12px 0;">No payouts yet. You can request a payout once you have completed jobs.</div>'}</div>
     <div class="panel">
       <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <span>Payout History</span>
@@ -6362,7 +6362,7 @@ const PROVIDER_SECTIONS = {
     </div>`;
   },
   portfolio: () => `
-    <div class="dash-header"><div><div class="dash-title">Portfolio</div><div class="dash-sub">Showcase past work to win more matches</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Portfolio</div><div class="dash-sub">Photos of your completed work</div></div></div>
     <div class="panel">
       <label class="upload-box" for="portfolio-file-input" style="cursor:pointer;display:block;"
         ondragover="event.preventDefault();this.style.borderColor='var(--teal)';"
@@ -6371,12 +6371,12 @@ const PROVIDER_SECTIONS = {
         📷 Upload Portfolio Photo <span style="color:var(--muted);font-weight:400;">— or drag and drop</span>
       </label>
       <input type="file" id="portfolio-file-input" accept="image/*" style="display:none;" onchange="selectPortfolioPhoto(this.files[0])"/>
-      <div style="font-size:13px;color:var(--muted);margin-top:8px;">A real photo of your actual completed work — customers judge you by these. Not a screenshot, logo, or stock photo. JPEG, PNG, WEBP, or GIF · up to 5MB · up to 12 photos.</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:8px;">A photo of work you have completed. Do not use screenshots, logos or stock photos. JPEG, PNG, WEBP, or GIF · up to 5MB · up to 12 photos.</div>
       <div id="portfolio-grid-wrap" style="margin-top:16px;">${portfolioGridHTML(providerData.portfolioPhotos || [])}</div>
     </div>`,
   verification: () => verificationHTML('provider', providerData.verificationStatus || 'none'),
   settings: () => `
-    <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Payout preferences & account ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Saved to your account</span>' : ''}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Settings</div><div class="dash-sub">Payout preferences and account ${BACKEND_AVAILABLE ? '<span class=\"badge badge-success\" style=\"margin-left:6px;\">Saved to your account</span>' : ''}</div></div></div>
     <div class="panel"><div class="panel-title">Profile Photo</div>
       <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
         <div id="prov-profile-photo-preview">${avatarHTML({ profilePhotoUrl: (AUTH.user && AUTH.user.profilePhotoUrl), initials: (AUTH.user && AUTH.user.initials) || '?', color: (AUTH.user && AUTH.user.color) || 'var(--navy)', name: (AUTH.user && AUTH.user.name) || '' }, 72)}</div>
@@ -6384,7 +6384,7 @@ const PROVIDER_SECTIONS = {
           <input type="file" id="prov-photo-file-input" accept="image/*" style="display:none;" onchange="uploadProfilePhoto(this.files[0])"/>
           <button class="btn-sm btn-sm-primary" onclick="document.getElementById('prov-photo-file-input').click()">Upload Photo</button>
           ${AUTH.user && AUTH.user.profilePhotoUrl ? `<button class="btn-sm btn-sm-outline" onclick="removeProfilePhoto()">Remove</button>` : ''}
-          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">This is what customers see on your card, search results, and profile — a real, identifiable photo builds a lot more trust than initials.</div>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">This photo appears on your profile and in search results. A clear photo of you builds more trust than initials.</div>
         </div>
       </div>
     </div>
@@ -6394,7 +6394,7 @@ const PROVIDER_SECTIONS = {
       <button class="btn-sm btn-sm-primary" onclick="saveProviderSettings()">Save Changes</button>
     </div>
     <div class="panel"><div class="panel-title">Location</div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">This is what customers see on your profile and what matches you with nearby jobs — if this is wrong, fix it here.</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Customers see this location on your profile, and it is used to match you with nearby jobs. Update it here if it is incorrect.</div>
       <div class="form-group"><label class="form-label">Country</label>
         <select class="form-input form-select" id="set-prov-country" onchange="populateSettingsStates('prov')"></select>
       </div>
@@ -6407,20 +6407,20 @@ const PROVIDER_SECTIONS = {
       <button class="btn-sm btn-sm-primary" onclick="saveProviderLocation()">Save Location</button>
     </div>
     <div class="panel"><div class="panel-title">Service Category</div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">${AUTH.user && AUTH.user.categoryApprovalStatus === 'pending' ? 'Your current category is pending admin review.' : AUTH.user && AUTH.user.categoryApprovalStatus === 'rejected' ? 'Your last category request wasn\'t approved — pick a listed category below, or describe a new one.' : 'This is what customers search for to find you.'}</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">${AUTH.user && AUTH.user.categoryApprovalStatus === 'pending' ? 'Your current category is pending admin review.' : AUTH.user && AUTH.user.categoryApprovalStatus === 'rejected' ? 'Your last category request was not approved. Choose a listed category below or describe a new one.' : 'This is what customers search for to find you.'}</div>
       <div class="form-group"><label class="form-label">Primary Service Category</label>
         <select class="form-input form-select" id="set-prov-category" onchange="document.getElementById('set-prov-custom-category-group').style.display = this.value === '__other__' ? 'block' : 'none'"></select>
       </div>
       <div class="form-group" id="set-prov-custom-category-group" style="display:none;">
         <label class="form-label">What service do you offer?</label>
         <input class="form-input" type="text" id="set-prov-custom-category" placeholder="e.g. Piano Tuning, Pool Maintenance"/>
-        <div style="font-size:13px;color:var(--muted);margin-top:5px;">Not on our current list — a team member reviews new categories within 24 hours. You can keep using your account normally in the meantime.</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:5px;">This category is not on our list yet. New categories are reviewed within 24 hours, and you can use your account in the meantime.</div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveProviderCategory()">Save Category</button>
     </div>
     <div class="panel"><div class="panel-title">${escapeHtml(tr('Extra skills'))}</div><div id="extra-skills-body" style="font-size:14px;color:var(--slate);">${escapeHtml(tr('Loading…'))}</div></div>
     <div class="panel"><div class="panel-title">License & Insurance</div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:14px;">If your category requires a license or insurance, keep the expiry date current here — customers and Trothen can see your standing, and it helps you avoid an awkward surprise mid-job. This is informational only right now; it doesn't block you from accepting work.</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:14px;">If your category requires a license or insurance, keep the expiry date up to date here. Customers and Trothen can see your status. This is for information only and does not affect your ability to accept work.</div>
       ${licenseInsuranceStatusHTML(AUTH.user && AUTH.user.licenseExpiryDate, 'License')}
       <div class="form-group"><label class="form-label">License Expiry Date</label><input class="form-input" type="date" id="set-prov-license-expiry" value="${escapeHtml((AUTH.user && AUTH.user.licenseExpiryDate) || '')}"/></div>
       ${licenseInsuranceStatusHTML(AUTH.user && AUTH.user.insuranceExpiryDate, 'Insurance')}
@@ -6428,13 +6428,13 @@ const PROVIDER_SECTIONS = {
       <button class="btn-sm btn-sm-primary" onclick="saveLicenseInsurance()">Save Dates</button>
     </div>
     <div class="panel"><div class="panel-title">Service Location <small style="font-weight:400;color:var(--slate);">optional</small></div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Share your exact location so nearby customers see real distance to you, not just your city name — this can help you show up first for customers genuinely close by. Entirely optional; your city still works fine for matching without this.</div>
-      <div id="prov-location-status" style="font-size:13.5px;color:${AUTH.user && AUTH.user.latitude != null ? 'var(--teal)' : 'var(--slate)'};margin-bottom:10px;">${AUTH.user && AUTH.user.latitude != null ? '✓ Real location shared' : 'Not shared yet'}</div>
-      <button class="btn-sm btn-sm-primary" onclick="shareProviderLocation()">📍 Share My Real Location</button>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Share your location so nearby customers can see how far away you are. This is optional; matching by city works without it.</div>
+      <div id="prov-location-status" style="font-size:13.5px;color:${AUTH.user && AUTH.user.latitude != null ? 'var(--teal)' : 'var(--slate)'};margin-bottom:10px;">${AUTH.user && AUTH.user.latitude != null ? '✓ Location shared' : 'Not shared yet'}</div>
+      <button class="btn-sm btn-sm-primary" onclick="shareProviderLocation()">📍 Share My Location</button>
       ${AUTH.user && AUTH.user.latitude != null ? `<button class="btn-sm btn-sm-outline" style="margin-left:8px;" onclick="clearProviderLocation()">Remove</button>` : ''}
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
         <label class="form-label">How far will you travel for a job?</label>
-        <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">Only takes effect once you and a customer have both shared real locations — leave blank to be shown regardless of distance.</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">Applies only when you and the customer have both shared a location. Leave blank to be shown regardless of distance.</div>
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="form-input" type="number" min="1" max="500" style="max-width:120px;" id="set-prov-service-radius" placeholder="e.g. 25" value="${escapeHtml((AUTH.user && AUTH.user.serviceRadiusMiles) || '')}"/>
           <span style="font-size:13.5px;color:var(--slate);">miles</span>
@@ -6443,7 +6443,7 @@ const PROVIDER_SECTIONS = {
       </div>
     </div>
     <div class="panel"><div class="panel-title">Business Profile <small style="font-weight:400;color:var(--slate);">optional</small></div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">If you operate as a registered business rather than as an individual, add your business details here — this appears on your public profile alongside your name.</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">If you operate as a registered business, add your business details here. They appear on your public profile alongside your name.</div>
       <div class="form-group"><label class="form-label">Business Name</label><input class="form-input" type="text" id="set-prov-business-name" value="${escapeHtml((AUTH.user && AUTH.user.businessName) || '')}" placeholder="e.g. Marcus T. Plumbing LLC"/></div>
       <div class="form-group"><label class="form-label">Business Registration Number</label><input class="form-input" type="text" id="set-prov-business-reg" value="${escapeHtml((AUTH.user && AUTH.user.businessRegistrationNumber) || '')}" placeholder="e.g. state or national registration ID"/></div>
       <button class="btn-sm btn-sm-primary" onclick="saveBusinessProfile()">Save Business Profile</button>
@@ -6456,12 +6456,12 @@ const PROVIDER_SECTIONS = {
     <div class="panel"><div class="panel-title">Current Plan</div>
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">${(() => {
         const plan = (AUTH.user && AUTH.user.plan) || 'starter';
-        return `You're on the <strong style="color:var(--navy)">${PLAN_LABELS[plan]}</strong> plan. ${plan === 'starter' ? 'Upgrade for priority placement and lower commission.' : 'Changing plans here is test mode — no real charge yet.'}`;
+        return `You're on the <strong style="color:var(--navy)">${PLAN_LABELS[plan]}</strong> plan. ${plan === 'starter' ? 'Upgrade for priority placement and lower commission.' : 'Plan changes are in test mode. No charge is made.'}`;
       })()}</div>
       <button class="btn-sm btn-sm-outline" onclick="showPricing()">View Plans & Pricing</button>
     </div>
     <div class="panel"><div class="panel-title">Accepting New Bookings</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Turn this off any time you're unavailable — on vacation, fully booked, or just need a break. Customers won't be able to book you while it's off; anything already booked is unaffected.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Turn this off when you are unavailable. Customers cannot book you while it is off; existing bookings are not affected.</div>
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
           <div style="font-weight:600;color:var(--navy);">${(AUTH.user && AUTH.user.acceptingBookings === false) ? 'Not accepting new bookings' : 'Accepting new bookings'}</div>
@@ -6481,11 +6481,11 @@ const PROVIDER_SECTIONS = {
         <label class="form-label">Hourly Rate ($)</label>
         <input class="form-input" type="number" min="1" id="set-prov-price" value="${escapeHtml((AUTH.user && AUTH.user.price) || 50)}"/>
       </div>
-      <div id="pricing-negotiable-note" style="display:${(AUTH.user && (AUTH.user.pricingModel === 'negotiable' || AUTH.user.pricingModel === 'both')) ? 'block' : 'none'};font-size:13px;color:var(--slate);margin-bottom:10px;">${AUTH.user && AUTH.user.pricingModel === 'both' ? 'A customer can either book you at your hourly rate, or propose their own offer — your choice which to accept.' : 'Customers will propose an offer when booking you, instead of a fixed hourly total.'}</div>
+      <div id="pricing-negotiable-note" style="display:${(AUTH.user && (AUTH.user.pricingModel === 'negotiable' || AUTH.user.pricingModel === 'both')) ? 'block' : 'none'};font-size:13px;color:var(--slate);margin-bottom:10px;">${AUTH.user && AUTH.user.pricingModel === 'both' ? 'Customers can book you at your hourly rate or make an offer, which you can accept or decline.' : 'Customers will propose an offer when booking you, instead of a fixed hourly total.'}</div>
       <button class="btn-sm btn-sm-primary" onclick="savePricingModel()">Save Pricing</button>
     </div>
     <div class="panel"><div class="panel-title">Availability</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Set the specific time slots you're available — customers pick from exactly these when booking you, not a generic morning/afternoon/evening.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Set the times you are available. Customers choose from these times when booking you.</div>
       <div id="availability-list" style="margin-bottom:12px;">${availabilityListHTML()}</div>
       <div class="row-actions">
         <input class="form-input" type="text" placeholder="e.g. Tue 1pm–4pm" id="new-availability-slot" style="flex:1;"/>
@@ -6493,15 +6493,15 @@ const PROVIDER_SECTIONS = {
       </div>
     </div>
     <div class="panel"><div class="panel-title">Local Payout Method</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">For payments from customers in your own country. If you also work with customers booking you from abroad, add an International Payout Method below too — you'll choose which account to use each time you request a payout.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">For payments from customers in your own country. If you also have customers abroad, add an International Payout Method below. You choose which account to use each time you request a payout.</div>
       <div class="form-group"><label class="form-label">Payout Method</label>
         <select class="form-input form-select" id="set-prov-payout-method" onchange="savePayoutMethod(this.value)">
-          <option value="Bank Transfer" ${(!AUTH.user || !AUTH.user.payoutMethod || AUTH.user.payoutMethod === 'Bank Transfer') ? 'selected' : ''}>Bank Transfer — Chase •••• 1123</option>
+          <option value="Bank Transfer" ${(!AUTH.user || !AUTH.user.payoutMethod || AUTH.user.payoutMethod === 'Bank Transfer') ? 'selected' : ''}>Bank Transfer (Chase •••• 1123)</option>
           <option value="Wallet / Mobile Money" ${(AUTH.user && AUTH.user.payoutMethod === 'Wallet / Mobile Money') ? 'selected' : ''}>Wallet / Mobile Money</option>
           <option value="Debit Card" ${(AUTH.user && AUTH.user.payoutMethod === 'Debit Card') ? 'selected' : ''}>Debit Card</option>
           <option value="PayPal" ${(AUTH.user && AUTH.user.payoutMethod === 'PayPal') ? 'selected' : ''}>PayPal</option>
         </select>
-        <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Card and PayPal payouts are test mode until a real payment processor is connected — same as everywhere else money touches this app.</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Card and PayPal payouts are in test mode until a payment processor is connected.</div>
       </div>
     </div>
     <div class="panel" id="prov-payout-paypal-panel" style="display:${(AUTH.user && AUTH.user.payoutMethod === 'PayPal') ? 'block' : 'none'};">
@@ -6511,7 +6511,7 @@ const PROVIDER_SECTIONS = {
     </div>
     <div class="panel">
       <div class="panel-title">International Payout Method <span style="font-weight:400;color:var(--slate);font-size:13px;">(optional)</span></div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">For payments from customers booking you from abroad — most people use PayPal here since it works internationally, unlike most local bank/mobile transfers.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">For payments from customers abroad. PayPal is the most widely used option internationally.</div>
       <div class="form-group"><label class="form-label">International Payout Method</label>
         <select class="form-input form-select" id="set-prov-payout-method-intl" onchange="savePayoutMethodIntl(this.value)">
           <option value="" ${(!AUTH.user || !AUTH.user.payoutMethodIntl) ? 'selected' : ''}>Not set up</option>
@@ -6553,7 +6553,7 @@ function setPricingModelUI(model) {
   document.getElementById('pricing-hourly-rate-group').style.display = (model === 'hourly' || model === 'both') ? 'block' : 'none';
   document.getElementById('pricing-negotiable-note').style.display = (model === 'negotiable' || model === 'both') ? 'block' : 'none';
   document.getElementById('pricing-negotiable-note').textContent = model === 'both'
-    ? 'A customer can either book you at your hourly rate, or propose their own offer — your choice which to accept.'
+    ? 'Customers can book you at your hourly rate or make an offer, which you can accept or decline.'
     : 'Customers will propose an offer when booking you, instead of a fixed hourly total.';
 }
 
@@ -6566,7 +6566,7 @@ async function savePayoutMethod(method) {
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { payoutMethod: method });
     AUTH.user = user;
-    showToast('Payout method updated — future payouts will use this');
+    showToast('Payout method updated. Future payouts will use this method.');
   } catch (e) { showToast(e.message || 'Could not update payout method'); }
 }
 
@@ -6577,7 +6577,7 @@ async function savePayoutPaypalEmail() {
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { payoutPaypalEmail: email });
     AUTH.user = user;
-    showToast('PayPal email saved — future payouts will go here');
+    showToast('PayPal email saved. Future payouts will be sent here.');
   } catch (e) { showToast(e.message || 'Could not save PayPal email'); }
 }
 
@@ -6607,7 +6607,7 @@ async function savePayoutCard() {
   const cardNumber = document.getElementById('prov-payout-card-number').value.trim();
   const expiry = document.getElementById('prov-payout-card-expiry').value.trim();
   const nameOnCard = document.getElementById('prov-payout-card-name').value.trim();
-  if (cardNumber.replace(/\D/g, '').length < 4) return showToast('Enter at least 4 digits (test mode — any digits work)');
+  if (cardNumber.replace(/\D/g, '').length < 4) return showToast('Enter at least 4 digits (test mode: any digits are accepted)');
   if (!/^\d{1,2}\/\d{2}$/.test(expiry)) return showToast('Enter expiry as MM/YY');
   if (!nameOnCard || nameOnCard.length < 2) return showToast('Enter the name on the card');
   if (!BACKEND_AVAILABLE) return showToast('Card saved for payouts (demo mode)');
@@ -6631,7 +6631,7 @@ async function toggleAcceptingBookings() {
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', patch);
     AUTH.user = user;
-    showToast(currentlyOff ? "You're accepting new bookings again" : 'New bookings paused — existing bookings are unaffected');
+    showToast(currentlyOff ? "You're accepting new bookings again" : 'New bookings paused. Existing bookings are not affected.');
     selectProviderSection('settings');
   } catch (e) { showToast(e.message || 'Could not update this setting'); }
 }
@@ -6649,7 +6649,7 @@ async function savePricingModel() {
     if (!price || price <= 0) return showToast('Enter a valid hourly rate');
     patch.price = price;
   }
-  if (!BACKEND_AVAILABLE) return showToast('Pricing saved (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Pricing saved (demo mode)');
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', patch);
     AUTH.user = user;
@@ -6693,7 +6693,7 @@ async function saveProviderSettings() {
   const email = document.getElementById('set-prov-email').value.trim();
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
-  if (!BACKEND_AVAILABLE) return showToast('Settings saved (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Settings saved (demo mode)');
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { name, email });
     AUTH.user = user;
@@ -6707,7 +6707,7 @@ async function saveAdminSettings() {
   const email = document.getElementById('set-admin-email').value.trim();
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
-  if (!BACKEND_AVAILABLE) return showToast('Settings saved (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Settings saved (demo mode)');
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { name, email });
     AUTH.user = user;
@@ -6736,12 +6736,12 @@ async function saveSupportContact() {
   const whatsapp = document.getElementById('support-whatsapp').value.trim();
   const phoneDisplay = document.getElementById('support-phone-display').value.trim();
   const email = document.getElementById('support-email').value.trim();
-  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567');
+  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('Enter the WhatsApp number as digits only, including the country code, for example 15551234567');
   if (phoneDisplay.length < 5) return showToast('Enter a valid display phone number');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     await apiFetch('PATCH', '/admin/settings/support-contact', { whatsapp, phoneDisplay, email });
-    showToast('Support contact info updated — live on the homepage now');
+    showToast('Support contact details updated on the homepage.');
     await loadAdminData();
     await loadSupportContact();
     selectAdminSection('settings');
@@ -6752,7 +6752,7 @@ async function saveRegionalSupportContact() {
   const whatsapp = document.getElementById('regional-support-whatsapp').value.trim();
   const phoneDisplay = document.getElementById('regional-support-phone-display').value.trim();
   const email = document.getElementById('regional-support-email').value.trim();
-  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567');
+  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('Enter the WhatsApp number as digits only, including the country code, for example 15551234567');
   if (phoneDisplay.length < 5) return showToast('Enter a valid display phone number');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
@@ -6773,7 +6773,7 @@ const SUPPORT_CATEGORY_LABELS = { dispute: 'Dispute', onboarding: 'Onboarding', 
 function supportCategoryRowsHTML(contact, idPrefix, targetRegionCity) {
   const categories = (contact && contact.categories) || {};
   return `<div style="background:var(--offwhite);border-radius:10px;padding:14px;margin-top:12px;">
-    <div class="form-label" style="margin-bottom:8px;">Category-specific numbers <span style="color:var(--slate);font-weight:400;">(optional — anything left blank uses the General number above)</span></div>
+    <div class="form-label" style="margin-bottom:8px;">Category-specific numbers <span style="color:var(--slate);font-weight:400;">(optional; blank fields use the general number above)</span></div>
     ${Object.keys(SUPPORT_CATEGORY_LABELS).map(cat => { const c = categories[cat]; return `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
       <div style="width:90px;font-size:13px;font-weight:600;color:var(--navy);padding-bottom:7px;">${SUPPORT_CATEGORY_LABELS[cat]}</div>
@@ -6789,7 +6789,7 @@ async function saveSupportCategoryContact(category, idPrefix, targetRegionCity) 
   const whatsapp = document.getElementById(`${idPrefix}-${category}-whatsapp`).value.trim();
   const phoneDisplay = document.getElementById(`${idPrefix}-${category}-phone`).value.trim();
   const email = document.getElementById(`${idPrefix}-${category}-email`).value.trim();
-  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567');
+  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('Enter the WhatsApp number as digits only, including the country code, for example 15551234567');
   if (phoneDisplay.length < 5) return showToast('Enter a valid display phone number');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
@@ -6831,7 +6831,7 @@ async function saveNewRegionalContact() {
   const phoneDisplay = document.getElementById('new-regional-contact-phone').value.trim();
   const email = document.getElementById('new-regional-contact-email').value.trim();
   if (!city) return showToast('Choose a city');
-  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567');
+  if (!/^\d{7,15}$/.test(whatsapp)) return showToast('Enter the WhatsApp number as digits only, including the country code, for example 15551234567');
   if (phoneDisplay.length < 5) return showToast('Enter a valid display phone number');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
@@ -6868,7 +6868,7 @@ async function saveHomepageContent() {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     await apiFetch('PATCH', '/admin/settings/homepage-content', { heroPrefix, heroRotatingWords, heroSuffix, heroSubheadline, missionHeadline, missionBody });
-    showToast('Homepage content updated — live now');
+    showToast('Homepage content updated.');
     await loadAdminData();
     selectAdminSection('settings');
   } catch (e) { showToast(e.message || 'Could not save homepage content'); }
@@ -6892,7 +6892,7 @@ async function uploadHomepageImage(slot) {
   const input = document.getElementById(`hc-image-${slot}`);
   const file = input.files[0];
   if (!file) return showToast('Choose an image file first');
-  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large — 5MB max');
+  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large. The maximum size is 5 MB.');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   const formData = new FormData();
   formData.append('image', file);
@@ -6904,7 +6904,7 @@ async function uploadHomepageImage(slot) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upload failed');
-    showToast('Photo uploaded — live on the homepage now');
+    showToast('Photo uploaded and published on the homepage.');
     await loadAdminData();
     await loadHomepageImages();
     selectAdminSection('settings');
@@ -6915,7 +6915,7 @@ async function removeHomepageImage(slot) {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     await apiFetch('DELETE', `/admin/homepage-images/${slot}`);
-    showToast('Photo removed — reverted to the default look');
+    showToast('Photo removed. The default design is shown.');
     await loadAdminData();
     selectAdminSection('settings');
   } catch (e) { showToast(e.message || 'Could not remove this photo'); }
@@ -6937,7 +6937,7 @@ async function uploadCategoryImage(categoryId) {
   const input = document.getElementById(`ci-image-${categoryId}`);
   const file = input.files[0];
   if (!file) return showToast('Choose an image file first');
-  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large — 5MB max');
+  if (file.size > 5 * 1024 * 1024) return showToast('That file is too large. The maximum size is 5 MB.');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   const formData = new FormData();
   formData.append('image', file);
@@ -6949,7 +6949,7 @@ async function uploadCategoryImage(categoryId) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upload failed');
-    showToast('Photo uploaded — live on the homepage now (if this category has verified pros)');
+    showToast('Photo uploaded. It appears on the homepage when this category has verified pros.');
     await loadAdminData();
     selectAdminSection('settings');
   } catch (e) { showToast(e.message || 'Could not upload this photo'); }
@@ -6959,7 +6959,7 @@ async function removeCategoryImage(categoryId) {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     await apiFetch('DELETE', `/admin/category-images/${categoryId}`);
-    showToast('Photo removed — reverted to the category icon');
+    showToast('Photo removed. The category icon is shown.');
     await loadAdminData();
     selectAdminSection('settings');
   } catch (e) { showToast(e.message || 'Could not remove this photo'); }
@@ -6974,17 +6974,17 @@ async function openPayoutCurrencyChoice() {
     const panel = document.getElementById('payout-currency-panel');
     const c = info.currency;
     const currencyChoiceHTML = info.isUSD ? '' : `
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Your account is based in a ${escapeHtml(c.name)} (${c.code}) region — choose how you'd like to receive this payout.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Your account is based in a ${escapeHtml(c.name)} (${c.code}) region. Choose how you would like to receive this payout.</div>
       <div style="display:flex;gap:8px;margin-bottom:${hasIntlMethod ? '16px' : '0'};">
         <button class="btn-sm btn-sm-primary" onclick="requestPayout('local', document.getElementById('payout-method-choice')?.value === 'intl')" style="flex:1;">${c.symbol} Receive in ${c.code}</button>
         <button class="btn-sm btn-sm-outline" onclick="requestPayout('usd', document.getElementById('payout-method-choice')?.value === 'intl')" style="flex:1;">$ Receive in USD</button>
       </div>
-      <div style="font-size:12.5px;color:var(--muted);margin-bottom:${hasIntlMethod ? '16px' : '0'};">Uses an approximate test-mode exchange rate — not a live market rate.</div>`;
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:${hasIntlMethod ? '16px' : '0'};">Uses an approximate test-mode exchange rate, not a live market rate.</div>`;
     const methodChoiceHTML = !hasIntlMethod ? '' : `
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:8px;">Which account should this payout go to?</div>
       <select class="form-input form-select" id="payout-method-choice" style="margin-bottom:12px;">
-        <option value="local">Local — ${escapeHtml(AUTH.user.payoutMethod || 'Bank Transfer')}</option>
-        <option value="intl">International — ${escapeHtml(AUTH.user.payoutMethodIntl)}</option>
+        <option value="local">Local: ${escapeHtml(AUTH.user.payoutMethod || 'Bank Transfer')}</option>
+        <option value="intl">International: ${escapeHtml(AUTH.user.payoutMethodIntl)}</option>
       </select>
       ${info.isUSD ? `<button class="btn-sm btn-sm-primary" style="width:100%;" onclick="requestPayout('usd', document.getElementById('payout-method-choice').value === 'intl')">Request Payout</button>` : ''}`;
     document.getElementById('payout-currency-body').innerHTML = currencyChoiceHTML + methodChoiceHTML;
@@ -6993,14 +6993,14 @@ async function openPayoutCurrencyChoice() {
 }
 
 async function requestPayout(payoutCurrency, useIntlMethod) {
-  if (!BACKEND_AVAILABLE) return showToast('Payout requested (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Payout requested (demo mode)');
   try {
     const { payout } = await apiFetch('POST', '/payouts/request', { payoutCurrency, useIntlMethod: !!useIntlMethod });
     const panel = document.getElementById('payout-currency-panel');
     if (panel) panel.style.display = 'none';
     const msg = payout.payoutAmountLocal
-      ? `Payout of ${payout.payoutCurrency} ${payout.payoutAmountLocal} (≈ $${payout.amount} USD) requested — via ${payout.method}`
-      : `Payout of $${payout.amount} requested — via ${payout.method}`;
+      ? `Payout of ${payout.payoutCurrency} ${payout.payoutAmountLocal} (≈ $${payout.amount} USD) requested via ${payout.method}`
+      : `Payout of $${payout.amount} requested via ${payout.method}`;
     showToast(msg);
     await loadProviderData();
     selectProviderSection('earnings');
@@ -7028,13 +7028,13 @@ function toggleEarningsBreakdown(which) {
   const contracts = which === 'available'
     ? providerData.contracts.filter(c => c.escrow && c.escrow.status === 'released' && !c.escrow.payoutId)
     : providerData.contracts.filter(c => c.escrow && c.escrow.status === 'held');
-  const title = which === 'available' ? 'Available for Payout — the exact jobs behind this number' : 'Pending — jobs the customer hasn\'t marked complete yet';
+  const title = which === 'available' ? 'Available for Payout: jobs included in this amount' : 'Pending: jobs not yet marked complete by the customer';
   panel.innerHTML = `
     <div class="panel-title">${title}</div>
     ${contracts.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Amount</th><th>Contract Status</th></tr></thead><tbody>
       ${contracts.map(c => `<tr><td>${escapeHtml(c.customerName)}</td><td>${escapeHtml(c.service)}</td><td>$${c.escrow.amount}</td><td>${statusBadge(c.status)}</td></tr>`).join('')}
       </tbody></table></div>`
-      : `<div style="color:var(--slate);font-size:14px;padding:8px 0;">${which === 'available' ? 'Nothing here yet — this fills in once a customer marks a job complete.' : 'Nothing pending right now.'}</div>`}
+      : `<div style="color:var(--slate);font-size:14px;padding:8px 0;">${which === 'available' ? 'Nothing to show yet. Jobs appear here once a customer marks them complete.' : 'Nothing pending right now.'}</div>`}
   `;
   panel.style.display = 'block';
 }
@@ -7050,9 +7050,9 @@ function payoutHistoryTableHTML(payouts) {
       <tr id="payout-breakdown-${p.id}" style="display:none;">
         <td colspan="8" style="background:var(--offwhite);padding:0;">
           ${p.lineItems && p.lineItems.length ? `
-            <div style="padding:12px 16px;font-size:13px;color:var(--slate);font-weight:600;">Who paid — ${p.lineItems.length} job${p.lineItems.length===1?'':'s'} in this payout</div>
+            <div style="padding:12px 16px;font-size:13px;color:var(--slate);font-weight:600;">Included in this payout: ${p.lineItems.length} job${p.lineItems.length===1?'':'s'} in this payout</div>
             ${p.lineItems.map(li => payoutLineItemDetailHTML(li)).join('')}
-          ` : `<div style="padding:12px 16px;font-size:13px;color:var(--muted);">No itemized breakdown available for this payout — it was requested before this feature existed.</div>`}
+          ` : `<div style="padding:12px 16px;font-size:13px;color:var(--muted);">An itemized breakdown is not available for this payout.</div>`}
         </td>
       </tr>
     `).join('')}
@@ -7155,7 +7155,7 @@ function adminTransactionsTableHTML(transactions) {
     <td>$${t.amount}</td>
     <td>${t.materialsAdvanceAmount ? `$${t.materialsAdvanceAmount}` : '—'}</td>
     <td>${t.escrowStatus}${t.paidOut ? ' (paid out)' : ''}</td>
-    <td title="${escapeHtml(t.commissionRate != null ? Math.round(t.commissionRate * 100) + '% of amount — estimate; only final once paid out' : '')}">${t.estCommission != null ? `$${t.estCommission.toFixed(2)}` : '—'}</td>
+    <td title="${escapeHtml(t.commissionRate != null ? Math.round(t.commissionRate * 100) + '% of amount (estimate; final when paid out)' : '')}">${t.estCommission != null ? `$${t.estCommission.toFixed(2)}` : '—'}</td>
     <td>${statusBadge(t.status)}</td>
     <td><button class="btn-sm btn-sm-outline" onclick="downloadFileWithAuth('${API_BASE}/contracts/${t.contractId}/pdf', 'Trothen-Contract-${t.bookingNumber}.pdf')">📄 PDF</button></td>
   </tr>`).join('')}
@@ -7177,7 +7177,7 @@ function financialByRegionTableHTML(data) {
     const pct = totalVolume > 0 ? ((volume / totalVolume) * 100).toFixed(1) : '0.0';
     return `<tr><td>${escapeHtml(r.region)}</td><td>${escapeHtml(r.country)}</td><td>$${r.held.toLocaleString()}</td><td>$${r.released.toLocaleString()}</td><td>$${r.commissionRevenue.toLocaleString()}</td><td>$${(r.serviceFeeRevenue || 0).toLocaleString()}</td><td>${escapeHtml(r.transactionCount)}</td><td>$${(r.avgTransaction || 0).toLocaleString()}</td><td>${pct}%</td></tr>`;
   }).join('')}
-  <tr style="font-weight:700;background:var(--offwhite);"><td colspan="2">Total — All Regions</td><td>$${total.held.toLocaleString()}</td><td>$${total.released.toLocaleString()}</td><td>$${total.commissionRevenue.toLocaleString()}</td><td>$${(total.serviceFeeRevenue || 0).toLocaleString()}</td><td>${escapeHtml(total.transactionCount)}</td><td>$${(total.avgTransaction || 0).toLocaleString()}</td><td>100.0%</td></tr>
+  <tr style="font-weight:700;background:var(--offwhite);"><td colspan="2">Total, All Regions</td><td>$${total.held.toLocaleString()}</td><td>$${total.released.toLocaleString()}</td><td>$${total.commissionRevenue.toLocaleString()}</td><td>$${(total.serviceFeeRevenue || 0).toLocaleString()}</td><td>${escapeHtml(total.transactionCount)}</td><td>$${(total.avgTransaction || 0).toLocaleString()}</td><td>100.0%</td></tr>
   </tbody></table></div>`;
 }
 
@@ -7202,7 +7202,7 @@ async function filterAdminFinancials() {
     adminData.financialByRegion = financialByRegion;
     document.getElementById('admin-financial-region-wrap').innerHTML = financialByRegionTableHTML(financialByRegion);
     applyTransactionsClientFilter();
-  } catch (e) { showToast(e.message || 'Could not filter — one of the two panels may not have updated'); }
+  } catch (e) { showToast(e.message || 'Could not apply the filter. Please refresh the page.'); }
 }
 
 function clearAdminFinancialsFilter() {
@@ -7336,7 +7336,7 @@ async function loadJobNegotiationThread() {
     const { messages } = await apiFetch('GET', `/messages/${CURRENT_JOB_NEGOTIATION.customerId}?jobId=${encodeURIComponent(CURRENT_JOB_NEGOTIATION.jobId)}`);
     body.innerHTML = messages.length
       ? messages.map(m => `<div class="msg-bubble ${m.fromId === AUTH.user.id ? 'me' : 'them'}">${escapeHtml(m.text)}<div style="text-align:${m.fromId === AUTH.user.id ? 'right' : 'left'};margin-top:3px;line-height:1;opacity:.85;">${msgTimeHTML(m.createdAt)}</div></div>`).join('')
-      : `<div style="text-align:center;color:var(--slate);font-size:13.5px;padding:20px;">No messages yet — say hello and start negotiating a price.</div>`;
+      : `<div style="text-align:center;color:var(--slate);font-size:13.5px;padding:20px;">No messages yet. Send a message to discuss the job and price.</div>`;
     body.scrollTop = body.scrollHeight;
   } catch (e) {
     body.innerHTML = `<div style="text-align:center;color:var(--slate);font-size:13.5px;padding:20px;">Could not load messages.</div>`;
@@ -7376,7 +7376,7 @@ function contractsTable(list) {
     } else if (c.status === 'awaiting_payment') { // v125
       actions = `<span style="font-size:13px;color:var(--slate);">${escapeHtml(tr('Price agreed. Waiting for the customer to pay. You\'ll be told the moment they do.'))}</span>`;
     } else if (c.status === 'expired') {
-      actions = `<span style="font-size:13px;color:var(--slate);">You didn't respond in time — automatically cancelled</span>`;
+      actions = `<span style="font-size:13px;color:var(--slate);">Cancelled automatically: no response in time</span>`;
     }
     return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${c.payMethod === 'cash' ? ` <span class="badge badge-warn" title="${escapeHtml(tr('The customer pays you directly after the work. Trothen\'s commission was taken from your tokens.'))}">💵 ${escapeHtml(tr('Cash job'))}</span>` : ''}${whereHTML(c)}${c.photoUrls && c.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(c.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${c.photoUrls.length} file${c.photoUrls.length===1?'':'s'}</a>` : ''}${c.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(c.materialsOnHand)}</div>` : ''}${contractGoodsHTML(c.id)}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} ${handoverButtonHTML(c.id, c.status)} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
   }).join('')}
@@ -7432,7 +7432,7 @@ function renderTierProgress(currentPlan, jobsCompleted, rating, cancellationRate
 
   return `<div class="panel">
     <div class="panel-title">Your Path to ${threshold.nextLabel} <small style="font-weight:400;color:var(--slate);">currently ${currentLabel} · ${currentRate} commission</small></div>
-    ${allMet ? `<div style="background:#EAF4EF;border:1px solid #2E8C6F;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:14px;color:#1C5C42;">✓ You meet every published requirement for ${threshold.nextLabel} (${threshold.nextRate} commission). Tier changes are reviewed, not automatic — reach out if you'd like it looked at.</div>` : ''}
+    ${allMet ? `<div style="background:#EAF4EF;border:1px solid #2E8C6F;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:14px;color:#1C5C42;">✓ You meet every published requirement for ${threshold.nextLabel} (${threshold.nextRate} commission). Tier changes are reviewed by our team. Contact support to request a review.</div>` : ''}
     ${bar('Jobs completed', jobsCompleted, threshold.jobs, '', false)}
     ${bar('Average rating', rating !== null ? rating.toFixed(2) : 0, threshold.rating, '★', false)}
     ${bar('Cancellation rate', cancellationRate.toFixed(1), threshold.cancellationRate, '%', true)}
@@ -7460,7 +7460,7 @@ async function respondToOffer(contractId, decision) {
   if (decision === 'decline' && !(await confirmDialog("Decline this booking? The customer will be notified and refunded."))) return;
   try {
     const { contract } = await apiFetch('POST', `/contracts/${contractId}/respond-offer`, { decision });
-    showToast(decision === 'accept' ? (contract.payMethod === 'cash' ? `Cash job confirmed — collect $${contract.amount} from the customer after the work` : `Booking confirmed — $${contract.amount} held in escrow`) : (contract.payMethod === 'cash' ? 'Booking declined — the customer has been told' : 'Booking declined — customer refunded'));
+    showToast(decision === 'accept' ? (contract.payMethod === 'cash' ? `Cash job confirmed. Collect $${contract.amount} from the customer after the work` : `Booking confirmed. $${contract.amount} held in escrow`) : (contract.payMethod === 'cash' ? 'Booking declined. The customer has been notified.' : 'Booking declined. The customer has been refunded.'));
     await loadProviderData();
     selectProviderSection('contracts');
   } catch (e) { showToast(e.message || 'Could not respond to this booking'); }
@@ -7485,7 +7485,7 @@ async function viewScopeChangeRequests(contractId) {
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('scope-requests-overlay').remove()">✕</button>
           <h3>Additional Requests</h3>
-          <p>Extra amounts your provider has requested for this job — nothing changes unless you approve.</p>
+          <p>Additional amounts requested by your provider for this job. Nothing changes unless you approve.</p>
         </div>
         <div class="modal-body" id="scope-requests-body">Loading…</div>
       </div>
@@ -7522,7 +7522,7 @@ async function decideScopeChangeRequest(requestId, decision, contractId) {
   if (decision === 'approve' && !(await confirmDialog('Approve this additional amount? This will update the contract total and the held escrow immediately.'))) return;
   try {
     await apiFetch('POST', `/scope-change-requests/${requestId}/decide`, { decision });
-    showToast(decision === 'approve' ? 'Approved — contract updated' : 'Declined');
+    showToast(decision === 'approve' ? 'Approved. Contract updated.' : 'Declined');
     document.getElementById('scope-requests-overlay')?.remove();
     await loadCustomerData();
     selectCustomerSection('bookings');
@@ -7536,7 +7536,7 @@ function openScopeChangeRequestForm(contractId) {
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('scope-change-overlay').remove()">✕</button>
           <h3>Request Additional Payment</h3>
-          <p>For when the job turns out bigger than what was originally posted or booked — the customer has to approve this before anything changes.</p>
+          <p>Use this when the job is larger than originally posted or booked. The customer must approve the request before anything changes.</p>
         </div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Additional Amount</label><input class="form-input" type="number" min="1" step="0.01" id="scope-change-amount" placeholder="$40.00"/></div>
@@ -7558,7 +7558,7 @@ async function submitScopeChangeRequest(contractId) {
   if (!BACKEND_AVAILABLE) { showToast('Request sent (demo mode)'); document.getElementById('scope-change-overlay')?.remove(); return; }
   try {
     await apiFetch('POST', `/contracts/${contractId}/scope-change-request`, { amount, reason });
-    showToast('Additional request sent — the customer needs to approve it');
+    showToast('Request sent. The customer must approve it.');
     document.getElementById('scope-change-overlay')?.remove();
   } catch (e) { showToast(e.message || 'Could not send this request'); }
 }
@@ -7616,7 +7616,7 @@ function cancelProviderContract(contractId) {
               <input type="radio" name="cancel-reason" value="${escapeHtml(val)}" ${i === 0 ? 'checked' : ''}/>
               <span>${label}</span>
             </label>`).join('')}
-          <div style="font-size:13px;color:var(--muted);margin-top:10px;line-height:1.5;">Cancelling because a job wasn't as described, became unsafe, needs a different trade, or requires a license you don't hold never counts against your standing — that's a system rule, not a judgment call.</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:10px;line-height:1.5;">Cancelling because a job was not as described, became unsafe, needs a different trade or requires a license you do not hold never counts against your standing.</div>
         </div>
         <div class="modal-footer">
           <button class="confirm-btn" onclick="confirmProviderCancel('${contractId}')">Cancel This Job</button>
@@ -7633,7 +7633,7 @@ async function confirmProviderCancel(contractId) {
     await apiFetch('POST', `/contracts/${contractId}/cancel`, { reason });
     const overlay = document.getElementById('cancel-reason-overlay');
     if (overlay) overlay.remove();
-    showToast('Contract cancelled — customer notified and refunded');
+    showToast('Contract cancelled. The customer has been notified and refunded.');
     await loadProviderData();
     selectProviderSection('contracts');
   } catch (e) { showToast(e.message || 'Could not cancel this contract'); }
@@ -7696,7 +7696,7 @@ function showPortfolioPhotoPreview(dataUrl, file) {
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('portfolio-preview-overlay').remove()">✕</button>
           <h3>Use this photo?</h3>
-          <p>Make sure it's a real photo of your completed work</p>
+          <p>Make sure the photo shows work you have completed</p>
         </div>
         <div class="modal-body">
           <img src="${dataUrl}" alt="Preview of the completed-work photo you're about to add to your portfolio" style="width:100%;border-radius:10px;display:block;"/>
@@ -7724,7 +7724,7 @@ async function confirmPortfolioPhotoUpload() {
 
 async function uploadPortfolioPhoto(file) {
   if (!file) return;
-  if (!BACKEND_AVAILABLE) return showToast('Photo uploaded (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Photo uploaded (demo mode)');
 
   const formData = new FormData();
   try {
@@ -7760,7 +7760,7 @@ async function deletePortfolioPhoto(id) {
 
 async function uploadProfilePhoto(file) {
   if (!file) return;
-  if (!BACKEND_AVAILABLE) return showToast('Profile photo updated (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Profile photo updated (demo mode)');
 
   const formData = new FormData();
   try {
@@ -8026,8 +8026,8 @@ async function adminDecide(listName, id, decision, sectionKey) {
     // click was failing. Now actually asks for it.
     rejectionReason = await confirmDialog(
       listName === 'users'
-        ? 'Reject this account application? This will permanently block them from logging in — this is not the same as leaving them pending, and is harder to casually undo. Type the reason they\'re being rejected — they\'ll see this.'
-        : 'Reject this verification submission? Type the reason — the applicant will see this and can resubmit.',
+        ? 'Reject this account application? This permanently blocks them from signing in. Enter the reason for rejection; the applicant will see it.'
+        : 'Reject this verification submission? Enter the reason. The applicant will see it and can resubmit.',
       { danger: true, confirmLabel: 'Reject', requireTextInput: true }
     );
     if (rejectionReason === null) return; // cancelled
@@ -8101,8 +8101,8 @@ async function confirmSplitDispute(id) {
 async function resolveDispute(id, decision) {
   const note = await confirmDialog(
     decision === 'refund_customer'
-      ? 'Refund the customer for this dispute? Type a short note explaining the decision — both the customer and provider will see it.'
-      : 'Release escrow to the provider for this dispute? Type a short note explaining the decision — both parties will see it.',
+      ? 'Refund the customer for this dispute? Enter a short note explaining the decision. The customer and provider will both see it.'
+      : 'Release payment to the provider for this dispute? Enter a short note explaining the decision. Both parties will see it.',
     { confirmLabel: decision === 'refund_customer' ? 'Refund Customer' : 'Release to Provider', requireTextInput: true }
   );
   if (note === null) return; // cancelled
@@ -8110,12 +8110,12 @@ async function resolveDispute(id, decision) {
     const d = adminData.disputes.find(x => x.id === id);
     if (!d) return;
     d.status = 'resolved';
-    showToast(decision === 'refund_customer' ? `Dispute ${id} marked resolved — customer refunded` : `Dispute ${id} marked resolved — escrow released`);
+    showToast(decision === 'refund_customer' ? `Dispute ${id} marked resolved. Customer refunded.` : `Dispute ${id} marked resolved. Payment released.`);
     return selectAdminSection('disputes');
   }
   try {
     await apiFetch('POST', `/admin/disputes/${id}/resolve`, { decision, note });
-    showToast(decision === 'refund_customer' ? `Dispute ${id} marked resolved — customer refunded` : `Dispute ${id} marked resolved — escrow released`);
+    showToast(decision === 'refund_customer' ? `Dispute ${id} marked resolved. Customer refunded.` : `Dispute ${id} marked resolved. Payment released.`);
     await loadAdminData();
     selectAdminSection('disputes');
   } catch (e) { showToast(e.message || 'Could not resolve dispute'); }
@@ -8126,7 +8126,7 @@ const ADMIN_SECTIONS = {
     const region = adminData.stats.region || 'All Locations';
     const isSuper = AUTH.user && AUTH.user.isSuperAdmin;
     return `
-    <div class="dash-header"><div><div class="dash-title">${isSuper ? 'Global Overview' : 'Region Overview'} — ${region}</div><div class="dash-sub">${isSuper ? 'Platform health across every city Trothen operates in' : 'Platform health across the area you manage'} ${BACKEND_AVAILABLE ? '<span class="badge badge-success" style="margin-left:6px;">Live data</span>' : ''}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">${isSuper ? 'Global Overview' : 'Region Overview'}: ${region}</div><div class="dash-sub">${isSuper ? 'Platform health across every city Trothen operates in' : 'Platform health across the area you manage'} ${BACKEND_AVAILABLE ? '' : ''}</div></div></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Users</div><div class="stat-card-val">${adminData.stats.totalUsers.toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-card-label">Pending Approvals</div><div class="stat-card-val">${adminData.stats.pendingApprovals}</div></div>
@@ -8138,10 +8138,10 @@ const ADMIN_SECTIONS = {
     <div class="panel"><div class="panel-title">Open Disputes</div>${disputesTable(adminData.disputes.filter(d=>d.status!=='resolved'))}</div>`;
   },
   approvals: () => `
-    <div class="dash-header"><div><div class="dash-title">User Approvals</div><div class="dash-sub">Review new signups before they go live on the marketplace — scoped to ${adminData.stats.region || 'your assigned location'}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">User Approvals</div><div class="dash-sub">Review new sign-ups before they go live. Region: ${adminData.stats.region || 'your assigned location'}</div></div></div>
     <div class="panel">${usersTable(adminData.pendingUsers, 'approvals')}</div>`,
   people: () => `
-    <div class="dash-header"><div><div class="dash-title">Customers & Providers</div><div class="dash-sub">${AUTH.user && AUTH.user.isSuperAdmin ? 'Every customer and provider, across every city' : `Every customer and provider in ${adminData.stats.region || 'your city'} — this is your community to manage`}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Customers & Providers</div><div class="dash-sub">${AUTH.user && AUTH.user.isSuperAdmin ? 'Every customer and provider, across every city' : `Every customer and provider in ${adminData.stats.region || 'your city'}`}</div></div></div>
     <div class="panel">
       <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <span>Directory <small style="font-weight:400;color:var(--slate);">${adminData.people.length} total</small></span>
@@ -8180,12 +8180,12 @@ const ADMIN_SECTIONS = {
       <div id="guarantors-review-panel"><div style="color:var(--slate);font-size:13.5px;padding:12px 0;">Loading…</div></div>
     </div>`,
   providerscores: () => `
-    <div class="dash-header"><div><div class="dash-title">Provider Scores</div><div class="dash-sub">Ranked by real, computed trust score — updated daily. Flags a recommended pause when a score drops, but never applies one automatically; that's always a real click from a real admin.</div></div>
+    <div class="dash-header"><div><div class="dash-title">Provider Scores</div><div class="dash-sub">Ranked by trust score, updated daily. A pause is recommended when a score drops, but is only applied by an administrator.</div></div>
     ${AUTH.user && AUTH.user.isSuperAdmin ? `<button class="btn-sm btn-sm-outline" id="recompute-scores-btn" onclick="recomputeAllProviderScores()">🔄 Recompute now</button>` : ''}</div>
     <div class="panel" id="provider-score-rule-panel" style="display:none;"></div>
     <div class="panel" id="provider-scores-panel"><div style="color:var(--slate);font-size:13.5px;padding:12px 0;">Loading…</div></div>`,
   promotions: () => `
-    <div class="dash-header"><div><div class="dash-title">Promotions</div><div class="dash-sub">${AUTH.user && AUTH.user.isSuperAdmin ? 'Post platform-wide, or target one city' : `Post to ${AUTH.user.region || AUTH.user.city || 'your city'} — your promotions only reach your own city`}</div></div>
+    <div class="dash-header"><div><div class="dash-title">Promotions</div><div class="dash-sub">${AUTH.user && AUTH.user.isSuperAdmin ? 'Post platform-wide, or target one city' : `Post to ${AUTH.user.region || AUTH.user.city || 'your city'}. Promotions reach your city only.`}</div></div>
     <button class="btn-sm btn-sm-primary" onclick="openNewPromotionForm()">+ New Promotion</button></div>
     <div class="panel" id="new-promotion-panel" style="display:none;">
       <div class="panel-title">New Promotion</div>
@@ -8199,7 +8199,7 @@ const ADMIN_SECTIONS = {
         <input type="hidden" id="promo-image-url"/>
       </div>
       <div class="form-group">
-        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;"><input type="checkbox" id="promo-send-email"/> Also send this as a real email to everyone it's shown to <span style="color:var(--slate);font-weight:400;">(good for policy changes or technical issues, not just promos)</span></label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;"><input type="checkbox" id="promo-send-email"/> Also send this by email to everyone who sees it <span style="color:var(--slate);font-weight:400;">(for policy changes, service notices or promotions)</span></label>
       </div>
       <div class="form-group"><label class="form-label">Show to</label>
         <select class="form-input form-select" id="promo-audience">
@@ -8208,7 +8208,7 @@ const ADMIN_SECTIONS = {
           <option value="providers">Providers only</option>
         </select>
       </div>
-      ${AUTH.user && AUTH.user.isSuperAdmin ? `<div class="form-group"><label class="form-label">Region</label><input class="form-input" id="promo-region" placeholder="Leave blank for platform-wide, or enter a city to target just that city"/></div>` : ''}
+      ${AUTH.user && AUTH.user.isSuperAdmin ? `<div class="form-group"><label class="form-label">Region</label><input class="form-input" id="promo-region" placeholder="Leave blank for platform-wide, or enter a city to target that city only"/></div>` : ''}
       <div class="row-actions"><button class="btn-sm btn-sm-primary" onclick="submitPromotion()">Post Promotion</button><button class="btn-sm btn-sm-outline" onclick="document.getElementById('new-promotion-panel').style.display='none'">Cancel</button></div>
     </div>
     <div class="panel" id="promotions-list-panel"><div style="color:var(--slate);font-size:13.5px;padding:12px 0;">Loading…</div></div>`,
@@ -8228,7 +8228,7 @@ const ADMIN_SECTIONS = {
       <div id="admin-disputes-table-wrap">${disputesTable(adminData.disputes)}</div>
     </div>`,
   fraud: () => `
-    <div class="dash-header"><div><div class="dash-title">Fraud & Safety</div><div class="dash-sub">Real, rule-based flags from automatic screening on every signup, booking, and dispute</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Fraud & Safety</div><div class="dash-sub">Flags raised by automatic screening of sign-ups, bookings and disputes</div></div></div>
     <div class="panel">${fraudFlagsTableHTML(adminData.fraudFlags || [])}</div>`,
   payments: () => `
     <div class="dash-header"><div><div class="dash-title">Payments</div><div class="dash-sub">Escrow, payouts, and commission across the platform</div></div></div>
@@ -8270,7 +8270,7 @@ const ADMIN_SECTIONS = {
   reports: () => {
     const ra = adminData.reportsAnalytics;
     if (!ra) return `
-    <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">Real demand and performance insights</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">Demand and performance insights</div></div></div>
     <div class="panel">Loading reports…</div>`;
 
     // Demand chart — how many times a category was actually BOOKED, not
@@ -8291,9 +8291,9 @@ const ADMIN_SECTIONS = {
     const trendTotal = ra.jobsOverTime.reduce((s, d) => s + d.count, 0);
 
     return `
-    <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">Real demand and performance insights${ra.region !== 'All Locations' ? ` — ${ra.region}` : ''}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Reports & Analytics</div><div class="dash-sub">Demand and performance insights${ra.region !== 'All Locations' ? ` — ${ra.region}` : ''}</div></div></div>
 
-    <div class="panel"><div class="panel-title">Report Builder <small style="font-weight:400;color:var(--slate);">build a custom report from real booking data</small></div>
+    <div class="panel"><div class="panel-title">Report Builder <small style="font-weight:400;color:var(--slate);">build a custom report from booking data</small></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;">
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">From date</label><input class="form-input" type="date" id="rb-date-from"/></div>
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">To date</label><input class="form-input" type="date" id="rb-date-to"/></div>
@@ -8324,20 +8324,20 @@ const ADMIN_SECTIONS = {
       <div id="report-builder-results" style="margin-top:16px;"></div>
     </div>
 
-    <div class="panel"><div class="panel-title">Demand by Category (Real Bookings) <small style="font-weight:400;color:var(--slate);">${categoriesWithActivity ? `top ${Math.min(10, categoriesWithActivity)} of ${categoriesWithActivity} with activity` : `0 of ${ra.totalCategories} categories`}</small></div>${topDemand.length ? barChart(topDemand, { clickable: true }) : '<div style="color:var(--slate);font-size:14px;padding:12px 0;">No bookings yet — this chart reflects real completed and active jobs, not provider signups.</div>'}${topDemand.length ? `<div style="font-size:13px;color:var(--slate);margin-top:10px;">Click a bar to filter the tables below to just that category. <span id="reports-filter-note"></span></div>` : ''}</div>
+    <div class="panel"><div class="panel-title">Demand by Category (Bookings) <small style="font-weight:400;color:var(--slate);">${categoriesWithActivity ? `top ${Math.min(10, categoriesWithActivity)} of ${categoriesWithActivity} with activity` : `0 of ${ra.totalCategories} categories`}</small></div>${topDemand.length ? barChart(topDemand, { clickable: true }) : '<div style="color:var(--slate);font-size:14px;padding:12px 0;">No bookings yet. This chart shows completed and active jobs.</div>'}${topDemand.length ? `<div style="font-size:13px;color:var(--slate);margin-top:10px;">Select a bar to filter the tables below by category. <span id="reports-filter-note"></span></div>` : ''}</div>
 
-    <div class="panel"><div class="panel-title">Jobs Booked — Last 30 Days <small style="font-weight:400;color:var(--slate);">${trendTotal} total</small></div>${trendTotal ? barChart(trendBars) : '<div style="color:var(--slate);font-size:14px;padding:12px 0;">No bookings in the last 30 days.</div>'}</div>
+    <div class="panel"><div class="panel-title">Jobs Booked, Last 30 Days <small style="font-weight:400;color:var(--slate);">${trendTotal} total</small></div>${trendTotal ? barChart(trendBars) : '<div style="color:var(--slate);font-size:14px;padding:12px 0;">No bookings in the last 30 days.</div>'}</div>
 
-    <div class="panel"><div class="panel-title">Category Performance <small style="font-weight:400;color:var(--slate);">only categories with real bookings — ${ra.totalCategories - categoriesWithActivity} of ${ra.totalCategories} categories have none yet</small></div>
+    <div class="panel"><div class="panel-title">Category Performance <small style="font-weight:400;color:var(--slate);">categories with bookings only · ${ra.totalCategories - categoriesWithActivity} of ${ra.totalCategories} categories have none yet</small></div>
       <div id="category-performance-table-wrap">${categoryPerformanceTableHTML(ra.categoryPerformance)}</div>
     </div>
 
-    <div class="panel"><div class="panel-title">Top Providers <small style="font-weight:400;color:var(--slate);">by real completed jobs</small></div>
+    <div class="panel"><div class="panel-title">Top Providers <small style="font-weight:400;color:var(--slate);">by completed jobs</small></div>
       <div id="top-providers-table-wrap">${topProvidersTableHTML(ra.topProviders)}</div>
     </div>
 
     <div class="panel"><div class="panel-title">Platform Health</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Live checks against the API right now — no historical uptime monitoring is connected yet (that needs a status-page provider or APM tool), but these rows are genuinely real-time, not decorative.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Live checks against the API. Historical uptime monitoring is not connected.</div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Service</th><th>Response Time</th><th>Status</th></tr></thead><tbody>
       <tr><td>Marketplace API</td><td>${adminData.apiHealth ? (adminData.apiHealth.ok ? adminData.apiHealth.ms + ' ms' : '—') : 'Checking…'}</td><td>${adminData.apiHealth ? (adminData.apiHealth.ok ? '<span class="badge badge-success">Operational</span>' : '<span class="badge badge-danger">Down</span>') : '<span class="badge badge-neutral">Checking…</span>'}</td></tr>
       </tbody></table></div>
@@ -8352,7 +8352,7 @@ const ADMIN_SECTIONS = {
       ? `<label class="switch"><input type="checkbox" ${c.status==='live'?'checked':''} onchange="toggleCountry('${c.id}')"><span class="switch-track"></span></label>`
       : (c.status === 'live' ? statusBadge('completed') : `<span class="badge badge-neutral">Planned</span>`);
     return `
-    <div class="dash-header"><div><div class="dash-title">Categories & Countries</div><div class="dash-sub">${isSuper ? "Manage what's bookable, and where" : 'Global platform settings — read-only outside Super Admin'}</div></div>${isSuper ? `<div class="row-actions"><button class="btn-sm btn-sm-outline" onclick="syncReferenceData()" title="Adds any new categories/countries that have been added to the platform since this database was first set up — never touches existing settings or real users">↻ Sync Latest Categories & Countries</button><button class="btn-sm btn-sm-primary" onclick="openNewCategoryForm()">+ Add Category</button><button class="btn-sm btn-sm-outline" onclick="openNewCountryForm()">+ Add Country</button></div>` : ''}</div>
+    <div class="dash-header"><div><div class="dash-title">Categories & Countries</div><div class="dash-sub">${isSuper ? "Manage what's bookable, and where" : 'Platform settings (read-only for administrators other than the super admin)'}</div></div>${isSuper ? `<div class="row-actions"><button class="btn-sm btn-sm-outline" onclick="syncReferenceData()" title="Adds categories and countries added since this database was set up. Existing settings and users are not changed.">↻ Sync Latest Categories & Countries</button><button class="btn-sm btn-sm-primary" onclick="openNewCategoryForm()">+ Add Category</button><button class="btn-sm btn-sm-outline" onclick="openNewCountryForm()">+ Add Country</button></div>` : ''}</div>
     ${isSuper && adminData.categoryRequests.filter(r => r.status === 'pending').length ? `<div class="panel"><div class="panel-title">Category Requests <small>${adminData.categoryRequests.filter(r => r.status === 'pending').length} pending</small></div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Requested Category</th><th>Requested</th><th>Action</th></tr></thead><tbody>
       ${adminData.categoryRequests.filter(r => r.status === 'pending').map(r => `<tr>
@@ -8393,17 +8393,17 @@ const ADMIN_SECTIONS = {
     </div>`;
   },
   locations: () => `
-    <div class="dash-header"><div><div class="dash-title">Locations & Admins</div><div class="dash-sub">Create a regional admin for a city, or a functional team member scoped to just one area — verification, disputes, finance, customer service, or legal</div></div>
+    <div class="dash-header"><div><div class="dash-title">Locations & Admins</div><div class="dash-sub">Create a regional administrator for a city, or a team member for one area: verification, disputes, finance, customer service or legal</div></div>
     <button class="btn-sm btn-sm-primary" onclick="openNewLocationForm()">+ Add Admin</button></div>
     <div class="panel" id="new-location-panel" style="display:none;">
       <div class="panel-title">New Admin</div>
       <div class="form-group"><label class="form-label">Admin Name</label><input class="form-input" id="loc-admin-name" placeholder="e.g. Fatima B."/></div>
       <div class="form-group"><label class="form-label">Admin Email</label><input class="form-input" id="loc-admin-email" placeholder="fatima@example.com"/></div>
-      <div class="form-group"><label class="form-label">Temporary Password</label><input class="form-input" id="loc-admin-password" placeholder="Set a starting password" type="text" value="Welcome123456!"/><div style="font-size:12.5px;color:var(--muted);margin-top:5px;">8-72 characters — no forced mix of numbers/symbols required. They can change it after signing in.</div></div>
+      <div class="form-group"><label class="form-label">Temporary Password</label><input class="form-input" id="loc-admin-password" placeholder="Set a starting password" type="text" value="Welcome123456!"/><div style="font-size:12.5px;color:var(--muted);margin-top:5px;">8 to 72 characters. They can change it after signing in.</div></div>
       <div class="form-group"><label class="form-label">Country</label>
         <select class="form-input form-select" id="loc-country"></select>
       </div>
-      <div class="form-group"><label class="form-label">City</label><input class="form-input" id="loc-city" placeholder="e.g. Monrovia"/><div style="font-size:12.5px;color:var(--muted);margin-top:5px;">Still required even for a functional-team member (their base location for contact purposes) — it just won't restrict what they can see if a department is selected below.</div></div>
+      <div class="form-group"><label class="form-label">City</label><input class="form-input" id="loc-city" placeholder="e.g. Monrovia"/><div style="font-size:12.5px;color:var(--muted);margin-top:5px;">Required for all team members as their base location. It does not restrict access when a department is selected below.</div></div>
       <div class="form-group"><label class="form-label">This admin covers</label>
         <select class="form-input form-select" id="loc-scope">
           <option value="country" selected>The whole country chosen above (recommended)</option>
@@ -8413,18 +8413,18 @@ const ADMIN_SECTIONS = {
       </div>
       <div class="form-group"><label class="form-label">Role</label>
         <select class="form-input form-select" id="loc-department" onchange="handleLocDepartmentChange(this.value)">
-          <option value="">Regional Admin — full access, scoped to this one city</option>
-          <option value="verification">Verification Team — global access to identity verification only</option>
-          <option value="disputes">Disputes Team — global access to disputes only</option>
-          <option value="financial">Financial Team — global access to escrow & payouts only</option>
-          <option value="accountant">Accountant — same access as Financial for now</option>
-          <option value="controller">Controller — same access as Financial for now</option>
-          <option value="customer_service">Customer Service — approvals, verification & disputes, to help users directly</option>
-          <option value="legal">Legal — read-only access to disputes & transactions, for compliance review</option>
-          <option value="sales">Sales Team — Custom-plan leads and multi-seat organization accounts only</option>
-          <option value="hr">HR Team — job applications only</option>
+          <option value="">Regional Admin: full access for this city</option>
+          <option value="verification">Verification Team: identity verification only, all regions</option>
+          <option value="disputes">Disputes Team: disputes only, all regions</option>
+          <option value="financial">Financial Team: escrow and payouts only, all regions</option>
+          <option value="accountant">Accountant: same access as Financial</option>
+          <option value="controller">Controller: same access as Financial</option>
+          <option value="customer_service">Customer Service: approvals, verification and disputes</option>
+          <option value="legal">Legal: read-only access to disputes and transactions</option>
+          <option value="sales">Sales Team: Custom plan leads and organization accounts only</option>
+          <option value="hr">HR Team: job applications only</option>
         </select>
-        <div id="loc-department-warning" style="display:none;margin-top:8px;font-size:13.5px;color:#8a5a00;background:#fff8e6;border:1px solid #f0d896;border-radius:8px;padding:10px 12px;">⚠️ This is a <strong>global</strong> role — this person will see data from <strong>every city and country</strong>, not just the one entered above. If you actually want someone scoped to just one location, choose "Regional Admin" instead, or check the box below to scope this role to just the city entered above.</div>
+        <div id="loc-department-warning" style="display:none;margin-top:8px;font-size:13.5px;color:#8a5a00;background:#fff8e6;border:1px solid #f0d896;border-radius:8px;padding:10px 12px;">⚠️ This is a <strong>global</strong> role. This person will see data from <strong>every city and country</strong>, not just the one entered above. To limit access to one location, choose "Regional Admin" instead, or check the box below to scope this role to just the city entered above.</div>
         <div id="loc-region-scoped-row" style="display:none;margin-top:8px;">
           <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;">
             <input type="checkbox" id="loc-region-scoped"/>
@@ -8440,14 +8440,14 @@ const ADMIN_SECTIONS = {
     const isSuper = AUTH.user && AUTH.user.isSuperAdmin;
     const scopeLabel = isSuper ? 'across every city' : `for ${AUTH.user.region || AUTH.user.city || 'your city'}`;
     return `
-    <div class="dash-header"><div><div class="dash-title">Advertising</div><div class="dash-sub">Real submissions from the "Advertise Here" homepage slide, ${scopeLabel}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Advertising</div><div class="dash-sub">Submissions from the "Advertise Here" homepage slide, ${scopeLabel}</div></div></div>
     <div class="panel"><div class="panel-title">Inquiries <small style="font-weight:400;color:var(--slate);">${(adminData.advertisingInquiries || []).length} total</small></div>${advertisingInquiriesTableHTML(adminData.advertisingInquiries || [])}</div>`;
   },
   pricing: () => (AUTH.user && AUTH.user.isSuperAdmin) ? superAdminPricingSectionHTML() : regionalPricingSectionHTML(),
   referrals: () => {
     const data = adminData.referralsOverview || { totalReferrals: 0, totalReferrers: 0, topReferrers: [], recent: [] };
     return `
-    <div class="dash-header"><div><div class="dash-title">Referrals</div><div class="dash-sub">Real, platform-wide referral activity</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Referrals</div><div class="dash-sub">Referral activity across the platform</div></div></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Referrals</div><div class="stat-card-val">${data.totalReferrals}</div></div>
       <div class="stat-card"><div class="stat-card-label">People Who've Referred Someone</div><div class="stat-card-val">${data.totalReferrers}</div></div>
@@ -8475,10 +8475,10 @@ const ADMIN_SECTIONS = {
       disputes_list: 'Viewed disputes list',
       financial_by_region: 'Viewed financial-by-region data',
       people_list: 'Viewed customer/provider list',
-      contact_info_reveal: 'Revealed a person\'s real contact info',
+      contact_info_reveal: 'Viewed a person\'s contact details',
     };
     return `
-    <div class="dash-header"><div><div class="dash-title">Access Logs</div><div class="dash-sub">A real record of who on the admin team has viewed sensitive data, and when</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Access Logs</div><div class="dash-sub">A record of which administrators viewed sensitive data, and when</div></div></div>
     <div class="panel">
       <div class="panel-title">Recent Access <small style="font-weight:400;color:var(--slate);">Last ${list.length} events</small></div>
       ${!list.length ? `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No access recorded yet.</div>` : `
@@ -8504,16 +8504,16 @@ const ADMIN_SECTIONS = {
         <div class="form-group" style="flex:1;min-width:140px;"><label class="form-label">Priority</label><select class="form-input" id="ann-priority-input"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
         <div class="form-group" style="flex:1;min-width:140px;"><label class="form-label">Send at (optional)</label><input class="form-input" type="datetime-local" id="ann-schedule-input"/></div>
       </div>
-      <div class="form-group"><label class="form-label">Regions (leave blank for all)</label><input class="form-input" id="ann-regions-input" placeholder="e.g. Atlanta, Lagos — comma separated city names"/></div>
+      <div class="form-group"><label class="form-label">Regions (leave blank for all)</label><input class="form-input" id="ann-regions-input" placeholder="e.g. Atlanta, Lagos (comma-separated city names)"/></div>
       <button class="btn-sm btn-sm-primary" onclick="submitAnnouncement()">Send announcement</button>
     </div>` : ''}
     <div class="panel"><div class="panel-title">${isSuper ? 'History' : 'Your announcements'}</div><div id="announcements-list-panel"><div style="color:var(--slate);font-size:13.5px;padding:12px 0;">Loading…</div></div></div>`;
   },
   golive: () => `
-    <div class="dash-header"><div><div class="dash-title">Go-Live</div><div class="dash-sub">Everything that has to be true before real people use Trothen — checked live from this server, not typed in by hand.</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Go-Live</div><div class="dash-sub">Requirements to complete before launch, checked live on this server.</div></div></div>
     <div class="panel"><div class="panel-title">Readiness checklist</div><div id="golive-checklist"><div style="color:var(--slate);font-size:13.5px;">Loading…</div></div></div>
     <div class="panel">
-      <div class="panel-title">Step 1 — Create your real super admin</div>
+      <div class="panel-title">Step 1: Create your super admin account</div>
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Use your own email. The password you type here is temporary: the first time you sign in you'll be asked to set your own, and two-factor sign-in is on from the start.</div>
       <div class="form-group"><label class="form-label">Full name</label><input class="form-input" id="golive-admin-name" autocomplete="off"/></div>
       <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="golive-admin-email" type="email" autocomplete="off"/></div>
@@ -8521,14 +8521,14 @@ const ADMIN_SECTIONS = {
       <button class="btn-sm btn-sm-primary" onclick="submitGoLiveSuperAdmin()">Create super admin</button>
     </div>
     <div class="panel">
-      <div class="panel-title">Step 2 — Remove all demo data</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Removes every demo account (fake pros, customers and admins) and everything attached to them — demo bookings, reviews, payouts, disputes, messages and notifications. Real accounts are never touched. You must be signed in with your real super admin (Step 1) to do this.</div>
+      <div class="panel-title">Step 2: Remove all demo data</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Removes all demo accounts and their bookings, reviews, payouts, disputes, messages and notifications. Other accounts are not affected. You must be signed in with the super admin account from Step 1.</div>
       <div id="golive-demo-preview" style="margin-bottom:12px;"></div>
       <button class="btn-sm btn-sm-outline" onclick="previewGoLiveDemoRemoval()">Preview what will be removed</button>
       <button class="btn-sm btn-sm-primary" style="background:#C1554D;border-color:#C1554D;" onclick="executeGoLiveDemoRemoval()">Remove all demo data</button>
     </div>
     <div class="panel">
-      <div class="panel-title">Step 3 — Choose the countries you actually serve</div>
+      <div class="panel-title">Step 3: Choose the countries you serve</div>
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Only these countries appear on the homepage "Live in…" line and in the signup country list. Every other country is set to "planned". Nothing is deleted, and people already signed up anywhere keep their accounts.</div>
       <div class="form-group"><label class="form-label">Live countries (one per line)</label><textarea class="form-input" id="golive-countries" rows="4" style="resize:vertical;">United States
 Nigeria
@@ -8538,10 +8538,10 @@ Liberia</textarea></div>
     </div>
     <div class="panel"><div class="panel-title">History</div><div id="golive-log"><div style="color:var(--slate);font-size:13.5px;">Loading…</div></div></div>`,
   datacleanup: () => `
-    <div class="dash-header"><div><div class="dash-title">Data Cleanup</div><div class="dash-sub">Safely clear untouched test accounts under a country — never touches any account with real contract, payment, or dispute history</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Data Cleanup</div><div class="dash-sub">Remove unused test accounts in a country. Accounts with contract, payment or dispute history are never removed.</div></div></div>
     <div class="panel">
       <div class="panel-title">Preview</div>
-      <div class="form-group"><label class="form-label">Country <span style="color:var(--slate);font-weight:400;">(leave blank to check every country at once)</span></label><input class="form-input" id="cleanup-country-input" placeholder="e.g. Liberia — or leave blank for all countries"/></div>
+      <div class="form-group"><label class="form-label">Country <span style="color:var(--slate);font-weight:400;">(leave blank to check every country at once)</span></label><input class="form-input" id="cleanup-country-input" placeholder="e.g. Liberia, or leave blank for all countries"/></div>
       <button class="btn-sm btn-sm-outline" onclick="previewDataCleanup()">Preview what would be removed</button>
       <div id="data-cleanup-preview-panel" style="margin-top:14px;"></div>
     </div>
@@ -8551,7 +8551,7 @@ Liberia</textarea></div>
     const newCount = list.filter(i => i.status === 'new').length;
     const isRegionallyScoped = AUTH.user && !AUTH.user.isSuperAdmin;
     return `
-    <div class="dash-header"><div><div class="dash-title">Contact Us Messages</div><div class="dash-sub">Real submissions from the public Contact Us form${isRegionallyScoped ? ` — ${escapeHtml(AUTH.user.city || 'your city')} and unrouted messages` : ''}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Contact Us Messages</div><div class="dash-sub">Submissions from the Contact Us form${isRegionallyScoped ? ` — ${escapeHtml(AUTH.user.city || 'your city')} and unrouted messages` : ''}</div></div></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Messages</div><div class="stat-card-val">${list.length}</div></div>
       <div class="stat-card"><div class="stat-card-label">New</div><div class="stat-card-val">${newCount}</div></div>
@@ -8578,7 +8578,7 @@ Liberia</textarea></div>
     const newCount = list.filter(i => i.status === 'new').length;
     const isRegionallyScoped = AUTH.user && !AUTH.user.isSuperAdmin && (!AUTH.user.adminDepartment || AUTH.user.regionScoped);
     return `
-    <div class="dash-header"><div><div class="dash-title">Job Applications</div><div class="dash-sub">Real submissions from the Careers page${isRegionallyScoped ? ` — ${escapeHtml(AUTH.user.city || AUTH.user.region || 'your city')} only` : ''}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Job Applications</div><div class="dash-sub">Submissions from the Careers page${isRegionallyScoped ? ` — ${escapeHtml(AUTH.user.city || AUTH.user.region || 'your city')} only` : ''}</div></div></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Applications</div><div class="stat-card-val">${list.length}</div></div>
       <div class="stat-card"><div class="stat-card-label">New</div><div class="stat-card-val">${newCount}</div></div>
@@ -8608,7 +8608,7 @@ Liberia</textarea></div>
     const contactedCount = list.filter(i => i.status === 'contacted').length;
     const convertedCount = list.filter(i => i.convertedToOrgId).length;
     return `
-    <div class="dash-header"><div><div class="dash-title">Sales Inquiries</div><div class="dash-sub">Real submissions from the Custom plan's "Contact Sales" button</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Sales Inquiries</div><div class="dash-sub">Submissions from the Custom plan "Contact Sales" button</div></div></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Total Inquiries</div><div class="stat-card-val">${list.length}</div></div>
       <div class="stat-card"><div class="stat-card-label">New</div><div class="stat-card-val">${newCount}</div></div>
@@ -8639,7 +8639,7 @@ Liberia</textarea></div>
     const ratedOrgs = orgs.filter(o => o.commissionRate != null);
     const avgRate = ratedOrgs.length ? (ratedOrgs.reduce((s, o) => s + o.commissionRate, 0) / ratedOrgs.length * 100).toFixed(1) : null;
     return `
-    <div class="dash-header"><div><div class="dash-title">Organizations</div><div class="dash-sub">Multi-seat Custom-plan accounts — created from an agreed Sales Inquiry</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Organizations</div><div class="dash-sub">Custom plan organization accounts, created from an agreed sales inquiry</div></div></div>
     <div class="stat-cards">
       <div class="stat-card"><div class="stat-card-label">Organizations</div><div class="stat-card-val">${orgs.length}</div></div>
       <div class="stat-card"><div class="stat-card-label">Total Seats</div><div class="stat-card-val">${totalSeats}</div></div>
@@ -8663,14 +8663,14 @@ Liberia</textarea></div>
     </div>
     ${twoFactorPanelHTML(true)}
     ${AUTH.user && AUTH.user.isSuperAdmin ? `<div class="panel"><div class="panel-title">Platform Handbook</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:10px;">The getting-started guide offered to every new customer and provider once they've signed up. Upload a PDF to make it available — replacing it here replaces it everywhere immediately.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:10px;">The getting-started guide offered to every new customer and provider once they've signed up. Upload a PDF to make it available. Replacing it here updates it everywhere.</div>
       <input type="file" id="handbook-upload-input" accept="application/pdf" style="display:none;" onchange="handleHandbookUpload(event)"/>
       <button class="btn-sm btn-sm-outline" onclick="document.getElementById('handbook-upload-input').click()">Upload PDF</button>
       <span id="handbook-upload-status" style="font-size:13px;color:var(--slate);margin-left:8px;"></span>
     </div>` : ''}
     ${AUTH.user && AUTH.user.role === 'admin' && !AUTH.user.isSuperAdmin && !AUTH.user.adminDepartment ? `
-    <div class="panel"><div class="panel-title">Support Chat Contact Info — ${escapeHtml(AUTH.user.region || 'Your City')}</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Your own city's real WhatsApp and phone number for the support chat's "Chat with us" / "Call" links — customers and providers in ${escapeHtml(AUTH.user.region || 'your city')} see this number instead of the platform-wide one. ${adminData.supportContact && adminData.supportContact.usingPlatformFallback ? "You haven't set your own yet, so visitors here currently reach the platform-wide number below." : (adminData.supportContact && adminData.supportContact.isPlaceholder ? '<strong style="color:var(--danger,#B23A3A);">That platform-wide number is still the placeholder demo number — set your own real one below.</strong>' : 'This is your real, live number.')}</div>
+    <div class="panel"><div class="panel-title">Support Chat Contact Details: ${escapeHtml(AUTH.user.region || 'Your City')}</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Your city's WhatsApp and phone number for the support chat "Chat with us" / "Call" links. Customers and providers in ${escapeHtml(AUTH.user.region || 'your city')} see this number instead of the platform-wide one. ${adminData.supportContact && adminData.supportContact.usingPlatformFallback ? "You haven't set your own yet, so visitors here currently reach the platform-wide number below." : (adminData.supportContact && adminData.supportContact.isPlaceholder ? '<strong style="color:var(--danger,#B23A3A);">The platform-wide number is still the demo placeholder. Enter your number below.</strong>' : 'This number is live.')}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">WhatsApp Number <span style="color:var(--slate);font-weight:400;">(digits only, country code, e.g. 15551234567)</span></label><input class="form-input" id="regional-support-whatsapp" value="${escapeHtml(adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? adminData.supportContact.whatsapp : '')}" placeholder="15551234567"/></div>
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Phone Number Shown to Visitors</label><input class="form-input" id="regional-support-phone-display" value="${escapeHtml(adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? adminData.supportContact.phoneDisplay : '')}" placeholder="+1 (555) 123-4567"/></div>
@@ -8678,24 +8678,24 @@ Liberia</textarea></div>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn-sm btn-sm-primary" onclick="saveRegionalSupportContact()">Save</button>
-        ${adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? `<button class="btn-sm btn-sm-outline" onclick="removeRegionalSupportContact()">Remove — use platform default instead</button>` : ''}
+        ${adminData.supportContact && !adminData.supportContact.usingPlatformFallback ? `<button class="btn-sm btn-sm-outline" onclick="removeRegionalSupportContact()">Remove and use the platform default</button>` : ''}
       </div>
-      ${!adminData.supportContact || adminData.supportContact.usingPlatformFallback ? `<div style="font-size:13px;color:var(--slate);margin-top:10px;">Set your own General number above first — category numbers for ${escapeHtml(AUTH.user.region || 'your city')} need that in place first.</div>` : supportCategoryRowsHTML(adminData.supportContact, 'regional-support', AUTH.user.region)}
+      ${!adminData.supportContact || adminData.supportContact.usingPlatformFallback ? `<div style="font-size:13px;color:var(--slate);margin-top:10px;">Set the general number above first. Category numbers for ${escapeHtml(AUTH.user.region || 'your city')} need that in place first.</div>` : supportCategoryRowsHTML(adminData.supportContact, 'regional-support', AUTH.user.region)}
     </div>` : ''}
     ${AUTH.user && AUTH.user.isSuperAdmin ? `
     <div class="panel"><div class="panel-title">Platform Settings</div>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Provider Booking Confirmation Window</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">How long a provider has to accept or decline a new booking before it's automatically cancelled and the customer refunded — scaled by how soon the job actually is, not one flat number. A category can override this entirely in Categories & Countries. Changes apply to every new booking made after you save — doesn't affect bookings already pending.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">How long a provider has to accept or decline a new booking before it is cancelled automatically and the customer refunded. The time depends on how soon the job is due. A category can override this entirely in Categories & Countries. Changes apply to new bookings made after you save. Pending bookings are not affected.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px;">
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job within 24h</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-within24h" value="${escapeHtml(adminData.bookingWindowTiers ? adminData.bookingWindowTiers.within24h : 1)}"/></div>
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job within 2–7 days</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-within7d" value="${escapeHtml(adminData.bookingWindowTiers ? adminData.bookingWindowTiers.within7d : 4)}"/></div>
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Job beyond 7 days</label><input class="form-input" type="number" min="0.25" max="168" step="0.25" id="booking-window-beyond7d" value="${escapeHtml(adminData.bookingWindowTiers ? adminData.bookingWindowTiers.beyond7d : 24)}"/></div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveBookingWindow()">Save</button>
-      <div style="font-size:12.5px;color:var(--slate);margin-top:8px;">Defaults: 1h / 4h / 24h. The deadline is also always automatically capped at the job's own start time, however these are set — a provider can never "confirm" a job after it was supposed to already start.</div>
+      <div style="font-size:12.5px;color:var(--slate);margin-top:8px;">Defaults: 1h / 4h / 24h. The deadline never extends past the job's start time.</div>
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Support Chat Contact Info</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">The real WhatsApp and phone number behind the homepage support chat's "Chat with us" / "Call" links. ${adminData.supportContact && adminData.supportContact.isPlaceholder ? '<strong style="color:var(--danger,#B23A3A);">These are still the placeholder demo numbers — visitors clicking them right now will not reach you.</strong>' : 'These are your real, live numbers.'}</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">The WhatsApp and phone number used by the homepage support chat "Chat with us" / "Call" links. ${adminData.supportContact && adminData.supportContact.isPlaceholder ? '<strong style="color:var(--danger,#B23A3A);">These are still the demo placeholder numbers. Visitors will not be able to reach you until they are updated.</strong>' : 'These numbers are live.'}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">WhatsApp Number <span style="color:var(--slate);font-weight:400;">(digits only, country code, e.g. 15551234567)</span></label><input class="form-input" id="support-whatsapp" value="${escapeHtml(adminData.supportContact ? adminData.supportContact.whatsapp : '')}" placeholder="15551234567"/></div>
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Phone Number Shown to Visitors</label><input class="form-input" id="support-phone-display" value="${escapeHtml(adminData.supportContact ? adminData.supportContact.phoneDisplay : '')}" placeholder="+1 (555) 123-4567"/></div>
@@ -8712,15 +8712,15 @@ Liberia</textarea></div>
           <div><label class="form-label" style="font-size:12.5px;">Email (optional)</label><input class="form-input" type="email" id="new-regional-contact-email" style="width:170px;padding:6px 8px;" placeholder="support@city.trothenpro.com"/></div>
           <button class="btn-sm btn-sm-primary" onclick="saveNewRegionalContact()">Set Contact</button>
         </div>
-        <div style="font-size:13px;color:var(--slate);margin-top:8px;">This is the real way to set a contact for a city that doesn't have its own regional admin logged in yet to set one themselves.</div>
+        <div style="font-size:13px;color:var(--slate);margin-top:8px;">Set contact details for a city that does not have its own regional admin logged in yet to set one themselves.</div>
       </div>
       ${(adminData.allRegionalContacts || []).length ? `<div class="data-table-wrap" style="margin-top:14px;"><table class="data-table"><thead><tr><th>City</th><th>WhatsApp</th><th>Phone</th><th>Email</th><th>Action</th></tr></thead><tbody>
         ${adminData.allRegionalContacts.map(c => `<tr><td>${escapeHtml(c.city)}</td><td>${escapeHtml(c.whatsapp)}</td><td>${escapeHtml(c.phoneDisplay)}</td><td>${escapeHtml(c.email || '—')}</td>
         <td class="row-actions"><button class="btn-sm btn-sm-outline" data-city="${escapeHtml(c.city)}" onclick="clearAnyRegionalContact(this.dataset.city)">Clear</button></td></tr>`).join('')}
-        </tbody></table></div>` : `<div style="color:var(--slate);font-size:13.5px;margin-top:10px;">No city has its own contact set yet — every city follows the platform-wide number above.</div>`}
+        </tbody></table></div>` : `<div style="color:var(--slate);font-size:13.5px;margin-top:10px;">No city has its own contact details. All cities use the platform-wide number above.</div>`}
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Homepage Content</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">The actual on-screen copy for the homepage hero and mission section. Changes go live immediately for every visitor — no deploy needed.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">The text shown in the homepage hero and mission section. Changes are published immediately.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px;">
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Hero Prefix</label><input class="form-input" id="hc-hero-prefix" value="${escapeHtml(adminData.homepageContent ? adminData.homepageContent.heroPrefix : '')}" placeholder="Find Trusted Local"/></div>
         <div class="form-group" style="margin-bottom:0;"><label class="form-label">Rotating Words <span style="color:var(--slate);font-weight:400;">(comma-separated)</span></label><input class="form-input" id="hc-hero-words" value="${escapeHtml(adminData.homepageContent ? adminData.homepageContent.heroRotatingWords.join(', ') : '')}" placeholder="Pros, Plumbers, Cleaners"/></div>
@@ -8730,7 +8730,7 @@ Liberia</textarea></div>
       <div class="form-group"><label class="form-label">Mission Headline</label><input class="form-input" id="hc-mission-headline" value="${escapeHtml(adminData.homepageContent ? adminData.homepageContent.missionHeadline : '')}"/></div>
       <div class="form-group"><label class="form-label">Mission Body</label><textarea class="form-input" id="hc-mission-body" rows="4" style="resize:vertical;">${adminData.homepageContent ? adminData.homepageContent.missionBody : ''}</textarea></div>
       <div class="form-group"><label class="form-label">Featured Countries</label>
-        <div style="font-size:13.5px;color:var(--slate);background:var(--offwhite);border-radius:8px;padding:10px 12px;">This line is genuinely connected to <strong>Admin → Locations & Countries</strong> now, not a separate field here — it always shows whichever countries are actually toggled "live" there. To change what shows on the homepage, toggle a country's status on that screen instead.</div>
+        <div style="font-size:13.5px;color:var(--slate);background:var(--offwhite);border-radius:8px;padding:10px 12px;">This line is linked to <strong>Admin → Locations & Countries</strong>. It shows the countries that are switched on there "live" there. To change what shows on the homepage, toggle a country's status on that screen instead.</div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveHomepageContent()">Save</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
@@ -8740,12 +8740,12 @@ Liberia</textarea></div>
       <div class="we-actions"><button class="btn-sm btn-sm-primary" onclick="saveWording()">Save wording</button><button class="btn-sm btn-sm-outline" onclick="resetAllWording()">Reset everything to built-in</button></div>
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Homepage Photos</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Real photos for the hero and mission sections. Neither is required — without one, that section just keeps its current icon/gradient look.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Photos for the hero and mission sections. Both are optional; without a photo, the section keeps its default design.</div>
       ${homepageImageUploadRowHTML('hero', 'Hero Background', adminData.homepageImages && adminData.homepageImages.hero)}
       ${homepageImageUploadRowHTML('mission', 'Mission Section Photo', adminData.homepageImages && adminData.homepageImages.mission)}
       <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;"/>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Popular Projects Photos</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">A real photo per category for the homepage "Popular Projects" section. Any category without one just shows its icon instead — the section only ever displays categories that already have real verified pros, so there's always something honest to show even before every photo is uploaded.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">One photo per category for the homepage "Popular Projects" section. Categories without a photo show their icon. Only categories with verified pros are displayed.</div>
       <div style="max-height:420px;overflow-y:auto;">
         ${(adminData.categories || []).map(c => categoryImageUploadRowHTML(c, (adminData.categoryImages || {})[c.id])).join('')}
       </div>
@@ -8761,13 +8761,13 @@ Liberia</textarea></div>
     </div>
     <div class="panel"><div class="panel-title">Maintenance Tools</div>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Fix Old Notification Links</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Category-request, sales-inquiry, and advertising-inquiry notifications only started linking to their real admin section recently — any notification created before that fix has no destination, and new code doesn't rewrite already-saved data on its own. This looks at existing notifications and adds the correct link based on their own text, so old ones become clickable too, not just new ones going forward. Safe to run any time — it only ever fills in a missing link, never changes one that's already set.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Older category request, sales inquiry and advertising inquiry notifications do not link to an admin section. This looks at existing notifications and adds the correct link based on their own text, including older notifications. It can be run at any time — it only ever fills in a missing link, never changes one that's already set.</div>
       <button class="btn-sm btn-sm-primary" onclick="backfillNotificationLinks()">Fix Old Notifications</button>
     </div>` : ''}
     ${AUTH.user && (AUTH.user.isSuperAdmin || AUTH.user.adminDepartment === 'customer_service') ? `
-    <div class="panel"><div class="panel-title">Site Content — About Us & Terms of Service</div>
+    <div class="panel"><div class="panel-title">Site Content: About Us and Terms of Service</div>
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:16px;line-height:1.6;">
-        Write as much as you need — there's no meaningful length limit. A simple format is supported: a line starting with <code>#&nbsp;</code> becomes a heading, a line starting with <code>-&nbsp;</code> becomes a bullet point, <code>**text**</code> becomes <strong>bold</strong>, and a blank line starts a new paragraph.
+        There is no practical length limit. A simple format is supported: a line starting with <code>#&nbsp;</code> becomes a heading, a line starting with <code>-&nbsp;</code> becomes a bullet point, <code>**text**</code> becomes <strong>bold</strong>, and a blank line starts a new paragraph.
       </div>
       <div class="form-group">
         <label class="form-label">About Us <small id="about-us-charcount" style="font-weight:400;color:var(--slate);"></small></label>
@@ -8776,15 +8776,15 @@ Liberia</textarea></div>
       <button class="btn-sm btn-sm-primary" onclick="saveAboutUsContent()">Save About Us</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:22px 0;"/>
       <div class="form-group">
-        <label class="form-label">Terms of Service — Customers <small id="terms-customer-charcount" style="font-weight:400;color:var(--slate);"></small></label>
+        <label class="form-label">Terms of Service: Customers <small id="terms-customer-charcount" style="font-weight:400;color:var(--slate);"></small></label>
         <textarea class="form-input" id="settings-terms-customer" rows="14" style="resize:vertical;font-family:ui-monospace,monospace;font-size:13.5px;" oninput="document.getElementById('terms-customer-charcount').textContent = this.value.length.toLocaleString() + ' characters'">${escapeHtml(adminData.termsOfServiceCustomerContent || '')}</textarea>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveTermsContent('customer')">Save Customer Terms</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:22px 0;"/>
       <div class="form-group">
-        <label class="form-label">Terms of Service — Providers <small id="terms-provider-charcount" style="font-weight:400;color:var(--slate);"></small></label>
+        <label class="form-label">Terms of Service: Providers <small id="terms-provider-charcount" style="font-weight:400;color:var(--slate);"></small></label>
         <textarea class="form-input" id="settings-terms-provider" rows="14" style="resize:vertical;font-family:ui-monospace,monospace;font-size:13.5px;" oninput="document.getElementById('terms-provider-charcount').textContent = this.value.length.toLocaleString() + ' characters'">${escapeHtml(adminData.termsOfServiceProviderContent || '')}</textarea>
-        <div style="font-size:13px;color:var(--muted);margin-top:6px;">Customer and Provider Terms are genuinely separate documents — a Customer only ever sees the Customer version, a Provider only ever sees the Provider version. This is real legal content shown before either can use the platform. Consider having a lawyer review both before you rely on them — these starting drafts reflect the policies you've already written, structured the way real marketplace Terms of Service are, but they aren't a substitute for legal review.</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px;">Customer and Provider Terms are separate documents. Customers see only the Customer version and providers only the Provider version, before they can use the platform. Have a lawyer review both documents before relying on them. These drafts reflect your existing policies but are not a substitute for legal review.</div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveTermsContent('provider')">Save Provider Terms</button>
     </div>` : ''}
@@ -8812,10 +8812,10 @@ async function setAdminScope(adminId, scope) {
 const DEPARTMENT_LABELS = { verification: 'Verification Team', disputes: 'Disputes Team', financial: 'Financial Team', accountant: 'Accountant', controller: 'Controller', customer_service: 'Customer Service', legal: 'Legal', sales: 'Sales Team', hr: 'HR Team' };
 
 function functionalAdminsTable(list) {
-  if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No functional team members yet — create one above with a Role other than "Regional Admin".</div>`;
+  if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No team members yet. Create one above with a role other than "Regional Admin".</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Team</th><th>Scope</th><th>Status</th>${AUTH.user && AUTH.user.isSuperAdmin ? '<th>Action</th>' : ''}</tr></thead><tbody>
   ${list.map(a => `<tr><td>${escapeHtml(a.name)}</td><td>${escapeHtml(a.email)}</td><td>${DEPARTMENT_LABELS[a.adminDepartment] || a.adminDepartment}</td>
-  <td>${a.regionScoped ? (a.adminScope === 'country' ? `All of ${escapeHtml(a.country || 'their country')}` : `Just ${escapeHtml(a.city || 'their city')}`) : `<span style="color:#8a5a00;">Global — every city</span>`}</td>
+  <td>${a.regionScoped ? (a.adminScope === 'country' ? `All of ${escapeHtml(a.country || 'their country')}` : `Just ${escapeHtml(a.city || 'their city')}`) : `<span style="color:#8a5a00;">Global (all cities)</span>`}</td>
   <td>${statusBadge(a.active === false ? 'suspended' : 'active')}</td>
   ${AUTH.user && AUTH.user.isSuperAdmin ? `<td class="row-actions">
     <button class="btn-sm btn-sm-outline" onclick="toggleSubAdminRegionScope('${a.id}', ${!a.regionScoped})">${a.regionScoped ? 'Make Global' : `Scope to ${escapeHtml(a.city || 'their city')}`}</button>
@@ -8832,7 +8832,7 @@ function adInquiryStatusBadge(status) {
 }
 
 function advertisingInquiriesTableHTML(list) {
-  if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No advertising inquiries yet — they'll show up here as soon as someone submits the "Advertise Here" form.</div>`;
+  if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No advertising inquiries yet. They will appear here when someone submits the "Advertise Here" form.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Company</th><th>Contact</th><th>Email</th><th>Target</th><th>Message</th><th>Status</th><th>Live</th><th>Action</th></tr></thead><tbody>
   ${list.map(i => `<tr>
     <td style="white-space:nowrap;">${escapeHtml((i.createdAt || '').slice(0, 10))}</td>
@@ -8863,7 +8863,7 @@ function openGoLiveForm(id, companyName, targetCity) {
       <div class="modal">
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('golive-modal-overlay').remove()">✕</button>
-          <h3>Approve &amp; Go Live — ${escapeHtml(companyName)}</h3>
+          <h3>Approve and Go Live: ${escapeHtml(companyName)}</h3>
           <p>${targetCity ? `This will start showing on the homepage for visitors in ${escapeHtml(targetCity)}.` : 'This will start showing on the homepage for every visitor, platform-wide.'}</p>
         </div>
         <div class="modal-body">
@@ -8947,7 +8947,7 @@ async function loadPlanBillingPanel() {
   const invRows = d.recent.map(i => `<tr><td>${escapeHtml(i.providerName)}</td><td>${escapeHtml(i.period)}</td><td>${escapeHtml(PLAN_LABELS_CLIENT[i.plan] || i.plan)}</td><td>${money(i.amountUsd)}</td><td>${money(i.paidUsd)}</td><td>${i.status === 'paid' ? '<span class="badge badge-success">Paid</span>' : i.status === 'waived' ? '<span class="badge badge-neutral">Waived</span>' : '<span class="badge badge-warn">Open</span>'}</td><td class="row-actions">${i.status === 'open' ? `<button class="btn-sm btn-sm-ghost" onclick="waivePlanInvoice('${escapeHtml(i.id)}')">Waive</button>` : '—'}</td></tr>`).join('');
   main.insertAdjacentHTML('beforeend', `<div class="panel" id="plan-billing-panel">
     <div class="panel-title">Charging the monthly plan fee <small>built and ready, off until real payments are live</small></div>
-    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;">The prices above are shown to pros on the Provider Plans page. This is the part that actually collects them. A pro is never charged on a card: once a month they get an invoice, and it comes out of their own payouts (never more than half of one payout; the rest carries over). Pros inside an organization, and pros who aren't ID-checked yet, aren't billed.</div>
+    <div style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:12px;">The prices above are shown to pros on the Provider Plans page. This section controls how the fee is collected. A pro is never charged on a card: once a month they get an invoice, and it comes out of their own payouts (never more than half of one payout; the rest carries over). Pros inside an organization, and pros who aren't ID-checked yet, aren't billed.</div>
     <div style="font-size:14px;line-height:1.9;"><div><strong>Lock 1, server:</strong> ${lock1}</div><div><strong>Lock 2, this switch:</strong> ${lock2}</div></div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0;">
       <label class="form-label" style="margin:0;" for="plan-billing-notice">Notice before the first invoice</label>
@@ -8992,7 +8992,7 @@ function regionalPricingSectionHTML() {
   const pp = adminData.planPricing;
   if (!pp || !pp.plans) return `<div class="dash-header"><div><div class="dash-title">Plans &amp; Pricing</div></div></div><div class="panel">Loading pricing…</div>`;
   return `
-    <div class="dash-header"><div><div class="dash-title">Plans &amp; Pricing</div><div class="dash-sub">Your real local price for each plan in ${pp.country}, compared against the global USD base</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">Plans &amp; Pricing</div><div class="dash-sub">Local price for each plan in ${pp.country}, compared against the global USD base</div></div></div>
     <div class="panel"><div class="panel-title">${pp.country} Pricing</div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Plan</th><th>Global USD Base</th><th>Your Local Price</th><th>USD Equivalent</th><th>Source</th><th>Action</th></tr></thead><tbody>
       ${pp.plans.map(p => `<tr>
@@ -9007,7 +9007,7 @@ function regionalPricingSectionHTML() {
         </td>
       </tr>`).join('')}
       </tbody></table></div>
-      <div style="font-size:13px;color:var(--slate);margin-top:10px;">Setting your own price here only applies to ${pp.country} — it doesn't change what any other country pays. Leave it alone and your price automatically follows the global USD base, converted at the current exchange rate.</div>
+      <div style="font-size:13px;color:var(--slate);margin-top:10px;">Setting your own price here only applies to ${pp.country} and does not change prices in other countries. If no price is set, the global USD price applies, converted at the current exchange rate.</div>
     </div>`;
 }
 
@@ -9053,7 +9053,7 @@ function superAdminPricingSectionHTML() {
       <div style="font-size:13px;color:var(--slate);margin-top:10px;">Every country without its own override automatically follows this price, converted to local currency at the current exchange rate.</div>
     </div>
     <div class="panel"><div class="panel-title">Customer Membership Pricing (USD)</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Free is always $0 and VIP is never self-priced (it's granted, not purchased) — only Plus, Pro, and Elite are editable here. This is the exact price shown to and charged to customers, everywhere in the app.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Free is always $0 and VIP is by invitation only, so only Plus, Pro and Elite can be edited here. This is the exact price shown to and charged to customers, everywhere in the app.</div>
       ${adminData.membershipPricing
         ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Tier</th><th>Current USD Price</th><th>New Price</th><th>Action</th></tr></thead><tbody>
         ${['plus', 'pro', 'elite'].map(tier => { const t = (adminData.membershipPricing || []).find(x => x.tier === tier); return t ? `<tr>
@@ -9074,13 +9074,13 @@ function superAdminPricingSectionHTML() {
           <div><label class="form-label" style="font-size:12.5px;">Local Price</label><input class="form-input" type="number" min="0" step="0.01" id="new-override-price" style="width:110px;padding:6px 8px;" placeholder="0.00"/></div>
           <button class="btn-sm btn-sm-primary" onclick="saveNewCountryOverride()">Set Price</button>
         </div>
-        <div style="font-size:13px;color:var(--slate);margin-top:8px;">This is the real way to set a price for a country that doesn't have one yet — until now, a super admin could only view and clear existing overrides here, not create new ones.</div>
+        <div style="font-size:13px;color:var(--slate);margin-top:8px;">Set a price for a country that does not have one yet.</div>
       </div>
       ${planPricingOverridesTableHTML(pp.overrides)}
     </div>
     <div class="panel">
       <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <span>Exchange Rates <small style="font-weight:400;color:var(--slate);">Auto-refreshed daily from a live provider — edits here flow into job payments and payouts too, not just pricing</small></span>
+        <span>Exchange Rates <small style="font-weight:400;color:var(--slate);">Updated daily from a live rate provider. Changes here also apply to job payments and payouts.</small></span>
         <button class="btn-sm btn-sm-primary" onclick="refreshLiveRatesNow()">↻ Refresh Live Rates Now</button>
       </div>
       ${exchangeRatesTableHTML(adminData.exchangeRates || [])}
@@ -9088,7 +9088,7 @@ function superAdminPricingSectionHTML() {
 }
 
 function planPricingOverridesTableHTML(overrides) {
-  if (!overrides.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No country has set a custom price yet — every country follows the global USD base.</div>`;
+  if (!overrides.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No country has a custom price. All countries use the global USD price.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Country</th><th>Plan</th><th>Local Price</th><th>Currency</th><th>Updated</th><th>Action</th></tr></thead><tbody>
   ${overrides.map(o => `<tr><td>${escapeHtml(o.country)}</td><td>${PLAN_LABELS_CLIENT[o.plan] || o.plan}</td><td>${escapeHtml(o.localPrice)}</td><td>${escapeHtml(o.currencyCode)}</td><td>${(o.updatedAt || '').slice(0, 10)}</td>
   <td class="row-actions"><button class="btn-sm btn-sm-outline" data-country="${o.country.replace(/"/g, '&quot;')}" data-plan="${o.plan}" onclick="clearAnyPricingOverride(this.dataset.country, this.dataset.plan)">Clear</button></td></tr>`).join('')}
@@ -9146,7 +9146,7 @@ async function saveMembershipPricing(tier) {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     await apiFetch('PATCH', '/admin/settings/membership-pricing', { tier, usdPrice });
-    showToast('Membership price updated — live immediately for every customer');
+    showToast('Membership price updated for all customers.');
     await loadAdminData();
     selectAdminSection('pricing');
   } catch (e) { showToast(e.message || 'Could not update membership price'); }
@@ -9221,7 +9221,7 @@ async function updateAdvertisingInquiryStatus(id, status) {
 }
 
 function salesInquiriesTableHTML(list) {
-  if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No sales inquiries yet — they'll show up here as soon as someone submits the Custom plan's "Contact Sales" form.</div>`;
+  if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No sales inquiries yet. They will appear here when someone submits the Custom plan "Contact Sales" form.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Company</th><th>Contact</th><th>Team Size</th><th>Message</th><th>Status</th><th>Deal Terms</th><th>Action</th></tr></thead><tbody>
   ${list.map(i => `<tr>
     <td style="white-space:nowrap;">${escapeHtml((i.createdAt || '').slice(0, 10))}</td>
@@ -9276,14 +9276,14 @@ function renderProviderScoreRulePanel(threshold, canEdit) {
   el.style.display = 'block';
   el.innerHTML = `
     <div class="panel-title">New-pro rule</div>
-    <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">A provider shows "New on Trothen" instead of a real score until they've completed this many jobs <strong>through Trothen itself</strong> — a high rating or jobs number on their own profile doesn't count toward this; it can reflect real work done before they joined or off the platform.</div>
+    <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">A provider shows "New on Trothen" instead of a score until they have completed this many jobs <strong>through Trothen itself</strong>. Ratings or job counts from outside Trothen do not count toward this.</div>
     ${canEdit ? `
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <label class="form-label" style="margin:0;" for="new-pro-threshold-input">Jobs needed, completed on Trothen</label>
         <input class="form-input" type="number" min="1" max="50" step="1" id="new-pro-threshold-input" value="${escapeHtml(String(threshold))}" style="max-width:90px;"/>
         <button class="btn-sm btn-sm-primary" onclick="saveNewProJobsThreshold()">Save</button>
       </div>
-      <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Changing this doesn't retroactively update anyone's stored score — click "Recompute now" above right after saving to apply it immediately, or wait for tonight's daily run.</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:6px;">Changing this does not update existing scores. Click "Recompute now" above right after saving to apply it immediately, or wait for tonight's daily run.</div>
     ` : `<div style="font-size:13.5px;"><strong>${threshold}</strong> completed Trothen bookings</div>`}
   `;
 }
@@ -9309,7 +9309,7 @@ async function loadProviderScoresPanel() {
     const target = document.getElementById('provider-scores-panel');
     if (!target) return;
     if (!providers.length) {
-      target.innerHTML = `<div style="color:var(--slate);font-size:13.5px;padding:12px 0;">No scores computed yet — this fills in after the first daily scoring run.</div>`;
+      target.innerHTML = `<div style="color:var(--slate);font-size:13.5px;padding:12px 0;">No scores yet. Scores appear after the first daily calculation.</div>`;
       return;
     }
     target.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Rank</th><th>Provider</th><th>City</th><th>Category</th><th>Score</th><th>Status</th><th>Action</th></tr></thead><tbody>
@@ -9322,7 +9322,7 @@ async function loadProviderScoresPanel() {
         <td>${p.onHold
           ? `<span class="badge badge-warn">On hold${p.holdUntil ? ' until ' + new Date(p.holdUntil).toLocaleDateString() : ''}</span>`
           : p.isNew
-            ? `<span class="badge badge-neutral" title="Counts only jobs completed through Trothen itself — a high rating or jobs figure on their profile can reflect work done elsewhere, which doesn't count toward this.">New: fewer than ${threshold} Trothen booking${threshold === 1 ? '' : 's'}, starter allowance</span>`
+            ? `<span class="badge badge-neutral" title="Counts only jobs completed through Trothen. Ratings or job counts on the profile may include work done elsewhere, which doesn't count toward this.">New: fewer than ${threshold} Trothen booking${threshold === 1 ? '' : 's'}, starter allowance</span>`
           : p.trustScore <= 40
             ? `<span class="badge" style="background:#FDECEA;color:#C1554D;">New matches paused (automatic)</span>`
             : p.recommendedAction
@@ -9361,7 +9361,7 @@ async function openProviderScoreBreakdown(providerId, providerName) {
       <div class="modal" style="max-width:520px;">
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('score-breakdown-overlay').remove()">✕</button>
-          <h3>Trust score — ${escapeHtml(providerName)}</h3>
+          <h3>Trust Score: ${escapeHtml(providerName)}</h3>
           <p>Computed live right now, not the last daily run.</p>
         </div>
         <div class="modal-body" id="score-breakdown-body"><div style="color:var(--slate);font-size:13.5px;">Loading…</div></div>
@@ -9386,8 +9386,8 @@ async function openProviderScoreBreakdown(providerId, providerName) {
       <div style="font-size:26px;font-weight:700;color:var(--navy);margin-bottom:4px;">${r.total}/100${r.isNew ? ' <span style="font-size:14px;font-weight:600;color:var(--slate);">(provisional)</span>' : ''}</div>
       ${r.isNew
         ? `<div style="background:#EEF4FB;border:1px solid #C9DBF0;border-radius:8px;padding:10px 12px;font-size:13.5px;line-height:1.5;margin-bottom:14px;">
-             <strong>Shows as "New on Trothen" to customers</strong> — this pro has <strong>${r.completedJobs} completed Trothen booking${r.completedJobs === 1 ? '' : 's'}</strong> on record, and needs ${r.jobsUntilScored} more before this number becomes their real, public score.
-             ${r.completedJobs === 0 ? ' If this pro has real-world experience (star rating, a jobs-done figure) shown elsewhere on their card, that figure describes work done off Trothen — it is not the same thing as a completed Trothen booking, and this score can only count bookings actually done through Trothen. Recomputing cannot change that; only real completed bookings on this platform can.' : ''}
+             <strong>Shows as "New on Trothen" to customers</strong>. This pro has <strong>${r.completedJobs} completed Trothen booking${r.completedJobs === 1 ? '' : 's'}</strong> on record, and needs ${r.jobsUntilScored} more before this score is shown publicly.
+             ${r.completedJobs === 0 ? ' Experience shown elsewhere on this pro\'s profile (such as a rating or number of jobs) may include work done outside Trothen. This score counts only bookings completed through Trothen. Recalculating does not change this; only completed bookings on Trothen count.' : ''}
            </div>`
         : ''}
       ${r.recommendedAction ? `<div class="badge" style="background:#FBF3E3;color:#8A6A2A;white-space:normal;margin-bottom:14px;">${escapeHtml(r.recommendedAction.label)}</div>` : (r.isNew ? '' : '<div class="badge badge-success" style="margin-bottom:14px;">Good standing</div>')}
@@ -9445,7 +9445,7 @@ async function markGuarantor(providerId, index, status, guarantorName) {
     if (!sure) return;
   }
   if (status === 'verified') {
-    const ok = await confirmDialog(`Mark ${guarantorName || 'this guarantor'} as verified? Only do this after you have actually spoken with them. The provider is notified.`);
+    const ok = await confirmDialog(`Mark ${guarantorName || 'this guarantor'} as verified? Only do this after you have spoken with them. The provider is notified.`);
     if (!ok) return;
   }
   try {
@@ -9550,13 +9550,13 @@ async function previewDataCleanup() {
     const scopeLabel = country ? escapeHtml(country) : 'every country';
     const expectedPhrase = country ? `DELETE TEST DATA FOR ${country.toUpperCase()}` : 'DELETE ALL TEST DATA';
     if (!result.accountsEligible.length) {
-      target.innerHTML = `<div style="color:var(--slate);font-size:13.5px;">No untouched test accounts found under ${scopeLabel} — nothing eligible to clear. Any account there has real contract, payment, or dispute history and won't be touched by this tool.</div>`;
+      target.innerHTML = `<div style="color:var(--slate);font-size:13.5px;">No untouched test accounts found under ${scopeLabel}. Nothing can be removed. All accounts there have contract, payment or dispute history.</div>`;
       return;
     }
     target.innerHTML = `
-      <div style="font-size:13.5px;color:var(--navy);margin-bottom:8px;"><strong>${result.accountsEligible.length} account${result.accountsEligible.length === 1 ? '' : 's'}</strong> eligible for removal under ${scopeLabel}, plus related match/notification/verification/photo records for whichever ones you select below. None of these have ever had a real contract, payment, or dispute.</div>
+      <div style="font-size:13.5px;color:var(--navy);margin-bottom:8px;"><strong>${result.accountsEligible.length} account${result.accountsEligible.length === 1 ? '' : 's'}</strong> eligible for removal under ${scopeLabel}, plus related match/notification/verification/photo records for whichever ones you select below. None of these have any contract, payment or dispute history.</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-size:13px;color:var(--slate);">Select which accounts to remove — all selected by default</span>
+        <span style="font-size:13px;color:var(--slate);">Select the accounts to remove (all are selected by default)</span>
         <span><a onclick="toggleAllCleanupSelections(true)" style="font-size:13px;cursor:pointer;color:var(--navy);font-weight:600;">Select all</a> · <a onclick="toggleAllCleanupSelections(false)" style="font-size:13px;cursor:pointer;color:var(--navy);font-weight:600;">Select none</a></span>
       </div>
       <div style="max-height:220px;overflow-y:auto;font-size:13px;color:var(--slate);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:10px;">
@@ -9608,7 +9608,7 @@ async function loadGoLivePanel() {
   try {
     const r = await apiFetch('GET', '/admin/go-live/status');
     const sevLabel = { required: 'Required', recommended: 'Recommended', optional: 'Optional', business: 'Business step' };
-    box.innerHTML = `<div style="font-size:13.5px;margin-bottom:10px;">${r.counts.realAccounts} real account(s) · ${r.counts.demoAccounts} demo account(s)</div>` +
+    box.innerHTML = `<div style="font-size:13.5px;margin-bottom:10px;">${r.counts.realAccounts} account(s) with activity · ${r.counts.demoAccounts} demo account(s)</div>` +
       r.items.map(i => `
       <div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--border);">
         <div style="font-size:16px;line-height:1.2;">${i.ok ? '✅' : (i.severity === 'required' ? '❌' : '⚪')}</div>
@@ -9660,7 +9660,7 @@ async function previewGoLiveDemoRemoval() {
   } catch (e) { box.textContent = (e && e.message) || 'Could not load the preview.'; }
 }
 async function executeGoLiveDemoRemoval() {
-  const phrase = await confirmDialog('This permanently removes every demo account and everything attached to them. Real accounts are not touched. Type REMOVE ALL DEMO DATA to confirm.', { requireTextInput: true, danger: true, confirmLabel: 'Remove demo data' });
+  const phrase = await confirmDialog('This permanently removes every demo account and everything attached to them. Other accounts are not affected. Type REMOVE ALL DEMO DATA to confirm.', { requireTextInput: true, danger: true, confirmLabel: 'Remove demo data' });
   if (!phrase) return;
   try {
     const r = await apiFetch('POST', '/admin/go-live/demo-data/remove', { confirmPhrase: typeof phrase === 'string' ? phrase.trim() : '' });
@@ -9696,11 +9696,11 @@ function openProviderHoldForm(providerId, providerName) {
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('provider-hold-overlay').remove()">✕</button>
           <h3>Place ${escapeHtml(providerName)} on Hold</h3>
-          <p>A real reason is required — this is shown to the provider directly.</p>
+          <p>A reason is required. It is shown to the provider.</p>
         </div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Duration (months)</label><input class="form-input" type="number" min="1" max="24" id="provider-hold-months" placeholder="e.g. 3"/></div>
-          <div class="form-group"><label class="form-label">Reason</label><textarea class="form-input" id="provider-hold-reason" rows="3" style="resize:vertical;" placeholder="Explain why — this is shown to the provider"></textarea></div>
+          <div class="form-group"><label class="form-label">Reason</label><textarea class="form-input" id="provider-hold-reason" rows="3" style="resize:vertical;" placeholder="Explain the reason. It is shown to the provider."></textarea></div>
         </div>
         <div class="modal-footer">
           <button class="confirm-btn" onclick="submitProviderHold('${providerId}')">Place on Hold</button>
@@ -9714,10 +9714,10 @@ async function submitProviderHold(providerId) {
   const months = parseInt(document.getElementById('provider-hold-months').value, 10);
   const reason = document.getElementById('provider-hold-reason').value.trim();
   if (!months || months <= 0) return showToast('Enter a valid number of months');
-  if (!reason || reason.length < 10) return showToast('Explain why (at least 10 characters) — the provider will see this');
+  if (!reason || reason.length < 10) return showToast('Explain the reason (at least 10 characters). The provider will see this.');
   try {
     await apiFetch('POST', `/admin/providers/${providerId}/hold`, { months, reason });
-    showToast('Provider placed on hold — they\'ve been notified');
+    showToast('Provider placed on hold and notified.');
     document.getElementById('provider-hold-overlay')?.remove();
     await loadProviderScoresPanel();
   } catch (e) { showToast(e.message || 'Could not place this hold'); }
@@ -9770,9 +9770,9 @@ async function submitPromotion() {
   try {
     const result = await apiFetch('POST', '/admin/promotions', { title, message, audience, imageUrl: imageUrl || undefined, region: region || undefined, sendEmail: sendEmailChecked });
     if (sendEmailChecked && result.emailConfigured === false) {
-      showToast('Promotion posted — email not sent (no email provider connected yet)');
+      showToast('Promotion posted. Email was not sent because no email provider is connected.');
     } else if (sendEmailChecked) {
-      showToast(`Promotion posted — emailed to ${result.promotion.emailSentCount} people`);
+      showToast(`Promotion posted and emailed to ${result.promotion.emailSentCount} people`);
     } else {
       showToast('Promotion posted');
     }
@@ -9885,7 +9885,7 @@ async function copyToClipboard(text, buttonEl) {
     }
     if (buttonEl) { const original = buttonEl.textContent; buttonEl.textContent = 'Copied!'; setTimeout(() => { buttonEl.textContent = original; }, 1500); }
     else showToast('Copied to clipboard');
-  } catch (e) { showToast('Could not copy — your browser may be blocking clipboard access'); }
+  } catch (e) { showToast('Could not copy. Your browser may be blocking clipboard access.'); }
 }
 
 // A deliberate, honest use of mailto: — unlike the old "Advertise Here"
@@ -9897,7 +9897,7 @@ async function copyToClipboard(text, buttonEl) {
 // from inside the app, which this platform has no real capability to do
 // yet (see the [TEST MODE] email notes elsewhere in the codebase).
 function replyByEmail(email, companyName) {
-  const subject = encodeURIComponent(`Re: Your Trothen Custom Plan Inquiry — ${companyName}`);
+  const subject = encodeURIComponent(`Re: Your Trothen Custom Plan Inquiry: ${companyName}`);
   const body = encodeURIComponent(`Hi,\n\nThanks for your interest in Trothen's Custom plan for ${companyName}. \n\n`);
   window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_blank');
 }
@@ -9914,8 +9914,8 @@ function openDealNotesForm(id, companyName, price, currency, notes) {
       <div class="modal">
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('deal-modal-overlay').remove()">✕</button>
-          <h3>Deal Terms — ${companyName}</h3>
-          <p>A shared record of what was actually agreed — this doesn't provision anything automatically.</p>
+          <h3>Deal Terms: ${companyName}</h3>
+          <p>A record of the agreed terms. Nothing is set up automatically.</p>
         </div>
         <div class="modal-body">
           <div class="form-group"><label class="form-label">Agreed Price <span style="color:var(--slate);font-weight:400;">(optional)</span></label><input class="form-input" type="number" min="0" step="0.01" id="deal-price" value="${escapeHtml(price || '')}" placeholder="e.g. 15"/></div>
@@ -9958,12 +9958,12 @@ function openConvertToOrgForm(inquiryId, companyName, teamSize) {
       <div class="modal">
         <div class="modal-header">
           <button class="modal-close" onclick="document.getElementById('convert-org-modal-overlay').remove()">✕</button>
-          <h3>Create Organization — ${companyName}</h3>
-          <p>This creates a real multi-seat account. Providers join it themselves via an invite link (generated after), or you can add existing providers directly.</p>
+          <h3>Create Organization: ${companyName}</h3>
+          <p>This creates a multi-seat organization account. Providers join it themselves via an invite link (generated after), or you can add existing providers directly.</p>
         </div>
         <div class="modal-body">
-          <div class="form-group"><label class="form-label">Commission Rate <span style="color:var(--slate);font-weight:400;">(decimal, e.g. 0.04 for 4% — the volume discount)</span></label><input class="form-input" type="number" min="0" max="1" step="0.001" id="conv-commission" placeholder="e.g. 0.04"/></div>
-          <div class="form-group"><label class="form-label">Seat Limit <span style="color:var(--slate);font-weight:400;">(optional — blank = unlimited)</span></label><input class="form-input" type="number" min="1" id="conv-seat-limit" value="${escapeHtml((teamSize && parseInt(teamSize, 10)) || '')}" placeholder="e.g. 40"/></div>
+          <div class="form-group"><label class="form-label">Commission Rate <span style="color:var(--slate);font-weight:400;">(decimal, for example 0.04 for a 4% volume discount)</span></label><input class="form-input" type="number" min="0" max="1" step="0.001" id="conv-commission" placeholder="e.g. 0.04"/></div>
+          <div class="form-group"><label class="form-label">Seat Limit <span style="color:var(--slate);font-weight:400;">(optional; leave blank for unlimited)</span></label><input class="form-input" type="number" min="1" id="conv-seat-limit" value="${escapeHtml((teamSize && parseInt(teamSize, 10)) || '')}" placeholder="e.g. 40"/></div>
         </div>
         <div class="modal-footer">
           <button class="confirm-btn" onclick="submitConvertToOrg('${inquiryId}')">Create Organization</button>
@@ -9982,7 +9982,7 @@ async function submitConvertToOrg(inquiryId) {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     const { organization } = await apiFetch('POST', `/admin/sales-inquiries/${inquiryId}/convert-to-org`, { commissionRate, seatLimit });
-    showToast(`${organization.name} is now a real organization account`);
+    showToast(`${organization.name} is now an organization account`);
     document.getElementById('convert-org-modal-overlay').remove();
     await loadAdminData();
     selectAdminSection('organizations');
@@ -9995,7 +9995,7 @@ async function submitConvertToOrg(inquiryId) {
 let currentOrgDetailId = null;
 
 function organizationsListHTML(orgs) {
-  if (!orgs.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No organizations yet — convert an agreed Sales Inquiry into one to get started.</div>`;
+  if (!orgs.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No organizations yet. Convert an agreed sales inquiry to create one.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Organization</th><th>Seats</th><th>Agreed Price</th><th>Commission Rate</th><th>Account Manager</th><th>Created</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${orgs.map(o => `<tr>
     <td style="font-weight:600;">${escapeHtml(o.name)}</td>
@@ -10068,7 +10068,7 @@ function renderOrgDetailModal(detail) {
           ${seats.length ? `<div class="data-table-wrap" style="margin-bottom:18px;"><table class="data-table"><thead><tr><th>Name</th><th>Category</th><th>City</th><th>Verified</th><th>Action</th></tr></thead><tbody>
             ${seats.map(s => `<tr><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.category || '—')}</td><td>${escapeHtml(s.city || '—')}</td><td>${s.verified ? '✅' : '⏳'}</td>
             <td><button class="btn-sm btn-sm-outline" onclick="removeOrgSeat('${o.id}', '${s.id}')">Remove</button></td></tr>`).join('')}
-            </tbody></table></div>` : `<div style="color:var(--slate);font-size:14px;margin-bottom:18px;">No providers have joined yet — share an invite link below, or add one directly.</div>`}
+            </tbody></table></div>` : `<div style="color:var(--slate);font-size:14px;margin-bottom:18px;">No providers have joined yet. Share an invite link below or add a provider directly.</div>`}
 
           <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:18px;">
             <div class="form-group" style="flex:1;margin-bottom:0;"><label class="form-label">Add existing provider by ID</label><input class="form-input" id="add-seat-provider-id" placeholder="Provider user ID"/></div>
@@ -10121,7 +10121,7 @@ async function removeOrgSeat(orgId, userId) {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     await apiFetch('DELETE', `/admin/organizations/${orgId}/seats/${userId}`);
-    showToast('Seat removed — this provider now follows their own individual plan rate');
+    showToast('Seat removed. This provider now uses their individual plan rate.');
     const detail = await apiFetch('GET', `/admin/organizations/${orgId}`);
     renderOrgDetailModal(detail);
     await loadAdminData();
@@ -10244,9 +10244,9 @@ async function createLocationAdmin() {
   // typo, but it catches the single most likely and most damaging one —
   // for free, before it ever reaches an admin account.
   if ((GEO_DATA.countries && GEO_DATA.countries.length ? GEO_DATA.countries : FALLBACK_GEO.countries).some(c => c.toLowerCase() === city.toLowerCase())) {
-    return showToast(`"${city}" looks like a country, not a city — enter the actual city this admin is based in (e.g. Monrovia, not Liberia).`);
+    return showToast(`"${city}" appears to be a country. Enter the city this administrator is based in (for example Monrovia, not Liberia).`);
   }
-  if (!BACKEND_AVAILABLE) return showToast(`${city} admin created (demo mode — no backend detected)`);
+  if (!BACKEND_AVAILABLE) return showToast(`${city} admin created (demo mode)`);
   try {
     const { admin } = await apiFetch('POST', '/admin/sub-admins', { name, email, password, city, country, department, scope, regionScoped: department && department !== 'sales' ? regionScoped : false });
     showToast(department ? `${admin.name} is now on the ${department} team${regionScoped && department !== 'sales' ? ` (scoped to ${scope === 'country' ? country : city})` : ' (global)'}` : `${admin.name} is now the admin for ${scope === 'country' ? 'all of ' + country : city + ', ' + country}`);
@@ -10257,7 +10257,7 @@ async function createLocationAdmin() {
 
 async function toggleSubAdminActive(adminId) {
   if (!adminId) return;
-  if (!BACKEND_AVAILABLE) return showToast('Status updated (demo mode — no backend detected)');
+  if (!BACKEND_AVAILABLE) return showToast('Status updated (demo mode)');
   try {
     const { admin } = await apiFetch('PATCH', `/admin/sub-admins/${adminId}`, { toggleActive: true });
     showToast(`${admin.name} ${admin.active === false ? 'suspended' : 'reactivated'}`);
@@ -10277,7 +10277,7 @@ async function toggleSubAdminRegionScope(adminId, makeScoped) {
   if (!confirmed) return;
   try {
     const { admin } = await apiFetch('PATCH', `/admin/sub-admins/${adminId}`, { regionScoped: makeScoped });
-    showToast(`${admin.name} is now ${makeScoped ? `scoped to ${admin.city}` : 'global — every city'}`);
+    showToast(`${admin.name} is now ${makeScoped ? `scoped to ${admin.city}` : 'global (all cities)'}`);
     await loadAdminData();
     selectAdminSection('locations');
   } catch (e) { showToast(e.message || 'Could not update admin scope'); }
@@ -10292,7 +10292,7 @@ async function deleteSubAdmin(adminId, adminName, cityName) {
     showToast(`${adminName} deleted`);
     await loadAdminData();
     selectAdminSection('locations');
-  } catch (e) { showToast(e.message || `Could not delete — ${cityName} may still need a reassigned admin first`); }
+  } catch (e) { showToast(e.message || `Could not delete. ${cityName} may still need a reassigned admin first`); }
 }
 
 function openNewCategoryForm() {
@@ -10315,7 +10315,7 @@ async function submitNewCategory() {
   const icon = document.getElementById('new-cat-icon').value || '🛠️';
   if (!name || name.length < 2) return showToast('Category name must be at least 2 characters');
   if (!BACKEND_AVAILABLE) {
-    showToast(`"${name}" created (demo mode — no backend detected)`);
+    showToast(`"${name}" created (demo mode)`);
     document.getElementById('new-category-panel').style.display = 'none';
     return;
   }
@@ -10339,7 +10339,7 @@ async function submitNewCountry() {
   const live = document.getElementById('new-country-live').checked;
   if (!name || name.length < 2) return showToast('Country name must be at least 2 characters');
   if (!BACKEND_AVAILABLE) {
-    showToast(`"${name}" created (demo mode — no backend detected)`);
+    showToast(`"${name}" created (demo mode)`);
     document.getElementById('new-country-panel').style.display = 'none';
     return;
   }
@@ -10437,7 +10437,7 @@ async function decideCategoryRequest(requestId, decision) {
   if (!BACKEND_AVAILABLE) return showToast(`Request ${decision}d (demo mode)`);
   try {
     await apiFetch('POST', `/admin/category-requests/${requestId}/${decision}`);
-    showToast(decision === 'approve' ? 'Category approved — now live and bookable' : 'Category request rejected');
+    showToast(decision === 'approve' ? 'Category approved and available for booking.' : 'Category request rejected');
     await loadAdminData();
     selectAdminSection('categories');
   } catch (e) { showToast(e.message || `Could not ${decision} this request`); }
@@ -10445,11 +10445,11 @@ async function decideCategoryRequest(requestId, decision) {
 
 async function saveAboutUsContent() {
   const content = document.getElementById('settings-about-us').value.trim();
-  if (content.length < 10) return showToast('Enter some real content first');
+  if (content.length < 10) return showToast('Enter some content first');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     await apiFetch('PATCH', '/admin/settings/about-us', { content });
-    showToast('About Us updated — live now');
+    showToast('About Us updated.');
     adminData.aboutUsContent = content;
   } catch (e) { showToast(e.message || 'Could not save this'); }
 }
@@ -10463,7 +10463,7 @@ async function saveFooterInfo() {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     const { footer } = await apiFetch('PATCH', '/admin/settings/footer', { companyName, location, supportEmail, copyrightYear });
-    showToast('Footer updated — live now');
+    showToast('Footer updated.');
     adminData.footerInfo = footer;
     FOOTER_INFO = footer;
     document.querySelectorAll('.footer-text').forEach(el => { el.textContent = footerLine(); });
@@ -10472,11 +10472,11 @@ async function saveFooterInfo() {
 
 async function saveTermsContent(role) {
   const content = document.getElementById(`settings-terms-${role}`).value.trim();
-  if (content.length < 10) return showToast('Enter some real content first');
+  if (content.length < 10) return showToast('Enter some content first');
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     await apiFetch('PATCH', `/admin/settings/terms-of-service-${role}`, { content });
-    showToast(`${role === 'customer' ? 'Customer' : 'Provider'} Terms of Service updated — live now`);
+    showToast(`${role === 'customer' ? 'Customer' : 'Provider'} Terms of Service updated.`);
     if (role === 'customer') adminData.termsOfServiceCustomerContent = content;
     else adminData.termsOfServiceProviderContent = content;
   } catch (e) { showToast(e.message || 'Could not save this'); }
@@ -10488,11 +10488,11 @@ async function backfillNotificationLinks() {
   try {
     const result = await apiFetch('POST', '/admin/backfill-notification-links');
     if (result.updated === 0) {
-      showToast(`Checked ${result.checked} notifications — nothing needed fixing`);
+      showToast(`Checked ${result.checked} notifications. No changes were needed.`);
     } else {
-      showToast(`Fixed ${result.updated} of ${result.checked} notifications — they're clickable now`);
+      showToast(`Fixed ${result.updated} of ${result.checked} notifications.`);
     }
-  } catch (e) { showToast(e.message || 'Could not run this — try again'); }
+  } catch (e) { showToast(e.message || 'Could not complete this action. Please try again.'); }
 }
 
 async function syncReferenceData() {
@@ -10502,7 +10502,7 @@ async function syncReferenceData() {
     const result = await apiFetch('POST', '/admin/sync-reference-data');
     const total = result.countriesAdded.length + result.categoriesAdded.length + (result.countriesReactivated || []).length + (result.iconsBackfilled || []).length;
     if (total === 0) {
-      showToast('Already up to date — nothing new to add');
+      showToast('Already up to date.');
     } else {
       let msg = `Added ${result.countriesAdded.length} countr${result.countriesAdded.length === 1 ? 'y' : 'ies'} and ${result.categoriesAdded.length} categor${result.categoriesAdded.length === 1 ? 'y' : 'ies'}`;
       if (result.countriesReactivated && result.countriesReactivated.length) {
@@ -10541,7 +10541,7 @@ async function releaseUserHold(userId) {
   if (!BACKEND_AVAILABLE) return showToast('Requires a live backend connection');
   try {
     await apiFetch('PATCH', `/admin/users/${userId}/hold`, { onHold: false });
-    showToast('Hold released — account back to normal');
+    showToast('Hold released. The account is active.');
     document.getElementById('person-detail-overlay')?.remove();
     await loadAdminData();
     selectAdminSection('people');
@@ -10618,7 +10618,7 @@ async function startCloseAccount() {
   try { blockers = (await apiFetch('GET', '/auth/me/close-account/check')).blockers || []; } catch (e) { return showToast(e.message || 'Could not check your account'); }
   const usesGoogle = !!(AUTH.user && AUTH.user.googleId);
   const body = blockers.length
-    ? `<p style="margin:0 0 10px;">${escapeHtml(tr("Your account can't be closed just yet:"))}</p><ul style="margin:0 0 4px 18px;line-height:1.6;">${blockers.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>`
+    ? `<p style="margin:0 0 10px;">${escapeHtml(tr("Your account cannot be closed yet:"))}</p><ul style="margin:0 0 4px 18px;line-height:1.6;">${blockers.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>`
     : `<p style="margin:0 0 12px;line-height:1.6;">${escapeHtml(tr("This closes your account now. You'll be signed out everywhere and won't be able to sign back in. If you change your mind, contact support before your details are removed."))}</p>
        <div class="form-group"><label class="form-label">${escapeHtml(tr(usesGoogle ? 'Your password, or type CLOSE' : 'Your password'))}</label><input class="form-input" type="${usesGoogle ? 'text' : 'password'}" id="close-account-password" autocomplete="current-password"/></div>
        <div class="form-group" style="margin-bottom:0;"><label class="form-label">${escapeHtml(tr("Why are you leaving?"))} <span style="font-weight:400;color:var(--slate);">${escapeHtml(tr("(optional)"))}</span></label><textarea class="form-input" id="close-account-reason" rows="2" maxlength="500"></textarea></div>`;
@@ -10708,7 +10708,7 @@ async function loadContactCheck() {
 }
 async function savePrivacyPolicy() {
   const content = document.getElementById('settings-privacy-policy').value.trim();
-  if (content.length < 10) return showToast('Enter some real content first');
+  if (content.length < 10) return showToast('Enter some content first');
   try { await apiFetch('PATCH', '/admin/settings/privacy-policy', { content }); showToast('Privacy Policy updated. Live now.'); }
   catch (e) { showToast(e.message || 'Could not save this'); }
 }
@@ -10869,10 +10869,10 @@ async function revealPersonContact(userId) {
 }
 
 async function toggleCustomerVip(customerId, grant) {
-  if (!(await confirmDialog(grant ? 'Grant this customer VIP membership? This is a real invitation, not a purchase — VIP can\'t be self-bought.' : 'Revoke VIP membership from this customer? They\'ll drop back to the Free tier.'))) return;
+  if (!(await confirmDialog(grant ? 'Grant this customer VIP membership? VIP membership is by invitation and cannot be purchased.' : 'Revoke VIP membership from this customer? They\'ll drop back to the Free tier.'))) return;
   try {
     await apiFetch('POST', `/admin/customers/${customerId}/vip`, { grant });
-    showToast(grant ? 'VIP granted — they\'ve been notified' : 'VIP revoked');
+    showToast(grant ? 'VIP membership granted. The customer has been notified.' : 'VIP revoked');
     document.getElementById('person-detail-overlay')?.remove();
     await loadAdminData();
     selectAdminSection('people');
@@ -10881,7 +10881,7 @@ async function toggleCustomerVip(customerId, grant) {
 
 function openPersonDetail(userId) {
   const u = adminData.people.find(p => p.id === userId);
-  if (!u) return showToast('Could not find that person — try refreshing the page');
+  if (!u) return showToast('Could not find this person. Please refresh the page.');
   const isProvider = u.role === 'Provider';
   const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;"><span style="color:var(--slate);">${escapeHtml(label)}</span><span style="font-weight:600;text-align:right;">${value === null || value === undefined ? '—' : escapeHtml(value)}</span></div>`;
   const modalHtml = `
@@ -10900,7 +10900,7 @@ function openPersonDetail(userId) {
           </div>
           <div style="margin:-4px 0 12px 0;">
             <button class="btn-sm btn-sm-outline" onclick="revealPersonContact('${u.id}')" id="reveal-contact-btn">🔓 Reveal Contact Info</button>
-            <span style="font-size:12.5px;color:var(--muted);margin-left:6px;">Logged when revealed — see Access Logs</span>
+            <span style="font-size:12.5px;color:var(--muted);margin-left:6px;">Viewing is recorded in Access Logs</span>
           </div>
           ${row('City / Country', [u.city, u.country].filter(Boolean).join(', '))}
           ${!isProvider && AUTH.user && AUTH.user.isSuperAdmin ? `
@@ -10921,12 +10921,12 @@ function openPersonDetail(userId) {
           ${row('Joined', u.createdAt ? u.createdAt.slice(0, 10) : '—')}
           ${row('Identity Verified', u.verified ? '✅ Verified' : '⏳ Not verified')}
           ${row('Phone Verified', u.phoneVerified ? '✅ Verified' : '⏳ Not verified')}
-          ${row('Account Status', u.onHold ? `⏸️ On hold — ${escapeHtml(u.holdReason || 'pending review')}${u.holdSince ? ` (since ${u.holdSince.slice(0,10)})` : ''}` : (u.active ? 'Active' : 'Suspended'))}
+          ${row('Account Status', u.onHold ? `⏸️ On hold: ${escapeHtml(u.holdReason || 'pending review')}${u.holdSince ? ` (since ${u.holdSince.slice(0,10)})` : ''}` : (u.active ? 'Active' : 'Suspended'))}
           ${row('Terms Accepted', u.termsAcceptedAt ? `✅ ${u.termsAcceptedAt.slice(0, 10)} (v${u.termsVersion || '?'})` : '⏳ Not yet agreed')}
           ${isProvider && u.licenseExpiryDate ? row('License Expiry', formatAdminExpiryStatus(u.licenseExpiryDate)) : ''}
           ${isProvider && u.insuranceExpiryDate ? row('Insurance Expiry', formatAdminExpiryStatus(u.insuranceExpiryDate)) : ''}
           ${isProvider && u.commissionRateOverrideStatus === 'approved' ? row('Custom Commission Rate', `${(u.commissionRateOverride * 100).toFixed(1)}% (overrides the normal plan rate)`) : ''}
-          ${isProvider && u.commissionRateOverrideStatus === 'pending' ? row('Custom Commission Rate', `⏳ ${(u.commissionRateOverride * 100).toFixed(1)}% proposed — awaiting super admin approval. Reason: ${escapeHtml(u.commissionRateOverrideReason || '')}`) : ''}
+          ${isProvider && u.commissionRateOverrideStatus === 'pending' ? row('Custom Commission Rate', `⏳ ${(u.commissionRateOverride * 100).toFixed(1)}% proposed, awaiting super admin approval. Reason: ${escapeHtml(u.commissionRateOverrideReason || '')}`) : ''}
         </div>
         <div class="modal-footer">
           ${isProvider && u.commissionRateOverrideStatus === 'pending' && AUTH.user && AUTH.user.isSuperAdmin
@@ -10977,7 +10977,7 @@ async function proposeCommissionRate(providerId) {
   if (reason === null) return;
   try {
     await apiFetch('POST', `/admin/providers/${providerId}/propose-commission-rate`, { rate: ratePercent / 100, reason });
-    showToast('Proposal sent — a super admin will review it');
+    showToast('Proposal sent for super admin review.');
     document.getElementById('person-detail-overlay') && document.getElementById('person-detail-overlay').remove();
     await loadAdminData();
   } catch (e) { showToast(e.message || 'Could not submit the proposal'); }
@@ -11221,7 +11221,7 @@ const FRAUD_TYPE_LABELS = {
 function fraudFlagsTableHTML(flags) {
   const open = flags.filter(f => f.status === 'open');
   const resolved = flags.filter(f => f.status !== 'open');
-  if (!flags.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No fraud flags yet — this fills in automatically as real signups, bookings, and disputes get screened.</div>`;
+  if (!flags.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No fraud flags. Sign-ups, bookings and disputes are screened automatically.</div>`;
   return `
     ${open.length ? `<div style="font-size:13px;color:var(--slate);font-weight:600;margin-bottom:8px;">${open.length} open</div>` : ''}
     <div class="data-table-wrap"><table class="data-table"><thead><tr><th>Type</th><th>Severity</th><th>Account</th><th>Details</th><th>Flagged</th><th>Status</th><th>Action</th></tr></thead><tbody>
@@ -11277,7 +11277,7 @@ async function viewDispute(id) {
     <div class="form-label" style="margin-bottom:10px;">Timeline</div>
     <div style="font-size:13.5px;color:var(--slate);line-height:2;">
       ⚠️ Dispute opened${openedDate ? ` — ${openedDate}` : ''}<br/>
-      ${d.status === 'resolved' ? (d.resolution === 'refund_customer' ? '✅ Resolved — customer refunded' : '✅ Resolved — escrow released to provider') : `Current status: ${DISPUTE_ACTION_LABEL[d.status] || d.status}`}
+      ${d.status === 'resolved' ? (d.resolution === 'refund_customer' ? '✅ Resolved: customer refunded' : '✅ Resolved: payment released to provider') : `Current status: ${DISPUTE_ACTION_LABEL[d.status] || d.status}`}
     </div>
     ${evidenceHTML}
     ${auditLogHTML}`;
@@ -11435,7 +11435,7 @@ async function saveServiceRadius() {
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { serviceRadiusMiles });
     AUTH.user = user;
-    showToast(serviceRadiusMiles ? `Service radius set to ${serviceRadiusMiles} miles` : 'Service radius cleared — you\'ll be shown regardless of distance');
+    showToast(serviceRadiusMiles ? `Service radius set to ${serviceRadiusMiles} miles` : 'Service radius cleared. You will be shown regardless of distance.');
   } catch (e) { showToast(e.message || 'Could not save service radius'); }
 }
 
@@ -11447,7 +11447,7 @@ async function shareProviderLocation() {
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { latitude: r.latitude, longitude: r.longitude });
     AUTH.user = user;
-    showToast(`Location saved (${describeAccuracy(r.accuracyM)}). Nearby customers will see the real distance to you.`);
+    showToast(`Location saved (${describeAccuracy(r.accuracyM)}). Nearby customers will see how far away you are.`);
     selectProviderSection('settings');
   } catch (e) { showToast(e.message || 'Could not save your location'); }
 }
@@ -11457,7 +11457,7 @@ async function clearProviderLocation() {
   try {
     const { user } = await apiFetch('PATCH', '/auth/me', { latitude: null, longitude: null });
     AUTH.user = user;
-    showToast('Real location removed — matching falls back to your city');
+    showToast('Location removed. Matching now uses your city.');
     selectProviderSection('settings');
   } catch (e) { showToast(e.message || 'Could not remove your location'); }
 }
@@ -11477,7 +11477,7 @@ async function useMyLocation() {
   btn.innerHTML = uiIcon('check');
   document.getElementById('search-location-input').value = 'Current location';
   document.getElementById('search-location-input').readOnly = true;
-  showToast('Using your location. Pros are sorted by real distance.');
+  showToast('Using your location. Pros are sorted by distance.');
   handleSearchClick();
 }
 
@@ -11502,7 +11502,7 @@ async function searchOtherCountry(country) {
     const result = await apiFetch('GET', `/providers?country=${encodeURIComponent(country)}`);
     document.getElementById('providers-sub').textContent = `${result.providers.length} pros found in ${country}`;
     document.getElementById('providers-grid').innerHTML =
-      `<div style="grid-column:1/-1;font-size:13.5px;color:var(--slate);margin-bottom:14px;">Showing pros in ${escapeHtml(country)} — a suggestion you chose to view, not your own country's results.</div>` +
+      `<div style="grid-column:1/-1;font-size:13.5px;color:var(--slate);margin-bottom:14px;">Showing pros in ${escapeHtml(country)}. These are suggestions, not results for your country.</div>` +
       providerCardsHTML(result.providers);
   } catch (e) { showToast('Could not load that suggestion right now'); }
 }
@@ -11544,14 +11544,14 @@ async function handleSearchClick() {
         : result.locationScope === 'country'
         ? (cityPart ? `<div style="grid-column:1/-1;font-size:13.5px;color:var(--gold);background:var(--offwhite);border:1px dashed var(--gold);border-radius:8px;padding:8px 12px;margin-bottom:14px;">📍 No matches nearby yet, so we widened the search to all of ${country}.</div>` : '')
         : result.locationScope === 'country_empty'
-        ? `<div style="grid-column:1/-1;font-size:13.5px;color:var(--navy);background:var(--offwhite);border:1px dashed var(--border);border-radius:8px;padding:12px 14px;margin-bottom:14px;">📍 No pros in ${country} yet for this search.${result.suggestedCountry ? ` <a onclick="searchOtherCountry('${result.suggestedCountry}')" style="cursor:pointer;font-weight:600;">Would you like to see pros in ${result.suggestedCountry} instead?</a> This is only a suggestion — nothing is booked or shown automatically.` : ''}</div>`
+        ? `<div style="grid-column:1/-1;font-size:13.5px;color:var(--navy);background:var(--offwhite);border:1px dashed var(--border);border-radius:8px;padding:12px 14px;margin-bottom:14px;">📍 No pros in ${country} yet for this search.${result.suggestedCountry ? ` <a onclick="searchOtherCountry('${result.suggestedCountry}')" style="cursor:pointer;font-weight:600;">Would you like to see pros in ${result.suggestedCountry} instead?</a> This is a suggestion only. Nothing is booked automatically.` : ''}</div>`
         : '';
       document.getElementById('providers-sub').textContent = `${result.providers.length} pros found`;
       document.getElementById('providers-grid').innerHTML = scopeNote + (result.providers.length || !scopeNote ? providerCardsHTML(result.providers) : '');
       markResultsArrived();
       return;
     } catch (e) {
-      console.warn('Real location search failed, falling back to local filtering', e);
+      console.warn('Location search failed; filtering locally instead.', e);
     }
   }
 
@@ -11640,7 +11640,7 @@ async function submitForcePasswordChange() {
     AUTH.token = data.token;
     saveAuthSession(data.token);
     AUTH.user = { ...AUTH.user, mustChangePassword: false };
-    showToast('Password set — welcome to Trothen!');
+    showToast('Password set. Welcome to Trothen.');
     await completeAuthAndResumeIntent(AUTH.user.role);
   } catch (e) {
     showToast(e.message || 'Could not set your new password');
@@ -11659,7 +11659,7 @@ async function completeAuthAndResumeIntent(role) {
     const provider = PROVIDERS.find(p => p.id === intent.providerId);
     if (provider) {
       checkTermsGate(role); // this path skips goDashboard(), the only other place this fires — never skip the agreement screen just because someone signed up mid-booking
-      showToast(`Welcome! Continuing your booking with ${provider.name}...`);
+      showToast(`Welcome. Continuing your booking with ${provider.name}...`);
       await openBooking(intent.providerId);
       return;
     }
@@ -11820,7 +11820,7 @@ async function openBooking(id) {
   if (loyaltyRow) {
     if (AUTH.user && (AUTH.user.loyaltyPoints || 0) >= 25) {
       loyaltyRow.style.display = 'block';
-      loyaltyRow.innerHTML = `<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;"><input type="checkbox" id="booking-use-loyalty-points"/> 🎁 Use 25 loyalty points for a free booking (waives the service fee — you have ${AUTH.user.loyaltyPoints})</label>`;
+      loyaltyRow.innerHTML = `<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;"><input type="checkbox" id="booking-use-loyalty-points"/> 🎁 Use 25 loyalty points for a free booking (the service fee is waived; you have ${AUTH.user.loyaltyPoints})</label>`;
     } else {
       loyaltyRow.style.display = 'none';
       loyaltyRow.innerHTML = '';
@@ -11962,7 +11962,7 @@ async function confirmBooking() {
       // A real failure (validation error, server down, etc.) must NOT show a
       // fake success screen — that would tell the user their booking is
       // confirmed and protected by escrow when nothing was actually saved.
-      showToast(e.message || 'Could not complete booking — please try again');
+      showToast(e.message || 'Could not complete the booking. Please try again.');
       return;
     }
   }
@@ -12382,18 +12382,18 @@ function supportContactHTML(category) {
 }
 
 const SUPPORT_FAQ = [
-  { keywords: ['escrow', 'hold', 'held', 'release fund'], answer: "Escrow means the money for your job is held safely by Trothen — not paid to the pro — until you confirm the work is done. Once you mark a booking \"Complete\" in My Bookings, the funds release to your pro automatically." },
-  { keywords: ['verif', 'id check', 'background check', 'kyc'], answer: "Every customer and provider on Trothen goes through identity verification — submit a government ID in Settings, and an admin reviews it (usually quickly). Providers also get a background check before their first job." },
-  { keywords: ['dispute', 'problem', 'complaint', 'refund', 'bad job', 'not happy'], answer: "If something's wrong with a job, don't mark it complete — that releases escrow. Instead, message your pro first to try to resolve it, and if that doesn't work, our Finance & Dispute team can step in to review and resolve it fairly." + supportContactHTML('dispute') },
-  { keywords: ['pay', 'payment', 'card', 'billing'], answer: "You can add a payment method in Customer → Payments. Right now this runs in test mode (no real charges) while we finalize our payment processor — you can use any test card number to try the flow." },
-  { keywords: ['become a pro', 'sign up as provider', 'join as provider', 'provider account'], answer: "Click \"Become a Pro\" at the top of the page, or choose \"Provider\" when you sign up. You'll need your category, skills, and location — new providers start unverified until an admin approves their documents." },
+  { keywords: ['escrow', 'hold', 'held', 'release fund'], answer: "With escrow, payment for your job is held by Trothen, not paid to the pro, until you confirm the work is done. Once you mark a booking \"Complete\" in My Bookings, the funds release to your pro automatically." },
+  { keywords: ['verif', 'id check', 'background check', 'kyc'], answer: "Every customer and provider on Trothen completes identity verification. Submit a government ID in Settings for review. Providers also get a background check before their first job." },
+  { keywords: ['dispute', 'problem', 'complaint', 'refund', 'bad job', 'not happy'], answer: "If there is a problem with a job, do not mark it complete, as this releases the payment. Instead, message your pro first to try to resolve it, and if that doesn't work, our Finance & Dispute team can step in to review and resolve it fairly." + supportContactHTML('dispute') },
+  { keywords: ['pay', 'payment', 'card', 'billing'], answer: "You can add a payment method in Customer → Payments. Payments are currently in test mode and no charges are made." },
+  { keywords: ['become a pro', 'sign up as provider', 'join as provider', 'provider account'], answer: "Click \"Become a Pro\" at the top of the page, or choose \"Provider\" when you sign up. You will need your category, skills and location. New providers remain unverified until their documents are approved." },
   { keywords: ['price', 'pricing', 'plan', 'cost', 'subscription', 'fee'], get answer() { return `Trothen has three plans for pros. Starter takes ${PLAN_COMMISSION.starter}% commission on each job. Pro takes ${PLAN_COMMISSION.pro}% and is reached automatically once you qualify. Super Pro takes ${PLAN_COMMISSION.superpro}% and is confirmed by our team once you qualify. Each plan also has a monthly price, which depends on your country: the Provider Plans page shows yours. ${PLAN_BILLING_PUBLIC.active ? 'The monthly fee comes out of your payouts, never a card.' : 'The monthly fee isn\'t being charged during early access.'} Customers don't pay to join.`; } },
-  { keywords: ['categor', 'service', 'what can i book', 'what do you offer'], answer: "Trothen covers Plumbing, Cleaning, Tutoring, Electrical, Moving, Painting, Landscaping, Fitness, Pick & Drop, and more — browse them all from \"See all categories\" on the homepage." },
+  { keywords: ['categor', 'service', 'what can i book', 'what do you offer'], answer: "Trothen covers plumbing, cleaning, tutoring, electrical work, moving, painting, landscaping, fitness, pick and drop, and more. Browse all categories from \"See all categories\" on the homepage." },
   { keywords: ['match', 'ai match', 'how does matching work', 'algorithm'], answer: "When you post a job, our matching engine ranks verified pros in your category and community by rating, experience, and proximity (we prioritize pros in your exact zip code first). You'll see the top matches with a fit score." },
-  { keywords: ['community', 'zip', 'postal', 'location match'], answer: "We use your zip/postal code to find pros right in your community first, before widening to your broader city — this tends to mean faster response times and pros who already know the area." },
-  { keywords: ['phone verif', 'otp', 'verify my phone', 'text code'], answer: "You don't need to verify your phone to create an account — just your email. If you'd like to verify your phone later (useful for two-factor login), you can do that any time from Settings." },
-  { keywords: ['human', 'agent', 'real person', 'support team', 'talk to someone', 'whatsapp', 'call'], answer: "Of course — reach a real person any time:" + supportContactHTML() + supportEmailLineHTML() },
-  { keywords: ['hi', 'hello', 'hey'], answer: "Hi! I'm Trothen's AI assistant, not a person. Ask me about escrow, verification, disputes, payments, pricing, or how matching works — or ask for a real person any time." },
+  { keywords: ['community', 'zip', 'postal', 'location match'], answer: "We use your ZIP or postal code to find pros near you first, then widen the search to your city." },
+  { keywords: ['phone verif', 'otp', 'verify my phone', 'text code'], answer: "Only your email address needs to be verified to create an account. If you'd like to verify your phone later (useful for two-factor login), you can do that any time from Settings." },
+  { keywords: ['human', 'agent', 'real person', 'support team', 'talk to someone', 'whatsapp', 'call'], answer: "You can contact our team at any time:" + supportContactHTML() + supportEmailLineHTML() },
+  { keywords: ['hi', 'hello', 'hey'], answer: "I am Trothen's automated assistant. Ask about escrow, verification, disputes, payments, pricing or matching, or ask to speak with our team." },
 ];
 
 const SUPPORT_SUGGESTIONS = ['How does escrow work?', 'How do I get verified?', 'What are the pricing plans?', 'How does matching work?'];
@@ -12403,7 +12403,7 @@ function answerSupportQuestion(text) {
   for (const entry of SUPPORT_FAQ) {
     if (entry.keywords.some(k => lower.includes(k))) return entry.answer;
   }
-  return "I don't have a canned answer for that yet — try asking about escrow, verification, disputes, payments, or pricing. Or reach a real person:" + supportContactHTML();
+  return "I do not have an answer for that. Try asking about escrow, verification, disputes, payments or pricing, or contact our team:" + supportContactHTML();
 }
 
 // The chat bubble is fully draggable — press and drag it anywhere on
@@ -12544,7 +12544,7 @@ function toggleSupportChat() {
   if (isOpening) positionChatPanelNearBubble();
   panel.classList.toggle('open');
   if (isOpening && !document.getElementById('support-chat-body').children.length) {
-    appendSupportMessage('bot', "Hi — I'm Trothen's AI assistant, not a person. I can answer most questions about escrow, verification, disputes, payments, or how the platform works. If you'd rather talk to a real person, just ask, or use the link below any time.");
+    appendSupportMessage('bot', "I am Trothen's automated assistant. I can answer questions about escrow, verification, disputes, payments and how the platform works. To speak with our team, ask at any time or use the link below.");
     appendSupportSuggestions();
   }
 }
@@ -12552,8 +12552,8 @@ function toggleSupportChat() {
 // Skips straight past the AI entirely — genuinely one request away, not
 // buried behind having to guess the right keyword first.
 function requestHumanSupport() {
-  appendSupportMessage('user', 'Talk to a real person');
-  appendSupportMessage('bot', "Of course — reach a real person any time:" + supportContactHTML() + supportEmailLineHTML());
+  appendSupportMessage('user', 'Contact our team');
+  appendSupportMessage('bot', "You can contact our team at any time:" + supportContactHTML() + supportEmailLineHTML());
 }
 
 // If the bubble has been dragged somewhere other than its default corner,
@@ -12664,8 +12664,8 @@ function sendSupportChatMessage() {
     // lot if you're the site owner testing whether this is even on.
     const notConfigured = e && e.data && e.data.error === 'not_configured';
     const fallback = notConfigured
-      ? "The smart-answer feature isn't turned on yet — it needs a real API key added as an environment variable on the server (not something set through this website). Here's a real person in the meantime:" + supportContactHTML()
-      : "I don't have a confident answer for that — let's get you a real person:" + supportContactHTML();
+      ? "Automated answers are not available at the moment. Please contact our team:" + supportContactHTML()
+      : "I cannot answer that reliably. Please contact our team:" + supportContactHTML();
     appendSupportMessage('bot', fallback);
     SUPPORT_CHAT_HISTORY.push({ from: 'bot', text: fallback });
   });
@@ -12706,7 +12706,7 @@ async function loadSystemStatusBanner() {
       return;
     }
     const warn = ''; // v89: the card warning now sits on the payment form itself, where a card is typed, so it isn't mistaken for an ID card
-    el.innerHTML = '<strong>Early access</strong> — accounts and ID verification are real. ' + parts.map(escapeHtml).join(' ') + warn;
+    el.innerHTML = '<strong>Early access.</strong> Accounts and ID verification are live. ' + parts.map(escapeHtml).join(' ') + warn;
   } catch (e) { /* keep the safe default wording */ }
 }
 
@@ -13888,9 +13888,9 @@ async function resetAllWording() {
     renderHomeCategories();
     loadShowcase();
     loadContentOverrides();
-    console.log('%cTrothen API connected — live data enabled.', 'color:#1D5FA8;font-weight:bold;');
+    console.log('%cTrothen API connected.', 'color:#1D5FA8;font-weight:bold;');
   } else {
-    console.log('%cTrothen API not detected — running on demo data. Start the backend (npm start in /trothen-backend) for live data.', 'color:var(--gold);');
+    console.log('%cTrothen API not detected. Running on demo data.', 'color:var(--gold);');
   }
   loadFeaturedCarousel();
   if (BACKEND_AVAILABLE) loadSystemStatusBanner();
@@ -13947,7 +13947,7 @@ async function resetAllWording() {
     // signup and simply won't attach an invalid one.
     pendingReferralCode = urlReferralCode.trim().toUpperCase();
     showAuth('signup');
-    showToast("You're signing up through a friend's referral link!");
+    showToast("You are signing up with a referral link.");
   } else if (BACKEND_AVAILABLE) {
     // Otherwise, try to restore a real prior session — this is what makes an
     // ordinary browser refresh not silently log someone out. The saved
@@ -13970,7 +13970,7 @@ async function resetAllWording() {
         // loading used to sign the person out for good; now the sign-in is
         // kept and works again on the next page load.
         if (restoreFailureIsFinal(e)) clearAuthSession();
-        else showToast(tr("Couldn't reach Trothen just now. Check your connection and reload the page."));
+        else showToast(tr("Unable to reach Trothen. Check your connection and reload the page."));
       }
     }
   }
@@ -14040,7 +14040,7 @@ async function togglePushNotifications(checkbox) {
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
       await apiFetch('POST', '/push/subscribe', sub.toJSON());
       window.__pushSubscribed = true;
-      showToast('Push notifications enabled — you\'ll get alerts even when Trothen is closed');
+      showToast('Push notifications enabled. You will receive alerts when Trothen is closed.');
     } else {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
@@ -14715,7 +14715,7 @@ async function saveStoreSettings() {
 const BIZ = { tab: 'summary', from: '', to: '', business: null, kinds: [], conditions: [], docs: [], tools: [], expenses: [] };
 const BIZ_TABS = [['summary', 'Summary'], ['quotes', 'Quotes & estimates'], ['invoices', 'Invoices'], ['inventory', 'Inventory'], ['tools', 'Tools'], ['expenses', 'Expenses'], ['tax', 'Tax report'], ['settings', 'Tax & invoice details']];
 function businessShellHTML() {
-  return `<div class="dash-header"><div><div class="dash-title">Business Tools</div><div class="dash-sub">Quotes, invoices, stock, tools, expenses and your numbers in one place</div></div></div>
+  return `<div class="dash-header"><div><div class="dash-title">Business Tools</div><div class="dash-sub">Quotes, invoices, stock, tools and expenses</div></div></div>
     <div id="biz-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;" role="tablist"></div><div id="biz-body"><div class="panel" style="color:var(--slate);">Loading…</div></div>`;
 }
 async function loadBusiness(tab) {
@@ -14999,7 +14999,7 @@ async function bizExpenses() {
   const r = await apiFetch('GET', '/business/expenses' + bizRangeQuery()); BIZ.expenses = r.expenses; BIZ.kinds = r.kinds;
   bizBody(`${bizRangeHTML('bizExpenses')}
     <div class="panel"><div class="panel-title" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;"><span>Expenses <small style="font-weight:400;color:var(--slate);">${usd2(r.total)} in this period</small></span><button class="btn-sm btn-sm-primary" onclick="openExpenseForm()">+ Add an expense</button></div>
-    ${r.expenses.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Kind</th><th>Paid to</th><th>Note</th><th>Amount</th><th>Receipt</th><th>Action</th></tr></thead><tbody>${r.expenses.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.kind)}</td><td>${escapeHtml(e.vendor || '—')}</td><td>${escapeHtml(e.note || '—')}</td><td>${usd2(e.amount)}</td><td>${e.receiptUrl ? v105Photo(e.receiptUrl, 40) : '—'}</td><td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="openExpenseForm(${jsArg(e.id)})">Edit</button> <button class="btn-sm btn-sm-ghost" onclick="deleteExpense(${jsArg(e.id)})">Remove</button></td></tr>`).join('')}</tbody></table></div>` : '<div style="color:var(--slate);font-size:14px;padding:8px 0;">No expenses in this period. Add what you spend on materials, stock, transport and the rest, and your summary will show what is really left over.</div>'}</div>`);
+    ${r.expenses.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Kind</th><th>Paid to</th><th>Note</th><th>Amount</th><th>Receipt</th><th>Action</th></tr></thead><tbody>${r.expenses.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.kind)}</td><td>${escapeHtml(e.vendor || '—')}</td><td>${escapeHtml(e.note || '—')}</td><td>${usd2(e.amount)}</td><td>${e.receiptUrl ? v105Photo(e.receiptUrl, 40) : '—'}</td><td class="row-actions"><button class="btn-sm btn-sm-outline" onclick="openExpenseForm(${jsArg(e.id)})">Edit</button> <button class="btn-sm btn-sm-ghost" onclick="deleteExpense(${jsArg(e.id)})">Remove</button></td></tr>`).join('')}</tbody></table></div>` : '<div style="color:var(--slate);font-size:14px;padding:8px 0;">No expenses in this period. Add what you spend on materials, stock, transport and the rest, and your summary will show your net result.</div>'}</div>`);
 }
 function openExpenseForm(id) {
   const e = id ? BIZ.expenses.find(x => x.id === id) : null;
@@ -16062,7 +16062,7 @@ async function openDriverPicker(orderId) {
 function checkoutPlaceHTML() {
   return `<div class="form-group" style="margin-top:12px;"><label class="form-label" for="co-landmark">${escapeHtml(tr('Where should it be brought?'))}</label><input class="form-input" id="co-landmark" maxlength="200" value="${escapeHtml(CHECKOUT.landmark || '')}" oninput="CHECKOUT.landmark=this.value" placeholder="${escapeHtml(tr('e.g. Blue gate by Total station, Sinkor'))}"/></div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:-4px 0 6px;font-size:13.5px;">
-      <span>${CHECKOUT.pin ? `📍 ${escapeHtml(tr('Pinned'))}: ${plusCodeFor(CHECKOUT.pin.latitude, CHECKOUT.pin.longitude)}` : escapeHtml(tr('Add a pin so the driver can find you and the price covers the real distance.'))}</span>
+      <span>${CHECKOUT.pin ? `📍 ${escapeHtml(tr('Pinned'))}: ${plusCodeFor(CHECKOUT.pin.latitude, CHECKOUT.pin.longitude)}` : escapeHtml(tr('Add a pin so the driver can find you and the price reflects the distance.'))}</span>
       <button type="button" class="btn-sm btn-sm-outline" id="co-pin-btn" onclick="pinCheckout()">📍 ${escapeHtml(tr(CHECKOUT.pin ? 'Pin again' : 'Use where I am now'))}</button>
     </div>`;
 }
@@ -16450,7 +16450,7 @@ const PAGE_ES = {"pages": {"← Back to Home": "← Volver al inicio", "Provider
 const PAGE_ORIG = new WeakMap();
 const PAGE_NUM = /\$?\d[\d,]*(?:\.\d+)?%?/g;
 const PAGE_RULES = [
-  [/^Thanks, (.+) — we've received your message and will be in touch soon\.$/, 'Gracias, $1. Recibimos tu mensaje y te contactaremos pronto.'],
+  [/^Thanks, (.+). We have received your message and will be in touch soon\.$/, 'Gracias, $1. Recibimos tu mensaje y te contactaremos pronto.'],
   [/^Prefer to reach us directly in (.+)\?$/, '¿Prefieres contactarnos directamente en $1?'],
 ];
 function pageEs(text) {
@@ -16871,9 +16871,9 @@ const MAIN_ES = {"(optional)": "(opcional)", "optional": "opcional", "if there i
 Object.assign(PAGE_ES.pages, MAIN_ES);
 PAGE_RULES.push(
   [/^Welcome back, (.+?)( 👋)?$/, 'Bienvenido de nuevo, $1$2'],
-  [/^✓ Verified account — showing pros in (.+?) · (\d+) active bookings?$/, '✓ Cuenta verificada — profesionales en $1 · $2 reservas activas'],
-  [/^✓ Verified account — showing pros in (.+)$/, '✓ Cuenta verificada — profesionales en $1'],
-  [/^⏳ Verification pending — showing pros in (.+)$/, '⏳ Verificación pendiente — profesionales en $1'],
+  [/^✓ Verified account · Showing pros in (.+?) · (\d+) active bookings?$/, '✓ Cuenta verificada — profesionales en $1 · $2 reservas activas'],
+  [/^✓ Verified account · Showing pros in (.+)$/, '✓ Cuenta verificada — profesionales en $1'],
+  [/^⏳ Verification pending · Showing pros in (.+)$/, '⏳ Verificación pendiente — profesionales en $1'],
   [/^(.+) · Serving (.+?) · +Trothen Pro since (\d+)$/, '$1 · Atiende en $2 · En Trothen desde $3'],
   [/^Responds by (.+)$/, 'Responde antes del $1'],
   [/^Book ([A-Z][\w.'-]*(?: [A-Z][\w.'-]*)?)$/, 'Reservar a $1']

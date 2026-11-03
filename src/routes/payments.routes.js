@@ -83,7 +83,7 @@ router.post('/payment-methods', requireAuth, async (req, res) => {
 
   if (methodType === 'card') {
     const errors = validate([
-      ['cardNumber', isNonEmptyString(cardNumber, { min: 4 }), 'Enter a card number (any digits — this is test mode)'],
+      ['cardNumber', isNonEmptyString(cardNumber, { min: 4 }), 'Enter a card number (any digits. This is test mode)'],
       ['expiry', isValidCardExpiry(expiry), 'Enter a valid, non-expired expiry date in MM/YY format'],
       ['nameOnCard', isNonEmptyString(nameOnCard, { min: 2 }), 'Enter the name on the card'],
       ['billingAddress', isNonEmptyString(billingAddress, { min: 3, max: 200 }), 'Enter the billing address'],
@@ -262,7 +262,7 @@ const { effectiveCommissionRate } = require('../commission');
 router.post('/payouts/request', requireAuth, requireRole('provider'), require('../terms').requireCurrentTerms, async (req, res) => {
   const requestingProvider = await db.find('users', u => u.id === req.user.sub);
   if (requestingProvider && requestingProvider.onHold) {
-    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — payouts will resume once this clears, usually within a couple hours. Contact support if you need this resolved sooner.' });
+    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review: payouts will resume once this clears, usually within a couple hours. Contact support if you need this resolved sooner.' });
   }
   const { payoutCurrency, useIntlMethod } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
 
@@ -271,7 +271,7 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), require('.
   // message. A genuinely concurrent second request never even reaches the
   // vulnerable read-then-write section below.
   if (payoutLocks.has(req.user.sub)) {
-    return res.status(409).json({ error: 'A payout request is already being processed — please wait a moment before trying again.' });
+    return res.status(409).json({ error: 'A payout request is already being processed. Please wait a moment before trying again.' });
   }
   payoutLocks.add(req.user.sub);
 
@@ -329,7 +329,7 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   const totalTips = Math.round(unpaidTipContracts.reduce((sum, c) => sum + c.tipAmount, 0) * 100) / 100; // v109: rounded to cents
 
   if (grossAmount <= 0 && totalTips <= 0) {
-    return res.status(400).json({ error: 'Nothing to pay out yet — this only includes jobs the customer has marked complete, tips, or agreed materials advances, that haven\'t already been paid out.' });
+    return res.status(400).json({ error: 'Nothing to pay out yet. This only includes jobs the customer has marked complete, tips, or agreed materials advances, that haven\'t already been paid out.' });
   }
 
   // A provider should be able to see exactly which jobs and which
@@ -486,7 +486,7 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     planFeeItems: planFee.items,
     payoutCurrency: wantsLocal ? currency.code : 'USD',
     payoutAmountLocal,
-    exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
+    exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate, not a live market rate' : null,
     method: (useIntlMethod && provider && provider.payoutMethodIntl) ? provider.payoutMethodIntl : ((provider && provider.payoutMethod) || 'Bank Transfer'),
     status: 'processing',
     lineItems,
@@ -514,11 +514,11 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   }
 
   const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
-  const tipNote = totalTips > 0 ? ` (includes $${totalTips} in tips — no commission taken on those)` : '';
+  const tipNote = totalTips > 0 ? ` (includes $${totalTips} in tips. No commission taken on those)` : '';
   const planFeeNote = planFee.amount > 0 ? ` $${planFee.amount} in plan fees was taken from this payout.` : '';
   const goodsNote = storeGoodsAmount > 0 ? ` $${storeGoodsAmount} of this is goods from your store, with no commission taken${storeFeeAmount > 0 ? `; $${storeFeeAmount} in store purchase fees was taken instead` : ''}.` : '';
   const tokenNote = commissionFromTokens > 0 ? ` 🪙 ${commissionFromTokens} tokens paid ${commissionFromTokens >= commissionAmount ? 'all' : 'part'} of the commission, so you keep $${commissionFromTokens} more.` : '';
-  const creditNote = usedFreeCommissionCredit ? ' 🏆 Used your top-scorer free-commission credit — 0% commission on this payout!' : '';
+  const creditNote = usedFreeCommissionCredit ? ' 🏆 Used your top-scorer free-commission credit: 0% commission on this payout.' : '';
   await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned)${tipNote}${goodsNote}${planFeeNote}${creditNote}${tokenNote} — processing.`, 'payoutAlerts', { section: 'earnings' });
   res.status(201).json({ payout });
 }
@@ -553,7 +553,7 @@ router.get('/plan-billing/mine', requireAuth, requireRole('provider'), async (re
 router.post('/contracts/:id/on-my-way', requireAuth, requireRole('provider'), async (req, res) => {
   const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
-  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status} — it can't be marked on the way` });
+  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status}. It can't be marked on the way` });
   if (contract.onMyWayAt) return res.status(400).json({ error: 'Already marked on the way for this booking' });
 
   const { latitude, longitude } = req.body || {};
@@ -570,7 +570,7 @@ router.post('/contracts/:id/on-my-way', requireAuth, requireRole('provider'), as
   // v128: a booking with no location pin leaves the pro with nowhere to go,
   // so the customer is asked to share where they are, straight away.
   const hasPin = contract.jobLocation && typeof contract.jobLocation.latitude === 'number';
-  await notify(contract.customerId, '🚗', `${require('../arrival-time').personName(provider, 'Your pro')} is on the way for "${contract.service}". Open My Bookings and tap "Track arrival" to follow their arrival.${hasPin ? '' : ' Your booking has no job location, so they cannot navigate to you yet: tap "Share my location" or "Set job location".'}`, 'bookingUpdates', { section: 'bookings' });
+  await notify(contract.customerId, '🚗', `${require('../arrival-time').personName(provider, 'Your pro')} is on the way for "${contract.service}". Open My Bookings and tap "Track Arrival" to follow their arrival.${hasPin ? '' : ' Your booking has no job location, so they cannot navigate to you yet: tap "Share My Location" or "Set Job Location".'}`, 'bookingUpdates', { section: 'bookings' });
   res.json({ contract: updated });
 });
 
@@ -749,7 +749,7 @@ router.get('/contracts/:id/tracking', requireAuth, async (req, res) => {
 router.post('/contracts/:id/arrived', requireAuth, requireRole('provider'), async (req, res) => {
   const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
-  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status} — it can't be marked arrived` });
+  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status}. It can't be marked arrived` });
   if (contract.arrivedAt) return res.status(400).json({ error: 'Already marked arrived for this booking' });
 
   const { latitude, longitude } = req.body || {};
@@ -785,18 +785,18 @@ router.post('/contracts/:id/arrived', requireAuth, requireRole('provider'), asyn
 router.post('/contracts/:id/scope-change-request', requireAuth, requireRole('provider'), async (req, res) => {
   const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
-  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status} — additional requests only apply to active jobs` });
+  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status}: additional requests only apply to active jobs` });
 
   const { amount, reason } = req.body || {};
   if (typeof amount !== 'number' || amount <= 0 || amount > contract.amount * 5) {
-    return res.status(400).json({ error: 'Enter a positive additional amount (and a realistic one — under 5x the original job price)' });
+    return res.status(400).json({ error: 'Enter a positive additional amount (and a realistic one: under 5x the original job price)' });
   }
   if (!isNonEmptyString(reason, { min: 10, max: 500 })) {
-    return res.status(400).json({ error: 'Explain what changed about the job (at least 10 characters) — the customer needs a real reason to approve this' });
+    return res.status(400).json({ error: 'Explain what changed about the job (at least 10 characters). The customer needs a real reason to approve this' });
   }
 
   const existing = await db.find('scopeChangeRequests', r => r.contractId === contract.id && r.status === 'pending');
-  if (existing) return res.status(400).json({ error: 'There\'s already a pending additional request for this job — wait for the customer to respond to it first' });
+  if (existing) return res.status(400).json({ error: 'There\'s already a pending additional request for this job: wait for the customer to respond to it first' });
 
   const requestingProvider = await db.find('users', u => u.id === req.user.sub);
   const request = {
@@ -810,7 +810,7 @@ router.post('/contracts/:id/scope-change-request', requireAuth, requireRole('pro
     createdAt: new Date().toISOString(),
   };
   await db.insert('scopeChangeRequests', request);
-  await notify(contract.customerId, '📋', `${requestingProvider ? requestingProvider.name : 'Your provider'} is requesting an additional $${request.amount} for "${contract.service}": "${request.reason.slice(0, 80)}${request.reason.length > 80 ? '…' : ''}" — review and approve or decline.`, null, { section: 'bookings' });
+  await notify(contract.customerId, '📋', `${requestingProvider ? requestingProvider.name : 'Your provider'} is requesting an additional $${request.amount} for "${contract.service}": "${request.reason.slice(0, 80)}${request.reason.length > 80 ? '…' : ''}": review and approve or decline.`, null, { section: 'bookings' });
   res.status(201).json({ request });
 });
 
@@ -840,7 +840,7 @@ router.post('/scope-change-requests/:id/decide', requireAuth, requireRole('custo
   // so an approval here can never interleave with the customer
   // completing or cancelling the very contract it's about to modify.
   if (contractStatusLocks.has(request.contractId)) {
-    return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
+    return res.status(409).json({ error: 'This booking is already being updated. Please try again in a moment.' });
   }
   contractStatusLocks.add(request.contractId);
   try {
@@ -877,7 +877,7 @@ async function handleScopeChangeDecide(req, res, request) {
   }
 
   if (contract.status !== 'active') {
-    return res.status(400).json({ error: `This booking is now ${contract.status} — it can no longer be adjusted` });
+    return res.status(400).json({ error: `This booking is now ${contract.status}. It can no longer be adjusted` });
   }
   // v109: a store order has no work in it to add to.
   if (contract.storeOrder || contract.goodsOnly) {
@@ -915,7 +915,7 @@ async function handleScopeChangeDecide(req, res, request) {
       if (defaultMethod && defaultMethod.type === 'mobile_money') {
         const result = await requestMobileMoneyCollection(defaultMethod.mobileMoneyNumber, request.amount, contract.id, null);
         if (!result.success) {
-          return res.status(409).json({ error: `The additional $${request.amount} could not be collected from the customer's mobile money account: ${result.message}. Nothing on this booking was changed — ask the customer to try approving again.` });
+          return res.status(409).json({ error: `The additional $${request.amount} could not be collected from the customer's mobile money account: ${result.message}. Nothing on this booking was changed. Ask the customer to try approving again.` });
         }
       }
     }
@@ -934,13 +934,13 @@ async function handleScopeChangeDecide(req, res, request) {
   }
   await db.update('scopeChangeRequests', request.id, { status: 'approved', decidedAt: new Date().toISOString() });
 
-  await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved — ${contract.payMethod === 'cash' ? 'the agreed cash price' : 'the contract and held escrow'} have been updated. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
+  await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved: ${contract.payMethod === 'cash' ? 'the agreed cash price' : 'the contract and held escrow'} have been updated. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
   res.json({ request: { ...request, status: 'approved' }, contract: updatedContract });
 }
 
 router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), async (req, res) => {
   if (contractStatusLocks.has(req.params.id)) {
-    return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
+    return res.status(409).json({ error: 'This booking is already being updated. Please try again in a moment.' });
   }
   contractStatusLocks.add(req.params.id);
   try {
@@ -967,7 +967,7 @@ async function handleContractComplete(req, res) {
   let tip = 0;
   if (tipAmount !== undefined && tipAmount !== null && tipAmount !== '') {
     if (typeof tipAmount !== 'number' || tipAmount < 0 || tipAmount > contract.amount * 3) {
-      return res.status(400).json({ error: 'Tip must be a positive number (and a realistic one — under 3x the job price)' });
+      return res.status(400).json({ error: 'Tip must be a positive number (and a realistic one: under 3x the job price)' });
     }
     tip = Math.round(tipAmount * 100) / 100;
   }
@@ -1044,9 +1044,9 @@ async function completeContractCore(contract, tip, customerId) {
     await notify(contract.providerId, '💵', `Ride #${contract.bookingNumber} is complete. The rider paid you $${Number(contract.amount).toFixed(2)} in cash, so nothing is added to your Trothen balance.`, 'bookingUpdates', { section: 'rides' });
     return { contract: updated, escrow: null };
   }
-  await notify(contract.providerId, '💰', `Escrow released — $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts', { section: 'earnings' });
+  await notify(contract.providerId, '💰', `Escrow released: $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts', { section: 'earnings' });
   if (tip > 0) {
-    await notify(contract.providerId, '🌟', `${(await db.find('users', u => u.id === customerId))?.name || 'The customer'} left you a $${tip} tip on "${contract.service}" — 100% yours, no commission, added to your next payout.`, 'payoutAlerts', { section: 'earnings' });
+    await notify(contract.providerId, '🌟', `${(await db.find('users', u => u.id === customerId))?.name || 'The customer'} left you a $${tip} tip on "${contract.service}": 100% yours, no commission, added to your next payout.`, 'payoutAlerts', { section: 'earnings' });
   }
   return { contract: updated, escrow: escrow ? { ...escrow, status: 'released' } : null };
 }
@@ -1060,7 +1060,7 @@ async function completeContractCore(contract, tip, customerId) {
 // party is notified either way.
 router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
   if (contractStatusLocks.has(req.params.id)) {
-    return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
+    return res.status(409).json({ error: 'This booking is already being updated. Please try again in a moment.' });
   }
   contractStatusLocks.add(req.params.id);
   try {
@@ -1155,7 +1155,7 @@ async function handleContractCancel(req, res) {
   const iAmCustomer = contract.customerId === req.user.sub;
   const otherPartyId = iAmCustomer ? contract.providerId : contract.customerId;
   const canceller = await db.find('users', u => u.id === req.user.sub);
-  const reasonNote = isProtected ? ` Reason: ${CANCEL_REASON_LABELS[reasonCategory]} — this does not count against them.` : '';
+  const reasonNote = isProtected ? ` Reason: ${CANCEL_REASON_LABELS[reasonCategory]}. This does not count against them.` : '';
   const message = escrow
     ? `${canceller ? canceller.name : 'The other party'} cancelled the booking for "${contract.service}". Any held escrow has been refunded.${reasonNote}`
     : `${canceller ? canceller.name : 'The other party'} withdrew the offer for "${contract.service}".${reasonNote}`;

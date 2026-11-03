@@ -86,7 +86,7 @@ async function fetchAccessToken(product) {
   // already checked isCollectionsConfigured()/isDisbursementConfigured().
   // Belt and suspenders, deliberately, given what's at stake here.
   if (!isLiberiaMoMoEnabled()) {
-    throw new Error('Liberia mobile money is not yet enabled (LCMMMI_INTEGRATION_ENABLED is not set to "true") — this is intentional until it\'s explicitly turned on.');
+    throw new Error('Liberia mobile money is not yet enabled (LCMMMI_INTEGRATION_ENABLED is not set to "true"). This is intentional until it\'s explicitly turned on.');
   }
   const cached = tokenCache[product];
   if (cached && cached.expiresAt > Date.now() + 60000) return cached.token;
@@ -142,8 +142,8 @@ function usdToLrd(amountUsd, rateOverride) {
 async function requestMobileMoneyCollection(msisdn, amountUsd, contractId, rateOverride) {
   if (!isCollectionsConfigured()) {
     const reason = !isLiberiaMoMoEnabled()
-      ? 'Liberia mobile money is intentionally not yet enabled (waiting on the go-ahead) — see LCMMMI_INTEGRATION_ENABLED in src/liberia-momo.js.'
-      : 'Liberia mobile money collections are missing required credentials — see the LCMMMI_COLLECTIONS_* environment variables this needs.';
+      ? 'Liberia mobile money is intentionally not yet enabled (waiting on the go-ahead). See LCMMMI_INTEGRATION_ENABLED in src/liberia-momo.js.'
+      : 'Liberia mobile money collections are missing required credentials. See the LCMMMI_COLLECTIONS_* environment variables this needs.';
     return { success: false, error: 'not_configured', message: reason };
   }
   const referenceId = require('crypto').randomUUID();
@@ -203,8 +203,8 @@ async function checkCollectionStatus(referenceId) {
 async function requestMobileMoneyDisbursement(msisdn, amountUsd, payoutId, rateOverride) {
   if (!isDisbursementConfigured()) {
     const reason = !isLiberiaMoMoEnabled()
-      ? 'Liberia mobile money is intentionally not yet enabled (waiting on the go-ahead) — see LCMMMI_INTEGRATION_ENABLED in src/liberia-momo.js.'
-      : 'Liberia mobile money disbursement is missing required credentials — see the LCMMMI_DISBURSEMENT_* environment variables this needs.';
+      ? 'Liberia mobile money is intentionally not yet enabled (waiting on the go-ahead). See LCMMMI_INTEGRATION_ENABLED in src/liberia-momo.js.'
+      : 'Liberia mobile money disbursement is missing required credentials. See the LCMMMI_DISBURSEMENT_* environment variables this needs.';
     return { success: false, error: 'not_configured', message: reason };
   }
   const referenceId = require('crypto').randomUUID();

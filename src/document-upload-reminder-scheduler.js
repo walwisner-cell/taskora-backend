@@ -31,9 +31,9 @@ async function sweepDocumentUploadReminders() {
       // falsely record that this person was reminded when they weren't,
       // which would silently block them from ever getting a real one
       // (same principle as the provider-score and other sweeps below).
-      await notify(user.id, '🪪', 'Quick reminder — you haven\'t finished verifying your identity yet. It only takes a couple minutes, and unlocks the full Trothen experience.', null, { section: 'verification' });
+      await notify(user.id, '🪪', 'Reminder: please complete your identity verification. It takes about two minutes.', null, { section: 'verification' });
       if (isSmsConfigured() && user.phone) {
-        await sendSms(user.phone, 'Trothen: You started signing up but haven\'t finished identity verification yet. Open the app to finish — it only takes a couple minutes.');
+        await sendSms(user.phone, 'Trothen: You started signing up but haven\'t finished identity verification yet. Open Trothen to complete it. It takes about two minutes.');
       }
       await db.update('users', user.id, { documentReminderSentAt: new Date().toISOString() });
       reminded += 1;

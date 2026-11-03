@@ -37,7 +37,7 @@ function resolveJwtSecret() {
   const randomFallback = crypto.randomBytes(48).toString('hex');
   const isProduction = process.env.NODE_ENV === 'production';
   const banner = isProduction
-    ? '🚨🚨🚨 CRITICAL: TROTHEN_JWT_SECRET is not set in production! 🚨🚨🚨'
+    ? '🚨🚨🚨 CRITICAL: TROTHEN_JWT_SECRET is not set in production. 🚨🚨🚨'
     : '⚠️  TROTHEN_JWT_SECRET is not set (expected in local dev).';
   console.error(banner);
   console.error(isProduction
@@ -134,7 +134,7 @@ async function requireAuth(req, res, next) {
     // life regardless of the password change that was supposed to protect
     // the account.
     if ((payload.tokenVersion || 0) !== (current.tokenVersion || 0)) {
-      return res.status(401).json({ error: 'Your session is no longer valid — please sign in again.' });
+      return res.status(401).json({ error: 'Your session is no longer valid. Please sign in again.' });
     }
     // Item: per-device sign-out enforcement — see signToken above and
     // POST /auth/logout. A token that passed the tokenVersion check can
@@ -145,7 +145,7 @@ async function requireAuth(req, res, next) {
     if (payload.sessionId) {
       const session = await db.find('sessions', s => s.id === payload.sessionId);
       if (!session) {
-        return res.status(401).json({ error: 'Your session is no longer valid — please sign in again.' });
+        return res.status(401).json({ error: 'Your session is no longer valid. Please sign in again.' });
       }
     }
     // An account created with a starting temp password (see POST
@@ -174,7 +174,7 @@ async function requireAuth(req, res, next) {
 function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Forbidden — insufficient role' });
+      return res.status(403).json({ error: 'Forbidden: insufficient role' });
     }
     next();
   };

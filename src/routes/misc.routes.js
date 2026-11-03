@@ -21,7 +21,7 @@ const router = express.Router();
 // above any real typing pace), strict enough to stop an actual flood.
 const messageLimiter = rateLimit({
   windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
-  message: { error: 'Sending messages too quickly — please slow down a moment.' },
+  message: { error: 'Sending messages too quickly. Please slow down a moment.' },
 });
 
 // The AI chat calls a real, metered external API per question — a
@@ -30,7 +30,7 @@ const messageLimiter = rateLimit({
 // in-memory keyword match.
 const supportChatLimiter = rateLimit({
   windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
-  message: { error: 'Too many questions in a row — please wait a moment, or ask to talk to a real person.' },
+  message: { error: 'Too many questions in a row. Please wait a moment, or ask to talk to a real person.' },
 });
 
 // POST /api/contact — the public "Contact Us" form. No auth required (an
@@ -105,7 +105,7 @@ const uploadResume = multer({ storage: resumeStorage, fileFilter: resumeFileFilt
 
 router.post('/careers-inquiry', publicFormLimiter, (req, res, next) => {
   uploadResume.single('resume')(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message === 'Resume must be a PDF file' ? err.message : 'Resume upload failed — must be a PDF under 8MB' });
+    if (err) return res.status(400).json({ error: err.message === 'Resume must be a PDF file' ? err.message : 'Resume upload failed: must be a PDF under 8MB' });
     next();
   });
 }, async (req, res) => {
@@ -126,7 +126,7 @@ router.post('/careers-inquiry', publicFormLimiter, (req, res, next) => {
   if (req.file) {
     if (!verifyPdfMagicBytes(req.file.path)) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'That file doesn\'t look like a real PDF — please upload an actual PDF resume' });
+      return res.status(400).json({ error: 'That file doesn\'t look like a real PDF. Please upload an actual PDF resume' });
     }
     resumeUrl = `/uploads/${req.file.filename}`;
   }
@@ -159,7 +159,7 @@ router.post('/careers-inquiry', publicFormLimiter, (req, res, next) => {
   if (!recipients.length) recipients = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
 
   for (const admin of recipients) {
-    await notify(admin.id, '💼', `New job application from ${submission.name}${submission.city ? ` (${submission.city})` : ''} — interested in: "${submission.role}"${resumeUrl ? ' (resume attached)' : ''}`, null, { section: 'careers' });
+    await notify(admin.id, '💼', `New job application from ${submission.name}${submission.city ? ` (${submission.city})` : ''}: interested in: "${submission.role}"${resumeUrl ? ' (resume attached)' : ''}`, null, { section: 'careers' });
   }
   console.log(`[TEST MODE — no email provider connected] Would email ${recipients.length ? recipients.map(a => a.email).join(', ') : 'support@trothen.io'}: new job application from ${submission.email}`);
 
@@ -227,7 +227,7 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
   // under active review shouldn't be able to pay for and submit a new
   // ad in the meantime either.
   if (provider.onHold) {
-    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to submit an ad again shortly.' });
+    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review. You\'ll be able to submit an ad again shortly.' });
   }
   // A provider paying for a second ad while their first is still pending
   // review or already live isn't a real, separate purchase — it's the
@@ -248,7 +248,7 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
   }
   const existingActive = await db.find('advertisingInquiries', a => a.providerId === provider.id && (a.isLive === true || a.status === 'new'));
   if (existingActive) {
-    return res.status(409).json({ error: existingActive.isLive ? 'You already have a live ad running — take it down first if you want to submit a new one.' : 'You already have an ad pending review — please wait for that one before submitting another.' });
+    return res.status(409).json({ error: existingActive.isLive ? 'You already have a live ad running: take it down first if you want to submit a new one.' : 'You already have an ad pending review. Please wait for that one before submitting another.' });
   }
   // A provider can only ever target their own city, or genuinely go
   // platform-wide — never claim to represent a city they're not
@@ -298,7 +298,7 @@ router.post('/advertising-inquiry/self-serve', requireAuth, requireRole('provide
   const regionalAdmins = city ? await require('../admin-scope').regionalAdminsFor({ city }) : []; // v96: country-wide admins too
   const toNotify = [...superAdmins, ...regionalAdmins];
   for (const admin of toNotify) {
-    await notify(admin.id, '📣', `${provider.name} (an existing provider) submitted a self-serve ad, already paid ($${price}) — just needs a quick content review${city ? ` for ${city}` : ' (platform-wide)'}`, null, { section: 'advertising' });
+    await notify(admin.id, '📣', `${provider.name} (an existing provider) submitted a self-serve ad, already paid ($${price}): just needs a quick content review${city ? ` for ${city}` : ' (platform-wide)'}`, null, { section: 'advertising' });
   }
 
   res.json({ submission, paidWithTokens });
@@ -620,7 +620,7 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
     : verifyImageMagicBytes(filePath, req.file.mimetype);
   if (!bytesValid) {
     cleanup();
-    return res.status(400).json({ error: 'That file doesn\'t look like a genuine document of the type it claims to be — please re-upload' });
+    return res.status(400).json({ error: 'That file doesn\'t look like a genuine document of the type it claims to be. Please re-upload' });
   }
 
   // A previous rejected/review-required submission gets superseded, not
@@ -675,7 +675,7 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
   if (!nameMatch) {
     const admins = reviewers;
     for (const admin of admins) {
-      await notify(admin.id, '⚠️', `${user.name}'s submitted ID name ("${idLegalName.trim()}") doesn't clearly match their account name — needs manual review.`, null, { section: 'verification' });
+      await notify(admin.id, '⚠️', `${user.name}'s submitted ID name ("${idLegalName.trim()}") doesn't clearly match their account name. Needs manual review.`, null, { section: 'verification' });
     }
   } else {
     // Item (best practice): a normal, clean submission — the common
@@ -685,7 +685,7 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
     // needs them, not just the flagged exceptions.
     const admins = reviewers;
     for (const admin of admins) {
-      await notify(admin.id, '🪪', `${user.name} (${user.role === 'customer' ? 'customer' : 'pro'}) submitted identity verification — ready for review.`, null, { section: 'verification' });
+      await notify(admin.id, '🪪', `${user.name} (${user.role === 'customer' ? 'customer' : 'pro'}) submitted identity verification: ready for review.`, null, { section: 'verification' });
     }
   }
 
@@ -762,13 +762,13 @@ router.post('/webhooks/persona', async (req, res) => {
       await notify(user.id, '✅', 'Your identity was verified automatically.', null, { section: 'verification' });
     } else {
       await db.insert('verifications', { ...base, nameMatch: false, status: 'review_required', reviewDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() });
-      await notifyReviewers(`${user.name}'s automated ID check passed, but the name on the ID ("${idName}") doesn't match the account name — needs manual review.`);
+      await notifyReviewers(`${user.name}'s automated ID check passed, but the name on the ID ("${idName}") doesn't match the account name. Needs manual review.`);
       await notify(user.id, '🪪', 'Your ID was checked. A member of our team is confirming a few details and will finish your verification shortly.', null, { section: 'verification' });
     }
   } else if (eventType === 'inquiry.declined' || eventType === 'inquiry.failed') {
     await db.insert('verifications', { ...base, nameMatch: null, status: 'review_required', reviewDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() });
-    await notifyReviewers(`${user.name}'s automated ID verification didn't pass — needs manual review.`);
-    await notify(user.id, '⚠️', 'Automated identity verification didn\'t go through — a real person will review it shortly.', null, { section: 'verification' });
+    await notifyReviewers(`${user.name}'s automated ID verification didn't pass. Needs manual review.`);
+    await notify(user.id, '⚠️', 'Automated identity verification didn\'t go through. A real person will review it shortly.', null, { section: 'verification' });
   }
   res.status(200).json({ ok: true });
 });
@@ -893,7 +893,7 @@ router.post('/support-chat/ask', supportChatLimiter, async (req, res) => {
       return res.status(503).json({ error: 'not_configured' });
     }
     console.error('[support-chat] Real API call failed:', e.message);
-    res.status(502).json({ error: 'Could not reach the assistant right now — try again, or talk to a real person.' });
+    res.status(502).json({ error: 'Could not reach the assistant right now. Try again, or talk to a real person.' });
   }
 });
 
@@ -1045,7 +1045,7 @@ router.post('/membership/cancel', requireAuth, requireRole('customer'), async (r
   const me = await db.find('users', u => u.id === req.user.sub);
   if (!me.membershipTier || me.membershipTier === 'free') return res.status(400).json({ error: 'You\'re already on the Free tier' });
   const updated = await db.update('users', me.id, { membershipTier: 'free', membershipCancelledAt: new Date().toISOString(), membershipPrice: null });
-  await notify(me.id, '👋', 'Your Trothen membership has been cancelled — no further charges. You\'re back on the Free tier.', null, { section: 'settings' });
+  await notify(me.id, '👋', 'Your Trothen membership has been cancelled. No further charges. You\'re back on the Free tier.', null, { section: 'settings' });
   res.json({ user: updated });
 });
 
@@ -1114,7 +1114,7 @@ router.post('/provider/guarantors', requireAuth, requireRole('provider'), async 
     const verificationAdmins = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'verification');
     const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
     for (const admin of (verificationAdmins.length ? verificationAdmins : superAdmins)) {
-      await notify(admin.id, '📋', `${updated.name} submitted ${merged.length} guarantor${merged.length === 1 ? '' : 's'} for review — a real person to call for background-check purposes.`, null, { section: 'verification' });
+      await notify(admin.id, '📋', `${updated.name} submitted ${merged.length} guarantor${merged.length === 1 ? '' : 's'} for review. A real person to call for background-check purposes.`, null, { section: 'verification' });
     }
   }
   res.json({ user: updated });

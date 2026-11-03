@@ -16,11 +16,11 @@
 // honestly as-is for now rather than half-built into something that
 // doesn't actually do anything yet.
 const MEMBERSHIP_TIERS = {
-  free: { label: 'Free', price: 0, feeDiscount: 0, selfServe: true, description: '$0 — book and pay, create an account, full access to the core marketplace.' },
+  free: { label: 'Free', price: 0, feeDiscount: 0, selfServe: true, description: '$0. Book and pay, with full access to the marketplace.' },
   plus: { label: 'Plus', price: 9.99, feeDiscount: 0.20, selfServe: true, description: 'Lower fees + priority features.' },
   pro: { label: 'Pro', price: 19.99, feeDiscount: 0.40, selfServe: true, description: 'More savings + premium support.', suggestedPrice: true },
   elite: { label: 'Elite', price: 39.99, feeDiscount: 0.60, selfServe: true, description: 'Maximum customer benefits.', suggestedPrice: true },
-  vip: { label: 'VIP', price: null, feeDiscount: 0.80, selfServe: false, description: 'Invitation/eligibility — includes concierge support. Granted by Trothen, not self-purchased.' },
+  vip: { label: 'VIP', price: null, feeDiscount: 0.80, selfServe: false, description: 'By invitation only. Includes concierge support.' },
 };
 
 // Resolves the real, current USD price for a paid tier: a super-admin

@@ -8,7 +8,7 @@
      location" bar sat on top of the confirmation sheet and covered its
      buttons, so tapping did nothing. The bar now sits under every window,
      is smaller, and has its own "View trip" and "Arrived" buttons.
-   - "Leave now" (the pro's start button) responds at once. It no longer
+   - "Leave Now" (the pro's start button) responds at once. It no longer
      waits up to 12 seconds for a location before telling the customer; the
      trip opens straight away and the position follows.
    - If the pro's phone blocks location, the trip screen says so plainly,
@@ -107,14 +107,14 @@
     let where = '';
     if (EDITABLE.includes(b.status) && !b.arrivedAt) {
       where = !hasPin(b)
-        ? `<div class="where-warn"><strong>${esc(tr('Location required.'))}</strong> ${esc(tr('Your pro cannot navigate to you until a location is set.'))}<div style="margin-top:6px;"><button type="button" class="btn-sm btn-sm-primary" onclick="openJobLocationEditor(${jsArg(b.id)})">${esc(tr('Set job location'))}</button></div></div>`
-        : `<div style="margin-top:4px;"><button type="button" class="link-btn" onclick="openJobLocationEditor(${jsArg(b.id)})">${esc(tr('Change location'))}</button></div>`;
+        ? `<div class="where-warn"><strong>${esc(tr('Location required.'))}</strong> ${esc(tr('Your pro cannot navigate to you until a location is set.'))}<div style="margin-top:6px;"><button type="button" class="btn-sm btn-sm-primary" onclick="openJobLocationEditor(${jsArg(b.id)})">${esc(tr('Set Job Location'))}</button></div></div>`
+        : `<div style="margin-top:4px;"><button type="button" class="link-btn" onclick="openJobLocationEditor(${jsArg(b.id)})">${esc(tr('Change Location'))}</button></div>`;
     }
     return legacyNote(b) + where;
   };
   function legacyNote(b) {
     const enRoute = b.onMyWayAt && !b.arrivedAt && b.status === 'active';
-    const track = enRoute ? `<div style="margin-top:6px;"><button class="btn-sm btn-sm-primary" onclick="openTripTracking(${jsArg(b.id)})">${esc(tr('Track arrival'))}</button></div>` : '';
+    const track = enRoute ? `<div style="margin-top:6px;"><button class="btn-sm btn-sm-primary" onclick="openTripTracking(${jsArg(b.id)})">${esc(tr('Track Arrival'))}</button></div>` : '';
     if (!b.onMyWayAt && !b.arrivedAt) return '';
     const fmt = (iso) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const parts = [];
@@ -141,7 +141,7 @@
         </div>
         <div class="modal-footer sheet-foot">
           <button class="btn-sm btn-sm-outline" onclick="closeJobLocationEditor()">${esc(tr('Cancel'))}</button>
-          <button class="confirm-btn" id="fixloc-save" onclick="saveJobLocation(${jsArg(contractId)})">${esc(tr('Save location'))}</button>
+          <button class="confirm-btn" id="fixloc-save" onclick="saveJobLocation(${jsArg(contractId)})">${esc(tr('Save Location'))}</button>
         </div>
       </div></div>`);
     const lm = $('fix-landmark'); if (lm && c.landmark) lm.value = c.landmark;
@@ -161,7 +161,7 @@
       if (typeof loadCustomerData === 'function' && $('screen-customer')) { await loadCustomerData(); selectCustomerSection('bookings'); }
     } catch (e) {
       showToast(e.message || tr('Could not save the location'));
-      if (btn) { btn.disabled = false; btn.textContent = tr('Save location'); }
+      if (btn) { btn.disabled = false; btn.textContent = tr('Save Location'); }
     }
   };
 
@@ -173,7 +173,7 @@
     el.innerHTML = `<span class="share-dot" style="background:${dotColor};"></span><span class="share-text">${text}</span><span class="share-btns">${buttons}</span>`;
   }
 
-  // ── PRO: the trip, from "Leave now" to "Arrived" ──────────────────────
+  // ── PRO: the trip, from "Leave Now" to "Arrived" ──────────────────────
   // LIVE_TRIP comes from trothen.js; geoError is new.
   function roughAfterGood(p, last, lastAt) {
     return !!(last && last.accuracyM != null && last.accuracyM <= 200 && Date.now() - lastAt < 120000 && (p.accuracyM == null || p.accuracyM > 1000));
@@ -197,7 +197,7 @@
       : !p ? `<strong>${esc(tr('Trip in progress.'))}</strong> ${esc(tr('Locating you…'))}`
       : `<strong>${esc(tr('Sharing your location'))}</strong> ${esc(tr('with your customer'))}${p.accuracyM > 500 ? ` · <span style="color:#FFD58A;">${esc(tr('rough position'))}</span>` : ''}`;
     bar('live-trip-bar', LIVE_TRIP.geoError ? '#F2B84B' : '#3DDC97', text,
-      `<button type="button" onclick="openTripTracking(LIVE_TRIP.contractId)">${esc(tr('View trip'))}</button><button type="button" class="primary" onclick="markContractArrived(LIVE_TRIP.contractId)">${esc(tr('Arrived'))}</button>`);
+      `<button type="button" onclick="openTripTracking(LIVE_TRIP.contractId)">${esc(tr('View Trip'))}</button><button type="button" class="primary" onclick="markContractArrived(LIVE_TRIP.contractId)">${esc(tr('Arrived'))}</button>`);
   };
   window.startLiveTrip = async function (contractId) {
     if (LIVE_TRIP.contractId === contractId && LIVE_TRIP.watchId != null) return;
@@ -236,7 +236,7 @@
       .filter(c => c.id !== contractId && c.status === 'active' && c.onMyWayAt && !c.arrivedAt && (Date.now() - new Date(c.onMyWayAt).getTime()) < TRIP_MAX_MS);
   }
   const busy = new Set();
-  // "Leave now": tells the customer at once, opens the trip, then shares the position.
+  // "Leave Now": tells the customer at once, opens the trip, then shares the position.
   window.markContractOnMyWay = async function (contractId) {
     if (!BACKEND_AVAILABLE) return showToast('Marked on the way (demo mode)');
     if (busy.has(contractId)) return;
@@ -244,7 +244,7 @@
     const who = personName(c.customer || c.customerName, tr('your customer'));
     const others = openTripsOther(contractId);
     const msg = `${tr('Start the trip to')} ${who}?\n\n${tr('Your customer will be notified that you are on your way and will see your live location until you mark yourself as arrived. Keep Trothen open on your phone during the trip.')}${others.length ? `\n\n${tr('Your trip for')} "${sentence(others[0].service)}" ${tr('is still open. Location sharing will move to this trip.')}` : ''}`;
-    const ok = await confirmDialog(msg, { confirmLabel: tr('Leave now') });
+    const ok = await confirmDialog(msg, { confirmLabel: tr('Leave Now') });
     if (!ok) return;
     busy.add(contractId);
     showToast(tr('Starting your trip…'));
@@ -264,7 +264,7 @@
   window.markContractArrived = async function (contractId) {
     if (!BACKEND_AVAILABLE) return showToast('Marked arrived (demo mode)');
     if (!contractId || busy.has(contractId)) return;
-    const ok = await confirmDialog(tr('Confirm that you have arrived at the job location? Location sharing will stop and your customer will be notified.'), { confirmLabel: tr('I have arrived') });
+    const ok = await confirmDialog(tr('Confirm that you have arrived at the job location? Location sharing will stop and your customer will be notified.'), { confirmLabel: tr('I Have Arrived') });
     if (!ok) return;
     busy.add(contractId);
     let loc = LIVE_TRIP.contractId === contractId ? LIVE_TRIP.latest : null;
@@ -306,7 +306,7 @@
     if (!navigator.geolocation) return showToast(tr("This browser can't share location."));
     if (SHARE.contractId === contractId && SHARE.watchId != null) return;
     if (!skipAsk) {
-      const ok = await confirmDialog(tr('Share your live location with your pro until they arrive? Only the pro on this booking can see it. You can stop at any time, and it is deleted when they arrive. Keep Trothen open on your phone.'), { confirmLabel: tr('Share location') });
+      const ok = await confirmDialog(tr('Share your live location with your pro until they arrive? Only the pro on this booking can see it. You can stop at any time, and it is deleted when they arrive. Keep Trothen open on your phone.'), { confirmLabel: tr('Share Location') });
       if (!ok) return;
     }
     stopShare();
@@ -415,7 +415,7 @@
     } else if (d.phase === 'not_started') {
       headline = pro ? tr('Trip not started') : `${d.proName} ${tr('has not set off yet')}`;
       sub = d.arrivalAt ? `${tr('Scheduled arrival')}: ${whenOf(d.arrivalAt)}.` : tr('No arrival time has been agreed yet.');
-      sub += ' ' + (pro ? tr('Tap Leave now when you set off. Your customer will be able to follow your arrival.') : tr('Live tracking starts when your pro taps Leave now.'));
+      sub += ' ' + (pro ? tr('Tap Leave Now when you set off. Your customer will be able to follow your arrival.') : tr('Live tracking starts when your pro taps Leave Now.'));
     } else if (d.phase === 'ended') {
       headline = tr('This trip is no longer live');
     } else if (!d.proLocation) {
@@ -436,10 +436,10 @@
     if (pro && d.phase === 'on_the_way' && LIVE_TRIP.contractId === id && LIVE_TRIP.geoError) {
       notice = noticeHTML('error', LIVE_TRIP.geoError === 'denied'
         ? `<strong>${esc(tr('Location access is blocked.'))}</strong> ${esc(tr('Your customer cannot see you. Allow location for trothenpro.com: on iPhone, Settings › Privacy › Location Services › Safari Websites; on Android, tap the lock icon next to the address, then Permissions › Location.'))}`
-        : `<strong>${esc(tr('Location unavailable.'))}</strong> ${esc(tr('Make sure Location is switched on, then try again.'))}`, `<button type="button" class="btn-sm btn-sm-primary" onclick="retryLiveLocation()">${esc(tr('Try again'))}</button>`) + notice;
+        : `<strong>${esc(tr('Location unavailable.'))}</strong> ${esc(tr('Make sure Location is switched on, then try again.'))}`, `<button type="button" class="btn-sm btn-sm-primary" onclick="retryLiveLocation()">${esc(tr('Try Again'))}</button>`) + notice;
     }
     if (pro && d.phase === 'on_the_way' && LIVE_TRIP.contractId !== id) {
-      notice = noticeHTML('warn', tr('Location sharing is not running for this trip on this device.'), `<button type="button" class="btn-sm btn-sm-primary" onclick="startLiveTrip(${jsArg(id)});setTimeout(refreshTripTracking,800)">${esc(tr('Share my location'))}</button>`) + notice;
+      notice = noticeHTML('warn', tr('Location sharing is not running for this trip on this device.'), `<button type="button" class="btn-sm btn-sm-primary" onclick="startLiveTrip(${jsArg(id)});setTimeout(refreshTripTracking,800)">${esc(tr('Share My Location'))}</button>`) + notice;
     }
     if (!pro && !SHARE.contractId && SHARE.geoError === 'denied') notice += noticeHTML('error', tr('Location access is blocked on this phone, so your location cannot be shared.'));
     if (!d.jobLocation && d.phase !== 'arrived') {
@@ -463,15 +463,15 @@
     const dirTo = d.jobLocation || d.customerLocation;
     if (pro) {
       const c = ((typeof providerData === 'object' && providerData.contracts) || []).find(x => x.id === id) || raw(id) || {};
-      if (d.phase === 'not_started' && d.status === 'active') btns.push(`<button type="button" class="btn-sm btn-sm-primary" onclick="closeTripTracking();markContractOnMyWay(${jsArg(id)})">${esc(tr('Leave now'))}</button>`);
-      if (d.phase === 'on_the_way') btns.push(`<button type="button" class="btn-sm btn-sm-primary" onclick="markContractArrived(${jsArg(id)})">${esc(tr('I have arrived'))}</button>`);
+      if (d.phase === 'not_started' && d.status === 'active') btns.push(`<button type="button" class="btn-sm btn-sm-primary" onclick="closeTripTracking();markContractOnMyWay(${jsArg(id)})">${esc(tr('Leave Now'))}</button>`);
+      if (d.phase === 'on_the_way') btns.push(`<button type="button" class="btn-sm btn-sm-primary" onclick="markContractArrived(${jsArg(id)})">${esc(tr('I Have Arrived'))}</button>`);
       if (dirTo && d.phase !== 'arrived') btns.push(`<a class="btn-sm btn-sm-outline" href="https://www.google.com/maps/dir/?api=1&destination=${dirTo.latitude},${dirTo.longitude}" target="_blank" rel="noopener noreferrer">${esc(tr('Directions'))}</a>`);
       if (c.customerId) btns.push(`<button type="button" class="btn-sm btn-sm-outline" onclick="closeTripTracking();selectProviderSection('messages');setTimeout(()=>selectMessageContact(${jsArg(c.customerId)}),80)">${esc(tr('Message'))}</button>`);
       return btns.join('');
     }
     const c = raw(id) || {};
     if (d.phase === 'on_the_way') btns.push(SHARE.contractId === id
-      ? `<button type="button" class="btn-sm btn-sm-outline" onclick="stopCustomerShare()">${esc(tr('Stop sharing'))}</button>`
+      ? `<button type="button" class="btn-sm btn-sm-outline" onclick="stopCustomerShare()">${esc(tr('Stop Sharing'))}</button>`
       : `<button type="button" class="btn-sm ${d.jobLocation ? 'btn-sm-outline' : 'btn-sm-primary'}" onclick="startCustomerShare(${jsArg(id)}, ${d.customerLocation ? 'true' : 'false'})">${esc(tr(d.customerLocation ? 'Resume sharing' : 'Share my location'))}</button>`);
     if (d.canEditLocation) btns.push(`<button type="button" class="btn-sm ${d.jobLocation ? 'btn-sm-outline' : 'btn-sm-primary'}" onclick="openJobLocationEditor(${jsArg(id)})">${esc(tr(d.jobLocation ? 'Change location' : 'Set job location'))}</button>`);
     if (c.providerId) btns.push(`<button type="button" class="btn-sm btn-sm-outline" onclick="closeTripTracking();selectCustomerSection('messages');setTimeout(()=>selectMessageContact(${jsArg(c.providerId)}),80)">${esc(tr('Message'))}</button>`);
@@ -487,7 +487,7 @@
     if (d.jobLocation) rows.push(row(tr('Job location'), `${plusCodeFor(d.jobLocation.latitude, d.jobLocation.longitude)} · <a href="${mapsUrl(d.jobLocation)}" target="_blank" rel="noopener noreferrer">${esc(tr('Open in Maps'))}</a>`));
     if (d.landmark) rows.push(row(tr('Landmark'), esc(d.landmark)));
     if (d.customerLocation) rows.push(row(pro ? `${d.customerName} (${tr('shared')})` : tr('Your shared location'), `${d.customerSecondsSinceUpdate != null ? esc(agoWords(d.customerSecondsSinceUpdate)) + ' · ' : ''}<a href="${mapsUrl(d.customerLocation)}" target="_blank" rel="noopener noreferrer">${esc(tr('Open in Maps'))}</a>`));
-    if (d.proLocation && !pro) rows.push(row(d.proName, `<a href="${mapsUrl(d.proLocation)}" target="_blank" rel="noopener noreferrer">${esc(tr('Open position in Maps'))}</a>`));
+    if (d.proLocation && !pro) rows.push(row(d.proName, `<a href="${mapsUrl(d.proLocation)}" target="_blank" rel="noopener noreferrer">${esc(tr('Open Position in Maps'))}</a>`));
     return rows.join('');
   }
 

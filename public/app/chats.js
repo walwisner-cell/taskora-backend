@@ -81,8 +81,8 @@
   window.messagingHTML = function (role) {
     CHATS.role = role;
     if (!BACKEND_AVAILABLE) {
-      return `<div class="dash-header"><div><div class="dash-title">Messages</div><div class="dash-sub">Connect the backend to message your real contacts</div></div></div>
-      <div class="panel" style="text-align:center;color:var(--slate);padding:40px;">Messaging requires the backend to be running (demo mode — no backend detected).</div>`;
+      return `<div class="dash-header"><div><div class="dash-title">Messages</div><div class="dash-sub">Messaging is unavailable without a server connection</div></div></div>
+      <div class="panel" style="text-align:center;color:var(--slate);padding:40px;">Messaging requires the backend to be running (demo mode).</div>`;
     }
     const unread = CHATS.list.reduce((s, c) => s + (c.unread || 0), 0);
     return `
@@ -144,10 +144,10 @@
     const chips = (c.bookings || []).slice(0, 4).map(b => `<button type="button" class="chat-chip" onclick="chatsOpenBookings()" title="${escapeHtml(tr('Open your bookings'))}">${b.bookingNumber ? '#' + escapeHtml(b.bookingNumber) + ' · ' : ''}${escapeHtml(String(b.service || '').slice(0, 28))} · ${escapeHtml(statusWord(b.status))}</button>`).join('')
       + (c.jobs || []).filter(j => !(c.bookings || []).some(b => b.jobId === j.id)).slice(0, 2).map(j => `<span class="chat-chip">${escapeHtml(tr('Job'))}: ${escapeHtml(String(j.title).slice(0, 30))}</span>`).join('');
     return `<div class="chat-head-row">
-        <button type="button" class="chat-back" onclick="chatsBack()" aria-label="${escapeHtml(tr('All conversations'))}">‹ ${escapeHtml(tr('All chats'))}</button>
+        <button type="button" class="chat-back" onclick="chatsBack()" aria-label="${escapeHtml(tr('All conversations'))}">‹ ${escapeHtml(tr('All Chats'))}</button>
         <span class="chat-avatar" aria-hidden="true">${escapeHtml(initials(c.name))}</span>
         <div style="min-width:0;flex:1;"><div class="chat-head-name">${escapeHtml(c.name)}</div><div class="chat-head-sub">${escapeHtml([who, since].filter(Boolean).join(' · '))}</div></div>
-        ${c.total ? `<button type="button" class="btn-sm btn-sm-outline" onclick="chatsDownload()" title="${escapeHtml(tr('Download this conversation as a text file'))}">⬇ ${escapeHtml(tr('Save chat'))}</button>` : ''}
+        ${c.total ? `<button type="button" class="btn-sm btn-sm-outline" onclick="chatsDownload()" title="${escapeHtml(tr('Download this conversation as a text file'))}">⬇ ${escapeHtml(tr('Save Chat'))}</button>` : ''}
       </div>
       ${chips ? `<div class="chat-chips">${chips}</div>` : ''}`;
   }

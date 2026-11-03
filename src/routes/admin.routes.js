@@ -202,7 +202,7 @@ function publicAdmin(u, options = {}) {
       ...rest,
       email: maskEmail(rest.email),
       phone: maskPhone(rest.phone),
-      address: rest.address ? '••••• (hidden — use Reveal Contact Info)' : rest.address,
+      address: rest.address ? '••••• (hidden; use Reveal Contact Info)' : rest.address,
     };
   }
   return rest;
@@ -464,7 +464,7 @@ router.post('/customers/:id/vip', requireSuperAdmin, async (req, res) => {
     ? { membershipTier: 'vip', membershipStartedAt: new Date().toISOString(), membershipPrice: null }
     : { membershipTier: 'free', membershipCancelledAt: new Date().toISOString(), membershipPrice: null });
   await notify(target.id, grant ? '💎' : '👋', grant
-    ? 'You\'ve been invited to Trothen VIP — our top membership tier, including concierge support.'
+    ? 'You have been invited to Trothen VIP, our highest membership tier, which includes concierge support.'
     : 'Your Trothen VIP membership has ended. You\'re now on the Free tier.', null, { section: 'settings' });
   res.json({ user: publicAdmin(updated) });
 });
@@ -571,7 +571,7 @@ router.post('/providers/:id/hold', async (req, res) => {
     return res.status(400).json({ error: 'months must be a positive number (24 max)' });
   }
   if (!isNonEmptyString(reason, { min: 10, max: 300 })) {
-    return res.status(400).json({ error: 'Enter a real reason for this hold (at least 10 characters) — it\'s shown to the provider' });
+    return res.status(400).json({ error: 'Enter a reason for this hold (at least 10 characters). It\'s shown to the provider' });
   }
 
   const holdUntil = new Date();
@@ -610,12 +610,12 @@ router.patch('/users/:id/status', async (req, res) => {
   if (!active && target.role === 'provider') {
     const activeContracts = await db.filter('contracts', c => c.providerId === target.id && ['active', 'pending_agreement', 'pending_provider_confirmation'].includes(c.status));
     for (const contract of activeContracts) {
-      await notify(contract.customerId, '⚠️', `Your provider for "${contract.service}" has had their account suspended. Our team is reviewing your booking and will follow up shortly — contact support if you need this resolved sooner.`, 'bookingUpdates', { section: 'bookings' });
+      await notify(contract.customerId, '⚠️', `Your provider for "${contract.service}" has had their account suspended. Our team is reviewing your booking and will follow up shortly. Contact support if you need this resolved sooner.`, 'bookingUpdates', { section: 'bookings' });
     }
     if (activeContracts.length) {
       const supers = await db.filter('users', u => u.isSuperAdmin === true);
       for (const admin of supers) {
-        await notify(admin.id, '⚠️', `${target.name} was just suspended with ${activeContracts.length} active booking${activeContracts.length === 1 ? '' : 's'} still in progress — these need a real decision (refund, reassign, etc.).`, null, { section: 'disputes' });
+        await notify(admin.id, '⚠️', `${target.name} was suspended with ${activeContracts.length} active booking${activeContracts.length === 1 ? '' : 's'} still in progress. These need a decision (refund, reassign, etc.).`, null, { section: 'disputes' });
       }
     }
   }
@@ -640,7 +640,7 @@ router.post('/providers/:id/propose-commission-rate', async (req, res) => {
     return res.status(400).json({ error: 'Rate must be a number between 0 and 0.5 (e.g. 0.08 for 8%)' });
   }
   if (!isNonEmptyString(reason, { min: 10, max: 500 })) {
-    return res.status(400).json({ error: 'Explain why this provider has earned a custom rate (at least 10 characters) — a super admin needs this to actually decide' });
+    return res.status(400).json({ error: 'Explain why this provider should receive a custom rate (at least 10 characters). A super admin will review it.' });
   }
   const region = await myRegion(req);
   const provider = await db.find('users', u => u.id === req.params.id && u.role === 'provider');
@@ -659,7 +659,7 @@ router.post('/providers/:id/propose-commission-rate', async (req, res) => {
 
   const supers = await db.filter('users', u => u.isSuperAdmin === true);
   for (const admin of supers) {
-    await notify(admin.id, '💲', `${m.name} proposed a custom ${(rate * 100).toFixed(1)}% commission rate for ${provider.name}: "${reason.trim().slice(0, 80)}${reason.length > 80 ? '…' : ''}" — needs your approval.`, null, { section: 'people' });
+    await notify(admin.id, '💲', `${m.name} proposed a custom ${(rate * 100).toFixed(1)}% commission rate for ${provider.name}: "${reason.trim().slice(0, 80)}${reason.length > 80 ? '…' : ''}". Approval required.`, null, { section: 'people' });
   }
 
   res.json({ user: publicAdmin(updated) });
@@ -681,7 +681,7 @@ router.post('/providers/:id/commission-rate/:decision', requireSuperAdmin, async
 
   if (decision === 'approve') {
     const updated = await db.update('users', provider.id, { commissionRateOverrideStatus: 'approved' });
-    await notify(provider.id, '🎉', `You've been approved for a custom ${(provider.commissionRateOverride * 100).toFixed(1)}% commission rate, effective immediately — recognition for your excellent performance.`, null, { section: 'settings' });
+    await notify(provider.id, '🎉', `You've been approved for a custom ${(provider.commissionRateOverride * 100).toFixed(1)}% commission rate, effective immediately, in recognition of your performance.`, null, { section: 'settings' });
     if (provider.commissionRateOverrideProposedBy) {
       await notify(provider.commissionRateOverrideProposedBy, '✅', `Your proposed commission rate for ${provider.name} was approved.`, null, { section: 'people' });
     }
@@ -724,7 +724,7 @@ router.patch('/users/:id/hold', async (req, res) => {
   });
   await notify(target.id, onHold ? '⏸️' : '✅', onHold
     ? `Your account has been temporarily paused${reason ? `: ${reason}` : ''}. Contact support if you have questions.`
-    : 'Your account hold has been cleared — you can book and accept jobs normally again.', null, { section: 'settings' });
+    : 'The hold on your account has been removed. You can book and accept jobs again.', null, { section: 'settings' });
   res.json({ user: publicAdmin(updated) });
 });
 
@@ -831,7 +831,7 @@ router.patch('/providers/:id/guarantors/:index', requireDepartment(['verificatio
     await notify(provider.id, '❌', `Your guarantor "${guarantors[idx].name}" wasn't accepted. A guarantor must be another person with their own phone number. Please replace them in Verification.`, null, { section: 'verification' });
   }
   if (status === 'verified') {
-    await notify(provider.id, '✅', `Your guarantor "${guarantors[idx].name}" has been contacted and verified — thank you for helping us keep Trothen trustworthy.`, null, { section: 'verification' });
+    await notify(provider.id, '✅', `Your guarantor "${guarantors[idx].name}" has been contacted and verified. Thank you.`, null, { section: 'verification' });
   }
   res.json({ user: publicAdmin(updated) });
 });
@@ -1179,7 +1179,7 @@ router.post('/verification/:id/decide', requireDepartment(['verification']), asy
   // replaced by a newer upload ("superseded"), or one already decided,
   // can't be approved by mistake from a stale screen.
   if (!['pending', 'review_required'].includes(record.status)) {
-    return res.status(409).json({ error: `This submission is already ${record.status.replace('_', ' ')} — refresh the queue.` });
+    return res.status(409).json({ error: `This submission is already ${record.status.replace('_', ' ')}. Refresh the queue.` });
   }
   const region = await myRegion(req);
   const user = await db.find('users', u => u.id === record.userId);
@@ -1193,7 +1193,7 @@ router.post('/verification/:id/decide', requireDepartment(['verification']), asy
   const approveMessage = user && user.role === 'provider' && !user.profilePhotoUrl
     ? 'Your identity verification was approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
     : 'Your identity verification was approved.';
-  await notify(record.userId, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? approveMessage : `Your identity verification was rejected: ${rejectionReason.trim()} — please resubmit your documents.`, null, { section: 'verification' });
+  await notify(record.userId, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? approveMessage : `Your identity verification was rejected: ${rejectionReason.trim()}. Please resubmit your documents.`, null, { section: 'verification' });
   res.json({ verification: { ...record, status, rejectionReason: finalRejectionReason } });
 });
 
@@ -1472,7 +1472,7 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
   // was actually about. Required, matching the same real-reason pattern
   // already used for verification/account rejections.
   if (!isNonEmptyString(note, { min: 3, max: 500 })) {
-    return res.status(400).json({ error: 'A note explaining the resolution is required — both parties will see it' });
+    return res.status(400).json({ error: 'A note explaining the resolution is required. Both parties will see it' });
   }
   const trimmedNote = note.trim();
 
@@ -1564,8 +1564,8 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
     const wasRefunded = escrow && escrow.status === 'refunded';
     if (escrow && !wasRefunded) await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
     if (contract) {
-      await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved in your favor — ${wasRefunded ? 'your payment was already refunded.' : 'your payment has been refunded.'} ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
-      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — the customer was refunded, so this booking's escrow will not be released to you. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
+      await notify(contract.customerId, '⚖️', `Your dispute (${dispute.reason}) has been resolved in your favor: ${wasRefunded ? 'your payment was already refunded.' : 'your payment has been refunded.'} ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved. The customer was refunded, so this booking's escrow will not be released to you. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
     }
     return res.json({ dispute: updated });
   }
@@ -1580,7 +1580,7 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
       const releasedUnpaid = (await db.filter('escrowTransactions', e => e.status === 'released' && !e.payoutId))
         .filter(e => providerContractIds.has(e.contractId));
       const totalAvailable = releasedUnpaid.reduce((s, e) => s + e.amount, 0);
-      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved — escrow released. You now have $${totalAvailable} available to request as a payout. ${trimmedNote}`, 'bookingUpdates', { section: 'earnings' });
+      await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved. Escrow released. You now have $${totalAvailable} available to request as a payout. ${trimmedNote}`, 'bookingUpdates', { section: 'earnings' });
     } else {
       await notify(contract.providerId, '⚖️', `A dispute on one of your jobs (${dispute.reason}) has been resolved. ${trimmedNote}`, 'bookingUpdates', { section: 'bookings' });
     }
@@ -1607,7 +1607,7 @@ router.post('/disputes/:id/action', requireSuperAdmin, async (req, res) => {
     return res.status(400).json({ error: `action must be one of: ${DISPUTE_ACTIONS.join(', ')}` });
   }
   if (!isNonEmptyString(note, { min: 3, max: 1000 })) {
-    return res.status(400).json({ error: 'A note explaining this action is required — it becomes part of the permanent audit trail' });
+    return res.status(400).json({ error: 'A note explaining this action is required. It becomes part of the permanent audit trail' });
   }
   const dispute = await db.find('disputes', d => d.id === req.params.id);
   if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
@@ -1632,7 +1632,7 @@ router.post('/disputes/:id/action', requireSuperAdmin, async (req, res) => {
     if (escrowForAction.payoutId || escrowForAction.materialsAdvancePayoutId) return res.status(409).json({ error: 'The pro has already been paid out for this booking, so this dispute can\'t be reopened here. Settle it by hand and record it in a note.' });
   }
   if (action !== 'reopen' && dispute.status !== 'open') {
-    return res.status(400).json({ error: `This dispute is already ${dispute.status} — reopen it first if it needs further action` });
+    return res.status(400).json({ error: `This dispute is already ${dispute.status}. Reopen it first if it needs further action` });
   }
 
   const statusByAction = { request_info: 'open', escalate: 'escalated', reject: 'rejected', close: 'closed', reopen: 'open' };
@@ -1859,13 +1859,13 @@ router.get('/go-live/status', requireSuperAdmin, async (req, res) => {
 router.post('/go-live/super-admins', requireSuperAdmin, async (req, res) => {
   const { name, email, password } = req.body || {};
   const errors = validate([
-    ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
+    ['name', isValidName(name), 'Enter a valid name using letters, spaces, hyphens and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
     ['password', isValidPassword(password), 'Temporary password must be 8-72 characters and not a common password'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
   const { isDemoAccount, createSuperAdmin } = require('../go-live');
-  if (isDemoAccount({ email })) return res.status(400).json({ error: 'Use a real email address, not a demo one.' });
+  if (isDemoAccount({ email })) return res.status(400).json({ error: 'Use a valid email address.' });
   const existing = await db.find('users', u => u.email.toLowerCase() === email.trim().toLowerCase());
   if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
   const admin = await createSuperAdmin({ name, email, password });
@@ -2134,10 +2134,10 @@ router.patch('/settings/support-contact', requireAuth, requireRole('admin'), asy
   }
   const { whatsapp, phoneDisplay, email, category } = req.body || {};
   if (category !== undefined && category !== null && !SUPPORT_CATEGORIES.includes(category)) {
-    return res.status(400).json({ error: `category must be one of: ${SUPPORT_CATEGORIES.join(', ')} — or omitted for the General number` });
+    return res.status(400).json({ error: `category must be one of: ${SUPPORT_CATEGORIES.join(', ')}, or omitted for the General number` });
   }
   if (!isNonEmptyString(whatsapp) || !/^\d{7,15}$/.test(whatsapp)) {
-    return res.status(400).json({ error: 'WhatsApp number must be digits only, with country code and no +/spaces/dashes — e.g. 15551234567' });
+    return res.status(400).json({ error: 'WhatsApp number must be digits only, with country code and no +/spaces/dashes, for example 15551234567' });
   }
   if (!isNonEmptyString(phoneDisplay, { min: 5, max: 30 })) {
     return res.status(400).json({ error: 'Enter a valid display phone number' });
@@ -2203,7 +2203,7 @@ router.delete('/settings/support-contact', requireAuth, requireRole('admin'), as
   const { getSetting, setSetting } = require('../platform-settings');
   const region = (m.isSuperAdmin && isNonEmptyString(targetRegion)) ? targetRegion.trim() : await myRegion(req);
   if (!region) {
-    if (!category) return res.status(400).json({ error: 'The platform-wide General number can be changed, but not removed — set a new one instead.' });
+    if (!category) return res.status(400).json({ error: 'The platform-wide General number can be changed, but not removed. Set a new one instead.' });
     const current = await getSetting('supportContact');
     const categories = { ...(current.categories || {}) };
     delete categories[category];
@@ -2442,7 +2442,7 @@ router.post('/homepage-images/:slot/upload', requireSuperAdmin, (req, res) => {
 
     if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
+      return res.status(400).json({ error: 'This file is not a valid image. Please upload a photo.' });
     }
 
     const url = `/uploads/${req.file.filename}`;
@@ -2505,7 +2505,7 @@ router.post('/category-images/:categoryId/upload', requireSuperAdmin, (req, res)
 
     if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
+      return res.status(400).json({ error: 'This file is not a valid image. Please upload a photo.' });
     }
 
     const url = `/uploads/${req.file.filename}`;
@@ -2675,7 +2675,7 @@ router.post('/category-requests/:id/approve', requireSuperAdmin, async (req, res
   }
   await db.update('users', request.providerId, { categoryApprovalStatus: 'approved' });
   await db.update('categoryRequests', request.id, { status: 'approved', resolvedAt: new Date().toISOString() });
-  await notify(request.providerId, '✅', `Your category "${finalCategoryName}" was approved — you're now fully listed and bookable.`, null, { section: 'settings' });
+  await notify(request.providerId, '✅', `Your category "${finalCategoryName}" was approved. You're now fully listed and bookable.`, null, { section: 'settings' });
   res.json({ ok: true, matchedExisting: !!existingCategory, finalCategoryName });
 });
 
@@ -2697,7 +2697,7 @@ router.post('/category-requests/:id/reject', requireSuperAdmin, async (req, res)
 router.post('/categories', requireSuperAdmin, async (req, res) => {
   const { name, icon } = req.body || {};
   if (!isValidLabel(name, { min: 2, max: 40 })) {
-    return res.status(400).json({ error: 'Enter a real category name (2-40 characters)' });
+    return res.status(400).json({ error: 'Enter a valid category name (2-40 characters)' });
   }
   const trimmed = name.trim();
   const existing = await db.find('categories', c => c.name.toLowerCase() === trimmed.toLowerCase());
@@ -2779,7 +2779,7 @@ router.get('/countries', async (req, res) => res.json({ countries: await db.all(
 router.post('/countries', requireSuperAdmin, async (req, res) => {
   const { name, status } = req.body || {};
   if (!isValidLabel(name, { min: 2, max: 60 })) {
-    return res.status(400).json({ error: 'Enter a real country name (2-60 characters)' });
+    return res.status(400).json({ error: 'Enter a valid country name (2-60 characters)' });
   }
   const trimmed = name.trim();
   const existing = await db.find('countries', c => c.name.toLowerCase() === trimmed.toLowerCase());
@@ -2860,7 +2860,7 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
   const { name, email, password, city, country, department, regionScoped, scope } = req.body || {};
   if (scope !== undefined && !['country', 'city'].includes(scope)) return res.status(400).json({ error: 'scope must be country or city' });
   const errors = validate([
-    ['name', isValidName(name), 'Enter a real name — letters, spaces, hyphens, and apostrophes only'],
+    ['name', isValidName(name), 'Enter a valid name using letters, spaces, hyphens and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
     ['password', isValidPassword(password), 'Password must be 8-72 characters'],
     ['city', isNonEmptyString(city), 'City is required'],
@@ -3194,7 +3194,7 @@ router.post('/platform-handbook', requireSuperAdmin, (req, res) => {
     }
     if (!verifyPdfMagicBytes(req.file.path)) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'That file doesn\'t look like a real PDF — please upload an actual PDF.' });
+      return res.status(400).json({ error: 'That file is not a valid PDF. Please upload a PDF file.' });
     }
     const { setSetting } = require('../platform-settings');
     await setSetting('platformHandbookUrl', `/uploads/${req.file.filename}`);
@@ -3216,7 +3216,7 @@ router.post('/promotions/image', async (req, res) => {
     }
     if (!verifyImageMagicBytes(req.file.path, req.file.mimetype)) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'This file does not appear to be a genuine image — please upload a real photo.' });
+      return res.status(400).json({ error: 'This file is not a valid image. Please upload a photo.' });
     }
     res.status(201).json({ url: `/uploads/${req.file.filename}` });
   });
@@ -3242,7 +3242,7 @@ router.post('/promotions', async (req, res) => {
     return res.status(400).json({ error: 'Use the upload button to add a promotion image' });
   }
   if (expiresAt && (Number.isNaN(new Date(expiresAt).getTime()) || new Date(expiresAt).getTime() < Date.now())) {
-    return res.status(400).json({ error: 'The end date must be a real date in the future' });
+    return res.status(400).json({ error: 'The end date must be a valid future date' });
   }
 
   const promo = {
@@ -3277,7 +3277,7 @@ router.post('/promotions', async (req, res) => {
       let sent = 0;
       for (const recipient of recipients) {
         if (!recipient.email) continue;
-        const result = await sendEmail(recipient.email, promo.title, `${promo.message}\n\n— The Trothen Team`);
+        const result = await sendEmail(recipient.email, promo.title, `${promo.message}\n\nKind regards,\nThe Trothen Team`);
         if (result.sent) sent += 1;
       }
       await db.update('promotions', promo.id, { emailSentCount: sent });
@@ -3612,7 +3612,7 @@ router.patch('/plan-pricing/override', async (req, res) => {
   if (typeof localPrice !== 'number' || localPrice < 0) return res.status(400).json({ error: 'Enter a valid non-negative price' });
   if (!isNonEmptyString(country)) return res.status(400).json({ error: 'country is required' });
   if (!m.isSuperAdmin && country !== m.country) {
-    return res.status(403).json({ error: `Your admin account is scoped to ${m.country} — you can't set pricing for other countries.` });
+    return res.status(403).json({ error: `Your admin account is scoped to ${m.country}. You can't set pricing for other countries.` });
   }
   const currency = currencyForCountry(country);
   const existing = await db.find('planPricingOverrides', r => r.country === country && r.plan === plan);
@@ -3632,7 +3632,7 @@ router.delete('/plan-pricing/override/:country/:plan', async (req, res) => {
   }
   const { country, plan } = req.params;
   if (!m.isSuperAdmin && country !== m.country) {
-    return res.status(403).json({ error: `Your admin account is scoped to ${m.country} — you can't edit pricing for other countries.` });
+    return res.status(403).json({ error: `Your admin account is scoped to ${m.country}. You can't edit pricing for other countries.` });
   }
   const existing = await db.find('planPricingOverrides', r => r.country === country && r.plan === plan);
   if (existing) await db.remove('planPricingOverrides', existing.id);

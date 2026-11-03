@@ -23,7 +23,7 @@ const router = express.Router();
 // hammering the endpoint across many different contracts.
 const disputeLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
-  message: { error: 'Too many disputes filed recently — please contact support directly if you need to report something urgent.' },
+  message: { error: 'Too many disputes filed recently. Please contact support directly if you need to report something urgent.' },
 });
 
 // Same race-condition class as the payout lock in payments.routes.js: an
@@ -120,7 +120,7 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
     storeFeeFromPro: contract.storeFeePaidBy === 'pro' ? Math.min(contract.storeFee || 0, contract.storeGoodsTotal || 0) : 0,
     paidCurrency: wantsLocal ? currency.code : 'USD',
     paidAmountLocal,
-    exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate — not a live market rate' : null,
+    exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate, not a live market rate' : null,
     status: 'held',
     materialsAdvanceAmount: advance,
     materialsAdvanceReleased: false,
@@ -637,7 +637,7 @@ router.post('/org-invites/:code/redeem', requireAuth, requireRole('provider'), a
   // step: two people redeeming the same link can't both pass the
   // maxUses check, and can't both pass the seat-limit check either.
   if (orgSeatLocks.has(code)) {
-    return res.status(409).json({ error: 'This invite is being processed — please try again in a moment.' });
+    return res.status(409).json({ error: 'This invite is being processed. Please try again in a moment.' });
   }
   orgSeatLocks.add(code);
 
@@ -653,7 +653,7 @@ router.post('/org-invites/:code/redeem', requireAuth, requireRole('provider'), a
     if (!org || org.status !== 'active') return res.status(400).json({ error: 'This organization account is no longer active' });
     if (org.seatLimit != null) {
       const currentSeats = (await db.filter('users', u => u.role === 'provider' && u.organizationId === org.id)).length;
-      if (currentSeats >= org.seatLimit) return res.status(400).json({ error: `${org.name} is at its seat limit — contact them to request more seats.` });
+      if (currentSeats >= org.seatLimit) return res.status(400).json({ error: `${org.name} is at its seat limit. Contact them to request more seats.` });
     }
     await db.update('users', provider.id, { organizationId: org.id });
     await db.update('organizationInvites', invite.id, { usesCount: invite.usesCount + 1 });
@@ -693,7 +693,7 @@ router.get('/currency/mine', requireAuth, async (req, res) => {
     currency,
     isUSD: currency.code === 'USD',
     convertedAmount: converted,
-    exchangeRateNote: currency.code !== 'USD' ? 'Approximate test-mode exchange rate — not a live market rate' : null,
+    exchangeRateNote: currency.code !== 'USD' ? 'Approximate test-mode exchange rate, not a live market rate' : null,
   });
 });
 
@@ -945,7 +945,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
     return res.status(403).json({ code: 'VERIFY_IDENTITY', error: 'Please verify your identity first. Upload a government ID in the Verification section, and you can post a job once it\'s been reviewed.' });
   }
   if (customer.onHold) {
-    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to post a job again shortly. Contact support if you need this resolved sooner.' });
+    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review. You\'ll be able to post a job again shortly. Contact support if you need this resolved sooner.' });
   }
   const { category, description, materialsOnHand, materialsCost, budget, payCurrency, photoUrls } = req.body || {};
   const jobWhere = readJobLocation(req.body); // v92
@@ -958,7 +958,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   const errors = validate([
     ['category', isNonEmptyString(category, { min: 2, max: 60 }), 'Category is required'],
     ['description', isNonEmptyString(description, { min: 5, max: 500 }), 'Description must be between 5 and 500 characters'],
-    ['description', typeof description !== 'string' || looksLikeRealText(description), 'Please describe the job in real words so we can match you correctly'],
+    ['description', typeof description !== 'string' || looksLikeRealText(description), 'Please describe the job in words so we can match you correctly'],
   ]);
   if (materialsOnHand && !isNonEmptyString(materialsOnHand, { max: 300 })) {
     return res.status(400).json({ error: 'What you already have must be under 300 characters' });
@@ -969,10 +969,10 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
   const prohibitedHit = findProhibitedContent(category, category) || findProhibitedContent(description, category);
   if (prohibitedHit) {
-    return res.status(400).json({ error: `This can't be posted on Trothen — jobs involving ${prohibitedHit} are never permitted on the platform.` });
+    return res.status(400).json({ error: `This can't be posted on Trothen: jobs involving ${prohibitedHit} are never permitted on the platform.` });
   }
   const validPhotoUrls = validateJobPhotoUrls(photoUrls);
-  if (validPhotoUrls === null) return res.status(400).json({ error: 'Invalid photo — please re-upload your photos and try again' });
+  if (validPhotoUrls === null) return res.status(400).json({ error: 'Invalid photo. Please re-upload your photos and try again' });
 
   const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
   const isKnownCategory = activeCategories.includes(category);
@@ -1009,7 +1009,7 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   if (!isKnownCategory) {
     const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
     for (const admin of superAdmins) {
-      await notify(admin.id, '📋', `A customer requested "${category}" — not a current category. Consider adding it if you're seeing repeat demand.`, null, { section: 'categories' });
+      await notify(admin.id, '📋', `A customer requested "${category}", not a current category. Consider adding it if you're seeing repeat demand.`, null, { section: 'categories' });
     }
   }
 
@@ -1238,10 +1238,10 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), requir
   if (decision === 'accept') {
     const provider = await db.find('users', u => u.id === req.user.sub);
     if (provider && provider.onHold) {
-      return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to respond to jobs again shortly. Contact support if you need this resolved sooner.' });
+      return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review. You\'ll be able to respond to jobs again shortly. Contact support if you need this resolved sooner.' });
     }
     if (provider && LICENSED_TRADE_CATEGORIES.has(provider.category) && !hasValidLicense(provider)) {
-      return res.status(403).json({ error: `${provider.category} requires a current, verified license on file before you can respond to jobs — add your license expiry date in Settings.` });
+      return res.status(403).json({ error: `${provider.category} requires a current, verified license on file before you can respond to jobs. Add your license expiry date in Settings.` });
     }
   }
 
@@ -1347,7 +1347,7 @@ router.get('/jobs/:id/candidates', requireAuth, requireRole('customer'), async (
 router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), async (req, res) => {
   const job = await db.find('jobs', j => j.id === req.params.id && j.customerId === req.user.sub);
   if (!job) return res.status(404).json({ error: 'Job not found' });
-  if (job.status !== 'open') return res.status(400).json({ error: `This job is already ${job.status} — it can't be hired out again.` });
+  if (job.status !== 'open') return res.status(400).json({ error: `This job is already ${job.status}. It can't be hired out again.` });
 
   const { providerId, amount } = req.body || {};
   if (!isNonEmptyString(providerId)) return res.status(400).json({ error: 'A provider must be selected' });
@@ -1357,7 +1357,7 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
 
   const provider = await db.find('users', u => u.id === providerId);
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
-  if (provider.onHold) return res.status(403).json({ error: 'This provider\'s account is temporarily paused — choose another provider, or check back shortly.' });
+  if (provider.onHold) return res.status(403).json({ error: 'This provider\'s account is temporarily paused. Choose another provider, or check back shortly.' });
   if (LICENSED_TRADE_CATEGORIES.has(provider.category) && !hasValidLicense(provider)) {
     return res.status(403).json({ error: `${provider.name} doesn't have a current, verified license on file for ${provider.category} and can't be hired for this job right now.` });
   }
@@ -1465,7 +1465,7 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
   await checkNewAccountHighValue(req.user.sub, contract.amount);
 
   const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
-  await notify(providerId, '🎉', `You were selected for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" at $${finalAmount}${contract.payMethod === 'cash' ? ' (CASH job: the customer pays you after the work; Trothen\'s commission comes from your tokens when you accept)' : ''} — confirm by ${deadlineLabel} or it's automatically offered to the next candidate.`, null, { section: 'bookings' });
+  await notify(providerId, '🎉', `You were selected for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" at $${finalAmount}${contract.payMethod === 'cash' ? ' (CASH job: the customer pays you after the work; Trothen\'s commission comes from your tokens when you accept)' : ''}. Confirm by ${deadlineLabel} or it's automatically offered to the next candidate.`, null, { section: 'bookings' });
   await notify(req.user.sub, '⏳', `Your booking for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" is awaiting the provider's confirmation.`, null, { section: 'bookings' });
 
   // NOTE: other candidates are deliberately NOT dismissed here — see
@@ -1567,7 +1567,7 @@ async function finalizeJobSelection(job, confirmedMatchId) {
   const otherMatches = await db.filter('matches', m => m.jobId === job.id && m.id !== confirmedMatchId && ['pending', 'interested'].includes(m.status));
   for (const other of otherMatches) {
     await db.update('matches', other.id, { status: 'not_selected' });
-    await notify(other.providerId, '📋', `The customer hired another provider for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" — this job is no longer available.`, null, { section: 'matches' });
+    await notify(other.providerId, '📋', `The customer hired another provider for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}". This job is no longer available.`, null, { section: 'matches' });
   }
 }
 
@@ -1603,7 +1603,7 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
     // Nobody left to offer it to — reopen the job so the customer can
     // pick again (or wait for new responses) rather than it dying silently.
     await db.update('jobs', job.id, { status: 'open' });
-    await notify(job.customerId, '🔁', `Your provider for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" didn't confirm in time and no other candidates are available — the job is reopened so you can choose again.`, null, { section: 'bookings' });
+    await notify(job.customerId, '🔁', `Your provider for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" didn't confirm in time and no other candidates are available. The job is reopened so you can choose again.`, null, { section: 'bookings' });
     return null;
   }
 
@@ -1648,7 +1648,7 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
   await db.update('matches', next.id, { status: 'accepted' });
 
   const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
-  await notify(next.providerId, '🎉', `You were selected for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" at $${failedAmount} — confirm by ${deadlineLabel} or it's automatically offered to the next candidate.`, null, { section: 'bookings' });
+  await notify(next.providerId, '🎉', `You were selected for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" at $${failedAmount}. Confirm by ${deadlineLabel} or it's automatically offered to the next candidate.`, null, { section: 'bookings' });
   await notify(job.customerId, '🔁', `Your first pick didn't confirm in time, so your job for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" was automatically offered to the next candidate${provider ? `, ${provider.name},` : ''} at the same price.`, null, { section: 'bookings' });
 
   return contract;
@@ -1667,7 +1667,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     return res.status(403).json({ code: 'VERIFY_IDENTITY', error: 'Please verify your identity first. Upload a government ID in the Verification section, and you can book a pro once it\'s been reviewed.' });
   }
   if (customer.onHold) {
-    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review — you\'ll be able to book again shortly. Contact support if you need this resolved sooner.' });
+    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review. You\'ll be able to book again shortly. Contact support if you need this resolved sooner.' });
   }
   const { providerId, date, time, amount, payCurrency, materialsAdvance, photoUrls, isOffer, useLoyaltyPoints, materialsOnHand } = req.body || {};
   let { service } = req.body || {};
@@ -1696,7 +1696,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   const errors = validate([
     ['providerId', isNonEmptyString(providerId), 'A provider must be selected'],
     ['service', isNonEmptyString(service, { min: 3, max: 200 }), 'Describe the service in at least 3 characters'],
-    ['service', typeof service !== 'string' || looksLikeRealText(service), 'Please describe the job in real words so we can match you correctly'],
+    ['service', typeof service !== 'string' || looksLikeRealText(service), 'Please describe the job in words so we can match you correctly'],
     ['date', isNonEmptyString(date), 'Pick a date for the job'],
     ['time', isNonEmptyString(time), 'Pick a time for the job'],
     ['address', isNonEmptyString(address, { min: 5, max: 200 }), 'Tell the pro where the job is: pin the location, describe a landmark, or type an address'],
@@ -1706,7 +1706,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
   const prohibitedHit = findProhibitedContent(service, provider.category);
   if (prohibitedHit) {
-    return res.status(400).json({ error: `This can't be booked on Trothen — jobs involving ${prohibitedHit} are never permitted on the platform.` });
+    return res.status(400).json({ error: `This can't be booked on Trothen: jobs involving ${prohibitedHit} are never permitted on the platform.` });
   }
   if (amount !== undefined && (typeof amount !== 'number' || amount <= 0)) {
     return res.status(400).json({ error: 'Amount must be a positive number' });
@@ -1721,7 +1721,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     return res.status(400).json({ error: 'A materials advance is for a job. This order is for goods only.' });
   }
   const validPhotoUrls = validateJobPhotoUrls(photoUrls);
-  if (validPhotoUrls === null) return res.status(400).json({ error: 'Invalid photo — please re-upload your photos and try again' });
+  if (validPhotoUrls === null) return res.status(400).json({ error: 'Invalid photo. Please re-upload your photos and try again' });
 
   // A provider can pause new bookings without deleting their profile or
   // going through the confirm/decline dance on every request — the
@@ -1877,7 +1877,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
 
   if (canRedeemPoints) {
     await db.update('users', customerForPoints.id, { loyaltyPoints: (customerForPoints.loyaltyPoints || 0) - POINTS_FOR_FREE_BOOKING });
-    await notify(req.user.sub, '🎁', `Free booking credit applied — $${realServiceFee.toFixed(2)} service fee waived on "${contract.service}".`, null, { section: 'bookings' });
+    await notify(req.user.sub, '🎁', `Free booking credit applied: $${realServiceFee.toFixed(2)} service fee waived on "${contract.service}".`, null, { section: 'bookings' });
   }
   // v109: the booking point is now given when the job is completed (see
   // completeContractCore). Giving it here let anyone collect points by
@@ -1913,7 +1913,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     c.id !== contract.id && c.providerId === providerId && c.date === date &&
     ['active', 'pending_provider_confirmation', 'pending_agreement'].includes(c.status)
   );
-  const conflictNote = sameDayConflict ? ` Note: you already have another job on ${date} — double check your schedule before confirming.` : '';
+  const conflictNote = sameDayConflict ? ` Note: you already have another job on ${date}: double check your schedule before confirming.` : '';
 
   // v119: paying by code: the pro is only asked once the money has arrived.
   if (contract.status === 'awaiting_payment' && escrow) {
@@ -1922,10 +1922,10 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   }
   const cashNote = contract.payMethod === 'cash' ? ' CASH job: the customer pays you directly after the work. Trothen\'s commission is taken from your tokens when you accept.' : '';
   if (isNegotiable) {
-    await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}" — respond by ${deadlineLabel} or it expires automatically.${cashNote}${conflictNote}`, null, { section: 'bookings' });
+    await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}": respond by ${deadlineLabel} or it expires automatically.${cashNote}${conflictNote}`, null, { section: 'bookings' });
   } else {
     const goodsNote = basket.items.length ? ` It includes ${basket.items.reduce((n, i) => n + i.qty, 0)} good${basket.items.reduce((n, i) => n + i.qty, 0) === 1 ? '' : 's'} from your store ($${goodsTotal}); they are held for this customer.` : ''; // v106
-    await notify(providerId, '📋', `${customer ? customer.name : 'A customer'} booked you for "${contract.service}" on ${date} — confirm by ${deadlineLabel} or the booking is automatically cancelled${contract.payMethod === 'cash' ? '' : ' and refunded'}.${cashNote}${goodsNote}${conflictNote}`, null, { section: 'bookings' });
+    await notify(providerId, '📋', `${customer ? customer.name : 'A customer'} booked you for "${contract.service}" on ${date}. Confirm by ${deadlineLabel} or the booking is automatically cancelled${contract.payMethod === 'cash' ? '' : ' and refunded'}.${cashNote}${goodsNote}${conflictNote}`, null, { section: 'bookings' });
   }
   res.status(201).json({ contract, escrow, sameDayConflict: !!sameDayConflict });
 });
@@ -1940,7 +1940,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
 // refunds it, same as a cancellation.
 router.post('/contracts/:id/respond-offer', requireAuth, requireRole('provider'), requireCurrentTerms, async (req, res) => {
   if (contractStatusLocks.has(req.params.id)) {
-    return res.status(409).json({ error: 'This booking is already being updated — please try again in a moment.' });
+    return res.status(409).json({ error: 'This booking is already being updated. Please try again in a moment.' });
   }
   contractStatusLocks.add(req.params.id);
   try {
@@ -2101,7 +2101,7 @@ async function handleRespondOffer(req, res) {
   if (contract.providerResponseDeadline && new Date(contract.providerResponseDeadline) < new Date()) {
     const { expireOneBooking } = require('../booking-scheduler');
     await expireOneBooking(contract);
-    return res.status(400).json({ error: 'The response window for this booking has already passed — it was automatically cancelled and refunded.' });
+    return res.status(400).json({ error: 'The response window for this booking has already passed. It was automatically cancelled and refunded.' });
   }
 
   // Three real shapes share this endpoint: a negotiable Mutual Agreement
@@ -2136,7 +2136,7 @@ async function handleRespondOffer(req, res) {
       await require('../store-orders').deliveryEvent(contract, 'declined');
       return res.json({ contract: updated, escrow: null });
     }
-    await notify(contract.customerId, '❌', `${provider ? provider.name : 'The provider'} can't take "${contract.service}" and declined the booking. Any held funds have been refunded — try another provider.`, null, { section: 'bookings' });
+    await notify(contract.customerId, '❌', `${provider ? provider.name : 'The provider'} can't take "${contract.service}" and declined the booking. Any held funds have been refunded. Try another provider.`, null, { section: 'bookings' });
     return res.json({ contract: updated, escrow: null });
   }
 
@@ -2158,10 +2158,10 @@ async function acceptAndStart(contract, acceptingProvider, { isDirectBooking, is
   const reply = (status, body) => ({ status, body });
   const agreedWords = customerAgreed ? `You agreed ${acceptingProvider ? acceptingProvider.name.split(' ')[0] + '\'s' : 'the pro\'s'} price of $${contract.amount} for "${contract.service}".` : `Your offer of $${contract.amount} for "${contract.service}" was accepted.`;
   if (acceptingProvider && acceptingProvider.onHold) {
-    return reply(403, { error: 'Your account is temporarily paused pending a quick review — you\'ll be able to accept new jobs again shortly. Contact support if you need this resolved sooner.' });
+    return reply(403, { error: 'Your account is temporarily paused pending a quick review. You\'ll be able to accept new jobs again shortly. Contact support if you need this resolved sooner.' });
   }
   if (acceptingProvider && LICENSED_TRADE_CATEGORIES.has(acceptingProvider.category) && !hasValidLicense(acceptingProvider)) {
-    return reply(403, { error: `${acceptingProvider.category} requires a current, verified license on file before you can accept jobs — add your license expiry date in Settings.` });
+    return reply(403, { error: `${acceptingProvider.category} requires a current, verified license on file before you can accept jobs. Add your license expiry date in Settings.` });
   }
 
   // v110: money-ordering fix. For a direct booking or a job-board hire,
@@ -2476,7 +2476,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
       row('Amount Charged to Customer', `${escrow.paidAmountLocal} ${escrow.paidCurrency}  (${escrow.exchangeRateNote || 'converted at time of payment'})`);
     }
   } else {
-    row('Escrow Status', 'No escrow was funded for this booking — see status above');
+    row('Escrow Status', 'No escrow was funded for this booking. See status above');
   }
 
   // ── NEGOTIATION RECORD ────────────────────────────────────────────────
@@ -2490,7 +2490,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   if (Array.isArray(contract.negotiationTranscript) && contract.negotiationTranscript.length) {
     sectionHeader('Negotiation Record');
     paragraph(
-      `The messages below were exchanged between the customer and provider before this booking was confirmed, and are preserved here exactly as sent — this is the actual conversation that led to the terms above, not a summary.`,
+      `The messages below were exchanged between the customer and provider before this booking was confirmed, and are preserved here exactly as sent. This is the actual conversation that led to the terms above, not a summary.`,
       { gapAfter: 10 }
     );
     for (const msg of contract.negotiationTranscript) {
@@ -2512,7 +2512,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   if (contract.arrivedAt) timelineEvents.push({ date: new Date(contract.arrivedAt), label: `Provider marked arrived${contract.arrivedLocation ? ' (GPS location recorded)' : ''}` });
   if (dispute) timelineEvents.push({ date: new Date(dispute.createdAt), label: `Dispute opened: "${dispute.reason}"` });
   if (dispute && dispute.status === 'resolved') timelineEvents.push({ date: new Date(dispute.resolvedAt || dispute.createdAt), label: 'Dispute resolved and escrow released' });
-  if (contract.status === 'completed' && escrow && escrow.status === 'released') timelineEvents.push({ date: generatedAt, label: 'Marked complete — escrow released to provider' });
+  if (contract.status === 'completed' && escrow && escrow.status === 'released') timelineEvents.push({ date: generatedAt, label: 'Marked complete. Escrow released to provider' });
   timelineEvents.sort((a, b) => a.date - b.date);
 
   sectionHeader('Timeline');
@@ -2538,7 +2538,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   // parties to explain the platform first.
   sectionHeader("How Trothen's Escrow & Dispute Process Works");
   paragraph(
-    `Under Trothen's terms of service, payment for a booking is collected from the customer and held in escrow — not released to the provider — until the customer confirms the work was completed. Either party may raise a dispute before that confirmation, which freezes the contract and holds escrow in place pending review. A resolved dispute results in escrow being released to the provider, refunded to the customer, or otherwise apportioned according to Trothen's review of the matter. This structure is designed so that no party is paid, or loses funds, before the outcome of the booking is settled.`,
+    `Under Trothen's terms of service, payment for a booking is collected from the customer and held in escrow, not released to the provider until the customer confirms the work was completed. Either party may raise a dispute before that confirmation, which freezes the contract and holds escrow in place pending review. A resolved dispute results in escrow being released to the provider, refunded to the customer, or otherwise apportioned according to Trothen's review of the matter. This structure is designed so that no party is paid, or loses funds, before the outcome of the booking is settled.`,
     { gapAfter: 14 }
   );
 
@@ -2675,7 +2675,7 @@ router.post('/disputes', requireAuth, disputeLimiter, async (req, res) => {
 
   // Notify whichever party didn't raise the dispute.
   const otherPartyId = req.user.sub === contract.customerId ? contract.providerId : contract.customerId;
-  await notify(otherPartyId, '⚠️', `A dispute was opened on "${contract.service}" — our team is reviewing it.`, 'bookingUpdates', { section: 'bookings' });
+  await notify(otherPartyId, '⚠️', `A dispute was opened on "${contract.service}". Our team is reviewing it.`, 'bookingUpdates', { section: 'bookings' });
 
   // Real fraud/safety screening — checks both parties for an unusual
   // pattern of repeat disputes, not just this one.
@@ -2739,7 +2739,7 @@ router.post('/disputes/:id/evidence', requireAuth, (req, res, next) => {
 
   const filePath = path.join(PRIVATE_UPLOADS_DIR, req.file.filename);
   const bytesValid = req.file.mimetype === 'application/pdf' ? verifyPdfMagicBytes(filePath) : verifyImageMagicBytes(filePath, req.file.mimetype);
-  if (!bytesValid) { cleanup(); return res.status(400).json({ error: "That file doesn't look like a genuine document of the type it claims to be — please re-upload" }); }
+  if (!bytesValid) { cleanup(); return res.status(400).json({ error: "That file doesn't look like a genuine document of the type it claims to be. Please re-upload" }); }
 
   const uploader = await db.find('users', u => u.id === req.user.sub);
   // v83: evidence gets the same optional encryption as ID files.

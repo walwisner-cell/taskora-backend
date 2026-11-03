@@ -214,7 +214,7 @@ async function buildExportPdf(res, userId) {
         b.amount != null ? `$${Number(b.amount).toFixed(2)}` : '—',
       ])
     );
-    if (data.bookings.length > 60) r.paragraph(`${data.bookings.length - 60} more booking(s) are in the full data file — see below.`, { size: 8.5 });
+    if (data.bookings.length > 60) r.paragraph(`${data.bookings.length - 60} more booking(s) are in the full data file. See below.`, { size: 8.5 });
   } else {
     r.sectionHeader('Bookings'); r.paragraph('No bookings yet.');
   }

@@ -253,8 +253,8 @@ async function computeProviderScore(providerId) {
 // could genuinely help with, not just a number to react to.
 function recommendedActionForScore(score) {
   if (score > 60) return null; // fine standing, nothing recommended
-  if (score > 40) return { callRequired: false, label: 'Approaching the new-match floor — worth keeping an eye on, no action needed yet' };
-  return { callRequired: true, label: 'At or below the new-match floor — new job matches are already paused automatically; call to understand why and see if there\'s a real way to help them recover' };
+  if (score > 40) return { callRequired: false, label: 'Approaching the new-match floor. No action needed yet.' };
+  return { callRequired: true, label: 'At or below the new-match floor: new job matches are already paused automatically; call to understand why and see whether they can be helped to recover' };
 }
 
 // Weekly job-access tiers, replacing the old flat pass/fail floor at 40

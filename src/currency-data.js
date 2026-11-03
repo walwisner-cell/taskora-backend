@@ -108,7 +108,7 @@ function convertFromUSD(usdAmount, currencyCode, rateOverride) {
 // having it refresh APPROX_USD_RATE periodically) is the one change needed
 // to move from test-mode rates to real ones.
 async function fetchLiveRates() {
-  throw new Error('No live exchange rate provider is connected yet — using static approximate rates.');
+  throw new Error('No live exchange rate provider is connected yet: using static approximate rates.');
 }
 
 module.exports = { CURRENCY_BY_COUNTRY, APPROX_USD_RATE, currencyForCountry, convertFromUSD, fetchLiveRates };

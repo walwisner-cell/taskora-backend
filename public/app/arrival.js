@@ -1,4 +1,4 @@
-/* Agreeing an arrival time, "Leave now", and a phone-friendly dashboard (v129).
+/* Agreeing an arrival time, "Leave Now", and a phone-friendly dashboard (v129).
    Loaded after trothen.js and where.js.
 
    1. ARRIVAL TIME. The customer and the pro agree when the pro will arrive.
@@ -11,10 +11,10 @@
    2. NEXT JOB CARD. At the top of the pro's Overview and My Contracts, and
       the customer's Overview and My Bookings: the trip in progress, or the
       next agreed arrival, with the one button that matters right now
-      ("Leave now", "I have arrived", "Track arrival", "Accept").
+      ("Leave Now", "I have arrived", "Track Arrival", "Accept").
    3. PHONE LAYOUT. On a phone, the bookings and contracts tables become
       cards (each line labelled), with full-width buttons. The pro's
-      "On My Way" button is labelled "Leave now".
+      "On My Way" button is labelled "Leave Now".
    4. NAMES. Names typed in capitals ("JAMES DOE") show as "James Doe" on the
       dashboards. */
 (function () {
@@ -83,17 +83,17 @@
       const leave = isPro && c.status === 'active' && timeToLeave(c);
       html += `<div class="arr"><span class="arr-k">${esc(tr('Arrival'))}</span> <strong>${esc(when(a.agreed.at))}</strong> <span class="pill pill-ok">${esc(tr('Agreed'))}</span>
         <div class="arr-sub">${esc(inWords(a.agreed.at))}${a.proposal ? '' : ` · <button type="button" class="link-btn" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Change'))}</button>`}</div>
-        ${leave ? `<div style="margin-top:6px;"><button type="button" class="btn-sm btn-sm-primary" onclick="markContractOnMyWay(${jsArg(c.id)})">${esc(tr('Leave now'))}</button></div>` : ''}</div>`;
+        ${leave ? `<div style="margin-top:6px;"><button type="button" class="btn-sm btn-sm-primary" onclick="markContractOnMyWay(${jsArg(c.id)})">${esc(tr('Leave Now'))}</button></div>` : ''}</div>`;
     }
     if (a.proposal) {
       const mine = a.proposal.byId === meId;
       html += mine
         ? `<div class="arr arr-pending"><span class="arr-k">${esc(tr(a.agreed ? 'New time proposed' : 'Arrival proposed'))}</span> <strong>${esc(when(a.proposal.at))}</strong><div class="arr-sub">${esc(tr('Awaiting confirmation from'))} ${esc(otherName(c))} · <button type="button" class="link-btn" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Change'))}</button></div></div>`
         : `<div class="arr arr-action"><span class="arr-k">${esc(otherName(c))} ${esc(tr('proposed'))}</span> <strong>${esc(when(a.proposal.at))}</strong>${a.proposal.note ? `<div class="arr-sub">“${esc(a.proposal.note)}”</div>` : ''}
-            <div class="arr-btns"><button type="button" class="btn-sm btn-sm-primary" onclick="acceptArrivalTime(${jsArg(c.id)})">${esc(tr('Accept'))}</button><button type="button" class="btn-sm btn-sm-outline" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Propose another time'))}</button></div></div>`;
+            <div class="arr-btns"><button type="button" class="btn-sm btn-sm-primary" onclick="acceptArrivalTime(${jsArg(c.id)})">${esc(tr('Accept'))}</button><button type="button" class="btn-sm btn-sm-outline" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Propose Another Time'))}</button></div></div>`;
     }
     if (!a.agreed && !a.proposal) {
-      html += `<div class="arr arr-none"><span class="arr-k">${esc(tr('Arrival'))}</span> ${esc(tr('Not agreed yet'))}<div class="arr-btns"><button type="button" class="btn-sm btn-sm-outline" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Agree arrival time'))}</button></div></div>`;
+      html += `<div class="arr arr-none"><span class="arr-k">${esc(tr('Arrival'))}</span> ${esc(tr('Not agreed yet'))}<div class="arr-btns"><button type="button" class="btn-sm btn-sm-outline" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Agree Arrival Time'))}</button></div></div>`;
     }
     return html;
   }
@@ -138,7 +138,7 @@
         </div>
         <div class="modal-footer sheet-foot">
           <button class="btn-sm btn-sm-outline" onclick="closeArrivalTime()">${esc(tr('Cancel'))}</button>
-          <button class="confirm-btn" id="arr-save" onclick="submitArrivalTime(${jsArg(contractId)})">${esc(tr('Send proposal'))}</button>
+          <button class="confirm-btn" id="arr-save" onclick="submitArrivalTime(${jsArg(contractId)})">${esc(tr('Send Proposal'))}</button>
         </div>
       </div></div>`);
   };
@@ -157,7 +157,7 @@
       closeArrivalTime();
       showToast(tr('Proposal sent. You will be notified when it is accepted.'));
       redrawCurrent();
-    } catch (e) { showToast(e.message || tr('Could not send the proposal.')); if (btn) { btn.disabled = false; btn.textContent = tr('Send proposal'); } }
+    } catch (e) { showToast(e.message || tr('Could not send the proposal.')); if (btn) { btn.disabled = false; btn.textContent = tr('Send Proposal'); } }
   };
   window.acceptArrivalTime = async function (contractId) {
     try {
@@ -210,8 +210,8 @@
       head = isPro ? `${tr('En route to')} ${who}` : `${who} ${tr('is en route')}`;
       sub = `${tr('Departed')} ${new Date(c.onMyWayAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}${c.arrival && c.arrival.agreed ? ` · ${tr('due')} ${when(c.arrival.agreed.at)}` : ''}`;
       btns = isPro
-        ? `<button type="button" class="btn-sm btn-sm-primary" onclick="markContractArrived(${jsArg(c.id)})">${esc(tr('I have arrived'))}</button><button type="button" class="btn-sm btn-sm-outline" onclick="openTripTracking(${jsArg(c.id)})">${esc(tr('View trip'))}</button>`
-        : `<button type="button" class="btn-sm btn-sm-primary" onclick="openTripTracking(${jsArg(c.id)})">${esc(tr('Track arrival'))}</button>`;
+        ? `<button type="button" class="btn-sm btn-sm-primary" onclick="markContractArrived(${jsArg(c.id)})">${esc(tr('I Have Arrived'))}</button><button type="button" class="btn-sm btn-sm-outline" onclick="openTripTracking(${jsArg(c.id)})">${esc(tr('View Trip'))}</button>`
+        : `<button type="button" class="btn-sm btn-sm-primary" onclick="openTripTracking(${jsArg(c.id)})">${esc(tr('Track Arrival'))}</button>`;
     } else if (n.kind === 'next') {
       const due = c.arrival.agreed.at, leave = timeToLeave(c);
       const overdue = Date.parse(due) < Date.now();
@@ -219,19 +219,19 @@
       head = isPro ? `${tr('Due at')} ${who}'s ${when(due)}` : `${who} ${tr('arrives')} ${when(due)}`;
       sub = `${sentence(inWords(due))}${isPro && !leave ? ` · ${tr('you will be reminded when it is time to leave')}` : ''}`;
       btns = isPro
-        ? `<button type="button" class="btn-sm ${leave ? 'btn-sm-primary' : 'btn-sm-outline'}" onclick="markContractOnMyWay(${jsArg(c.id)})">${esc(tr('Leave now'))}</button>${c.jobLocation ? `<a class="btn-sm btn-sm-outline" href="https://www.google.com/maps/dir/?api=1&destination=${c.jobLocation.latitude},${c.jobLocation.longitude}" target="_blank" rel="noopener noreferrer">${esc(tr('Directions'))}</a>` : ''}`
-        : `<button type="button" class="btn-sm btn-sm-outline" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Change time'))}</button>`;
+        ? `<button type="button" class="btn-sm ${leave ? 'btn-sm-primary' : 'btn-sm-outline'}" onclick="markContractOnMyWay(${jsArg(c.id)})">${esc(tr('Leave Now'))}</button>${c.jobLocation ? `<a class="btn-sm btn-sm-outline" href="https://www.google.com/maps/dir/?api=1&destination=${c.jobLocation.latitude},${c.jobLocation.longitude}" target="_blank" rel="noopener noreferrer">${esc(tr('Directions'))}</a>` : ''}`
+        : `<button type="button" class="btn-sm btn-sm-outline" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Change Time'))}</button>`;
       if (isPro && (leave || overdue)) label = `<span class="pill pill-live">${esc(label)}</span>`;
     } else if (n.kind === 'ask') {
       label = tr('Action needed');
       head = `${who} ${tr('proposed an arrival time')}`;
       sub = when(c.arrival.proposal.at);
-      btns = `<button type="button" class="btn-sm btn-sm-primary" onclick="acceptArrivalTime(${jsArg(c.id)})">${esc(tr('Accept'))}</button><button type="button" class="btn-sm btn-sm-outline" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Propose another time'))}</button>`;
+      btns = `<button type="button" class="btn-sm btn-sm-primary" onclick="acceptArrivalTime(${jsArg(c.id)})">${esc(tr('Accept'))}</button><button type="button" class="btn-sm btn-sm-outline" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Propose Another Time'))}</button>`;
     } else {
       label = tr('Action needed');
       head = tr('No arrival time agreed');
       sub = `${tr('Agree a time with')} ${who} ${tr('so both of you receive reminders.')}`;
-      btns = `<button type="button" class="btn-sm btn-sm-primary" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Agree arrival time'))}</button>`;
+      btns = `<button type="button" class="btn-sm btn-sm-primary" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Agree Arrival Time'))}</button>`;
     }
     return `<div class="next-card" id="next-card"><div class="next-label">${label.startsWith('<span') ? label : esc(label)}</div><div class="next-title">${esc(title)}</div><div class="next-head">${esc(head)}</div><div class="next-sub">${esc(sub)}</div><div class="next-btns">${btns}</div></div>`;
   }
@@ -287,9 +287,9 @@
       if (m && /[A-Za-z]/.test(m[2]) && (m[2] === m[2].toUpperCase() || m[2] === m[2].toLowerCase())) { const fixed = m[1] + nameFix(m[2]); if (h.textContent !== fixed) h.textContent = fixed; }
     });
     // The pro's start button reads the same everywhere.
-    (root || document).querySelectorAll('#provider-main button[onclick^="markContractOnMyWay"]').forEach(b => { if (b.textContent.trim() !== tr('Leave now')) b.textContent = tr('Leave now'); b.classList.remove('btn-sm-outline'); b.classList.add('btn-sm-primary'); });
-    (root || document).querySelectorAll('#provider-main button[onclick^="markContractArrived"]').forEach(b => { if (!/arrived/i.test(b.dataset.done || '')) { b.textContent = tr('I have arrived'); b.dataset.done = 'arrived'; } });
-    (root || document).querySelectorAll('#provider-main button[onclick^="openTripTracking"]').forEach(b => { b.textContent = tr('View trip'); });
+    (root || document).querySelectorAll('#provider-main button[onclick^="markContractOnMyWay"]').forEach(b => { if (b.textContent.trim() !== tr('Leave Now')) b.textContent = tr('Leave Now'); b.classList.remove('btn-sm-outline'); b.classList.add('btn-sm-primary'); });
+    (root || document).querySelectorAll('#provider-main button[onclick^="markContractArrived"]').forEach(b => { if (!/arrived/i.test(b.dataset.done || '')) { b.textContent = tr('I Have Arrived'); b.dataset.done = 'arrived'; } });
+    (root || document).querySelectorAll('#provider-main button[onclick^="openTripTracking"]').forEach(b => { b.textContent = tr('View Trip'); });
   }
   // Names in the side panel, the account button and greetings, shown properly
   // ("walter wisner" and "JAMES DOE" read "Walter Wisner" and "James Doe").
