@@ -8240,7 +8240,7 @@ const ADMIN_SECTIONS = {
     </div>
     <div class="panel">
       <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <span>Date Range <small style="font-weight:400;color:var(--slate);">applies to both panels below</small></span>
+        <span>Date Range <small style="font-weight:400;color:var(--slate);">applies to the panels below</small></span>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
           <input type="date" class="form-input" id="fin-filter-from" style="padding:6px 10px;font-size:13.5px;width:auto;" onchange="filterAdminFinancials()"/>
           <span style="font-size:13px;color:var(--slate);">to</span>

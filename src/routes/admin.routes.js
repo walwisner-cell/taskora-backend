@@ -1328,6 +1328,9 @@ router.get('/transactions', requireDepartment(['financial', 'accountant', 'contr
     return { c, customer, provider, escrow };
   }));
   const orgsById = new Map((await db.all('organizations')).map(o => [o.id, o]));
+  const payoutsById = new Map((await db.all('payouts')).map(p => [p.id, p])); // v132
+  const cashLinesByRef = new Map(); // v132
+  for (const l of await db.filter('tokenLedger', l => l.refKind === 'cashjob' && String(l.ref || '').startsWith('cashjob:'))) { if (!cashLinesByRef.has(l.ref)) cashLinesByRef.set(l.ref, []); cashLinesByRef.get(l.ref).push(l); }
 
   const scoped = region ? rows.filter(r => r.customer && inRegion(region, r.customer)) : rows;
   const transactions = scoped.map(({ c, customer, provider, escrow }) => {
@@ -1340,6 +1343,18 @@ router.get('/transactions', requireDepartment(['financial', 'accountant', 'contr
     // guessing what a job will net the platform before payout happens.
     const commissionRate = provider ? effectiveCommissionRate(provider, orgsById.get(provider.organizationId)) : null;
     const estCommission = commissionRate != null ? Math.round(Math.max(0, c.amount - (c.storeGoodsTotal || 0)) * commissionRate * 100) / 100 : null; // v105: no commission on store goods
+    // v132: the commission actually charged, once it has been: from the
+    // payout's own record of this job, or the tokens paid on a cash job.
+    let commission = null, commissionHow = null;
+    const payout = escrow && escrow.payoutId ? payoutsById.get(escrow.payoutId) : null;
+    const li = payout && (payout.lineItems || []).find(x => x.contractId === c.id && x.kind !== 'advance' && x.kind !== 'tip' && typeof x.commission === 'number');
+    if (li) { commission = li.commission; commissionHow = (payout.commissionPaidWithTokens || 0) > 0 ? ((payout.commissionPaidWithTokens >= payout.commissionAmount) ? 'tokens' : 'payout+tokens') : 'payout'; }
+    else if (payout) { commissionHow = 'payout'; }
+    if (c.payMethod === 'cash' && c.cashCommission) {
+      const lines = cashLinesByRef.get(`cashjob:${c.id}`) || [];
+      commission = Math.round(-lines.reduce((s, l) => s + (Number(l.tokens) || 0), 0) * 100) / 100;
+      commissionHow = c.cashCommission.freeCredit ? 'free' : 'cash-tokens';
+    }
     return {
       contractId: c.id,
       bookingNumber: c.bookingNumber || c.id,
@@ -1358,9 +1373,22 @@ router.get('/transactions', requireDepartment(['financial', 'accountant', 'contr
       paidOut: !!(escrow && escrow.payoutId),
       commissionRate,
       estCommission,
+      commission, // v132: null until charged
+      commissionHow, // v132: payout, tokens, payout+tokens, cash-tokens or free
+      payMethod: c.payMethod || 'protected',
     };
   });
   res.json({ transactions });
+});
+
+// GET /api/admin/commission-ledger — v132: every commission Trothen has
+// received and how it was paid: taken from a payout, paid with tokens at
+// payout, or paid with tokens on a cash job. A regional admin sees the pros
+// in their own city or country.
+router.get('/commission-ledger', requireDepartment(['financial', 'accountant', 'controller', 'legal']), async (req, res) => {
+  const region = await myRegion(req);
+  const { from, to } = req.query;
+  res.json(await require('../commission-statement').commissionLedger((p) => inRegion(region, p), { from, to }));
 });
 
 // GET /api/admin/transactions/pdf — a real, downloadable platform

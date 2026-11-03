@@ -192,7 +192,10 @@ async function velocityCheck(customer, recentCount) {
 // (Liberia, once MTN is connected), or a super admin has switched on test
 // purchases for a test site.
 async function inAppPaymentAvailable(country) {
-  if ((await getSetting('tokenTestPurchases')) === true) return true;
+  // v132: on the live site ("pay out only money Trothen really received" is
+  // on), test purchases never work, even if that box was left ticked.
+  const live = (await getSetting('payoutsRequireRealPayment')) === true;
+  if (!live && (await getSetting('tokenTestPurchases')) === true) return true;
   if (country === 'Liberia') { try { return require('./liberia-momo').isLiberiaMoMoConfigured(); } catch (e) { return false; } }
   return false;
 }
@@ -367,9 +370,16 @@ async function refundRef(ref, why) {
 
 // The pro's own choices: which bills to pay from tokens first.
 const AUTOPAY_KEYS = ['commission', 'plan', 'ad', 'pass'];
+// v132: commission is paid from tokens first unless the pro has turned it
+// off themselves. This is how a prepaid balance normally works: a pro who
+// bought tokens expects them to be used, and the payout is then kept whole.
+// Before v132 the box started unticked and almost no one found it, so no
+// token was ever spent on commission. `tokenAutoPayChosen.commission` marks
+// a pro who has made their own choice; their choice is always kept.
 function autopayOf(u) {
   const a = (u && u.tokenAutoPay) || {};
-  return Object.fromEntries(AUTOPAY_KEYS.map(k => [k, a[k] === true]));
+  const chosen = (u && u.tokenAutoPayChosen) || {};
+  return Object.fromEntries(AUTOPAY_KEYS.map(k => [k, k === 'commission' && !chosen.commission ? true : a[k] === true]));
 }
 
 // ── v119: commission on CASH jobs, paid from tokens ─────────────────────
@@ -759,6 +769,9 @@ async function stats() {
   const since = Date.now() - 30 * DAY;
   const recent = all.filter(l => new Date(l.createdAt).getTime() >= since);
   const sum = (rows, f) => money(rows.reduce((s, l) => s + f(l), 0));
+  // v132: tokens added by a test purchase were never paid for, so they are not sales.
+  const sold = (l) => l.kind === 'purchase' && l.paymentStatus !== 'simulated';
+  const test = (l) => l.kind === 'purchase' && l.paymentStatus === 'simulated';
   const holders = new Map();
   for (const l of all) holders.set(l.userId, money((holders.get(l.userId) || 0) + l.tokens));
   const purchases = await db.all('tokenPurchases');
@@ -766,15 +779,18 @@ async function stats() {
     outstandingTokens: sum(all, l => l.tokens),
     customersWithBalance: [...holders.values()].filter(v => v > 0.004).length,
     last30: {
-      soldUsd: sum(recent.filter(l => l.kind === 'purchase'), l => l.priceUsd || 0),
-      tokensSold: sum(recent.filter(l => l.kind === 'purchase'), l => l.tokens),
-      bonusGiven: sum(recent.filter(l => l.kind === 'purchase'), l => l.bonus || 0),
+      soldUsd: sum(recent.filter(sold), l => l.priceUsd || 0),
+      tokensSold: sum(recent.filter(sold), l => l.tokens),
+      bonusGiven: sum(recent.filter(sold), l => l.bonus || 0),
+      testTokens: sum(recent.filter(test), l => l.tokens), // v132
       tokensSpent: sum(recent.filter(l => l.kind === 'spend'), l => -l.tokens),
       tokensRefunded: sum(recent.filter(l => l.kind === 'refund'), l => l.tokens),
       adminChanges: sum(recent.filter(l => l.kind === 'admin_add' || l.kind === 'admin_remove'), l => l.tokens),
     },
     allTime: {
-      soldUsd: sum(all.filter(l => l.kind === 'purchase'), l => l.priceUsd || 0),
+      soldUsd: sum(all.filter(sold), l => l.priceUsd || 0),
+      testTokens: sum(all.filter(test), l => l.tokens), // v132: given out by test purchases, never paid for
+      testUsd: sum(all.filter(test), l => l.priceUsd || 0),
       tokensSpent: sum(all.filter(l => l.kind === 'spend'), l => -l.tokens),
     },
     pendingPurchases: purchases.filter(p => p.status === 'requested').length,

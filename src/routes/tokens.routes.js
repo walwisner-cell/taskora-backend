@@ -68,7 +68,9 @@ router.put('/tokens/autopay', requireAuth, requireRole('provider'), async (req, 
   const b = req.body || {};
   const next = { ...tokens.autopayOf(me) };
   for (const k of tokens.AUTOPAY_KEYS) if (b[k] !== undefined) next[k] = b[k] === true;
-  await db.update('users', me.id, { tokenAutoPay: next });
+  const chosen = { ...(me.tokenAutoPayChosen || {}) };
+  if (b.commission !== undefined) chosen.commission = true; // v132: the pro's own choice is kept from now on
+  await db.update('users', me.id, { tokenAutoPay: next, tokenAutoPayChosen: chosen });
   res.json({ autopay: next });
 });
 // POST /api/tokens/plan-invoices/:id/pay — pay an open plan fee from tokens now.

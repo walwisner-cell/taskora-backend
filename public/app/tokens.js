@@ -122,7 +122,7 @@
   // What this pro's tokens pay for: the job fee (set by Trothen) and the
   // bills they choose to pay from tokens first.
   const USE_ROWS = [
-    ['commission', 'Commission on protected jobs, when I cash out', 'Trothen\'s commission is paid from tokens, so you keep the full amount you earned. If your tokens don\'t cover all of it, the rest comes out of the payout as usual.'],
+    ['commission', 'Commission on protected jobs, when I cash out', 'On unless you turn it off. Trothen\'s commission is paid from tokens, so you keep the full amount you earned. If your tokens don\'t cover all of it, the rest comes out of the payout as usual.'],
     ['plan', 'My monthly plan fee', 'Paid from tokens as soon as the month\'s invoice is made, instead of from your payouts.'],
     ['ad', 'Ads I place', 'Paid from tokens when your balance covers the whole price; otherwise the usual way.'],
     ['pass', 'Driver passes', 'Paid from tokens when your balance covers the whole price; otherwise the usual way.'],
@@ -291,7 +291,7 @@
         ${stat('Tokens pros hold now', n2(st.outstandingTokens), `Worth $${n2(st.outstandingTokens).toFixed(2)} of fees Trothen has been paid in advance. ${st.customersWithBalance} pro(s).`)}
         ${stat('Sold, last 30 days', '$' + n2(st.last30.soldUsd).toFixed(2), `${n2(st.last30.tokensSold)} tokens, of which ${n2(st.last30.bonusGiven)} bonus`)}
         ${stat('Spent, last 30 days', n2(st.last30.tokensSpent), `${n2(st.last30.tokensRefunded)} given back on refunds`)}
-        ${stat('Sold, all time', '$' + n2(st.allTime.soldUsd).toFixed(2), `${n2(st.allTime.tokensSpent)} tokens spent all time`)}
+        ${stat('Sold, all time', '$' + n2(st.allTime.soldUsd).toFixed(2), `${n2(st.allTime.tokensSpent)} tokens spent all time${st.allTime.testTokens > 0 ? `. Not counted: ${n2(st.allTime.testTokens)} tokens from test purchases (no payment)` : ''}`)}
         ${st.pendingPurchases ? stat('Waiting for mobile money', st.pendingPurchases, 'Purchases not yet confirmed by MTN') : ''}
       </div>
       <div class="ver-note" style="margin-bottom:14px;">${e(tr('Money paid for tokens is not revenue until the tokens are spent. Until then it is a balance Trothen owes its pros. Bonus tokens are a discount Trothen pays for when they are spent.'))}</div>
@@ -300,7 +300,7 @@
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-realonly" ${s.payoutsRealOnly ? 'checked' : ''} ${edit ? '' : 'disabled'}/> <span>${e(tr('LIVE SITE: pay out only money Trothen really received (bookings paid by code or mobile money). Test-mode bookings are left out of payouts.'))}</span></label>
         <div style="font-size:13.5px;margin-bottom:8px;">💳 ${e(tr('Card payments (Stripe):'))} <strong>${e(tr(s.cardPaymentsOn ? 'on' : 'off (add STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET on Render to switch them on)'))}</strong></div>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-realonly-pay" ${s.realPaymentsOnly ? 'checked' : ''} ${edit ? '' : 'disabled'}/> <span>${e(tr('Real payments only. Tick this once card payments or Trothen\'s accounts are set up: escrow is then offered only where real money can be paid. Left unticked (now), escrow is offered everywhere and no real money moves yet.'))}</span></label>
-        <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-test" ${s.testPurchases ? 'checked' : ''} ${edit ? '' : 'disabled'}/> <span>${e(tr('TEST SITES ONLY: "Pay in the app" adds tokens without a real payment'))} <span style="color:#B4472E;">${e(tr('(leave this off on the live site, or pros get tokens for free)'))}</span></span></label>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-test" ${s.testPurchases ? 'checked' : ''} ${edit ? '' : 'disabled'}/> <span>${e(tr('TEST SITES ONLY: "Pay in the app" adds tokens without a real payment'))} <span style="color:#B4472E;">${e(tr('(leave this off on the live site, or pros get tokens for free)'))}</span>${s.payoutsRealOnly ? ` <span style="color:var(--slate);">${e(tr('Not active while LIVE SITE is ticked.'))}</span>` : ''}</span></label>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-cash" ${s.cashJobsEnabled !== false ? 'checked' : ''} ${edit ? '' : 'disabled'}/> ${e(tr('Cash jobs are on (customers may pay the pro directly after the job; the pro\'s commission is taken from their tokens at their plan rate)'))}</label>
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <div class="form-group" style="flex:1;min-width:200px;max-width:280px;"><label class="form-label" for="tka-max">${e(tr('Most tokens one pro can hold'))}</label><input class="form-input" type="number" min="10" max="10000" step="1" id="tka-max" value="${e(s.maxBalance)}" ${edit ? '' : 'disabled'}/></div>

@@ -204,6 +204,16 @@ router.get('/payouts/mine', requireAuth, requireRole('provider'), async (req, re
   res.json({ payouts });
 });
 
+// GET /api/payouts/commission — v132: how this pro's commission is worked
+// out and paid: their rate, what the next payout would take, and a
+// job-by-job statement (due, pending, paid from payouts, paid with tokens on
+// cash jobs). Read-only: nothing is charged by opening it.
+router.get('/payouts/commission', requireAuth, requireRole('provider'), async (req, res) => {
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  if (!provider) return res.status(404).json({ error: 'Account not found.' });
+  res.json(await require('../commission-statement').providerCommissionSummary(provider));
+});
+
 // GET /api/payouts/pdf — a real, downloadable payout history report for a
 // provider, honoring the same from/to date range as the on-screen history.
 // Built so "who paid me, and when" is answerable from a document alone,
@@ -285,147 +295,22 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), require('.
 async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   const provider = await db.find('users', u => u.id === req.user.sub);
 
-  // What's actually payable is escrow that's been RELEASED (the customer
-  // confirmed the work) and hasn't already gone out in an earlier payout —
-  // not escrow that's still held pending confirmation. Paying out held
-  // funds would defeat the entire point of escrow protection, and paying
-  // out the same released escrow twice would be a real financial bug, not
-  // just a display one — so every included escrow record gets stamped
-  // with this payout's id the moment it's included, and never counted
-  // again after that.
-  const releasedEscrow = await db.filter('escrowTransactions', e =>
-    e.status === 'released' && !e.payoutId
-  );
-  const contracts = await db.filter('contracts', c => c.providerId === req.user.sub);
-  const contractIds = new Set(contracts.map(c => c.id));
-  // v119: once a super admin turns on "only pay out money Trothen really
-  // received" (for the live site), a payout only includes bookings whose
-  // money truly arrived: paid by a confirmed payment code, or collected by
-  // mobile money. Test-mode bookings stay out, so no real money is sent
-  // for money that was never paid in.
-  const realOnly = (await require('../platform-settings').getSetting('payoutsRequireRealPayment')) === true;
-  const reallyPaid = (e) => !realOnly || e.paidBy === 'code' || e.paidBy === 'card' || !!e.liberiaMoMoReference; // v125: card payments are real money too
-  const payableEscrow = releasedEscrow.filter(e => contractIds.has(e.contractId) && reallyPaid(e));
-
-  // Materials advances release the moment they're agreed, independent of
-  // whether the rest of the job is done — so they're gathered separately
-  // here, using their own payout tracking field, since the MAIN escrow
-  // record for that contract might still legitimately be 'held' for the
-  // remainder while the advance itself is fully payable right now.
-  const allEscrowForProvider = await db.filter('escrowTransactions', e => contractIds.has(e.contractId));
-  const payableAdvances = allEscrowForProvider.filter(e =>
-    e.materialsAdvanceReleased && e.materialsAdvanceAmount > 0 && !e.materialsAdvancePayoutId && e.status !== 'refunded' && reallyPaid(e)
-  );
-
-  const grossAmount = Math.round((payableEscrow.reduce((sum, e) => sum + (e.amount - (e.materialsAdvanceAmount || 0)), 0)
-    + payableAdvances.reduce((sum, e) => sum + e.materialsAdvanceAmount, 0)) * 100) / 100; // v109: rounded to cents
-
-  // Unpaid tips — gathered from completed contracts directly (not the
-  // escrow ledger), and added to what's paid out AFTER commission is
-  // computed on grossAmount above, so a tip is never commission-taxed.
-  // Genuinely optional on the customer's side (see handleContractComplete),
-  // so this is simply $0 for a provider with none.
-  const unpaidTipContracts = (await db.filter('contracts', c => c.providerId === req.user.sub && c.tipAmount > 0 && !c.tipPaid));
-  const totalTips = Math.round(unpaidTipContracts.reduce((sum, c) => sum + c.tipAmount, 0) * 100) / 100; // v109: rounded to cents
+  // v132: the whole calculation lives in src/commission-statement.js, so the
+  // Earnings page preview and the real payout always use the same numbers.
+  // What is payable is escrow the customer has RELEASED (job confirmed) and
+  // that has not gone out in an earlier payout, plus agreed materials
+  // advances and unpaid tips. Commission is based on the pro's rate now:
+  // an approved custom rate, else their organization's rate, else their
+  // plan (Starter 13%, Pro 12%, Super Pro 10%). Store goods and tips carry
+  // no commission; rides carry the ride rate, or none with a Driver Pass;
+  // a top-scorer free-commission credit makes this payout commission-free.
+  const calc = await require('../commission-statement').calcPayout(provider);
+  const { payableEscrow, payableAdvances, unpaidTipContracts, grossAmount, totalTips, storeGoodsAmount, rideGross, ridePassFree, rideRate, commissionRate, usedFreeCommissionCredit, commissionAmount, storeFeeAmount, lineItems } = calc;
 
   if (grossAmount <= 0 && totalTips <= 0) {
-    return res.status(400).json({ error: 'Nothing to pay out yet. This only includes jobs the customer has marked complete, tips, or agreed materials advances, that haven\'t already been paid out.' });
+    return res.status(400).json({ error: 'Nothing to pay out yet. A payout includes jobs the customer has marked complete, tips and agreed materials advances that have not been paid out yet.' });
   }
 
-  // A provider should be able to see exactly which jobs and which
-  // customers make up a payout, not just a lump sum — this is what
-  // actually answers "who paid, and for what" when they look at their
-  // payout history later.
-  const lineItems = [];
-  for (const e of payableEscrow) {
-    const contract = contracts.find(c => c.id === e.contractId);
-    if (!contract) continue;
-    const customer = await db.find('users', u => u.id === contract.customerId);
-    const review = await db.find('reviews', r => r.contractId === contract.id);
-    const newlyPayable = e.amount - (e.materialsAdvanceAmount || 0);
-    if (newlyPayable <= 0) continue; // the whole amount was already an advance, nothing further to add here
-    lineItems.push({
-      contractId: contract.id,
-      bookingNumber: contract.bookingNumber || contract.id,
-      customerName: customer ? customer.name : 'Unknown customer',
-      customerEmail: customer ? customer.email : null,
-      customerPhone: customer ? customer.phone : null,
-      service: contract.service,
-      jobDate: contract.date || null,
-      jobTime: contract.time || null,
-      address: contract.address || null,
-      contractStatus: contract.status,
-      signedAt: contract.signedAt || (contract.createdAt || '').slice(0, 10),
-      review: review ? { stars: review.stars, text: review.text || null } : null,
-      amount: newlyPayable,
-    });
-  }
-  for (const e of payableAdvances) {
-    const contract = contracts.find(c => c.id === e.contractId);
-    if (!contract) continue;
-    const customer = await db.find('users', u => u.id === contract.customerId);
-    lineItems.push({
-      contractId: contract.id,
-      bookingNumber: contract.bookingNumber || contract.id,
-      customerName: customer ? customer.name : 'Unknown customer',
-      customerEmail: customer ? customer.email : null,
-      customerPhone: customer ? customer.phone : null,
-      service: `${contract.service} (materials advance)`,
-      jobDate: contract.date || null,
-      jobTime: contract.time || null,
-      address: contract.address || null,
-      contractStatus: contract.status,
-      signedAt: contract.signedAt || (contract.createdAt || '').slice(0, 10),
-      review: null,
-      amount: e.materialsAdvanceAmount,
-    });
-  }
-
-  // Commission is based on the provider's plan at the time they cash out —
-  // matches the rates in COMMISSION_RATES (src/commission.js): Starter
-  // 13%, Pro 12%, Super Pro 10%, actually deducted here rather than just
-  // being marketing copy. A provider attached to a Custom-plan
-  // organization uses that org's negotiated rate instead — the "volume
-  // commission discount" promised on the Custom pricing card.
-  // v84: a suspended organization's negotiated rate no longer applies. Its
-  // pros pay the normal rate for their plan until it is active again.
-  const organization = provider.organizationId ? await db.find('organizations', o => o.id === provider.organizationId && o.status !== 'suspended') : null;
-  let commissionRate = effectiveCommissionRate(provider, organization);
-  // A top-scorer free-commission credit (see
-  // src/top-scorer-promotion-scheduler.js) is consumed here, on an actual
-  // payout — not just checked and left alone, the way a read-only rate
-  // lookup would. This is deliberately the only place this credit is
-  // spent: requesting a payout is the one real, stateful action that
-  // should use it up.
-  const usedFreeCommissionCredit = (provider.freeCommissionCredits || 0) > 0;
-  if (usedFreeCommissionCredit) commissionRate = 0;
-  // v105: goods sold from the pro's store carry no commission. Trothen's
-  // share of a store purchase is the flat fee the customer paid at
-  // booking. So the goods part of each booking is taken out before the
-  // commission is worked out. (If a dispute was split, what is left of
-  // the booking is counted as goods first.)
-  const storeGoodsAmount = Math.round(payableEscrow.reduce((sum, e) => sum + Math.min(e.storeGoodsAmount || 0, Math.max(0, e.amount - (e.materialsAdvanceAmount || 0))), 0) * 100) / 100;
-  const commissionableAmount = Math.max(0, Math.round((grossAmount - storeGoodsAmount) * 100) / 100);
-  // v111: rides carry their own, lower commission (a setting, default 5%, never
-  // above the pro's normal rate). The rider already paid Trothen a fee on top
-  // of the fare, and a flat 10-13% off a $3 ride would leave a driver almost nothing.
-  const rideSharePct = Number(await require('../platform-settings').getSetting('rideCommissionPercent'));
-  const rideRate = usedFreeCommissionCredit ? 0 : Math.min(commissionRate, (Number.isFinite(rideSharePct) ? rideSharePct : 5) / 100);
-  const rideGross = Math.round(payableEscrow.reduce((sum, e) => {
-    const c = contracts.find(x => x.id === e.contractId);
-    return c && c.ride ? sum + Math.max(0, e.amount - (e.materialsAdvanceAmount || 0)) : sum;
-  }, 0) * 100) / 100;
-  // v113: rides taken while the driver had an active Driver Pass carry no commission at all.
-  const ridePassFree = Math.round(payableEscrow.reduce((sum, e) => {
-    const c = contracts.find(x => x.id === e.contractId);
-    return c && c.ride && c.ride.commissionFree === true ? sum + Math.max(0, e.amount - (e.materialsAdvanceAmount || 0)) : sum;
-  }, 0) * 100) / 100;
-  const rideCommission = Math.round(Math.min(Math.max(0, rideGross - ridePassFree), commissionableAmount) * rideRate * 100) / 100;
-  const commissionAmount = Math.round((Math.max(0, commissionableAmount - rideGross) * commissionRate + rideCommission) * 100) / 100;
-  // v106: store purchase fees the pro pays (when the super admin has set
-  // the fee to come from the pro). Never more than what is being paid on
-  // that booking, so a split dispute can't push a payout below zero.
-  const storeFeeAmount = Math.round(payableEscrow.reduce((sum, e) => sum + Math.min(e.storeFeeFromPro || 0, Math.max(0, e.amount - (e.materialsAdvanceAmount || 0))), 0) * 100) / 100;
   // v118: a pro who chose "pay my commission with tokens" has it taken from
   // their tokens (as much as their balance covers) and keeps that much more
   // of the payout. The customer's money and escrow are not affected.
@@ -451,25 +336,6 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   const rate = wantsLocal ? resolveRate(currency.code, await db.all('exchangeRates')) : null;
   const payoutAmountLocal = wantsLocal ? convertFromUSD(netAmount, currency.code, rate) : null;
 
-  for (const c of unpaidTipContracts) {
-    const customer = await db.find('users', u => u.id === c.customerId);
-    lineItems.push({
-      contractId: c.id,
-      bookingNumber: c.bookingNumber || c.id,
-      customerName: customer ? customer.name : 'Unknown customer',
-      customerEmail: customer ? customer.email : null,
-      customerPhone: customer ? customer.phone : null,
-      service: `${c.service} (tip — no commission)`,
-      jobDate: c.date || null,
-      jobTime: c.time || null,
-      address: c.address || null,
-      contractStatus: c.status,
-      signedAt: c.signedAt || (c.createdAt || '').slice(0, 10),
-      review: null,
-      amount: c.tipAmount,
-    });
-  }
-
   const payout = {
     id: payoutId,
     providerId: req.user.sub,
@@ -478,6 +344,10 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     commissionRate,
     commissionAmount,
     commissionPaidWithTokens: commissionFromTokens, // v118: the part of the commission paid from tokens, not from this payout
+    commissionFromPayout: Math.round((commissionAmount - commissionFromTokens) * 100) / 100, // v132: the part taken from this payout
+    commissionRateSource: usedFreeCommissionCredit ? 'credit' : calc.rates.rateSource, // v132: override, organization, plan or credit
+    freeCommissionCreditUsed: usedFreeCommissionCredit, // v132
+    tipsAmount: totalTips, // v132
     rideGrossAmount: rideGross, ridePassFreeAmount: ridePassFree, rideCommissionRate: rideGross > 0 ? rideRate : null, // v111, v113
     storeGoodsAmount, // v105: the part of this payout that is store goods (no commission)
     storeFeeAmount, // v106: flat store purchase fees paid by the pro
@@ -514,12 +384,14 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   }
 
   const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
-  const tipNote = totalTips > 0 ? ` (includes $${totalTips} in tips. No commission taken on those)` : '';
+  const tipNote = totalTips > 0 ? ` It includes $${totalTips} in tips, which carry no commission.` : '';
   const planFeeNote = planFee.amount > 0 ? ` $${planFee.amount} in plan fees was taken from this payout.` : '';
-  const goodsNote = storeGoodsAmount > 0 ? ` $${storeGoodsAmount} of this is goods from your store, with no commission taken${storeFeeAmount > 0 ? `; $${storeFeeAmount} in store purchase fees was taken instead` : ''}.` : '';
-  const tokenNote = commissionFromTokens > 0 ? ` 🪙 ${commissionFromTokens} tokens paid ${commissionFromTokens >= commissionAmount ? 'all' : 'part'} of the commission, so you keep $${commissionFromTokens} more.` : '';
-  const creditNote = usedFreeCommissionCredit ? ' 🏆 Used your top-scorer free-commission credit: 0% commission on this payout.' : '';
-  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested (after ${Math.round(commissionRate*100)}% commission — $${commissionAmount} — on $${grossAmount} earned)${tipNote}${goodsNote}${planFeeNote}${creditNote}${tokenNote} — processing.`, 'payoutAlerts', { section: 'earnings' });
+  const goodsNote = storeGoodsAmount > 0 ? ` $${storeGoodsAmount} is goods from your store, which carry no commission${storeFeeAmount > 0 ? `; $${storeFeeAmount} in store purchase fees was taken instead` : ''}.` : '';
+  const how = commissionFromTokens > 0
+    ? (commissionFromTokens >= commissionAmount ? ` The commission was paid with ${commissionFromTokens} tokens, so nothing was taken from the payout.` : ` ${commissionFromTokens} tokens paid part of the commission; the remaining $${payout.commissionFromPayout} was taken from the payout.`)
+    : (commissionAmount > 0 ? ' The commission was taken from the payout.' : '');
+  const commissionText = usedFreeCommissionCredit ? 'Your free-commission credit was used, so no commission was charged.' : `Commission: $${commissionAmount} (${Math.round(commissionRate * 1000) / 10}%) on $${grossAmount} earned.${how}`;
+  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested and processing. ${commissionText}${tipNote}${goodsNote}${planFeeNote}`, 'payoutAlerts', { section: 'earnings' });
   res.status(201).json({ payout });
 }
 
