@@ -68,9 +68,7 @@ router.put('/tokens/autopay', requireAuth, requireRole('provider'), async (req, 
   const b = req.body || {};
   const next = { ...tokens.autopayOf(me) };
   for (const k of tokens.AUTOPAY_KEYS) if (b[k] !== undefined) next[k] = b[k] === true;
-  const chosen = { ...(me.tokenAutoPayChosen || {}) };
-  if (b.commission !== undefined) chosen.commission = true; // v132: the pro's own choice is kept from now on
-  await db.update('users', me.id, { tokenAutoPay: next, tokenAutoPayChosen: chosen });
+  await db.update('users', me.id, { tokenAutoPay: next });
   res.json({ autopay: next });
 });
 // POST /api/tokens/plan-invoices/:id/pay — pay an open plan fee from tokens now.
@@ -123,7 +121,7 @@ const TOKEN_VIEW_DEPARTMENTS = ['customer_service', 'financial', 'accountant', '
 async function adminGate(req, res, next) {
   const m = await db.find('users', u => u.id === req.user.sub);
   if (!m || m.active === false) return res.status(403).json({ error: 'This account has been suspended.' });
-  if (!m.isSuperAdmin && !TOKEN_VIEW_DEPARTMENTS.includes(m.adminDepartment)) return res.status(403).json({ error: 'Only a super admin, customer service or the finance team can see tokens.' });
+  if (!m.isSuperAdmin && !TOKEN_VIEW_DEPARTMENTS.includes(m.adminDepartment) && !require('../admin-permissions').gatePassed(req, m)) return res.status(403).json({ error: 'Only a super admin, customer service or the finance team can see tokens.' });
   req.adminUser = m; next();
 }
 const gate = [requireAuth, requireRole('admin'), adminGate];
@@ -141,7 +139,7 @@ router.get('/admin/tokens', gate, async (req, res) => {
   res.json({
     settings: { ...(await tokens.settings()), cashJobsEnabled: (await getSetting('cashJobsEnabled')) !== false, testPurchases: (await getSetting('tokenTestPurchases')) === true, allowTestPayments: (await getSetting('allowTestPayments')) === true, realPaymentsOnly: (await getSetting('realPaymentsOnly')) === true, cardPaymentsOn: require('../stripe-pay').isOn(), payoutsRealOnly: (await getSetting('payoutsRequireRealPayment')) === true },
     canEdit: req.adminUser.isSuperAdmin === true,
-    canRecordPayments: req.adminUser.isSuperAdmin === true || ['financial', 'accountant', 'controller'].includes(req.adminUser.adminDepartment),
+    canRecordPayments: req.adminUser.isSuperAdmin === true || ['financial', 'accountant', 'controller'].includes(req.adminUser.adminDepartment) || require('../admin-permissions').adminCan(req.adminUser, 'tokens', 'manage'), // v135
     offlineMethods: tokens.OFFLINE_METHODS,
     countryList: Object.keys(require('../currency-data').CURRENCY_BY_COUNTRY).sort(),
     stats: { ...st, recent: st.recent.map(l => ({ ...tokens.publicLine(l), userId: l.userId, customer: nameOf(l.userId), actorName: l.actorName || null })) },
@@ -291,7 +289,7 @@ router.get('/admin/tokens/country', gate, async (req, res) => {
 // (cash at an office or agent, a bank deposit, mobile money sent to
 // Trothen's own number). Super admins and the finance team only.
 const FINANCE_DEPARTMENTS = ['financial', 'accountant', 'controller'];
-const financeOnly = (req, res, next) => (req.adminUser && (req.adminUser.isSuperAdmin || FINANCE_DEPARTMENTS.includes(req.adminUser.adminDepartment)) ? next() : res.status(403).json({ error: 'Only a super admin or the finance team can record a payment.' }));
+const financeOnly = (req, res, next) => (req.adminUser && (req.adminUser.isSuperAdmin || FINANCE_DEPARTMENTS.includes(req.adminUser.adminDepartment) || require('../admin-permissions').gatePassed(req, req.adminUser)) ? next() : res.status(403).json({ error: 'Only a super admin or the finance team can record a payment.' }));
 router.post('/admin/tokens/offline-topup', gate, financeOnly, async (req, res) => {
   const b = req.body || {};
   const r = await tokens.recordOfflineTopUp(req.adminUser, { userId: b.userId, packId: b.packId || null, amountPaid: b.amountPaid, method: b.method, receipt: b.receipt, note: b.note });

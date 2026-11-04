@@ -89,7 +89,7 @@ async function sweepProviderScores() {
 
     const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
     const regionalAdmins = await require('./admin-scope').regionalAdminsFor({ city: provider.city, country: provider.country }); // v96
-    const verificationAdmins = await db.filter('users', u => u.role === 'admin' && u.adminDepartment === 'verification');
+    const verificationAdmins = await db.filter('users', u => u.role === 'admin' && (u.adminDepartment === 'verification' || require('./admin-permissions').customCan(u, 'verification', 'manage'))); // v135
     const recipients = [...superAdmins, ...regionalAdmins, ...verificationAdmins];
     for (const admin of recipients) {
       await notify(admin.id, '⚠️', `${provider.name}'s Trothen Score dropped to ${result.total}/100 — recommended: ${action.label}.`, null, { section: 'people' });

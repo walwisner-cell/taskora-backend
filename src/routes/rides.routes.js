@@ -628,7 +628,7 @@ router.get('/ride-share/:token', shareLimiter, async (req, res) => {
 async function adminGate(req, res, next) {
   const m = await db.find('users', u => u.id === req.user.sub);
   if (!m || m.active === false) return res.status(403).json({ error: 'This account has been suspended.' });
-  if (!m.isSuperAdmin && m.adminDepartment && !['verification', 'customer_service'].includes(m.adminDepartment)) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+  if (!m.isSuperAdmin && m.adminDepartment && !['verification', 'customer_service'].includes(m.adminDepartment) && !require('../admin-permissions').gatePassed(req, m)) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   req.adminUser = m; next();
 }
 const gate = [requireAuth, requireRole('admin'), adminGate];

@@ -647,7 +647,7 @@ async function customerReportsPaid(customer, purchaseId, transactionId) {
   const tx = typeof transactionId === 'string' ? transactionId.trim() : '';
   if (tx && (tx.length < 4 || tx.length > 60)) return { status: 400, error: 'The transaction ID should be 4 to 60 characters, as shown in your mobile money message.' };
   const updated = await db.update('tokenPurchases', p.id, { status: 'customer_says_paid', customerTransactionId: tx || null, customerSaysPaidAt: new Date().toISOString() });
-  const team = await db.filter('users', u => u.role === 'admin' && u.active !== false && (u.isSuperAdmin || ['financial', 'accountant', 'controller'].includes(u.adminDepartment)));
+  const team = await db.filter('users', u => u.role === 'admin' && u.active !== false && (u.isSuperAdmin || ['financial', 'accountant', 'controller'].includes(u.adminDepartment) || require('./admin-permissions').customCan(u, 'tokens', 'manage'))); // v135
   for (const a of team) await notify(a.id, '🪙', `${customer.name} says they paid token code ${p.paymentCode} (${p.priceLocal != null ? `${p.currency} ${p.priceLocal}` : `$${p.priceUsd}`}${tx ? `, their transaction ID ${tx}` : ''}). Check Trothen's mobile money statement and confirm it in Admin → Tokens.`, null, { section: 'tokens' });
   return { ok: true, purchase: updated };
 }

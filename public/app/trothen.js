@@ -11355,7 +11355,7 @@ function updateAdminSidebar() {
   document.getElementById('admin-sidebar-avatar').textContent = u.initials || 'AD';
   document.getElementById('admin-sidebar-avatar').style.background = u.isSuperAdmin ? 'var(--gold)' : '#6B4C7A';
   document.getElementById('admin-sidebar-name').textContent = u.name;
-  document.getElementById('admin-sidebar-role').textContent = u.isSuperAdmin ? 'Super Admin · All Locations' : `Admin · ${u.region || u.city || 'Unassigned'} Region`;
+  document.getElementById('admin-sidebar-role').textContent = u.isSuperAdmin ? 'Super Admin · All Locations' : u.adminDepartment === 'custom' ? `Admin · ${u.regionScoped ? (u.adminScope === 'country' ? (u.country || 'Their country') : (u.region || u.city || 'Their city')) : 'Every region'}` : `Admin · ${u.region || u.city || 'Unassigned'} Region`; // v135: custom admins show their real area
 }
 
 async function initAdminDash() {

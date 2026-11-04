@@ -8,6 +8,7 @@ const { requireAuth, requireRole, hashPassword } = require('../auth');
 const { isValidEmail, isNonEmptyString, isValidPassword, isValidName, isValidLabel, validate } = require('../validators');
 const { notify } = require('../notify');
 const { effectiveCommissionRate } = require('../commission');
+const { gatePassed } = require('../admin-permissions'); // v135: custom admin permissions
 const { effectivePlanPricing, PLAN_KEYS, DEFAULT_USD_PRICES } = require('../plan-pricing');
 const { currencyForCountry, APPROX_USD_RATE, CURRENCY_BY_COUNTRY } = require('../currency-data');
 const { UPLOADS_DIR, verifyImageMagicBytes, verifyPdfMagicBytes } = require('../uploads');
@@ -24,7 +25,8 @@ router.use(async (req, res, next) => {
   if (!current || current.active === false) {
     return res.status(403).json({ error: 'This account has been suspended. Contact a super admin for access.' });
   }
-  next();
+  // v135: second lock for custom-permission admins (see src/admin-permissions.js).
+  return require('../admin-permissions').requireGateForCustom(req, res, next, current);
 });
 
 // Every route below runs as an admin (super admin or a location admin).
@@ -130,6 +132,7 @@ function requireSuperAdminOrDepartment(dept) {
     if (!m) return res.status(403).json({ error: 'Not authorized' });
     if (m.isSuperAdmin) return next();
     if (m.adminDepartment === dept) return next();
+    if (gatePassed(req, m)) return next(); // v135: a custom admin the permissions gate allowed
     return res.status(403).json({ error: `This requires a super admin account or ${dept === 'sales' ? 'Sales team' : dept} access.` });
   };
 }
@@ -149,6 +152,7 @@ function requireDepartment(deptOrDepts) {
     if (m.isSuperAdmin) return next();
     if (!m.adminDepartment) return next(); // regular regional admin — unchanged access
     if (allowed.includes(m.adminDepartment)) return next();
+    if (gatePassed(req, m)) return next(); // v135: a custom admin the permissions gate allowed
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   };
 }
@@ -632,7 +636,7 @@ router.patch('/users/:id/status', async (req, res) => {
 // propose (and approve their own proposal) for anyone.
 router.post('/providers/:id/propose-commission-rate', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const { rate, reason } = req.body || {};
@@ -2127,7 +2131,7 @@ const { SUPPORT_CATEGORIES } = require('../platform-settings');
 
 router.get('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const { getSetting, DEFAULTS } = require('../platform-settings');
@@ -2159,7 +2163,7 @@ router.get('/settings/support-contact', requireAuth, requireRole('admin'), async
 // as the fallback for any category nobody has given its own number yet.
 router.patch('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const { whatsapp, phoneDisplay, email, category } = req.body || {};
@@ -2223,7 +2227,7 @@ router.patch('/settings/support-contact', requireAuth, requireRole('admin'), asy
 // deleted, only replaced (see PATCH above).
 router.delete('/settings/support-contact', requireAuth, requireRole('admin'), async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const { category, targetRegion } = req.body || {};
@@ -2907,8 +2911,9 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
   if (!m.isSuperAdmin && m.adminDepartment !== 'customer_service') {
     return res.status(403).json({ error: 'Only a super admin or the customer service team can add new employees.' });
   }
-  const { name, email, password, city, country, department, regionScoped, scope } = req.body || {};
-  if (scope !== undefined && !['country', 'city'].includes(scope)) return res.status(400).json({ error: 'scope must be country or city' });
+  const { name, email, password, city, country, department, regionScoped, scope, permissions } = req.body || {};
+  // v135: 'all' (every region) is only for a custom-permissions admin.
+  if (scope !== undefined && !['country', 'city', ...(department === 'custom' ? ['all'] : [])].includes(scope)) return res.status(400).json({ error: 'scope must be country or city' });
   const errors = validate([
     ['name', isValidName(name), 'Enter a valid name using letters, spaces, hyphens and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
@@ -2917,8 +2922,16 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
     ['country', isNonEmptyString(country), 'Country is required'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
-  if (department && !['verification', 'disputes', 'financial', 'accountant', 'controller', 'customer_service', 'legal', 'sales', 'hr'].includes(department)) {
-    return res.status(400).json({ error: 'department must be verification, disputes, financial, accountant, controller, customer_service, legal, sales, or hr' });
+  if (department && !['verification', 'disputes', 'financial', 'accountant', 'controller', 'customer_service', 'legal', 'sales', 'hr', 'custom'].includes(department)) {
+    return res.status(400).json({ error: 'department must be verification, disputes, financial, accountant, controller, customer_service, legal, sales, hr or custom' });
+  }
+  // v135: custom permissions: the super admin ticks each section (Off, View or Manage).
+  const perms = require('../admin-permissions');
+  let customPermissions = null;
+  if (department === 'custom') {
+    if (!m.isSuperAdmin) return res.status(403).json({ error: 'Only a super admin can create an admin with custom permissions.' });
+    customPermissions = perms.cleanPermissions(permissions);
+    if (!Object.keys(customPermissions).length) return res.status(400).json({ error: 'Choose at least one section this admin can view or manage.' });
   }
   if (!m.isSuperAdmin && m.adminDepartment === 'customer_service' && department !== 'customer_service') {
     return res.status(403).json({ error: 'The customer service team can only add new customer service employees, not other departments.' });
@@ -2935,6 +2948,7 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
     adminScope: scope === 'country' ? 'country' : 'city', // v90: whole country, or just the city above
     isSuperAdmin: false,
     adminDepartment: department || null,
+    ...(department === 'custom' ? { adminPermissions: customPermissions, regionScoped: scope !== 'all' } : {}), // v135
     active: true,
     verified: true,
     initials: name.trim().split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
@@ -2950,7 +2964,9 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
   };
   await db.insert('users', admin);
 
-  // Register (or update) the city's entry in the cities registry
+  // Register (or update) the city's entry in the cities registry.
+  // v135: a custom-permissions admin is not made the city's manager.
+  if (department === 'custom') return res.status(201).json({ admin: publicAdmin(admin) });
   const existingCity = await db.find('cities', c => c.name.toLowerCase() === city.toLowerCase());
   if (existingCity) {
     await db.update('cities', existingCity.id, { adminId: admin.id, country });
@@ -2959,6 +2975,13 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
   }
 
   res.status(201).json({ admin: publicAdmin(admin) });
+});
+
+// GET /api/admin/permission-areas — v135: the sections a custom admin can be
+// given (Off, View or Manage), for the New Admin form and the admin menu.
+router.get('/permission-areas', async (req, res) => {
+  const { AREAS } = require('../admin-permissions');
+  res.json({ areas: AREAS });
 });
 
 // PATCH /api/admin/sub-admins/:id — toggle active/suspended, or reassign city
@@ -2972,9 +2995,11 @@ router.patch('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
   }
   // v90: switch an existing admin between one city and the whole country.
   if ('scope' in (req.body || {})) {
-    if (!['country', 'city'].includes(req.body.scope)) return res.status(400).json({ error: 'scope must be country or city' });
+    const willBeCustom = (req.body.department !== undefined ? req.body.department : target.adminDepartment) === 'custom';
+    if (!['country', 'city', ...(willBeCustom ? ['all'] : [])].includes(req.body.scope)) return res.status(400).json({ error: 'scope must be country or city' });
     if (req.body.scope === 'country' && !target.country) return res.status(400).json({ error: 'This admin has no country on their account. Set one first.' });
-    patch.adminScope = req.body.scope;
+    if (req.body.scope === 'all') { patch.regionScoped = false; } // v135: every region (custom admins only)
+    else { patch.adminScope = req.body.scope; if (willBeCustom) patch.regionScoped = true; }
   }
   if ('city' in (req.body || {})) {
     if (!isNonEmptyString(req.body.city, { min: 2, max: 100 })) return res.status(400).json({ error: 'Enter a valid city' });
@@ -2990,10 +3015,20 @@ router.patch('/sub-admins/:id', requireSuperAdmin, async (req, res) => {
   // else here.
   if ('department' in (req.body || {})) {
     const dept = req.body.department;
-    if (dept !== null && !['verification', 'disputes', 'financial', 'accountant', 'controller', 'customer_service', 'legal', 'sales', 'hr'].includes(dept)) {
-      return res.status(400).json({ error: 'department must be verification, disputes, financial, accountant, controller, customer_service, legal, sales, hr, or null for a plain regional admin' });
+    if (dept !== null && !['verification', 'disputes', 'financial', 'accountant', 'controller', 'customer_service', 'legal', 'sales', 'hr', 'custom'].includes(dept)) {
+      return res.status(400).json({ error: 'department must be verification, disputes, financial, accountant, controller, customer_service, legal, sales, hr, custom, or null for a plain regional admin' });
     }
     patch.adminDepartment = dept;
+  }
+  // v135: change a custom admin's permissions (or set them when switching to custom).
+  if ('permissions' in (req.body || {})) {
+    const willBeCustom = (patch.adminDepartment !== undefined ? patch.adminDepartment : target.adminDepartment) === 'custom';
+    if (!willBeCustom) return res.status(400).json({ error: 'Permissions can only be set on an admin with custom permissions.' });
+    const cleaned = require('../admin-permissions').cleanPermissions(req.body.permissions);
+    if (!Object.keys(cleaned).length) return res.status(400).json({ error: 'Choose at least one section this admin can view or manage.' });
+    patch.adminPermissions = cleaned;
+  } else if (patch.adminDepartment === 'custom' && !(target.adminPermissions && Object.keys(target.adminPermissions).length)) {
+    return res.status(400).json({ error: 'Choose at least one section this admin can view or manage.' });
   }
   if ('regionScoped' in (req.body || {})) {
     if (typeof req.body.regionScoped !== 'boolean') return res.status(400).json({ error: 'regionScoped must be true or false' });
@@ -3054,7 +3089,7 @@ router.get('/contact-submissions', async (req, res) => {
   if (!m) return res.status(403).json({ error: 'Not authorized' });
   // v109: messages from the public go to customer service, legal and the
   // area admins, not to every team (finance, HR, sales, verification).
-  if (!m.isSuperAdmin && m.adminDepartment && !['customer_service', 'legal'].includes(m.adminDepartment)) {
+  if (!m.isSuperAdmin && m.adminDepartment && !['customer_service', 'legal'].includes(m.adminDepartment) && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   let submissions = (await db.all('contactSubmissions')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -3092,8 +3127,9 @@ router.patch('/contact-submissions/:id/status', async (req, res) => {
 router.get('/careers-inquiries', async (req, res) => {
   const m = await me(req);
   const isPlainRegionalManager = !m.isSuperAdmin && !m.adminDepartment;
-  const isGlobalHr = m.adminDepartment === 'hr' && !m.regionScoped;
-  const isRegionalHr = m.adminDepartment === 'hr' && m.regionScoped;
+  const asHr = m.adminDepartment === 'hr' || gatePassed(req, m); // v135: a custom admin with Job Applications
+  const isGlobalHr = asHr && !m.regionScoped;
+  const isRegionalHr = asHr && m.regionScoped;
   if (!m.isSuperAdmin && !isPlainRegionalManager && !isGlobalHr && !isRegionalHr) {
     return res.status(403).json({ error: 'Only HR, a regional manager, or a super admin can view job applications.' });
   }
@@ -3112,8 +3148,9 @@ router.get('/careers-inquiries', async (req, res) => {
 router.patch('/careers-inquiries/:id/status', async (req, res) => {
   const m = await me(req);
   const isPlainRegionalManager = !m.isSuperAdmin && !m.adminDepartment;
-  const isGlobalHr = m.adminDepartment === 'hr' && !m.regionScoped;
-  const isRegionalHr = m.adminDepartment === 'hr' && m.regionScoped;
+  const asHr = m.adminDepartment === 'hr' || gatePassed(req, m); // v135: a custom admin with Job Applications
+  const isGlobalHr = asHr && !m.regionScoped;
+  const isRegionalHr = asHr && m.regionScoped;
   if (!m.isSuperAdmin && !isPlainRegionalManager && !isGlobalHr && !isRegionalHr) {
     return res.status(403).json({ error: 'Only HR, a regional manager, or a super admin can update job applications.' });
   }
@@ -3187,7 +3224,7 @@ router.get('/referrals-overview', requireSuperAdmin, async (req, res) => {
 // editing — see the ownership check in PATCH/DELETE below).
 router.get('/promotions', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   let promos = (await db.all('promotions')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -3254,7 +3291,7 @@ router.post('/platform-handbook', requireSuperAdmin, (req, res) => {
 
 router.post('/promotions/image', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   uploadPromoImage.single('image')(req, res, async (err) => {
@@ -3274,7 +3311,7 @@ router.post('/promotions/image', async (req, res) => {
 
 router.post('/promotions', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const { title, message, imageUrl, audience, region, expiresAt, sendEmail: shouldEmail } = req.body || {};
@@ -3375,7 +3412,7 @@ router.delete('/promotions/:id', async (req, res) => {
 // same tight scoping as everything it's tracking.
 router.get('/access-logs', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment !== 'legal') {
+  if (!m.isSuperAdmin && m.adminDepartment !== 'legal' && !gatePassed(req, m)) {
     return res.status(403).json({ error: 'Only Legal or a super admin can view access logs.' });
   }
   const logs = (await db.all('accessLogs')).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 500);
@@ -3393,7 +3430,7 @@ router.get('/access-logs', async (req, res) => {
 // etc.) aren't tied to this at all, so they're blocked, same as elsewhere.
 router.get('/advertising-inquiries', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const region = await myRegion(req); // null for a super admin
@@ -3421,7 +3458,7 @@ router.patch('/advertising-inquiries/:id/status', async (req, res) => {
   if (!target) return res.status(404).json({ error: 'Inquiry not found' });
   const m = await me(req);
   if (!m.isSuperAdmin) {
-    if (m.adminDepartment) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+    if (m.adminDepartment && !gatePassed(req, m)) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
     const region = await myRegion(req);
     if (!adInRegion(region, target, target.providerId ? await db.find('users', u => u.id === target.providerId) : null, region instanceof CountryScope ? await require('../ads').citiesInCountry(region.country) : null)) return res.status(403).json({ error: 'This inquiry targets a different place than the one you manage.' });
   }
@@ -3456,7 +3493,7 @@ router.patch('/advertising-inquiries/:id/live', async (req, res) => {
   if (!target) return res.status(404).json({ error: 'Inquiry not found' });
   const m = await me(req);
   if (!m.isSuperAdmin) {
-    if (m.adminDepartment) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
+    if (m.adminDepartment && !gatePassed(req, m)) return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
     const region = await myRegion(req);
     if (!target.targetCity) return res.status(403).json({ error: 'Platform-wide ads can only be approved by a super admin.' });
     if (!adInRegion(region, target, target.providerId ? await db.find('users', u => u.id === target.providerId) : null, region instanceof CountryScope ? await require('../ads').citiesInCountry(region.country) : null)) return res.status(403).json({ error: 'This inquiry targets a different place than the one you manage.' });
@@ -3589,7 +3626,7 @@ router.post('/plan-billing/invoices/:id/waive', requireSuperAdmin, async (req, r
 
 router.get('/plan-pricing', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const [baseRows, overrideRows, rateRows] = await Promise.all([
@@ -3654,7 +3691,7 @@ router.patch('/settings/membership-pricing', requireSuperAdmin, async (req, res)
 // (see effectivePlanPricing), not stored here.
 router.patch('/plan-pricing/override', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const { country, plan, localPrice } = req.body || {};
@@ -3677,7 +3714,7 @@ router.patch('/plan-pricing/override', async (req, res) => {
 // base price. Same scoping rule as setting one.
 router.delete('/plan-pricing/override/:country/:plan', async (req, res) => {
   const m = await me(req);
-  if (!m.isSuperAdmin && m.adminDepartment) {
+  if (!m.isSuperAdmin && m.adminDepartment && !gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   const { country, plan } = req.params;

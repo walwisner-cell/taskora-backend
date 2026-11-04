@@ -66,11 +66,11 @@ const FINANCE = ['financial', 'accountant', 'controller'];
 async function gateFn(req, res, next) {
   const m = await db.find('users', u => u.id === req.user.sub);
   if (!m || m.active === false) return res.status(403).json({ error: 'This account has been suspended.' });
-  if (!m.isSuperAdmin && !VIEW.includes(m.adminDepartment)) return res.status(403).json({ error: 'Only a super admin, customer service or the finance team can see customer payments.' });
+  if (!m.isSuperAdmin && !VIEW.includes(m.adminDepartment) && !require('../admin-permissions').gatePassed(req, m)) return res.status(403).json({ error: 'Only a super admin, customer service or the finance team can see customer payments.' });
   req.adminUser = m; next();
 }
 const gate = [requireAuth, requireRole('admin'), gateFn];
-const financeOnly = (req, res, next) => (req.adminUser.isSuperAdmin || FINANCE.includes(req.adminUser.adminDepartment) ? next() : res.status(403).json({ error: 'Only a super admin or the finance team can do this.' }));
+const financeOnly = (req, res, next) => (req.adminUser.isSuperAdmin || FINANCE.includes(req.adminUser.adminDepartment) || require('../admin-permissions').gatePassed(req, req.adminUser) ? next() : res.status(403).json({ error: 'Only a super admin or the finance team can do this.' }));
 async function logIt(req, what, id) { try { await require('../access-log').logAccess(req, what, id); } catch (e) { /* never block */ } }
 
 // GET /api/admin/customer-payments?q=CODE — payments waiting, and refunds to send.
@@ -88,7 +88,7 @@ router.get('/admin/customer-payments', gate, async (req, res) => {
   const ru = await db.filter('users', u => rc.some(c => c.customerId === u.id));
   await logIt(req, 'customer_payments_view');
   res.json({
-    canAct: req.adminUser.isSuperAdmin || FINANCE.includes(req.adminUser.adminDepartment),
+    canAct: req.adminUser.isSuperAdmin || FINANCE.includes(req.adminUser.adminDepartment) || require('../admin-permissions').adminCan(req.adminUser, 'custpay', 'manage'), // v135
     payments: waiting.map(e => {
       const c = contracts.find(x => x.id === e.contractId) || {};
       return { ...cp.publicPayment(e), escrowId: e.id, bookingNumber: c.bookingNumber || null, service: c.service || null, bookingStatus: c.status || null, customer: nameOf(c.customerId), customerPhone: phoneOf(c.customerId), pro: nameOf(c.providerId), createdAt: e.createdAt, confirmedByName: e.confirmedByName || null };

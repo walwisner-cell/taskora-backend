@@ -1150,14 +1150,14 @@ router.get('/payments/pdf', requireAuth, requireRole('customer'), async (req, re
 // super admin or an unscoped regional admin still sees this unchanged.
 router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
-  if (!me.isSuperAdmin && me.adminDepartment && !['financial', 'legal'].includes(me.adminDepartment)) {
+  if (!me.isSuperAdmin && me.adminDepartment && !['financial', 'legal'].includes(me.adminDepartment) && !require('../admin-permissions').gatePassed(req, me)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${me.adminDepartment} team and doesn't have access to this.` });
   }
   // A regional admin (no department, just assigned a city) should only ever
   // see their own city's numbers here — every other financial view already
   // works this way; this was the one that didn't, which meant a regional
   // admin could see platform-wide totals well beyond their own city.
-  const region = (!me.isSuperAdmin && !me.adminDepartment) ? me.region : null;
+  const region = (!me.isSuperAdmin && (!me.adminDepartment || (require('../admin-permissions').gatePassed(req, me) && me.regionScoped))) ? (me.region || me.city) : null; // v135: a custom admin limited to an area sees only that area
   // v90: a regional admin may cover a whole country instead of one city.
   const sameTxt = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
   const mine = (person) => (me.adminScope === 'country' && me.country) ? sameTxt(person.country, me.country) : sameTxt(person.city, region);
@@ -1203,7 +1203,7 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
   const { logAccess } = require('../access-log');
   await logAccess(req, 'financial_by_region');
   const me = await db.find('users', u => u.id === req.user.sub);
-  if (!me.isSuperAdmin && me.adminDepartment && !['financial', 'legal'].includes(me.adminDepartment)) {
+  if (!me.isSuperAdmin && me.adminDepartment && !['financial', 'legal'].includes(me.adminDepartment) && !require('../admin-permissions').gatePassed(req, me)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${me.adminDepartment} team and doesn't have access to this.` });
   }
   // Same fix as /escrow/summary above: a plain regional admin (no
@@ -1212,7 +1212,7 @@ router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), asyn
   // still returned every region's real financial data to whoever asked,
   // regardless of which city they actually administer. A super admin or
   // an unscoped financial/legal admin still sees every region unchanged.
-  const region = (!me.isSuperAdmin && !me.adminDepartment) ? me.region : null;
+  const region = (!me.isSuperAdmin && (!me.adminDepartment || (require('../admin-permissions').gatePassed(req, me) && me.regionScoped))) ? (me.region || me.city) : null; // v135: a custom admin limited to an area sees only that area
   // v90: a regional admin may cover a whole country instead of one city.
   const sameTxt = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
   const mine = (person) => (me.adminScope === 'country' && me.country) ? sameTxt(person.country, me.country) : sameTxt(person.city, region);
@@ -1309,7 +1309,7 @@ router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (re
   // v109: the same rule as the other money reports. A team admin outside
   // finance or legal (customer service, HR, sales...) used to get the whole
   // platform's bookings here.
-  if (requestingAdmin && !requestingAdmin.isSuperAdmin && requestingAdmin.adminDepartment && !['financial', 'legal'].includes(requestingAdmin.adminDepartment)) {
+  if (requestingAdmin && !requestingAdmin.isSuperAdmin && requestingAdmin.adminDepartment && !['financial', 'legal'].includes(requestingAdmin.adminDepartment) && !require('../admin-permissions').gatePassed(req, requestingAdmin)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${requestingAdmin.adminDepartment} team and doesn't have access to this.` });
   }
   const region = requestingAdmin && !requestingAdmin.isSuperAdmin && (!requestingAdmin.adminDepartment || requestingAdmin.regionScoped) ? (requestingAdmin.region || requestingAdmin.city || requestingAdmin.country || null) : null;

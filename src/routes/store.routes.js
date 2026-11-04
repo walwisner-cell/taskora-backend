@@ -608,7 +608,7 @@ async function adminGateCheck(req, res, next) {
   const m = await db.find('users', u => u.id === req.user.sub);
   if (!m || m.active === false) return res.status(403).json({ error: 'This account has been suspended. Contact a super admin for access.' });
   // Store and skill checks belong with the people who already check IDs.
-  if (!m.isSuperAdmin && m.adminDepartment && !['verification', 'customer_service'].includes(m.adminDepartment)) {
+  if (!m.isSuperAdmin && m.adminDepartment && !['verification', 'customer_service'].includes(m.adminDepartment) && !require('../admin-permissions').gatePassed(req, m)) {
     return res.status(403).json({ error: `Your admin account is scoped to the ${m.adminDepartment} team and doesn't have access to this.` });
   }
   req.adminUser = m;
