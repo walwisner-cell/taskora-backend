@@ -16,7 +16,7 @@
 (function () {
   'use strict';
   if (typeof EventSource === 'undefined') return; // very old browsers: the 5-second bell check still runs
-  const LV = { es: null, cust: 'overview', prov: 'overview', admin: null, wanted: false, failures: 0, fallback: null, pend: new Set(), timer: null, busy: false, again: false, everConnected: false };
+  const LV = { last: 0, es: null, cust: 'overview', prov: 'overview', admin: null, wanted: false, failures: 0, fallback: null, pend: new Set(), timer: null, busy: false, again: false, everConnected: false };
   const el = (id) => document.getElementById(id);
   const role = () => AUTH.user && AUTH.user.role;
   const visible = (id) => { const s = el(id); return !!(s && s.classList.contains('active') || (s && getComputedStyle(s).display !== 'none')); };
@@ -35,12 +35,17 @@
     if (!LV.wanted || LV.es) return;
     const es = new EventSource(`${API_BASE}/live/stream?ticket=${encodeURIComponent(ticket)}`);
     LV.es = es;
+    try { (window.LIVE_LISTENERS || []).forEach(([name, fn]) => es.addEventListener(name, fn)); } catch (x) {} // v136: calls listen here too
+    LV.last = Date.now();
+    es.addEventListener('ping', () => { LV.last = Date.now(); }); // v136: the server's "still here" every 20 seconds
     es.addEventListener('hello', () => {
+      LV.last = Date.now();
       const reconnect = LV.everConnected || LV.failures > 0;
       LV.everConnected = true; LV.failures = 0; stopFallback();
       if (reconnect) { LV.pend.add('all'); schedule(); } // things may have changed while the connection was down
     });
     es.addEventListener('change', (ev) => {
+      LV.last = Date.now();
       try { (JSON.parse(ev.data).sections || []).forEach(s => LV.pend.add(s)); } catch (x) { LV.pend.add('all'); }
       schedule();
     });
@@ -65,9 +70,23 @@
   }
   function startFallback() {
     if (LV.fallback) return;
-    LV.fallback = setInterval(() => { if (!document.hidden && LV.wanted) { LV.pend.add('all'); schedule(); } }, 20000);
+    LV.fallback = setInterval(() => { if (!document.hidden && LV.wanted) { LV.pend.add('all'); schedule(); } }, 10000); // v136: every 10 seconds (was 20)
   }
   function stopFallback() { if (LV.fallback) clearInterval(LV.fallback); LV.fallback = null; }
+
+  // v136: a connection can stay "open" while delivering nothing (some
+  // proxies and phone networks do this). The server sends a ping every 20
+  // seconds; if nothing at all has arrived for 50 seconds, start again and
+  // check for changes in the meantime, instead of waiting for a tab switch.
+  setInterval(() => {
+    if (!LV.wanted || !LV.es || document.hidden) return;
+    if (Date.now() - LV.last > 50000) {
+      try { LV.es.close(); } catch (x) {}
+      LV.es = null;
+      LV.pend.add('all'); schedule();
+      retryLater();
+    }
+  }, 10000);
 
   // Start with the bell check (after sign-in), stop with it (sign-out).
   if (typeof startMessagePolling === 'function') { const f = startMessagePolling; startMessagePolling = async function () { const r = await f.apply(this, arguments); LV.wanted = true; connect(); return r; }; }
@@ -123,6 +142,7 @@
     try { seenNotificationIds = new Set(notifications.map(n => n.id)); } catch (x) {}
     if (!newOnes.length) return;
     CURRENT_NOTIFICATIONS = notifications;
+    try { if (typeof announceNewNotifications === 'function') announceNewNotifications(newOnes); } catch (x) {} // v136: a pop-up for what just arrived
     const soundOn = AUTH.user && AUTH.user.notifPrefs && AUTH.user.notifPrefs.messageSound;
     if (soundOn && newOnes.some(n => n.linkTo && ['messages', 'bookings', 'matches'].includes(n.linkTo.section))) {
       try { playMessageSound(); } catch (x) {}
@@ -178,5 +198,5 @@
   if (typeof renderJobCandidates === 'function') { const f = renderJobCandidates; renderJobCandidates = function () { const r = f.apply(this, arguments); setTimeout(markHireTouched, 0); return r; }; }
 
   // For checking from the browser console: liveStatus()
-  window.liveStatus = () => ({ connected: !!(LV.es && LV.es.readyState === 1), checkingEvery20s: !!LV.fallback, screen: role() === 'customer' ? LV.cust : role() === 'provider' ? LV.prov : LV.admin });
+  window.liveStatus = () => ({ secondsSinceLastNote: LV.last ? Math.round((Date.now() - LV.last) / 1000) : null, connected: !!(LV.es && LV.es.readyState === 1), checkingEvery20s: !!LV.fallback, screen: role() === 'customer' ? LV.cust : role() === 'provider' ? LV.prov : LV.admin });
 })();

@@ -139,7 +139,7 @@ router.get('/admin/tokens', gate, async (req, res) => {
   res.json({
     settings: { ...(await tokens.settings()), cashJobsEnabled: (await getSetting('cashJobsEnabled')) !== false, testPurchases: (await getSetting('tokenTestPurchases')) === true, allowTestPayments: (await getSetting('allowTestPayments')) === true, realPaymentsOnly: (await getSetting('realPaymentsOnly')) === true, cardPaymentsOn: require('../stripe-pay').isOn(), payoutsRealOnly: (await getSetting('payoutsRequireRealPayment')) === true },
     canEdit: req.adminUser.isSuperAdmin === true,
-    canRecordPayments: req.adminUser.isSuperAdmin === true || ['financial', 'accountant', 'controller'].includes(req.adminUser.adminDepartment) || require('../admin-permissions').adminCan(req.adminUser, 'tokens', 'manage'), // v135
+    canRecordPayments: req.adminUser.isSuperAdmin === true || ['financial', 'accountant', 'controller'].includes(req.adminUser.adminDepartment) || require('../admin-permissions').adminCan(req.adminUser, 'tokens', 'confirm'), // v135
     offlineMethods: tokens.OFFLINE_METHODS,
     countryList: Object.keys(require('../currency-data').CURRENCY_BY_COUNTRY).sort(),
     stats: { ...st, recent: st.recent.map(l => ({ ...tokens.publicLine(l), userId: l.userId, customer: nameOf(l.userId), actorName: l.actorName || null })) },

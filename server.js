@@ -165,6 +165,7 @@ app.use('/api', require('./src/routes/orders.routes')); // v108: store orders, d
 app.use('/api', require('./src/routes/rides.routes')); // v111: passenger rides
 app.use('/api', require('./src/routes/tokens.routes')); // v115: Trothen Tokens
 app.use('/api', require('./src/routes/custpay.routes')); // v119: customer payments by code
+app.use('/api', require('./src/routes/calls.routes')); // v136: in-app voice and video calls
 app.use('/api', require('./src/routes/business.routes'));
 app.use('/api', marketplaceRoutes);
 app.use('/api', paymentsRoutes);

@@ -672,7 +672,7 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
   // covers the whole country and cities typed with different capitals.
   // Before, only an admin whose city matched letter for letter was told.
   const regionalIds = new Set((await require('../admin-scope').regionalAdminsFor({ city: user.city, country: user.country })).map(a => a.id));
-  const reviewers = await db.filter('users', u => u.role === 'admin' && u.active !== false && (u.isSuperAdmin || u.adminDepartment === 'verification' || regionalIds.has(u.id) || require('../admin-permissions').customCan(u, 'verification', 'manage'))); // v135
+  const reviewers = await db.filter('users', u => u.role === 'admin' && u.active !== false && (u.isSuperAdmin || u.adminDepartment === 'verification' || regionalIds.has(u.id) || require('../admin-permissions').customCan(u, 'verification', 'decide'))); // v135
   if (!nameMatch) {
     const admins = reviewers;
     for (const admin of admins) {
@@ -747,7 +747,7 @@ router.post('/webhooks/persona', async (req, res) => {
     createdAt: new Date().toISOString(),
   };
   const notifyReviewers = async (message) => {
-    const admins = await db.filter('users', u => u.role === 'admin' && (u.isSuperAdmin || u.adminDepartment === 'verification' || (!u.adminDepartment && u.city === user.city) || require('../admin-permissions').customCan(u, 'verification', 'manage'))); // v135
+    const admins = await db.filter('users', u => u.role === 'admin' && (u.isSuperAdmin || u.adminDepartment === 'verification' || (!u.adminDepartment && u.city === user.city) || require('../admin-permissions').customCan(u, 'verification', 'decide'))); // v135
     for (const admin of admins) await notify(admin.id, '⚠️', message, null, { section: 'verification' });
   };
 
@@ -1112,7 +1112,7 @@ router.post('/provider/guarantors', requireAuth, requireRole('provider'), async 
   });
   const updated = await db.update('users', req.user.sub, { guarantors: merged });
   if (merged.length > 0) {
-    const verificationAdmins = await db.filter('users', u => u.role === 'admin' && (u.adminDepartment === 'verification' || require('../admin-permissions').customCan(u, 'verification', 'manage'))); // v135
+    const verificationAdmins = await db.filter('users', u => u.role === 'admin' && (u.adminDepartment === 'verification' || require('../admin-permissions').customCan(u, 'verification', 'decide'))); // v135
     const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
     for (const admin of (verificationAdmins.length ? verificationAdmins : superAdmins)) {
       await notify(admin.id, '📋', `${updated.name} submitted ${merged.length} guarantor${merged.length === 1 ? '' : 's'} for review. A real person to call for background-check purposes.`, null, { section: 'verification' });

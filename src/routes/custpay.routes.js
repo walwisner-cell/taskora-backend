@@ -88,7 +88,7 @@ router.get('/admin/customer-payments', gate, async (req, res) => {
   const ru = await db.filter('users', u => rc.some(c => c.customerId === u.id));
   await logIt(req, 'customer_payments_view');
   res.json({
-    canAct: req.adminUser.isSuperAdmin || FINANCE.includes(req.adminUser.adminDepartment) || require('../admin-permissions').adminCan(req.adminUser, 'custpay', 'manage'), // v135
+    canAct: req.adminUser.isSuperAdmin || FINANCE.includes(req.adminUser.adminDepartment) || require('../admin-permissions').adminCan(req.adminUser, 'custpay', 'confirm'), // v135
     payments: waiting.map(e => {
       const c = contracts.find(x => x.id === e.contractId) || {};
       return { ...cp.publicPayment(e), escrowId: e.id, bookingNumber: c.bookingNumber || null, service: c.service || null, bookingStatus: c.status || null, customer: nameOf(c.customerId), customerPhone: phoneOf(c.customerId), pro: nameOf(c.providerId), createdAt: e.createdAt, confirmedByName: e.confirmedByName || null };

@@ -913,6 +913,32 @@ router.get('/me/export', requireAuth, privacyLimiter, async (req, res) => {
   res.type('application/json').send(JSON.stringify(data, null, 2));
 });
 
+// POST /api/auth/me/export.zip { password | confirm } — v138: "Download a
+// copy of my data": one ZIP with a readable page (Start here.html), the
+// summary PDF, spreadsheets, the complete data.json and their own photos and
+// voice messages. It holds everything about the person, so they confirm
+// with their password first (Google-only accounts type DOWNLOAD), and they
+// get a notice afterwards so a download they didn't make doesn't go unseen.
+router.post('/me/export.zip', requireAuth, privacyLimiter, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me || me.role === 'admin') return res.status(400).json({ error: 'Data downloads are for customer and pro accounts' });
+  const { password, confirm } = req.body || {};
+  const passwordOk = !!password && verifyPassword(String(password), me.passwordHash);
+  const googleOk = !!me.googleId && String(confirm || '').trim().toUpperCase() === 'DOWNLOAD';
+  if (!passwordOk && !googleOk) return res.status(401).json({ code: 'CONFIRM', error: me.googleId ? 'Enter your password, or type DOWNLOAD to confirm' : 'That password isn\'t right' });
+  try {
+    await require('../account-privacy').buildExportZip(res, me.id);
+  } catch (e) {
+    console.error('[export.zip]', e.message);
+    if (!res.headersSent) return res.status(500).json({ error: 'Could not prepare your data. Please try again.' });
+    return res.end();
+  }
+  try {
+    const { notify } = require('../notify');
+    await notify(me.id, '🔒', `A copy of your Trothen data was downloaded on ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })} (UTC). If this wasn't you, change your password now.`, 'settings', { section: 'settings' });
+  } catch (e) { /* the download already went */ }
+});
+
 // GET /api/auth/me/export.pdf — the same data as /me/export, but as a real,
 // readable PDF document instead of a raw .json file. Reported by Joseph as
 // "this document is not downloading in PDF" — the button always produced a

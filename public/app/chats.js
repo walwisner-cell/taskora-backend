@@ -101,7 +101,7 @@
       <div class="chat-main">
         <div class="chat-head" id="chat-head">${headHTML()}</div>
         <div class="msg-thread-body chat-body" id="msg-thread-body"><div class="chat-empty">${escapeHtml(tr('Loading…'))}</div></div>
-        <div class="msg-input-row" id="chat-input-row"><input type="text" placeholder="${escapeHtml(tr('Type a message...'))}" id="msg-input" maxlength="2000" onkeypress="if(event.key==='Enter')sendRealMessage()"/><button onclick="sendRealMessage()">${escapeHtml(tr('Send'))}</button></div>
+        <div class="msg-input-row" id="chat-input-row"><input type="text" placeholder="${escapeHtml(tr('Type a message...'))}" id="msg-input" maxlength="2000" onkeypress="if(event.key==='Enter')sendRealMessage()"/>${typeof voiceButtonHTML === 'function' ? voiceButtonHTML() : ''}<button onclick="sendRealMessage()">${escapeHtml(tr('Send'))}</button></div>
       </div>
     </div>`;
   };
@@ -147,6 +147,8 @@
         <button type="button" class="chat-back" onclick="chatsBack()" aria-label="${escapeHtml(tr('All conversations'))}">‹ ${escapeHtml(tr('All Chats'))}</button>
         <span class="chat-avatar" aria-hidden="true">${escapeHtml(initials(c.name))}</span>
         <div style="min-width:0;flex:1;"><div class="chat-head-name">${escapeHtml(c.name)}</div><div class="chat-head-sub">${escapeHtml([who, since].filter(Boolean).join(' · '))}</div></div>
+        ${typeof callButtonsHTML === 'function' && c.userId && ['customer', 'provider'].includes(c.role) ? callButtonsHTML(c.userId, c.name) : ''}
+        ${typeof callMenuHTML === 'function' && c.userId && ['customer', 'provider'].includes(c.role) ? callMenuHTML(c.userId, c.name) : ''}
         ${c.total ? `<button type="button" class="btn-sm btn-sm-outline" onclick="chatsDownload()" title="${escapeHtml(tr('Download this conversation as a text file'))}">⬇ ${escapeHtml(tr('Save Chat'))}</button>` : ''}
       </div>
       ${chips ? `<div class="chat-chips">${chips}</div>` : ''}`;
@@ -167,7 +169,8 @@
       lastJob = jid;
       const mine = m.fromId === me;
       const seen = mine && lastMine && m.id === lastMine.id && m.readAt ? ` · ${escapeHtml(tr('Seen'))}` : '';
-      out += `<div class="msg-bubble ${mine ? 'me' : 'them'}">${escapeHtml(m.text)}<div style="text-align:${mine ? 'right' : 'left'};margin-top:3px;line-height:1;opacity:.85;">${msgTimeHTML(m.createdAt)}${seen ? `<span class="msg-time" style="font-size:11.5px;">${seen}</span>` : ''}</div></div>`;
+      const body = m.kind === 'voice' && typeof voiceBubbleHTML === 'function' ? voiceBubbleHTML(m, mine) : escapeHtml(m.text); // v137: voice messages play in the chat
+      out += `<div class="msg-bubble ${mine ? 'me' : 'them'}${m.kind === 'voice' ? ' msg-voice' : ''}">${body}<div style="text-align:${mine ? 'right' : 'left'};margin-top:3px;line-height:1;opacity:.85;">${msgTimeHTML(m.createdAt)}${seen ? `<span class="msg-time" style="font-size:11.5px;">${seen}</span>` : ''}</div></div>`;
     }
     return out;
   }

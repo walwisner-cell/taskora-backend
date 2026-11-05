@@ -33,19 +33,90 @@
   };
   TEMPLATES.accountant = TEMPLATES.financial; TEMPLATES.controller = TEMPLATES.financial;
 
+  // v137: each section has a quick choice (Off, View, Manage, Custom) and,
+  // under "Details", a tick box for every action in it.
+  const readKeys = (a) => a.actions.filter(x => x.read).map(x => x.key);
+  const allKeys = (a) => a.actions.map(x => x.key);
+  function keysFor(a, v) {
+    if (v === 'manage') return allKeys(a);
+    if (v === 'view') return readKeys(a);
+    if (Array.isArray(v)) { const k = allKeys(a).filter(x => v.includes(x)); return k.length && !k.includes('view') ? ['view', ...k] : k; }
+    return [];
+  }
+  const same = (x, y) => x.length === y.length && x.every(k => y.includes(k));
+  function levelOf(a, keys) {
+    if (!keys.length) return '';
+    if (same(keys, readKeys(a))) return 'view';
+    if (same(keys, allKeys(a))) return 'manage';
+    return 'custom';
+  }
   function gridHTML(list, perms, prefix) {
     const opt = (v, l, cur) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`;
     return `<div class="perm-grid" style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">
-      ${list.map((a, i) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;${i ? 'border-top:1px solid var(--border);' : ''}">
-        <div style="min-width:0;"><div style="font-weight:600;color:var(--navy);font-size:14px;">${e(a.label)}</div><div style="font-size:12.5px;color:var(--slate);">${e(a.help)}</div></div>
-        <select class="form-input form-select" data-perm="${e(a.key)}" id="${prefix}-${e(a.key)}" style="width:auto;min-width:120px;flex-shrink:0;padding:6px 30px 6px 10px;">
-          ${opt('', 'Off', perms[a.key] || '')}${opt('view', 'View', perms[a.key])}${opt('manage', 'Manage', perms[a.key])}
-        </select></div>`).join('')}
+      ${list.map((a, i) => {
+        const keys = keysFor(a, perms[a.key]); const lvl = levelOf(a, keys);
+        const many = a.actions.length > 1;
+        return `<div class="perm-row" data-area="${e(a.key)}" style="padding:9px 12px;${i ? 'border-top:1px solid var(--border);' : ''}">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <div style="min-width:0;"><div style="font-weight:600;color:var(--navy);font-size:14px;">${e(a.label)}</div><div style="font-size:12.5px;color:var(--slate);">${e(a.help)}</div>
+            ${many ? `<button type="button" class="perm-toggle" style="background:none;border:0;padding:2px 0 0;color:var(--blue,#2563eb);font-size:12.5px;cursor:pointer;">Details · <span class="perm-count">${keys.length}</span> of ${a.actions.length} allowed</button>` : ''}</div>
+          <select class="form-input form-select" data-perm="${e(a.key)}" id="${prefix}-${e(a.key)}" style="width:auto;min-width:120px;flex-shrink:0;padding:6px 30px 6px 10px;">
+            ${opt('', 'Off', lvl)}${opt('view', 'View', lvl)}${a.actions.some(x => !x.read) ? opt('manage', 'Manage', lvl) : ''}${many ? opt('custom', 'Custom', lvl) : ''}
+          </select></div>
+        <div class="perm-actions" style="display:${lvl === 'custom' ? 'block' : 'none'};margin:8px 0 2px;padding:8px 10px;background:var(--bg-soft,#f6f8fb);border-radius:8px;">
+          ${a.actions.map(x => `<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text,#1b2533);padding:3px 0;cursor:pointer;">
+            <input type="checkbox" data-action="${e(x.key)}" ${keys.includes(x.key) ? 'checked' : ''}> ${e(x.label)}${x.read ? '' : ' <span style="font-size:11.5px;color:#8a5a00;background:#fff8e6;border-radius:6px;padding:1px 6px;">changes</span>'}</label>`).join('')}
+        </div></div>`;
+      }).join('')}
     </div>`;
+  }
+  // Keeps the quick choice and the tick boxes of one row in step.
+  function wireGrid(root, list) {
+    if (!root || root.dataset.wired) return; root.dataset.wired = '1';
+    const def = (k) => list.find(a => a.key === k);
+    const sync = (row) => {
+      const a = def(row.dataset.area); const boxes = [...row.querySelectorAll('input[data-action]')];
+      const keys = boxes.filter(b => b.checked).map(b => b.dataset.action);
+      const c = row.querySelector('.perm-count'); if (c) c.textContent = keys.length;
+      const view = boxes.find(b => b.dataset.action === 'view');
+      if (view) view.disabled = keys.some(k => k !== 'view'); // you can't act on what you can't see
+      return { a, keys };
+    };
+    root.addEventListener('change', (ev) => {
+      const row = ev.target.closest('.perm-row'); if (!row) return;
+      const a = def(row.dataset.area); if (!a) return;
+      const panel = row.querySelector('.perm-actions');
+      const sel = row.querySelector('select[data-perm]');
+      if (ev.target === sel) {
+        if (sel.value !== 'custom') {
+          const keys = keysFor(a, sel.value);
+          row.querySelectorAll('input[data-action]').forEach(b => { b.checked = keys.includes(b.dataset.action); });
+        } else { panel.style.display = 'block'; const v = row.querySelector('input[data-action="view"]'); if (v && !row.querySelector('input[data-action]:checked')) v.checked = true; }
+        sync(row);
+        return;
+      }
+      if (ev.target.matches('input[data-action]')) {
+        if (ev.target.checked && ev.target.dataset.action !== 'view') { const v = row.querySelector('input[data-action="view"]'); if (v) v.checked = true; }
+        const { keys } = sync(row);
+        const lvl = levelOf(a, keys); sel.value = lvl === '' ? '' : lvl;
+      }
+    });
+    root.addEventListener('click', (ev) => {
+      const t = ev.target.closest('.perm-toggle'); if (!t) return;
+      const panel = t.closest('.perm-row').querySelector('.perm-actions');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    root.querySelectorAll('.perm-row').forEach(sync);
   }
   function readGrid(root) {
     const out = {};
-    root.querySelectorAll('select[data-perm]').forEach(s => { if (s.value) out[s.dataset.perm] = s.value; });
+    root.querySelectorAll('.perm-row').forEach(row => {
+      const sel = row.querySelector('select[data-perm]');
+      if (!sel || !sel.value) return;
+      if (sel.value !== 'custom') { out[row.dataset.area] = sel.value; return; }
+      const keys = [...row.querySelectorAll('input[data-action]:checked')].map(b => b.dataset.action);
+      if (keys.length) out[row.dataset.area] = keys;
+    });
     return out;
   }
   function templateSelectHTML(id) {
@@ -58,8 +129,13 @@
   function applyTemplate(root, value) {
     if (!value) return;
     const p = value === 't:none' ? {} : (TEMPLATES[value.slice(2)] || {}).p || {};
-    root.querySelectorAll('select[data-perm]').forEach(s => { s.value = p[s.dataset.perm] || ''; });
+    root.querySelectorAll('select[data-perm]').forEach(s => {
+      const want = p[s.dataset.perm] || '';
+      s.value = [...s.options].some(o => o.value === want) ? want : (want === 'manage' ? 'view' : '');
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   }
+  const EXPLAIN = 'View: they can open the section and see its records. Manage: they can also do everything in it. Custom: tick exactly which actions they can take (open Details). Off: hidden and blocked.';
   const NOTE = 'Super-admin-only actions are never included: creating admins, Go-Live, Data Cleanup, platform settings and the legal pages.';
 
   // ── New Admin form ──────────────────────────────────────────────────
@@ -73,11 +149,12 @@
     const box = document.createElement('div'); box.id = 'loc-custom-box'; box.style.cssText = 'display:none;margin-top:12px;';
     box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
         <div style="font-weight:700;color:var(--navy);">Permissions</div>${templateSelectHTML('loc-custom-template')}</div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:8px;">View: they can open the section and see its records. Manage: they can also act in it (approve, resolve, edit). Off: hidden and blocked.</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${e(EXPLAIN)}</div>
       ${gridHTML(list, {}, 'loc-perm')}
       <div style="font-size:12.5px;color:var(--muted);margin-top:8px;">${e(NOTE)}</div>`;
     const anchor = document.getElementById('loc-region-scoped-row') || dep;
     anchor.insertAdjacentElement('afterend', box);
+    wireGrid(box, list);
     document.getElementById('loc-custom-template').addEventListener('change', (ev) => applyTemplate(box, ev.target.value));
     const scope = document.getElementById('loc-scope');
     dep.addEventListener('change', () => {
@@ -124,13 +201,19 @@
     if (!keys.length) return 'No sections';
     const lab = (k) => LABELS[k] || k;
     const m = keys.filter(k => p[k] === 'manage').map(lab), v = keys.filter(k => p[k] === 'view').map(lab);
-    return `${m.length ? `Manage: ${m.join(', ')}` : ''}${m.length && v.length ? '. ' : ''}${v.length ? `View: ${v.join(', ')}` : ''}`;
+    const c = keys.filter(k => Array.isArray(p[k])).map(k => {
+      const def = (AREAS || []).find(x => x.key === k);
+      const acts = p[k].filter(x => x !== 'view').map(x => ((def && def.actions.find(y => y.key === x)) || {}).label || x);
+      return `${lab(k)} (${acts.length ? acts.join('; ') : 'see only'})`;
+    });
+    return [m.length ? `Manage: ${m.join(', ')}` : '', v.length ? `View: ${v.join(', ')}` : '', c.length ? `Some actions: ${c.join(', ')}` : ''].filter(Boolean).join('. ');
   }
   if (typeof functionalAdminsTable === 'function') {
     const base = functionalAdminsTable;
     functionalAdminsTable = function (list) {
       const html = base(list);
       if (!(AUTH.user && AUTH.user.isSuperAdmin) || !list.length) return html;
+      if (!AREAS) areas(); // so the summary can name each action
       const box = document.createElement('div'); box.innerHTML = html;
       box.querySelectorAll('tbody tr').forEach((tr, i) => {
         const a = list[i]; if (!a) return;
@@ -161,10 +244,12 @@
         </select>
         ${templateSelectHTML('perm-edit-template')}
       </div>
+      <div style="font-size:12.5px;color:var(--slate);margin-bottom:6px;">${e(EXPLAIN)}</div>
       <div id="perm-edit-grid" style="max-height:50vh;overflow:auto;">${gridHTML(list, start, 'perm-edit')}</div>
       <div style="font-size:12px;color:var(--muted);margin-top:8px;">${e(NOTE)}</div></div>`;
     const p = confirmDialog('', { confirmLabel: 'Save Permissions' });
     const msg = document.getElementById('confirm-dialog-message'); if (msg) msg.innerHTML = html;
+    wireGrid(document.getElementById('perm-edit-grid'), list);
     const tpl = document.getElementById('perm-edit-template'); if (tpl) tpl.addEventListener('change', (ev) => applyTemplate(document.getElementById('perm-edit-grid'), ev.target.value));
     let permissions = null, scope = null;
     const grab = () => { permissions = readGrid(document.getElementById('perm-edit-grid')); scope = document.getElementById('perm-edit-scope').value; };

@@ -1130,7 +1130,18 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
 // GET /api/jobs/mine — customer's posted jobs
 router.get('/jobs/mine', requireAuth, requireRole('customer'), async (req, res) => {
   const jobs = await db.filter('jobs', j => j.customerId === req.user.sub);
-  res.json({ jobs });
+  // v136: how many pros have answered each open job and their best price,
+  // so the job card shows it without opening "View Responses".
+  const open = new Set(jobs.filter(j => j.status === 'open').map(j => j.id));
+  const matches = open.size ? await db.filter('matches', m => open.has(m.jobId)) : [];
+  const out = jobs.map(j => {
+    if (!open.has(j.id)) return j;
+    const answered = matches.filter(m => m.jobId === j.id && (m.status === 'interested' || (m.price != null && m.status !== 'declined' && m.status !== 'not_selected')));
+    const prices = answered.map(m => Number(m.price)).filter(n => n > 0);
+    const latest = answered.map(m => m.priceAt || m.respondedAt || m.updatedAt || m.createdAt).filter(Boolean).sort().pop() || null;
+    return { ...j, responses: { count: answered.length, priced: prices.length, bestPrice: prices.length ? Math.min(...prices) : null, latestAt: latest } };
+  });
+  res.json({ jobs: out });
 });
 
 // POST /api/jobs/:id/cancel — a customer can remove their own job request

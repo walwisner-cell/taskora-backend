@@ -138,13 +138,19 @@ router.get('/live/stream', (req, res) => {
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no', // tells proxies not to hold the notes back
   });
+  // v136: about 2 KB of padding first. Some proxies and phone networks hold
+  // a response back until they have that much, which made the first notes
+  // arrive late (or only when the next one pushed them through).
+  res.write(`: ${' '.repeat(2048)}\n\n`);
   res.write(`retry: 5000\nevent: hello\ndata: {}\n\n`);
   if (!streams.has(t.userId)) streams.set(t.userId, new Set());
   const set = streams.get(t.userId);
   if (set.size >= MAX_STREAMS_PER_USER) { const oldest = set.values().next().value; set.delete(oldest); try { oldest.end(); } catch (e) {} }
   set.add(res);
   // A small "still here" every 25 seconds so hosting proxies and phones don't drop a quiet connection.
-  const beat = setInterval(() => { try { res.write(`: ping\n\n`); } catch (e) {} }, 25 * 1000);
+  // v136: a real "ping" event (not a comment) so the page can tell a live
+  // connection from one that has quietly stopped delivering, and reconnect.
+  const beat = setInterval(() => { try { res.write(`event: ping\ndata: {}\n\n`); } catch (e) {} }, 20 * 1000);
   req.on('close', () => {
     clearInterval(beat);
     set.delete(res);
@@ -155,6 +161,18 @@ router.get('/live/stream', (req, res) => {
 // Old, unused tickets are cleared every minute.
 setInterval(() => { const now = Date.now(); for (const [k, v] of tickets) if (v.expires < now) tickets.delete(k); }, 60 * 1000).unref();
 
+// v136: send a named event with data to one person's open pages (used for
+// calls: ringing, answer, hang up). Returns how many pages received it.
+function sendEvent(userId, event, data) {
+  const set = streams.get(userId);
+  if (!set || !set.size) return 0;
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  let n = 0;
+  for (const res of set) { try { res.write(msg); n++; } catch (e) { /* closed */ } }
+  return n;
+}
+const isOnline = (userId) => !!(streams.get(userId) && streams.get(userId).size);
+
 function stats() { let open = 0; for (const s of streams.values()) open += s.size; return { people: streams.size, connections: open }; }
 
-module.exports = { install, router, queue, stats, quiet };
+module.exports = { install, router, queue, stats, quiet, sendEvent, isOnline };

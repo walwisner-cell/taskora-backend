@@ -36,22 +36,31 @@ async function buildExport(userId) {
   const disputes = (await safeAll('disputes')).filter(d => contractIds.has(d.contractId));
   return {
     exportedAt: new Date().toISOString(),
-    note: 'This is the information Trothen holds about your account. Passwords are never stored in readable form and are not included. Photos and ID files are not inside this file; the records of them are.',
+    note: 'This is the information Trothen holds about your account. Passwords are never stored in readable form and are not included. ID document images are not included; the records of your identity checks are. Your photos and voice messages are in the "files" folder of the download.',
     profile: strip(me, INTERNAL_USER_FIELDS),
     jobsPosted: mine(await safeAll('jobs'), 'customerId'),
-    jobMatches: mine(await safeAll('matches'), 'providerId'),
+    // v138: a customer's responses from pros too, not only a pro's own.
+    jobMatches: mine(await safeAll('matches'), 'providerId', 'customerId'),
     bookings: contracts,
+    bookingChanges: (await safeAll('scopeChangeRequests')).filter(r => contractIds.has(r.contractId)),
     paymentsHeld: (await safeAll('escrowTransactions')).filter(e => contractIds.has(e.contractId)),
     payouts: mine(await safeAll('payouts'), 'providerId'),
     planInvoices: mine(await safeAll('planInvoices'), 'providerId'),
     paymentMethods: mine(await safeAll('paymentMethods'), 'userId'),
-    reviews: mine(await safeAll('reviews'), 'customerId', 'providerId', 'authorId', 'reviewerId'),
+    // v138: reviews about a pro, and the reviews a customer wrote (stored against the booking).
+    reviews: (await safeAll('reviews')).filter(r => r.providerId === userId || [r.customerId, r.authorId, r.reviewerId].includes(userId) || (r.contractId && contractIds.has(r.contractId))),
     disputes,
-    messages: mine(await safeAll('messages'), 'fromUserId', 'toUserId', 'from', 'to', 'senderId', 'recipientId'),
+    disputeEvidence: mine(await safeAll('disputeEvidence'), 'uploadedBy').map(e => strip(e, ['filename'])),
+    // v138: messages are stored with fromId/toId. The old field names here
+    // matched nothing, so earlier downloads had no messages in them.
+    messages: mine(await safeAll('messages'), 'fromId', 'toId', 'fromUserId', 'toUserId', 'senderId', 'recipientId'),
+    calls: mine(await safeAll('calls'), 'fromId', 'toId'),
+    callBlocks: mine(await safeAll('callBlocks'), 'blockerId'),
     notifications: mine(await safeAll('notifications'), 'userId'),
     identityChecks: mine(await safeAll('verifications'), 'userId').map(v => strip(v, ['documentFilename', 'selfieFilename', 'backFilename'])),
     portfolioPhotos: mine(await safeAll('portfolioPhotos'), 'providerId'),
-    favorites: mine(await safeAll('favorites'), 'customerId', 'userId'),
+    favorites: [...mine(await safeAll('favoriteProviders'), 'customerId'), ...mine(await safeAll('favorites'), 'customerId', 'userId')],
+    referrals: mine(await safeAll('referrals'), 'referrerId', 'referredUserId', 'referredByUserId'),
     // v105: the pro's store and business records
     storeGoods: mine(await safeAll('storeGoods'), 'providerId'),
     tools: mine(await safeAll('proTools'), 'providerId'),
@@ -59,6 +68,8 @@ async function buildExport(userId) {
     quotesAndInvoices: mine(await safeAll('proDocs'), 'providerId', 'customerId'),
     tokens: mine(await safeAll('tokenLedger'), 'userId'), // v115
     tokenPurchases: mine(await safeAll('tokenPurchases'), 'userId'),
+    ridePasses: mine(await safeAll('ridePasses'), 'userId'),
+    rideSafetyReports: mine(await safeAll('rideSafetyEvents'), 'raisedBy'),
   };
 }
 
@@ -128,6 +139,11 @@ async function eraseAccount(closure, adminId) {
     try { await db.remove('proExpenses', x.id); } catch (e) { /* skip */ }
   }
   for (const sk of (user.extraSkills || [])) if (sk && sk.licenceFile) removeFileQuietly(PRIVATE_UPLOADS_DIR, sk.licenceFile); // v106: licence proof for extra skills
+  // v137: voice messages they recorded.
+  for (const m of (await safeAll('messages')).filter(m => m.fromId === user.id && m.kind === 'voice' && m.voice && m.voice.file && !m.voice.deletedAt)) {
+    removeFileQuietly(require('path').join(PRIVATE_UPLOADS_DIR, 'voice'), m.voice.file);
+    try { await db.update('messages', m.id, { text: 'Voice message deleted', voice: { ...m.voice, deletedAt: new Date().toISOString() } }); } catch (e) { /* skip */ }
+  }
   for (const coll of ['proTools', 'proDocs']) {
     for (const r of (await safeAll(coll)).filter(r => r.providerId === user.id)) { try { await db.remove(coll, r.id); } catch (e) { /* skip */ } }
   }
@@ -259,6 +275,7 @@ async function buildExportPdf(res, userId) {
   r.paragraph(
     [
       `Messages: ${data.messages.length}`,
+      `Calls: ${data.calls.length}`,
       `Notifications: ${data.notifications.length}`,
       `Identity checks on file: ${data.identityChecks.length}`,
       `Saved favorites: ${data.favorites.length}`,
@@ -268,10 +285,10 @@ async function buildExportPdf(res, userId) {
     ].filter(Boolean).join('    ·    '),
     { size: 9.5 }
   );
-  r.paragraph('Passwords are never stored in readable form and are not included here. Photos and ID document images are not inside this document; the records of them are. For the complete, exact copy of every field above (useful if you are moving your data somewhere else), use "Download the complete file (.json)" on the same screen.', { size: 8.5 });
+  r.paragraph('Passwords are never stored in readable form and are not included here. This is a summary. The full download (Settings, "Download a copy of my data") also has every message, your photos and voice messages, spreadsheets you can open in Excel or Google Sheets, and the complete machine-readable file.', { size: 8.5 });
 
   r.finish({ closingNote: `Generated for ${me.name || me.email} on ${new Date(data.exportedAt).toLocaleString('en-US')}.` });
   return true;
 }
 
-module.exports = { buildExport, buildExportPdf, closureBlockers, closeAccount, eraseAccount };
+module.exports = { buildExport, buildExportPdf, buildExportZip: (...a) => require('./account-export-zip').buildExportZip(...a), closureBlockers, closeAccount, eraseAccount };

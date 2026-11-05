@@ -134,7 +134,7 @@ async function customerReportsPaid(customer, contractId, transactionId) {
   const tx = typeof transactionId === 'string' ? transactionId.trim() : '';
   if (tx && (tx.length < 4 || tx.length > 60)) return { status: 400, error: 'The transaction ID should be 4 to 60 characters, as shown in your mobile money message.' };
   await db.update('escrowTransactions', e.id, { customerSaysPaidAt: new Date().toISOString(), customerTransactionId: tx || null });
-  const team = await db.filter('users', u => u.role === 'admin' && u.active !== false && (u.isSuperAdmin || ['financial', 'accountant', 'controller'].includes(u.adminDepartment) || require('./admin-permissions').customCan(u, 'custpay', 'manage'))); // v135
+  const team = await db.filter('users', u => u.role === 'admin' && u.active !== false && (u.isSuperAdmin || ['financial', 'accountant', 'controller'].includes(u.adminDepartment) || require('./admin-permissions').customCan(u, 'custpay', 'confirm'))); // v135
   for (const a of team) await notify(a.id, '💳', `${customer.name} says they paid booking #${c.bookingNumber} with code ${e.paymentCode} (${e.dueCurrency} ${e.amountDue}${tx ? `, their transaction ID ${tx}` : ''}). Check Trothen's mobile money statement and confirm it in Admin → Customer Payments.`, null, { section: 'custpay' });
   return { ok: true };
 }

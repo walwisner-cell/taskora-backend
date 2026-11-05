@@ -381,7 +381,7 @@ Your account and its records. Kept while your account is open. If you close your
 
 # 7. Your Choices
 
-Download your data. In Settings, "Download my data" gives you a file with what Trothen holds about your account.
+Download your data. In Settings, "Download a copy of my data" gives you one file with what Trothen holds about your account: a page you can read, spreadsheets, your photos and voice messages, and the complete data file for moving to another service.
 
 Close your account. In Settings, "Close my account". You cannot close it while a booking, a held payment or a dispute is still open.
 

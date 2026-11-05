@@ -1734,6 +1734,34 @@ router.get('/disputes/:id/audit-log', requireDepartment(['disputes', 'customer_s
 });
 
 
+// GET /api/admin/disputes/:id/calls — v137: when the two sides of a dispute
+// called each other, and the voice messages they sent: times and lengths
+// only. Calls are never recorded, and voice messages stay private to the two
+// people, so a dispute can show "he never called me" was or wasn't so
+// without anyone listening in.
+router.get('/disputes/:id/calls', requireDepartment(['disputes', 'customer_service', 'legal']), async (req, res) => {
+  const region = await myRegion(req);
+  const dispute = await db.find('disputes', d => d.id === req.params.id);
+  if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
+  if (region && !inRegion(region, await disputeCustomer(dispute))) return res.status(403).json({ error: 'That dispute is outside the area you manage' });
+  const contract = await db.find('contracts', c => c.id === dispute.contractId);
+  if (!contract) return res.json({ calls: [], voiceMessages: [] });
+  const a = contract.customerId, b = contract.providerId;
+  const pair = (x) => (x.fromId === a && x.toId === b) || (x.fromId === b && x.toId === a);
+  const nameById = new Map((await db.filter('users', u => u.id === a || u.id === b)).map(u => [u.id, u.name]));
+  const calls = (await db.filter('calls', pair)).sort((x, y) => new Date(x.createdAt) - new Date(y.createdAt)).map(c => ({
+    id: c.id, at: c.createdAt, from: nameById.get(c.fromId) || 'Former member', to: nameById.get(c.toId) || 'Former member',
+    video: !!c.video, status: c.status, answered: !!c.answeredAt,
+    seconds: c.answeredAt && c.endedAt ? Math.max(0, Math.round((Date.parse(c.endedAt) - Date.parse(c.answeredAt)) / 1000)) : 0,
+    droppedByNetwork: c.endReason === 'connection',
+  }));
+  const voiceMessages = (await db.filter('messages', m => m.kind === 'voice' && pair(m))).sort((x, y) => new Date(x.createdAt) - new Date(y.createdAt)).map(m => ({
+    id: m.id, at: m.createdAt, from: nameById.get(m.fromId) || 'Former member', to: nameById.get(m.toId) || 'Former member',
+    seconds: (m.voice && m.voice.seconds) || 0, played: !!(m.voice && m.voice.playedAt), deleted: !!(m.voice && m.voice.deletedAt),
+  }));
+  res.json({ calls, voiceMessages, parties: { customer: nameById.get(a) || null, provider: nameById.get(b) || null } });
+});
+
 // ---- Data Management & Cleanup (item 13) -------------------------------------
 // Real, scoped, protected deletion — not a blanket "wipe this country"
 // button. This is specifically what's needed to actually delete a
