@@ -37,6 +37,22 @@ const STORE_DEFAULTS = {
   deliveryFeePercent: 9,
   // v110: days a seller has to pack a paid order. After that the customer is refunded automatically.
   sellerPackDays: 7,
+  // v139: how Trothen earns on goods. 'percent' (the marketplace standard,
+  // like Jumia or Amazon's referral fee): a share of the goods total, with a
+  // minimum, paid by the seller from their money at payout. The buyer sees
+  // the shelf price and pays nothing extra. 'flat': the old flat fee above.
+  feeMode: 'percent',
+  goodsFeePercent: 8,
+  goodsFeeMin: 0.5,
+  // v139: personal listings (anyone selling their own item) bought "with
+  // Trothen protection": the buyer pays a small protection fee, the seller
+  // gets their full price. Meeting in person and paying cash costs nothing.
+  protectionFeePercent: 5,
+  protectionFeeMin: 0.5,
+  // v139: an order that has been handed over completes by itself after these
+  // days unless the buyer reports a problem (collected / delivered).
+  autoReleasePickupDays: 3,
+  autoReleaseDeliveryDays: 7,
 };
 // v108: how goods can reach the customer.
 const DELIVERY_METHODS = ['pickup', 'seller', 'driver'];
@@ -60,6 +76,9 @@ const MAX_EXTRA_SKILLS = 4;
 
 const money = (n) => Math.round(Number(n) * 100) / 100;
 
+const pctOr = (v, d, max) => (Number.isFinite(Number(v)) && v !== null && v !== '' && Number(v) >= 0 && Number(v) <= max ? Math.round(Number(v) * 100) / 100 : d);
+const dollarsOr = (v, d) => (Number.isFinite(Number(v)) && v !== null && v !== '' && Number(v) >= 0 && Number(v) <= 100 ? money(v) : d);
+const daysOr = (v, d) => (Number.isInteger(v) && v >= 1 && v <= 30 ? v : d);
 let cached = { ...STORE_DEFAULTS, rulesText: DEFAULT_STORE_RULES };
 async function storeSettings() {
   try {
@@ -75,6 +94,13 @@ async function storeSettings() {
       rulesText: typeof v.rulesText === 'string' && v.rulesText.trim() ? v.rulesText.trim() : DEFAULT_STORE_RULES,
       deliveryFeePercent: Number.isFinite(Number(v.deliveryFeePercent)) && Number(v.deliveryFeePercent) >= 0 && Number(v.deliveryFeePercent) <= 30 ? Math.round(Number(v.deliveryFeePercent) * 100) / 100 : STORE_DEFAULTS.deliveryFeePercent,
       sellerPackDays: Number.isInteger(v.sellerPackDays) && v.sellerPackDays >= 1 && v.sellerPackDays <= 60 ? v.sellerPackDays : STORE_DEFAULTS.sellerPackDays,
+      feeMode: v.feeMode === 'flat' ? 'flat' : 'percent',
+      goodsFeePercent: pctOr(v.goodsFeePercent, STORE_DEFAULTS.goodsFeePercent, 30),
+      goodsFeeMin: dollarsOr(v.goodsFeeMin, STORE_DEFAULTS.goodsFeeMin),
+      protectionFeePercent: pctOr(v.protectionFeePercent, STORE_DEFAULTS.protectionFeePercent, 20),
+      protectionFeeMin: dollarsOr(v.protectionFeeMin, STORE_DEFAULTS.protectionFeeMin),
+      autoReleasePickupDays: daysOr(v.autoReleasePickupDays, STORE_DEFAULTS.autoReleasePickupDays),
+      autoReleaseDeliveryDays: daysOr(v.autoReleaseDeliveryDays, STORE_DEFAULTS.autoReleaseDeliveryDays),
     };
   } catch (e) { /* keep the last known settings */ }
   return cached;
@@ -90,6 +116,25 @@ async function saveStoreSettings(patch) {
   return storeSettings();
 }
 storeSettings().catch(() => {});
+
+// v139: Trothen's fee on goods, and who pays it.
+//   percent: a share of the goods total with a minimum, from the seller at
+//            payout (never more than the goods came to). Buyer pays nothing extra.
+//   flat:    the flat fee per purchase, paid by whoever the setting says.
+function goodsFeeFor(goodsTotal, s) {
+  s = s || cached;
+  const total = money(goodsTotal || 0);
+  if (!(total > 0)) return { fee: 0, paidBy: 'pro', mode: s.feeMode };
+  if (s.feeMode === 'flat') return { fee: s.purchaseFee, paidBy: s.feePaidBy === 'pro' ? 'pro' : 'customer', mode: 'flat' };
+  return { fee: Math.min(total, Math.max(s.goodsFeeMin, money(total * s.goodsFeePercent / 100))), paidBy: 'pro', mode: 'percent' };
+}
+// v139: the buyer's protection fee on a personal listing bought through Trothen.
+function protectionFeeFor(price, s) {
+  s = s || cached;
+  const p = money(price || 0);
+  if (!(p > 0)) return 0;
+  return Math.max(s.protectionFeeMin, money(p * s.protectionFeePercent / 100));
+}
 
 // A good is on the shelf when a manager approved it, the pro hasn't
 // hidden it, and it isn't sold out.
@@ -201,7 +246,8 @@ async function refreshStoreLive(providerId) {
 // Prices a basket from the server's own records. Nothing the customer's
 // browser says about names or prices is used: only which good and how many.
 // Returns { items, total } or { error }.
-async function priceBasket(providerId, rawItems) {
+// v140: opts.trade = the buyer is a verified pro, who pays the store's trade price where it has one.
+async function priceBasket(providerId, rawItems, opts = {}) {
   if (rawItems === undefined || rawItems === null) return { items: [], total: 0 };
   if (!Array.isArray(rawItems)) return { error: 'The basket could not be read. Please pick your goods again.' };
   if (!rawItems.length) return { items: [], total: 0 };
@@ -232,6 +278,11 @@ async function priceBasket(providerId, rawItems) {
     const cur = pf.priceCurrency !== 'USD' ? currencies.find(x => x.code === pf.priceCurrency) : null;
     const lineTotal = cur ? Math.max(0.01, money(Number(pf.priceLocal) * qty / (cur.rate > 0 ? cur.rate : 1))) : money(pf.price * qty);
     const line = { goodId: g.id, name: g.name, unit: g.unit || null, unitPrice: pf.price, qty, lineTotal };
+    const tp = Number(g.tradePrice);
+    if (opts.trade && Number.isFinite(tp) && tp > 0 && tp < pf.price) { // v140: trade price for pros, in US dollars
+      line.unitPrice = money(tp); line.lineTotal = money(tp * qty); line.tradePrice = true; line.shelfUnitPrice = pf.price;
+      items.push(line); continue;
+    }
     // v108: a good priced in local money keeps that price on the order, next to the dollars charged.
     if (pf.priceCurrency !== 'USD') { line.priceCurrency = pf.priceCurrency; line.priceSymbol = pf.priceSymbol; line.unitPriceLocal = pf.priceLocal; line.lineTotalLocal = money(pf.priceLocal * qty); }
     items.push(line);
@@ -326,6 +377,7 @@ function hasSkill(user, category) {
 }
 
 module.exports = {
+  goodsFeeFor, protectionFeeFor,
   STORE_DEFAULTS, DEFAULT_STORE_RULES, MAX_PHOTOS_PER_GOOD, MAX_QTY_PER_LINE, MAX_EXTRA_SKILLS, money,
   storeSettings, storeSettingsCached, saveStoreSettings,
   isOnShelf, inStock, storeIsLive, publicStore, refreshStoreLive,

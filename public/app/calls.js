@@ -24,7 +24,9 @@
       'The call could not connect. Some networks block calls. Try Wi-Fi, or send a message instead.': 'No se pudo conectar la llamada. Algunas redes bloquean las llamadas. Prueba con Wi-Fi o envía un mensaje.',
       'Calls need a secure connection (https).': 'Las llamadas necesitan una conexión segura (https).', 'This browser cannot make calls.': 'Este navegador no puede hacer llamadas.',
       'They are not on Trothen right now. They have been notified that you called.': 'No está en Trothen ahora. Se le avisó de tu llamada.',
-      'Reconnecting…': 'Reconectando…', 'Weak connection': 'Conexión débil', 'Leave a voice message': 'Dejar un mensaje de voz', 'Close': 'Cerrar', 'Call again': 'Llamar de nuevo',
+      'Reconnecting…': 'Reconectando…', 'Still connecting…': 'Todavía conectando…',
+      'The call could not connect. Check both internet connections and try again.': 'No se pudo conectar la llamada. Revisen sus conexiones a internet e inténtenlo de nuevo.',
+      'The call could not connect. One of your networks is blocking direct calls, often a VPN or office, school or hotel Wi-Fi. Turn off a VPN, or switch between Wi-Fi and mobile data, and try again.': 'No se pudo conectar la llamada. Una de sus redes bloquea las llamadas directas, a menudo una VPN o el Wi-Fi de una oficina, escuela u hotel. Desactiva la VPN o cambia entre Wi-Fi y datos móviles, e inténtalo de nuevo.', 'Weak connection': 'Conexión débil', 'Leave a voice message': 'Dejar un mensaje de voz', 'Close': 'Cerrar', 'Call again': 'Llamar de nuevo',
       'The connection dropped. Call again when you have a better signal.': 'Se cortó la conexión. Vuelve a llamar cuando tengas mejor señal.',
     });
   } catch (x) {}
@@ -90,20 +92,22 @@
   let audioCtx = null, toneTimer = null;
   function tone(pattern) {
     stopTone();
+    // v140: the person's chosen ringtone (src: public/app/sounds.js)
+    if (window.TrothenSounds) { const stop = window.TrothenSounds.loop(pattern === 'ring' ? 'ring' : 'ringback'); if (stop) { toneTimer = { stop }; return; } }
     try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); } catch (x) { return; }
     const beep = (f1, f2, ms) => { try { const o = audioCtx.createOscillator(), o2 = audioCtx.createOscillator(), g = audioCtx.createGain(); o.frequency.value = f1; o2.frequency.value = f2; g.gain.value = 0.06; o.connect(g); o2.connect(g); g.connect(audioCtx.destination); o.start(); o2.start(); setTimeout(() => { o.stop(); o2.stop(); }, ms); } catch (x) {} };
     const play = pattern === 'ring' ? () => { beep(440, 480, 900); setTimeout(() => beep(440, 480, 900), 1200); } : () => beep(440, 480, 1200);
     play(); toneTimer = setInterval(play, pattern === 'ring' ? 3500 : 4000);
     if (pattern === 'ring' && navigator.vibrate) { try { navigator.vibrate([500, 300, 500]); } catch (x) {} }
   }
-  function stopTone() { if (toneTimer) clearInterval(toneTimer); toneTimer = null; }
+  function stopTone() { if (toneTimer && toneTimer.stop) toneTimer.stop(); else if (toneTimer) clearInterval(toneTimer); toneTimer = null; }
 
   // ── state ────────────────────────────────────────────────────────────
   const C = { id: null, role: null, video: false, peer: null, pc: null, local: null, queued: [], startedAt: null, timer: null, ice: null, ending: false, remoteSet: false, voiceOk: true, reconnecting: false, reconnectTimer: null, reconnectStarted: 0, reconnects: 0, statsTimer: null, quality: null, lastStats: null };
   window.callDebug = () => ({ id: C.id, role: C.role, state: C.pc && C.pc.connectionState, quality: C.quality, reconnects: C.reconnects, reconnecting: C.reconnecting, dataSaver: !!(C.pc && C.pc.localDescription && /usedtx=1/.test(C.pc.localDescription.sdp) && /maxaveragebitrate=32000/.test(C.pc.localDescription.sdp)) });
   async function iceServers() {
     if (C.ice) return C.ice;
-    try { C.ice = (await apiFetch('GET', '/calls/ice-servers')).iceServers; } catch (x) { C.ice = [{ urls: 'stun:stun.l.google.com:19302' }]; }
+    try { const r = await apiFetch('GET', '/calls/ice-servers'); C.ice = r.iceServers; C.relayConfigured = r.relay === true; } catch (x) { C.ice = [{ urls: 'stun:stun.l.google.com:19302' }]; C.relayConfigured = false; }
     return C.ice;
   }
   async function getMedia(video) {
@@ -138,7 +142,9 @@
     const pc = new RTCPeerConnection({ iceServers: await iceServers() });
     C.pc = pc;
     C.local.getTracks().forEach(tr => pc.addTrack(tr, C.local));
-    pc.onicecandidate = (ev) => { if (ev.candidate && C.id) signal('ice', ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate); };
+    C.candTypes = new Set();
+    pc.onicecandidate = (ev) => { if (ev.candidate && C.id) { try { const m = / typ (\w+)/.exec(ev.candidate.candidate || ''); if (m) C.candTypes.add(m[1]); } catch (x) {} signal('ice', ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate); } };
+    startConnectWatch();
     pc.ontrack = (ev) => {
       const v = document.getElementById('call-remote-video'), a = document.getElementById('call-remote-audio');
       if (C.video && v) { v.srcObject = ev.streams[0]; v.play && v.play().catch(() => {}); }
@@ -149,7 +155,7 @@
       const s = pc.connectionState;
       if (s === 'connected') {
         stopTone();
-        if (!C.startedAt) { C.startedAt = Date.now(); C.timer = setInterval(drawTimer, 1000); capSenders(pc); startStats(); }
+        if (!C.startedAt) { C.startedAt = Date.now(); C.timer = setInterval(drawTimer, 1000); capSenders(pc); startStats(); clearTimeout(C.connectTimer); clearTimeout(C.connectFail); showNote(''); }
         reconnected();
         setStatus(''); drawTimer();
       }
@@ -159,6 +165,24 @@
       }
     };
     return pc;
+  }
+  // v140: a call that never connects used to sit on "Connecting…" for ever.
+  // After 15 seconds the caller tries a fresh route once; after 30 seconds
+  // the call ends with a plain reason and (for the caller) the choice of a
+  // voice message or calling again.
+  function startConnectWatch() {
+    clearTimeout(C.connectTimer); clearTimeout(C.connectFail);
+    // Only the caller restarts and ends a call that won't connect, so the two sides never both try at once.
+    C.connectTimer = setTimeout(() => {
+      if (!C.pc || C.startedAt) return;
+      showNote(t('Still connecting…'));
+      if (C.role === 'caller') { C.reconnecting = true; C.reconnectStarted = Date.now(); reconnect(); C.reconnecting = false; }
+    }, 15000);
+    C.connectFail = setTimeout(() => {
+      if (!C.pc || C.startedAt || !C.id) return;
+      showNote(t(C.relayConfigured ? 'The call could not connect. Check both internet connections and try again.' : 'The call could not connect. One of your networks is blocking direct calls, often a VPN or office, school or hotel Wi-Fi. Turn off a VPN, or switch between Wi-Fi and mobile data, and try again.'));
+      hangUp(false, 'connection');
+    }, C.role === 'caller' ? 30000 : 40000); // the person called only gives up if the caller's page has gone
   }
   // Back on a working route (after a new offer and answer, or the line
   // coming back by itself): carry on.
@@ -177,6 +201,7 @@
     if (Date.now() - C.reconnectStarted > 25000) { showNote(t('The connection dropped. Call again when you have a better signal.')); return hangUp(false, 'connection'); }
     try {
       if (C.role === 'caller') {
+        if (C.pc.signalingState !== 'stable') { C.reconnectTimer = setTimeout(() => { if (C.reconnecting) reconnect(); }, 3000); return; } // an offer is already on its way
         const offer = await C.pc.createOffer({ iceRestart: true });
         offer.sdp = tuneSdp(offer.sdp);
         await C.pc.setLocalDescription(offer);
@@ -274,7 +299,7 @@
   function cleanup(message) {
     stopTone();
     if (C.timer) clearInterval(C.timer);
-    clearInterval(C.statsTimer); clearTimeout(C.reconnectTimer);
+    clearInterval(C.statsTimer); clearTimeout(C.reconnectTimer); clearTimeout(C.connectTimer); clearTimeout(C.connectFail);
     try { C.pc && C.pc.close(); } catch (x) {}
     try { C.local && C.local.getTracks().forEach(tr => tr.stop()); } catch (x) {}
     const o = document.getElementById('call-screen');
@@ -285,8 +310,10 @@
     if (!C.id || C.ending) return;
     C.ending = true;
     const id = C.id;
-    try { await apiFetch('POST', `/calls/${encodeURIComponent(id)}/end`, reason ? { reason } : undefined); } catch (x) {}
-    if (reason === 'connection' && C.role === 'caller' && C.peer) return endWithChoices(t('The connection dropped. Call again when you have a better signal.'), true);
+    const diag = reason === 'connection' ? { ice: C.pc ? C.pc.iceConnectionState : '', relay: !!C.relayConfigured, candidates: [...(C.candTypes || [])].join(',') } : null;
+    try { await apiFetch('POST', `/calls/${encodeURIComponent(id)}/end`, reason ? { reason, ...(diag ? { diag } : {}) } : undefined); } catch (x) {}
+    if (reason === 'connection' && C.role === 'caller' && C.peer) return endWithChoices(C.startedAt ? t('The connection dropped. Call again when you have a better signal.') : ((document.getElementById('call-note') || {}).textContent || t('The call could not connect.')), true);
+    if (reason === 'connection' && !C.startedAt) { const note = (document.getElementById('call-note') || {}).textContent; return cleanup(note || t('Call ended')); }
     cleanup(quiet ? null : t('Call ended'));
   }
   // The caller's screen when a call didn't go through: leave a voice
@@ -295,7 +322,7 @@
     const peer = C.peer || {}, callId = C.id, video = C.video, voiceOk = C.voiceOk !== false;
     stopTone();
     if (C.timer) clearInterval(C.timer);
-    clearInterval(C.statsTimer); clearTimeout(C.reconnectTimer);
+    clearInterval(C.statsTimer); clearTimeout(C.reconnectTimer); clearTimeout(C.connectTimer); clearTimeout(C.connectFail);
     try { C.pc && C.pc.close(); } catch (x) {}
     try { C.local && C.local.getTracks().forEach(tr => tr.stop()); } catch (x) {}
     Object.assign(C, { id: null, role: null, video: false, peer: null, pc: null, local: null, queued: [], startedAt: null, timer: null, ending: false, remoteSet: false, voiceOk: true, reconnecting: false, reconnectTimer: null, statsTimer: null, lastStats: null, reconnects: 0, quality: null });
@@ -351,7 +378,8 @@
   }
 
   // ── events from the server ───────────────────────────────────────────
-  async function onCallEvent(ev) {
+  async function onCallEvent(ev) { try { await handleCallEvent(ev); } catch (x) { console.warn('[call]', x && x.message); } }
+  async function handleCallEvent(ev) {
     let d; try { d = JSON.parse(ev.data); } catch (x) { return; }
     if (d.type === 'ring') return incoming(d);
     if (!C.id || d.callId !== C.id) return;
@@ -374,6 +402,7 @@
       signal('answer', { type: answer.type, sdp: answer.sdp });
       setTimeout(reconnected, 500); setTimeout(reconnected, 1500);
     } else if (d.type === 'answer' && C.role === 'caller') {
+      if (!C.pc || C.pc.signalingState !== 'have-local-offer') return; // a late or repeated answer
       await C.pc.setRemoteDescription(d.data); C.remoteSet = true;
       for (const c of C.queued.splice(0)) await addIce(c);
       setTimeout(reconnected, 500); setTimeout(reconnected, 1500);
@@ -381,7 +410,7 @@
       if (C.pc && C.remoteSet) await addIce(d.data); else C.queued.push(d.data);
     } else if (d.type === 'declined') { if (C.role === 'caller') endWithChoices(t('Call declined'), false); else cleanup(t('Call declined')); }
     else if (d.type === 'unanswered') { if (C.role === 'caller') endWithChoices(t('No answer'), true); else cleanup(t('No answer')); }
-    else if (d.type === 'ended') { cleanup(t('Call ended')); }
+    else if (d.type === 'ended') { if (C.ending) return; cleanup(t(d.reason === 'connection' && !C.startedAt ? 'The call could not connect.' : 'Call ended')); } // our own hang-up echoing back is handled by hangUp
     else if (d.type === 'answered-elsewhere' && C.role === 'ringing') { cleanup(); }
   }
   function incoming(d) {

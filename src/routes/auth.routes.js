@@ -9,6 +9,7 @@ const { generateUniqueReferralCode } = require('../referral-code');
 const { isValidStateForCountry, isPlausibleCityForCountry } = require('../geo-data');
 
 const router = express.Router();
+const PRO_MODES = ['services', 'goods', 'both']; // v139
 
 // The real public address of this app, for links inside emails. APP_URL
 // wins when it's set; otherwise it's taken from the incoming request
@@ -99,6 +100,9 @@ function generateSixDigitCode() {
 // but does NOT create the account yet.
 router.post('/signup/start', signupLimiter, async (req, res) => {
   const { name, email, password, role, country, state, city, phone, address, zipCode, category, skills, inviteCode, referralCode } = req.body || {};
+  // v139: what a pro does on Trothen: offer services, sell goods, or both.
+  const proMode = PRO_MODES.includes((req.body || {}).proMode) ? req.body.proMode : 'services';
+  const sellsOnly = role === 'provider' && proMode === 'goods';
   const errors = validate([
     ['name', isValidName(name), 'Enter a valid name using letters, spaces, hyphens and apostrophes only'],
     ['email', isValidEmail(email), 'Enter a valid email address'],
@@ -113,9 +117,11 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
     ['state', typeof country !== 'string' || typeof state !== 'string' || isValidStateForCountry(country.trim(), state.trim()), 'That state/region doesn\'t belong to the selected country. Please re-select both'],
     ['city', typeof country !== 'string' || typeof city !== 'string' || isPlausibleCityForCountry(country.trim(), city.trim()), 'That city is a known city in a different country. Please double check your country and city'],
   ]);
-  if (role === 'provider') {
+  if (role === 'provider' && !sellsOnly) {
     errors.push(...validate([
-      ['category', isNonEmptyString(categoryTyped), 'Select your primary service category'],
+      // v139: was "categoryTyped" since v134, a name that doesn't exist in
+      // this function, so every pro signing up by email got an error.
+      ['category', isNonEmptyString(category), 'Select your primary service category'],
       ['skills', isNonEmptyString(skills, { min: 2, max: 300 }), 'List at least one skill or specialty'],
     ]));
   }
@@ -164,7 +170,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
     id: `preg_${nanoid(12)}`,
     // v81: the password is hashed right here. It used to sit in this waiting
     // record as typed until the code was entered (and forever if it never was).
-    payload: { name: name.trim(), email: email.trim(), passwordHash: hashPassword(password), role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category, skills, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null },
+    payload: { name: name.trim(), email: email.trim(), passwordHash: hashPassword(password), role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category: sellsOnly ? null : category, skills: sellsOnly ? '' : skills, proMode: role === 'provider' ? proMode : undefined, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null },
     emailCodeHash: hashResetToken(emailCode),
     phoneVerified: false,
     emailVerified: false,
@@ -269,7 +275,7 @@ async function completeSignupVerify(req, res, pending) {
   // same "don't block, but don't silently pretend it's approved either"
   // principle used for unlisted job categories.
   let categoryApprovalStatus = 'approved';
-  if (payload.role === 'provider') {
+  if (payload.role === 'provider' && payload.proMode !== 'goods') {
     const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
     const canonical = require('../search-synonyms').canonicalCategory(payload.category, activeCategories); // v134: "Land Scaping" is Landscaping
     if (canonical) payload.category = canonical;
@@ -296,10 +302,11 @@ async function completeSignupVerify(req, res, pending) {
     createdAt: new Date().toISOString(),
     ...(payload.role === 'provider' ? {
       providerRole: 'New Provider',
-      category: payload.category || 'Plumbing',
+      category: payload.proMode === 'goods' ? null : (payload.category || 'Plumbing'),
       categoryApprovalStatus,
-      skills: payload.skills.trim(),
-      tags: payload.skills.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6),
+      proMode: PRO_MODES.includes(payload.proMode) ? payload.proMode : 'services', // v139
+      skills: String(payload.skills || '').trim(),
+      tags: String(payload.skills || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 6),
       rating: 0, jobs: 0, price: 50, color: '#5A5F6C', since: String(new Date().getFullYear()),
     } : {}),
   };
@@ -672,6 +679,8 @@ router.post('/google', async (req, res) => {
 // first-class account, not a lesser one.
 router.post('/google/signup', signupLimiter, async (req, res) => {
   const { idToken, role, country, state, city, phone, address, zipCode, category: categoryTyped, skills, inviteCode, referralCode } = req.body || {};
+  const proMode = PRO_MODES.includes((req.body || {}).proMode) ? req.body.proMode : 'services'; // v139
+  const sellsOnly = role === 'provider' && proMode === 'goods';
   const { verifyGoogleIdToken } = require('../google-auth');
   const google = await verifyGoogleIdToken(idToken);
   if (!google) return res.status(401).json({ error: 'Could not verify that Google sign-in. Please try again' });
@@ -688,7 +697,7 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
     ['state', typeof country !== 'string' || typeof state !== 'string' || isValidStateForCountry(country.trim(), state.trim()), 'That state/region doesn\'t belong to the selected country. Please re-select both'],
     ['city', typeof country !== 'string' || typeof city !== 'string' || isPlausibleCityForCountry(country.trim(), city.trim()), 'That city is a known city in a different country. Please double check your country and city'],
   ]);
-  if (role === 'provider') {
+  if (role === 'provider' && !sellsOnly) {
     errors.push(...validate([
       ['category', isNonEmptyString(categoryTyped), 'Select your primary service category'],
       ['skills', isNonEmptyString(skills, { min: 2, max: 300 }), 'List at least one skill or specialty'],
@@ -721,8 +730,8 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
   }
 
   let categoryApprovalStatus = 'approved';
-  let category = categoryTyped;
-  if (role === 'provider') {
+  let category = sellsOnly ? null : categoryTyped;
+  if (role === 'provider' && !sellsOnly) {
     const activeCategories = (await db.filter('categories', c => c.active)).map(c => c.name);
     const canonical = require('../search-synonyms').canonicalCategory(category, activeCategories); // v134: "Land Scaping" is Landscaping
     if (canonical) category = canonical;
@@ -756,10 +765,11 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
     createdAt: new Date().toISOString(),
     ...(role === 'provider' ? {
       providerRole: 'New Provider',
-      category: category || 'Plumbing',
+      category: sellsOnly ? null : (category || 'Plumbing'),
       categoryApprovalStatus,
-      skills: skills.trim(),
-      tags: skills.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6),
+      proMode, // v139
+      skills: String(skills || '').trim(),
+      tags: String(skills || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 6),
       rating: 0, jobs: 0, price: 50, color: '#5A5F6C', since: String(new Date().getFullYear()),
     } : {}),
   };
@@ -977,7 +987,7 @@ router.post('/me/close-account', requireAuth, privacyLimiter, async (req, res) =
 });
 
 router.patch('/me', requireAuth, async (req, res) => {
-  const allowed = ['name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'payoutPaypalEmail', 'payoutMethodIntl', 'payoutPaypalEmailIntl', 'notifPrefs', 'availability', 'pricingModel', 'price', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category', 'acceptingBookings', 'licenseExpiryDate', 'insuranceExpiryDate', 'latitude', 'longitude', 'serviceRadiusMiles'];
+  const allowed = ['proMode', 'name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'payoutPaypalEmail', 'payoutMethodIntl', 'payoutPaypalEmailIntl', 'notifPrefs', 'availability', 'pricingModel', 'price', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category', 'acceptingBookings', 'licenseExpiryDate', 'insuranceExpiryDate', 'latitude', 'longitude', 'serviceRadiusMiles'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
   if ('acceptingBookings' in patch && typeof patch.acceptingBookings !== 'boolean') {
@@ -1020,6 +1030,26 @@ router.patch('/me', requireAuth, async (req, res) => {
   if ('serviceRadiusMiles' in patch && patch.serviceRadiusMiles !== null) {
     if (typeof patch.serviceRadiusMiles !== 'number' || patch.serviceRadiusMiles <= 0 || patch.serviceRadiusMiles > 500) {
       return res.status(400).json({ error: 'Service radius must be a positive number of miles (500 max), or left blank to travel anywhere' });
+    }
+  }
+  if ('proMode' in patch) { // v139: offer services, sell goods, or both
+    if (req.user.role !== 'provider') return res.status(400).json({ error: 'Only pros choose what they do on Trothen' });
+    if (!PRO_MODES.includes(patch.proMode)) return res.status(400).json({ error: 'Choose services, goods or both' });
+    if (patch.proMode !== 'goods') {
+      const cur = await db.find('users', u => u.id === req.user.sub);
+      if (!(cur && cur.category) && !patch.category) return res.status(400).json({ code: 'NEEDS_CATEGORY', error: 'To offer services, choose your main service category too.' });
+    }
+  }
+  // v140: changing where payouts go is the first thing someone does after
+  // taking over an account. A change (not the first time it is set) is
+  // confirmed to the owner, and payouts wait 24 hours.
+  {
+    const payoutKeys = ['payoutMethod', 'payoutPaypalEmail', 'payoutMethodIntl', 'payoutPaypalEmailIntl'];
+    const cur = await db.find('users', u => u.id === req.user.sub);
+    const changed = payoutKeys.filter(k => k in patch && String(patch[k] || '') !== String((cur && cur[k]) || '') && (cur && cur[k]));
+    if (changed.length) {
+      patch.payoutMethodChangedAt = new Date().toISOString();
+      try { await notify(req.user.sub, '🔒', 'Where your payouts go was just changed. For your safety, payouts wait 24 hours after a change. If this wasn\'t you, change your password now and contact support.', 'payoutAlerts', { section: 'settings' }); } catch (e) { /* the change still saves */ }
     }
   }
   if ('payoutMethodIntl' in patch && patch.payoutMethodIntl !== null && !['PayPal', 'Bank Transfer'].includes(patch.payoutMethodIntl)) {

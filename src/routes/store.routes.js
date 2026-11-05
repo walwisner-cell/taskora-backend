@@ -65,6 +65,14 @@ const BANNED_GOODS = [
   [/\b(cigarettes?|tobacco|vapes?|cigars?|shisha)\b/i, 'tobacco'],
   [/\b(counterfeit|fake (id|passport|licen[cs]e|certificate)|replica (watch|bag))\b/i, 'counterfeit goods'],
   [/\b(ivory|bush ?meat|pangolin)\b/i, 'protected wildlife'],
+  // v140: the other items international marketplaces ban (eBay, Jumia, Jiji, Facebook Marketplace).
+  [/\b(passports?(?! (holders?|covers?|wallets?|cases?|photos?))|national id cards?|birth certificates?|voter('?s)? cards?)\b/i, 'identity documents'],
+  [/\b(credit card numbers?|bank logins?|account (logins?|passwords?)|cvv|card dumps?|sim cards? registered)\b/i, 'financial or account details'],
+  [/\b(stolen|hot goods|no papers)\b/i, 'stolen goods'],
+  [/\b(organs? for sale|kidney for sale|human remains|human skulls?)\b/i, 'human remains or organs'],
+  [/\b(pornograph(y|ic)|sex services?|escort services?)\b/i, 'adult content'],
+  [/\b(mercury|cyanide|asbestos|radioactive|uranium|ddt)\b/i, 'hazardous materials'],
+  [/\b(fixed (matches|games)|betting (codes|tips) guaranteed|lottery tickets?)\b/i, 'gambling'],
 ];
 function bannedGoodReason(text) {
   for (const [re, why] of BANNED_GOODS) if (re.test(String(text || ''))) return why;
@@ -121,7 +129,7 @@ router.get('/store/mine', requireAuth, requireRole('provider'), async (req, res)
     options: store.storeOptions(me),
     currencies,
     goods: goods.map(g => goodForOwner(g, currencies)),
-    settings: { enabled: settings.enabled, purchaseFee: settings.purchaseFee, maxGoodsPerStore: settings.maxGoodsPerStore, feePaidBy: settings.feePaidBy, deliveryFeePercent: settings.deliveryFeePercent, sellerPackDays: settings.sellerPackDays },
+    settings: { enabled: settings.enabled, purchaseFee: settings.purchaseFee, maxGoodsPerStore: settings.maxGoodsPerStore, feePaidBy: settings.feePaidBy, deliveryFeePercent: settings.deliveryFeePercent, sellerPackDays: settings.sellerPackDays, feeMode: settings.feeMode, goodsFeePercent: settings.goodsFeePercent, goodsFeeMin: settings.goodsFeeMin, protectionFeePercent: settings.protectionFeePercent, protectionFeeMin: settings.protectionFeeMin, autoReleasePickupDays: settings.autoReleasePickupDays, autoReleaseDeliveryDays: settings.autoReleaseDeliveryDays },
     rules: { text: settings.rulesText, version: settings.rulesVersion, agreed: !!(me.store && me.store.rulesVersion === settings.rulesVersion), agreedAt: (me.store && me.store.rulesAgreedAt) || null },
     verified: me.verified === true,
   });
@@ -380,6 +388,8 @@ router.delete('/store/goods/:id', requireAuth, requireRole('provider'), async (r
 router.get('/providers/:id/store', async (req, res) => {
   const p = await db.find('users', u => u.id === req.params.id && u.role === 'provider' && u.verified);
   if (!p || !store.storeIsLive(p)) return res.status(404).json({ error: 'This pro doesn\'t have a store open right now.' });
+  let tradeViewer = false; // v140
+  try { const h = req.headers.authorization || ''; if (h.startsWith('Bearer ')) { const pl = require('jsonwebtoken').verify(h.slice(7), require('../auth').JWT_SECRET); const v = await db.find('users', u => u.id === pl.sub); tradeViewer = !!(v && v.role === 'provider' && v.verified === true && v.id !== p.id); } } catch (e) { /* public view */ }
   const goods = (await db.filter('storeGoods', g => g.providerId === p.id)).filter(store.isOnShelf)
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const settings = await store.storeSettings();
@@ -387,11 +397,11 @@ router.get('/providers/:id/store', async (req, res) => {
   const opt = store.storeOptions(p);
   res.json({
     store: { name: p.store.name, description: p.store.description || '', providerId: p.id, providerName: p.name, city: p.city || '', country: p.country || '' },
-    goods: goods.map(g => goodForShopper(g, currencies)),
+    goods: goods.map(g => { const v = goodForShopper(g, currencies); const tp = Number(g.tradePrice); return tradeViewer && Number.isFinite(tp) && tp > 0 && tp < v.price ? { ...v, tradePrice: store.money(tp) } : v; }), // v140: trade prices for verified pros
     // v108: how the goods can reach the customer, and what the seller charges to bring them
     delivery: { methods: opt.deliveryMethods, sellerFee: opt.deliveryFee, pickupPlace: opt.pickupPlace || [p.city, p.country].filter(Boolean).join(', '), hasPickupPin: !!opt.pickupLocation, hours: opt.hours, orderNote: opt.orderNote, feePercent: settings.deliveryFeePercent },
     currencies: currencies.map(c => ({ code: c.code, symbol: c.symbol })),
-    purchaseFee: settings.feePaidBy === 'customer' ? settings.purchaseFee : 0, // v106: nothing extra for the customer when the pro pays the fee
+    purchaseFee: settings.feeMode === 'flat' && settings.feePaidBy === 'customer' ? settings.purchaseFee : 0, // v106/v139: nothing extra for the customer when the seller pays the fee
   });
 });
 
@@ -399,10 +409,12 @@ router.get('/providers/:id/store', async (req, res) => {
 // So the booking form can show the same total the server will charge.
 router.post('/store/price-basket', requireAuth, async (req, res) => {
   const { providerId, items } = req.body || {};
-  const priced = await store.priceBasket(providerId, items);
+  const buyer = await db.find('users', u => u.id === req.user.sub);
+  const priced = await store.priceBasket(providerId, items, { trade: !!(buyer && buyer.role === 'provider' && buyer.verified === true && buyer.id !== providerId) }); // v140
   if (priced.error) return res.status(400).json({ error: priced.error });
   const settings = await store.storeSettings();
-  res.json({ items: priced.items, goodsTotal: priced.total, purchaseFee: (priced.items.length && settings.feePaidBy === 'customer') ? settings.purchaseFee : 0 });
+  const gf = store.goodsFeeFor(priced.total, settings); // v139
+  res.json({ items: priced.items, goodsTotal: priced.total, purchaseFee: (priced.items.length && gf.paidBy === 'customer') ? gf.fee : 0 });
 });
 
 // ── EXTRA SKILLS ───────────────────────────────────────────────────────
@@ -790,7 +802,7 @@ router.post('/admin/store/privacy-check/apply', adminGate, async (req, res) => {
 
 router.put('/admin/store/settings', adminGate, async (req, res) => {
   if (!req.adminUser.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
-  const { enabled, purchaseFee, feePaidBy, bannedWords, rulesText, deliveryFeePercent, sellerPackDays } = req.body || {};
+  const { enabled, purchaseFee, feePaidBy, bannedWords, rulesText, deliveryFeePercent, sellerPackDays, feeMode, goodsFeePercent, goodsFeeMin, protectionFeePercent, protectionFeeMin, autoReleasePickupDays, autoReleaseDeliveryDays } = req.body || {};
   const patch = {};
   const before = await store.storeSettings();
   if (feePaidBy !== undefined) {
@@ -816,14 +828,32 @@ router.put('/admin/store/settings', adminGate, async (req, res) => {
     patch.sellerPackDays = sellerPackDays;
   }
   if (enabled !== undefined) patch.enabled = enabled === true;
+  // v139: the Market fees and automatic completion
+  if (feeMode !== undefined) { if (!['percent', 'flat'].includes(feeMode)) return res.status(400).json({ error: 'The fee is a percentage or a flat fee' }); patch.feeMode = feeMode; }
+  const num = (v, lo, hi, label) => { if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) throw Object.assign(new Error(label), { status: 400 }); return Math.round(v * 100) / 100; };
+  try {
+    if (goodsFeePercent !== undefined) patch.goodsFeePercent = num(goodsFeePercent, 0, 30, 'The fee on goods must be between 0% and 30%');
+    if (goodsFeeMin !== undefined) patch.goodsFeeMin = num(goodsFeeMin, 0, 100, 'The minimum fee must be between $0 and $100');
+    if (protectionFeePercent !== undefined) patch.protectionFeePercent = num(protectionFeePercent, 0, 20, 'The buyer protection fee must be between 0% and 20%');
+    if (protectionFeeMin !== undefined) patch.protectionFeeMin = num(protectionFeeMin, 0, 100, 'The minimum protection fee must be between $0 and $100');
+    for (const [k, v] of [['autoReleasePickupDays', autoReleasePickupDays], ['autoReleaseDeliveryDays', autoReleaseDeliveryDays]]) {
+      if (v === undefined) continue;
+      if (!Number.isInteger(v) || v < 1 || v > 30) throw Object.assign(new Error('Days before an order completes by itself must be a whole number from 1 to 30'), { status: 400 });
+      patch[k] = v;
+    }
+  } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
   if (purchaseFee !== undefined) {
     if (typeof purchaseFee !== 'number' || purchaseFee < 0 || purchaseFee > 500) return res.status(400).json({ error: 'The purchase fee must be between $0 and $500' });
     patch.purchaseFee = money(purchaseFee);
   }
   const settings = await store.saveStoreSettings(patch);
-  try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'store_settings', resourceId: `fee ${before.purchaseFee} -> ${settings.purchaseFee}; paid by ${before.feePaidBy} -> ${settings.feePaidBy}; stores ${before.enabled ? 'on' : 'off'} -> ${settings.enabled ? 'on' : 'off'}; rules v${before.rulesVersion} -> v${settings.rulesVersion}; banned words ${before.bannedWords.length} -> ${settings.bannedWords.length}`.slice(0, 250), ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the change still stands */ }
+  try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'store_settings', resourceId: `mode ${before.feeMode} -> ${settings.feeMode}; goods ${before.goodsFeePercent}% -> ${settings.goodsFeePercent}%; protection ${before.protectionFeePercent}% -> ${settings.protectionFeePercent}%; flat fee ${before.purchaseFee} -> ${settings.purchaseFee}; paid by ${before.feePaidBy} -> ${settings.feePaidBy}; stores ${before.enabled ? 'on' : 'off'} -> ${settings.enabled ? 'on' : 'off'}; rules v${before.rulesVersion} -> v${settings.rulesVersion}; banned words ${before.bannedWords.length} -> ${settings.bannedWords.length}`.slice(0, 250), ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the change still stands */ }
   res.json({ settings });
 });
 
 module.exports = router;
 module.exports.bannedGoodReason = bannedGoodReason;
+module.exports.bannedReason = bannedReason; // v139: the Market's personal listings use the same check
+module.exports.photoUploader = photoUploader; // v139: the Market's personal listings use the same photo checks
+module.exports.handlePhotoUpload = handlePhotoUpload;
+module.exports.uploadLimiter = uploadLimiter;

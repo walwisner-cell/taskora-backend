@@ -297,8 +297,9 @@ async function submitGoogleSignup() {
 
   const zipRequired = !(GEO_DATA.noPostalCodeCountries || []).includes(country);
   if (!phone || !address || !city || !state || !country || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
-  if (authState.role === 'provider' && !skills) return showToast('List at least one skill or specialty');
-  if (authState.role === 'provider' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
+  const proMode = (document.getElementById('auth-pro-mode') || {}).value || 'services'; // v139: services, goods or both
+  if (authState.role === 'provider' && proMode !== 'goods' && !skills) return showToast('List at least one skill or specialty');
+  if (authState.role === 'provider' && proMode !== 'goods' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
   const phoneDigits = phone.replace(/[^0-9]/g, '');
   if (phoneDigits.length < 7) return showToast('Enter a valid phone number');
   if (zipCode && zipCode.length < 3 && !(GEO_DATA.noPostalCodeCountries || []).includes(country)) return showToast('Enter a valid zip/postal code');
@@ -307,7 +308,7 @@ async function submitGoogleSignup() {
     const data = await apiFetch('POST', '/auth/google/signup', {
       idToken: authState.googleIdToken, role: authState.role, city, country, state, phone, address, zipCode,
       ...(pendingReferralCode ? { referralCode: pendingReferralCode } : {}),
-      ...(authState.role === 'provider' ? { category, skills, inviteCode: document.getElementById('auth-invite-code').value.trim() } : {}),
+      ...(authState.role === 'provider' ? { category, skills, proMode, inviteCode: document.getElementById('auth-invite-code').value.trim() } : {}),
     });
     AUTH.token = data.token; AUTH.user = data.user;
     saveAuthSession(data.token);
@@ -2510,6 +2511,8 @@ function navigateFromNotification(linkTo) {
     const map = { bookings: 'contracts' }; // providers call their booking list "contracts"
     goDashboard('provider').then(() => {
       selectProviderSection(map[linkTo.section] || linkTo.section);
+      // v140: a customer's message about an open job opens that job's chat, with the price box
+      if (linkTo.openJobChat && linkTo.jobId && linkTo.contactId && typeof messageCustomerAboutJob === 'function') { setTimeout(() => messageCustomerAboutJob(linkTo.contactId, linkTo.jobId), 250); return; }
       if (linkTo.contactId) setTimeout(() => selectMessageContact(linkTo.contactId), 150);
     });
   } else if (role === 'admin') {
@@ -3348,8 +3351,9 @@ async function mockAuth() {
   } else {
     const zipRequired = !(GEO_DATA.noPostalCodeCountries || []).includes(country);
     { const missing = firstMissingSignupField({ name, email, password, phone, address, city, state, zipCode, zipRequired }); if (missing) return missing; }
-    if (authState.role === 'provider' && !skills) return showToast('List at least one skill or specialty');
-    if (authState.role === 'provider' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
+    const proModeNow = (document.getElementById('auth-pro-mode') || {}).value || 'services'; // v139
+    if (authState.role === 'provider' && proModeNow !== 'goods' && !skills) return showToast('List at least one skill or specialty');
+    if (authState.role === 'provider' && proModeNow !== 'goods' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
   }
   if (!isValidEmailClient(email)) {
     return showToast('Enter a valid email address');
@@ -3384,7 +3388,7 @@ async function mockAuth() {
       const data = await apiFetch('POST', '/auth/signup/start', {
         name, email, password, role: authState.role, city, country, state, phone, address, zipCode,
         ...(pendingReferralCode ? { referralCode: pendingReferralCode } : {}),
-        ...(authState.role === 'provider' ? { category, skills, inviteCode: document.getElementById('auth-invite-code').value.trim() } : {}),
+        ...(authState.role === 'provider' ? { category, skills, proMode: (document.getElementById('auth-pro-mode') || {}).value || 'services', inviteCode: document.getElementById('auth-invite-code').value.trim() } : {}),
       });
       pendingSignupId = data.pendingId;
       document.getElementById('auth-main-form').style.display = 'none';

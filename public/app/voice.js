@@ -19,7 +19,7 @@
       'Voice message': 'Mensaje de voz', 'Record a voice message': 'Grabar un mensaje de voz', 'Leave a voice message': 'Dejar un mensaje de voz',
       'Recording…': 'Grabando…', 'Tap to start recording': 'Toca para empezar a grabar', 'Stop': 'Detener', 'Send': 'Enviar', 'Discard': 'Descartar', 'Record again': 'Grabar de nuevo',
       'Voice message sent': 'Mensaje de voz enviado', 'Up to 2 minutes': 'Hasta 2 minutos', 'Close': 'Cerrar', 'Block': 'Bloquear', 'Unblock': 'Desbloquear',
-      'Calls & Voice Messages': 'Llamadas y mensajes de voz', 'Take calls on Trothen': 'Recibir llamadas en Trothen', 'Take voice messages': 'Recibir mensajes de voz',
+      'Calls & Voice Messages': 'Llamadas y mensajes de voz', 'Sounds': 'Sonidos', 'Ringtone for calls': 'Tono de llamada', 'Message and alert sound': 'Sonido de mensajes y avisos', 'Play': 'Reproducir', 'Take calls on Trothen': 'Recibir llamadas en Trothen', 'Take voice messages': 'Recibir mensajes de voz',
       'Only take calls at set times': 'Recibir llamadas solo en horario', 'From': 'Desde', 'To': 'Hasta', 'Save': 'Guardar', 'Saved': 'Guardado',
       'People you blocked': 'Personas bloqueadas', 'Nobody. Block someone from the top of your chat with them.': 'Nadie. Bloquea a alguien desde la parte superior de tu chat con esa persona.',
       'This voice message was deleted.': 'Este mensaje de voz fue eliminado.', 'Delete': 'Eliminar', 'Could not play this voice message.': 'No se pudo reproducir este mensaje de voz.',
@@ -43,7 +43,10 @@
   let settingsCache = null;
   async function loadSettings() {
     if (!isUser()) return null;
-    try { settingsCache = await apiFetch('GET', '/calls/settings'); window.CALL_BLOCKED = new Set((settingsCache.blocked || []).map(b => b.userId)); } catch (x) {}
+    try {
+      settingsCache = await apiFetch('GET', '/calls/settings'); window.CALL_BLOCKED = new Set((settingsCache.blocked || []).map(b => b.userId));
+      const st = settingsCache.settings || {}; if (window.TrothenSounds && (st.ringtone || st.alertTone)) TrothenSounds.setPrefs({ ...(st.ringtone ? { ringtone: st.ringtone } : {}), ...(st.alertTone ? { alertTone: st.alertTone } : {}) }); // v140
+    } catch (x) {}
     return settingsCache;
   }
   window.callMenuHTML = function (userId, name) {
@@ -263,6 +266,12 @@
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">${DAYS.map((d, i) => `<label style="display:inline-flex;gap:4px;align-items:center;font-size:13.5px;border:1px solid var(--border);border-radius:8px;padding:4px 8px;background:#fff;"><input type="checkbox" class="cs-day" value="${i}" ${(h.days || []).includes(i) ? 'checked' : ''}>${d}</label>`).join('')}</div>
         <div style="font-size:12.5px;color:var(--slate);margin-top:8px;">Your time zone: ${e(myTz() || 'not known')}. Outside these times, people can leave you a voice message.</div>
       </div>
+      ${window.TrothenSounds ? (() => { const S = TrothenSounds, p = S.prefs(); return `<div style="font-weight:600;color:var(--navy);margin:16px 0 6px;">${e(t('Sounds'))}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <div><label class="form-label" for="cs-ring">${e(t('Ringtone for calls'))}</label><div style="display:flex;gap:6px;"><select class="form-input form-select" id="cs-ring" style="width:auto;">${Object.entries(S.RINGTONES).map(([k, v]) => `<option value="${k}" ${p.ringtone === k ? 'selected' : ''}>${e(t(v.label))}</option>`).join('')}</select><button type="button" class="btn-sm btn-sm-outline" onclick="TrothenSounds.preview('ring', document.getElementById('cs-ring').value)">▶ ${e(t('Play'))}</button></div></div>
+          <div><label class="form-label" for="cs-alert">${e(t('Message and alert sound'))}</label><div style="display:flex;gap:6px;"><select class="form-input form-select" id="cs-alert" style="width:auto;">${Object.entries(S.ALERTS).map(([k, v]) => `<option value="${k}" ${p.alertTone === k ? 'selected' : ''}>${e(t(v.label))}</option>`).join('')}</select><button type="button" class="btn-sm btn-sm-outline" onclick="TrothenSounds.preview('alert', document.getElementById('cs-alert').value)">▶ ${e(t('Play'))}</button></div></div>
+        </div>
+        <div style="font-size:12.5px;color:var(--slate);margin-top:6px;">${e(t('Message sounds play when "Message sound alert" is on in your notification settings.'))}</div>`; })() : ''}
       <div style="margin-top:12px;"><button type="button" class="btn-sm btn-sm-primary" id="cs-save">${e(t('Save'))}</button></div>
       <div style="font-weight:600;color:var(--navy);margin:18px 0 6px;">${e(t('People you blocked'))}</div>
       ${(data.blocked || []).length ? data.blocked.map(b => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--border);font-size:14px;"><span>${e(b.name)}</span><button type="button" class="btn-sm btn-sm-outline" data-uid="${e(b.userId)}" data-name="${e(b.name)}" onclick="toggleCallBlock(this.dataset.uid, this.dataset.name)">${e(t('Unblock'))}</button></div>`).join('') : `<div style="font-size:13.5px;color:var(--slate);">${e(t('Nobody. Block someone from the top of your chat with them.'))}</div>`}`;
@@ -272,9 +281,10 @@
         calls: document.getElementById('cs-calls').checked,
         voice: document.getElementById('cs-voice').checked,
         tz: myTz(),
+        ...(document.getElementById('cs-ring') ? { ringtone: document.getElementById('cs-ring').value, alertTone: document.getElementById('cs-alert').value } : {}),
         hours: { on: document.getElementById('cs-hours-on').checked, from: document.getElementById('cs-from').value || '08:00', to: document.getElementById('cs-to').value || '20:00', days: [...document.querySelectorAll('.cs-day:checked')].map(x => Number(x.value)) },
       };
-      try { await apiFetch('PUT', '/calls/settings', body); showToast(t('Saved')); } catch (x) { showToast(x.message || 'Could not save'); }
+      try { await apiFetch('PUT', '/calls/settings', body); if (window.TrothenSounds && body.ringtone) TrothenSounds.setPrefs({ ringtone: body.ringtone, alertTone: body.alertTone }); showToast(t('Saved')); } catch (x) { showToast(x.message || 'Could not save'); }
     };
   }
   window.drawCallSettingsPanel = drawSettingsPanel;

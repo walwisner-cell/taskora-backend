@@ -60,6 +60,9 @@ const CLOSED_JOB = ['closed', 'cancelled', 'expired', 'completed', 'deleted'];
 // Do these two people have something together? (any time, ever)
 async function connected(a, b) {
   if (!a || !b || a.id === b.id) return false;
+  // v139: a buyer and a seller with a Market order between them, whatever their roles.
+  const pairOrder = await db.find('contracts', c => c.storeOrder === true && ((c.customerId === a.id && c.providerId === b.id) || (c.customerId === b.id && c.providerId === a.id)));
+  if (pairOrder) return true;
   const roles = new Set([a.role, b.role]);
   if (!(roles.has('customer') && roles.has('provider'))) return false;
   const cust = a.role === 'customer' ? a : b, pro = a.role === 'provider' ? a : b;
@@ -72,6 +75,10 @@ async function connected(a, b) {
 // v137: is there something going on between them right now (or recently)?
 async function inCallWindow(a, b) {
   if (!(await connected(a, b))) return false;
+  // v139: a Market order between them, open or ended in the last 7 days.
+  const orders = await db.filter('contracts', c => c.storeOrder === true && ((c.customerId === a.id && c.providerId === b.id) || (c.customerId === b.id && c.providerId === a.id)));
+  if (orders.some(c => !ENDED_CONTRACT.includes(c.status) || recent(c.updatedAt || c.createdAt))) return true;
+  if (!((a.role === 'customer' && b.role === 'provider') || (a.role === 'provider' && b.role === 'customer'))) return false;
   const cust = a.role === 'customer' ? a : b, pro = a.role === 'provider' ? a : b;
   const contracts = await db.filter('contracts', c => c.customerId === cust.id && c.providerId === pro.id);
   if (contracts.some(c => !ENDED_CONTRACT.includes(c.status) || recent(c.updatedAt || c.createdAt))) return true;
@@ -133,6 +140,9 @@ router.put('/calls/settings', requireAuth, async (req, res) => {
   const next = { ...cur };
   if ('calls' in b) { if (typeof b.calls !== 'boolean') return res.status(400).json({ error: 'calls must be true or false' }); next.calls = b.calls; }
   if ('voice' in b) { if (typeof b.voice !== 'boolean') return res.status(400).json({ error: 'voice must be true or false' }); next.voice = b.voice; }
+  // v140: chosen sounds (made in the browser; see public/app/sounds.js)
+  if ('ringtone' in b) { if (!['classic', 'marimba', 'chime', 'pulse', 'soft', 'digital', 'silent'].includes(b.ringtone)) return res.status(400).json({ error: 'Unknown ringtone' }); next.ringtone = b.ringtone; }
+  if ('alertTone' in b) { if (!['triple', 'ding', 'pop', 'chime', 'soft', 'none'].includes(b.alertTone)) return res.status(400).json({ error: 'Unknown alert sound' }); next.alertTone = b.alertTone; }
   if ('tz' in b) { if (b.tz !== null && !(typeof b.tz === 'string' && validTz(b.tz))) return res.status(400).json({ error: 'Unknown time zone' }); next.tz = b.tz; }
   if ('hours' in b) {
     const h = b.hours || {};
@@ -214,11 +224,35 @@ async function finish(call, status, extra = {}) {
 }
 
 // GET /api/calls/ice-servers — how the browsers find each other.
-router.get('/calls/ice-servers', requireAuth, (req, res) => {
+// v140: a relay (TURN) can come from fixed settings (TURN_URLS,
+// TURN_USERNAME, TURN_CREDENTIAL) or from a provider's credentials link
+// (TURN_API_URL, for example Metered's free Open Relay:
+// https://<yourapp>.metered.live/api/v1/turn/credentials?apiKey=<key>).
+// The link's answer is kept for 30 minutes.
+let turnCache = { at: 0, servers: [] };
+async function turnFromApi() {
+  const url = String(process.env.TURN_API_URL || '').trim();
+  if (!/^https:\/\//.test(url)) return [];
+  if (Date.now() - turnCache.at < 30 * 60 * 1000 && turnCache.servers.length) return turnCache.servers;
+  try {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch(url, { signal: ctl.signal }); clearTimeout(t);
+    const j = await r.json();
+    const list = (Array.isArray(j) ? j : (j && j.iceServers) || []).filter(s => s && s.urls).slice(0, 8);
+    if (list.length) turnCache = { at: Date.now(), servers: list };
+    return list;
+  } catch (e) { console.error('[calls] TURN_API_URL failed:', e.message); return turnCache.servers; }
+}
+async function iceServerList() {
   const iceServers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
   const turn = String(process.env.TURN_URLS || '').split(',').map(s => s.trim()).filter(Boolean);
   if (turn.length && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) iceServers.push({ urls: turn, username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL });
-  res.json({ iceServers, relay: iceServers.length > 1 });
+  iceServers.push(...(await turnFromApi()));
+  return iceServers;
+}
+router.get('/calls/ice-servers', requireAuth, async (req, res) => {
+  const iceServers = await iceServerList();
+  res.json({ iceServers, relay: iceServers.some(s => [].concat(s.urls || []).some(u => /^turns?:/.test(String(u)))) });
 });
 
 // POST /api/calls { toUserId, video } — ring someone.
@@ -279,8 +313,10 @@ router.post('/calls/:id/decline', requireAuth, async (req, res) => {
 router.post('/calls/:id/end', requireAuth, async (req, res) => {
   const call = await mine(req, res); if (!call) return;
   if (!['ringing', 'active'].includes(call.status)) return res.json({ ok: true });
-  await finish(call, 'ended', req.body && req.body.reason === 'connection' ? { endReason: 'connection' } : {});
-  live.sendEvent(other(call, req.user.sub), 'call', { type: 'ended', callId: call.id });
+  // v140: a call that never connected records what the browser saw, so the team can tell how often networks block calls.
+  const diag = req.body && req.body.diag && typeof req.body.diag === 'object' ? { ice: String(req.body.diag.ice || '').slice(0, 20), relay: req.body.diag.relay === true, candidates: String(req.body.diag.candidates || '').slice(0, 60) } : null;
+  await finish(call, 'ended', req.body && req.body.reason === 'connection' ? { endReason: 'connection', ...(diag ? { connectDiag: diag } : {}) } : {});
+  live.sendEvent(other(call, req.user.sub), 'call', { type: 'ended', callId: call.id, reason: req.body && req.body.reason === 'connection' ? 'connection' : undefined });
   live.sendEvent(req.user.sub, 'call', { type: 'ended', callId: call.id });
   res.json({ ok: true });
 });
@@ -390,3 +426,4 @@ module.exports.connected = connected;
 module.exports.inCallWindow = inCallWindow;
 module.exports.withinHours = withinHours;
 module.exports.VOICE_DIR = VOICE_DIR;
+module.exports.iceServerList = iceServerList; // v140: for tests

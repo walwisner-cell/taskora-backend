@@ -65,8 +65,9 @@ function quoteFor(u, km) {
 
 // The drivers to offer for one order: same country as the seller, the
 // seller's own city first, then nearest to the store, then best rated.
-async function suggestDrivers({ seller, dropoff, customerId }) {
+async function suggestDrivers({ seller, dropoff, customerId, pickup }) {
   const opt = store.storeOptions(seller);
+  if (pickup !== undefined) opt.pickupLocation = pickup; // v139: a personal listing's own pick-up place
   const km = kmBetween(opt.pickupLocation, dropoff);
   const all = (await db.filter('users', u => isDriver(u) && u.id !== seller.id && u.id !== customerId && sameText(u.country, seller.country)));
   const rows = all.map(u => {

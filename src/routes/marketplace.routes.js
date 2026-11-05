@@ -1820,11 +1820,11 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   const goodsTotal = basket.total;
   const finalContractAmount = proStore.money(laborAmount + goodsTotal);
   const storeSettingsNow = await proStore.storeSettings();
-  const storeFee = basket.items.length ? storeSettingsNow.purchaseFee : 0;
-  // v106: the super admin chooses who pays the flat fee. When the pro pays,
-  // the customer is charged nothing extra and the fee is taken from the
-  // pro's money at payout (never more than the goods came to).
-  const storeFeePaidBy = storeSettingsNow.feePaidBy === 'pro' ? 'pro' : 'customer';
+  // v139: Trothen's fee on goods: by default a share of the goods total paid
+  // by the pro at payout (the customer pays nothing extra), or the flat fee.
+  const gf = proStore.goodsFeeFor(goodsTotal, storeSettingsNow);
+  const storeFee = basket.items.length ? gf.fee : 0;
+  const storeFeePaidBy = gf.paidBy;
   const storeFeeFromCustomer = storeFeePaidBy === 'customer' ? storeFee : 0;
   const { feeDiscountForTier } = require('../membership');
   const realServiceFee = laborAmount > 0 ? Math.round(computeServiceFee(laborAmount) * (1 - feeDiscountForTier(customerForPoints && customerForPoints.membershipTier)) * 100) / 100 : 0;

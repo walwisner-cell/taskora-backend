@@ -15,6 +15,8 @@ const so = require('../store-orders');
 const { money } = store;
 
 const router = express.Router();
+// v139: customers and pros can both buy in the Market.
+const requireBuyer = (req, res, next) => (['customer', 'provider'].includes(req.user && req.user.role) ? next() : res.status(403).json({ error: 'Buying is for customer and pro accounts' }));
 const today = () => new Date().toISOString().slice(0, 10);
 const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || 'Customer';
 const itemsLine = (items) => (items || []).map(i => `${i.qty} x ${i.name}`).join(', ');
@@ -48,6 +50,9 @@ function readDropoff(body) {
 async function createDelivery({ order, seller, driver, where, payCurrency, expectedPrice }) {
   const { generateBookingNumber, fundEscrowForContract } = require('./marketplace.routes');
   const opt = store.storeOptions(seller);
+  // v139: a personal listing has its own pick-up place and no store name.
+  if (order.marketListingId) { opt.pickupLocation = order.pickupLocation || null; opt.pickupPlace = order.pickupPlace || ''; }
+  const sellerLabel = (seller.store && seller.store.name) || seller.name;
   const settings = await store.storeSettings();
   const km = so.kmBetween(opt.pickupLocation, where.jobLocation);
   const price = so.quoteFor(driver, km);
@@ -62,7 +67,7 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
     bookingNumber: await generateBookingNumber(),
     customerId: order.customerId,
     providerId: driver.id,
-    service: `Delivery: store order #${order.bookingNumber} from ${seller.store.name}`.slice(0, 200),
+    service: `Delivery: ${order.marketListingId ? 'Market' : 'store'} order #${order.bookingNumber} from ${sellerLabel}`.slice(0, 200),
     date: today(), time: 'As soon as possible',
     address: where.address, jobLocation: where.jobLocation || null, landmark: where.landmark || null,
     amount: price,
@@ -75,7 +80,7 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
     signedAt: null,
     providerResponseDeadline: new Date(Date.now() + so.DELIVERY_RESPONSE_MINUTES * 60 * 1000).toISOString(),
     delivery: {
-      forContractId: order.id, orderNumber: order.bookingNumber, sellerId: seller.id, storeName: seller.store.name,
+      forContractId: order.id, orderNumber: order.bookingNumber, sellerId: seller.id, storeName: sellerLabel,
       pickupPlace: opt.pickupPlace || [seller.city, seller.country].filter(Boolean).join(', '), pickupLocation: opt.pickupLocation,
       distanceKm: km, vehicle: rates.vehicle, items: itemsLine(order.storeItems).slice(0, 300), itemCount: (order.storeItems || []).reduce((n, i) => n + i.qty, 0),
     },
@@ -91,7 +96,7 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
   await db.insert('deliveryCodes', { id: `dc_${nanoid(8)}`, contractId: delivery.id, pickupCode: String(crypto.randomInt(1000, 10000)), dropoffCode: String(crypto.randomInt(1000, 10000)), attempts: 0, lockedUntil: null, createdAt: new Date().toISOString() });
   await db.update('contracts', order.id, { deliveryMethod: 'driver', deliveryContractId: delivery.id, address: where.address, jobLocation: where.jobLocation || null, landmark: where.landmark || null });
   const by = new Date(delivery.providerResponseDeadline).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  await notify(driver.id, '🚚', `Delivery request: collect store order #${order.bookingNumber} (${delivery.delivery.items.slice(0, 80)}) from ${seller.store.name}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver.country)}` : ''}. You are paid $${price.toFixed(2)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by} server time).`, 'bookingUpdates', { section: 'bookings' });
+  await notify(driver.id, '🚚', `Delivery request: collect order #${order.bookingNumber} (${delivery.delivery.items.slice(0, 80)}) from ${sellerLabel}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver.country)}` : ''}. You are paid $${price.toFixed(2)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by} server time).`, 'bookingUpdates', { section: 'bookings' });
   return { delivery };
 }
 
@@ -137,6 +142,12 @@ async function orderView(order, viewerId) {
     contacts: contactsFor(order, d, d ? await db.find('users', u => u.id === d.providerId) : null, seller, viewerId, customer), // v111
     // The customer can pick a driver (or switch to collecting) while the order is open and nobody is on the way.
     canArrangeDelivery: order.status === 'active' && method !== 'seller' && !live,
+    // v139: the Market
+    listing: order.marketListingId ? { id: order.marketListingId, title: order.listingTitle || null, photo: order.listingPhoto || null } : null,
+    handedOverAt: order.handedOverAt || null,
+    autoCompleteAt: order.status === 'active' ? (await require('../market').autoCompleteAt(order)) : null,
+    iAmSeller,
+    review: order.status === 'completed' ? await db.find('marketReviews', r => r.orderId === order.id) || null : null,
     handover: order.handover || null,
   };
 }
@@ -177,13 +188,15 @@ router.get('/store/drivers', requireAuth, driverLimiter, async (req, res) => {
 // ── BUYING ─────────────────────────────────────────────────────────────
 const buyInFlight = new Set(); // v110: one purchase at a time per customer (double-tap guard)
 // POST /api/store/orders { providerId, items, deliveryMethod, driverId, driverPrice, jobLocation, landmark, address, note, payCurrency }
-router.post('/store/orders', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
+// v139: pros can buy too (a plumber buying fittings from a supplier).
+router.post('/store/orders', requireAuth, requireBuyer, requireCurrentTerms, async (req, res) => {
   const customer = await customerCanBuy(req, res);
   if (!customer) return;
   const b = req.body || {};
   const seller = await db.find('users', u => u.id === b.providerId && u.role === 'provider');
   if (!seller) return res.status(404).json({ error: 'Store not found' });
-  const basket = await store.priceBasket(seller.id, b.items);
+  if (seller.id === customer.id) return res.status(400).json({ error: 'You can\'t buy from your own store.' });
+  const basket = await store.priceBasket(seller.id, b.items, { trade: customer.role === 'provider' && customer.verified === true }); // v140: trade prices for pros
   if (basket.error) return res.status(400).json({ error: basket.error });
   if (!basket.items.length) return res.status(400).json({ error: 'Pick at least one good from the store.' });
   const opt = store.storeOptions(seller);
@@ -220,8 +233,12 @@ router.post('/store/orders', requireAuth, requireRole('customer'), requireCurren
   if (b.expectedDeliveryFee !== undefined && Math.abs(Number(b.expectedDeliveryFee) - sellerDeliveryFee) > 0.009) {
     return res.status(409).json({ code: 'PRICE_CHANGED', deliveryFee: sellerDeliveryFee, error: `The seller's delivery charge is now $${sellerDeliveryFee.toFixed(2)}. Check it and approve again.` });
   }
-  const storeFee = settings.purchaseFee;
-  const storeFeePaidBy = settings.feePaidBy === 'pro' ? 'pro' : 'customer';
+  // v140: materials for one of the buyer's own jobs.
+  let linkedJob = null;
+  if (b.jobId) { linkedJob = await db.find('jobs', j => j.id === b.jobId && j.customerId === customer.id); if (!linkedJob) return res.status(404).json({ error: 'That job was not found.' }); }
+  const gf = store.goodsFeeFor(basket.total, settings); // v139: a share of the goods (seller pays at payout), or the flat fee
+  const storeFee = gf.fee;
+  const storeFeePaidBy = gf.paidBy;
   const pickupPlace = opt.pickupPlace || [seller.city, seller.country].filter(Boolean).join(', ');
   const order = {
     id: `ct_${nanoid(10)}`,
@@ -241,6 +258,7 @@ router.post('/store/orders', requireAuth, requireRole('customer'), requireCurren
     goodsOnly: true, storeOrder: true, materialsCost: basket.total, storeStockHeld: true,
     deliveryMethod: method, sellerDeliveryFee, pickupPlace, pickupLocation: opt.pickupLocation,
     orderNote: b.note ? String(b.note).trim() : null,
+    jobId: linkedJob ? linkedJob.id : null, // v140: materials bought for one of the buyer's jobs
     loyaltyPointsRedeemed: 0, materialsAdvance: 0, materialsOnHand: null, photoUrls: [],
     // A store order is confirmed the moment it is paid for: the seller put
     // the goods on the shelf at that price. There is nothing to accept.
@@ -280,6 +298,10 @@ router.post('/store/orders', requireAuth, requireRole('customer'), requireCurren
   const how = method === 'pickup' ? 'The customer will collect it.' : method === 'seller' ? `Bring it to the customer: ${where.address}. Your delivery charge of $${sellerDeliveryFee.toFixed(2)} is included.` : `A driver (${driver.name}) has been asked to collect it.`;
   await notify(seller.id, '🛍️', `New store order #${order.bookingNumber} from ${firstName(customer.name)}: ${count} good${count === 1 ? '' : 's'} ($${basket.total.toFixed(2)}). ${how} The money is held and is released to you when the customer confirms they have the goods.`, 'bookingUpdates', { section: 'store' });
   if (driver) await createDelivery({ order, seller, driver, where, payCurrency: order.payCurrency });
+  if (linkedJob) { // v140: the pro doing that job is told the materials are coming
+    const hired = await db.find('contracts', c => c.jobId === linkedJob.id && !c.storeOrder && !['cancelled', 'declined', 'refunded'].includes(c.status));
+    if (hired && hired.providerId !== seller.id) await notify(hired.providerId, '🧰', `${firstName(customer.name)} bought materials for "${String(linkedJob.description || '').slice(0, 50)}": ${itemsLine(basket.items).slice(0, 120)} from ${seller.store.name} (${method === 'pickup' ? 'they will collect them' : 'being delivered'}).`, 'bookingUpdates', { section: 'contracts' });
+  }
   const fresh = await db.find('contracts', c => c.id === order.id);
   res.status(201).json({ order: await orderView(fresh, customer.id) });
 });
@@ -374,9 +396,13 @@ function contactsFor(order, d, driverUser, seller, viewerId, customerUser) {
 // GET /api/store/orders/mine
 router.get('/store/orders/mine', requireAuth, async (req, res) => {
   const me = req.user.sub;
+  const newest = (a, b) => String(b.createdAt).localeCompare(String(a.createdAt));
+  // v139: everyone can buy and sell in the Market, so both lists are for everyone.
+  const bought = (await db.filter('contracts', c => c.customerId === me && c.storeOrder === true)).sort(newest);
+  const buying = await Promise.all(bought.slice(0, 100).map(o => orderView(o, me)));
   if (req.user.role === 'customer') {
-    const orders = (await db.filter('contracts', c => c.customerId === me && c.storeOrder === true)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    return res.json({ orders: await Promise.all(orders.slice(0, 100).map(o => orderView(o, me))) });
+    const sold = (await db.filter('contracts', c => c.providerId === me && c.storeOrder === true)).sort(newest);
+    return res.json({ orders: buying, buying, selling: await Promise.all(sold.slice(0, 100).map(o => orderView(o, me))) });
   }
   if (req.user.role !== 'provider') return res.status(403).json({ error: 'Store orders are for customers and pros' });
   const selling = (await db.filter('contracts', c => c.providerId === me && c.storeOrder === true)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -397,11 +423,11 @@ router.get('/store/orders/mine', requireAuth, async (req, res) => {
       pickupCode: (d.status === 'active' && !(h.pickup && h.pickup.length)) ? ((await db.find('deliveryCodes', x => x.contractId === d.id)) || {}).pickupCode || null : null, // v111: show this to the seller
     });
   }
-  res.json({ selling: await Promise.all(selling.slice(0, 100).map(o => orderView(o, me))), delivering });
+  res.json({ selling: await Promise.all(selling.slice(0, 100).map(o => orderView(o, me))), delivering, buying, orders: buying });
 });
 
 // POST /api/store/orders/:id/ready — the seller says the goods are packed.
-router.post('/store/orders/:id/ready', requireAuth, requireRole('provider'), async (req, res) => {
+router.post('/store/orders/:id/ready', requireAuth, async (req, res) => { // v139: personal sellers too
   const order = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub && c.storeOrder === true);
   if (!order) return res.status(404).json({ error: 'Order not found' });
   if (order.status !== 'active') return res.status(400).json({ error: `This order is ${String(order.status).replace(/_/g, ' ')}.` });
@@ -419,7 +445,7 @@ router.post('/store/orders/:id/ready', requireAuth, requireRole('provider'), asy
 // POST /api/store/orders/:id/delivery — the customer picks a driver after
 // the first one fell through, changes from collecting to a driver, or the
 // other way round. { deliveryMethod: 'driver'|'pickup', driverId, driverPrice, jobLocation, landmark, address }
-router.post('/store/orders/:id/delivery', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
+router.post('/store/orders/:id/delivery', requireAuth, requireBuyer, requireCurrentTerms, async (req, res) => {
   if (contractStatusLocks.has(req.params.id)) return res.status(409).json({ error: 'This order is already being updated. Please try again in a moment.' });
   contractStatusLocks.add(req.params.id);
   try {
@@ -434,7 +460,7 @@ router.post('/store/orders/:id/delivery', requireAuth, requireRole('customer'), 
     if (b.deliveryMethod === 'pickup') {
       if (!opt.deliveryMethods.includes('pickup')) return res.status(400).json({ error: 'This store doesn\'t offer collection.' });
       const pickupPlace = order.pickupPlace || opt.pickupPlace || [seller.city, seller.country].filter(Boolean).join(', ');
-      const updated = await db.update('contracts', order.id, { deliveryMethod: 'pickup', address: `Collect from ${seller.store.name}: ${pickupPlace}`.slice(0, 200), jobLocation: null, landmark: null });
+      const updated = await db.update('contracts', order.id, { deliveryMethod: 'pickup', address: `Collect from ${(seller.store && seller.store.name) || seller.name}: ${pickupPlace}`.slice(0, 200), jobLocation: null, landmark: null });
       await notify(seller.id, '🛍️', `The customer will now collect store order #${order.bookingNumber} themselves.`, 'bookingUpdates', { section: 'store' });
       return res.json({ order: await orderView(updated, req.user.sub) });
     }
@@ -459,7 +485,7 @@ router.post('/store/orders/:id/delivery', requireAuth, requireRole('customer'), 
 
 // POST /api/store/orders/:id/received — "I have my goods". Releases the
 // seller's money, and the driver's if a driver brought them.
-router.post('/store/orders/:id/received', requireAuth, requireRole('customer'), async (req, res) => {
+router.post('/store/orders/:id/received', requireAuth, requireBuyer, async (req, res) => {
   if (contractStatusLocks.has(req.params.id)) return res.status(409).json({ error: 'This order is already being updated. Please try again in a moment.' });
   contractStatusLocks.add(req.params.id);
   try {
@@ -469,6 +495,7 @@ router.post('/store/orders/:id/received', requireAuth, requireRole('customer'), 
     const { completeContractCore } = require('./payments.routes');
     const done = await completeContractCore(order, 0, req.user.sub);
     await so.afterComplete(order, req.user.sub);
+    await require('../market').afterOrderEnds(done.contract); // v139: a personal listing is marked sold
     res.json({ order: await orderView(done.contract, req.user.sub) });
   } finally { contractStatusLocks.delete(req.params.id); }
 });
@@ -541,3 +568,7 @@ router.get('/store/orders/:id/receipt', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.createDelivery = createDelivery; // v139: the Market's personal listings
+module.exports.orderView = orderView;
+module.exports.readDropoff = readDropoff;
+module.exports.customerCanBuy = customerCanBuy;

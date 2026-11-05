@@ -169,7 +169,9 @@
       lastJob = jid;
       const mine = m.fromId === me;
       const seen = mine && lastMine && m.id === lastMine.id && m.readAt ? ` · ${escapeHtml(tr('Seen'))}` : '';
-      const body = m.kind === 'voice' && typeof voiceBubbleHTML === 'function' ? voiceBubbleHTML(m, mine) : escapeHtml(m.text); // v137: voice messages play in the chat
+      let body = m.kind === 'voice' && typeof voiceBubbleHTML === 'function' ? voiceBubbleHTML(m, mine) : escapeHtml(m.text); // v137: voice messages play in the chat
+      // v140: a message that looks like a scam gets a warning for the person receiving it.
+      if (!mine && Array.isArray(m.safetyWarning) && m.safetyWarning.length) body += `<div class="msg-safety" role="note" style="margin-top:6px;padding:6px 8px;border-radius:8px;background:#fff4e5;color:#8a4b00;font-size:12.5px;line-height:1.4;">⚠ ${escapeHtml(tr('Be careful: this message mentions'))} ${escapeHtml(m.safetyWarning.map(x => tr(x)).join(', '))}. ${escapeHtml(tr('Never pay outside Trothen, never pay with gift cards or crypto, and never share a code sent to your phone. Payments through Trothen are protected.'))}</div>`;
       out += `<div class="msg-bubble ${mine ? 'me' : 'them'}${m.kind === 'voice' ? ' msg-voice' : ''}">${body}<div style="text-align:${mine ? 'right' : 'left'};margin-top:3px;line-height:1;opacity:.85;">${msgTimeHTML(m.createdAt)}${seen ? `<span class="msg-time" style="font-size:11.5px;">${seen}</span>` : ''}</div></div>`;
     }
     return out;

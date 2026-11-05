@@ -207,6 +207,7 @@ async function readinessReport(requestingUser) {
     item('jwt', 'Sign-in secret is set', !!(process.env.TROTHEN_JWT_SECRET || process.env.TASKORA_JWT_SECRET),
       process.env.TROTHEN_JWT_SECRET ? 'Set' : 'Not set: everyone is signed out on every restart.'),
     item('production', 'Running in production mode', isProduction(), `NODE_ENV=${process.env.NODE_ENV || '(not set)'}`),
+    item('turn', 'Calls work on every network (a relay server is set)', !!(process.env.TURN_API_URL || (process.env.TURN_URLS && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL)), process.env.TURN_API_URL || process.env.TURN_URLS ? 'Relay set' : 'Set TURN_API_URL (for example Metered Open Relay, free 20 GB a month) on Render, or calls fail on some networks and VPNs'),
     item('datastore', 'Data is stored on a permanent disk or database', usingPostgres || !!process.env.DATA_DIR,
       usingPostgres ? 'Postgres (DATABASE_URL)' : (process.env.DATA_DIR ? `JSON files at ${process.env.DATA_DIR}` : 'DATA_DIR not set: data is lost on every deploy')),
     item('private_uploads', 'ID documents are saved on the permanent disk', !!process.env.PRIVATE_UPLOADS_DIR,

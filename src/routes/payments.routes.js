@@ -295,7 +295,9 @@ router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res
 // POST /api/payouts/request — provider requests payout of released escrow
 const { effectiveCommissionRate } = require('../commission');
 
-router.post('/payouts/request', requireAuth, requireRole('provider'), require('../terms').requireCurrentTerms, async (req, res) => {
+// v139: customers who sold something in the Market cash out the same way.
+const canCashOut = (req, res, next) => (['provider', 'customer'].includes(req.user && req.user.role) ? next() : res.status(403).json({ error: 'Payouts are for pros and Market sellers' }));
+router.post('/payouts/request', requireAuth, canCashOut, require('../terms').requireCurrentTerms, async (req, res) => {
   const requestingProvider = await db.find('users', u => u.id === req.user.sub);
   if (requestingProvider && requestingProvider.onHold) {
     return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review: payouts will resume once this clears, usually within a couple hours. Contact support if you need this resolved sooner.' });
@@ -320,6 +322,11 @@ router.post('/payouts/request', requireAuth, requireRole('provider'), require('.
 
 async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
   const provider = await db.find('users', u => u.id === req.user.sub);
+  // v140: 24 hours after the payout details change, nothing is paid out.
+  if (provider && provider.payoutMethodChangedAt && Date.now() - Date.parse(provider.payoutMethodChangedAt) < 24 * 3600 * 1000) {
+    const at = new Date(Date.parse(provider.payoutMethodChangedAt) + 24 * 3600 * 1000);
+    return res.status(403).json({ code: 'PAYOUT_COOLDOWN', error: `For your safety, payouts wait 24 hours after your payout details change. You can cash out from ${at.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })} (UTC).` });
+  }
 
   // v132: the whole calculation lives in src/commission-statement.js, so the
   // Earnings page preview and the real payout always use the same numbers.

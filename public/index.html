@@ -2994,6 +2994,15 @@
       </div>
       <div id="auth-provider-fields-group" style="display:none">
         <div class="form-group">
+          <label class="form-label" for="auth-pro-mode">What will you do on Trothen?</label>
+          <select class="form-input form-select" id="auth-pro-mode" onchange="if (typeof proModeChanged === 'function') proModeChanged(this.value)">
+            <option value="services">Offer my services</option>
+            <option value="goods">Sell goods (a store)</option>
+            <option value="both">Both: services and a store</option>
+          </select>
+        </div>
+        <div id="auth-service-fields">
+        <div class="form-group">
           <label class="form-label">Primary Service Category</label>
           <select class="form-input form-select" id="auth-category" onchange="document.getElementById('auth-custom-category-group').style.display = this.value === '__other__' ? 'block' : 'none'">
             <option>Plumbing</option><option>Cleaning</option><option>Tutoring</option><option>Electrical</option>
@@ -3010,6 +3019,7 @@
           <input class="form-input" type="text" id="auth-skills"/>
           <div style="font-size:13px;color:var(--muted);margin-top:5px;">Comma-separated. Used to match you with suitable jobs.</div>
         </div>
+        </div><!-- /auth-service-fields -->
         <div class="form-group" id="auth-rides-group">
           <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;"><input type="checkbox" id="auth-wants-rides" style="margin-top:3px;" onchange="try{localStorage.setItem('trothen_want_rides',this.checked?'1':'')}catch(e){}"/> <span>I also want to give rides to passengers <span style="color:var(--muted);">(where rides are available. You apply after signing up, with your licence and vehicle papers.)</span></span></label>
         </div>
@@ -3368,24 +3378,26 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=e3da03d454" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/trothen.js?v=52bf0beca5" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
 <script src="/app/rides.js?v=a2c8b43d59"></script>
 <script src="/app/tokens.js?v=5f4e0153b4"></script>
 <script src="/app/payways.js?v=e8b90fab53"></script>
 <script src="/app/review.js?v=ffe4bd174a"></script>
 <script src="/app/pricing.js?v=a5e5b9da75"></script>
-<script src="/app/chats.js?v=01a497f6ba"></script>
+<script src="/app/chats.js?v=1823d38f9c"></script>
 <script src="/app/where.js?v=e95bd61078"></script>
 <script src="/app/arrival.js?v=dd36557e0a"></script>
 <script src="/app/live.js?v=d049a42ced"></script>
 <script src="/app/instant.js?v=b5f36cd31f"></script>
-<script src="/app/calls.js?v=ce7e88452a"></script>
-<script src="/app/voice.js?v=3eb8646d35"></script>
+<script src="/app/sounds.js?v=80c9ab4c9a"></script>
+<script src="/app/calls.js?v=6e6d566cf1"></script>
+<script src="/app/voice.js?v=e069aafd33"></script>
+<script src="/app/market.js?v=91425154b8"></script>
 <script src="/app/commission.js?v=13eff24a79"></script>
 <script src="/app/categories.js?v=9ac65b7765"></script>
 <script src="/app/acceptquote.js?v=3d4d251ecf"></script>
 <script src="/app/listing.js?v=a623d4b3fe"></script>
 <script src="/app/permissions.js?v=640782242f"></script>
-<script src="/app/polish.js?v=6697ab16a1"></script>
+<script src="/app/polish.js?v=4d06d96034"></script>
 </body>
 </html>

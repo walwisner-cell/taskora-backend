@@ -104,6 +104,10 @@ const cspDirectives = {
   frameAncestors: ["'self'"],
   upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
 };
+// v140: browser features the site may use. Calls need the microphone and
+// camera, maps and deliveries need location, all only for Trothen itself;
+// everything else is switched off (an OWASP-recommended header).
+app.use((req, res, next) => { res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=(self), payment=(), usb=(), serial=(), bluetooth=(), magnetometer=(), gyroscope=(), accelerometer=()'); next(); });
 app.use(helmet({
   contentSecurityPolicy: { useDefaults: false, directives: cspDirectives, reportOnly: process.env.CSP_REPORT_ONLY === 'true' },
   // Helmet's default Cross-Origin-Opener-Policy (same-origin) severs
@@ -166,6 +170,8 @@ app.use('/api', require('./src/routes/rides.routes')); // v111: passenger rides
 app.use('/api', require('./src/routes/tokens.routes')); // v115: Trothen Tokens
 app.use('/api', require('./src/routes/custpay.routes')); // v119: customer payments by code
 app.use('/api', require('./src/routes/calls.routes')); // v136: in-app voice and video calls
+app.use('/api', require('./src/routes/market.routes')); // v139: the Market (stores and personal listings)
+require('./src/market').startMarketScheduler(); // v139: orders complete by themselves; listings end
 app.use('/api', require('./src/routes/business.routes'));
 app.use('/api', marketplaceRoutes);
 app.use('/api', paymentsRoutes);

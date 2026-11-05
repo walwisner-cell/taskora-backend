@@ -923,10 +923,30 @@ router.post('/messages', requireAuth, messageLimiter, async (req, res) => {
   }
 
   const message = { id: `msg_${nanoid(10)}`, fromId: req.user.sub, toId, text: text.trim(), jobId: jobId || null, createdAt: new Date().toISOString() };
+  // v140: signs of a scam (paying outside Trothen, gift cards, crypto, asking
+  // for a code...). The message still goes; the person receiving it sees a
+  // safety warning, and a sender who keeps doing it is flagged for the team.
+  const signals = require('../market').scamSignals(message.text);
+  if (signals.length) message.safetyWarning = signals;
   await db.insert('messages', message);
+  if (signals.length) {
+    try {
+      const dayAgo = Date.now() - 24 * 3600 * 1000;
+      const warned = await db.filter('messages', m => m.fromId === req.user.sub && Array.isArray(m.safetyWarning) && Date.parse(m.createdAt) > dayAgo);
+      const flagged = await db.find('fraudFlags', f => f.type === 'off_platform_payment' && f.userId === req.user.sub && Date.parse(f.createdAt) > dayAgo);
+      if (warned.length >= 3 && !flagged) {
+        const who = await db.find('users', u => u.id === req.user.sub);
+        await require('../fraud-detection').createFlag({ type: 'off_platform_payment', severity: 'medium', userId: req.user.sub, relatedUserId: toId, details: `${who ? who.name : 'A user'} sent ${warned.length} messages in a day that look like scam or off-platform payment requests (${[...new Set(warned.flatMap(m => m.safetyWarning))].join(', ')})` });
+      }
+    } catch (e) { /* the message is sent either way */ }
+  }
 
   const sender = await db.find('users', u => u.id === req.user.sub);
-  await notify(toId, '💬', `New message from ${sender ? sender.name : 'someone'}: "${text.trim().slice(0, 50)}${text.length > 50 ? '…' : ''}"`, 'messages', { section: 'messages', contactId: req.user.sub, jobId: jobId || undefined });
+  // v140: a customer writing to a pro about an open job: the pro's
+  // notification opens that job's chat, where the "Send my price" box is.
+  const openMatch = job && req.user.sub === job.customerId && job.status === 'open' ? await db.find('matches', m => m.jobId === job.id && m.providerId === toId && ['pending', 'interested'].includes(m.status)) : null;
+  if (openMatch) await notify(toId, '💬', `${sender ? sender.name : 'A customer'} wrote about "${String(job.description || '').slice(0, 40)}": "${text.trim().slice(0, 60)}${text.length > 60 ? '…' : ''}". Open it to reply or send your price.`, 'messages', { section: 'matches', contactId: req.user.sub, jobId: job.id, openJobChat: true });
+  else await notify(toId, '💬', `New message from ${sender ? sender.name : 'someone'}: "${text.trim().slice(0, 50)}${text.length > 50 ? '…' : ''}"`, 'messages', { section: 'messages', contactId: req.user.sub, jobId: jobId || undefined });
 
   // A provider messaging a customer about their open job is a real
   // response, the same as clicking "I'm Interested" — this keeps the
