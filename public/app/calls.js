@@ -138,6 +138,17 @@
       } catch (x) { /* older browsers: their own defaults */ }
     }
   }
+  // v146: while a call is on, each side tells the server every 15 seconds
+  // that its page is still there. A phone that loses signal, runs out of
+  // battery or is swiped away can't say goodbye; the server then ends the
+  // call after about a minute and a half, instead of leaving both people
+  // "already in a call" for hours.
+  function startAlive() {
+    clearInterval(C.aliveTimer);
+    const id = C.id;
+    const ping = () => { if (!C.id || C.id !== id) return clearInterval(C.aliveTimer); apiFetch('POST', `/calls/${encodeURIComponent(id)}/alive`, { connected: !!C.startedAt }).catch(() => {}); };
+    ping(); C.aliveTimer = setInterval(ping, 15000);
+  }
   async function makePC() {
     const pc = new RTCPeerConnection({ iceServers: await iceServers() });
     C.pc = pc;
@@ -145,6 +156,7 @@
     C.candTypes = new Set();
     pc.onicecandidate = (ev) => { if (ev.candidate && C.id) { try { const m = / typ (\w+)/.exec(ev.candidate.candidate || ''); if (m) C.candTypes.add(m[1]); } catch (x) {} signal('ice', ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate); } };
     startConnectWatch();
+    startAlive();
     pc.ontrack = (ev) => {
       const v = document.getElementById('call-remote-video'), a = document.getElementById('call-remote-audio');
       if (C.video && v) { v.srcObject = ev.streams[0]; v.play && v.play().catch(() => {}); }
@@ -299,7 +311,7 @@
   function cleanup(message) {
     stopTone();
     if (C.timer) clearInterval(C.timer);
-    clearInterval(C.statsTimer); clearTimeout(C.reconnectTimer); clearTimeout(C.connectTimer); clearTimeout(C.connectFail);
+    clearInterval(C.statsTimer); clearInterval(C.aliveTimer); clearTimeout(C.reconnectTimer); clearTimeout(C.connectTimer); clearTimeout(C.connectFail);
     try { C.pc && C.pc.close(); } catch (x) {}
     try { C.local && C.local.getTracks().forEach(tr => tr.stop()); } catch (x) {}
     const o = document.getElementById('call-screen');
@@ -322,7 +334,7 @@
     const peer = C.peer || {}, callId = C.id, video = C.video, voiceOk = C.voiceOk !== false;
     stopTone();
     if (C.timer) clearInterval(C.timer);
-    clearInterval(C.statsTimer); clearTimeout(C.reconnectTimer); clearTimeout(C.connectTimer); clearTimeout(C.connectFail);
+    clearInterval(C.statsTimer); clearInterval(C.aliveTimer); clearTimeout(C.reconnectTimer); clearTimeout(C.connectTimer); clearTimeout(C.connectFail);
     try { C.pc && C.pc.close(); } catch (x) {}
     try { C.local && C.local.getTracks().forEach(tr => tr.stop()); } catch (x) {}
     Object.assign(C, { id: null, role: null, video: false, peer: null, pc: null, local: null, queued: [], startedAt: null, timer: null, ending: false, remoteSet: false, voiceOk: true, reconnecting: false, reconnectTimer: null, statsTimer: null, lastStats: null, reconnects: 0, quality: null });

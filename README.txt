@@ -1,6 +1,7 @@
-Trothen v145: everything in one place (includes v128 to v144)
+Trothen v146: everything in one place (includes v128 to v145)
 
-  src\ public\ server.js    The 79 files changed since your GitHub main (before v128), in their real folders.
+  src\ public\ server.js    The 80 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v146.md           Calls no longer stuck after a dropped call; Admin, Call health; a Rides switch per country.
   CHANGES_v145.md           Drivers can accept rides whatever their main trade; licences follow the work.
   CHANGES_v144.md           Post a Job redesigned: 5 steps, a real price in L$ or US$ (or pros send prices), when, materials.
   CHANGES_v143.md           The store complete (returns, sizes, sales, codes, reviews, saved) and keeping stolen goods out.
@@ -19,22 +20,23 @@ Trothen v145: everything in one place (includes v128 to v144)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v145.md  Byte counts and the cmd.exe steps.
-  deploy_v145.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v145-files.zip    The code files packed; the .bat reads this from Downloads.
+  DEPLOYMENT_STEPS_v146.md  Byte counts and the cmd.exe steps.
+  deploy_v146.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v146-files.zip    The code files packed; the .bat reads this from Downloads.
   screenshots\              The new screens.
 
-Works whether or not v128 is already live. git status shows 96 files if v128 is live, 98 if not.
+Works whether or not v128 is already live. git status shows 98 files if v128 is live, 100 if not.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v145.
-  2. copy "%USERPROFILE%\Downloads\trothen-v145\trothen-v145-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v146.
+  2. copy "%USERPROFILE%\Downloads\trothen-v146\trothen-v146-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v145\deploy_v145.bat"
+     "%USERPROFILE%\Downloads\trothen-v146\deploy_v146.bat"
   Nothing goes live until you type YES.
 
 After it is live:
-  - Rides shows only for accounts in Liberia (Admin, Rides, Countries where rides are on). Use a Liberia test account to see it.
+  - Rides shows only for accounts in a country switched on in Admin, Rides, Rides by country (Liberia). Use a Liberia test account to see it.
+  - For calls, add TURN_API_URL and the VAPID keys on Render. Admin, Call health shows whether calls connect.
   - Try + Post a New Job as a customer. Keep the L$ exchange rate in Admin current: an L$ price is kept in US$ at that rate.
   - Tell sellers about returns, sizes, sales and discount codes; phones and laptops in the Market now need their IMEI or serial.
   - Admin, Categories and Countries, Sync Latest Categories and Countries (adds Driver for Hire).

@@ -201,7 +201,20 @@ router.get('/calls/can-reach/:userId', requireAuth, async (req, res) => {
   res.json({ call: call ? { ok: false, code: call.code, error: call.error } : { ok: true }, voice: voice ? { ok: false, code: voice.code, error: voice.error } : { ok: true } });
 });
 
-const isBusy = async (userId) => !!(await db.find('calls', c => (c.fromId === userId || c.toId === userId) && (c.status === 'ringing' || c.status === 'active')));
+// v146: an "active" call where one side's page has gone quiet (lost signal,
+// flat battery, browser swiped away) no longer counts as busy.
+const ALIVE_MS = 90 * 1000;
+function goneQuiet(c, now = Date.now()) {
+  if (c.status !== 'active') return false;
+  const since = Date.parse(c.answeredAt || c.createdAt);
+  if (now - since < ALIVE_MS) return false;
+  const a = c.alive || {};
+  // Only a side that has sent at least one heartbeat counts (it pings as soon
+  // as it starts connecting), so a page still running the older app (no
+  // heartbeat) isn't cut off; such calls keep the 4-hour rule below.
+  return [c.fromId, c.toId].some(id => a[id] && now - Date.parse(a[id]) > ALIVE_MS);
+}
+const isBusy = async (userId) => !!(await db.find('calls', c => (c.fromId === userId || c.toId === userId) && (c.status === 'ringing' || (c.status === 'active' && !goneQuiet(c)))));
 
 function mmss(ms) { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
 
@@ -273,6 +286,7 @@ router.post('/calls', requireAuth, async (req, res) => {
   const call = { id: `call_${nanoid(12)}`, fromId: me.id, toId: them.id, video: video === true, status: 'ringing', createdAt: new Date().toISOString() };
   await db.insert('calls', call);
   const reached = live.sendEvent(them.id, 'call', { type: 'ring', callId: call.id, video: call.video, from: publicPerson(me) });
+  await db.update('calls', call.id, { rang: reached > 0 }); // v146: for Admin → Call health
   if (!reached) {
     // Not on Trothen right now: a notification (and a phone push, where set up).
     await notify(them.id, '📞', `${nameOf(me)} is calling you. Open Trothen to answer.`, 'messages', { section: 'messages', contactId: me.id });
@@ -318,6 +332,17 @@ router.post('/calls/:id/end', requireAuth, async (req, res) => {
   await finish(call, 'ended', req.body && req.body.reason === 'connection' ? { endReason: 'connection', ...(diag ? { connectDiag: diag } : {}) } : {});
   live.sendEvent(other(call, req.user.sub), 'call', { type: 'ended', callId: call.id, reason: req.body && req.body.reason === 'connection' ? 'connection' : undefined });
   live.sendEvent(req.user.sub, 'call', { type: 'ended', callId: call.id });
+  res.json({ ok: true });
+});
+
+// POST /api/calls/:id/alive { connected } — v146: each side, every 15 seconds during a call.
+router.post('/calls/:id/alive', requireAuth, async (req, res) => {
+  const call = await mine(req, res); if (!call) return;
+  if (call.status !== 'active') return res.json({ ok: true, ended: !['ringing'].includes(call.status) });
+  const now = new Date().toISOString();
+  const patch = { alive: { ...(call.alive || {}), [req.user.sub]: now } };
+  if (req.body && req.body.connected === true && !call.connectedAt) patch.connectedAt = now;
+  await db.update('calls', call.id, patch);
   res.json({ ok: true });
 });
 
@@ -407,6 +432,41 @@ router.delete('/voice-messages/:id', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/admin/calls/health — v146: the last calls, each with what
+// happened in plain words, and what to fix (super admin).
+function callOutcome(c) {
+  const len = (a, b) => mmss(Date.parse(b) - Date.parse(a));
+  if (c.status === 'ringing') return { key: 'ringing', words: 'Ringing now' };
+  if (c.status === 'active') return { key: 'active', words: 'On the call now' };
+  if (c.status === 'declined') return { key: 'declined', words: 'Declined' };
+  if (c.status === 'missed') return c.rang === false ? { key: 'not_open', words: "Didn't ring: they didn't have Trothen open. They were sent a notification." } : { key: 'no_answer', words: c.rang ? 'Rang, but nobody answered' : 'Nobody answered' };
+  if (!c.answeredAt) return { key: 'caller_hung_up', words: 'The caller hung up while it was ringing' };
+  if (c.endReason === 'dropped') return { key: 'dropped', words: `Cut off: one phone lost signal or closed Trothen${c.connectedAt ? ` (after ${len(c.connectedAt, c.endedAt)})` : ''}` };
+  if (c.endReason === 'connection' && !c.connectedAt) return { key: 'no_connect', words: 'Answered, but the sound never connected (the network blocked it)' };
+  if (c.endReason === 'connection') return { key: 'dropped', words: `The connection dropped after ${len(c.connectedAt, c.endedAt)}` };
+  if (c.connectedAt || c.rang !== undefined) return c.connectedAt ? { key: 'talked', words: `Talked ${len(c.connectedAt, c.endedAt)}` } : { key: 'hung_up_connecting', words: 'Answered, then hung up while connecting' };
+  return { key: 'talked', words: `Answered, ${len(c.answeredAt, c.endedAt)}` };
+}
+router.get('/admin/calls/health', requireAuth, async (req, res) => {
+  const admin = await db.find('users', u => u.id === req.user.sub);
+  if (!admin || admin.role !== 'admin' || admin.isSuperAdmin !== true) return res.status(403).json({ error: 'This page is for a super admin' });
+  const all = (await db.all('calls')).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+  const week = all.filter(c => Date.parse(c.createdAt) > weekAgo).map(c => callOutcome(c).key);
+  const count = (k) => week.filter(x => x === k).length;
+  const names = new Map();
+  const nameOf2 = async (id) => { if (!names.has(id)) { const u = await db.find('users', x => x.id === id); names.set(id, u ? `${u.name}${u.country ? ` (${u.country})` : ''}` : 'Deleted account'); } return names.get(id); };
+  const recent = await Promise.all(all.slice(0, 50).map(async c => ({ id: c.id, when: c.createdAt, from: await nameOf2(c.fromId), to: await nameOf2(c.toId), video: !!c.video, outcome: callOutcome(c), relayOnCall: c.connectDiag ? c.connectDiag.relay : null, network: c.connectDiag ? c.connectDiag.candidates : null })));
+  const relay = (await iceServerList()).some(s => [].concat(s.urls || []).some(u => /^turns?:/.test(String(u))));
+  const push = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+  const fixes = [];
+  if (!relay) fixes.push({ level: count('no_connect') ? 'high' : 'medium', text: `No relay (TURN) server is set${count('no_connect') ? `, and ${count('no_connect')} call(s) this week were answered but the sound never connected` : ''}. Without one, calls fail on many mobile networks (MTN, Orange, Lonestar) and on some Wi-Fi, while working on others. On Render, add TURN_API_URL (Metered's free Open Relay gives 20 GB a month), then redeploy.` });
+  if (!push) fixes.push({ level: count('not_open') ? 'high' : 'medium', text: `Phone push isn't set up (VAPID keys)${count('not_open') ? `, and ${count('not_open')} call(s) this week didn't ring because the person didn't have Trothen open` : ''}. A web app can only ring while Trothen is open; with push, a closed Trothen still gets a notification on the phone. On Render, add VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY (Admin → Go-Live explains how).` });
+  else if (count('not_open')) fixes.push({ level: 'medium', text: `${count('not_open')} call(s) this week didn't ring because the person didn't have Trothen open. They got a notification. Ask regular users to install Trothen on their phone and allow notifications.` });
+  if (count('dropped')) fixes.push({ level: 'low', text: `${count('dropped')} call(s) this week were cut off when a phone lost signal or closed Trothen. Since this version, such a call ends within about 90 seconds, so nobody is left "already in a call".` });
+  res.json({ relay, push, week: { total: week.length, talked: count('talked'), notOpen: count('not_open'), noAnswer: count('no_answer'), declined: count('declined'), noConnect: count('no_connect'), dropped: count('dropped'), callerHungUp: count('caller_hung_up') + count('hung_up_connecting') }, fixes, recent });
+});
+
 // Calls nobody answered become missed calls.
 setInterval(async () => {
   try {
@@ -415,6 +475,12 @@ setInterval(async () => {
       await finish(call, 'missed');
       live.sendEvent(call.fromId, 'call', { type: 'unanswered', callId: call.id });
       live.sendEvent(call.toId, 'call', { type: 'ended', callId: call.id });
+    }
+    // v146: a side whose page went quiet for 90 seconds: the call is over.
+    for (const call of await db.filter('calls', c => goneQuiet(c, now))) {
+      await finish(call, 'ended', { endReason: 'dropped' });
+      live.sendEvent(call.fromId, 'call', { type: 'ended', callId: call.id, reason: 'connection' });
+      live.sendEvent(call.toId, 'call', { type: 'ended', callId: call.id, reason: 'connection' });
     }
     // A call left "active" for over 4 hours (both pages closed mid-call) is closed.
     for (const call of await db.filter('calls', c => c.status === 'active' && now - Date.parse(c.answeredAt || c.createdAt) > 4 * 3600 * 1000)) await finish(call, 'ended');

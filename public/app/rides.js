@@ -697,6 +697,44 @@
   { const f = handoverEntryHTML; handoverEntryHTML = function (en) { const h = f.apply(this, arguments); const badge = en.codeVerified ? `<div style="font-size:13px;color:#1E7A55;margin-top:6px;">🔐 ${e(tr('Code checked'))}</div>` : en.codeSkipped ? `<div style="font-size:13px;color:#B4472E;margin-top:6px;">⚠️ ${e(tr('Delivered without the customer\'s code'))}</div>` : ''; return badge ? appendToCard(h, badge) : h; }; }
 
   // ── ADMIN ────────────────────────────────────────────────────────────
+  // v146: one Rides switch per country Trothen is live in.
+  function countrySwitchesHTML(o) {
+    const list = o.countryList || [];
+    if (!list.length) return `<div class="ver-note">${e(tr('No country is live yet. Make one live in Admin → Categories & Countries.'))}</div>`;
+    // The countries that matter (Rides on, or drivers there) get a row; with
+    // many live countries the rest are in a list to switch on.
+    const shown = list.length <= 12 ? list : list.filter(c => c.on || c.approved || c.pending || (R.rcAdded || []).includes(c.name));
+    const rest = list.filter(c => !shown.includes(c) && c.live);
+    const row = (c) => `<tr style="border-top:1px solid var(--border);">
+      <td style="padding:8px 6px;font-weight:600;color:var(--navy);">${e(c.name)}${c.live ? '' : ` <span style="font-size:12px;color:#B45309;font-weight:400;">${e(tr('(not live on Trothen)'))}</span>`}</td>
+      <td style="padding:8px 6px;font-size:13px;color:var(--slate);">${c.approved} ${e(tr('approved'))}${c.pending ? ` · ${c.pending} ${e(tr('waiting'))}` : ''}${c.online ? ` · <span style="color:#15803d;">${c.online} ${e(tr('online'))}</span>` : ''}</td>
+      <td style="padding:8px 6px;font-size:13px;color:${c.fares ? 'var(--slate)' : '#B45309'};">${e(tr(c.fares ? 'Trothen fares set' : 'No fares set: drivers price themselves'))}</td>
+      <td style="padding:8px 6px;text-align:right;white-space:nowrap;">${o.canEditSettings
+        ? `<label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;"><span style="font-size:13px;font-weight:600;color:${c.on ? '#15803d' : 'var(--slate)'};" data-rc-word="${e(c.name)}">${e(tr(c.on ? 'On' : 'Off'))}</span><input type="checkbox" class="rc-switch" data-country="${e(c.name)}" ${c.on ? 'checked' : ''} ${!c.live && !c.on ? 'disabled' : ''} onchange="ridesCountrySwitch(this)" style="width:20px;height:20px;cursor:pointer;" aria-label="${e(tr('Rides in'))} ${e(c.name)}"/></label>`
+        : `<strong style="color:${c.on ? '#15803d' : 'var(--slate)'};">${e(tr(c.on ? 'On' : 'Off'))}</strong>`}</td></tr>`;
+    return `<div style="font-weight:700;color:var(--navy);margin:4px 0 2px;">${e(tr('Rides by country'))}</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">${e(tr('Rides can be on in any country Trothen is live in. Switch it on or off for each country; it takes effect straight away. Turning a country off stops new ride requests there; rides already under way finish normally. Check the country\'s transport rules (and set its fares below) before switching it on.'))}</div>
+      <div style="overflow-x:auto;"><table id="rides-countries" style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:${rest.length ? 6 : 12}px;"><tbody>${shown.map(row).join('')}</tbody></table></div>
+      ${rest.length && o.canEditSettings ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;font-size:13.5px;"><span style="color:var(--slate);">${e(tr('Switch Rides on in another live country'))} (${rest.length}):</span><select class="form-input form-select" id="rc-add" style="max-width:240px;"><option value="">${e(tr('Choose a country'))}</option>${rest.map(c => `<option>${e(c.name)}</option>`).join('')}</select><button type="button" class="btn-sm btn-sm-primary" onclick="ridesCountryAdd()">${e(tr('Switch on'))}</button></div>` : ''}`;
+  }
+  window.ridesCountrySwitch = async function (box) {
+    const country = box.dataset.country, on = box.checked;
+    const c = ((R.over && R.over.countryList) || []).find(x => x.name === country) || {};
+    if (!on && c.online && !confirm(`${country}: ${c.online} ${tr('driver(s) are online. Turn Rides off? New ride requests stop; rides under way finish.')}`)) { box.checked = true; return; }
+    box.disabled = true;
+    try {
+      await apiFetch('PUT', '/admin/rides/countries', { country, on });
+      c.on = on;
+      const w = document.querySelector(`[data-rc-word="${CSS.escape(country)}"]`); if (w) { w.textContent = tr(on ? 'On' : 'Off'); w.style.color = on ? '#15803d' : 'var(--slate)'; }
+      showToast(`${tr('Rides')} ${tr(on ? 'on' : 'off')}: ${country}`);
+    } catch (x) { box.checked = !on; showToast(x.message || tr('Could not save')); }
+    box.disabled = false;
+  };
+  window.ridesCountryAdd = async function () {
+    const v = (el('rc-add') || {}).value; if (!v) return showToast(tr('Choose a country'));
+    try { await apiFetch('PUT', '/admin/rides/countries', { country: v, on: true }); R.rcAdded = [...(R.rcAdded || []), v]; showToast(`${tr('Rides')} ${tr('on')}: ${v}`); loadAdminRides(); }
+    catch (x) { showToast(x.message || tr('Could not save')); }
+  };
   async function loadAdminRides() {
     if (!body()) return;
     let o; try { o = await apiFetch('GET', '/admin/rides/overview'); } catch (x) { body().innerHTML = `<div class="panel">${e(x.message || 'Could not load')}</div>`; return; }
@@ -704,7 +742,8 @@
     body().innerHTML = `
       <div class="panel"><div class="panel-title">${e(tr('Where rides are on'))}</div>
         <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px;font-size:14px;"><span>⏳ ${c.pending} ${e(tr('waiting for review'))}</span><span>✅ ${c.approved} ${e(tr('approved drivers'))}</span><span>🛵 ${c.openRides} ${e(tr('rides open now'))}</span><span style="color:${c.openAlerts ? '#C0392B' : 'inherit'};">🚨 ${c.openAlerts} ${e(tr('open safety alerts'))}</span></div>
-        ${o.canEditSettings ? `<div class="form-group"><label class="form-label" for="rs-countries">${e(tr('Countries where rides are on (separate with commas)'))}</label><input class="form-input" id="rs-countries" value="${e((s.enabledCountries || []).join(', '))}"/></div>
+        ${countrySwitchesHTML(o)}
+        ${o.canEditSettings ? `
         <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-max">${e(tr('Longest ride (km)'))}</label><input class="form-input" id="rs-max" type="number" value="${e(s.maxKm)}"/></div>
         <div class="form-group"><label class="form-label" for="rs-search">${e(tr('Show drivers within (km)'))}</label><input class="form-input" id="rs-search" type="number" value="${e(s.searchKm)}"/></div>
         <div class="form-group"><label class="form-label" for="rs-ans">${e(tr('Minutes for a driver to answer'))}</label><input class="form-input" id="rs-ans" type="number" value="${e(s.answerMinutes)}"/></div>
@@ -728,7 +767,7 @@
         <div class="ver-note" style="margin-bottom:10px;border-left:3px solid #8C6423;">${e(tr('These rules are a starting draft. Have a lawyer review them before real riders use them. Saving changed wording makes everyone accept again.'))}</div>
         <button class="btn-sm btn-sm-primary" onclick="ridesAdminSave()">${e(tr('Save'))}</button>
         <div class="ver-note" style="margin-top:10px;">${e(tr('Turn a country on only after you have checked its transport rules. Even when it is on, no ride can happen until you approve a driver there.'))}</div>`
-        : `<div class="ver-note">${e(tr('Rides are on in:'))} <strong>${e((s.enabledCountries || []).join(', ') || tr('no country'))}</strong>. ${e(tr('Only a super admin can change this.'))}</div>`}</div>
+        : `<div class="ver-note">${e(tr('Only a super admin can change these settings.'))}</div>`}</div>
       <div class="panel"><div class="panel-title">${e(tr('Safety alerts'))}</div>${o.alerts.length ? o.alerts.map(a => `<div style="padding:10px 0;border-top:1px solid var(--border);font-size:14px;${a.status === 'open' ? 'background:#FDF0EE;' : ''}"><strong>${a.status === 'open' ? (a.kind === 'report' ? '📝 ' : '🚨 ') : ''}#${e(a.bookingNumber)}</strong>${a.kind === 'report' ? ` <em>${e(tr('problem report'))}</em>` : ''} · ${e(a.raisedByRole)} ${e(a.raisedByName)} · ${e(new Date(a.createdAt).toLocaleString())}${a.location ? ` · <a href="https://www.google.com/maps/search/?api=1&query=${a.location.latitude},${a.location.longitude}" target="_blank" rel="noopener">${e(tr('Open location'))}</a>` : ''}${a.note ? `<div>${e(a.note)}</div>` : ''}${a.status === 'open' ? `<button class="btn-sm btn-sm-outline" style="margin-top:6px;" onclick="ridesAdminResolve(${jsArg(a.id)})">${e(tr('Mark handled'))}</button>` : ` <span style="color:var(--slate);">${e(tr('handled'))}</span>`}</div>`).join('') : `<div style="color:var(--slate);">${e(tr('None'))}</div>`}</div>
       ${o.passes ? `<div class="panel"><div class="panel-title">${e(tr('Driver Passes'))}</div><div style="display:flex;gap:18px;flex-wrap:wrap;font-size:14px;"><span>🎟️ ${o.passes.activeDrivers} ${e(tr('drivers with an active pass'))}</span><span>🛒 ${o.passes.soldLast30Days} ${e(tr('sold in the last 30 days'))}</span><span>💵 ${money(o.passes.revenueLast30Days)} ${e(tr('in the last 30 days'))}</span></div>
         ${(o.passes.recent || []).length ? `<div style="margin-top:8px;font-size:13px;color:var(--slate);">${o.passes.recent.map(x => `${e(new Date(x.createdAt).toLocaleDateString())} · ${e(x.label)} · ${money(x.priceUsd)} · ${e(x.paymentStatus)}`).join('<br>')}</div>` : ''}
@@ -805,7 +844,7 @@
   }
   window.ridesAdminSave = async function () {
     try {
-      await apiFetch('PUT', '/admin/rides/settings', { enabledCountries: el('rs-countries').value.split(',').map(x => x.trim()).filter(Boolean), maxKm: Number(el('rs-max').value), searchKm: Number(el('rs-search').value), answerMinutes: Number(el('rs-ans').value), feePercent: Number(el('rs-fee').value), commissionPercent: Number(el('rs-comm').value), requireInsurance: el('rs-ins').value === '1', motorbikeNight: { enabled: el('rs-night').checked, startHour: Number(el('rs-n1').value), endHour: Number(el('rs-n2').value) }, rulesRider: el('rs-rr').value, rulesDriver: el('rs-rd').value, docRules: el('rs-docs').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const x = l.split('|').map(t => t.trim()); return { country: x[0], vehicle: (x[1] || '').toLowerCase(), docs: (x[2] || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean) }; }), passEnabled: el('rs-pass').value === '1', cashEnabled: el('rs-cash').value === '1', passPlans: el('rs-plans').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const x = l.split(',').map(t => t.trim()); return { id: x[0], label: x[1], days: Number(x[2]), priceUsd: Number(x[3]) }; }), autoReleaseHours: Number(el('rs-auto').value), noStartHours: Number(el('rs-nostart').value), stuckHours: Number(el('rs-stuck').value), waitMinutes: Number(el('rs-wait').value), trackKeepDays: Number(el('rs-keep').value) });
+      await apiFetch('PUT', '/admin/rides/settings', { maxKm: Number(el('rs-max').value), searchKm: Number(el('rs-search').value), answerMinutes: Number(el('rs-ans').value), feePercent: Number(el('rs-fee').value), commissionPercent: Number(el('rs-comm').value), requireInsurance: el('rs-ins').value === '1', motorbikeNight: { enabled: el('rs-night').checked, startHour: Number(el('rs-n1').value), endHour: Number(el('rs-n2').value) }, rulesRider: el('rs-rr').value, rulesDriver: el('rs-rd').value, docRules: el('rs-docs').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const x = l.split('|').map(t => t.trim()); return { country: x[0], vehicle: (x[1] || '').toLowerCase(), docs: (x[2] || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean) }; }), passEnabled: el('rs-pass').value === '1', cashEnabled: el('rs-cash').value === '1', passPlans: el('rs-plans').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const x = l.split(',').map(t => t.trim()); return { id: x[0], label: x[1], days: Number(x[2]), priceUsd: Number(x[3]) }; }), autoReleaseHours: Number(el('rs-auto').value), noStartHours: Number(el('rs-nostart').value), stuckHours: Number(el('rs-stuck').value), waitMinutes: Number(el('rs-wait').value), trackKeepDays: Number(el('rs-keep').value) });
       showToast(tr('Saved')); loadAdminRides();
     } catch (x) { showToast(x.message || 'Could not save'); }
   };

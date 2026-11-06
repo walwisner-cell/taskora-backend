@@ -685,6 +685,34 @@ async function adminGate(req, res, next) {
 }
 const gate = [requireAuth, requireRole('admin'), adminGate];
 
+// v146: every country Trothen is live in, each with its own Rides switch.
+async function rideCountryList(drivers, open) {
+  const on = (await getSetting('rideEnabledCountries')) || [];
+  const live = (await db.all('countries')).filter(c => c.status === 'live').map(c => c.name);
+  const tables = await rideFares.tables();
+  const names = [...new Set([...live, ...on.filter(n => !live.some(l => sameText(l, n)))])].sort((a, b) => a.localeCompare(b));
+  const users = await db.filter('users', u => u.rideDriver && u.rideDriver.status);
+  return names.map(name => {
+    const here = users.filter(u => sameText(u.country, name));
+    const fares = Object.keys(tables || {}).some(k => sameText(k, name));
+    return { name, on: on.some(c => sameText(c, name)), live: live.some(l => sameText(l, name)), approved: here.filter(u => u.rideDriver.status === 'approved').length, pending: here.filter(u => u.rideDriver.status === 'pending').length, online: here.filter(u => isApproved(u) && u.rideDriver.online === true).length, openRides: open.filter(c => here.some(u => u.id === c.providerId)).length, fares };
+  });
+}
+// PUT /api/admin/rides/countries { country, on } — v146: one switch per country (super admin).
+router.put('/admin/rides/countries', gate, async (req, res) => {
+  if (!req.adminUser.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
+  const name = String((req.body && req.body.country) || '').trim(), turnOn = req.body && req.body.on === true;
+  const rec = (await db.all('countries')).find(c => sameText(c.name, name));
+  const list = ((await getSetting('rideEnabledCountries')) || []).filter(c => !sameText(c, name));
+  if (turnOn) {
+    if (!rec || rec.status !== 'live') return res.status(400).json({ error: `${name || 'That country'} isn't live on Trothen. Make it live in Admin → Categories & Countries first.` });
+    list.push(rec.name);
+  }
+  await setSetting('rideEnabledCountries', list);
+  try { await db.insert('accessLogs', { id: `al_${require('nanoid').nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'rides_country', resourceId: `${rec ? rec.name : name}: ${turnOn ? 'on' : 'off'}`, ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the switch still works */ }
+  res.json({ ok: true, enabledCountries: list });
+});
+
 router.get('/admin/rides/overview', gate, async (req, res) => {
   const drivers = await db.filter('users', u => u.rideDriver && u.rideDriver.status);
   const by = (s) => drivers.filter(u => u.rideDriver.status === s).length;
@@ -700,6 +728,7 @@ router.get('/admin/rides/overview', gate, async (req, res) => {
       licenceNumber: u.rideDriver.licenceNumber, licenceExpiry: u.rideDriver.licenceExpiry, insuranceExpiry: u.rideDriver.insuranceExpiry || null, roadworthyExpiry: u.rideDriver.roadworthyExpiry || null, helmet: u.rideDriver.helmet === true, submittedAt: u.rideDriver.submittedAt || null,
       docs: Object.fromEntries(Object.keys(DOC_KINDS).map(k => [k, !!(u.rideDriver.docs && u.rideDriver.docs[k])])), required: req1, missing: req1.filter(k => !(u.rideDriver.docs && u.rideDriver.docs[k])), jobs: u.jobs || 0, rating: u.rating || null,
     })),
+    countryList: await rideCountryList(drivers, open),
     alerts: sos,
     passes: await ridePass.stats(),
     // the 40 most recent rides, so support can answer "what happened to my ride?"
