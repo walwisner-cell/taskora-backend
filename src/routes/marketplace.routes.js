@@ -1257,6 +1257,20 @@ function computeServiceFee(amount) {
   return Math.round(Math.min(raw, MAX_SERVICE_FEE) * 100) / 100;
 }
 
+// v145: the licence a job needs follows the WORK, not the pro's main trade.
+// A plumber who also drives a motorbike needs no plumbing licence to give a
+// ride (the driving licence is checked when the team approves the driver),
+// and a store order or a delivery needs no trade licence at all. A pro whose
+// main trade isn't licensed still needs one for plumbing or electrical work.
+function workCategoryOf(contract, job, provider) {
+  if (contract && (contract.ride || contract.delivery || contract.storeOrder)) return null;
+  if (job && job.category) return job.category;
+  if (contract && contract.category) return contract.category;
+  return provider ? provider.category : null;
+}
+function licenceBlocks(provider, workCategory) {
+  return !!(provider && workCategory && LICENSED_TRADE_CATEGORIES.has(workCategory) && !hasValidLicense(provider));
+}
 function hasValidLicense(provider) {
   if (!provider.licenseExpiryDate) return false;
   // The Provider Agreement is explicit: "Expired documents block
@@ -1305,8 +1319,10 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), requir
     if (provider && provider.onHold) {
       return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review. You\'ll be able to respond to jobs again shortly. Contact support if you need this resolved sooner.' });
     }
-    if (provider && LICENSED_TRADE_CATEGORIES.has(provider.category) && !hasValidLicense(provider)) {
-      return res.status(403).json({ error: `${provider.category} requires a current, verified license on file before you can respond to jobs. Add your license expiry date in Settings.` });
+    const respJob = await db.find('jobs', j => j.id === match.jobId);
+    const respCat = workCategoryOf(null, respJob, provider);
+    if (licenceBlocks(provider, respCat)) {
+      return res.status(403).json({ error: `${respCat} requires a current, verified license on file before you can respond to jobs. Add your license expiry date in Settings.` });
     }
   }
 
@@ -1340,7 +1356,7 @@ router.post('/matches/:id/accept-budget', requireAuth, requireRole('provider'), 
   if (!amount) return res.status(400).json({ code: 'NO_SINGLE_BUDGET', error: 'This job has no single budget to accept. Send your price instead.' });
   const provider = await db.find('users', u => u.id === req.user.sub);
   if (provider.onHold) return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review.' });
-  if (LICENSED_TRADE_CATEGORIES.has(provider.category) && !hasValidLicense(provider)) return res.status(403).json({ error: `${provider.category} requires a current, verified license on file before you can accept jobs.` });
+  if (licenceBlocks(provider, workCategoryOf(null, job, provider))) return res.status(403).json({ error: `${job.category} requires a current, verified license on file before you can accept jobs.` });
   if (job.payMethod === 'cash') { // the pro's own words: what they need to accept a cash job
     const check = await require('../tokens').cashReady(provider, amount);
     if (!check.ok) return res.status(402).json({ code: 'TOKENS_SHORT', error: check.debt ? `You still owe ${check.debt} tokens of commission from an earlier cash job. Buy tokens on your Tokens page, then accept.` : `This is a cash job: Trothen's commission on $${amount.toFixed(2)} is ${check.need} tokens, taken from your tokens when you accept. You have ${check.have}. Buy tokens on your Tokens page, then accept it.` });
@@ -1423,8 +1439,8 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
   const provider = await db.find('users', u => u.id === providerId);
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
   if (provider.onHold) return res.status(403).json({ error: 'This provider\'s account is temporarily paused. Choose another provider, or check back shortly.' });
-  if (LICENSED_TRADE_CATEGORIES.has(provider.category) && !hasValidLicense(provider)) {
-    return res.status(403).json({ error: `${provider.name} doesn't have a current, verified license on file for ${provider.category} and can't be hired for this job right now.` });
+  if (licenceBlocks(provider, workCategoryOf(null, job, provider))) {
+    return res.status(403).json({ error: `${provider.name} doesn't have a current, verified license on file for ${job.category} and can't be hired for this job right now.` });
   }
 
   // v122: the pro's own price first; v144: then the customer's single price. Never a made-up amount.
@@ -2236,8 +2252,10 @@ async function acceptAndStart(contract, acceptingProvider, { isDirectBooking, is
   if (acceptingProvider && acceptingProvider.onHold) {
     return reply(403, { error: 'Your account is temporarily paused pending a quick review. You\'ll be able to accept new jobs again shortly. Contact support if you need this resolved sooner.' });
   }
-  if (acceptingProvider && LICENSED_TRADE_CATEGORIES.has(acceptingProvider.category) && !hasValidLicense(acceptingProvider)) {
-    return reply(403, { error: `${acceptingProvider.category} requires a current, verified license on file before you can accept jobs. Add your license expiry date in Settings.` });
+  const workJob = contract.jobId ? await db.find('jobs', j => j.id === contract.jobId) : null;
+  const workCat = workCategoryOf(contract, workJob, acceptingProvider);
+  if (licenceBlocks(acceptingProvider, workCat)) {
+    return reply(403, { error: `${workCat} requires a current, verified license on file before you can accept jobs. Add your license expiry date in Settings.` });
   }
 
   // v110: money-ordering fix. For a direct booking or a job-board hire,

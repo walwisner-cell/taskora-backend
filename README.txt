@@ -1,6 +1,7 @@
-Trothen v144: everything in one place (includes v128 to v143)
+Trothen v145: everything in one place (includes v128 to v144)
 
   src\ public\ server.js    The 79 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v145.md           Drivers can accept rides whatever their main trade; licences follow the work.
   CHANGES_v144.md           Post a Job redesigned: 5 steps, a real price in L$ or US$ (or pros send prices), when, materials.
   CHANGES_v143.md           The store complete (returns, sizes, sales, codes, reviews, saved) and keeping stolen goods out.
   CHANGES_v142.md           Trothen proposes ride fares by distance and time (L$, linked to fuel); drivers listed like pros.
@@ -18,21 +19,22 @@ Trothen v144: everything in one place (includes v128 to v143)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v144.md  Byte counts and the cmd.exe steps.
-  deploy_v144.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v144-files.zip    The code files packed; the .bat reads this from Downloads.
+  DEPLOYMENT_STEPS_v145.md  Byte counts and the cmd.exe steps.
+  deploy_v145.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v145-files.zip    The code files packed; the .bat reads this from Downloads.
   screenshots\              The new screens.
 
-Works whether or not v128 is already live. git status shows 95 files if v128 is live, 97 if not.
+Works whether or not v128 is already live. git status shows 96 files if v128 is live, 98 if not.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v144.
-  2. copy "%USERPROFILE%\Downloads\trothen-v144\trothen-v144-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v145.
+  2. copy "%USERPROFILE%\Downloads\trothen-v145\trothen-v145-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v144\deploy_v144.bat"
+     "%USERPROFILE%\Downloads\trothen-v145\deploy_v145.bat"
   Nothing goes live until you type YES.
 
 After it is live:
+  - Rides shows only for accounts in Liberia (Admin, Rides, Countries where rides are on). Use a Liberia test account to see it.
   - Try + Post a New Job as a customer. Keep the L$ exchange rate in Admin current: an L$ price is kept in US$ at that rate.
   - Tell sellers about returns, sizes, sales and discount codes; phones and laptops in the Market now need their IMEI or serial.
   - Admin, Categories and Countries, Sync Latest Categories and Countries (adds Driver for Hire).
