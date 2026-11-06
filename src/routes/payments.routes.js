@@ -195,8 +195,11 @@ router.delete('/payment-methods/:id', requireAuth, async (req, res) => {
 });
 
 // GET /api/payouts/mine — provider payout history
+// v141: a payout's full wallet or account number never goes back to the page.
+const payoutView = (p) => (p && p.sendTo ? { ...p, sendTo: { ...p.sendTo, number: undefined, accountNumber: undefined } } : p);
+
 router.get('/payouts/mine', requireAuth, requireRole('provider'), async (req, res) => {
-  let payouts = await db.filter('payouts', p => p.providerId === req.user.sub);
+  let payouts = (await db.filter('payouts', p => p.providerId === req.user.sub)).map(payoutView);
   const { from, to } = req.query;
   if (from) payouts = payouts.filter(p => p.date >= from);
   if (to) payouts = payouts.filter(p => p.date <= to);
@@ -328,6 +331,15 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     return res.status(403).json({ code: 'PAYOUT_COOLDOWN', error: `For your safety, payouts wait 24 hours after your payout details change. You can cash out from ${at.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })} (UTC).` });
   }
 
+  // v141: there has to be somewhere real to send the money: a Mobile Money
+  // wallet or a bank account (PayPal only outside Africa).
+  const pm = require('../payout-methods');
+  const payMethod = pm.normalMethod((useIntlMethod && provider && provider.payoutMethodIntl) ? provider.payoutMethodIntl : ((provider && provider.payoutMethod) || (pm.isAfrica(provider && provider.country) ? 'Mobile Money' : 'Bank Transfer')));
+  if (provider && payMethod !== 'Debit Card') {
+    const notReady = pm.readyToPay(provider, payMethod);
+    if (notReady) return res.status(400).json({ code: 'PAYOUT_DETAILS_NEEDED', error: notReady });
+  }
+
   // v132: the whole calculation lives in src/commission-statement.js, so the
   // Earnings page preview and the real payout always use the same numbers.
   // What is payable is escrow the customer has RELEASED (job confirmed) and
@@ -390,7 +402,9 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     payoutCurrency: wantsLocal ? currency.code : 'USD',
     payoutAmountLocal,
     exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate, not a live market rate' : null,
-    method: (useIntlMethod && provider && provider.payoutMethodIntl) ? provider.payoutMethodIntl : ((provider && provider.payoutMethod) || 'Bank Transfer'),
+    method: payMethod,
+    destination: provider ? pm.destinationText(provider, payMethod) : null, // v141: e.g. "Orange Money •••• 4567 (James Doe)"
+    sendTo: provider ? pm.sendTo(provider, payMethod) : null, // v141: what the team needs to send it (numbers kept encrypted)
     status: 'processing',
     lineItems,
     createdAt: new Date().toISOString(),
@@ -425,7 +439,7 @@ async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
     : (commissionAmount > 0 ? ' The commission was taken from the payout.' : '');
   const commissionText = usedFreeCommissionCredit ? 'Your free-commission credit was used, so no commission was charged.' : `Commission: $${commissionAmount} (${Math.round(commissionRate * 1000) / 10}%) on $${grossAmount} earned.${how}`;
   await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested and processing. ${commissionText}${tipNote}${goodsNote}${planFeeNote}`, 'payoutAlerts', { section: 'earnings' });
-  res.status(201).json({ payout });
+  res.status(201).json({ payout: payoutView(payout) });
 }
 
 // GET /api/plan-billing/mine — v78: a provider's own plan fee: whether it
@@ -1362,6 +1376,44 @@ router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (re
   };
 
   res.json({ rows, total });
+});
+
+// v141: Admin → Payments → "Payouts being sent". Each payout waiting to
+// go out, with where it goes (Mobile Money network and the last 4 digits,
+// or the bank). The full number is shown only on "Show full number",
+// and every look is written to the access log.
+async function payoutAdminScope(req) {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me) return { error: 403 };
+  const gate = require('../admin-permissions').gatePassed(req, me);
+  if (!me.isSuperAdmin && me.adminDepartment !== 'financial' && !gate) return { error: 403, me };
+  const sameTxt = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
+  const limited = !me.isSuperAdmin && gate && me.regionScoped;
+  const inScope = (person) => !limited || (me.adminScope === 'country' ? sameTxt(person.country, me.country) : sameTxt(person.city, me.region || me.city));
+  return { me, inScope };
+}
+router.get('/admin/payouts-to-send', requireAuth, requireRole('admin'), async (req, res) => {
+  const sc = await payoutAdminScope(req);
+  if (sc.error) return res.status(403).json({ error: 'Only the finance team and super admins see payouts being sent.' });
+  const users = new Map((await db.filter('users', u => u.role !== 'admin')).map(u => [u.id, u]));
+  const rows = (await db.filter('payouts', p => p.status === 'processing'))
+    .filter(p => { const u = users.get(p.providerId); return u && sc.inScope(u); })
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+    .map(p => { const u = users.get(p.providerId); return { id: p.id, createdAt: p.createdAt, amount: p.amount, payoutCurrency: p.payoutCurrency, payoutAmountLocal: p.payoutAmountLocal, method: p.method, destination: p.destination || null, person: { id: u.id, name: u.name, country: u.country, city: u.city } }; });
+  res.json({ payouts: rows });
+});
+router.post('/admin/payouts/:id/reveal', requireAuth, requireRole('admin'), async (req, res) => {
+  const sc = await payoutAdminScope(req);
+  if (sc.error) return res.status(403).json({ error: 'Only the finance team and super admins see payouts being sent.' });
+  const p = await db.find('payouts', x => x.id === req.params.id);
+  const u = p && await db.find('users', x => x.id === p.providerId);
+  if (!p || !u || !sc.inScope(u)) return res.status(404).json({ error: 'Payout not found' });
+  const pm = require('../payout-methods');
+  const s = p.sendTo || {};
+  const full = s.number ? pm.open(s.number) : s.accountNumber ? pm.open(s.accountNumber) : null;
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'payout_destination_revealed', p.id);
+  res.json({ method: p.method, network: s.network || null, bankName: s.bankName || null, branch: s.branch || null, swift: s.swift || null, name: s.name || s.accountName || null, email: s.email || null, number: full, note: (s.number || s.accountNumber) && !full ? 'This number was saved with an encryption key the server no longer has. Ask the person to enter it again.' : null });
 });
 
 module.exports = router;

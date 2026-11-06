@@ -215,6 +215,11 @@ function publicProvider(u) {
     latitude: u.latitude != null ? u.latitude : null, longitude: u.longitude != null ? u.longitude : null,
     availability: u.availability && u.availability.length ? u.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'],
     pricingModel: u.pricingModel || 'hourly',
+    // v141: how this pro charges, and what their card shows
+    pricing: (() => { const p = require('../pricing').pricingOf(u); return { unit: p.unit, rate: p.rate, from: p.from, minUnits: p.minUnits, offers: p.offers, list: p.list.map(x => ({ id: x.id, name: x.name, price: x.price, note: x.note || '' })) }; })(),
+    priceLabel: require('../pricing').priceLabel(u),
+    // v141: a driver approved for passenger rides, with their fares
+    rideDriver: u.rideDriver && u.rideDriver.status === 'approved' ? { vehicle: u.rideDriver.vehicle, baseFee: Number((u.rideDriver.rates || {}).baseFee) || null, perKm: Number((u.rideDriver.rates || {}).perKm) || null } : null,
     plan: u.plan || 'starter',
     profilePhotoUrl: u.profilePhotoUrl || null,
     businessName: u.businessName || null,
@@ -961,6 +966,20 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   }
   let { category } = req.body || {}; // v134: may be corrected to the listed name below
   const { description, materialsOnHand, materialsCost, budget, payCurrency, photoUrls } = req.body || {};
+  // v141: "Describe the job and ask for a price" from one pro's profile. The
+  // job goes to that pro only, who answers with their price the usual way.
+  let askedPro = null;
+  if ((req.body || {}).forProviderId !== undefined) {
+    askedPro = await db.find('users', u => u.id === req.body.forProviderId);
+    if (!askedPro || !isListedPro(askedPro)) return res.status(404).json({ error: 'That pro isn\'t taking requests right now.' });
+    if (askedPro.country !== customer.country) return res.status(400).json({ error: 'You can only ask pros in your own country for a price.' });
+    if (askedPro.acceptingBookings === false) return res.status(400).json({ error: `${String(askedPro.name || 'This pro').split(' ')[0]} isn't taking new work right now.` });
+    if (!category) category = askedPro.category;
+    const open = await db.filter('jobs', j => j.customerId === customer.id && j.forProviderId === askedPro.id && j.status === 'open');
+    if (open.length >= 3) return res.status(429).json({ error: 'You already have 3 price requests waiting with this pro. Wait for an answer, or cancel one.' });
+  }
+  const preferredDate = typeof (req.body || {}).preferredDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.preferredDate) ? req.body.preferredDate : null;
+  const preferredTime = typeof (req.body || {}).preferredTime === 'string' ? req.body.preferredTime.trim().slice(0, 20) || null : null;
   const jobWhere = readJobLocation(req.body); // v92
   if (jobWhere.error) return res.status(400).json({ error: jobWhere.error });
   // v128: a job must say where it is. Without a pin or at least a landmark,
@@ -1010,6 +1029,9 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
   if (budget && !isNonEmptyString(budget, { max: 40 })) {
     return res.status(400).json({ error: 'Budget must be under 40 characters' });
   }
+  // v144: when, materials and a structured price (src/job-details.js)
+  const details = await require('../job-details').readJobDetails(req.body, customer);
+  if (details.error) return res.status(400).json({ error: details.error });
 
   const job = {
     id: `job_${nanoid(10)}`,
@@ -1023,6 +1045,9 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
     photoUrls: validPhotoUrls,
     jobLocation: jobWhere.jobLocation, // v92: GPS pin of the job site, if the customer gave one
     landmark: jobWhere.landmark,
+    forProviderId: askedPro ? askedPro.id : null, // v141: a price request to one pro
+    preferredDate, preferredTime, // v141: when the customer would like it done
+    ...details.fields, // v144: when, materials, price (and the machine-readable budget), and when it closes
     status: 'open',
     createdAt: new Date().toISOString(),
   };
@@ -1071,7 +1096,10 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
 
   let candidates = [];
   let matchScope = 'city';
-  if (!customer) {
+  if (askedPro) {
+    candidates = [askedPro];
+    matchScope = 'asked';
+  } else if (!customer) {
     candidates = allInCategory;
     matchScope = 'none';
   } else {
@@ -1120,7 +1148,8 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
       createdAt: new Date().toISOString(),
     };
     await db.insert('matches', match);
-    await notify(provider.id, '🎯', `New job match: ${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''} (${score}% fit)`, 'newMatches', { section: 'matches' });
+    if (askedPro) await notify(provider.id, '💬', `${String(customer.name || 'A customer').split(' ')[0]} asked you for a price: "${job.description.slice(0, 60)}${job.description.length > 60 ? '…' : ''}". Open it in Job Matches and send your price.`, 'newMatches', { section: 'matches' });
+    else await notify(provider.id, '🎯', `New job match: ${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''} (${score}% fit)`, 'newMatches', { section: 'matches' });
     matches.push({ ...match, provider: publicProvider(provider) });
   }
 
@@ -1365,7 +1394,7 @@ router.get('/jobs/:id/candidates', requireAuth, requireRole('customer'), async (
     const messages = (await db.filter('messages', msg => msg.jobId === job.id && (msg.fromId === m.providerId || msg.toId === m.providerId)))
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     // v121: on a cash job, whether this pro can take it at the job's budget (yes/no only).
-    const cashReady = job.payMethod === 'cash' ? (await require('../tokens').cashReady(provider, m.price || parseBudgetAmount(job.budget, 100))).ok : undefined;
+    const cashReady = job.payMethod === 'cash' ? (await require('../tokens').cashReady(provider, m.price || require('../job-details').singlePriceUsd(job) || parseBudgetAmount(job.budget, 100))).ok : undefined;
     // v125: the price being agreed with this pro, if any (latest first).
     const offers = (await db.filter('contracts', c => c.jobId === job.id && c.providerId === m.providerId && c.customerId === req.user.sub)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     const o = offers.find(c => ['pending_agreement', 'awaiting_payment', 'pending_provider_confirmation', 'active', 'completed'].includes(c.status)) || null;
@@ -1398,11 +1427,13 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
     return res.status(403).json({ error: `${provider.name} doesn't have a current, verified license on file for ${provider.category} and can't be hired for this job right now.` });
   }
 
-  let finalAmount = match.price || parseBudgetAmount(job.budget, 100); // v122: the pro's own price first
+  // v122: the pro's own price first; v144: then the customer's single price. Never a made-up amount.
+  let finalAmount = match.price || require('../job-details').singlePriceUsd(job);
   if (amount !== undefined) {
     if (typeof amount !== 'number' || amount <= 0) return res.status(400).json({ error: 'Amount must be a positive number' });
     finalAmount = amount;
   }
+  if (!(finalAmount > 0)) return res.status(400).json({ code: 'PRICE_NEEDED', error: `${String(provider.name || 'This pro').split(' ')[0]} hasn't sent a price yet. Type the price you want to offer, or ask them for theirs.` });
 
   // v125: one way to agree a price everywhere. Accepting the pro's own price
   // books and pays now (below). Any other amount, or a pro who hasn't given a
@@ -1768,10 +1799,14 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     return res.status(400).json({ error: `${provider.name} isn't currently accepting new bookings. Try another provider, or check back later.` });
   }
 
-  const isNegotiable = !goodsOnly && (provider.pricingModel === 'negotiable' || (provider.pricingModel === 'both' && !!isOffer)); // v105: goods have a fixed price, so a goods-only order is never an offer
-  if (isNegotiable && (amount === undefined || amount <= 0)) {
-    return res.status(400).json({ error: 'Enter your offer amount for this provider' });
-  }
+  // v141: what the job costs is worked out here from the pro's own prices
+  // (a fixed price from their list, hours/days/trips at their rate, or the
+  // customer's offer). The amount the page sends is only used as an offer.
+  const pricingLib = require('../pricing');
+  const priced = goodsOnly ? { amount: 0, isOffer: false, detail: null } : pricingLib.bookingAmount(provider, { ...(req.body || {}), isOffer: isOffer === true });
+  if (priced.error) return res.status(400).json({ error: priced.error });
+  const isNegotiable = !goodsOnly && priced.isOffer; // v105: goods have a fixed price, so a goods-only order is never an offer
+  if (materialsAdvance && !goodsOnly && materialsAdvance > priced.amount) return res.status(400).json({ error: 'The materials advance can\'t be more than the total job amount' });
 
   // Every new booking — direct or a Mutual Agreement offer — now genuinely
   // requires the provider to accept before it's a real, confirmed job.
@@ -1816,7 +1851,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   // store. The 9% service fee is worked out on the job only. Goods carry
   // one flat purchase fee instead (set by the super admin), and no
   // commission is taken on them when the pro is paid.
-  const laborAmount = goodsOnly ? 0 : (amount || provider.price * 2);
+  const laborAmount = goodsOnly ? 0 : priced.amount;
   const goodsTotal = basket.total;
   const finalContractAmount = proStore.money(laborAmount + goodsTotal);
   const storeSettingsNow = await proStore.storeSettings();
@@ -1842,6 +1877,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     serviceFee: proStore.money((canRedeemPoints ? 0 : realServiceFee) + storeFeeFromCustomer),
     // v105: what the amount is made of
     laborAmount,
+    pricing: priced.detail, // v141: a fixed price, hours/days/trips × rate, or an offer
     storeItems: basket.items,
     storeGoodsTotal: goodsTotal,
     storeFee,
@@ -2015,7 +2051,7 @@ router.post('/contracts/:id/propose', requireAuth, requireCurrentTerms, async (r
     const waitingOn = contract.waitingOn || 'provider';
     if (waitingOn !== role) return { status: 409, body: { error: role === 'customer' ? 'Your price is with the pro. Wait for their answer.' : 'Your price is with the customer. Wait for their answer.' } };
     const amount = Math.round(Number((req.body || {}).amount) * 100) / 100;
-    if (!(amount >= 1) || amount > 1000000) return { status: 400, body: { error: 'Enter a price of at least $1.' } };
+    if (!(amount >= (contract.ride ? 0.25 : 1)) || amount > 1000000) return { status: 400, body: { error: `Enter a price of at least $${contract.ride ? '0.25' : '1'}.` } }; // v142: short rides in L$ can be under $1
     const note = typeof (req.body || {}).note === 'string' ? req.body.note.trim().slice(0, 300) : '';
     const history = negotiationOf(contract);
     if (history.filter(h => h.by === role).length >= MAX_PRICES_EACH) return { status: 400, body: { code: 'PRICE_LIMIT', error: `You've suggested ${MAX_PRICES_EACH} prices already, which is the most each side can. Accept the last price, or ${role === 'customer' ? 'cancel and book someone else' : 'decline'}.` } };
@@ -2024,6 +2060,10 @@ router.post('/contracts/:id/propose', requireAuth, requireCurrentTerms, async (r
     if ((contract.materialsAdvance || 0) > amount) return { status: 400, body: { error: `The price can't be less than the materials advance of $${Number(contract.materialsAdvance).toFixed(2)}.` } };
     const provider = await db.find('users', u => u.id === contract.providerId);
     const customer = await db.find('users', u => u.id === contract.customerId);
+    if (contract.ride && role === 'customer' && contract.driverFare) { // v142: a rider's offer can't be far below the fare
+      const floor = await require('../ride-fares').offerFloor(provider && provider.country, contract.driverFare);
+      if (floor != null && amount < floor) return { status: 400, body: { code: 'OFFER_TOO_LOW', error: `Offer at least $${floor.toFixed(2)} for this trip. Lower offers aren't fair to drivers.` } };
+    }
     if (contract.ride && history.filter(h => h.by === role).length >= 3) return { status: 400, body: { code: 'PRICE_LIMIT', error: 'A ride fare can go back and forth only a few times. Accept the last fare, or cancel.' } }; // v125
     if (contract.payMethod === 'cash' && role === 'provider' && !contract.ride) {
       const check = await require('../tokens').cashReady(provider, amount);

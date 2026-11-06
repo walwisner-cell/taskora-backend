@@ -55,7 +55,7 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
   const sellerLabel = (seller.store && seller.store.name) || seller.name;
   const settings = await store.storeSettings();
   const km = so.kmBetween(opt.pickupLocation, where.jobLocation);
-  const price = so.quoteFor(driver, km);
+  const price = await so.deliveryPrice(driver, km); // v143
   // The customer approved one price. If the driver changed their rates in
   // between, they are shown the new price instead of being charged it.
   if (expectedPrice !== undefined && Math.abs(Number(expectedPrice) - price) > 0.009) {
@@ -133,6 +133,12 @@ async function orderView(order, viewerId) {
     serviceFee: order.serviceFee || 0, amount: order.amount, totalPaid: money((order.amount || 0) + (order.serviceFee || 0)),
     paidCurrency: escrow ? escrow.paidCurrency : 'USD', paidAmountLocal: escrow ? escrow.paidAmountLocal : null, moneyStatus: escrow ? escrow.status : 'none',
     readyAt: order.readyAt || null, note: order.orderNote || null,
+    // v143: discount, returns and reviews
+    discount: order.discount || 0, discountCode: order.discountCode || null, goodsBeforeDiscount: order.goodsBeforeDiscount || order.storeGoodsTotal || 0, refundedAmount: order.refundedAmount || 0,
+    returnPolicy: order.returnPolicy ? { ...order.returnPolicy, words: store.returnPolicyWords(order.returnPolicy) } : null,
+    returnUntil: require('../store-extras').returnUntil(order), returnRequest: order.returnRequest || null,
+    canReturn: (() => { const u = require('../store-extras').returnUntil(order); return viewerId === order.customerId && !order.marketListingId && !!u && Date.parse(u) > Date.now() && !order.returnRequest; })(),
+    reviewedGoods: viewerId === order.customerId ? (await db.filter('goodReviews', r => r.orderId === order.id)).map(r => r.goodId) : [],
     store: seller ? { providerId: seller.id, name: (seller.store && seller.store.name) || seller.name, sellerName: seller.name, hours: opt.hours } : null,
     pickup: { place: order.pickupPlace || opt.pickupPlace || '', location: order.pickupLocation || opt.pickupLocation || null },
     // Where it is going: shown to the seller only when the seller is the one bringing it.
@@ -157,7 +163,7 @@ async function orderView(order, viewerId) {
 router.get('/delivery/rates', requireAuth, requireRole('provider'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   const settings = await store.storeSettings();
-  res.json({ hasSkill: store.hasSkill(me, store.DRIVER_SKILL), offered: so.isDriver(me), rates: so.driverRates(me), vehicles: store.VEHICLES, skill: store.DRIVER_SKILL, feePercent: settings.deliveryFeePercent, hasLocation: typeof me.latitude === 'number' });
+  res.json({ hasSkill: store.hasSkill(me, store.DRIVER_SKILL) || so.rideDeliverer(me), viaRides: so.rideDeliverer(me), offered: so.isDriver(me), rates: so.driverRates(me), vehicles: store.VEHICLES, skill: store.DRIVER_SKILL, feePercent: settings.deliveryFeePercent, hasLocation: typeof me.latitude === 'number' });
 });
 router.put('/delivery/rates', requireAuth, requireRole('provider'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
@@ -189,6 +195,24 @@ router.get('/store/drivers', requireAuth, driverLimiter, async (req, res) => {
 const buyInFlight = new Set(); // v110: one purchase at a time per customer (double-tap guard)
 // POST /api/store/orders { providerId, items, deliveryMethod, driverId, driverPrice, jobLocation, landmark, address, note, payCurrency }
 // v139: pros can buy too (a plumber buying fittings from a supplier).
+// v143: what the seller charges to bring an order: their flat charge, or by
+// distance at Trothen's motorbike fare for the country (never less than
+// their flat charge when one is set... unless no pin was given: then the flat one).
+async function sellerDeliveryCharge(seller, opt, dropPin) {
+  if (opt.deliveryPricing !== 'distance' || !dropPin || !opt.pickupLocation) return opt.deliveryFee;
+  const q = await so.tableQuote(seller.country, 'motorbike', so.kmBetween(opt.pickupLocation, dropPin), 0);
+  return q ? q.price : opt.deliveryFee;
+}
+router.get('/store/seller-delivery', requireAuth, async (req, res) => {
+  const seller = await db.find('users', u => u.id === req.query.providerId && u.role === 'provider');
+  if (!seller || !store.storeIsLive(seller)) return res.status(404).json({ error: 'Store not found' });
+  const opt = store.storeOptions(seller);
+  const lat = Number(req.query.latitude), lng = Number(req.query.longitude);
+  const pin = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0) ? { latitude: lat, longitude: lng } : null;
+  const fee = await sellerDeliveryCharge(seller, opt, pin);
+  const q = pin && opt.pickupLocation && opt.deliveryPricing === 'distance' ? await so.tableQuote(seller.country, 'motorbike', so.kmBetween(opt.pickupLocation, pin), 0) : null;
+  res.json({ fee, byDistance: opt.deliveryPricing === 'distance', local: q ? q.local : null, symbol: q ? q.symbol : null, distanceKm: pin && opt.pickupLocation ? so.kmBetween(opt.pickupLocation, pin) : null });
+});
 router.post('/store/orders', requireAuth, requireBuyer, requireCurrentTerms, async (req, res) => {
   const customer = await customerCanBuy(req, res);
   if (!customer) return;
@@ -215,20 +239,29 @@ router.post('/store/orders', requireAuth, requireBuyer, requireCurrentTerms, asy
       return res.status(400).json({ code: 'PICK_DRIVER', error: 'Choose a driver from the list. The one you picked isn\'t available any more.' });
     }
     // Checked before anything is charged, so a changed price never leaves a half-made order.
-    const price = so.quoteFor(driver, so.kmBetween(opt.pickupLocation, where.jobLocation));
+    const price = await so.deliveryPrice(driver, so.kmBetween(opt.pickupLocation, where.jobLocation)); // v143
     if (b.driverPrice === undefined || Math.abs(Number(b.driverPrice) - price) > 0.009) {
       return res.status(409).json({ code: 'PRICE_CHANGED', price, error: `${driver.name}'s price for this trip is $${price.toFixed(2)}. Check it and approve again.` });
     }
   }
   const settings = await store.storeSettings();
   const { generateBookingNumber, fundEscrowForContract } = require('./marketplace.routes');
-  const sellerDeliveryFee = method === 'seller' ? opt.deliveryFee : 0;
+  // v143: the seller's delivery, flat or by distance (Trothen's per-km fares on a motorbike)
+  const sellerDeliveryFee = method === 'seller' ? await sellerDeliveryCharge(seller, opt, where && where.jobLocation) : 0;
+  // v143: a store discount code
+  let discount = 0, discountCode = null;
+  if (b.discountCode) {
+    const d = await require('../store-extras').applyDiscount(seller, b.discountCode, basket.total, customer.id);
+    if (d.error) return res.status(400).json({ code: 'BAD_CODE', error: d.error });
+    discount = d.discount; discountCode = d.code;
+  }
+  const goodsTotal = money(basket.total - discount);
   // v109: what is charged must be what the customer saw. If the seller
   // changed a price or their delivery charge, or the exchange rate moved,
   // between the customer opening the checkout and paying, nothing is
   // charged and the new figures are sent back to approve.
-  if (b.expectedGoodsTotal !== undefined && Math.abs(Number(b.expectedGoodsTotal) - basket.total) > 0.009) {
-    return res.status(409).json({ code: 'PRICE_CHANGED', goodsTotal: basket.total, error: `The goods now come to $${basket.total.toFixed(2)}. A price changed since you opened the checkout. Check it and approve again.` });
+  if (b.expectedGoodsTotal !== undefined && Math.abs(Number(b.expectedGoodsTotal) - goodsTotal) > 0.009) {
+    return res.status(409).json({ code: 'PRICE_CHANGED', goodsTotal, error: `The goods now come to $${goodsTotal.toFixed(2)}. A price changed since you opened the checkout. Check it and approve again.` });
   }
   if (b.expectedDeliveryFee !== undefined && Math.abs(Number(b.expectedDeliveryFee) - sellerDeliveryFee) > 0.009) {
     return res.status(409).json({ code: 'PRICE_CHANGED', deliveryFee: sellerDeliveryFee, error: `The seller's delivery charge is now $${sellerDeliveryFee.toFixed(2)}. Check it and approve again.` });
@@ -236,7 +269,7 @@ router.post('/store/orders', requireAuth, requireBuyer, requireCurrentTerms, asy
   // v140: materials for one of the buyer's own jobs.
   let linkedJob = null;
   if (b.jobId) { linkedJob = await db.find('jobs', j => j.id === b.jobId && j.customerId === customer.id); if (!linkedJob) return res.status(404).json({ error: 'That job was not found.' }); }
-  const gf = store.goodsFeeFor(basket.total, settings); // v139: a share of the goods (seller pays at payout), or the flat fee
+  const gf = store.goodsFeeFor(goodsTotal, settings); // v139: a share of the goods (seller pays at payout), or the flat fee; v143: after any discount
   const storeFee = gf.fee;
   const storeFeePaidBy = gf.paidBy;
   const pickupPlace = opt.pickupPlace || [seller.city, seller.country].filter(Boolean).join(', ');
@@ -250,12 +283,14 @@ router.post('/store/orders', requireAuth, requireBuyer, requireCurrentTerms, asy
     address: method === 'pickup' ? `Collect from ${seller.store.name}: ${pickupPlace}`.slice(0, 200) : where.address,
     jobLocation: where ? (where.jobLocation || null) : null,
     landmark: where ? (where.landmark || null) : null,
-    amount: money(basket.total + sellerDeliveryFee),
+    amount: money(goodsTotal + sellerDeliveryFee),
     // What the customer pays on top: the flat store fee (if the customer pays it) and Trothen's share of the seller's delivery charge.
     serviceFee: money((storeFeePaidBy === 'customer' ? storeFee : 0) + pct(sellerDeliveryFee, settings.deliveryFeePercent)),
     laborAmount: sellerDeliveryFee, // delivery is a service; the goods are not
-    storeItems: basket.items, storeGoodsTotal: basket.total, storeFee, storeFeePaidBy,
-    goodsOnly: true, storeOrder: true, materialsCost: basket.total, storeStockHeld: true,
+    storeItems: basket.items, storeGoodsTotal: goodsTotal, storeFee, storeFeePaidBy,
+    goodsBeforeDiscount: basket.total, discount, discountCode, // v143
+    returnPolicy: opt.returnPolicy, // v143: the store's returns policy when the order was made
+    goodsOnly: true, storeOrder: true, materialsCost: goodsTotal, storeStockHeld: true,
     deliveryMethod: method, sellerDeliveryFee, pickupPlace, pickupLocation: opt.pickupLocation,
     orderNote: b.note ? String(b.note).trim() : null,
     jobId: linkedJob ? linkedJob.id : null, // v140: materials bought for one of the buyer's jobs
@@ -293,6 +328,7 @@ router.post('/store/orders', requireAuth, requireBuyer, requireCurrentTerms, asy
   } finally {
     buyInFlight.delete(customer.id);
   }
+  if (discountCode) { try { await require('../store-extras').useDiscount(seller.id, discountCode); } catch (e) { /* the order stands */ } }
   try { await require('../fraud-detection').checkNewAccountHighValue(customer.id, order.amount); } catch (e) { /* the order stands */ }
   const count = basket.items.reduce((n, i) => n + i.qty, 0);
   const how = method === 'pickup' ? 'The customer will collect it.' : method === 'seller' ? `Bring it to the customer: ${where.address}. Your delivery charge of $${sellerDeliveryFee.toFixed(2)} is included.` : `A driver (${driver.name}) has been asked to collect it.`;
@@ -567,7 +603,153 @@ router.get('/store/orders/:id/receipt', requireAuth, async (req, res) => {
     : 'These goods were sold by the seller named above, not by Trothen. Trothen held the payment and released it when the customer confirmed they had the goods. Amounts are in US dollars.' + simulated + ' If something is missing, wrong or damaged, use "Report a Problem" on the order.' });
 });
 
+// ── v143: RETURNS ────────────────────────────────────────────────────
+// The buyer asks within the store's return window (counted from the day the
+// order completed). Faulty, wrong, damaged or not-as-described goods can
+// always be returned in the window; "changed my mind" only where the store
+// accepts it. The seller accepts or declines within 3 days (no answer =
+// accepted). The buyer brings or sends the goods back and says so; the
+// seller confirms they have them, and the buyer is refunded from the money
+// Trothen still holds. A declined return, or one the seller doesn't confirm
+// within 7 days of it being sent back, goes to the Trothen team to decide.
+const extras = require('../store-extras');
+const returnLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Please wait a little and try again.' } });
+async function withOrder(req, res, who, fn) {
+  if (contractStatusLocks.has(req.params.id)) return res.status(409).json({ error: 'This order is being updated. Please try again in a moment.' });
+  contractStatusLocks.add(req.params.id);
+  try {
+    const o = await db.find('contracts', c => c.id === req.params.id && c.storeOrder === true && (who === 'buyer' ? c.customerId === req.user.sub : c.providerId === req.user.sub));
+    if (!o) return res.status(404).json({ error: 'Order not found' });
+    return await fn(o);
+  } finally { contractStatusLocks.delete(req.params.id); }
+}
+const returnWords = (rr) => rr.items.map(i => `${i.qty} × ${i.name}`).join(', ');
+router.post('/store/orders/:id/return', requireAuth, returnLimiter, (req, res) => withOrder(req, res, 'buyer', async (o) => {
+  const b = req.body || {};
+  if (o.marketListingId) return res.status(400).json({ error: 'Private sales can\'t be returned. If the item wasn\'t as described, contact support.' });
+  const until = extras.returnUntil(o);
+  if (o.status !== 'completed' || !until || Date.parse(until) <= Date.now()) return res.status(400).json({ error: o.status === 'active' ? 'This order isn\'t complete yet. If something is wrong, use "Report a Problem" on it before confirming you have your goods.' : 'The return window for this order has ended.' });
+  if (o.returnRequest && o.returnRequest.status !== 'declined_final') return res.status(409).json({ error: 'A return was already asked for on this order.' });
+  if (!extras.REASONS[b.reason]) return res.status(400).json({ error: 'Choose why you are returning it' });
+  if (b.reason === 'changed_mind' && !(o.returnPolicy && o.returnPolicy.changeOfMind)) return res.status(400).json({ error: 'This store only takes back goods that are faulty, wrong, damaged or not as described.' });
+  if (!Array.isArray(b.items) || !b.items.length) return res.status(400).json({ error: 'Choose what you are returning' });
+  const items = [];
+  for (const it of b.items) {
+    const line = (o.storeItems || []).find(l => l.goodId === (it && it.goodId) && (l.variantId || null) === ((it && it.variantId) || null));
+    const qty = Number(it && it.qty);
+    if (!line || !Number.isInteger(qty) || qty < 1 || qty > line.qty) return res.status(400).json({ error: 'Choose goods and quantities from this order' });
+    items.push({ goodId: line.goodId, variantId: line.variantId || null, name: line.name, qty, amount: money(line.lineTotal * qty / line.qty) });
+  }
+  // A discount is shared out over the goods, so the refund is what was really paid for them.
+  const share = (o.goodsBeforeDiscount || 0) > 0 ? (o.storeGoodsTotal || 0) / o.goodsBeforeDiscount : 1;
+  const amount = money(Math.min(o.storeGoodsTotal || 0, items.reduce((n, i) => n + i.amount, 0) * share));
+  const note = typeof b.note === 'string' ? b.note.trim().slice(0, 500) : '';
+  const photos = Array.isArray(b.photoUrls) ? b.photoUrls.filter(u => typeof u === 'string' && /^\/(uploads|handover)\//.test(u)).slice(0, 4) : [];
+  if (b.reason !== 'changed_mind' && note.length < 10) return res.status(400).json({ error: 'Say what is wrong in a few words, so the seller can check it.' });
+  const rr = { status: 'requested', reason: b.reason, reasonWords: extras.REASONS[b.reason], note, photoUrls: photos, items, amount, requestedAt: new Date().toISOString(), answerBy: new Date(Date.now() + 3 * extras.DAY).toISOString() };
+  await db.update('contracts', o.id, { returnRequest: rr });
+  await notify(o.providerId, '↩️', `Return asked on store order #${o.bookingNumber}: ${returnWords(rr)} (${rr.reasonWords}). Accept or decline by ${new Date(rr.answerBy).toDateString()}, or it is accepted automatically. The money for this order is held until it is settled.`, 'bookingUpdates', { section: 'store' });
+  res.status(201).json({ returnRequest: rr });
+}));
+router.post('/store/orders/:id/return/answer', requireAuth, requireRole('provider'), (req, res) => withOrder(req, res, 'seller', async (o) => {
+  const rr = o.returnRequest; const { decision, note } = req.body || {};
+  if (!rr || rr.status !== 'requested') return res.status(400).json({ error: 'There is no return waiting for your answer.' });
+  if (!['accept', 'decline'].includes(decision)) return res.status(400).json({ error: 'Accept or decline the return' });
+  const why = typeof note === 'string' ? note.trim().slice(0, 300) : '';
+  if (decision === 'decline' && why.length < 10) return res.status(400).json({ error: 'Say why you decline, in a few words. The buyer can ask the Trothen team to decide.' });
+  const opt = store.storeOptions(await db.find('users', u => u.id === o.providerId));
+  const next = decision === 'accept'
+    ? { ...rr, status: 'accepted', answeredAt: new Date().toISOString(), sellerNote: why || null, returnTo: opt.pickupPlace || null }
+    : { ...rr, status: 'declined', answeredAt: new Date().toISOString(), sellerNote: why };
+  await db.update('contracts', o.id, { returnRequest: next });
+  await notify(o.customerId, '↩️', decision === 'accept' ? `The seller accepted your return on order #${o.bookingNumber}. Bring or send back ${returnWords(rr)}${opt.pickupPlace ? ` to ${opt.pickupPlace}` : ''}, then press "I've sent it back". You're refunded when the seller has it.` : `The seller declined your return on order #${o.bookingNumber}: "${why}". If you disagree, press "Ask Trothen to decide" on the order.`, 'bookingUpdates', { section: 'orders' });
+  res.json({ returnRequest: next });
+}));
+router.post('/store/orders/:id/return/sent', requireAuth, (req, res) => withOrder(req, res, 'buyer', async (o) => {
+  const rr = o.returnRequest;
+  if (!rr || rr.status !== 'accepted') return res.status(400).json({ error: 'The seller hasn\'t accepted a return on this order.' });
+  const photos = Array.isArray((req.body || {}).photoUrls) ? req.body.photoUrls.filter(u => typeof u === 'string' && /^\/(uploads|handover)\//.test(u)).slice(0, 4) : [];
+  const next = { ...rr, status: 'sent', sentAt: new Date().toISOString(), sentPhotoUrls: photos, sentNote: typeof (req.body || {}).note === 'string' ? req.body.note.trim().slice(0, 300) : '', confirmBy: new Date(Date.now() + 7 * extras.DAY).toISOString() };
+  await db.update('contracts', o.id, { returnRequest: next });
+  await notify(o.providerId, '📦', `The buyer says they've sent back ${returnWords(rr)} (order #${o.bookingNumber}). When you have it, press "I have it back" so they are refunded.`, 'bookingUpdates', { section: 'store' });
+  res.json({ returnRequest: next });
+}));
+router.post('/store/orders/:id/return/received', requireAuth, requireRole('provider'), (req, res) => withOrder(req, res, 'seller', async (o) => {
+  const rr = o.returnRequest;
+  if (!rr || !['sent', 'accepted'].includes(rr.status)) return res.status(400).json({ error: 'There is no return on its way back to you.' });
+  const out = await extras.refundReturn(o, (req.body || {}).restock !== false);
+  if (out.error) return res.status(400).json({ error: out.error });
+  await notify(o.customerId, '💸', `The seller has your return from order #${o.bookingNumber}. $${out.refunded.toFixed(2)} is refunded to you.`, 'bookingUpdates', { section: 'orders' });
+  res.json({ refunded: out.refunded });
+}));
+router.post('/store/orders/:id/return/escalate', requireAuth, (req, res) => withOrder(req, res, 'buyer', async (o) => {
+  const rr = o.returnRequest;
+  if (!rr || !['declined', 'sent'].includes(rr.status)) return res.status(400).json({ error: 'There is nothing to ask the Trothen team about on this order.' });
+  if (rr.status === 'sent' && Date.parse(rr.sentAt) > Date.now() - 3 * extras.DAY) return res.status(400).json({ error: 'Give the seller a few days to confirm they have it back first.' });
+  const next = { ...rr, status: 'escalated', escalatedAt: new Date().toISOString(), escalatedFrom: rr.status };
+  await db.update('contracts', o.id, { returnRequest: next });
+  await tellReturnsTeam(o, next);
+  res.json({ returnRequest: next });
+}));
+async function tellReturnsTeam(o, rr) {
+  const admins = (await db.filter('users', u => u.role === 'admin' && u.active !== false && (u.isSuperAdmin || !u.adminDepartment || ['customer_service', 'legal'].includes(u.adminDepartment)))).slice(0, 25);
+  for (const a of admins) await notify(a.id, '↩️', `A store return needs a decision: order #${o.bookingNumber}, ${returnWords(rr)} ($${Number(rr.amount).toFixed(2)}). Open Stores & Skills → Returns.`, null, { section: 'stores' });
+}
+// The team decides an escalated return.
+const returnsAdmin = [requireAuth, requireRole('admin')]; // custom admins: the "returns" actions in Stores & Skills (src/admin-permissions.js)
+router.get('/admin/store/returns', ...returnsAdmin, async (req, res) => {
+  const rows = (await db.filter('contracts', c => c.storeOrder && c.returnRequest && ['escalated', 'requested', 'accepted', 'sent', 'declined'].includes(c.returnRequest.status)))
+    .sort((a, b) => String(a.returnRequest.requestedAt).localeCompare(String(b.returnRequest.requestedAt)));
+  const out = [];
+  for (const o of rows) {
+    const seller = await db.find('users', u => u.id === o.providerId), buyer = await db.find('users', u => u.id === o.customerId);
+    out.push({ id: o.id, number: o.bookingNumber, store: seller && seller.store ? seller.store.name : '', seller: seller ? seller.name : '', buyer: buyer ? buyer.name : '', completedAt: o.completedAt, returnRequest: o.returnRequest });
+  }
+  res.json({ returns: out });
+});
+router.post('/admin/store/returns/:id/decide', ...returnsAdmin, async (req, res) => {
+  const o = await db.find('contracts', c => c.id === req.params.id && c.storeOrder && c.returnRequest);
+  if (!o) return res.status(404).json({ error: 'Return not found' });
+  const { decision, note } = req.body || {};
+  if (!['refund', 'refuse'].includes(decision)) return res.status(400).json({ error: 'Refund the buyer, or refuse the return' });
+  const why = typeof note === 'string' ? note.trim().slice(0, 300) : '';
+  if (why.length < 5) return res.status(400).json({ error: 'Add a short note for both sides' });
+  const admin = await db.find('users', u => u.id === req.user.sub);
+  if (decision === 'refund') {
+    const out = await extras.refundReturn(o, false);
+    if (out.error) return res.status(400).json({ error: out.error });
+    const after = await db.find('contracts', c => c.id === o.id);
+    await db.update('contracts', o.id, { returnRequest: { ...after.returnRequest, decidedBy: admin.name, decidedNote: why } });
+    await notify(o.customerId, '⚖️', `Trothen decided your return on order #${o.bookingNumber}: $${out.refunded.toFixed(2)} is refunded to you. ${why}`, 'bookingUpdates', { section: 'orders' });
+    await notify(o.providerId, '⚖️', `Trothen decided the return on order #${o.bookingNumber}: the buyer is refunded $${out.refunded.toFixed(2)}. ${why}`, 'bookingUpdates', { section: 'store' });
+  } else {
+    await db.update('contracts', o.id, { returnRequest: { ...o.returnRequest, status: 'declined_final', decidedBy: admin.name, decidedNote: why, decidedAt: new Date().toISOString() } });
+    await notify(o.customerId, '⚖️', `Trothen decided your return on order #${o.bookingNumber}: it is not refunded. ${why}`, 'bookingUpdates', { section: 'orders' });
+    await notify(o.providerId, '⚖️', `Trothen decided the return on order #${o.bookingNumber} in your favour. The money for the order is released to you. ${why}`, 'bookingUpdates', { section: 'store' });
+  }
+  try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: admin.id, resourceType: 'store_return', resourceId: o.id, ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) {}
+  res.json({ ok: true });
+});
+// Runs with the store sweeps: unanswered returns are accepted; returns not confirmed in time go to the team.
+async function sweepReturns() {
+  const now = Date.now(); let n = 0;
+  for (const o of await db.filter('contracts', c => c.storeOrder && c.returnRequest && ['requested', 'sent'].includes(c.returnRequest.status))) {
+    const rr = o.returnRequest;
+    if (rr.status === 'requested' && Date.parse(rr.answerBy) <= now) {
+      const opt = store.storeOptions(await db.find('users', u => u.id === o.providerId));
+      await db.update('contracts', o.id, { returnRequest: { ...rr, status: 'accepted', answeredAt: new Date().toISOString(), autoAccepted: true, returnTo: opt.pickupPlace || null } });
+      await notify(o.customerId, '↩️', `The seller didn't answer in time, so your return on order #${o.bookingNumber} is accepted. Bring or send it back${opt.pickupPlace ? ` to ${opt.pickupPlace}` : ''}, then press "I've sent it back".`, 'bookingUpdates', { section: 'orders' });
+      await notify(o.providerId, '↩️', `You didn't answer the return on order #${o.bookingNumber} in time, so it was accepted.`, 'bookingUpdates', { section: 'store' }); n++;
+    } else if (rr.status === 'sent' && rr.confirmBy && Date.parse(rr.confirmBy) <= now) {
+      const next = { ...rr, status: 'escalated', escalatedAt: new Date().toISOString(), escalatedFrom: 'sent', autoEscalated: true };
+      await db.update('contracts', o.id, { returnRequest: next }); await tellReturnsTeam(o, next); n++;
+    }
+  }
+  return n;
+}
+
 module.exports = router;
+module.exports.sweepReturns = sweepReturns;
 module.exports.createDelivery = createDelivery; // v139: the Market's personal listings
 module.exports.orderView = orderView;
 module.exports.readDropoff = readDropoff;

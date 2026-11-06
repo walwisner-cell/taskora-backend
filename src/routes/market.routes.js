@@ -70,10 +70,11 @@ async function listingView(l, me, currencies, cache) {
     price: usd, localPrice: l.currency !== 'USD' ? { amount: l.price, code: cur.code, symbol: cur.symbol } : null,
     photoUrls: l.photoUrls || [], city: l.city || '', country: l.country || '', pickupPlace: l.pickupPlace || '', hasPin: !!l.pickupLocation,
     protected: l.protected !== false, cash: l.cash !== false, driver: l.driver !== false,
+    serialLast4: l.serialLast4 || null, isPart: l.isPart === true, proofGiven: !!l.proofUrl, ownerDeclared: !!l.ownerAttestedAt, // v143
     protectionFee: l.protected !== false ? store.protectionFeeFor(usd, s) : 0,
     status: l.status, createdAt: l.createdAt, expiresAt: l.expiresAt || null,
     seller: await sellerInfo(seller, cache), mine: !!(me && me.id === l.sellerId),
-    ...(me && me.id === l.sellerId ? { reports: (l.reports || []).length, views: l.views || 0, price_raw: l.price, currency: l.currency, pickupLocation: l.pickupLocation || null, removedReason: l.removedReason || null } : {}),
+    ...(me && me.id === l.sellerId ? { proofUrl: l.proofUrl || null, reports: (l.reports || []).length, views: l.views || 0, price_raw: l.price, currency: l.currency, pickupLocation: l.pickupLocation || null, removedReason: l.removedReason || null } : {}),
   };
 }
 
@@ -217,6 +218,10 @@ async function readListing(b, me, existing) {
   if (out.protected === false && out.cash === false) return { error: 'Allow at least one way to buy: through Trothen, or in person with cash' };
   const why = await require('./store.routes').bannedReason(out.title || (existing && existing.title), out.description);
   if (why) return { error: `This can't be sold on Trothen (${why}).` };
+  // v143: ownership, IMEI / serial numbers and proof of ownership (src/stolen-goods.js)
+  const own = require('../stolen-goods').readOwnership(b, existing, out.category, out.priceUsd !== undefined ? out.priceUsd : existing && existing.priceUsd, me.id);
+  if (own.error) return { error: own.error };
+  Object.assign(out, own.out);
   return { out };
 }
 
@@ -231,6 +236,12 @@ async function rememberPhotoHashes(hashes, userId, listingId) {
   for (const hash of (hashes || []).filter(Boolean)) {
     if (!(await db.find('marketPhotoHashes', h => h.hash === hash && h.userId === userId))) await db.insert('marketPhotoHashes', { id: `mph_${nanoid(10)}`, hash, userId, listingId, createdAt: new Date().toISOString() });
   }
+}
+// v143: a listing whose number is registered as stolen: a high-priority flag for the team.
+async function stolenAlert(listing, seller) {
+  try { await require('../fraud-detection').createFlag({ type: 'stolen_item_listed', severity: 'high', userId: seller.id, details: `"${listing.title}" by ${seller.name} (${seller.phone || 'no phone'}) has a number (ending ${listing.serialLast4}) registered as stolen. The listing is held. Do not tell the seller why; contact the person who registered it and, if they wish, the police.` }); } catch (e) { /* the hold stands */ }
+  const supers = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin && u.active !== false);
+  for (const a of supers) await notify(a.id, '🚨', `A Market listing matches an item registered as STOLEN: "${listing.title}". It is held. Fraud & Safety has the details.`, null, { section: 'fraud' });
 }
 async function sendForReview(listing, seller, reasons) {
   try { await require('../fraud-detection').createFlag({ type: 'market_listing_risk', severity: 'medium', userId: seller.id, details: `Market listing "${listing.title}" by ${seller.name} held for review: ${reasons.join('; ')}` }); } catch (e) { /* the hold still stands */ }
@@ -249,9 +260,10 @@ router.post('/market/listings', requireAuth, writeLimiter, async (req, res) => {
   const listing = { id: `ml_${nanoid(10)}`, sellerId: me.id, ...r.out, city: me.city || '', country: me.country || '', status: 'live', reports: [], views: 0, createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + market.LISTING_DAYS * market.DAY).toISOString() };
   listing.photoHashes = photoHashes(listing.photoUrls);
   // v140: signs of a scam listing send it to the team before it goes live.
-  const risk = await market.listingRisk(listing, me, listing.priceUsd);
+  const risk = [...await market.listingRisk(listing, me, listing.priceUsd), ...await require('../stolen-goods').stolenRisk(listing, me)]; // v143: stolen-goods checks too
   if (risk.length) { listing.status = 'review'; listing.reviewReasons = risk; }
   await db.insert('marketListings', listing);
+  if (risk.some(x => /STOLEN/.test(x))) await stolenAlert(listing, me);
   await rememberPhotoHashes(listing.photoHashes, me.id, listing.id);
   if (risk.length) await sendForReview(listing, me, risk);
   res.status(201).json({ listing: await listingView(listing, me), review: risk.length > 0 });
@@ -269,9 +281,9 @@ router.patch('/market/listings/:id', requireAuth, writeLimiter, async (req, res)
   let updated = await db.update('marketListings', l.id, r.out);
   if (r.out.photoHashes) await rememberPhotoHashes(r.out.photoHashes, me.id, l.id);
   // v140: a changed price or photos is checked again.
-  if ((r.out.priceUsd !== undefined || r.out.photoUrls) && updated.status === 'live') {
-    const risk = await market.listingRisk(updated, me, updated.priceUsd);
-    if (risk.length) { updated = await db.update('marketListings', l.id, { status: 'review', reviewReasons: risk }); await sendForReview(updated, me, risk); }
+  if ((r.out.priceUsd !== undefined || r.out.photoUrls || r.out.serialHash !== undefined) && updated.status === 'live') {
+    const risk = [...await market.listingRisk(updated, me, updated.priceUsd), ...await require('../stolen-goods').stolenRisk(updated, me)];
+    if (risk.length) { updated = await db.update('marketListings', l.id, { status: 'review', reviewReasons: risk }); await sendForReview(updated, me, risk); if (risk.some(x => /STOLEN/.test(x))) await stolenAlert(updated, me); }
   }
   res.json({ listing: await listingView(updated, me) });
 });
@@ -402,7 +414,7 @@ router.post('/market/listings/:id/buy', requireAuth, require('../terms').require
     if (driver) {
       // Checked before anything is charged, so a changed driver price never leaves a half-made order.
       const km = so.kmBetween(l.pickupLocation || null, where.jobLocation);
-      const quoted = so.quoteFor(driver, km);
+      const quoted = await so.deliveryPrice(driver, km); // v143
       if (Math.abs(Number(b.driverPrice) - quoted) > 0.009) return res.status(409).json({ code: 'PRICE_CHANGED', price: quoted, error: `${driver.name}'s price is now $${quoted.toFixed(2)}. Check it and approve again.` });
     }
     try {
@@ -467,10 +479,15 @@ router.get('/market/earnings', requireAuth, async (req, res) => {
   const held = (await db.filter('contracts', c => c.providerId === me.id && c.storeOrder === true && ['active', 'disputed'].includes(c.status))).reduce((s, c) => s + (c.amount || 0), 0);
   // v140: a new seller's personal sales wait 3 days after completing
   const now = Date.now();
-  const reservedList = (await db.filter('contracts', c => c.providerId === me.id && c.newSellerReserve && c.status === 'completed' && c.completedAt && now - Date.parse(c.completedAt) < 3 * market.DAY));
-  const reserved = { amount: money(reservedList.reduce((s, c) => s + (c.amount || 0), 0)), until: reservedList.length ? new Date(Math.max(...reservedList.map(c => Date.parse(c.completedAt))) + 3 * market.DAY).toISOString() : null };
+  const ex = require('../store-extras'); // v143: store orders also wait out their return window
+  const untilOf = (c) => Math.max(c.newSellerReserve && c.completedAt ? Date.parse(c.completedAt) + 3 * market.DAY : 0, ex.returnUntil(c) ? Date.parse(ex.returnUntil(c)) : 0);
+  const reservedList = (await db.filter('contracts', c => c.providerId === me.id && c.status === 'completed' && c.completedAt && ((c.newSellerReserve && now - Date.parse(c.completedAt) < 3 * market.DAY) || ex.returnHold(c))));
+  const reserved = { amount: money(reservedList.reduce((s, c) => s + (c.amount || 0), 0)), until: reservedList.length ? new Date(Math.max(...reservedList.map(untilOf))).toISOString() : null };
   const payouts = (await db.filter('payouts', x => x.providerId === me.id)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 10);
-  res.json({ available: p.summary || null, net: p.summary ? p.summary.net : 0, held: money(held), reserved, payoutMethod: me.payoutMethod || null, payoutPaypalEmail: me.payoutPaypalEmail || null, payouts: payouts.map(x => ({ id: x.id, date: x.date, amount: x.amount, status: x.status, method: x.method })) });
+  res.json({ available: p.summary || null, net: p.summary ? p.summary.net : 0, held: money(held), reserved, payoutMethod: me.payoutMethod || null, payoutPaypalEmail: me.payoutPaypalEmail || null,
+    // v141: the ways this person can be paid in their country, and what they saved (last 4 digits only)
+    payoutOptions: (() => { const pm = require('../payout-methods'); return { methods: pm.methodsFor(me.country), networks: pm.networksFor(me.country), mobile: pm.publicMobile(me.payoutMobile), bank: pm.publicBank(me.payoutBank) }; })(),
+    payouts: payouts.map(x => ({ id: x.id, date: x.date, amount: x.amount, status: x.status, method: x.method })) });
 });
 
 // A store's Market categories (up to three), so its goods show in the right aisle.
@@ -546,6 +563,31 @@ async function teamGate(req, res, next) {
   req.adminUser = m; req.covers = require('../admin-scope').adminScopeFor(m); next();
 }
 const adminOnly = [requireAuth, requireRole('admin'), teamGate];
+// v143: register a stolen item (phone, laptop, motorbike...). Listings with the number are held at once.
+router.post('/market/stolen', requireAuth, writeLimiter, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me || me.verified !== true) return res.status(403).json({ code: 'VERIFY_IDENTITY', error: 'Please verify your identity first, so a stolen-item report can be trusted.' });
+  const r = await require('../stolen-goods').registerStolen(me, req.body || {});
+  if (r.error) return res.status(400).json({ error: r.error });
+  for (const l of r.hits) {
+    const seller = await db.find('users', u => u.id === l.sellerId);
+    const reasons = [...(l.reviewReasons || []), `its number (ending ${l.serialLast4}) was just registered as STOLEN (report ${r.report.id})`];
+    const held = await db.update('marketListings', l.id, { status: 'review', reviewReasons: reasons });
+    if (seller) { await sendForReview(held, seller, reasons); await stolenAlert(held, seller); }
+  }
+  res.status(201).json({ report: { id: r.report.id, what: r.report.what, serialLast4: r.report.serialLast4, createdAt: r.report.createdAt }, message: r.hits.length ? 'Registered. A listing with this number was found and is held; the Trothen team will contact you.' : 'Registered. If anyone tries to sell it on Trothen, the listing is held and the team contacts you.' });
+});
+router.get('/market/stolen/mine', requireAuth, async (req, res) => {
+  const rows = (await db.filter('stolenReports', r => r.userId === req.user.sub)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  res.json({ reports: rows.map(r => ({ id: r.id, what: r.what, serialLast4: r.serialLast4, policeReport: r.policeReport, status: r.status, createdAt: r.createdAt })) });
+});
+router.post('/market/stolen/:id/found', requireAuth, async (req, res) => {
+  const r = await db.find('stolenReports', x => x.id === req.params.id && x.userId === req.user.sub);
+  if (!r) return res.status(404).json({ error: 'Report not found' });
+  await db.update('stolenReports', r.id, { status: 'recovered', recoveredAt: new Date().toISOString() });
+  res.json({ ok: true });
+});
+
 router.get('/admin/market/listings', adminOnly, async (req, res) => {
   const want = ['reported', 'hidden', 'removed', 'live', 'all'].includes(req.query.show) ? req.query.show : 'reported';
   let list = await db.filter('marketListings', l => l.status !== 'deleted');
@@ -555,7 +597,7 @@ router.get('/admin/market/listings', adminOnly, async (req, res) => {
   for (const l of list.sort((a, b) => ((b.reports || []).length - (a.reports || []).length) || String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 200)) {
     const seller = await db.find('users', u => u.id === l.sellerId);
     if (seller && !req.covers(seller)) continue;
-    out.push({ id: l.id, title: l.title, description: l.description, category: l.category, price: l.price, currency: l.currency, photoUrls: l.photoUrls || [], status: l.status, reviewReasons: l.reviewReasons || [], city: l.city, country: l.country, createdAt: l.createdAt, reports: (l.reports || []).map(r => ({ reason: r.reason, at: r.at })), seller: seller ? { id: seller.id, name: seller.name, verified: seller.verified === true } : null, removedReason: l.removedReason || null });
+    out.push({ id: l.id, title: l.title, description: l.description, category: l.category, price: l.price, currency: l.currency, photoUrls: l.photoUrls || [], status: l.status, reviewReasons: l.reviewReasons || [], serialLast4: l.serialLast4 || null, isPart: l.isPart === true, proofUrl: l.proofUrl || null, ownerAttestedAt: l.ownerAttestedAt || null, city: l.city, country: l.country, createdAt: l.createdAt, reports: (l.reports || []).map(r => ({ reason: r.reason, at: r.at })), seller: seller ? { id: seller.id, name: seller.name, verified: seller.verified === true } : null, removedReason: l.removedReason || null });
   }
   res.json({ listings: out });
 });

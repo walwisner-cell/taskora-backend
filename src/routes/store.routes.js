@@ -99,18 +99,31 @@ function publicSkill(s) {
 }
 
 // ── THE PRO'S OWN STORE ────────────────────────────────────────────────
+// v143: the product details, sizes or colours, and the sale, for both views.
+function goodDetails(g) {
+  return {
+    brand: g.brand || '', condition: g.condition || 'new', shelf: g.shelf || '', size: g.size || null, expiryDate: g.expiryDate || null,
+    variantName: g.variantName || '', salePercent: store.saleOn(g) || 0, saleEndsAt: g.saleEndsAt || null,
+  };
+}
 function goodForOwner(g, currencies) {
   return {
     id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, currencies), unit: g.unit || '', photoUrls: g.photoUrls || [],
+    ...goodDetails(g), salePercentSet: Number(g.salePercent) || 0,
+    variants: (g.variants || []).map(v => ({ id: v.id, label: v.label, price: v.price === undefined ? null : v.price, stock: v.stock === undefined ? null : v.stock })),
     stock: g.stock === undefined ? null : g.stock, lowStockAt: g.lowStockAt === undefined ? null : g.lowStockAt, costPrice: g.costPrice === undefined ? null : g.costPrice,
     forSale: g.forSale !== false, hidden: g.hidden === true, status: g.status, reviewNote: g.reviewNote || null, reviewedAt: g.reviewedAt || null,
     sold: g.sold || 0, stockLog: (g.stockLog || []).slice(-10), createdAt: g.createdAt, updatedAt: g.updatedAt || null,
   };
 }
-function goodForShopper(g, currencies) {
+function goodForShopper(g, currencies, rating) {
+  const hasV = Array.isArray(g.variants) && g.variants.length > 0;
+  const variants = hasV ? g.variants.map(v => { const st = v.stock === undefined ? null : v.stock; return { id: v.id, label: v.label, ...store.goodPriceFields(g, currencies, v.id), soldOut: st !== null && st < 1, left: st !== null && st <= 5 ? st : null }; }) : [];
   return {
     id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, currencies), unit: g.unit || '', photoUrls: g.photoUrls || [],
-    soldOut: !store.inStock(g, 1), left: (g.stock !== null && g.stock !== undefined && g.stock <= 5) ? g.stock : null,
+    ...goodDetails(g), variants,
+    soldOut: hasV ? variants.every(v => v.soldOut) : !store.inStock(g, 1), left: hasV ? null : ((g.stock !== null && g.stock !== undefined && g.stock <= 5) ? g.stock : null),
+    rating: rating || null, // v143: stars from people who bought it
   };
 }
 
@@ -129,7 +142,7 @@ router.get('/store/mine', requireAuth, requireRole('provider'), async (req, res)
     options: store.storeOptions(me),
     currencies,
     goods: goods.map(g => goodForOwner(g, currencies)),
-    settings: { enabled: settings.enabled, purchaseFee: settings.purchaseFee, maxGoodsPerStore: settings.maxGoodsPerStore, feePaidBy: settings.feePaidBy, deliveryFeePercent: settings.deliveryFeePercent, sellerPackDays: settings.sellerPackDays, feeMode: settings.feeMode, goodsFeePercent: settings.goodsFeePercent, goodsFeeMin: settings.goodsFeeMin, protectionFeePercent: settings.protectionFeePercent, protectionFeeMin: settings.protectionFeeMin, autoReleasePickupDays: settings.autoReleasePickupDays, autoReleaseDeliveryDays: settings.autoReleaseDeliveryDays },
+    settings: { enabled: settings.enabled, purchaseFee: settings.purchaseFee, maxGoodsPerStore: settings.maxGoodsPerStore, feePaidBy: settings.feePaidBy, deliveryFeePercent: settings.deliveryFeePercent, sellerPackDays: settings.sellerPackDays, feeMode: settings.feeMode, goodsFeePercent: settings.goodsFeePercent, goodsFeeMin: settings.goodsFeeMin, protectionFeePercent: settings.protectionFeePercent, protectionFeeMin: settings.protectionFeeMin, autoReleasePickupDays: settings.autoReleasePickupDays, autoReleaseDeliveryDays: settings.autoReleaseDeliveryDays, storeMinReturnDays: settings.storeMinReturnDays },
     rules: { text: settings.rulesText, version: settings.rulesVersion, agreed: !!(me.store && me.store.rulesVersion === settings.rulesVersion), agreedAt: (me.store && me.store.rulesAgreedAt) || null },
     verified: me.verified === true,
   });
@@ -163,7 +176,7 @@ router.put('/store/mine', requireAuth, requireRole('provider'), async (req, res)
   if (options !== undefined) {
     const r = readStoreOptions(options, store.storeOptions(me));
     if (r.error) return res.status(400).json({ error: r.error });
-    const bannedOpt = await bannedReason(r.out.pickupPlace, r.out.orderNote, r.out.hours);
+    const bannedOpt = await bannedReason(r.out.pickupPlace, r.out.orderNote, r.out.hours, (r.out.returnPolicy || {}).conditions);
     if (bannedOpt) return res.status(400).json({ error: `That wording can't be used (${bannedOpt}).` });
     next.options = r.out;
   }
@@ -202,6 +215,16 @@ function readStoreOptions(o, cur) {
       if (o[k] !== null && o[k] !== '' && (typeof o[k] !== 'string' || o[k].trim().length > max)) return { error: `${label} must be under ${max} characters.` };
       out[k] = o[k] ? String(o[k]).trim() : '';
     }
+  }
+  if (o.returnPolicy !== undefined) { // v143
+    const p = o.returnPolicy || {};
+    if (p.days !== undefined && !(Number.isInteger(p.days) && p.days >= 0 && p.days <= 30)) return { error: 'Returns can be offered for 0 to 30 days' };
+    if (p.conditions && (typeof p.conditions !== 'string' || p.conditions.length > 300)) return { error: 'The returns conditions must be under 300 characters' };
+    out.returnPolicy = { days: p.days === undefined ? (cur.returnPolicy || {}).days : p.days, changeOfMind: p.changeOfMind === true, conditions: p.conditions ? String(p.conditions).trim() : '', returnShipping: p.returnShipping === 'seller' ? 'seller' : 'buyer' };
+  }
+  if (o.deliveryPricing !== undefined) { // v143
+    if (!['flat', 'distance'].includes(o.deliveryPricing)) return { error: 'Your delivery charge is flat or by distance' };
+    out.deliveryPricing = o.deliveryPricing;
   }
   if (o.pickupLocation !== undefined) {
     if (o.pickupLocation === null) out.pickupLocation = null;
@@ -278,6 +301,48 @@ function readGoodBody(body, userId, existing, currencies) {
   }
   if (has('forSale')) out.forSale = b.forSale !== false;
   if (has('hidden')) out.hidden = b.hidden === true;
+  // v143: product details
+  for (const [k, max, label] of [['brand', 40, 'The brand'], ['shelf', 40, 'The section of your store'], ['variantName', 20, 'The name for the options (like Size or Colour)']]) {
+    if (has(k)) {
+      if (b[k] && (typeof b[k] !== 'string' || b[k].trim().length > max)) return { error: `${label} must be under ${max} characters` };
+      out[k] = b[k] ? String(b[k]).trim() : '';
+    }
+  }
+  if (has('condition')) { if (!['new', 'used', 'refurbished'].includes(b.condition)) return { error: 'Condition is new, used or refurbished' }; out.condition = b.condition; }
+  if (has('size')) { if (b.size !== null && !['small', 'medium', 'large', 'bulky'].includes(b.size)) return { error: 'Size is small, medium, large or bulky' }; out.size = b.size || null; }
+  if (has('expiryDate')) {
+    if (b.expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.expiryDate))) return { error: 'The expiry date must be a date' };
+    out.expiryDate = b.expiryDate || null;
+  }
+  if (has('salePercent')) {
+    const p = b.salePercent === null || b.salePercent === '' ? 0 : Number(b.salePercent);
+    if (!(p === 0 || (Number.isInteger(p) && p >= 1 && p <= 90))) return { error: 'A sale is a whole percentage from 1 to 90, or 0 for no sale' };
+    out.salePercent = p;
+  }
+  if (has('saleEndsAt')) {
+    if (b.saleEndsAt) { const t = Date.parse(b.saleEndsAt); if (!Number.isFinite(t) || t < Date.now()) return { error: 'The sale end date must be in the future' }; out.saleEndsAt = new Date(t).toISOString(); }
+    else out.saleEndsAt = null;
+  }
+  if (has('variants')) {
+    if (b.variants === null) out.variants = [];
+    else {
+      if (!Array.isArray(b.variants) || b.variants.length > 20) return { error: 'Up to 20 sizes or colours' };
+      const keep = new Map(((existing && existing.variants) || []).map(v => [v.id, v]));
+      const seen = new Set(); const list = [];
+      for (const v of b.variants) {
+        const lab = String((v && v.label) || '').trim();
+        if (lab.length < 1 || lab.length > 40) return { error: 'Each size or colour needs a name of up to 40 characters' };
+        if (seen.has(lab.toLowerCase())) return { error: `"${lab}" is listed twice` }; seen.add(lab.toLowerCase());
+        const price = v.price === undefined || v.price === null || v.price === '' ? null : Number(v.price);
+        if (price !== null && !(price > 0 && price <= 10000000)) return { error: `Enter a price above zero for "${lab}", or leave it blank to use the good's price` };
+        const stock = v.stock === undefined || v.stock === null || v.stock === '' ? null : Number(v.stock);
+        if (stock !== null && !(Number.isInteger(stock) && stock >= 0 && stock <= 1000000)) return { error: `The stock for "${lab}" must be a whole number, or blank` };
+        const id = v.id && keep.has(v.id) ? v.id : `var_${nanoid(8)}`;
+        list.push({ id, label: lab, price: price === null ? null : money(price), stock });
+      }
+      out.variants = list;
+    }
+  }
   return { out };
 }
 
@@ -302,7 +367,7 @@ router.post('/store/goods', requireAuth, requireRole('provider'), async (req, re
   const forSale = out.forSale !== false;
   if (forSale && !(me.store && me.store.name)) return res.status(400).json({ error: 'Name your store first, then add goods to it.' });
   if (forSale && !(out.photoUrls && out.photoUrls.length)) return res.status(400).json({ error: 'Add at least one photo of the good, so a manager and your customers can see what it is.' });
-  const banned = await bannedReason(out.name, out.description);
+  const banned = await bannedReason(out.name, out.description, [out.brand, ...(out.variants || []).map(v => v.label)].filter(Boolean).join(' '));
   if (banned) return res.status(400).json({ error: `This can't be sold on Trothen (${banned}).` });
   const count = (await db.filter('storeGoods', g => g.providerId === me.id)).length;
   if (count >= settings.maxGoodsPerStore) return res.status(400).json({ error: `A store can hold up to ${settings.maxGoodsPerStore} goods. Remove one first.` });
@@ -311,6 +376,8 @@ router.post('/store/goods', requireAuth, requireRole('provider'), async (req, re
     name: out.name, description: out.description || '', price: out.price, priceCurrency: out.priceCurrency || 'USD', priceLocal: out.priceLocal || null, unit: out.unit || '', photoUrls: out.photoUrls || [],
     stock: out.stock === undefined ? null : out.stock, lowStockAt: out.lowStockAt === undefined ? null : out.lowStockAt, costPrice: out.costPrice === undefined ? null : out.costPrice,
     forSale, hidden: false,
+    brand: out.brand || '', condition: out.condition || 'new', shelf: out.shelf || '', size: out.size || null, expiryDate: out.expiryDate || null, // v143
+    variantName: out.variantName || '', variants: out.variants || [], salePercent: out.salePercent || 0, saleEndsAt: out.saleEndsAt || null,
     status: forSale ? 'pending' : 'private',
     sold: 0, stockLog: [],
     createdAt: new Date().toISOString(),
@@ -329,7 +396,7 @@ router.patch('/store/goods/:id', requireAuth, requireRole('provider'), async (re
   const currencies = await store.currenciesFor(me);
   const { out, error } = readGoodBody(req.body, me.id, good, currencies);
   if (error) return res.status(400).json({ error });
-  const banned = await bannedReason(out.name !== undefined ? out.name : good.name, out.description !== undefined ? out.description : good.description);
+  const banned = await bannedReason(out.name !== undefined ? out.name : good.name, out.description !== undefined ? out.description : good.description, [out.brand, ...(out.variants || []).map(v => v.label)].filter(Boolean).join(' '));
   if (banned) return res.status(400).json({ error: `This can't be sold on Trothen (${banned}).` });
   const patch = { ...out };
   const forSale = out.forSale !== undefined ? out.forSale : good.forSale !== false;
@@ -341,7 +408,9 @@ router.patch('/store/goods/:id', requireAuth, requireRole('provider'), async (re
   // Price and stock can change freely.
   const wordsChanged = (out.name !== undefined && out.name !== good.name)
     || (out.description !== undefined && out.description !== (good.description || ''))
-    || (out.photoUrls !== undefined && JSON.stringify(out.photoUrls) !== JSON.stringify(good.photoUrls || []));
+    || (out.photoUrls !== undefined && JSON.stringify(out.photoUrls) !== JSON.stringify(good.photoUrls || []))
+    || (out.brand !== undefined && out.brand !== (good.brand || '')) // v143: a new brand is checked too (fake branded goods)
+    || (out.variants !== undefined && JSON.stringify(out.variants.map(v => v.label)) !== JSON.stringify((good.variants || []).map(v => v.label)));
   let needsReview = false;
   if (!forSale) patch.status = 'private';
   else if (good.status === 'private' || good.status === 'rejected' || wordsChanged) { patch.status = 'pending'; patch.reviewNote = null; needsReview = true; }
@@ -351,6 +420,9 @@ router.patch('/store/goods/:id', requireAuth, requireRole('provider'), async (re
   const updated = await db.update('storeGoods', good.id, patch);
   if (needsReview && good.status !== 'pending') await tellManagersAboutGood(me, updated);
   await store.refreshStoreLive(me.id);
+  // v143: back in stock (the good, or one of its sizes or colours) tells the people waiting for it
+  const wasOut = (g) => (Array.isArray(g.variants) && g.variants.length ? g.variants.every(v => v.stock !== null && v.stock !== undefined && v.stock < 1) : (g.stock !== null && g.stock !== undefined && g.stock < 1));
+  if (wasOut(good) && !wasOut(updated)) { try { await store.notifyBackInStock(good.id); } catch (e) { /* saved anyway */ } }
   res.json({ good: goodForOwner(updated, currencies), needsReview });
 });
 
@@ -365,6 +437,7 @@ router.post('/store/goods/:id/stock', requireAuth, requireRole('provider'), asyn
   const to = from + change;
   if (to < 0) return res.status(400).json({ error: `You only have ${from}. Stock can't go below zero.` });
   const updated = await db.update('storeGoods', good.id, { stock: to, stockLog: [...(good.stockLog || []), { at: new Date().toISOString(), from, to, reason }].slice(-30) });
+  if (from < 1 && to > 0) { try { await store.notifyBackInStock(good.id); } catch (e) { /* saved anyway */ } } // v143
   res.json({ good: goodForOwner(updated, await store.currenciesFor(await freshUser(req))) });
 });
 
@@ -395,11 +468,16 @@ router.get('/providers/:id/store', async (req, res) => {
   const settings = await store.storeSettings();
   const currencies = await store.currenciesFor(p);
   const opt = store.storeOptions(p);
+  const ratings = await require('../store-extras').ratingsFor(goods.map(g => g.id)); // v143
+  let savedIds = new Set();
+  try { const h = req.headers.authorization || ''; if (h.startsWith('Bearer ')) { const pl = require('jsonwebtoken').verify(h.slice(7), require('../auth').JWT_SECRET); savedIds = new Set((await db.filter('savedGoods', x => x.userId === pl.sub)).map(x => x.goodId)); } } catch (e) { /* public view */ }
+  const sellerRating = { rating: p.rating || null, jobs: p.jobs || 0 };
   res.json({
-    store: { name: p.store.name, description: p.store.description || '', providerId: p.id, providerName: p.name, city: p.city || '', country: p.country || '' },
-    goods: goods.map(g => { const v = goodForShopper(g, currencies); const tp = Number(g.tradePrice); return tradeViewer && Number.isFinite(tp) && tp > 0 && tp < v.price ? { ...v, tradePrice: store.money(tp) } : v; }), // v140: trade prices for verified pros
+    store: { name: p.store.name, description: p.store.description || '', providerId: p.id, providerName: p.name, city: p.city || '', country: p.country || '', ...sellerRating, hasDiscounts: (p.store.discounts || []).some(d => d.active !== false && !(d.endsAt && Date.parse(d.endsAt) <= Date.now())) },
+    returnPolicy: { ...opt.returnPolicy, words: store.returnPolicyWords(opt.returnPolicy) }, // v143
+    goods: goods.map(g => { const v = { ...goodForShopper(g, currencies, ratings[g.id]), saved: savedIds.has(g.id) }; const tp = Number(g.tradePrice); return tradeViewer && Number.isFinite(tp) && tp > 0 && tp < v.price ? { ...v, tradePrice: store.money(tp) } : v; }), // v140: trade prices for verified pros
     // v108: how the goods can reach the customer, and what the seller charges to bring them
-    delivery: { methods: opt.deliveryMethods, sellerFee: opt.deliveryFee, pickupPlace: opt.pickupPlace || [p.city, p.country].filter(Boolean).join(', '), hasPickupPin: !!opt.pickupLocation, hours: opt.hours, orderNote: opt.orderNote, feePercent: settings.deliveryFeePercent },
+    delivery: { methods: opt.deliveryMethods, sellerFee: opt.deliveryFee, deliveryPricing: opt.deliveryPricing, pickupPlace: opt.pickupPlace || [p.city, p.country].filter(Boolean).join(', '), hasPickupPin: !!opt.pickupLocation, hours: opt.hours, orderNote: opt.orderNote, feePercent: settings.deliveryFeePercent },
     currencies: currencies.map(c => ({ code: c.code, symbol: c.symbol })),
     purchaseFee: settings.feeMode === 'flat' && settings.feePaidBy === 'customer' ? settings.purchaseFee : 0, // v106/v139: nothing extra for the customer when the seller pays the fee
   });
@@ -413,8 +491,17 @@ router.post('/store/price-basket', requireAuth, async (req, res) => {
   const priced = await store.priceBasket(providerId, items, { trade: !!(buyer && buyer.role === 'provider' && buyer.verified === true && buyer.id !== providerId) }); // v140
   if (priced.error) return res.status(400).json({ error: priced.error });
   const settings = await store.storeSettings();
-  const gf = store.goodsFeeFor(priced.total, settings); // v139
-  res.json({ items: priced.items, goodsTotal: priced.total, purchaseFee: (priced.items.length && gf.paidBy === 'customer') ? gf.fee : 0 });
+  // v143: a store discount code, when one is given
+  let discount = 0, discountCode = null, discountLabel = null;
+  if ((req.body || {}).discountCode) {
+    const seller = await db.find('users', u => u.id === providerId);
+    const d = await require('../store-extras').applyDiscount(seller, req.body.discountCode, priced.total, req.user.sub);
+    if (d.error) return res.status(400).json({ code: 'BAD_CODE', error: d.error });
+    discount = d.discount; discountCode = d.code; discountLabel = d.label;
+  }
+  const goodsTotal = store.money(priced.total - discount);
+  const gf = store.goodsFeeFor(goodsTotal, settings); // v139
+  res.json({ items: priced.items, goodsBeforeDiscount: priced.total, discount, discountCode, discountLabel, goodsTotal, purchaseFee: (priced.items.length && gf.paidBy === 'customer') ? gf.fee : 0 });
 });
 
 // ── EXTRA SKILLS ───────────────────────────────────────────────────────
@@ -802,7 +889,7 @@ router.post('/admin/store/privacy-check/apply', adminGate, async (req, res) => {
 
 router.put('/admin/store/settings', adminGate, async (req, res) => {
   if (!req.adminUser.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
-  const { enabled, purchaseFee, feePaidBy, bannedWords, rulesText, deliveryFeePercent, sellerPackDays, feeMode, goodsFeePercent, goodsFeeMin, protectionFeePercent, protectionFeeMin, autoReleasePickupDays, autoReleaseDeliveryDays } = req.body || {};
+  const { enabled, purchaseFee, feePaidBy, bannedWords, rulesText, deliveryFeePercent, sellerPackDays, feeMode, goodsFeePercent, goodsFeeMin, protectionFeePercent, protectionFeeMin, autoReleasePickupDays, autoReleaseDeliveryDays, storeMinReturnDays } = req.body || {};
   const patch = {};
   const before = await store.storeSettings();
   if (feePaidBy !== undefined) {
@@ -828,6 +915,10 @@ router.put('/admin/store/settings', adminGate, async (req, res) => {
     patch.sellerPackDays = sellerPackDays;
   }
   if (enabled !== undefined) patch.enabled = enabled === true;
+  if (storeMinReturnDays !== undefined) { // v143
+    if (!Number.isInteger(storeMinReturnDays) || storeMinReturnDays < 0 || storeMinReturnDays > 30) return res.status(400).json({ error: 'The minimum return window is a whole number of days from 0 to 30' });
+    patch.storeMinReturnDays = storeMinReturnDays;
+  }
   // v139: the Market fees and automatic completion
   if (feeMode !== undefined) { if (!['percent', 'flat'].includes(feeMode)) return res.status(400).json({ error: 'The fee is a percentage or a flat fee' }); patch.feeMode = feeMode; }
   const num = (v, lo, hi, label) => { if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) throw Object.assign(new Error(label), { status: 400 }); return Math.round(v * 100) / 100; };
@@ -850,6 +941,85 @@ router.put('/admin/store/settings', adminGate, async (req, res) => {
   try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'store_settings', resourceId: `mode ${before.feeMode} -> ${settings.feeMode}; goods ${before.goodsFeePercent}% -> ${settings.goodsFeePercent}%; protection ${before.protectionFeePercent}% -> ${settings.protectionFeePercent}%; flat fee ${before.purchaseFee} -> ${settings.purchaseFee}; paid by ${before.feePaidBy} -> ${settings.feePaidBy}; stores ${before.enabled ? 'on' : 'off'} -> ${settings.enabled ? 'on' : 'off'}; rules v${before.rulesVersion} -> v${settings.rulesVersion}; banned words ${before.bannedWords.length} -> ${settings.bannedWords.length}`.slice(0, 250), ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the change still stands */ }
   res.json({ settings });
 });
+
+// ── v143: DISCOUNT CODES (the seller's own) ──────────────────────────
+router.get('/store/discounts', requireAuth, requireRole('provider'), async (req, res) => {
+  const me = await freshUser(req);
+  res.json({ discounts: (me.store && me.store.discounts) || [], max: require('../store-extras').MAX_CODES });
+});
+router.put('/store/discounts', requireAuth, requireRole('provider'), async (req, res) => {
+  const me = await freshUser(req);
+  if (!me.store || !me.store.name) return res.status(400).json({ error: 'Name your store first.' });
+  const extras = require('../store-extras');
+  const list = (req.body || {}).discounts;
+  if (!Array.isArray(list) || list.length > extras.MAX_CODES) return res.status(400).json({ error: `Up to ${extras.MAX_CODES} codes` });
+  const prev = new Map((me.store.discounts || []).map(d => [d.code, d]));
+  const out = []; const seen = new Set();
+  for (const b of list) {
+    const c = extras.cleanDiscount(b, prev.get(String((b && b.code) || '').trim().toUpperCase()));
+    if (c.error) return res.status(400).json({ error: c.error });
+    if (seen.has(c.discount.code)) return res.status(400).json({ error: `The code ${c.discount.code} is listed twice` });
+    seen.add(c.discount.code); out.push(c.discount);
+  }
+  const banned = await bannedReason(out.map(d => d.code).join(' '));
+  if (banned) return res.status(400).json({ error: `That code can't be used (${banned}).` });
+  await db.update('users', me.id, { store: { ...me.store, discounts: out } });
+  res.json({ discounts: out });
+});
+
+// ── v143: SAVED GOODS (and "tell me when it's back") ─────────────────
+router.post('/store/goods/:id/save', requireAuth, async (req, res) => {
+  const g = await db.find('storeGoods', x => x.id === req.params.id);
+  if (!g || !store.isOnShelf(g)) return res.status(404).json({ error: 'Good not found' });
+  if (g.providerId === req.user.sub) return res.status(400).json({ error: 'This is your own good.' });
+  const notifyRestock = (req.body || {}).notifyRestock !== false;
+  const had = await db.find('savedGoods', x => x.userId === req.user.sub && x.goodId === g.id);
+  if (had) { await db.update('savedGoods', had.id, { notifyRestock, notifiedAt: null }); return res.json({ saved: true }); }
+  if ((await db.filter('savedGoods', x => x.userId === req.user.sub)).length >= 200) return res.status(400).json({ error: 'You can save up to 200 goods. Remove some first.' });
+  await db.insert('savedGoods', { id: `sv_${nanoid(10)}`, userId: req.user.sub, goodId: g.id, providerId: g.providerId, notifyRestock, createdAt: new Date().toISOString() });
+  res.status(201).json({ saved: true });
+});
+router.delete('/store/goods/:id/save', requireAuth, async (req, res) => {
+  const had = await db.find('savedGoods', x => x.userId === req.user.sub && x.goodId === req.params.id);
+  if (had) await db.remove('savedGoods', had.id);
+  res.json({ saved: false });
+});
+router.get('/store/saved', requireAuth, async (req, res) => {
+  const rows = (await db.filter('savedGoods', x => x.userId === req.user.sub)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const out = [];
+  for (const r of rows) {
+    const g = await db.find('storeGoods', x => x.id === r.goodId);
+    const p = g && await db.find('users', u => u.id === g.providerId);
+    if (!g || !p) continue;
+    const onShelf = store.isOnShelf(g) && store.storeIsLive(p);
+    out.push({ goodId: g.id, providerId: p.id, storeName: (p.store && p.store.name) || '', name: g.name, photoUrl: (g.photoUrls || [])[0] || null, ...store.goodPriceFields(g, await store.currenciesFor(p)), available: onShelf, soldOut: onShelf && (Array.isArray(g.variants) && g.variants.length ? g.variants.every(v => v.stock !== null && v.stock !== undefined && v.stock < 1) : !store.inStock(g, 1)), notifyRestock: r.notifyRestock === true, savedAt: r.createdAt });
+  }
+  res.json({ saved: out });
+});
+
+// ── v143: PRODUCT REVIEWS (only from people who bought it) ───────────
+router.get('/store/goods/:id/reviews', async (req, res) => {
+  const rows = (await db.filter('goodReviews', r => r.goodId === req.params.id && r.hidden !== true)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50);
+  const r = await require('../store-extras').ratingsFor([req.params.id]);
+  res.json({ rating: r[req.params.id] || null, reviews: rows.map(x => ({ stars: x.stars, text: x.text || '', authorName: x.authorName, variantLabel: x.variantLabel || null, createdAt: x.createdAt, reply: x.reply || null })) });
+});
+router.post('/store/goods/:id/reviews', requireAuth, rateLimitReviews(), async (req, res) => {
+  const { orderId, stars, text } = req.body || {};
+  const order = await db.find('contracts', c => c.id === orderId && c.customerId === req.user.sub && c.storeOrder === true);
+  if (!order || order.status !== 'completed') return res.status(400).json({ error: 'You can review a good after the order is complete.' });
+  const line = (order.storeItems || []).find(i => i.goodId === req.params.id);
+  if (!line) return res.status(400).json({ error: 'That good wasn\'t in this order.' });
+  if (!(Number.isInteger(stars) && stars >= 1 && stars <= 5)) return res.status(400).json({ error: 'Choose 1 to 5 stars' });
+  if (text && (typeof text !== 'string' || text.length > 600)) return res.status(400).json({ error: 'A review is up to 600 characters' });
+  if (await db.find('goodReviews', r => r.goodId === req.params.id && r.orderId === order.id)) return res.status(409).json({ error: 'You\'ve already reviewed this good for this order.' });
+  if (text) { const banned = await bannedReason(text); if (banned) return res.status(400).json({ error: `That review can't be posted (${banned}).` }); }
+  const me = await freshUser(req);
+  const row = { id: `gr_${nanoid(10)}`, goodId: req.params.id, providerId: order.providerId, orderId: order.id, userId: me.id, authorName: `${String(me.name || '').split(' ')[0]} ${String(me.name || '').split(' ').slice(1).map(x => x[0] ? x[0] + '.' : '').join(' ')}`.trim(), stars, text: text ? text.trim() : '', variantLabel: line.variantLabel || null, verifiedPurchase: true, createdAt: new Date().toISOString() };
+  await db.insert('goodReviews', row);
+  try { await notify(order.providerId, '⭐', `${row.authorName} gave "${line.name}" ${stars} star${stars === 1 ? '' : 's'}${row.text ? `: "${row.text.slice(0, 80)}"` : ''}.`, null, { section: 'store' }); } catch (e) { /* posted anyway */ }
+  res.status(201).json({ review: { stars, text: row.text } });
+});
+function rateLimitReviews() { return require('express-rate-limit')({ windowMs: 60 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Please wait a little before posting more reviews.' } }); }
 
 module.exports = router;
 module.exports.bannedGoodReason = bannedGoodReason;

@@ -32,6 +32,7 @@ const REFERENCE_CATEGORIES = [
   { name: 'Carpet Cleaning', icon: '🧽' }, { name: 'Window Cleaning', icon: '🪞' },
   { name: 'Pool Cleaning & Maintenance', icon: '🏊' }, { name: 'Laundry & Dry Cleaning', icon: '👕' },
   { name: 'Moving', icon: '📦' }, { name: 'Pick & Drop', icon: '🚗' },
+  { name: 'Driver for Hire', icon: '🚘' }, // v142: drivers hired by the trip or the day, like any pro
   { name: 'Furniture Assembly', icon: '🪑' }, { name: 'Junk Removal', icon: '🗑️' },
   { name: 'Landscaping', icon: '🌿' }, { name: 'Lawn Care', icon: '🌾' },
   { name: 'Gardening', icon: '🌱' }, { name: 'Tree Trimming & Removal', icon: '🌳' },

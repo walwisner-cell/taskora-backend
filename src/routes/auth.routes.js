@@ -77,6 +77,9 @@ const signupVerifyLocks = new Set();
 
 function publicUser(u) {
   const { passwordHash, ...rest } = u;
+  // v141: payout wallet and bank numbers are only ever shown as the last 4 digits
+  if (rest.payoutMobile) rest.payoutMobile = require('../payout-methods').publicMobile(rest.payoutMobile);
+  if (rest.payoutBank) rest.payoutBank = require('../payout-methods').publicBank(rest.payoutBank);
   return rest;
 }
 
@@ -986,8 +989,24 @@ router.post('/me/close-account', requireAuth, privacyLimiter, async (req, res) =
   res.json({ ok: true });
 });
 
+// v141: the ways this person can be paid in their country, and what they
+// saved (the last 4 digits only). PayPal isn't offered in Africa.
+router.get('/payout-options', requireAuth, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me) return res.status(404).json({ error: 'Account not found' });
+  const pm = require('../payout-methods');
+  res.json({
+    country: me.country || null, africa: pm.isAfrica(me.country),
+    methods: pm.methodsFor(me.country), intlMethods: pm.intlMethodsFor(me.country), networks: pm.networksFor(me.country),
+    method: pm.normalMethod(me.payoutMethod) || null, intlMethod: me.payoutMethodIntl || null,
+    mobile: pm.publicMobile(me.payoutMobile), bank: pm.publicBank(me.payoutBank), paypalEmail: me.payoutPaypalEmail || null,
+    destination: me.payoutMethod ? pm.destinationText(me, me.payoutMethod) : null,
+    waitUntil: me.payoutMethodChangedAt && Date.now() - Date.parse(me.payoutMethodChangedAt) < 24 * 3600 * 1000 ? new Date(Date.parse(me.payoutMethodChangedAt) + 24 * 3600 * 1000).toISOString() : null,
+  });
+});
+
 router.patch('/me', requireAuth, async (req, res) => {
-  const allowed = ['proMode', 'name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'payoutPaypalEmail', 'payoutMethodIntl', 'payoutPaypalEmailIntl', 'notifPrefs', 'availability', 'pricingModel', 'price', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category', 'acceptingBookings', 'licenseExpiryDate', 'insuranceExpiryDate', 'latitude', 'longitude', 'serviceRadiusMiles'];
+  const allowed = ['pricing', 'proMode', 'name', 'email', 'phone', 'country', 'state', 'city', 'address', 'zipCode', 'payPreference', 'payoutMethod', 'payoutMobile', 'payoutBank', 'payoutPaypalEmail', 'payoutMethodIntl', 'payoutPaypalEmailIntl', 'notifPrefs', 'availability', 'pricingModel', 'price', 'twoFactorEnabled', 'businessName', 'businessRegistrationNumber', 'category', 'acceptingBookings', 'licenseExpiryDate', 'insuranceExpiryDate', 'latitude', 'longitude', 'serviceRadiusMiles'];
   const patch = {};
   for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k];
   if ('acceptingBookings' in patch && typeof patch.acceptingBookings !== 'boolean') {
@@ -1043,10 +1062,41 @@ router.patch('/me', requireAuth, async (req, res) => {
   // v140: changing where payouts go is the first thing someone does after
   // taking over an account. A change (not the first time it is set) is
   // confirmed to the owner, and payouts wait 24 hours.
+  // v141: payout details that fit the country. Mobile Money (with the
+  // network, number and registered name) or a bank account across Africa;
+  // PayPal only where it can actually pay people out (not in Africa).
   {
-    const payoutKeys = ['payoutMethod', 'payoutPaypalEmail', 'payoutMethodIntl', 'payoutPaypalEmailIntl'];
+    const pm = require('../payout-methods');
     const cur = await db.find('users', u => u.id === req.user.sub);
-    const changed = payoutKeys.filter(k => k in patch && String(patch[k] || '') !== String((cur && cur[k]) || '') && (cur && cur[k]));
+    const country = patch.country || (cur && cur.country);
+    if ('payoutMethod' in patch) {
+      patch.payoutMethod = pm.normalMethod(patch.payoutMethod);
+      const ok = pm.methodsFor(country).includes(patch.payoutMethod) || (patch.payoutMethod === 'Debit Card' && !pm.isAfrica(country));
+      if (!ok) return res.status(400).json({ error: pm.isAfrica(country) && patch.payoutMethod === 'PayPal' ? 'PayPal can\'t pay out in your country. Choose Mobile Money or Bank Transfer.' : `Choose how you're paid: ${pm.methodsFor(country).join(' or ')}` });
+    }
+    if ('payoutMethodIntl' in patch && patch.payoutMethodIntl && !pm.intlMethodsFor(country).includes(patch.payoutMethodIntl)) {
+      return res.status(400).json({ error: pm.isAfrica(country) ? 'PayPal can\'t pay out in your country. For customers abroad, use an international bank transfer.' : 'payoutMethodIntl must be PayPal, Bank Transfer, or left blank' });
+    }
+    if ('payoutMobile' in patch && patch.payoutMobile !== null) {
+      const c = pm.cleanMobile(patch.payoutMobile, country);
+      if (c.error) return res.status(400).json({ error: c.error });
+      patch.payoutMobile = c.value;
+    }
+    if ('payoutBank' in patch && patch.payoutBank !== null) {
+      const c = pm.cleanBank(patch.payoutBank);
+      if (c.error) return res.status(400).json({ error: c.error });
+      patch.payoutBank = c.value;
+    }
+  }
+  {
+    const payoutKeys = ['payoutMethod', 'payoutPaypalEmail', 'payoutMethodIntl', 'payoutPaypalEmailIntl', 'payoutMobile', 'payoutBank'];
+    const cur = await db.find('users', u => u.id === req.user.sub);
+    const pm = require('../payout-methods');
+    const sameness = (k, v) => (k === 'payoutMobile' ? JSON.stringify(pm.publicMobile(v)) : k === 'payoutBank' ? JSON.stringify(pm.publicBank(v)) : String(v || ''));
+    // v141: only a change from somewhere money could really go counts (an old
+    // default of "Bank Transfer" with no account saved was nowhere).
+    const hadPlace = (k) => (k === 'payoutMethod' ? !!(cur && cur.payoutMethod && (pm.destinationText(cur, cur.payoutMethod) || cur.payoutMethod === 'Debit Card')) : !!(cur && cur[k]));
+    const changed = payoutKeys.filter(k => k in patch && sameness(k, patch[k]) !== sameness(k, cur && cur[k]) && hadPlace(k));
     if (changed.length) {
       patch.payoutMethodChangedAt = new Date().toISOString();
       try { await notify(req.user.sub, '🔒', 'Where your payouts go was just changed. For your safety, payouts wait 24 hours after a change. If this wasn\'t you, change your password now and contact support.', 'payoutAlerts', { section: 'settings' }); } catch (e) { /* the change still saves */ }
@@ -1129,6 +1179,15 @@ router.patch('/me', requireAuth, async (req, res) => {
   // ever updated for the first two options and silently rejected the
   // third, so a provider choosing "Both" in Settings could never
   // actually save it.
+  // v141: per job, per hour, per day or per trip, with an optional price list
+  if ('pricing' in patch) {
+    if (req.user.role !== 'provider') return res.status(400).json({ error: 'Only pros set prices' });
+    const cur = await db.find('users', u => u.id === req.user.sub);
+    const c = require('../pricing').cleanPricing(patch.pricing, cur);
+    if (c.error) return res.status(400).json({ error: c.error });
+    patch.pricing = c.pricing;
+    Object.assign(patch, require('../pricing').legacyFields(c.pricing, cur));
+  }
   if ('pricingModel' in patch && !['hourly', 'negotiable', 'both'].includes(patch.pricingModel)) {
     return res.status(400).json({ error: 'Pricing model must be hourly, negotiable, or both' });
   }

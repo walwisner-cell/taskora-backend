@@ -36,6 +36,8 @@ async function sweepUnpackedStoreOrders() {
   for (const o of orders) {
     try { if (await refundOne(o)) n++; } catch (e) { console.error('[store-order-sweep] one order failed:', o.id, e.message); }
   }
+  // v143: returns the seller didn't answer, or didn't confirm getting back
+  try { await require('./routes/orders.routes').sweepReturns(); } catch (e) { console.error('[store-order-sweep] returns:', e.message); }
   return n;
 }
 module.exports = { sweepUnpackedStoreOrders, refundOne };

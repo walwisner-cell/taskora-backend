@@ -53,6 +53,12 @@ const STORE_DEFAULTS = {
   // days unless the buyer reports a problem (collected / delivered).
   autoReleasePickupDays: 3,
   autoReleaseDeliveryDays: 7,
+  // v143: every business store accepts returns of faulty, wrong, damaged or
+  // not-as-described goods for at least this many days after the order is
+  // complete (Jumia: 7 days). The seller's money for the order waits until
+  // then, so a refund is always possible. A store can offer longer, and
+  // change-of-mind returns too. 0 = no returns after the order completes.
+  storeMinReturnDays: 7,
 };
 // v108: how goods can reach the customer.
 const DELIVERY_METHODS = ['pickup', 'seller', 'driver'];
@@ -101,6 +107,7 @@ async function storeSettings() {
       protectionFeeMin: dollarsOr(v.protectionFeeMin, STORE_DEFAULTS.protectionFeeMin),
       autoReleasePickupDays: daysOr(v.autoReleasePickupDays, STORE_DEFAULTS.autoReleasePickupDays),
       autoReleaseDeliveryDays: daysOr(v.autoReleaseDeliveryDays, STORE_DEFAULTS.autoReleaseDeliveryDays),
+      storeMinReturnDays: Number.isInteger(v.storeMinReturnDays) && v.storeMinReturnDays >= 0 && v.storeMinReturnDays <= 30 ? v.storeMinReturnDays : STORE_DEFAULTS.storeMinReturnDays, // v143
     };
   } catch (e) { /* keep the last known settings */ }
   return cached;
@@ -141,8 +148,9 @@ function protectionFeeFor(price, s) {
 function isOnShelf(g) {
   return g.forSale !== false && g.status === 'approved' && g.hidden !== true;
 }
-function inStock(g, qty = 1) {
-  return g.stock === null || g.stock === undefined || g.stock >= qty;
+function inStock(g, qty = 1, variantId) {
+  const st = stockOf(g, variantId);
+  return st === null || st >= qty;
 }
 
 // v108: a manager approves the STORE itself (its name and what it says it
@@ -199,7 +207,22 @@ function storeOptions(user) {
     pickupLocation: loc,
     hours: typeof o.hours === 'string' ? o.hours : '',
     orderNote: typeof o.orderNote === 'string' ? o.orderNote : '',
+    returnPolicy: returnPolicyOf(o.returnPolicy), // v143
+    deliveryPricing: o.deliveryPricing === 'distance' ? 'distance' : 'flat', // v143: the seller's delivery by distance (Trothen's per-km fares) or one flat charge
   };
+}
+// v143: a store's returns policy. Every store takes back faulty, wrong,
+// damaged or not-as-described goods for at least the platform minimum.
+// A store may give longer, and may accept change-of-mind returns.
+function returnPolicyOf(p) {
+  p = p || {};
+  const min = cached.storeMinReturnDays;
+  const days = Number.isInteger(p.days) && p.days >= 0 && p.days <= 30 ? Math.max(min, p.days) : min;
+  return { days, changeOfMind: p.changeOfMind === true && days > 0, conditions: typeof p.conditions === 'string' ? p.conditions.slice(0, 300) : '', returnShipping: p.returnShipping === 'seller' ? 'seller' : 'buyer' };
+}
+function returnPolicyWords(p) {
+  if (!p || !(p.days > 0)) return 'No returns after you confirm you have your goods. Check them when they arrive, and use "Report a Problem" before confirming if something is wrong.';
+  return `${p.changeOfMind ? `Returns within ${p.days} days for any reason` : `Returns within ${p.days} days if an item is faulty, wrong, damaged or not as described`}, counted from the day you confirm you have it.${p.conditions ? ' ' + p.conditions : ''} ${p.returnShipping === 'seller' ? 'The seller pays to get it back.' : 'You bring or send it back at your own cost, unless the seller sent the wrong or a faulty item.'}`;
 }
 
 // v108: prices in more than one currency. A good is priced in US dollars
@@ -215,19 +238,47 @@ async function currenciesFor(user) {
   return out;
 }
 function usdFromLocal(amount, rate) { return money(Number(amount) / (rate > 0 ? rate : 1)); }
-// The price of a good in US dollars right now.
-function goodUsdPrice(g, currencies) {
-  if (g.priceCurrency && g.priceCurrency !== 'USD' && Number(g.priceLocal) > 0) {
-    const c = (currencies || []).find(x => x.code === g.priceCurrency);
-    if (c) return Math.max(0.01, usdFromLocal(g.priceLocal, c.rate));
-  }
-  return g.price;
+// v143: a sale (a percentage off, until an optional end date) and sizes or
+// colours ("variants"), each of which may have its own price and stock.
+function saleOn(g, now) {
+  const p = Number(g && g.salePercent);
+  if (!(p >= 1 && p <= 90)) return 0;
+  if (g.saleEndsAt && Date.parse(g.saleEndsAt) <= (now || Date.now())) return 0;
+  return p;
 }
-function goodPriceFields(g, currencies) {
+function variantOf(g, variantId) {
+  return Array.isArray(g && g.variants) && variantId ? g.variants.find(v => v && v.id === variantId) || null : null;
+}
+// The full price of a good (or one of its variants) in its own currency, before any sale.
+function listAmount(g, v) {
+  if (v && Number(v.price) > 0) return Number(v.price);
+  return g.priceCurrency && g.priceCurrency !== 'USD' && Number(g.priceLocal) > 0 ? Number(g.priceLocal) : Number(g.price);
+}
+const cutBy = (amount, pct) => money(amount * (1 - pct / 100));
+// The price of a good in US dollars right now (with the sale, if one is on).
+function goodUsdPrice(g, currencies, variantId) {
+  return goodPriceFields(g, currencies, variantId).price;
+}
+function goodPriceFields(g, currencies, variantId) {
+  const v = variantOf(g, variantId);
+  const sale = saleOn(g);
+  const full = listAmount(g, v);
+  const now = sale ? cutBy(full, sale) : full;
   const c = g.priceCurrency && g.priceCurrency !== 'USD' ? (currencies || []).find(x => x.code === g.priceCurrency) : null;
-  return c && Number(g.priceLocal) > 0
-    ? { price: goodUsdPrice(g, currencies), priceCurrency: c.code, priceLocal: g.priceLocal, priceSymbol: c.symbol }
-    : { price: g.price, priceCurrency: 'USD', priceLocal: null, priceSymbol: '$' };
+  if (c && Number(g.priceLocal) > 0) {
+    const out = { price: Math.max(0.01, usdFromLocal(now, c.rate)), priceCurrency: c.code, priceLocal: now, priceSymbol: c.symbol };
+    if (sale) Object.assign(out, { salePercent: sale, wasPrice: Math.max(0.01, usdFromLocal(full, c.rate)), wasLocal: full, saleEndsAt: g.saleEndsAt || null });
+    return out;
+  }
+  const out = { price: Math.max(0.01, money(now)), priceCurrency: 'USD', priceLocal: null, priceSymbol: '$' };
+  if (sale) Object.assign(out, { salePercent: sale, wasPrice: money(full), saleEndsAt: g.saleEndsAt || null });
+  return out;
+}
+// Stock of a good, or of the variant chosen when the good has variants.
+function stockOf(g, variantId) {
+  const v = variantOf(g, variantId);
+  if (Array.isArray(g.variants) && g.variants.length) return v ? (v.stock === undefined ? null : v.stock) : 0;
+  return g.stock === undefined ? null : g.stock;
 }
 function publicStore(user) {
   return storeIsLive(user) ? { name: user.store.name } : null;
@@ -260,26 +311,36 @@ async function priceBasket(providerId, rawItems, opts = {}) {
   const currencies = await currenciesFor(provider); // v108
   const merged = new Map();
   for (const it of rawItems) {
-    if (!it || typeof it.goodId !== 'string') return { error: 'The basket could not be read. Please pick your goods again.' };
+    if (!it || typeof it.goodId !== 'string' || (it.variantId !== undefined && it.variantId !== null && typeof it.variantId !== 'string')) return { error: 'The basket could not be read. Please pick your goods again.' };
     const qty = Number(it.qty);
     if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY_PER_LINE) return { error: `Choose a quantity between 1 and ${MAX_QTY_PER_LINE} for each good.` };
-    merged.set(it.goodId, (merged.get(it.goodId) || 0) + qty);
+    const key = `${it.goodId}|${it.variantId || ''}`; // v143: each size or colour is its own line
+    merged.set(key, (merged.get(key) || 0) + qty);
   }
   const items = [];
-  for (const [goodId, qty] of merged) {
+  for (const [key, qty] of merged) {
+    const [goodId, variantRaw] = key.split('|'); const variantId = variantRaw || null;
     if (qty > MAX_QTY_PER_LINE) return { error: `Choose a quantity between 1 and ${MAX_QTY_PER_LINE} for each good.` };
     const g = goods.find(x => x.id === goodId);
     if (!g || !isOnShelf(g)) return { error: 'One of the goods you picked is no longer in the store. Open the store and pick again.' };
-    if (!inStock(g, qty)) return { error: g.stock > 0 ? `Only ${g.stock} of "${g.name}" left in the store.` : `"${g.name}" is sold out.` };
-    const pf = goodPriceFields(g, currencies);
+    const hasVariants = Array.isArray(g.variants) && g.variants.length > 0;
+    const v = variantOf(g, variantId);
+    if (hasVariants && !v) return { error: `Choose the ${g.variantName || 'option'} you want for "${g.name}".` };
+    if (!hasVariants && variantId) return { error: 'One of the goods you picked has changed. Open the store and pick again.' };
+    const label = v ? `${g.name} (${v.label})` : g.name;
+    const st = stockOf(g, variantId);
+    if (!inStock(g, qty, variantId)) return { error: st > 0 ? `Only ${st} of "${label}" left in the store.` : `"${label}" is sold out.` };
+    const pf = goodPriceFields(g, currencies, variantId);
     // v109: a local-money good is worked out from the whole line in local
     // money, not from a unit price already rounded to cents. A ₦100 good
     // bought 99 times used to come to ₦9,207 instead of ₦9,900.
     const cur = pf.priceCurrency !== 'USD' ? currencies.find(x => x.code === pf.priceCurrency) : null;
     const lineTotal = cur ? Math.max(0.01, money(Number(pf.priceLocal) * qty / (cur.rate > 0 ? cur.rate : 1))) : money(pf.price * qty);
-    const line = { goodId: g.id, name: g.name, unit: g.unit || null, unitPrice: pf.price, qty, lineTotal };
+    const line = { goodId: g.id, name: label, unit: g.unit || null, unitPrice: pf.price, qty, lineTotal };
+    if (v) { line.variantId = v.id; line.variantLabel = v.label; }
+    if (pf.salePercent) { line.salePercent = pf.salePercent; line.wasUnitPrice = pf.wasPrice; }
     const tp = Number(g.tradePrice);
-    if (opts.trade && Number.isFinite(tp) && tp > 0 && tp < pf.price) { // v140: trade price for pros, in US dollars
+    if (opts.trade && !v && Number.isFinite(tp) && tp > 0 && tp < pf.price) { // v140: trade price for pros, in US dollars (not on a size or colour with its own price)
       line.unitPrice = money(tp); line.lineTotal = money(tp * qty); line.tradePrice = true; line.shelfUnitPrice = pf.price;
       items.push(line); continue;
     }
@@ -290,21 +351,52 @@ async function priceBasket(providerId, rawItems, opts = {}) {
   return { items, total: money(items.reduce((s, i) => s + i.lineTotal, 0)) };
 }
 
+// v143: changes the stock of a good, or of one size or colour of it, by
+// delta (negative = sold). Returns { before, after } (null when not counted).
+async function adjustStock(goodId, variantId, delta, soldDelta) {
+  const g = await db.find('storeGoods', x => x.id === goodId);
+  if (!g) return null;
+  const patch = { sold: Math.max(0, (g.sold || 0) + (soldDelta || 0)) };
+  let before = null, after = null, label = g.name;
+  if (variantId && Array.isArray(g.variants) && g.variants.some(v => v.id === variantId)) {
+    patch.variants = g.variants.map(v => {
+      if (v.id !== variantId) return v;
+      label = `${g.name} (${v.label})`;
+      if (v.stock === null || v.stock === undefined) return v;
+      before = v.stock; after = Math.max(0, v.stock + delta);
+      return { ...v, stock: after };
+    });
+  } else if (g.stock !== null && g.stock !== undefined) {
+    before = g.stock; after = Math.max(0, g.stock + delta); patch.stock = after;
+  }
+  await db.update('storeGoods', g.id, patch);
+  if (before !== null && before === 0 && after > 0) { try { await notifyBackInStock(g.id); } catch (e) { /* the change still stands */ } }
+  return { good: g, before, after, label };
+}
+// v143: people who saved a good and asked to be told are told when it's back.
+async function notifyBackInStock(goodId) {
+  const g = await db.find('storeGoods', x => x.id === goodId);
+  if (!g || !isOnShelf(g)) return 0;
+  const savers = await db.filter('savedGoods', s => s.goodId === goodId && s.notifyRestock === true && !s.notifiedAt);
+  const owner = await db.find('users', u => u.id === g.providerId);
+  const { notify } = require('./notify');
+  for (const s of savers) {
+    await notify(s.userId, '🔔', `"${g.name}" is back in stock${owner && owner.store && owner.store.name ? ` at ${owner.store.name}` : ''}.`, null, { section: 'saved' });
+    await db.update('savedGoods', s.id, { notifiedAt: new Date().toISOString() });
+  }
+  return savers.length;
+}
 // Stock is held the moment a booking is made, so two customers can't
 // both buy the last one, and given back if the booking doesn't go ahead.
 async function holdStock(items) {
   for (const it of items || []) {
-    const g = await db.find('storeGoods', x => x.id === it.goodId);
-    if (g && g.stock !== null && g.stock !== undefined) {
-      const left = Math.max(0, g.stock - it.qty);
-      await db.update('storeGoods', g.id, { stock: left, sold: (g.sold || 0) + it.qty });
-      // v106: tell the pro when a sale takes a good down to its warning level.
-      const warnAt = (g.lowStockAt === null || g.lowStockAt === undefined) ? 0 : g.lowStockAt;
-      if (left <= warnAt && g.stock > warnAt) {
-        try { await require('./notify').notify(g.providerId, '📦', left === 0 ? `"${g.name}" is now sold out in your store.` : `"${g.name}" is running low: ${left} left.`, null, { section: 'store' }); } catch (e) { /* the sale still stands */ }
+    const r = await adjustStock(it.goodId, it.variantId || null, -it.qty, it.qty);
+    // v106: tell the pro when a sale takes a good down to its warning level.
+    if (r && r.before !== null) {
+      const warnAt = (r.good.lowStockAt === null || r.good.lowStockAt === undefined) ? 0 : r.good.lowStockAt;
+      if (r.after <= warnAt && r.before > warnAt) {
+        try { await require('./notify').notify(r.good.providerId, '📦', r.after === 0 ? `"${r.label}" is now sold out in your store.` : `"${r.label}" is running low: ${r.after} left.`, null, { section: 'store' }); } catch (e) { /* the sale still stands */ }
       }
-    } else if (g) {
-      await db.update('storeGoods', g.id, { sold: (g.sold || 0) + it.qty });
     }
   }
 }
@@ -319,7 +411,7 @@ function reserveStock(items) {
     for (const it of items || []) {
       const g = await db.find('storeGoods', x => x.id === it.goodId);
       if (!g || !isOnShelf(g)) return { error: 'One of the goods you picked is no longer in the store. Open the store and pick again.' };
-      if (!inStock(g, it.qty)) return { error: g.stock > 0 ? `Only ${g.stock} of "${g.name}" left in the store.` : `"${g.name}" is sold out.` };
+      if (!inStock(g, it.qty, it.variantId || null)) { const st = stockOf(g, it.variantId || null); return { error: st > 0 ? `Only ${st} of "${it.name || g.name}" left in the store.` : `"${it.name || g.name}" is sold out.` }; }
     }
     await holdStock(items);
     return { ok: true };
@@ -330,13 +422,7 @@ function reserveStock(items) {
 }
 // Undo a reservation that never became an order (payment failed).
 async function releaseStock(items) {
-  for (const it of items || []) {
-    const g = await db.find('storeGoods', x => x.id === it.goodId);
-    if (!g) continue;
-    const patch = { sold: Math.max(0, (g.sold || 0) - it.qty) };
-    if (g.stock !== null && g.stock !== undefined) patch.stock = g.stock + it.qty;
-    await db.update('storeGoods', g.id, patch);
-  }
+  for (const it of items || []) await adjustStock(it.goodId, it.variantId || null, it.qty, -it.qty);
 }
 async function giveBackStock(contract) {
   if (!contract || !Array.isArray(contract.storeItems) || !contract.storeItems.length) return false;
@@ -352,13 +438,7 @@ async function giveBackStock(contract) {
     if ((dh.pickup && dh.pickup.length) || (dh.dropoff && dh.dropoff.length)) return false;
   }
   await db.update('contracts', fresh.id, { storeStockGivenBack: true });
-  for (const it of fresh.storeItems) {
-    const g = await db.find('storeGoods', x => x.id === it.goodId);
-    if (!g) continue;
-    const patch = { sold: Math.max(0, (g.sold || 0) - it.qty) };
-    if (g.stock !== null && g.stock !== undefined) patch.stock = g.stock + it.qty;
-    await db.update('storeGoods', g.id, patch);
-  }
+  for (const it of fresh.storeItems) await adjustStock(it.goodId, it.variantId || null, it.qty, -it.qty);
   return true;
 }
 
@@ -384,5 +464,6 @@ module.exports = {
   DELIVERY_METHODS, DELIVERY_LABELS, DRIVER_SKILL, VEHICLES, storeApproval, whyNotLive, WHY_NOT_LIVE_WORDS, storeOptions,
   currenciesFor, usdFromLocal, goodUsdPrice, goodPriceFields,
   priceBasket, holdStock, reserveStock, releaseStock, giveBackStock,
+  saleOn, variantOf, stockOf, adjustStock, notifyBackInStock, returnPolicyOf, returnPolicyWords, // v143
   approvedSkills, hasSkill,
 };

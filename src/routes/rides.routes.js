@@ -21,6 +21,8 @@ const { contractStatusLocks } = require('../contract-locks');
 const { getSetting, setSetting } = require('../platform-settings');
 const { distanceInMiles, isValidCoordinate } = require('../geo-distance');
 const ridePass = require('../ride-pass');
+const rideFares = require('../ride-fares'); // v142: Trothen's fares by distance and time, per country and vehicle
+const { routeTrip } = require('../road-route'); // v142: the real road distance, when a routing service is set
 
 const router = express.Router();
 const KM_PER_MILE = 1.609344;
@@ -168,7 +170,11 @@ router.get('/rides/drivers', requireAuth, requireRole('customer'), lookupLimiter
   const km = kmBetween(pickup, drop);
   if (km === null) return res.status(400).json({ error: 'Pin where you are being picked up and where you are going.' });
   const maxKm = await getSetting('rideMaxKm'), searchKm = await getSetting('rideSearchKm');
-  if (km * ROAD_FACTOR > maxKm) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km. This trip is further than that.` });
+  // v142: the trip by road (distance and minutes), worked out once per kind of vehicle
+  const trips = {}; const tripFor = async (v) => trips[v] || (trips[v] = await routeTrip(pickup, drop, v));
+  const carTrip = await tripFor('car');
+  if (carTrip.km > maxKm) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km. This trip is further than that.` });
+  const fareTable = await rideFares.tableFor(me.country), rateRows = await db.all('exchangeRates');
   const noBikes = await motorbikeBlockedNow();
   const cashOn = (await getSetting('rideCashEnabled')) === true;
   const busyIds = new Set((await db.filter('contracts', c => c.ride && OPEN_STATUSES.includes(c.status))).map(c => c.providerId)); // a driver with a ride open is not offered another
@@ -178,11 +184,15 @@ router.get('/rides/drivers', requireAuth, requireRole('customer'), lookupLimiter
     const loc = u.rideDriver.lastLocation;
     const away = loc ? kmBetween(loc, pickup) : null;
     if (away === null || away > searchKm) continue;
-    rows.push({ ...publicDriver(u), awayKm: away, fare: quote(u, km), seats: RIDE_VEHICLES[u.rideDriver.vehicle], cashOk: cashOn && u.rideDriver.acceptsCash === true && !!(await ridePass.activePass(u.id)) });
+    const f = await rideFares.fareFor(u, await tripFor(u.rideDriver.vehicle), { table: fareTable, rateRows });
+    rows.push({ ...publicDriver(u), awayKm: away, fare: f.fare, fareLocal: f.local, currency: f.currency, symbol: f.symbol, trothenFare: f.proposed, trothenFareLocal: f.proposedLocal, fareAdjust: f.adjust, fareSource: f.source, seats: RIDE_VEHICLES[u.rideDriver.vehicle], cashOk: cashOn && u.rideDriver.acceptsCash === true && !!(await ridePass.activePass(u.id)) });
   }
   rows.sort((a, b) => a.awayKm - b.awayKm || (b.rating || 0) - (a.rating || 0));
   const po = await require('../customer-payments').optionsFor(me.country);
-  res.json({ available: true, tripKm: Math.round(km * ROAD_FACTOR * 10) / 10, drivers: rows.slice(0, 10), feePercent: await getSetting('rideFeePercent'), appPay: ['card', 'simulated'].includes(po.protectedMode), payMode: po.protectedMode }); // v125
+  // v142: Trothen's fare for each kind of vehicle, so the rider sees the going rate even before choosing
+  const trothenFares = {};
+  if (fareTable) for (const v of Object.keys(fareTable.vehicles || {})) { if (RIDE_VEHICLES[v] < passengers || (noBikes && v === 'motorbike')) continue; const f = await rideFares.fareFor({ country: me.country, rideDriver: { vehicle: v } }, await tripFor(v), { table: fareTable, rateRows }); trothenFares[v] = { fare: f.proposed, local: f.proposedLocal, currency: f.currency, symbol: f.symbol, minutes: (await tripFor(v)).minutes }; }
+  res.json({ available: true, tripKm: carTrip.km, tripMinutes: carTrip.minutes, routeSource: carTrip.source, trothenFares, offerFloorPercent: fareTable ? (Number.isFinite(Number(fareTable.offerFloor)) ? Number(fareTable.offerFloor) : 70) : null, drivers: rows.slice(0, 10), feePercent: await getSetting('rideFeePercent'), appPay: ['card', 'simulated'].includes(po.protectedMode), payMode: po.protectedMode }); // v125
 });
 
 const bookInFlight = new Set();
@@ -211,14 +221,23 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
     if (driver.rideDriver.vehicle === 'motorbike' && await motorbikeBlockedNow()) return res.status(400).json({ error: 'Motorbike rides are paused at this hour. Choose another vehicle.' });
     const km = kmBetween(pk.point, dp.point);
     const maxKm = await getSetting('rideMaxKm');
-    if (km === null || km * ROAD_FACTOR > maxKm) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km.` });
+    if (km === null) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km.` });
     if (km < 0.1) return res.status(400).json({ error: 'The pickup and the destination are the same place.' });
-    const fare = quote(driver, km);
+    // v142: the fare from the road distance and time: Trothen's fare for this vehicle (within the driver's band), or the driver's own rates where no fare table is set
+    const trip = await routeTrip(pk.point, dp.point, driver.rideDriver.vehicle);
+    if (trip.km > maxKm) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km.` });
+    const priced = await rideFares.fareFor(driver, trip);
+    const fare = priced.fare;
+    const local = (usd, l) => (priced.local != null ? ` (${priced.symbol}${Math.round(l != null ? l : usd * priced.rate).toLocaleString('en-US')})` : '');
     // v125: the rider can offer their own fare instead (the driver accepts, suggests another, or declines).
     const offerRaw = b.offerFare;
     const offerFare = offerRaw === undefined || offerRaw === null || offerRaw === '' ? null : money(Number(offerRaw));
-    if (offerFare !== null && !(offerFare >= 1 && offerFare <= 100000)) return res.status(400).json({ error: 'Offer a fare of at least $1.' });
+    if (offerFare !== null && !(offerFare >= 0.25 && offerFare <= 100000)) return res.status(400).json({ error: 'Offer a fare of at least $0.25.' }); // v142: short rides in L$ can be under $1
     const isOffer = offerFare !== null && Math.abs(offerFare - fare) > 0.009;
+    if (isOffer) { // v142: an offer can't be far below the fare
+      const floor = await rideFares.offerFloor(driver.country, fare);
+      if (floor != null && offerFare < floor) return res.status(400).json({ code: 'OFFER_TOO_LOW', floor, error: `Offer at least $${floor.toFixed(2)}${local(floor)} for this trip. Lower offers aren't fair to drivers.` });
+    }
     if (!isOffer && (b.expectedFare === undefined || Math.abs(Number(b.expectedFare) - fare) > 0.009)) {
       return res.status(409).json({ code: 'PRICE_CHANGED', fare, error: `${driver.name}'s fare for this trip is now $${fare.toFixed(2)}. Check it and approve again.` });
     }
@@ -257,7 +276,8 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
       providerResponseDeadline: new Date(Date.now() + minutes * 60 * 1000).toISOString(),
       createdAt: new Date().toISOString(),
       ride: {
-        pickup: pk.point, dropoff: dp.point, km: Math.round(km * ROAD_FACTOR * 10) / 10, passengers,
+        pickup: pk.point, dropoff: dp.point, km: trip.km, minutes: trip.minutes, passengers,
+        fare: { source: priced.source, local: priced.local, currency: priced.currency, trothenFare: priced.proposed, trothenFareLocal: priced.proposedLocal, adjust: priced.adjust, ...priced.detail }, // v142: how the fare was worked out
         vehicle: driver.rideDriver.vehicle, plate: driver.rideDriver.plate,
         pin: String(crypto.randomInt(1000, 10000)), pinAttempts: 0, pinLockedUntil: null,
         cash, shareToken: nanoid(24), startedAt: null, endedAt: null, driverArrivedAt: null, live: null, sos: [],
@@ -272,8 +292,8 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
       return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be started, so you were not charged and no ride was requested. Please try again.' });
     }
     await db.insert('contracts', contract);
-    if (contract.status === 'pending_provider_confirmation') await notify(driver.id, '🛵', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km, $${fare.toFixed(2)}${cash ? ', the rider pays you in CASH' : ''}). Answer within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
-    else if (isOffer) await notify(driver.id, '💬', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km). The rider offers $${offerFare.toFixed(2)} (your fare is $${fare.toFixed(2)})${cash ? ', paid in CASH' : ''}. Accept it, suggest a fare, or decline within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
+    if (contract.status === 'pending_provider_confirmation') await notify(driver.id, '🛵', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km, $${fare.toFixed(2)}${local(fare, priced.local)}${cash ? ', the rider pays you in CASH' : ''}). Answer within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
+    else if (isOffer) await notify(driver.id, '💬', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km). The rider offers $${offerFare.toFixed(2)}${local(offerFare)} (your fare is $${fare.toFixed(2)}${local(fare, priced.local)})${cash ? ', paid in CASH' : ''}. Accept it, suggest a fare, or decline within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
     res.status(201).json({ ride: await rideView(contract, me.id), payment: escrow ? custPay.publicPayment(escrow) : null });
   } finally {
     bookInFlight.delete(me.id);
@@ -296,6 +316,7 @@ async function rideView(c, viewerId) {
     negotiation: c.status === 'pending_agreement' ? (Array.isArray(c.negotiation) && c.negotiation.length ? c.negotiation : [{ by: 'customer', amount: c.amount, at: c.createdAt }]) : null,
     waitingOn: c.status === 'pending_agreement' ? (c.waitingOn || 'provider') : null,
     driverFare: c.driverFare || null,
+    local: r.fare && r.fare.local != null && c.driverFare ? { per: c.driverFare / r.fare.local, symbol: require('../currency-data').currencyForCountry(driver && driver.country).symbol || r.fare.currency, currency: r.fare.currency } : null, // v142: to show and type fares in local money
     payDueAt: c.status === 'awaiting_payment' ? (c.paymentDueAt || null) : null,
     pickup: r.pickup, dropoff: r.dropoff, km: r.km, passengers: r.passengers,
     fare: c.amount, fee: c.serviceFee, totalPaid: money((c.amount || 0) + (c.serviceFee || 0)), cash: r.cash === true, payInCash: r.cash === true ? c.amount : null,
@@ -343,13 +364,22 @@ function driverState(u) {
   return {
     status: r.status || 'none', vehicle: r.vehicle || null, make: r.make || '', plate: r.plate || '', licenceNumber: r.licenceNumber || '', licenceExpiry: r.licenceExpiry || '', insuranceExpiry: r.insuranceExpiry || '', roadworthyExpiry: r.roadworthyExpiry || '',
     acceptsCash: r.acceptsCash === true, helmet: r.helmet === true, docs: Object.fromEntries(Object.keys(DOC_KINDS).map(k => [k, !!(r.docs && r.docs[k])])),
-    rates: rates(u), online: isOnline(u), onlineUntil: isOnline(u) ? r.onlineUntil : null, rejectReason: r.rejectReason || null,
+    rates: rates(u), fareAdjust: Number(r.fareAdjust) || 0, delivers: r.delivers !== false, online: isOnline(u), onlineUntil: isOnline(u) ? r.onlineUntil : null, rejectReason: r.rejectReason || null,
   };
 }
 router.get('/rides/driver/me', requireAuth, requireRole('provider'), async (req, res) => {
   const u = await db.find('users', x => x.id === req.user.sub);
   const byVehicle = {}; for (const v of Object.keys(RIDE_VEHICLES)) byVehicle[v] = await requiredDocs(u.country, v);
-  res.json({ ...driverState(u), requiredDocs: await requiredDocs(u.country, u.rideDriver && u.rideDriver.vehicle), requiredByVehicle: byVehicle, rules: await rulesState(u), commissionPercent: await getSetting('rideCommissionPercent'), availableHere: await ridesOnFor(u.country), country: u.country, vehicles: RIDE_VEHICLES, docKinds: DOC_KINDS, feePercent: await getSetting('rideFeePercent'),
+  // v142: Trothen's fares for this driver's country and vehicle, with examples at their own setting
+  let fareTable = null;
+  const t = await rideFares.tableFor(u.country), veh = u.rideDriver && u.rideDriver.vehicle;
+  if (t && veh && t.vehicles && t.vehicles[veh]) {
+    const { CITY_KMH } = require('../road-route'); const rows = await db.all('exchangeRates');
+    const examples = [];
+    for (const km of [2, 5, 10]) { const trip = { km, minutes: Math.round(km / (CITY_KMH[veh] || 20) * 60), source: 'estimate' }; const f = await rideFares.fareFor(u, trip, { table: t, rateRows: rows }); examples.push({ km, minutes: trip.minutes, local: f.local, fare: f.fare, trothenLocal: f.proposedLocal }); }
+    fareTable = { currency: t.currency, symbol: require('../currency-data').currencyForCountry(t.country).symbol, band: Number.isFinite(Number(t.band)) ? Number(t.band) : 20, row: t.vehicles[veh], fuelFactor: rideFares.fuelFactor(t), nightPct: Number((t.night || {}).pct) || 0, examples };
+  }
+  res.json({ ...driverState(u), fareTable, requiredDocs: await requiredDocs(u.country, u.rideDriver && u.rideDriver.vehicle), requiredByVehicle: byVehicle, rules: await rulesState(u), commissionPercent: await getSetting('rideCommissionPercent'), availableHere: await ridesOnFor(u.country), country: u.country, vehicles: RIDE_VEHICLES, docKinds: DOC_KINDS, feePercent: await getSetting('rideFeePercent'),
     passEnabled: (await getSetting('ridePassEnabled')) !== false, passPlans: await ridePass.plans(), pass: await ridePass.summary(u.id), cashEnabled: (await getSetting('rideCashEnabled')) === true });
 });
 // v113: buy a Driver Pass. The price the driver saw must still be the price.
@@ -442,12 +472,29 @@ router.post('/rides/driver/submit', requireAuth, requireRole('provider'), async 
 router.put('/rides/driver/rates', requireAuth, requireRole('provider'), async (req, res) => {
   const u = await db.find('users', x => x.id === req.user.sub);
   if (!u.rideDriver) return res.status(400).json({ error: 'Apply to be a ride driver first.' });
+  // v142: where Trothen sets the fares, a driver chooses how far above or below them to be (within the band)
+  const table = await rideFares.tableFor(u.country);
+  if (table && (req.body || {}).fareAdjust !== undefined) {
+    const band = Number.isFinite(Number(table.band)) ? Number(table.band) : 20, a = Number(req.body.fareAdjust);
+    if (!Number.isInteger(a) || a < -band || a > band) return res.status(400).json({ error: `Choose from ${band}% below to ${band}% above the Trothen fare` });
+    const rideDriver = { ...u.rideDriver, fareAdjust: a };
+    await db.update('users', u.id, { rideDriver });
+    return res.json(driverState({ ...u, rideDriver }));
+  }
   const { baseFee, perKm } = req.body || {};
   if (typeof baseFee !== 'number' || !(baseFee >= 0.5) || baseFee > 100) return res.status(400).json({ error: 'Your starting fare must be between $0.50 and $100' });
   if (typeof perKm !== 'number' || perKm < 0 || perKm > 20) return res.status(400).json({ error: 'Your price per kilometre must be between $0 and $20' });
   const rideDriver = { ...u.rideDriver, rates: { baseFee: money(baseFee), perKm: Math.round(perKm * 10000) / 10000 } };
   await db.update('users', u.id, { rideDriver });
   res.json(driverState({ ...u, rideDriver }));
+});
+// v143: an approved driver also carries store and Market deliveries, unless they switch it off.
+router.put('/rides/driver/delivers', requireAuth, requireRole('provider'), async (req, res) => {
+  const u = await db.find('users', x => x.id === req.user.sub);
+  if (!u.rideDriver) return res.status(400).json({ error: 'Apply to be a ride driver first.' });
+  const rideDriver = { ...u.rideDriver, delivers: (req.body || {}).on !== false };
+  await db.update('users', u.id, { rideDriver });
+  res.json({ delivers: rideDriver.delivers });
 });
 router.post('/rides/driver/online', requireAuth, requireRole('provider'), async (req, res) => {
   const u = await db.find('users', x => x.id === req.user.sub);
@@ -458,6 +505,11 @@ router.post('/rides/driver/online', requireAuth, requireRole('provider'), async 
     if (u.rideDriver.vehicle === 'motorbike' && await motorbikeBlockedNow()) return res.status(403).json({ error: 'Motorbike rides are paused at this hour.' });
     if (!isValidCoordinate(latitude, longitude)) return res.status(400).json({ error: 'We need your location to show you to riders nearby. Allow location and try again.' });
     const busy = await db.find('contracts', c => c.providerId === u.id && c.ride && OPEN_STATUSES.includes(c.status));
+    // v142: drivers approved before Driver for Hire existed get it the first time they go online
+    if (u.category !== 'Driver for Hire' && !(u.extraSkills || []).some(x => x.category === 'Driver for Hire') && (u.extraSkills || []).length < require('../store').MAX_EXTRA_SKILLS && await db.find('categories', c => c.name === 'Driver for Hire' && c.active)) {
+      const now = new Date().toISOString();
+      await db.update('users', u.id, { extraSkills: [...(u.extraSkills || []), { category: 'Driver for Hire', status: 'approved', requestedAt: now, decidedAt: now, via: 'rides' }] });
+    }
     const rideDriver = { ...u.rideDriver, online: true, onlineUntil: new Date(Date.now() + 12 * 3600 * 1000).toISOString(), lastLocation: { latitude, longitude, at: new Date().toISOString() } };
     await db.update('users', u.id, { rideDriver });
     return res.json({ ...driverState({ ...u, rideDriver }), busy: !!busy });
@@ -681,7 +733,21 @@ router.post('/admin/rides/applications/:userId/decision', gate, async (req, res)
     if (r.status !== 'pending' || need.some(k => !(r.docs && r.docs[k]))) return res.status(400).json({ error: 'Only a submitted application with every required document can be approved.' });
   }
   const status = decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'suspended';
-  await db.update('users', u.id, { rideDriver: { ...r, status, online: false, onlineUntil: null, rejectReason: decision === 'approve' ? null : why, reviewedBy: req.adminUser.id, reviewedAt: new Date().toISOString() } });
+  // v142: an approved driver is also listed like any pro, under "Driver for Hire" (hired by the trip or
+  // the day), since their licence and vehicle were just checked. Paused again if their driving is.
+  const DRIVER_CAT = 'Driver for Hire';
+  let extraSkills = Array.isArray(u.extraSkills) ? u.extraSkills.slice() : null;
+  const catOn = await db.find('categories', c => c.name === DRIVER_CAT && c.active);
+  if (catOn && u.category !== DRIVER_CAT) {
+    const now = new Date().toISOString(); const list = extraSkills || [];
+    const had = list.find(s => s.category === DRIVER_CAT);
+    if (decision === 'approve') {
+      if (had && had.via === 'rides') Object.assign(had, { status: 'approved', decidedAt: now });
+      else if (!had && list.length < require('../store').MAX_EXTRA_SKILLS) list.push({ category: DRIVER_CAT, status: 'approved', requestedAt: now, decidedAt: now, via: 'rides' });
+    } else if (had && had.via === 'rides') Object.assign(had, { status: 'paused', decidedAt: now });
+    extraSkills = list;
+  }
+  await db.update('users', u.id, { ...(extraSkills ? { extraSkills } : {}), rideDriver: { ...r, status, online: false, onlineUntil: null, rejectReason: decision === 'approve' ? null : why, reviewedBy: req.adminUser.id, reviewedAt: new Date().toISOString() } });
   try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'ride_driver', resourceId: `${decision} ${u.id}`.slice(0, 250), ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) {}
   await notify(u.id, decision === 'approve' ? '✅' : '⚠️', decision === 'approve' ? 'You are approved as a ride driver. Go to Rides and switch to online to get requests.' : `Your ride driver application was ${decision === 'reject' ? 'not approved' : 'paused'}: ${why}`, null, { section: 'rides' });
   res.json({ ok: true, status });
@@ -692,6 +758,47 @@ router.post('/admin/rides/alerts/:id/resolve', gate, async (req, res) => {
   await db.update('rideSafetyEvents', e.id, { status: 'resolved', resolvedBy: req.adminUser.id, resolvedAt: new Date().toISOString() });
   res.json({ ok: true });
 });
+// v142: Admin → Rides → Fares: Trothen's fare per country and vehicle, the
+// fuel price link, the night extra and the driver band, with what riders
+// have actually paid per km in the last 30 days.
+router.get('/admin/rides/fares', gate, async (req, res) => {
+  const tables = await rideFares.tables();
+  const since = Date.now() - 30 * 24 * 3600 * 1000;
+  const rides = await db.filter('contracts', c => c.ride && c.status === 'completed' && Date.parse(c.createdAt) >= since && c.ride.km > 0);
+  const users = new Map((await db.filter('users', u => u.rideDriver)).map(u => [u.id, u]));
+  const stats = {};
+  for (const c of rides) {
+    const d = users.get(c.providerId); const country = d ? d.country : '?'; const k = `${country}|${c.ride.vehicle}`;
+    const s = stats[k] || (stats[k] = { country, vehicle: c.ride.vehicle, rides: 0, km: 0, usd: 0, local: 0, localRides: 0, currency: (c.ride.fare && c.ride.fare.currency) || null });
+    s.rides += 1; s.km += c.ride.km; s.usd += c.amount || 0;
+    if (c.ride.fare && c.ride.fare.local != null) { s.local += (c.amount === c.driverFare ? c.ride.fare.local : (c.amount || 0) * (c.ride.fare.local / (c.driverFare || c.amount || 1))); s.localRides += 1; }
+  }
+  const list = Object.values(stats).map(s => ({ country: s.country, vehicle: s.vehicle, rides: s.rides, avgKm: Math.round(s.km / s.rides * 10) / 10, usdPerKm: Math.round(s.usd / s.km * 100) / 100, localPerKm: s.localRides === s.rides && s.currency ? Math.round(s.local / s.km) : null, currency: s.currency }));
+  res.json({ tables, vehicles: rideFares.VEHICLES, enabledCountries: await getSetting('rideEnabledCountries'), routing: !!(process.env.ROUTING_URL || '').trim(), stats: list });
+});
+router.put('/admin/rides/fares', gate, async (req, res) => {
+  if (!req.adminUser.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
+  const { country, table, remove } = req.body || {};
+  const all = { ...(await rideFares.tables()) };
+  const key = Object.keys(all).find(k => sameText(k, country)) || String(country || '').trim();
+  if (remove === true) { delete all[key]; }
+  else {
+    const c = rideFares.cleanTable(String(country || ''), table);
+    if (c.error) return res.status(400).json({ error: c.error });
+    const before = all[key];
+    all[key] = c.table;
+    // Drivers are told when their fares move because the fuel price changed.
+    if (before && rideFares.fuelFactor(before) !== rideFares.fuelFactor(c.table)) {
+      const drivers = await db.filter('users', u => u.rideDriver && u.rideDriver.status === 'approved' && sameText(u.country, key));
+      const change = Math.round((rideFares.fuelFactor(c.table) / rideFares.fuelFactor(before) - 1) * 1000) / 10;
+      for (const d of drivers) await notify(d.id, '⛽', `The fuel price changed, so Trothen's ride fares in ${key} ${change >= 0 ? 'went up' : 'went down'} by ${Math.abs(change)}%. Riders see the new fares now.`, 'bookingUpdates', { section: 'rides' });
+    }
+  }
+  await setSetting('rideFareTables', all);
+  try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'ride_fares', resourceId: String(key).slice(0, 60), ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) {}
+  res.json({ ok: true, tables: all });
+});
+
 router.put('/admin/rides/settings', gate, async (req, res) => {
   if (!req.adminUser.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
   const { docRules, enabledCountries, maxKm, searchKm, answerMinutes, feePercent, commissionPercent, requireInsurance, motorbikeNight, rulesRider, rulesDriver, autoReleaseHours, noStartHours, stuckHours, waitMinutes, trackKeepDays, passEnabled, passPlans, cashEnabled } = req.body || {};

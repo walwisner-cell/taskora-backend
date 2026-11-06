@@ -360,6 +360,10 @@ seedIfEmpty()
     const FIVE_MINUTES_MS = 5 * 60 * 1000;
     setTimeout(() => { expireOverdueBookingResponses().catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, 8000);
     setInterval(() => { expireOverdueBookingResponses().catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, FIVE_MINUTES_MS);
+    // v144: posted jobs nobody was hired for close by themselves (src/job-details.js)
+    const { sweepExpiredJobs } = require('./src/job-details');
+    setTimeout(() => { sweepExpiredJobs().catch(e => console.error('[job-expiry] Unexpected error:', e)); }, 26000);
+    setInterval(() => { sweepExpiredJobs().catch(e => console.error('[job-expiry] Unexpected error:', e)); }, 60 * 60 * 1000);
     const { sweepUnpackedStoreOrders } = require('./src/store-order-sweep');
     const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
     setTimeout(() => { sweepUnpackedStoreOrders().catch(e => console.error('[store-order-sweep] Unexpected error:', e)); }, 20000);

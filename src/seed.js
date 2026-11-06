@@ -121,6 +121,7 @@ await db.replaceAll('categories', [
   // Moving & delivery
   { id: id('cat'), name: 'Moving', icon: '📦', active: true },
   { id: id('cat'), name: 'Pick & Drop', icon: '🚗', active: true },
+  { id: id('cat'), name: 'Driver for Hire', icon: '🚘', active: true }, // v142
   { id: id('cat'), name: 'Furniture Assembly', icon: '🪑', active: true },
   { id: id('cat'), name: 'Junk Removal', icon: '🗑️', active: true },
 

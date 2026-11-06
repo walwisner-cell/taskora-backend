@@ -29,6 +29,7 @@ const SEARCH_SYNONYMS = {
   laundry: 'Laundry & Dry Cleaning', 'dry cleaning': 'Laundry & Dry Cleaning',
   mover: 'Moving', movers: 'Moving',
   delivery: 'Pick & Drop', courier: 'Pick & Drop',
+  driver: 'Driver for Hire', drivers: 'Driver for Hire', chauffeur: 'Driver for Hire', taxi: 'Driver for Hire', keke: 'Driver for Hire', 'pen pen': 'Driver for Hire', 'pen-pen': 'Driver for Hire', motorbike: 'Driver for Hire', 'motor bike': 'Driver for Hire', okada: 'Driver for Hire', boda: 'Driver for Hire', // v142
   furniture: 'Furniture Assembly', assembly: 'Furniture Assembly', ikea: 'Furniture Assembly',
   junk: 'Junk Removal', hauling: 'Junk Removal',
   landscaper: 'Landscaping', landscapers: 'Landscaping', yard: 'Landscaping',

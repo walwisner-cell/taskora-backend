@@ -46,6 +46,7 @@
     <div class="market-tabs" role="tablist" style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
       ${[['browse', 'Browse'], ['sell', 'Sell'], ['orders', 'My orders']].map(([k, l]) => `<button type="button" role="tab" class="btn-sm ${M.tab === k ? 'btn-sm-primary' : 'btn-sm-outline'}" data-mtab="${k}" onclick="marketTab('${k}')">${e(t(l))}</button>`).join('')}
     </div>
+    <div style="text-align:right;margin:-6px 0 10px;font-size:13px;"><a onclick="reportStolen()" style="color:var(--teal);cursor:pointer;font-weight:600;">🚨 ${e(t('Was something of yours stolen? Register it'))}</a></div>
     <div id="market-body"><div class="panel" style="color:var(--slate);">${e(t('Loading…'))}</div></div>`;
   try { CUSTOMER_SECTIONS.market = shell; } catch (x) {}
   try { PROVIDER_SECTIONS.market = shell; } catch (x) {}
@@ -140,6 +141,7 @@
           <div style="font-size:12.5px;color:var(--slate);">${e(t(s.sellerType === 'business' ? 'Business seller' : 'Private seller'))}${s.businessName && s.sellerType === 'business' ? ` (${e(s.businessName)})` : ''} · ${s.rating ? `★ ${Number(s.rating).toFixed(1)} (${s.ratingCount}) · ` : `${e(t('No ratings yet'))} · `}${s.sales || 0} ${e(t(s.sales === 1 ? 'sale' : 'sales'))} · ${e(t('On Trothen since'))} ${e(s.since)}${s.isNew ? ` · <span style="color:#8a5a00;font-weight:600;">${e(t('New seller'))}</span>` : ''}</div>
           ${s.sellerType === 'private' ? `<div style="font-size:12px;color:var(--slate);margin-top:2px;">${e(t('Private sellers are not businesses, so shop consumer rights may not apply. Trothen protection still covers you when you pay through Trothen.'))}</div>` : ''}</div>
       </div>
+      ${l.serialLast4 || l.proofGiven || l.ownerDeclared ? `<div style="font-size:13px;line-height:1.6;border-left:3px solid #2E8C6F;padding-left:8px;margin-bottom:8px;">${l.ownerDeclared ? `✅ ${e(t('The seller declares they own this item'))}<br>` : ''}${l.serialLast4 ? `🔢 ${e(t(l.category === 'Phones & Tablets' ? 'IMEI ending' : l.category === 'Vehicles & Parts' ? 'Chassis or engine number ending' : 'Serial number ending'))} <strong>${e(l.serialLast4)}</strong>. ${e(t(l.category === 'Phones & Tablets' ? 'Before you pay, dial *#06# on the phone and check it matches.' : 'Before you pay, check it matches the number on the item.'))} ${e(t('It is checked against items reported stolen.'))}<br>` : ''}${l.proofGiven ? `🧾 ${e(t('Proof of ownership given to Trothen'))}` : ''}</div>` : ''}
       <div style="font-size:13.5px;color:var(--slate);line-height:1.6;">📍 ${e(l.pickupPlace || l.city)}${l.protected ? `<br>🛡️ ${e(t('Buy through Trothen: your money is held until you have the item. If it isn\'t as described, report a problem and the Trothen team decides.'))}` : ''}${l.cash ? `<br>🤝 ${e(t('Meeting in person? Meet somewhere public in daylight, check the item before you pay, and never send money first.'))}` : ''}</div>`;
     const foot = document.getElementById('mkl-foot');
     if (l.mine) { foot.innerHTML = `<button class="btn-sm btn-sm-outline" onclick="v105Close('mk-listing');openMarket('sell')">${e(t('Manage in Sell'))}</button>`; return; }
@@ -274,10 +276,8 @@
       ${earn ? `<div class="panel" id="mk-earnings"><div class="panel-title">${e(t('Your Market money'))}</div>
         <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:14px;"><div>${e(t('Ready to cash out'))}<div style="font-size:20px;font-weight:800;color:var(--navy);">${money(earn.net)}</div></div><div>${e(t('Held until buyers have their items'))}<div style="font-size:20px;font-weight:800;color:var(--slate);">${money(earn.held)}</div></div>${earn.reserved && earn.reserved.amount > 0 ? `<div>${e(t('New-seller safety period'))}<div style="font-size:20px;font-weight:800;color:#8a5a00;">${money(earn.reserved.amount)}</div><div style="font-size:12px;color:var(--slate);">${e(t('payable from'))} ${e(new Date(earn.reserved.until).toLocaleDateString())}</div></div>` : ''}</div>
         ${role() === 'provider' ? `<p style="font-size:13px;color:var(--slate);margin:10px 0 0;">${e(t('Market money is paid out with your other earnings.'))} <a href="#" onclick="event.preventDefault();selectProviderSection('earnings')">${e(t('Earnings & Payouts'))}</a></p>` : `
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;">
-          <div><label class="form-label" for="mk-pm">${e(t('Paid to'))}</label><select class="form-input form-select" id="mk-pm" style="width:auto;">${['Mobile Money', 'Bank Transfer', 'PayPal'].map(m => `<option ${earn.payoutMethod === m ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
-          <div style="flex:1 1 200px;"><label class="form-label" for="mk-pe">${e(t('PayPal email (PayPal only)'))}</label><input class="form-input" id="mk-pe" value="${e(earn.payoutPaypalEmail || '')}"/></div>
-          <button class="btn-sm btn-sm-primary" ${earn.net > 0 ? '' : 'disabled'} onclick="cashOutMarket()">${e(t('Cash out'))}</button></div>`}
+        <div style="margin-top:12px;"><div style="font-weight:700;color:var(--navy);margin-bottom:6px;">${e(t('Where your money is paid'))}</div><div id="mk-payout"></div>
+          <button class="btn-sm btn-sm-primary" style="margin-top:10px;" ${earn.net > 0 ? '' : 'disabled'} onclick="cashOutMarket()">${e(t('Cash out'))}</button></div>`}
       </div>` : ''}
       ${u.role === 'provider' ? `<div class="panel" id="mk-store-cats"><div class="panel-title">${e(t('Your store in the Market'))}</div>
         <div style="font-size:13.5px;color:var(--slate);margin-bottom:8px;">${e(t('Your approved store goods show in the Market automatically. Choose up to three aisles they belong in.'))} <a href="#" onclick="event.preventDefault();selectProviderSection('store')">${e(t('My Store'))}</a></div>
@@ -288,6 +288,7 @@
         <div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${e(t('A lower price only verified pros see and pay, like a trade counter. Leave blank for no trade price.'))}</div>
         <div id="mk-trade"><span style="color:var(--slate);font-size:13px;">${e(t('Loading…'))}</span></div></div>` : ''}`;
     if (u.role === 'provider') drawTrade();
+    else if (earn && typeof payoutFormMount === 'function') payoutFormMount('mk-payout', 'mkp'); // v141: Mobile Money or bank, by country
   }
   async function drawTrade() {
     const box = document.getElementById('mk-trade'); if (!box) return;
@@ -305,10 +306,9 @@
     try { const r = await apiFetch('PUT', '/market/store-categories', { categories }); if (AUTH.user.store) AUTH.user.store.marketCategories = r.categories; showToast(t('Saved')); } catch (x) { showToast(x.message); }
   };
   window.cashOutMarket = async function () {
-    const payoutMethod = document.getElementById('mk-pm').value, payoutPaypalEmail = document.getElementById('mk-pe').value.trim();
-    if (payoutMethod === 'PayPal' && !payoutPaypalEmail) return showToast(t('Enter your PayPal email'));
+    // v141: the payout details are saved in the box above (Mobile Money or bank)
+    if (typeof payoutReady === 'function' && !payoutReady()) return showToast(t('Add where your money should be paid first, then press Save.'));
     try {
-      await apiFetch('PATCH', '/auth/me', { payoutMethod, ...(payoutMethod === 'PayPal' ? { payoutPaypalEmail } : {}) });
       await apiFetch('POST', '/payouts/request', {});
       showToast(t('Cash-out requested. You will be notified when it is sent.'));
       drawSell();
@@ -346,6 +346,12 @@
           <div class="form-group" style="flex:0 0 110px;"><label class="form-label" for="mkf-cur">${e(t('Currency'))}</label><select class="form-input form-select" id="mkf-cur">${cur.map(c => `<option value="${e(c.code)}" ${l && l.currency === c.code ? 'selected' : ''}>${e(c.code)}</option>`).join('')}</select></div>
         </div>
         <div class="form-group"><label class="form-label" for="mkf-desc">${e(t('Description'))}</label><textarea class="form-input" id="mkf-desc" rows="4" maxlength="1000">${e(l ? l.description : '')}</textarea></div>
+        <div id="mkf-own" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+          <div class="form-group" id="mkf-serial-row"><label class="form-label" for="mkf-serial" id="mkf-serial-label">${e(t('IMEI, serial or chassis number'))}</label><input class="form-input" id="mkf-serial" maxlength="40" autocomplete="off" placeholder="${l && l.serialLast4 ? e(t('Saved, ending')) + ' ' + e(l.serialLast4) : ''}"/><div id="mkf-serial-help" style="font-size:12.5px;color:var(--muted);margin-top:4px;"></div></div>
+          <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;" id="mkf-part-row"><input type="checkbox" id="mkf-part" ${l && l.isPart ? 'checked' : ''}/> ${e(t('This is a part or an accessory (no number needed)'))}</label>
+          <div class="form-group" id="mkf-proof-row"><label class="form-label">${e(t('Proof it is yours'))} <small style="font-weight:400;color:var(--slate);" id="mkf-proof-need"></small></label><div id="mkf-proof-line" style="font-size:13px;"></div><input type="file" id="mkf-proof-file" accept="image/jpeg,image/png,image/webp" style="margin-top:6px;" onchange="mkfProof(this)"/><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">${e(t('The receipt, the box showing the same number, or the registration papers. Only the Trothen team sees it; buyers see "Proof of ownership given".'))}</div></div>
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;"><input type="checkbox" id="mkf-owns" style="margin-top:3px;"/> <span>${e(t('I own this item and have the right to sell it. It is not stolen, borrowed, or still being paid for.'))} <span style="color:var(--slate);font-size:12.5px;">${e(t('Selling stolen goods is a crime. Sellers are ID-checked and every sale is recorded, so the team can help the police.'))}</span></span></label>
+        </div>
         <div class="form-group"><label class="form-label">${e(t('Photos (up to 6)'))}</label><div id="mkf-photos" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
           <input type="file" id="mkf-file" accept="image/jpeg,image/png,image/webp" multiple style="margin-top:6px;" onchange="mkfUpload(this)"/></div>
         <div class="form-group"><label class="form-label" for="mkf-place">${e(t('Where to collect it'))}</label><input class="form-input" id="mkf-place" maxlength="120" value="${e(l ? l.pickupPlace : '')}" placeholder="${e(t('An area or landmark, not your home address'))}"/>
@@ -356,7 +362,48 @@
           <label><input type="checkbox" id="mkf-cash" ${!l || l.cash ? 'checked' : ''}/> ${e(t('Buyers may also meet me in person and pay cash'))}</label>
         </div>
       </div><div class="modal-footer"><button class="confirm-btn" id="mkf-save" style="width:100%;" onclick="saveListing()">${e(t(l ? 'Save changes' : 'Put it on sale'))}</button></div>`, 600);
-    drawFormPhotos(); drawPin();
+    F.proof = l ? l.proofUrl || null : null;
+    drawFormPhotos(); drawPin(); drawOwn();
+    ['mkf-cat', 'mkf-part', 'mkf-price', 'mkf-cur'].forEach(id => { const x = document.getElementById(id); if (x) x.addEventListener(id === 'mkf-price' ? 'input' : 'change', drawOwn); });
+  };
+  // v143: what the form asks for to keep stolen goods out (src/stolen-goods.js)
+  const SERIAL_WORDS = { 'Phones & Tablets': 'IMEI (dial *#06# on the phone to see it)', 'Computers & Electronics': 'Serial number (on a sticker underneath, or in the settings)', 'Vehicles & Parts': 'Chassis (VIN) or engine number' };
+  const SERIAL_OPT = { Appliances: 'Serial number (optional)', 'Tools & Equipment': 'Serial number (optional, for generators and power tools)' };
+  function drawOwn() {
+    const cat = (document.getElementById('mkf-cat') || {}).value || '';
+    const part = (document.getElementById('mkf-part') || {}).checked;
+    const need = !!SERIAL_WORDS[cat];
+    const row = document.getElementById('mkf-serial-row'); if (!row) return;
+    row.style.display = need || SERIAL_OPT[cat] ? (need && part ? 'none' : '') : 'none';
+    document.getElementById('mkf-part-row').style.display = need ? '' : 'none';
+    document.getElementById('mkf-serial-label').textContent = t(SERIAL_WORDS[cat] || SERIAL_OPT[cat] || 'Serial number');
+    document.getElementById('mkf-serial-help').textContent = need ? t('Needed to keep stolen goods off Trothen. Buyers only see the last 4.') : t('Helps buyers trust the item. Buyers only see the last 4.');
+    const cur = (M.currencies || []).find(c => c.code === (document.getElementById('mkf-cur') || {}).value) || { rate: 1 };
+    const usd = Number((document.getElementById('mkf-price') || {}).value || 0) / (cur.rate || 1);
+    const proofNeeded = need && !part && usd >= 200;
+    document.getElementById('mkf-proof-row').style.display = need && !part ? '' : 'none';
+    document.getElementById('mkf-proof-need').textContent = t(proofNeeded ? 'needed for $200 or more' : 'optional');
+    document.getElementById('mkf-proof-line').innerHTML = F.proof ? `🧾 ${e(t('Added'))} <button type="button" class="btn-sm btn-sm-ghost" onclick="MARKET_FORM.proof=null;mkfOwn()">${e(t('Remove'))}</button>` : '';
+  }
+  window.mkfOwn = drawOwn;
+  window.mkfProof = async function (input) {
+    const f = (input.files || [])[0]; if (!f) return;
+    const fd = new FormData(); fd.append('photo', f);
+    try { const res = await fetch(API_BASE + '/market/photo', { method: 'POST', headers: { Authorization: 'Bearer ' + AUTH.token }, body: fd }); const d = await res.json().catch(() => ({})); if (!res.ok) throw new Error(d.error || 'Upload failed'); F.proof = d.url; drawOwn(); }
+    catch (x) { showToast(x.message); }
+    input.value = '';
+  };
+  window.reportStolen = function () {
+    if (needSignIn()) return;
+    v105Overlay('mk-stolen', `<div class="modal-header"><button class="modal-close" onclick="v105Close('mk-stolen')" aria-label="Close">✕</button><h3>${e(t('Register a stolen item'))}</h3><p>${e(t('If anyone tries to sell it on Trothen, the listing is held and the team contacts you.'))}</p></div>
+      <div class="modal-body"><div class="form-group"><label class="form-label" for="st-what">${e(t('What was stolen'))}</label><input class="form-input" id="st-what" maxlength="120" placeholder="${e(t('e.g. Tecno Spark 10, blue'))}"/></div>
+      <div class="form-group"><label class="form-label" for="st-serial">${e(t('IMEI, serial or chassis number'))}</label><input class="form-input" id="st-serial" maxlength="40" autocomplete="off"/><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">${e(t('A phone\'s IMEI is on its box and on your phone company\'s records.'))}</div></div>
+      <div class="form-group"><label class="form-label" for="st-police">${e(t('Police report number'))} <small style="font-weight:400;color:var(--slate);">${e(t('optional'))}</small></label><input class="form-input" id="st-police" maxlength="60"/></div></div>
+      <div class="modal-footer"><button class="confirm-btn" onclick="sendStolen()">${e(t('Register it'))}</button></div>`, 480);
+  };
+  window.sendStolen = async function () {
+    try { const r = await apiFetch('POST', '/market/stolen', { what: document.getElementById('st-what').value, serial: document.getElementById('st-serial').value, policeReport: document.getElementById('st-police').value }); v105Close('mk-stolen'); showToast(r.message); }
+    catch (x) { showToast(x.message || 'Could not register'); }
   };
   function drawFormPhotos() {
     const box = document.getElementById('mkf-photos'); if (!box) return;
@@ -393,7 +440,11 @@
       title: (v('mkf-title') || '').trim(), category: v('mkf-cat'), condition: v('mkf-cond'), price: Number(v('mkf-price')), currency: v('mkf-cur'),
       description: (v('mkf-desc') || '').trim(), photoUrls: F.photos, pickupPlace: (v('mkf-place') || '').trim(), pickupLocation: F.pin,
       protected: document.getElementById('mkf-prot').checked, driver: document.getElementById('mkf-drv').checked, cash: document.getElementById('mkf-cash').checked,
+      isPart: !!(document.getElementById('mkf-part') || {}).checked, proofUrl: F.proof || null, // v143
     };
+    const serial = ((document.getElementById('mkf-serial') || {}).value || '').trim(); if (serial) body.serial = serial;
+    if (!(document.getElementById('mkf-owns') || {}).checked) return showToast(t('Confirm that you own this item and have the right to sell it'));
+    body.ownsIt = true;
     F.busy = true;
     try {
       const r = F.id ? await apiFetch('PATCH', `/market/listings/${encodeURIComponent(F.id)}`, body) : await apiFetch('POST', '/market/listings', body);
@@ -556,7 +607,7 @@
       } catch (x) { return html; }
     };
   }
-  try { Object.assign(FRAUD_TYPE_LABELS, { market_listing_risk: 'Market Listing Held', off_platform_payment: 'Off-Platform Payment Request', market_self_dealing: 'Buying From Own Account' }); } catch (x) {}
+  try { Object.assign(FRAUD_TYPE_LABELS, { market_listing_risk: 'Market Listing Held', stolen_item_listed: 'Stolen Item Listed (urgent)', off_platform_payment: 'Off-Platform Payment Request', market_self_dealing: 'Buying From Own Account' }); } catch (x) {}
 
   // ── sign-up and Settings: services, a store, or both ────────────────
   window.proModeChanged = function (v) {

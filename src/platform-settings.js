@@ -140,6 +140,7 @@ const DEFAULTS = {
   rideWaitMinutes: 10,    // how long a driver waits at the pickup before they can report that the rider did not show
   rideTrackKeepDays: 30,  // GPS routes and last-known positions of finished rides are deleted after this many days
   rideFeePercent: 9,      // Trothen's share of a ride fare, added on top for the rider (0 to 30)
+  rideFareTables: {},     // v142: Trothen's fares per country and vehicle (Admin → Rides → Fares); a country with none uses each driver's own rates
 
   // The homepage support chat's "Chat with us" / "Call" links. Ships with
   // an obviously-fake placeholder number on purpose — flagged in every

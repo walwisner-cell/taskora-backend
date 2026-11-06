@@ -12,7 +12,7 @@ const GROUPS = [
   ['Home repairs & maintenance', /plumb|electric|hvac|air con|handyman|carpent|paint|roof|floor|locksmith|lock|appliance|pest|window install|mason|weld|contract|renovat|fence|interior/i],
   ['Cleaning', /clean|laundry|janitor/i],
   ['Outdoor & garden', /landscap|lawn|garden|tree|yard|pool/i],
-  ['Moving & delivery', /mov|pick|drop|deliver|courier|furniture|junk|haul|towing/i],
+  ['Moving & delivery', /mov|pick|drop|deliver|courier|furniture|junk|haul|towing|driver/i],
   ['Beauty & wellness', /hair|makeup|nail|massage|beauty|spa|barber|fitness|yoga|trainer/i],
   ['Lessons & tutoring', /tutor|lesson|test prep|teach|class|coach/i],
   ['Events & media', /event|photo|video|dj|cater|music|wedding|party/i],

@@ -74,7 +74,7 @@ async function calcPayout(provider) {
   const realOnly = (await require('./platform-settings').getSetting('payoutsRequireRealPayment')) === true;
   const reallyPaid = (e) => !realOnly || e.paidBy === 'code' || e.paidBy === 'card' || !!e.liberiaMoMoReference; // v125: card payments are real money too
   // v140: a new seller's personal Market sale becomes payable 3 days after it completes.
-  const reserved = (e) => { const c = contracts.find(x => x.id === e.contractId); return !!(c && c.newSellerReserve && c.completedAt && Date.now() - Date.parse(c.completedAt) < 3 * 24 * 3600 * 1000); };
+  const reserved = (e) => { const c = contracts.find(x => x.id === e.contractId); return !!(c && ((c.newSellerReserve && c.completedAt && Date.now() - Date.parse(c.completedAt) < 3 * 24 * 3600 * 1000) || require('./store-extras').returnHold(c))); }; // v143: and a store order inside its return window or with a return open
   const payableEscrow = releasedEscrow.filter(e => contractIds.has(e.contractId) && reallyPaid(e) && !reserved(e));
   // Materials advances are released as soon as they are agreed, so they are
   // tracked with their own payout field.

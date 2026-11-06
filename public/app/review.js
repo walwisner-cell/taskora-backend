@@ -38,8 +38,10 @@
     const r = document.querySelector('input[name="pw-booking"]:checked');
     return r ? r.value : 'protected';
   }
+  const pick = () => (typeof bookingPick === 'function' && currentPro ? bookingPick() : null); // v141
   function isOfferBooking() {
     if (!currentPro) return false;
+    const pk = pick(); if (pk) return pk.kind === 'offer';
     return currentPro.pricingModel === 'negotiable' || (currentPro.pricingModel === 'both' && bookingPricingChoice === 'offer');
   }
   function goodsPicked() {
@@ -56,7 +58,9 @@
     const addr = el('job-address').value.trim();
     const where = readJobWhere('book');
     if ((!addr || addr.length < 5) && !where.jobLocation && !(where.landmark && where.landmark.length >= 5)) return 'Tell your pro where the job is: pin the location, describe a landmark, or type an address';
-    if (isOfferBooking()) {
+    const pk = pick();
+    if (pk && pk.error) return pk.error;
+    if (!pk && isOfferBooking()) {
       const offerEl = el('job-offer-amount');
       const offer = offerEl ? parseFloat(offerEl.value) : 0;
       if (!offer || offer <= 0) return 'Enter your offer amount';
@@ -73,6 +77,7 @@
   }
   function jobAmount() {
     if (!currentPro) return 0;
+    const pk = pick(); if (pk) return pk.amount || 0;
     if (isOfferBooking()) { const o = el('job-offer-amount'); return o ? (parseFloat(o.value) || 0) : 0; }
     return currentPro.price * 2;
   }
@@ -139,7 +144,7 @@
 
     let priceRows = offer
       ? row(e(tr('Your offer')), `<strong>${money(job)}</strong>`)
-      : row(e(tr('Job amount')) + ` <small style="color:var(--muted);">(2 hr × ${money(currentPro.price)}/hr)</small>`, money(job));
+      : row(e(tr('Job amount')) + ` <small style="color:var(--muted);">(${pick() ? e(pick().label) : `2 hr × ${money(currentPro.price)}/hr`})</small>`, money(job));
     if (cash) priceRows += row(e(tr('Trothen service fee')), e(tr('None, cash job')));
     else if (points) priceRows += row(e(tr('Trothen service fee')), e(tr('Waived with 25 loyalty points')));
     else priceRows += row(e(tr('Trothen service fee')) + ` <small style="color:var(--muted);">(9%, $2.99–$25${mf.off ? `, ${Math.round(mf.off * 100)}% ${e(tr('off for members'))}` : ''})</small>`, money(fee));
@@ -243,11 +248,20 @@
     const footer = document.querySelector('#booking-modal .modal-footer');
     if (!footer || footer.dataset.reviewing === '1') return;
     const btn = footer.querySelector('.confirm-btn');
-    if (btn) btn.textContent = tr('Check my booking') + ' →';
+    const pk = pick();
+    if (btn) btn.textContent = pk && pk.kind === 'ask' ? tr('Send my request') + ' →' : tr('Check my booking') + ' →'; // v141
   }
 
   confirmBooking = async function () {
     const footer = document.querySelector('#booking-modal .modal-footer');
+    // v141: "Ask for a price" sends the job description straight to the pro; there's nothing to pay yet.
+    const pk = pick();
+    if (pk && pk.kind === 'ask') {
+      const desc = el('job-desc').value.trim(); const addr = el('job-address').value.trim(); const where = readJobWhere('book');
+      if (!desc || desc.length < 5) return showToast(tr('Describe the job in at least 5 characters, so the pro can price it'));
+      if ((!addr || addr.length < 5) && !where.jobLocation && !(where.landmark && where.landmark.length >= 5)) return showToast(tr('Tell your pro where the job is: pin the location, describe a landmark, or type an address'));
+      return sendPriceRequest();
+    }
     if (!footer || footer.dataset.reviewing !== '1') return showReview();
     const btn = footer.querySelector('.confirm-btn');
     if (btn) btn.disabled = true;

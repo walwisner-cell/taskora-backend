@@ -42,8 +42,14 @@ function distWords(km, country) {
 const sameText = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 
 // A driver is a verified pro with the "Pick & Drop" skill who is taking work.
+// v143: or a ride driver the team approved (licence and vehicle checked),
+// unless they switched deliveries off.
+function rideDeliverer(u) {
+  const r = u && u.rideDriver;
+  return !!(r && r.status === 'approved' && r.delivers !== false && ['motorbike', 'keke', 'car', 'van'].includes(r.vehicle));
+}
 function isDriver(u) {
-  return !!(u && u.role === 'provider' && u.verified === true && u.active !== false && u.onHold !== true && u.acceptingBookings !== false && store.hasSkill(u, store.DRIVER_SKILL));
+  return !!(u && u.role === 'provider' && u.verified === true && u.active !== false && u.onHold !== true && u.acceptingBookings !== false && (store.hasSkill(u, store.DRIVER_SKILL) || rideDeliverer(u)));
 }
 // What a driver charges: a starting price, plus a price per kilometre.
 // A driver who hasn't set these is offered at their listed price, flat.
@@ -52,7 +58,7 @@ function driverRates(u) {
   const base = Number(r.baseFee), perKm = Number(r.perKm);
   const set = Number.isFinite(base) && base > 0;
   return {
-    vehicle: store.VEHICLES.includes(r.vehicle) ? r.vehicle : null,
+    vehicle: store.VEHICLES.includes(r.vehicle) ? r.vehicle : (rideDeliverer(u) ? u.rideDriver.vehicle : null),
     baseFee: set ? money(base) : money(Number(u && u.price) > 0 ? u.price : 5),
     perKm: set && Number.isFinite(perKm) && perKm >= 0 ? Math.round(perKm * 10000) / 10000 : 0, // kept to 4 places so a price per mile converts cleanly
     isSet: set,
@@ -62,6 +68,25 @@ function quoteFor(u, km) {
   const r = driverRates(u);
   return Math.max(1, money(r.baseFee + (km ? r.perKm * km : 0)));
 }
+// v143: where Trothen sets fares for the country (Admin → Rides → Fares, in
+// L$), a delivery is priced the same way as a ride of that distance on the
+// driver's vehicle, at the driver's own setting above or below. A bicycle,
+// a truck or a country without fares keeps the driver's own delivery rates.
+async function tableQuote(country, vehicle, km, adjust) {
+  if (km == null) return null;
+  const rideFares = require('./ride-fares');
+  const t = await rideFares.tableFor(country);
+  if (!t || !t.vehicles || !t.vehicles[vehicle]) return null;
+  const { CITY_KMH } = require('./road-route');
+  const roadKm = Math.round(km * 1.3 * 10) / 10;
+  const f = await rideFares.fareFor({ country, rideDriver: { vehicle, fareAdjust: adjust || 0 } }, { km: roadKm, minutes: Math.max(1, Math.round(roadKm / (CITY_KMH[vehicle] || 20) * 60)), source: 'estimate' }, { table: t });
+  return { price: f.fare, local: f.local, currency: f.currency, symbol: f.symbol };
+}
+async function deliveryPrice(u, km) {
+  const vehicle = driverRates(u).vehicle;
+  const q = await tableQuote(u && u.country, vehicle, km, u && u.rideDriver ? u.rideDriver.fareAdjust : 0);
+  return q ? q.price : quoteFor(u, km);
+}
 
 // The drivers to offer for one order: same country as the seller, the
 // seller's own city first, then nearest to the store, then best rated.
@@ -70,7 +95,7 @@ async function suggestDrivers({ seller, dropoff, customerId, pickup }) {
   if (pickup !== undefined) opt.pickupLocation = pickup; // v139: a personal listing's own pick-up place
   const km = kmBetween(opt.pickupLocation, dropoff);
   const all = (await db.filter('users', u => isDriver(u) && u.id !== seller.id && u.id !== customerId && sameText(u.country, seller.country)));
-  const rows = all.map(u => {
+  const rows = await Promise.all(all.map(async u => {
     const rates = driverRates(u);
     const toStore = (typeof u.latitude === 'number' && typeof u.longitude === 'number') ? kmBetween({ latitude: u.latitude, longitude: u.longitude }, opt.pickupLocation) : null;
     return {
@@ -78,9 +103,9 @@ async function suggestDrivers({ seller, dropoff, customerId, pickup }) {
       city: u.city || '', rating: u.rating || null, jobs: u.jobs || 0,
       isNewPro: u.trustScoreProvisional === true || u.trustScore == null, trustScore: (u.trustScore != null && u.trustScoreProvisional !== true) ? u.trustScore : null,
       vehicle: rates.vehicle, baseFee: rates.baseFee, perKm: rates.perKm,
-      price: quoteFor(u, km), kmFromStore: toStore, sameCity: sameText(u.city, seller.city),
+      price: await deliveryPrice(u, km), kmFromStore: toStore, sameCity: sameText(u.city, seller.city),
     };
-  });
+  }));
   rows.sort((a, b) => (b.sameCity - a.sameCity)
     || ((a.kmFromStore === null ? 1e9 : a.kmFromStore) - (b.kmFromStore === null ? 1e9 : b.kmFromStore))
     || ((b.rating || 0) - (a.rating || 0)) || (a.price - b.price));
@@ -164,5 +189,6 @@ async function afterComplete(order, customerId) {
 
 module.exports = {
   DELIVERY_RESPONSE_MINUTES, MAX_DRIVERS_SUGGESTED, kmBetween, distWords, isDriver, driverRates, quoteFor, suggestDrivers,
+  rideDeliverer, tableQuote, deliveryPrice, // v143
   isLive, deliveryOf, deliveryEvent, afterCancel, afterComplete,
 };

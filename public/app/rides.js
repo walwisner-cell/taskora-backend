@@ -9,6 +9,8 @@
   const el = (id) => document.getElementById(id);
   const body = () => el('rides-body');
   const km = (x) => (x == null ? '' : x + ' km');
+  // v142: a ride fare in local money (L$) with the US$ amount, when Trothen set the fare in L$; cash is paid in L$
+  const fareL = (r, usd) => (r && r.local && r.local.per > 0 ? `${r.local.symbol}${Math.round(usd / r.local.per).toLocaleString()} (${money(usd)})` : money(usd));
   const when = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const STATUS_WORDS = { pending_agreement: 'Agreeing the fare', awaiting_payment: 'Waiting for payment', pending_provider_confirmation: 'Waiting for the driver to answer', active: 'Confirmed', completed: 'Finished', cancelled: 'Cancelled', declined: 'The driver said no', expired: 'No answer, refunded' };
 
@@ -163,15 +165,21 @@
       const r = await apiFetch('GET', `/rides/drivers?pLat=${a.latitude}&pLng=${a.longitude}&dLat=${b.latitude}&dLng=${b.longitude}&passengers=${pax}`);
       R.quote = { a, b, pax, an: (el('ridefrom-name').value || '').trim() || 'Pickup', bn: (el('rideto-name').value || '').trim() || 'Destination', fee: r.feePercent, appPay: r.appPay !== false, payMode: r.payMode };
       if (!r.drivers.length) { out.innerHTML = `<div class="ver-note">${e(tr('No drivers are online near you right now. Try again in a few minutes.'))}</div>`; return; }
-      out.innerHTML = `<div style="color:var(--slate);font-size:13.5px;margin-bottom:6px;">${e(tr('About'))} ${e(km(r.tripKm))}. ${e(tr('Fares are estimates from the distance; the driver sets their own price.'))}</div>` + r.drivers.map(d => `
+      R.floorPct = r.offerFloorPercent; // v142
+      R.localOf = {}; r.drivers.forEach(d => { if (d.fareLocal != null && d.fareLocal > 0) R.localOf[d.id] = { per: d.fare / d.fareLocal, symbol: d.symbol || '' }; }); // offers can be typed in L$
+      const tf = r.trothenFares || {}, tfKeys = Object.keys(tf);
+      const head = tfKeys.length
+        ? `<div style="font-size:13.5px;margin-bottom:6px;"><span style="color:var(--slate);">${e(tr('About'))} ${e(km(r.tripKm))}${r.tripMinutes ? `, ${e(r.tripMinutes)} ${e(tr('min'))}` : ''}${r.routeSource === 'road' ? ` ${e(tr('by road'))}` : ''}.</span> <strong>${e(tr('Trothen fare'))}:</strong> ${tfKeys.map(v => `${e(tr(v))} ${e(tf[v].symbol || '')}${e(Number(tf[v].local).toLocaleString())} (${money(tf[v].fare)})`).join(' · ')}<div style="color:var(--slate);font-size:12.5px;">${e(tr('Worked out from the distance and time, the same for every rider. Drivers can be a little above or below it, never more.'))}</div></div>`
+        : `<div style="color:var(--slate);font-size:13.5px;margin-bottom:6px;">${e(tr('About'))} ${e(km(r.tripKm))}. ${e(tr('Fares are estimates from the distance; the driver sets their own price.'))}</div>`;
+      out.innerHTML = head + r.drivers.map(d => `
         <div style="display:flex;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--border);flex-wrap:wrap;">
           <div style="flex:1;min-width:180px;"><div style="font-weight:700;color:var(--navy);">${e(d.name)} <span style="font-weight:400;color:var(--slate);">· ${d.rating ? '★ ' + e(d.rating) : e(tr('New'))}</span></div>
           <div style="font-size:13.5px;color:var(--slate);">${e(tr(d.vehicle))}${d.make ? ' · ' + e(d.make) : ''} · ${e(km(d.awayKm))} ${e(tr('away'))}${d.helmet ? ' · ' + e(tr('helmet provided')) : ''}</div></div>
-          <div style="text-align:right;"><div style="font-weight:700;font-size:18px;">${money(d.fare)}</div><div style="font-size:12px;color:var(--slate);">+ ${e(r.feePercent)}% ${e(tr('Trothen fee'))}</div></div>
+          <div style="text-align:right;"><div style="font-weight:700;font-size:18px;">${d.fareLocal != null ? `${e(d.symbol || '')}${e(Number(d.fareLocal).toLocaleString())}</div><div style="font-size:13px;">${money(d.fare)}` : money(d.fare)}</div>${d.fareAdjust ? `<div style="font-size:12px;color:${d.fareAdjust > 0 ? '#8a5a00' : '#1E7A55'};">${Math.abs(d.fareAdjust)}% ${e(tr(d.fareAdjust > 0 ? 'above' : 'below'))} ${e(tr('Trothen fare'))}</div>` : (d.fareSource === 'trothen' ? `<div style="font-size:12px;color:#1E7A55;">${e(tr('Trothen fare'))}</div>` : '')}<div style="font-size:12px;color:var(--slate);">+ ${e(r.feePercent)}% ${e(tr('Trothen fee'))}</div></div>
           <div style="display:flex;flex-direction:column;gap:6px;">${r.appPay !== false ? `<button class="btn-sm btn-sm-primary" onclick="ridesRequest(${jsArg(d.id)},${d.fare},'app')">${e(tr('Request'))} · ${e(tr(r.payMode === 'card' ? 'pay by card' : 'pay in app'))}</button>` : ''}
           ${d.cashOk ? `<button class="btn-sm btn-sm-outline" onclick="ridesRequest(${jsArg(d.id)},${d.fare},'cash')">💵 ${e(tr('Pay cash'))}</button><div style="font-size:11.5px;color:var(--slate);max-width:120px;">${e(tr('no Trothen fee'))}</div>` : ''}
           ${r.appPay === false && !d.cashOk ? `<div style="font-size:12px;color:var(--slate);max-width:150px;">${e(tr('Paying in the app isn\'t available here yet, and this driver doesn\'t take cash.'))}</div>` : ''}</div>
-          ${r.appPay !== false || d.cashOk ? `<div style="flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13.5px;"><span>${e(tr('Or offer your own fare:'))}</span><input class="form-input" type="number" min="1" step="0.5" id="ride-offer-${e(d.id)}" placeholder="$" style="width:100px;"/>
+          ${r.appPay !== false || d.cashOk ? `<div style="flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13.5px;"><span>${e(tr('Or offer your own fare:'))}</span><input class="form-input" type="number" min="1" step="0.5" id="ride-offer-${e(d.id)}" placeholder="${e(d.fareLocal != null ? (d.symbol || '') : '$')}" style="width:100px;"/>${r.offerFloorPercent != null ? `<span style="font-size:12px;color:var(--slate);">${e(tr('at least'))} ${d.fareLocal != null ? `${e(d.symbol || '')}${e(Math.ceil(d.fareLocal * r.offerFloorPercent / 100 / 5) * 5)}` : money(Math.ceil(d.fare * r.offerFloorPercent) / 100)}</span>` : ''}
             ${r.appPay !== false ? `<button class="btn-sm btn-sm-outline" onclick="ridesOffer(${jsArg(d.id)},'app')">${e(tr('Offer'))}</button>` : ''}${d.cashOk ? `<button class="btn-sm btn-sm-outline" onclick="ridesOffer(${jsArg(d.id)},'cash')">💵 ${e(tr('Offer, pay cash'))}</button>` : ''}</div>` : ''}
         </div>`).join('') + (r.appPay === false ? `<div class="ver-note" style="margin-top:8px;">${e(tr('Paying for rides in the app isn\'t switched on in your country yet, so rides are paid to the driver in cash.'))}</div>` : '');
     } catch (x) { out.innerHTML = `<div class="ver-note">${e(x.message || 'Could not find drivers')}</div>`; }
@@ -198,11 +206,13 @@
   // Offer your own fare (the driver accepts, suggests another, or declines).
   window.ridesOffer = async function (driverId, payment) {
     const q = R.quote; if (!q) return;
-    const amount = Number((el('ride-offer-' + driverId) || {}).value);
-    if (!(amount >= 1)) return showToast(tr('Type the fare you want to offer'));
+    const typed = Number((el('ride-offer-' + driverId) || {}).value);
+    const lc = R.localOf && R.localOf[driverId]; // v142: typed in local money (L$), sent in US$
+    const amount = lc ? Math.round(typed * lc.per * 100) / 100 : typed;
+    if (!(typed > 0) || !(amount >= 0.25)) return showToast(tr('Type the fare you want to offer'));
     try {
       await apiFetch('POST', '/rides', { driverId, passengers: q.pax, offerFare: amount, payment: payment === 'cash' ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
-      if (typeof showResult === 'function') showResult({ icon: '📨', title: tr('Fare offered'), lines: [`${tr('You offered')} ${money(amount)}.`, tr('The driver can accept it, suggest a different fare, or decline, within a few minutes. You\'ll see the answer here straight away.'), tr('Nothing is paid until you both agree the fare.')] });
+      if (typeof showResult === 'function') showResult({ icon: '📨', title: tr('Fare offered'), lines: [`${tr('You offered')} ${lc ? lc.symbol + typed.toLocaleString() + ' (' + money(amount) + ')' : money(amount)}.`, tr('The driver can accept it, suggest a different fare, or decline, within a few minutes. You\'ll see the answer here straight away.'), tr('Nothing is paid until you both agree the fare.')] });
       loadRiderPage();
     } catch (x) { showToast(x.message || 'Could not send your offer'); }
   };
@@ -236,13 +246,14 @@
   window.ridesSuggest = function (id) {
     const r = (R.list || []).find(x => x.id === id); if (!r) return;
     v105Overlay('ride-suggest', `<div class="modal-header"><button class="modal-close" onclick="v105Close('ride-suggest')" aria-label="Close">✕</button><h3>${e(tr('Suggest a fare'))}</h3><p>${e(r.pickup.address)} → ${e(r.dropoff.address)} · ${e(km(r.km))}</p></div>
-      <div class="modal-body"><div class="summary-row"><span>${e(tr('Fare on the table now'))}</span><span><strong>${money(r.fare)}</strong></span></div>
-      <div class="form-group" style="margin-top:10px;"><label class="form-label" for="rs-amount">${e(tr('Your fare ($)'))}</label><input class="form-input" type="number" min="1" step="0.5" id="rs-amount"/></div></div>
+      <div class="modal-body"><div class="summary-row"><span>${e(tr('Fare on the table now'))}</span><span><strong>${r.local ? `${e(r.local.symbol)}${e(Math.round(r.fare / r.local.per).toLocaleString())} · ` : ''}${money(r.fare)}</strong></span></div>
+      <div class="form-group" style="margin-top:10px;"><label class="form-label" for="rs-amount">${e(tr('Your fare'))} (${e(r.local ? r.local.symbol : '$')})</label><input class="form-input" type="number" min="0" step="${r.local ? 5 : 0.5}" id="rs-amount"/></div></div>
       <div class="modal-footer"><button class="confirm-btn" onclick="ridesSendSuggest(${jsArg(id)})">${e(tr('Send'))}</button></div>`);
   };
   window.ridesSendSuggest = async function (id) {
-    const amount = Number((el('rs-amount') || {}).value);
-    if (!(amount >= 1)) return showToast(tr('Type a fare of at least $1'));
+    const r = (R.list || []).find(x => x.id === id); const typed = Number((el('rs-amount') || {}).value);
+    const amount = r && r.local ? Math.round(typed * r.local.per * 100) / 100 : typed; // v142: typed in L$, sent in US$
+    if (!(amount >= 0.25)) return showToast(tr('Type the fare'));
     try { await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/propose`, { amount }); v105Close('ride-suggest'); showToast(tr('Sent')); (R.drv ? loadDriverPage : loadRiderPage)(); }
     catch (x) { showToast(x.message || 'Could not send'); }
   };
@@ -261,7 +272,7 @@
         ${r.negotiation ? fareTalkHTML(r, 'customer') : ''}
         ${r.answerBy && r.status === 'pending_agreement' ? `<div class="ver-note">${e(tr(myTurn ? 'Answer by' : 'The driver answers by'))} ${e(when(r.answerBy))}. ${e(tr('Nothing is paid until you both agree the fare.'))}</div>` : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-          ${myTurn ? `<button class="confirm-btn" style="max-width:280px;" onclick="ridesAgree(${jsArg(r.id)})">${e(tr('Accept'))} ${money(r.fare)}</button><button class="btn-sm btn-sm-outline" onclick="ridesSuggest(${jsArg(r.id)})">${e(tr('Suggest a fare'))}</button>` : ''}
+          ${myTurn ? `<button class="confirm-btn" style="max-width:280px;" onclick="ridesAgree(${jsArg(r.id)})">${e(tr('Accept'))} ${fareL(r, r.fare)}</button><button class="btn-sm btn-sm-outline" onclick="ridesSuggest(${jsArg(r.id)})">${e(tr('Suggest a fare'))}</button>` : ''}
           ${r.status === 'awaiting_payment' ? `<button class="confirm-btn" style="max-width:280px;" onclick="ridesPay(${jsArg(r.id)})">💳 ${e(tr('Pay'))} ${money(r.totalPaid)}</button>` : ''}
           ${r.canCancel ? `<button class="btn-sm btn-sm-outline" onclick="ridesCancel(${jsArg(r.id)})">${e(tr('Cancel'))}</button>` : ''}
         </div></div>`;
@@ -276,7 +287,7 @@
       ${waiting ? `<div class="ver-note">${e(tr('Answer due by'))} ${e(when(r.answerBy))}. ${e(tr('If there is no answer you are refunded automatically.'))}</div>` : ''}
       ${r.pin ? `<div style="text-align:center;margin:12px 0;padding:14px;border-radius:12px;background:#EEF8F3;"><div style="font-size:13px;color:var(--slate);">${e(tr('Your trip PIN. Check the plate, then give the driver this PIN.'))}</div><div style="font-size:44px;font-weight:800;letter-spacing:10px;color:var(--navy);">${e(r.pin)}</div></div>` : ''}
       ${r.status === 'active' ? `<div style="font-size:14px;margin:6px 0;">${r.live ? `📍 ${e(tr(r.phase === 'to_destination' ? 'On the way to your destination' : 'Driver is coming'))}${r.etaMinutes ? ' · ' + e(tr('about')) + ' ' + r.etaMinutes + ' ' + e(tr('min')) : ''}${r.stale ? ` · <span style="color:#B4472E;">${e(tr('no update for a while'))}</span>` : ''}` : e(tr('Waiting for the driver\'s location…'))}</div><button class="btn-sm btn-sm-primary" onclick="openTrack('ride',${jsArg(r.id)})">🗺️ ${e(tr('Watch on the map'))}</button>${contactRow(r.contact)}` : ''}
-      ${r.cash ? `<div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#FFF6DD;border:1px solid #E0A526;font-size:14px;">💵 <strong>${e(tr('Cash ride.'))}</strong> ${e(tr('Pay the driver exactly'))} <strong>${money(r.payInCash)}</strong> ${e(tr('at the end. Nothing is held by Trothen. If the driver asks for more, do not pay it. Report it here.'))}</div>` : ''}
+      ${r.cash ? `<div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#FFF6DD;border:1px solid #E0A526;font-size:14px;">💵 <strong>${e(tr('Cash ride.'))}</strong> ${e(tr('Pay the driver exactly'))} <strong>${fareL(r, r.payInCash)}</strong> ${e(tr('at the end. Nothing is held by Trothen. If the driver asks for more, do not pay it. Report it here.'))}</div>` : ''}
       ${r.autoReleaseAt ? `<div class="ver-note" style="margin-top:8px;">${e(tr(r.cash ? 'Your driver says you have arrived. If you do nothing, this ride is closed as complete on' : 'Your driver says you have arrived. If you do nothing, the fare is released to the driver on'))} ${e(new Date(r.autoReleaseAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}. ${e(tr('If something was wrong, use Report a Problem on the booking before then.'))}</div>` : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
         ${r.canConfirm ? `<button class="confirm-btn" onclick="ridesConfirm(${jsArg(r.id)},${r.cash ? 'true' : 'false'})">✅ ${e(tr(r.cash ? 'I arrived safely and paid in cash' : 'I arrived safely, pay the driver'))}</button>` : ''}
@@ -285,7 +296,7 @@
         ${r.status === 'active' ? `<button class="btn-sm" style="background:#C0392B;color:#fff;" onclick="ridesSOS(${jsArg(r.id)})">🚨 ${e(tr('Emergency / SOS'))}</button>` : ''}
         ${r.canCancel ? `<button class="btn-sm btn-sm-outline" onclick="ridesCancel(${jsArg(r.id)})">${e(tr('Cancel ride'))}</button>` : ''}
       </div>
-      <div class="ver-note" style="margin-top:10px;">${e(tr('Never get in if the plate or the driver does not match. Fare:'))} ${money(r.fare)} + ${money(r.fee)} ${e(tr('Trothen fee'))}.</div></div>`;
+      <div class="ver-note" style="margin-top:10px;">${e(tr('Never get in if the plate or the driver does not match. Fare:'))} ${fareL(r, r.fare)} + ${money(r.fee)} ${e(tr('Trothen fee'))}.</div></div>`;
   }
   window.ridesReport = function (id) {
     v105Overlay('report-overlay', `<div class="modal-header"><button class="modal-close" onclick="v105Close('report-overlay')" aria-label="Close">✕</button><h3>${e(tr('Report a problem'))}</h3><p>${e(tr('Tell the Trothen team what happened on this ride.'))}</p></div>
@@ -406,13 +417,35 @@
     try { const r = await apiFetch('PUT', '/rides/driver/cash', { accepts: on }); showToast(on ? (r.hasPass ? tr('You now take cash rides') : tr('Saved. Cash rides start once you buy a pass.')) : tr('You no longer take cash rides')); }
     catch (x) { showToast(x.message || 'Could not save'); loadDriverPage(); }
   };
+  // v143: approved drivers also carry store and Market deliveries (Deliveries in the menu)
+  const deliversToggle = (d) => `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:14px;"><input type="checkbox" id="rd-delivers" ${d.delivers !== false ? 'checked' : ''} onchange="ridesDelivers(this.checked)" style="margin-top:3px;"/> <span>${e(tr('I also carry store and Market deliveries'))} <span style="color:var(--slate);">${e(tr('Buyers can choose you to bring their goods. Delivery jobs show under Deliveries.'))}</span></span></label>`;
+  window.ridesDelivers = async function (on) { try { await apiFetch('PUT', '/rides/driver/delivers', { on }); showToast(tr(on ? 'You now carry deliveries too' : 'You no longer carry deliveries')); } catch (x) { showToast(x.message || 'Could not save'); } };
   function driverRates(d) {
+    return driverRatesInner(d).replace(/<\/div>$/, deliversToggle(d) + '</div>');
+  }
+  function driverRatesInner(d) {
+    if (d.fareTable) { // v142: Trothen sets the fares here; the driver chooses how far above or below
+      const t = d.fareTable, sym = t.symbol || t.currency, n = (x) => `${e(sym)}${e(Number(x).toLocaleString())}`;
+      const opts = []; for (let a = -t.band; a <= t.band; a += 5) opts.push(a);
+      if (!opts.includes(d.fareAdjust)) opts.push(d.fareAdjust);
+      opts.sort((x, y) => x - y);
+      return `<div class="panel" id="rd-fares"><div class="panel-title">${e(tr('My fares'))}</div>
+        <div style="font-size:14px;margin-bottom:8px;">${e(tr('Trothen works out every fare from the road distance and the time, the same way for every driver of your kind of vehicle:'))}</div>
+        <div style="font-size:14px;margin-bottom:8px;"><strong>${n(t.row.base)}</strong> ${e(tr('to start'))}, ${e(tr('plus'))} <strong>${n(t.row.perKm)}</strong> ${e(tr('per km'))}${t.row.perMin ? `, ${e(tr('plus'))} <strong>${n(t.row.perMin)}</strong> ${e(tr('per minute'))}` : ''}${t.row.min ? `. ${e(tr('Lowest fare'))} <strong>${n(t.row.min)}</strong>` : ''}.${t.fuelFactor !== 1 ? ` ${e(tr('Adjusted for the fuel price'))} (${t.fuelFactor > 1 ? '+' : ''}${Math.round((t.fuelFactor - 1) * 1000) / 10}%).` : ''}${t.nightPct ? ` ${e(tr('At night'))} +${e(t.nightPct)}%.` : ''}</div>
+        <table style="width:100%;max-width:460px;border-collapse:collapse;font-size:14px;margin-bottom:10px;"><thead><tr style="text-align:left;color:var(--slate);"><th style="padding:4px 0;">${e(tr('Trip'))}</th><th>${e(tr('Trothen fare'))}</th><th>${e(tr('Your fare'))}</th></tr></thead><tbody>${t.examples.map(x => `<tr style="border-top:1px solid var(--border);"><td style="padding:5px 0;">${x.km} km, ~${x.minutes} ${e(tr('min'))}</td><td>${n(x.trothenLocal)}</td><td><strong>${n(x.local)}</strong> <span style="color:var(--slate);">(${money(x.fare)})</span></td></tr>`).join('')}</tbody></table>
+        <div class="form-group"><label class="form-label" for="rr-adjust">${e(tr('My fares compared with the Trothen fare'))}</label><select class="form-input form-select" id="rr-adjust" style="max-width:280px;">${opts.map(a => `<option value="${a}" ${a === d.fareAdjust ? 'selected' : ''}>${a === 0 ? e(tr('The Trothen fare')) : `${Math.abs(a)}% ${e(tr(a > 0 ? 'above' : 'below'))}`}</option>`).join('')}</select></div>
+        <button class="btn-sm btn-sm-primary" onclick="ridesSaveAdjust()">${e(tr('Save'))}</button>
+        <div class="ver-note" style="margin-top:10px;">${e(tr('Riders see your fare and the Trothen fare before they choose. A lower fare gets more riders; a higher one suits a newer or more comfortable vehicle. Trothen adds a'))} ${e(d.feePercent)}% ${e(tr('fee on top for the rider. On ride earnings Trothen takes'))} ${e(d.commissionPercent)}% ${e(tr('when you are paid out.'))}</div></div>`;
+    }
     return `<div class="panel"><div class="panel-title">${e(tr('My fares'))}</div>
       <div class="dates-row"><div class="form-group"><label class="form-label" for="rr-base">${e(tr('Starting fare (US$)'))}</label><input class="form-input" id="rr-base" type="number" min="0.5" max="100" step="0.01" value="${e(d.rates.baseFee)}"/></div>
       <div class="form-group"><label class="form-label" for="rr-km">${e(tr('Plus, for each kilometre (US$)'))}</label><input class="form-input" id="rr-km" type="number" min="0" max="20" step="0.01" value="${e(d.rates.perKm)}"/></div></div>
       <button class="btn-sm btn-sm-primary" onclick="ridesSaveRates()">${e(tr('Save my fares'))}</button>
       <div class="ver-note" style="margin-top:10px;">${e(tr('Riders see your fare before they choose you. Trothen adds a'))} ${e(d.feePercent)}% ${e(tr('fee on top for the rider. On ride earnings Trothen takes'))} ${e(d.commissionPercent)}% ${e(tr('when you are paid out (never more than your plan rate).'))}</div></div>`;
   }
+  window.ridesSaveAdjust = async function () {
+    try { await apiFetch('PUT', '/rides/driver/rates', { fareAdjust: Number(el('rr-adjust').value) }); showToast(tr('Fares saved')); loadDriverPage(); } catch (x) { showToast(x.message || 'Could not save'); }
+  };
   window.ridesSaveRates = async function () {
     try { await apiFetch('PUT', '/rides/driver/rates', { baseFee: Number(el('rr-base').value), perKm: Number(el('rr-km').value) }); showToast(tr('Fares saved')); loadDriverPage(); } catch (x) { showToast(x.message || 'Could not save'); }
   };
@@ -426,15 +459,15 @@
       ${offers.map(r => { const myTurn = r.status === 'pending_agreement' && r.waitingOn === 'provider'; return `<div class="panel" style="border:2px solid #E0A526;"><div class="panel-title">${e(tr(r.status === 'awaiting_payment' ? 'Fare agreed: waiting for the rider to pay' : myTurn ? 'A rider offers a fare' : 'Waiting for the rider'))} <small>#${e(r.number)}</small></div>
         <div><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(r.passengers)} ${e(tr('passenger(s)'))}${r.cash ? ' · 💵 ' + e(tr('cash')) : ''}</div>
         ${r.negotiation ? fareTalkHTML(r, 'provider') : ''}
-        ${myTurn ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-sm-primary" onclick="ridesAnswer(${jsArg(r.id)},'accept')">${e(tr('Accept'))} ${money(r.fare)}</button><button class="btn-sm btn-sm-outline" onclick="ridesSuggest(${jsArg(r.id)})">${e(tr('Suggest a fare'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAnswer(${jsArg(r.id)},'decline')">${e(tr('Decline'))}</button></div><div style="font-size:13px;color:var(--slate);margin-top:4px;">${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>` : `<div style="font-size:13.5px;color:var(--slate);">${e(tr(r.status === 'awaiting_payment' ? 'You\'ll be told the moment the rider pays. Then go to them.' : 'The rider answers your fare next.'))}</div>`}</div>`; }).join('')}
+        ${myTurn ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-sm-primary" onclick="ridesAnswer(${jsArg(r.id)},'accept')">${e(tr('Accept'))} ${fareL(r, r.fare)}</button><button class="btn-sm btn-sm-outline" onclick="ridesSuggest(${jsArg(r.id)})">${e(tr('Suggest a fare'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAnswer(${jsArg(r.id)},'decline')">${e(tr('Decline'))}</button></div><div style="font-size:13px;color:var(--slate);margin-top:4px;">${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>` : `<div style="font-size:13.5px;color:var(--slate);">${e(tr(r.status === 'awaiting_payment' ? 'You\'ll be told the moment the rider pays. Then go to them.' : 'The rider answers your fare next.'))}</div>`}</div>`; }).join('')}
       ${incoming.map(r => `<div class="panel" style="border:2px solid #E0A526;"><div class="panel-title">${e(tr('New ride request'))} <small>#${e(r.number)}</small></div>
         <div><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(r.passengers)} ${e(tr('passenger(s)'))}</div>
-        <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(tr('Fare'))}: <strong>${money(r.fare)}</strong>${r.cash ? ' · 💵 <strong>' + e(tr('paid in CASH by the rider')) + '</strong>' : ''} · ${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>
+        <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(tr('Fare'))}: <strong>${fareL(r, r.fare)}</strong>${r.cash ? ' · 💵 <strong>' + e(tr('paid in CASH by the rider')) + '</strong>' : ''} · ${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>
         <div style="display:flex;gap:8px;"><button class="btn-sm btn-sm-primary" onclick="ridesAnswer(${jsArg(r.id)},'accept')">${e(tr('Accept'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAnswer(${jsArg(r.id)},'decline')">${e(tr('Decline'))}</button></div></div>`).join('')}
       ${active.map(r => `<div class="panel" style="border:2px solid var(--teal);"><div class="panel-title">${e(tr(r.startedAt ? 'Trip in progress' : 'Go to your rider'))} <small>#${e(r.number)}</small></div>
         <div><strong>${e(r.pickup.address)}</strong> <a href="https://www.google.com/maps/dir/?api=1&destination=${r.pickup.latitude},${r.pickup.longitude}" target="_blank" rel="noopener">🧭</a> → <strong>${e(r.dropoff.address)}</strong> <a href="https://www.google.com/maps/dir/?api=1&destination=${r.dropoff.latitude},${r.dropoff.longitude}" target="_blank" rel="noopener">🧭</a></div>
-        <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(r.rider ? r.rider.name : '')} · ${e(r.passengers)} ${e(tr('passenger(s)'))} · ${money(r.fare)}</div>
-        ${r.cash ? `<div style="margin:6px 0;padding:8px 12px;border-radius:10px;background:#FFF6DD;border:1px solid #E0A526;font-size:14px;">💵 <strong>${e(tr('CASH ride.'))}</strong> ${e(tr('Collect'))} <strong>${money(r.payInCash)}</strong> ${e(tr('from the rider at the end. Do not ask for more than this.'))} <a onclick="ridesReport(${jsArg(r.id)})" style="cursor:pointer;text-decoration:underline;">${e(tr('Report a problem'))}</a></div>` : ''}
+        <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(r.rider ? r.rider.name : '')} · ${e(r.passengers)} ${e(tr('passenger(s)'))} · ${fareL(r, r.fare)}</div>
+        ${r.cash ? `<div style="margin:6px 0;padding:8px 12px;border-radius:10px;background:#FFF6DD;border:1px solid #E0A526;font-size:14px;">💵 <strong>${e(tr('CASH ride.'))}</strong> ${e(tr('Collect'))} <strong>${fareL(r, r.payInCash)}</strong> ${e(tr('from the rider at the end. Do not ask for more than this.'))} <a onclick="ridesReport(${jsArg(r.id)})" style="cursor:pointer;text-decoration:underline;">${e(tr('Report a problem'))}</a></div>` : ''}
         ${contactRow(r.contact)}
         ${!r.startedAt ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
           <button class="btn-sm btn-sm-outline" onclick="ridesArrived(${jsArg(r.id)})">📍 ${e(tr('I have arrived'))}</button>
@@ -706,6 +739,69 @@
         <div>${e(a.vehicle)} ${e(a.make || '')} · ${e(tr('plate'))} <strong>${e(a.plate)}</strong> · ${e(tr('licence'))} ${e(a.licenceNumber)} (${e(tr('expires'))} ${e(a.licenceExpiry)})${a.insuranceExpiry ? ' · ' + e(tr('insurance until')) + ' ' + e(a.insuranceExpiry) : ''}${a.roadworthyExpiry ? ' · ' + e(tr('roadworthy until')) + ' ' + e(a.roadworthyExpiry) : ''}${a.vehicle === 'motorbike' ? ' · ' + e(a.helmet ? tr('helmet confirmed') : tr('NO helmet')) : ''}</div>
         <div style="margin:6px 0;">${Object.keys(o.docKinds || a.docs).map(k => a.docs[k] ? `<button class="btn-sm btn-sm-outline" onclick="ridesAdminDoc(${jsArg(a.userId)},'${k}')">📄 ${e(tr((o.docKinds || {})[k] || k))}${(a.required || []).includes(k) ? '' : ' (' + e(tr('extra')) + ')'}</button> ` : '').join('')}${(a.missing || []).length ? `<div style="margin-top:6px;color:#B4472E;font-weight:600;">⚠️ ${e(tr('Missing required:'))} ${a.missing.map(k => e(tr((o.docKinds || {})[k] || k))).join(', ')}</div>` : ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">${a.status === 'pending' ? `<button class="btn-sm btn-sm-primary" onclick="ridesAdminDecide(${jsArg(a.userId)},'approve')">${e(tr('Approve'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAdminDecide(${jsArg(a.userId)},'reject')">${e(tr('Reject'))}</button>` : ''}${a.status === 'approved' ? `<button class="btn-sm btn-sm-outline" onclick="ridesAdminDecide(${jsArg(a.userId)},'suspend')">${e(tr('Suspend'))}</button>` : ''}</div></div>`).join('') : `<div style="color:var(--slate);">${e(tr('No applications yet.'))}</div>`}</div>`;
+    drawAdminFares(); // v142
+  }
+  // ── v142: Admin → Rides → Fares ──────────────────────────────────────
+  const FARE_VEH = ['motorbike', 'keke', 'car', 'van'];
+  const SPEED = { motorbike: 24, keke: 18, car: 20, van: 18 };
+  const F = { data: null, country: null };
+  function fareRowsHTML(t, edit) {
+    const v = (t && t.vehicles) || {};
+    return `<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:13.5px;min-width:520px;"><thead><tr style="text-align:left;color:var(--slate);"><th style="padding:4px 6px;">${e(tr('Vehicle'))}</th><th>${e(tr('Starting fare'))}</th><th>${e(tr('Per km'))}</th><th>${e(tr('Per minute'))}</th><th>${e(tr('Lowest fare'))}</th></tr></thead><tbody>${FARE_VEH.map(k => `<tr style="border-top:1px solid var(--border);"><td style="padding:4px 6px;">${e(tr(k))}</td>${['base', 'perKm', 'perMin', 'min'].map(f => `<td style="padding:3px;"><input class="form-input rf-in" data-v="${k}" data-f="${f}" type="number" min="0" step="any" value="${v[k] && v[k][f] != null ? e(v[k][f]) : ''}" style="width:90px;padding:6px;" ${edit ? '' : 'disabled'} oninput="ridesFarePreview()"/></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  }
+  function readFareForm() {
+    const vehicles = {};
+    document.querySelectorAll('.rf-in').forEach(i => { if (i.value === '') return; (vehicles[i.dataset.v] = vehicles[i.dataset.v] || {})[i.dataset.f] = Number(i.value); });
+    for (const k of Object.keys(vehicles)) if (vehicles[k].base == null && vehicles[k].min == null) delete vehicles[k];
+    const g = (id) => (el(id) && el(id).value !== '' ? Number(el(id).value) : null);
+    return { currency: (el('rf-cur').value || '').trim().toUpperCase(), vehicles, fuel: { refPrice: g('rf-fref'), currentPrice: g('rf-fcur'), threshold: g('rf-fth'), share: g('rf-fsh') }, night: { pct: g('rf-npct') || 0, startHour: g('rf-ns') == null ? 22 : g('rf-ns'), endHour: g('rf-ne') == null ? 5 : g('rf-ne') }, band: g('rf-band'), offerFloor: g('rf-floor'), roundTo: g('rf-round'), tzOffset: g('rf-tz') || 0 };
+  }
+  window.ridesFarePreview = function () {
+    const box = el('rf-preview'); if (!box) return;
+    const t = readFareForm(); const f = t.fuel; let fuel = 1;
+    if (f.refPrice > 0 && f.currentPrice > 0) { const ch = f.currentPrice / f.refPrice - 1; if (Math.abs(ch) * 100 >= (f.threshold == null ? 10 : f.threshold)) fuel = 1 + ((f.share == null ? 40 : f.share) / 100) * ch; }
+    const step = t.roundTo == null ? 5 : t.roundTo; const rd = (x) => (step > 0 ? Math.round(x / step) * step : Math.round(x * 100) / 100);
+    const rows = Object.keys(t.vehicles).map(k => { const v = t.vehicles[k]; return `<tr style="border-top:1px solid var(--border);"><td style="padding:4px 6px;">${e(tr(k))}</td>${[2, 5, 10].map(d => { const m = d / SPEED[k] * 60; return `<td>${e(t.currency)} ${e(rd(Math.max(v.min || 0, (v.base || 0) + (v.perKm || 0) * d + (v.perMin || 0) * m) * fuel).toLocaleString())}</td>`; }).join('')}</tr>`; }).join('');
+    box.innerHTML = rows ? `<div style="font-weight:700;color:var(--navy);margin:8px 0 4px;">${e(tr('Example fares (daytime)'))}${fuel !== 1 ? ` · ${e(tr('fuel'))} ${fuel > 1 ? '+' : ''}${Math.round((fuel - 1) * 1000) / 10}%` : ''}</div><table style="border-collapse:collapse;font-size:13.5px;"><thead><tr style="text-align:left;color:var(--slate);"><th style="padding:4px 6px;"></th><th>2 km</th><th>5 km</th><th>10 km</th></tr></thead><tbody>${rows}</tbody></table><div style="font-size:12px;color:var(--slate);">${e(tr('Minutes estimated at city speeds (motorbike 24 km/h, car 20, keke and van 18). Real trips use the road distance and time.'))}</div>` : '';
+  };
+  function drawFareForm() {
+    const host = el('rf-form'); if (!host || !F.data) return;
+    const o = F.data, t = o.tables[F.country] || null, edit = R.over && R.over.canEditSettings;
+    const curDefault = F.country && /liberia/i.test(F.country) ? 'LRD' : '';
+    const inp = (id, label, val, extra) => `<div class="form-group" style="flex:1 1 150px;"><label class="form-label" for="${id}">${e(tr(label))}</label><input class="form-input" id="${id}" type="number" step="any" value="${val == null ? '' : e(val)}" ${edit ? '' : 'disabled'} oninput="ridesFarePreview()" ${extra || ''}/></div>`;
+    host.innerHTML = `<div class="dates-row"><div class="form-group" style="flex:0 1 140px;"><label class="form-label" for="rf-cur">${e(tr('Currency'))}</label><input class="form-input" id="rf-cur" value="${e(t ? t.currency : curDefault)}" maxlength="3" ${edit ? '' : 'disabled'} oninput="ridesFarePreview()"/></div></div>
+      ${fareRowsHTML(t, edit)}
+      <div style="font-weight:700;color:var(--navy);margin:14px 0 4px;">⛽ ${e(tr('Fuel price link'))}</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">${e(tr('Enter the pump price the fares above were set at, and today\'s price. Fares only move once the price has changed by more than the threshold, like the Ministry of Transport\'s fares, and then by the share of a fare that is fuel. Drivers are told when fares move.'))}</div>
+      <div class="dates-row" style="flex-wrap:wrap;">${inp('rf-fref', 'Price when fares were set (per gallon)', t && t.fuel.refPrice)}${inp('rf-fcur', 'Price today (per gallon)', t && t.fuel.currentPrice)}${inp('rf-fth', 'Only move fares after a change of (%)', t ? t.fuel.threshold : 10)}${inp('rf-fsh', 'Share of a fare that is fuel (%)', t ? t.fuel.share : 40)}</div>
+      <div style="font-weight:700;color:var(--navy);margin:10px 0 4px;">${e(tr('Other rules'))}</div>
+      <div class="dates-row" style="flex-wrap:wrap;">${inp('rf-band', 'Drivers may be above or below the fare by up to (%)', t ? t.band : 20)}${inp('rf-floor', 'Lowest offer a rider can make (% of the fare)', t ? t.offerFloor : 70)}${inp('rf-round', 'Round fares to the nearest', t ? t.roundTo : 5)}</div>
+      <div class="dates-row" style="flex-wrap:wrap;">${inp('rf-npct', 'Night extra (%), 0 for none', t ? t.night.pct : 0)}${inp('rf-ns', 'Night starts (hour, 0-23)', t ? t.night.startHour : 22)}${inp('rf-ne', 'Night ends (hour, 0-23)', t ? t.night.endHour : 5)}${inp('rf-tz', 'Hours from UTC (Liberia 0)', t ? t.tzOffset : 0)}</div>
+      <div id="rf-preview"></div>
+      ${edit ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"><button class="btn-sm btn-sm-primary" onclick="ridesFareSave()">${e(tr('Save fares for'))} ${e(F.country)}</button>${t ? `<button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="ridesFareRemove()">${e(tr('Stop Trothen fares here (drivers set their own)'))}</button>` : ''}</div>` : `<div class="ver-note">${e(tr('Only a super admin can change fares.'))}</div>`}`;
+    ridesFarePreview();
+  }
+  window.ridesFareCountry = function (c) { F.country = c; drawFareForm(); };
+  window.ridesFareSave = async function () {
+    if (!(await confirmDialog(tr('Save these fares? Riders in') + ' ' + F.country + ' ' + tr('see them straight away.'), { confirmLabel: tr('Save fares') }))) return;
+    try { const r = await apiFetch('PUT', '/admin/rides/fares', { country: F.country, table: readFareForm() }); F.data.tables = r.tables; showToast(tr('Fares saved')); drawAdminFares(true); } catch (x) { showToast(x.message || 'Could not save'); }
+  };
+  window.ridesFareRemove = async function () {
+    if (!(await confirmDialog(tr('Stop Trothen fares in') + ' ' + F.country + '? ' + tr('Each driver\'s own starting fare and price per km apply again.'), { confirmLabel: tr('Stop'), danger: true }))) return;
+    try { const r = await apiFetch('PUT', '/admin/rides/fares', { country: F.country, remove: true }); F.data.tables = r.tables; drawAdminFares(true); } catch (x) { showToast(x.message || 'Could not save'); }
+  };
+  async function drawAdminFares(reload) {
+    if (!body()) return;
+    try { F.data = await apiFetch('GET', '/admin/rides/fares'); } catch (x) { return; }
+    const o = F.data; const countries = [...new Set([...(o.enabledCountries || []), ...Object.keys(o.tables)])];
+    if (!F.country || !countries.includes(F.country)) F.country = countries[0] || null;
+    let box = el('admin-ride-fares');
+    if (!box) { box = document.createElement('div'); box.className = 'panel'; box.id = 'admin-ride-fares'; const first = body().querySelector('.panel'); if (first && first.nextSibling) body().insertBefore(box, first.nextSibling); else body().appendChild(box); }
+    box.innerHTML = `<div class="panel-title">💰 ${e(tr('Fares'))}</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:8px;">${e(tr('Trothen proposes every fare from the road distance and the time, per vehicle, in the country\'s own money. No surge pricing. A country without fares here uses each driver\'s own rates.'))} ${o.routing ? `<strong style="color:#1E7A55;">${e(tr('Road distances: on'))}</strong>` : `<span>${e(tr('Road distances: estimated (straight line × 1.3). Set ROUTING_URL on the server for real road distances.'))}</span>`}</div>
+      ${countries.length ? `<div class="form-group"><label class="form-label" for="rf-country">${e(tr('Country'))}</label><select class="form-input form-select" id="rf-country" onchange="ridesFareCountry(this.value)" style="max-width:260px;">${countries.map(c => `<option ${c === F.country ? 'selected' : ''}>${e(c)}</option>`).join('')}</select></div><div id="rf-form"></div>` : `<div class="ver-note">${e(tr('Switch rides on in a country first.'))}</div>`}
+      ${(o.stats || []).length ? `<div style="font-weight:700;color:var(--navy);margin:14px 0 4px;">${e(tr('What riders actually paid (last 30 days)'))}</div><table style="border-collapse:collapse;font-size:13.5px;"><thead><tr style="text-align:left;color:var(--slate);"><th style="padding:4px 6px;">${e(tr('Country'))}</th><th>${e(tr('Vehicle'))}</th><th>${e(tr('Rides'))}</th><th>${e(tr('Average trip'))}</th><th>${e(tr('Per km'))}</th></tr></thead><tbody>${o.stats.map(s => `<tr style="border-top:1px solid var(--border);"><td style="padding:4px 6px;">${e(s.country)}</td><td>${e(tr(s.vehicle))}</td><td>${e(s.rides)}</td><td>${e(s.avgKm)} km</td><td>${s.localPerKm != null ? `${e(s.currency)} ${e(s.localPerKm)} · ` : ''}${money(s.usdPerKm)}</td></tr>`).join('')}</tbody></table>` : ''}`;
+    drawFareForm();
   }
   window.ridesAdminSave = async function () {
     try {

@@ -37,14 +37,14 @@ async function buildExport(userId) {
   return {
     exportedAt: new Date().toISOString(),
     note: 'This is the information Trothen holds about your account. Passwords are never stored in readable form and are not included. ID document images are not included; the records of your identity checks are. Your photos and voice messages are in the "files" folder of the download.',
-    profile: strip(me, INTERNAL_USER_FIELDS),
+    profile: (() => { const p = strip(me, INTERNAL_USER_FIELDS); const pm = require('./payout-methods'); if (p.payoutMobile) p.payoutMobile = pm.publicMobile(p.payoutMobile); if (p.payoutBank) p.payoutBank = pm.publicBank(p.payoutBank); return p; })(), // v141: payout numbers as the last 4 digits
     jobsPosted: mine(await safeAll('jobs'), 'customerId'),
     // v138: a customer's responses from pros too, not only a pro's own.
     jobMatches: mine(await safeAll('matches'), 'providerId', 'customerId'),
     bookings: contracts,
     bookingChanges: (await safeAll('scopeChangeRequests')).filter(r => contractIds.has(r.contractId)),
     paymentsHeld: (await safeAll('escrowTransactions')).filter(e => contractIds.has(e.contractId)),
-    payouts: mine(await safeAll('payouts'), 'providerId'),
+    payouts: mine(await safeAll('payouts'), 'providerId').map(p => (p.sendTo ? { ...p, sendTo: strip(p.sendTo, ['number', 'accountNumber']) } : p)),
     planInvoices: mine(await safeAll('planInvoices'), 'providerId'),
     paymentMethods: mine(await safeAll('paymentMethods'), 'userId'),
     // v138: reviews about a pro, and the reviews a customer wrote (stored against the booking).

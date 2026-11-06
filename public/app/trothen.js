@@ -351,6 +351,7 @@ function mapPublicProvider(p) {
     twoFactorEnabled: p.twoFactorEnabled === true,
     skills: Array.isArray(p.skills) && p.skills.length ? p.skills : [p.category], // v105: main skill first, then extra ones
     store: p.store || null, // v105: only the store's name
+    pricing: p.pricing || null, priceLabel: p.priceLabel || null, rideDriver: p.rideDriver || null, // v141: per job / hour / day / trip, and ride drivers
   };
 }
 
@@ -1076,7 +1077,7 @@ function openJobCardHTML(j) {
         </div>
         <div style="font-size:14px;color:var(--slate);margin-top:2px;line-height:1.5;">${escapeHtml(j.description)}</div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:10px;flex-wrap:wrap;">
-          ${j.budget ? `<span class="badge badge-neutral">Budget: ${escapeHtml(j.budget)}</span>` : '<span></span>'}
+          ${typeof jobFactsLine === 'function' ? jobFactsLine(j) : (j.budget ? `<span class="badge badge-neutral">Budget: ${escapeHtml(j.budget)}</span>` : '<span></span>')}
           <div style="display:flex;gap:8px;">
             <button class="btn-sm btn-sm-primary" onclick="viewJobCandidates('${j.id}')">View Responses</button>
             <button class="btn-sm btn-sm-ghost" onclick="cancelJobRequest('${j.id}')">Cancel Request</button>
@@ -1212,7 +1213,7 @@ function candidateRowHTML(c, job) {
           <div style="background:${p.color || '#5A5F6C'};width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0;">${escapeHtml(p.initials || '')}</div>
           <div>
             <div style="font-weight:700;color:var(--navy);font-size:13.5px;">${escapeHtml(p.name)} ${(c.score != null ? c.score : p.score) != null ? `<span style="font-weight:400;color:var(--slate);font-size:13px;">· ${c.score != null ? c.score : p.score}% fit</span>` : ''}</div>
-            <div style="font-size:13px;color:var(--slate);">⭐ ${p.rating || 0} · ${p.jobs || 0} jobs · $${p.price}/hr starting</div>
+            <div style="font-size:13px;color:var(--slate);">⭐ ${p.rating || 0} · ${p.jobs || 0} jobs · ${(typeof priceText === 'function' ? priceText(p) : `$${p.price}/hr`)}</div>
           </div>
         </div>
         <span class="badge ${c.status === 'interested' ? 'badge-success' : c.status === 'accepted' ? 'badge-success' : c.status === 'declined' || c.status === 'not_selected' ? 'badge-neutral' : 'badge-warn'}">${MATCH_STATUS_LABEL[c.status] || c.status}</span>
@@ -1258,9 +1259,11 @@ async function hireProviderForJob(providerId) {
   const jobNow = (customerData.openJobs || []).find(j => j.id === jobId) || {}; // v119: say what happens for this job's way of paying
   const payWords = jobNow.payMethod === 'cash' ? 'This is a cash job: nothing is paid now, and you pay the pro directly after the work.' : 'Your payment is held by Trothen until the job is done (if Trothen gives you a payment code, the pro is asked once your payment arrives).';
   // v120: show the price, the fee and the total before hiring, not just the amount typed.
-  const budgetFirst = String(jobNow.budget || '').match(/\d+/); // same as the server's parseBudgetAmount: first number, else $100
+  // v144: the same as the server's singlePriceUsd: the customer's own price, or one plain amount. No made-up $100.
+  const budgetOne = Number(jobNow.budgetUsd) > 0 ? Number(jobNow.budgetUsd) : (() => { const m = String(jobNow.budget || '').replace(/,/g, '').match(/^\s*\$?\s*(\d+(?:\.\d{1,2})?)\s*\$?\s*$/); return m && Number(m[1]) > 0 ? Number(m[1]) : null; })();
   const proPrice = CANDIDATE_PRICES[providerId] || null; // v122: the pro's own price comes first, as on the server
-  const hireAmount = body.amount || proPrice || (budgetFirst && parseInt(budgetFirst[0], 10) > 0 ? parseInt(budgetFirst[0], 10) : 100);
+  const hireAmount = body.amount || proPrice || budgetOne;
+  if (!hireAmount) { if (amountInput) amountInput.focus(); return showToast('Enter the price you agreed with this pro first'); }
   const differs = proPrice && body.amount && Math.abs(body.amount - proPrice) > 0.005;
   const hireFee = jobNow.payMethod === 'cash' || !hireAmount ? 0 : Math.round(Math.min(Math.max(hireAmount * 0.09, 2.99), 25) * 100) / 100;
   const priceWords = !hireAmount ? '' : jobNow.payMethod === 'cash'
@@ -5843,7 +5846,7 @@ async function viewProviderProfile(id) {
     : `<div style="color:var(--slate);font-size:14px;padding:4px 0;">No portfolio photos yet.</div>`;
 
   const isNegotiable = p.pricingModel === 'negotiable';
-  const priceHTML = isNegotiable
+  const priceHTML = typeof profilePriceHTML === 'function' ? profilePriceHTML(p) : isNegotiable
     ? `<div class="profile-side-price" style="font-size:26px;">Mutual Agreement</div><div style="font-size:13px;color:var(--slate);margin-bottom:16px;">Price is worked out directly with ${escapeHtml(p.name.split(' ')[0])} per job</div>`
     : `<div class="profile-side-price">$${p.price}<span>/hr</span></div><div style="font-size:13px;color:var(--slate);margin-bottom:16px;">Escrow-protected, released when the job is confirmed done</div>`;
 
@@ -6136,7 +6139,7 @@ async function runAIMatch() {
             : `<div style="width:44px;height:44px;border-radius:50%;background:${p.color};color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:600;flex-shrink:0;">${p.initials}</div>`}
           <div style="flex:1;">
             <div style="font-weight:600;font-size:13.5px;color:var(--navy);">${escapeHtml(p.name)} <span class="badge badge-success" style="margin-left:4px;">${escapeHtml(p.score)}% match</span></div>
-            <div style="font-size:13px;color:var(--slate);">${escapeHtml(p.role)} · $${p.price}/hr · ★ ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
+            <div style="font-size:13px;color:var(--slate);">${escapeHtml(p.role)} · ${(typeof priceText === 'function' ? priceText(p) : `$${p.price}/hr`)} · ★ ${p.rating ? Number(p.rating).toFixed(1) : 'New'}</div>
           </div>
           ${postedJob ? `<span class="badge badge-warn">${escapeHtml(tr('Reviewing your job'))}</span>` : `<button class="btn-sm btn-sm-primary" onclick="closePostJobModal();openBooking('${p.id}');">Book</button>`}
         </div>`).join('')}
@@ -6191,7 +6194,7 @@ async function loadProviderData() {
     providerData.matches = matches.map(m => ({
       id: m.id, customerId: m.customerId, jobId: m.jobId, status: m.status,
       customer: m.customerName || 'Customer', service: m.job ? m.job.description : 'Service request',
-      budget: m.job && m.job.budget ? m.job.budget : '—', matchScore: m.score, distance: m.distanceMiles != null ? distLabel(m.distanceMiles) : (m.jobHasPin ? 'Share your location to see' : '—'), // v92: this used to be a random number
+      budget: m.job && m.job.budget ? m.job.budget : '—', job: m.job || null, budgetLabel: (m.job && m.job.budgetLabel) || null, matchScore: m.score, distance: m.distanceMiles != null ? distLabel(m.distanceMiles) : (m.jobHasPin ? 'Share your location to see' : '—'), // v92: this used to be a random number
       photoUrls: (m.job && m.job.photoUrls) || [],
       materialsOnHand: (m.job && m.job.materialsOnHand) || null,
       materialsCost: (m.job && m.job.materialsCost) != null ? m.job.materialsCost : null,
@@ -7005,8 +7008,8 @@ async function requestPayout(payoutCurrency, useIntlMethod) {
     const panel = document.getElementById('payout-currency-panel');
     if (panel) panel.style.display = 'none';
     const msg = payout.payoutAmountLocal
-      ? `Payout of ${payout.payoutCurrency} ${payout.payoutAmountLocal} (≈ $${payout.amount} USD) requested via ${payout.method}`
-      : `Payout of $${payout.amount} requested via ${payout.method}`;
+      ? `Payout of ${payout.payoutCurrency} ${payout.payoutAmountLocal} (≈ $${payout.amount} USD) requested to ${payout.destination || payout.method}`
+      : `Payout of $${payout.amount} requested to ${payout.destination || payout.method}`;
     showToast(msg);
     await loadProviderData();
     selectProviderSection('earnings');
@@ -7301,7 +7304,7 @@ function openJobPhotoViewer(photoUrls) {
 function matchesTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No pending matches right now.</div>`;
   return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Customer</th><th>Job</th><th>Budget</th><th>Match Score</th><th>Distance</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}${m.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(m.materialsOnHand)}</div>` : ''}${m.materialsCost != null ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">💵 Materials budget: $${m.materialsCost}</div>` : ''}</td><td>${escapeHtml(m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${escapeHtml(m.distance)}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
+  ${list.map(m => `<tr><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.service)}${m.photoUrls && m.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(m.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${m.photoUrls.length} file${m.photoUrls.length===1?'':'s'}</a>` : ''}${m.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(m.materialsOnHand)}</div>` : ''}${m.materialsCost != null ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">💵 Materials budget: $${m.materialsCost}</div>` : ''}${typeof jobFactsLine === 'function' && m.job ? jobFactsLine(m.job, true) : ''}</td><td>${escapeHtml(m.budgetLabel || m.budget)}</td><td><span class="badge badge-success">${m.matchScore}%</span></td><td>${escapeHtml(m.distance)}</td><td>${m.status === 'interested' ? '<span class="badge badge-success">🙋 Interested</span>' : '<span class="badge badge-warn">New</span>'}</td>
   <td class="row-actions">${m.offerContractId
     ? `<div style="font-size:13px;margin-bottom:6px;">${escapeHtml(tr('The customer offered you a price.'))}</div><button class="btn-sm btn-sm-primary" onclick="selectProviderSection('contracts')">${escapeHtml(tr('Answer it in My Contracts'))}</button>`
     : `${postedBudgetAmount(m.budget) ? `<button class="btn-sm btn-sm-primary" onclick="acceptPostedBudget('${m.id}', ${postedBudgetAmount(m.budget)})">${escapeHtml(tr('Accept the job at'))} $${postedBudgetAmount(m.budget).toFixed(2)}</button> ` : ''}${m.status === 'interested'
@@ -11442,10 +11445,10 @@ function providerCardsHTML(list) {
         </div>
         <div class="provider-tags">${p.tags.map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
         <div class="provider-footer">
-          <div class="provider-price">$${p.price}<span>/hr</span></div>
+          <div class="provider-price">${(typeof priceTagHTML === 'function' ? priceTagHTML(p) : `$${p.price}<span>/hr</span>`)}</div>
           ${p.acceptingBookings === false
             ? `<span class="badge badge-neutral" style="font-size:12px;">Not taking bookings</span>`
-            : `<button class="book-btn" onclick="event.stopPropagation();openBooking('${p.id}')">Book</button>`}
+            : (typeof bookButtonHTML === 'function' ? bookButtonHTML(p) : `<button class="book-btn" onclick="event.stopPropagation();openBooking('${p.id}')">Book</button>`)}
         </div>
       </div>
     </div>
@@ -11798,7 +11801,7 @@ async function openBooking(id) {
   document.getElementById('booking-photo-upload-container').innerHTML = jobPhotoUploadHTML('booking');
 
   document.getElementById('modal-pro-name').textContent = 'Book ' + currentPro.name;
-  document.getElementById('modal-pro-role').textContent = currentPro.role + (isNegotiable ? ' · Mutual Agreement' : ' · $' + currentPro.price + '/hr');
+  document.getElementById('modal-pro-role').textContent = currentPro.role + ' · ' + (typeof priceText === 'function' ? priceText(currentPro) : (isNegotiable ? 'Mutual Agreement' : '$' + currentPro.price + '/hr'));
 
   // Previously this forced the customer to pick one of the provider's own
   // availability labels as the "time" — meaning even a provider who'd set
@@ -11972,9 +11975,17 @@ async function confirmBooking() {
   // 9% service fee, so the booking came out higher than the form said.
   // The server adds the service fee; the page no longer adds anything.
   let total;
-  const wantsOffer = !goodsOnly && (currentPro.pricingModel === 'negotiable' || (currentPro.pricingModel === 'both' && bookingPricingChoice === 'offer'));
+  // v141: the customer's choice from the pro's prices (a fixed price, hours /
+  // days / trips, an offer, or "ask for a price"). The server works out the
+  // amount again from the pro's own prices; it never trusts this one.
+  const pick = (!goodsOnly && typeof bookingPick === 'function') ? bookingPick() : null;
+  if (pick && pick.kind === 'ask') return sendPriceRequest();
+  if (pick && pick.error) return showToast(pick.error);
+  const wantsOffer = !goodsOnly && (pick ? pick.kind === 'offer' : (currentPro.pricingModel === 'negotiable' || (currentPro.pricingModel === 'both' && bookingPricingChoice === 'offer')));
   if (goodsOnly) {
     total = 0;
+  } else if (pick) {
+    total = pick.amount;
   } else if (wantsOffer) {
     const offer = parseFloat(document.getElementById('job-offer-amount').value);
     if (!offer || offer <= 0) return showToast('Enter your offer amount');
@@ -11994,7 +12005,7 @@ async function confirmBooking() {
   if (BACKEND_AVAILABLE) {
     try {
       const { contract } = await apiFetch('POST', '/contracts', {
-        providerId: currentPro.id, service: goodsOnly ? undefined : desc, date, time, address: addr, ...bookWhere, amount: goodsOnly ? undefined : total, ...goods, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls: goodsOnly ? [] : photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked, materialsOnHand: document.getElementById('job-materials-on-hand')?.value.trim() || undefined,
+        providerId: currentPro.id, service: goodsOnly ? undefined : desc, date, time, address: addr, ...bookWhere, amount: goodsOnly ? undefined : total, ...(pick ? pick.payload : {}), ...goods, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls: goodsOnly ? [] : photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked, materialsOnHand: document.getElementById('job-materials-on-hand')?.value.trim() || undefined,
       });
       contractId = contract.bookingNumber || contract.id;
       isPendingOffer = contract.status === 'pending_agreement';
@@ -14363,6 +14374,8 @@ function storeNameLine(p, style) {
   return `<div style="${style || 'margin-top:6px;'}"><a onclick="event.stopPropagation();openProStore(${jsArg(p.id)})" style="color:var(--teal);font-weight:600;font-size:13.5px;cursor:pointer;" title="${escapeHtml(tr('Open this store'))}">🛍️ ${escapeHtml(tr('Store:'))} ${escapeHtml(p.store.name)}</a></div>`;
 }
 function basketCount(providerId) { return Object.values(STORE_BASKET[providerId] || {}).reduce((s, n) => s + n, 0); }
+// v143: a basket line is "goodId" or "goodId::variantId" (a size or colour)
+function basketToItems(basket) { return Object.entries(basket || {}).map(([key, qty]) => { const [goodId, variantId] = String(key).split('::'); return variantId ? { goodId, variantId, qty } : { goodId, qty }; }); }
 async function openProStore(providerId) {
   STORE_VIEW.providerId = providerId; STORE_VIEW.data = null;
   v105Overlay('pro-store-overlay', `
@@ -14438,7 +14451,7 @@ async function renderBookingGoods() {
   if (!slot || !currentPro) return;
   const pid = currentPro.id;
   const basket = STORE_BASKET[pid] || {};
-  const items = Object.entries(basket).map(([goodId, qty]) => ({ goodId, qty }));
+  const items = basketToItems(basket);
   BOOKING_BASKET_PRICED = null;
   if (!items.length) {
     BOOKING_GOODS_ONLY = false;
@@ -14492,7 +14505,7 @@ function clearBookingBasket() { if (currentPro) delete STORE_BASKET[currentPro.i
 function bookingGoodsPayload() {
   if (!currentPro) return {};
   const basket = STORE_BASKET[currentPro.id] || {};
-  const storeItems = Object.entries(basket).map(([goodId, qty]) => ({ goodId, qty }));
+  const storeItems = basketToItems(basket);
   return storeItems.length ? { storeItems, goodsOnly: BOOKING_GOODS_ONLY } : {};
 }
 // Goods lines shown on a booking, for both sides.
@@ -15838,7 +15851,7 @@ function renderMyStore() {
         <label style="display:flex;align-items:flex-start;gap:8px;font-size:14px;cursor:pointer;"><input type="checkbox" id="ms-agree" style="margin-top:3px;"/> <span>${escapeHtml(tr('I have read these rules and I agree to them'))}</span></label>
       </div>` : (MY_STORE.rules && MY_STORE.rules.agreedAt ? `<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">${escapeHtml(tr('You agreed to the store rules on'))} ${escapeHtml(new Date(MY_STORE.rules.agreedAt).toLocaleDateString())}. <a onclick="showStoreRules()" style="color:var(--teal);cursor:pointer;font-weight:600;">${escapeHtml(tr('Read them again'))}</a></div>` : '')}
       <button class="btn-sm btn-sm-primary" onclick="saveMyStore()">${escapeHtml(tr('Save'))}</button>
-      <div class="ver-note" style="margin-top:14px;">${escapeHtml(tr('How it works: a manager approves your store and each good. Customers see only your store name under your profile. When they open the store they see your goods and prices. They can buy goods on their own, or add them to a booking with you.'))} ${set.feePaidBy === 'pro' ? escapeHtml(tr('For each purchase Trothen takes a flat fee out of your goods money when you are paid:')) : escapeHtml(tr('For each purchase the customer pays Trothen a flat fee of'))} <strong>${usd(set.purchaseFee)}</strong>. ${escapeHtml(tr('No commission is taken on your goods.'))}</div>
+      <div class="ver-note" style="margin-top:14px;">${escapeHtml(tr('How it works: a manager approves your store and each good. Customers see only your store name under your profile. When they open the store they see your goods and prices. They can buy goods on their own, or add them to a booking with you.'))} ${set.feeMode === 'percent' ? `${escapeHtml(tr('Trothen keeps'))} <strong>${set.goodsFeePercent}%</strong> ${escapeHtml(tr('of your goods money (at least'))} ${usd(set.goodsFeeMin)}) ${escapeHtml(tr('when you are paid. The customer pays the shelf price and nothing extra.'))}` : `${set.feePaidBy === 'pro' ? escapeHtml(tr('For each purchase Trothen takes a flat fee out of your goods money when you are paid:')) : escapeHtml(tr('For each purchase the customer pays Trothen a flat fee of'))} <strong>${usd(set.purchaseFee)}</strong>.`} ${escapeHtml(tr('No commission is taken on your goods.'))}${set.storeMinReturnDays ? ` ${escapeHtml(tr('Your money for an order is paid after its returns window ends.'))}` : ''}</div>
     </div>
     ${s && s.name ? `
     <div class="panel" id="store-options-panel">
@@ -15846,7 +15859,7 @@ function renderMyStore() {
       <div style="font-weight:600;font-size:14px;margin-bottom:6px;">${escapeHtml(tr('How customers can get their goods'))}</div>
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;margin-bottom:8px;cursor:pointer;"><input type="checkbox" id="so-m-pickup" ${has('pickup') ? 'checked' : ''} style="margin-top:3px;"/> <span><strong>${escapeHtml(tr('They collect from me'))}</strong><br><span style="color:var(--slate);font-size:13px;">${escapeHtml(tr('No delivery charge.'))}</span></span></label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;margin-bottom:8px;cursor:pointer;"><input type="checkbox" id="so-m-seller" ${has('seller') ? 'checked' : ''} style="margin-top:3px;" onchange="document.getElementById('so-fee-row').style.display=this.checked?'':'none'"/> <span><strong>${escapeHtml(tr('I bring it to them'))}</strong><br><span style="color:var(--slate);font-size:13px;">${escapeHtml(tr('You set one delivery charge. It is paid to you with the goods.'))}</span></span></label>
-      <div class="form-group" id="so-fee-row" style="margin-left:26px;max-width:240px;${has('seller') ? '' : 'display:none;'}"><label class="form-label" for="so-fee">${escapeHtml(tr('My delivery charge (US$)'))}</label><input class="form-input" id="so-fee" type="number" min="0" max="1000" step="0.01" inputmode="decimal" value="${escapeHtml(opt.deliveryFee || 0)}"/><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">${escapeHtml(tr('0 means free delivery. The customer also pays Trothen'))} ${set.deliveryFeePercent}% ${escapeHtml(tr('of this charge. Your normal commission applies to it, not to the goods.'))}</div></div>
+      <div class="form-group" id="so-fee-row" style="margin-left:26px;max-width:320px;${has('seller') ? '' : 'display:none;'}">${typeof deliveryPricingHTML === 'function' ? deliveryPricingHTML(opt) : ''}<label class="form-label" for="so-fee">${escapeHtml(tr('My delivery charge (US$)'))}</label><input class="form-input" id="so-fee" type="number" min="0" max="1000" step="0.01" inputmode="decimal" value="${escapeHtml(opt.deliveryFee || 0)}"/><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">${escapeHtml(tr('0 means free delivery. The customer also pays Trothen'))} ${set.deliveryFeePercent}% ${escapeHtml(tr('of this charge. Your normal commission applies to it, not to the goods.'))}</div></div>
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:14px;margin-bottom:12px;cursor:pointer;"><input type="checkbox" id="so-m-driver" ${has('driver') ? 'checked' : ''} style="margin-top:3px;"/> <span><strong>${escapeHtml(tr('A pick-and-drop driver collects it'))}</strong><br><span style="color:var(--slate);font-size:13px;">${escapeHtml(tr('Trothen suggests drivers near you. The customer picks one and pays the driver. You hand the goods over and take a photo.'))}</span></span></label>
       <div class="form-group"><label class="form-label" for="so-place">${escapeHtml(tr('Where the goods are collected from'))}</label><input class="form-input" id="so-place" maxlength="200" value="${escapeHtml(opt.pickupPlace || '')}" placeholder="${escapeHtml(tr('e.g. Red Light market, stall 12, by the blue gate'))}"/></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:-4px 0 14px;font-size:13.5px;">
@@ -15856,8 +15869,10 @@ function renderMyStore() {
       </div>
       <div class="form-group"><label class="form-label" for="so-hours">${escapeHtml(tr('Opening hours'))} <small style="font-weight:400;color:var(--slate);">${escapeHtml(tr('optional'))}</small></label><input class="form-input" id="so-hours" maxlength="120" value="${escapeHtml(opt.hours || '')}" placeholder="${escapeHtml(tr('e.g. Monday to Saturday, 8am to 6pm'))}"/></div>
       <div class="form-group"><label class="form-label" for="so-note">${escapeHtml(tr('Note to customers'))} <small style="font-weight:400;color:var(--slate);">${escapeHtml(tr('optional'))}</small></label><input class="form-input" id="so-note" maxlength="300" value="${escapeHtml(opt.orderNote || '')}" placeholder="${escapeHtml(tr('e.g. Orders after 4pm are packed the next morning'))}"/></div>
+      ${typeof storeReturnsFormHTML === 'function' ? storeReturnsFormHTML(opt, set) : ''}
       <button class="btn-sm btn-sm-primary" onclick="saveMyStore()">${escapeHtml(tr('Save options'))}</button>
     </div>
+    ${typeof storeDiscountsPanelHTML === 'function' ? storeDiscountsPanelHTML() : ''}
     <div class="panel" id="store-orders-panel">
       <div class="panel-title">${escapeHtml(tr('Store orders'))} <small>${open.length} ${escapeHtml(tr('open'))}</small></div>
       ${orders.length ? shown.map(sellerOrderHTML).join('') + (orders.length > shown.length ? `<button class="v107-more" style="margin-top:10px;" onclick="MY_ORDERS_ALL=true;renderMyStore()">${escapeHtml(tr('Show all'))} ${orders.length}</button>` : '') : `<div style="color:var(--slate);font-size:14px;padding:8px 0;">${escapeHtml(tr('No orders yet. When a customer buys from your store, the order shows here.'))}</div>`}
@@ -15886,7 +15901,7 @@ function renderMyStore() {
 }
 // Re-draws without losing what was typed and not yet saved.
 function keepStoreFormThen(fn) {
-  const ids = ['ms-name', 'ms-desc', 'so-place', 'so-hours', 'so-note', 'so-fee'], boxes = ['ms-open', 'ms-agree', 'so-m-pickup', 'so-m-seller', 'so-m-driver'];
+  const ids = ['ms-name', 'ms-desc', 'so-place', 'so-hours', 'so-note', 'so-fee', 'so-ret-days', 'so-ret-cond', 'so-ret-ship', 'so-dprice'], boxes = ['ms-open', 'ms-agree', 'so-m-pickup', 'so-m-seller', 'so-m-driver', 'so-ret-mind'];
   const vals = {}, checks = {};
   for (const id of ids) { const el = document.getElementById(id); if (el) vals[id] = el.value; }
   for (const id of boxes) { const el = document.getElementById(id); if (el) checks[id] = el.checked; }
@@ -15914,6 +15929,7 @@ function readStoreOptionsForm() {
   const o = { deliveryMethods: methods, pickupPlace: document.getElementById('so-place').value.trim(), hours: document.getElementById('so-hours').value.trim(), orderNote: document.getElementById('so-note').value.trim() };
   const fee = Number(document.getElementById('so-fee').value); o.deliveryFee = Number.isFinite(fee) && fee >= 0 ? fee : 0;
   if (MY_STORE_PIN !== undefined) o.pickupLocation = MY_STORE_PIN;
+  if (typeof readStoreExtrasForm === 'function') Object.assign(o, readStoreExtrasForm()); // v143: returns policy, delivery by distance
   return o;
 }
 async function saveMyStore(switchOnly) {
@@ -16074,9 +16090,9 @@ async function openStoreCheckout() {
     if (!AUTH.token) { v105Close('pro-store-overlay'); showAuth('login'); }
     return;
   }
-  const items = Object.entries(STORE_BASKET[pid] || {}).map(([goodId, qty]) => ({ goodId, qty }));
+  const items = basketToItems(STORE_BASKET[pid] || {});
   if (!items.length) return;
-  Object.assign(CHECKOUT, { pid, orderId: null, priced: null, method: (d.delivery.methods || ['pickup'])[0], pin: null, drivers: null, driverId: null, loadingDrivers: false, busy: false, delivery: d.delivery, storeName: d.store.name, landmark: '', note: '' });
+  Object.assign(CHECKOUT, { pid, orderId: null, priced: null, discountCode: null, returnPolicy: d.returnPolicy || null, method: (d.delivery.methods || ['pickup'])[0], pin: null, drivers: null, driverId: null, loadingDrivers: false, busy: false, delivery: d.delivery, storeName: d.store.name, landmark: '', note: '' });
   v105Overlay('store-checkout-overlay', `
     <div class="modal-header"><button class="modal-close" onclick="v105Close('store-checkout-overlay')" aria-label="Close">✕</button><h3>${escapeHtml(tr('Buy from'))} ${escapeHtml(d.store.name)}</h3><p>${escapeHtml(tr('No booking needed. Pay now; your money is held until you have the goods.'))}</p></div>
     <div class="modal-body" id="co-body" style="overflow:auto;flex:1 1 auto;min-height:0;"><p style="color:var(--slate);">${escapeHtml(tr('Working out your goods…'))}</p></div>
@@ -16185,8 +16201,8 @@ async function submitCheckout() {
       v105Close('store-checkout-overlay'); showToast(tr('The driver has been asked. You will be told when they accept.')); await loadMyOrders();
       return;
     }
-    const items = Object.entries(STORE_BASKET[CHECKOUT.pid] || {}).map(([goodId, qty]) => ({ goodId, qty }));
-    const body = { providerId: CHECKOUT.pid, items, deliveryMethod: m, note: (CHECKOUT.note || '').trim() || undefined, ...place };
+    const items = basketToItems(STORE_BASKET[CHECKOUT.pid] || {});
+    const body = { providerId: CHECKOUT.pid, items, deliveryMethod: m, note: (CHECKOUT.note || '').trim() || undefined, discountCode: CHECKOUT.discountCode || undefined, ...place }; // v143: a store discount code
     // v109: the totals the customer is looking at, so a price that changed meanwhile is never charged unseen
     if (CHECKOUT.priced) body.expectedGoodsTotal = CHECKOUT.priced.goodsTotal;
     body.expectedDeliveryFee = m === 'seller' ? Number((CHECKOUT.delivery && CHECKOUT.delivery.sellerFee) || 0) : 0;
@@ -16203,7 +16219,7 @@ async function submitCheckout() {
     if (e.data && e.data.code === 'PRICE_CHANGED' && (e.data.goodsTotal !== undefined || e.data.deliveryFee !== undefined)) {
       CHECKOUT.busy = false;
       if (e.data.deliveryFee !== undefined && CHECKOUT.delivery) CHECKOUT.delivery.sellerFee = e.data.deliveryFee;
-      try { const items = Object.entries(STORE_BASKET[CHECKOUT.pid] || {}).map(([goodId, qty]) => ({ goodId, qty })); CHECKOUT.priced = await apiFetch('POST', '/store/price-basket', { providerId: CHECKOUT.pid, items }); } catch (er) {}
+      try { const items = basketToItems(STORE_BASKET[CHECKOUT.pid] || {}); CHECKOUT.priced = await apiFetch('POST', '/store/price-basket', { providerId: CHECKOUT.pid, items, discountCode: CHECKOUT.discountCode || undefined }); } catch (er) {}
       return drawCheckout();
     }
     if (/price/i.test(e.message || '')) { CHECKOUT.busy = false; return loadCheckoutDrivers(); } // a driver changed their price: show the new one

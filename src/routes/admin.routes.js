@@ -193,6 +193,9 @@ async function disputeCustomer(dispute, contractById, customerById) {
 
 function publicAdmin(u, options = {}) {
   const { passwordHash, ...rest } = u;
+  // v141: payout numbers show as the last 4 digits; the full one is on the payout to send
+  if (rest.payoutMobile) rest.payoutMobile = require('../payout-methods').publicMobile(rest.payoutMobile);
+  if (rest.payoutBank) rest.payoutBank = require('../payout-methods').publicBank(rest.payoutBank);
   // Masked by default for any customer or provider record — this is the
   // one function nearly every admin endpoint in this file routes a user
   // record through, so fixing it here closes the gap everywhere at
