@@ -154,8 +154,44 @@
       setTimeout(() => { window.location.href = payment.url; }, 900);
       return true;
     }
+    if (payment.method === 'momo') { momoWait(payment, contract); return true; } // v147
     return false; // a code: payways.js shows the code screen
   };
+  // v147: paying from the customer's own MTN MoMo wallet: MTN sends a prompt
+  // to their phone; this waits for their PIN and says plainly what happened.
+  let momoTimer = null;
+  function momoWait(p, contract) {
+    const id = p.contractId || (contract && contract.id);
+    if (!id) return;
+    const amount = `LRD ${Number(p.amountDue || 0).toLocaleString()}`;
+    overlay('momo-wait', `📱 ${e(tr('Approve the payment on your phone'))}`, '',
+      `<div style="font-size:14.5px;line-height:1.6;color:var(--navy);">
+        <p style="margin:0 0 8px;">${e(tr('A payment prompt for'))} <strong>${e(amount)}</strong> ${e(tr('from'))} ${e(p.network || 'MTN Mobile Money')} ${e(tr('has been sent to your phone'))}${p.last4 ? ` (${e(tr('the number ending'))} ${e(p.last4)})` : ''}.</p>
+        <p style="margin:0 0 8px;">${e(tr('Enter your Mobile Money PIN on your phone to approve it. Trothen holds the money until the job is done.'))}</p>
+        <p id="momo-wait-state" style="margin:0;color:var(--slate);">⏳ ${e(tr('Waiting for your approval…'))}</p>
+        <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0;">${e(tr('Only approve a prompt you expect. Trothen never asks for your PIN by call or message.'))}</p></div>`,
+      `<button class="btn-sm btn-sm-outline" id="momo-wait-close">${e(tr('Close (it keeps checking)'))}</button>`);
+    const close = () => { clearInterval(momoTimer); momoTimer = null; const o = el('momo-wait'); if (o) o.remove(); };
+    const btn = el('momo-wait-close'); if (btn) btn.onclick = close;
+    const until = Date.now() + 12 * 60 * 1000;
+    clearInterval(momoTimer);
+    const refresh = async () => { try { if (typeof loadCustomerData === 'function') await loadCustomerData(); } catch (x) {} try { if (typeof ridesRefresh === 'function') ridesRefresh(); } catch (x) {} };
+    const tick = async () => {
+      if (!el('momo-wait') || Date.now() > until) { clearInterval(momoTimer); momoTimer = null; return; }
+      try {
+        const r = await apiFetch('GET', `/customer-payments/${encodeURIComponent(id)}/card-status`);
+        if (r && r.paid && r.escrowStatus !== 'payment_expired') {
+          close(); await refresh();
+          showResult({ title: tr('Payment approved'), lines: [`${tr('We received')} ${amount}${r.bookingNumber ? ` ${tr('for booking')} #${r.bookingNumber}` : ''}.`, tr('Trothen is holding it safely until the job is done.'), r.isRide ? tr('Your driver has been asked to confirm.') : tr('Your pro has been asked to confirm.')] });
+        } else if (r && (r.escrowStatus === 'payment_expired' || r.bookingStatus === 'cancelled')) {
+          close(); await refresh();
+          showResult({ icon: '⚠️', title: tr('The payment was not approved'), lines: [tr('Nothing was taken from your wallet, and the booking was cancelled.'), tr('You can book again, or choose another way to pay.')] });
+        }
+      } catch (x) { /* try again shortly */ }
+    };
+    momoTimer = setInterval(tick, 4000);
+  }
+  window.payMomoWait = momoWait;
 
   // The customer accepts the pro's suggested price.
   window.agreeToPrice = function (contractId) {

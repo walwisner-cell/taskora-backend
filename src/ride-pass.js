@@ -63,12 +63,12 @@ async function buy(driver, planId, expectedPrice) {
       try { await tokens.spend(driver.id, plan.priceUsd, `pass:${id}`, plan.label); paymentStatus = 'tokens'; }
       catch (e) { if (e.code !== 'TOKENS_SHORT') throw e; }
     }
-    if (paymentStatus !== 'tokens' && driver.country === 'Liberia') {
-      const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('./liberia-momo');
-      if (isLiberiaMoMoConfigured()) {
-        const method = await db.find('paymentMethods', m => m.userId === driver.id && m.isDefault && m.type === 'mobile_money');
-        if (!method) return { status: 400, code: 'ADD_MOMO', error: 'Add a mobile money number in your payment methods first, then buy the pass.' };
-        const r = await requestMobileMoneyCollection(method.mobileMoneyNumber, plan.priceUsd, id, null);
+    if (paymentStatus !== 'tokens') { // v147: a connected wallet (MTN in Liberia, once switched on)
+      const mm = require('./mobile-money');
+      const api = mm.apiFor(driver.country, 'MTN');
+      if (api && api.collections) {
+        const r = await mm.chargeDefaultWallet(driver, plan.priceUsd, id, null);
+        if (!r) return { status: 400, code: 'ADD_MOMO', error: `Add your ${api.name} number in your payment methods (and make it your main one) first, then buy the pass.` };
         if (!r.success) return { status: 402, code: 'PAYMENT_FAILED', error: `Your payment could not be started: ${r.message}. You were not charged.` };
         paymentRef = r.referenceId; paymentStatus = 'requested';
       }

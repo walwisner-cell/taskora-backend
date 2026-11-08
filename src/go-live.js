@@ -214,8 +214,15 @@ async function readinessReport(requestingUser) {
       process.env.PRIVATE_UPLOADS_DIR ? process.env.PRIVATE_UPLOADS_DIR : 'PRIVATE_UPLOADS_DIR not set: every uploaded ID document is erased on the next deploy'),
     item('uploads', 'Profile/portfolio photos are saved on the permanent disk', !!process.env.UPLOADS_DIR,
       process.env.UPLOADS_DIR || 'UPLOADS_DIR not set: photos are erased on the next deploy'),
-    item('email', 'Email sending is connected (SendGrid)', delivery.isEmailConfigured(),
-      delivery.isEmailConfigured() ? `Sending from ${process.env.SENDGRID_FROM_EMAIL}` : 'Not connected: sign-up and sign-in codes are shown on screen, so email ownership and admin two-factor are not really checked.'),
+    (() => { // v147: SMTP (Trothen's own mailbox) and/or SendGrid, and whether the last email actually went
+      const st = delivery.emailStatus();
+      const via = [st.smtp ? `your mailbox (${st.smtpHost})` : null, st.sendgrid ? 'SendGrid' : null].filter(Boolean).join(', then ');
+      const failing = st.last && !st.last.sent && !st.last.badAddress;
+      return item('email', 'Email sending works', delivery.isEmailConfigured() && !failing,
+        !delivery.isEmailConfigured() ? 'Not connected: sign-up and sign-in codes are shown on screen, so email ownership and admin two-factor are not really checked. Set SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS for the noreply@trothenpro.com mailbox.'
+          : failing ? `NOT SENDING. The last email failed at ${new Date(st.last.at).toUTCString()}: ${st.last.words}${st.last.backup ? ` Backup: ${st.last.backup}` : ''} Use "Send a test email" below after fixing it.`
+          : `Sending from ${st.from} through ${via}${st.last ? `; the last email went at ${new Date(st.last.at).toUTCString()}` : ''}. Use "Send a test email" below to check.`);
+    })(),
     item('app_url', 'Public web address is set for email links', !!process.env.APP_URL,
       process.env.APP_URL || 'APP_URL not set: links fall back to the address of each request (works, but set it to be sure).', 'recommended'),
     item('countries', 'Only the countries you actually serve are marked live', liveCountries.length > 0 && liveCountries.length <= 15,

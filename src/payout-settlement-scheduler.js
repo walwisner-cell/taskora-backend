@@ -17,6 +17,11 @@ const { notify } = require('./notify');
 const SETTLEMENT_DELAY_MS = 2 * 24 * 60 * 60 * 1000; // 2 simulated days
 
 async function sweepPayoutSettlement() {
+  // v147: once real payments are on, a payout is "paid" only when finance
+  // marks it sent (with the receipt's reference) or MTN confirms it.
+  const sending = require('./payout-sending');
+  try { await sending.sweepSending(); } catch (e) { console.error('[payout-settlement-scheduler] MoMo check:', e.message); }
+  if (await sending.realPaymentsOn()) return { checked: 0, settled: 0, manual: true };
   const processing = await db.filter('payouts', p => p.status === 'processing');
   let settled = 0;
   for (const payout of processing) {

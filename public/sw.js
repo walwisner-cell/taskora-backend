@@ -31,12 +31,22 @@ self.addEventListener('push', (event) => {
     if (event.data) payload = event.data.json();
   } catch (e) { /* fall back to the default above */ }
 
+  // v147: if Trothen is open and in front, the page shows its own pop-up,
+  // so the phone doesn't show a second one. Otherwise the notification
+  // carries the same tag the page uses, so it is never shown twice, and
+  // the app icon gets a dot.
   event.waitUntil(
-    self.registration.showNotification('Trothen', {
-      body: payload.text || 'You have a new notification',
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      data: { linkTo: payload.linkTo || null },
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      if (list.some(c => c.visibilityState === 'visible' && c.focused)) return null;
+      try { if (self.navigator && self.navigator.setAppBadge) self.navigator.setAppBadge().catch(() => {}); } catch (e) { /* no badges here */ }
+      return self.registration.showNotification('Trothen', {
+        body: payload.text || 'You have a new notification',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: payload.id ? `n_${payload.id}` : undefined,
+        renotify: false,
+        data: { linkTo: payload.linkTo || null },
+      });
     })
   );
 });

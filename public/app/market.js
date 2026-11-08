@@ -343,7 +343,7 @@
         </div>
         <div style="display:flex;gap:8px;">
           <div class="form-group" style="flex:1;"><label class="form-label" for="mkf-price">${e(t('Price'))}</label><input class="form-input" id="mkf-price" type="number" min="0" step="0.01" inputmode="decimal" value="${l ? e(l.price_raw) : ''}"/></div>
-          <div class="form-group" style="flex:0 0 110px;"><label class="form-label" for="mkf-cur">${e(t('Currency'))}</label><select class="form-input form-select" id="mkf-cur">${cur.map(c => `<option value="${e(c.code)}" ${l && l.currency === c.code ? 'selected' : ''}>${e(c.code)}</option>`).join('')}</select></div>
+          <div class="form-group" style="flex:0 0 110px;"><label class="form-label" for="mkf-cur">${e(t('Currency'))}</label><select class="form-input form-select" id="mkf-cur">${cur.map(c => `<option value="${e(c.code)}" ${(l ? l.currency === c.code : c.code === ((cur.find(x => x.code !== 'USD') || cur[0]).code)) ? 'selected' : ''}>${e(c.code)}</option>`).join('')}</select></div>
         </div>
         <div class="form-group"><label class="form-label" for="mkf-desc">${e(t('Description'))}</label><textarea class="form-input" id="mkf-desc" rows="4" maxlength="1000">${e(l ? l.description : '')}</textarea></div>
         <div id="mkf-own" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px;">

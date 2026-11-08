@@ -231,13 +231,13 @@ async function buy(customer, packId, expectedPrice, requestId) {
     if (!(await inAppPaymentAvailable(customer.country))) {
       return { status: 403, code: 'NO_INAPP_PAYMENT', error: 'Paying in the app isn\'t available in your country yet. Use "Send mobile money myself" to get a payment code, or pay at a Trothen office or agent.' };
     }
-    if (customer.country === 'Liberia') {
-      const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('./liberia-momo');
-      if (isLiberiaMoMoConfigured()) {
-        const method = await db.find('paymentMethods', m => m.userId === customer.id && m.isDefault && m.type === 'mobile_money');
-        if (!method) return { status: 400, code: 'ADD_MOMO', error: 'Add a mobile money number in Payments first, then buy tokens.' };
+    { // v147: a connected wallet (MTN in Liberia, once switched on) is charged straight away
+      const mm = require('./mobile-money');
+      const api = mm.apiFor(customer.country, 'MTN');
+      if (api && api.collections) {
         // Charge exactly the local amount shown (L$), not a re-converted figure.
-        const r = await requestMobileMoneyCollection(method.mobileMoneyNumber, pack.priceLocal != null ? pack.priceLocal / s.rate : pack.priceUsd, id, s.rate);
+        const r = await mm.chargeDefaultWallet(customer, pack.priceLocal != null ? pack.priceLocal / s.rate : pack.priceUsd, id, s.rate);
+        if (!r) return { status: 400, code: 'ADD_MOMO', error: `Add your ${api.name} number in Payments (and make it your main one) to pay in the app, or use "Send mobile money myself" to get a payment code.` };
         if (!r.success) return { status: 402, code: 'PAYMENT_FAILED', error: `Your payment could not be started: ${r.message}. You were not charged.` };
         paymentRef = r.referenceId; status = 'requested'; paymentStatus = 'requested';
       }

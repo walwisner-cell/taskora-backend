@@ -58,9 +58,29 @@ function detectCardBrand(digits) {
 }
 
 // GET /api/payment-methods/mine
+// v147: a Mobile Money number shows as its network and last 4 digits only.
+function publicMethod(m) {
+  if (m.type !== 'mobile_money') return m;
+  const { momoNumber, mobileMoneyNumber, ...rest } = m;
+  const last4 = m.momoLast4 || String(mobileMoneyNumber || '').replace(/\D/g, '').slice(-4);
+  return { ...rest, mobileMoneyNumber: `•••• ${last4}`, brand: m.network || m.brand };
+}
 router.get('/payment-methods/mine', requireAuth, async (req, res) => {
   const methods = await db.filter('paymentMethods', m => m.userId === req.user.sub);
-  res.json({ methods });
+  res.json({ methods: methods.map(publicMethod) });
+});
+
+// GET /api/payment-methods/options — v147: what can be added in my country.
+// In Africa: Mobile Money first, then a card; no PayPal or Apple Pay (not
+// used there). Which wallets go through a connected Mobile Money system.
+router.get('/payment-methods/options', requireAuth, async (req, res) => {
+  const u = await db.find('users', x => x.id === req.user.sub);
+  const pmx = require('../payout-methods'), mm = require('../mobile-money');
+  const country = (u && u.country) || '';
+  const africa = pmx.isAfrica(country);
+  const networks = pmx.networksFor(country).map(n => { const api = n === 'Other' ? null : mm.apiFor(country, n); return { name: n, api: api ? api.name : null, apiOn: !!(api && api.collections) }; });
+  const c = mm.COUNTRY[country];
+  res.json({ country, africa, types: africa ? ['mobile_money', 'card'] : ['card', 'paypal', 'apple_pay', 'mobile_money'], networks, callingCode: c ? c[0] : null, example: country === 'Liberia' ? '0777 123 456 (Orange) or 0886 123 456 (MTN)' : c ? `+${c[0]} …` : '+231 77 123 4567' });
 });
 
 // POST /api/payment-methods — add a test payment method. Three types:
@@ -80,6 +100,10 @@ router.post('/payment-methods', requireAuth, async (req, res) => {
   const { type, cardNumber, expiry, nameOnCard, billingAddress, billingZip, paypalEmail, mobileMoneyProvider, mobileMoneyNumber } = req.body || {};
   const accountHolder = await db.find('users', u => u.id === req.user.sub);
   const methodType = ['card', 'apple_pay', 'paypal', 'mobile_money'].includes(type) ? type : 'card';
+  // v147: PayPal and Apple Pay aren't used in Liberia or the rest of Africa.
+  if ((methodType === 'paypal' || methodType === 'apple_pay') && require('../payout-methods').isAfrica(accountHolder && accountHolder.country)) {
+    return res.status(400).json({ code: 'NOT_IN_COUNTRY', error: `${methodType === 'paypal' ? 'PayPal' : 'Apple Pay'} isn't used in ${accountHolder.country}. Add your Mobile Money number, or a card.` });
+  }
 
   if (methodType === 'card') {
     const errors = validate([
@@ -132,24 +156,39 @@ router.post('/payment-methods', requireAuth, async (req, res) => {
   }
 
   if (methodType === 'mobile_money') {
-    const errors = validate([
-      ['mobileMoneyProvider', isNonEmptyString(mobileMoneyProvider, { min: 2, max: 60 }), 'Enter your mobile money provider (e.g. Orange Money, MTN Mobile Money, Lonestar Cell MTN)'],
-      ['mobileMoneyNumber', isNonEmptyString(mobileMoneyNumber, { min: 7, max: 20 }), 'Enter the phone number linked to your mobile money account'],
-    ]);
-    if (errors.length) return res.status(400).json({ error: errors[0], errors });
+    // v147: the network from the country's list, the number checked and kept
+    // in international form (encrypted, like payout numbers), the name the
+    // wallet is registered in. A number whose first digits belong to another
+    // network is caught (in Liberia 077 is Orange, 088 and 055 are MTN).
+    const pmx = require('../payout-methods'), mm = require('../mobile-money');
+    const country = (accountHolder && accountHolder.country) || '';
+    const network = String(req.body.network || mobileMoneyProvider || '').trim().slice(0, 40);
+    if (network.length < 2) return res.status(400).json({ error: 'Choose your Mobile Money network' });
+    const num = mm.readNumber(mobileMoneyNumber, country);
+    if (num.error) return res.status(400).json({ error: num.error });
+    if (num.network && network !== 'Other' && pmx.networksFor(country).includes(network) && num.network !== network) {
+      return res.status(400).json({ code: 'WRONG_NETWORK', error: `${num.display} is a ${num.network} number, not ${network}. Choose ${num.network}, or check the number.` });
+    }
+    const accountName = String(req.body.accountName || '').trim().slice(0, 80);
+    if (accountName.length < 2) return res.status(400).json({ error: 'Enter the name the Mobile Money account is registered in' });
     const existing = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+    const dup = existing.find(m => m.type === 'mobile_money' && mm.numberOf(m) === num.msisdn);
+    if (dup) return res.status(409).json({ error: 'This Mobile Money number is already saved.' });
+    const api = mm.apiFor(country, network);
     const method = {
       id: `pm_${nanoid(10)}`,
       userId: req.user.sub,
       type: 'mobile_money',
-      brand: mobileMoneyProvider.trim(),
-      mobileMoneyNumber: mobileMoneyNumber.trim(),
-      isDefault: existing.length === 0,
-      mode: 'test',
+      brand: network, network, country,
+      momoNumber: pmx.seal(num.msisdn), momoLast4: num.msisdn.slice(-4),
+      accountName,
+      api: api ? api.name : null, // the Mobile Money system that can charge it, once switched on
+      isDefault: existing.length === 0 || !existing.some(m => m.isDefault),
+      mode: api && api.collections ? 'live' : 'code',
       createdAt: new Date().toISOString(),
     };
     await db.insert('paymentMethods', method);
-    return res.status(201).json({ method });
+    return res.status(201).json({ method: publicMethod(method) });
   }
 
   // apple_pay — no form fields at all in a real integration (the device
@@ -827,16 +866,10 @@ async function handleScopeChangeDecide(req, res, request) {
   // today (MoMo is still gated, so this call is a no-op for everyone),
   // but this closes the same gap before it can matter.
   const scopeChangeCustomer = customerForFee;
-  if (contract.payMethod !== 'cash' && scopeChangeCustomer && scopeChangeCustomer.country === 'Liberia') {
-    const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('../liberia-momo');
-    if (isLiberiaMoMoConfigured()) {
-      const defaultMethod = await db.find('paymentMethods', m => m.userId === scopeChangeCustomer.id && m.isDefault);
-      if (defaultMethod && defaultMethod.type === 'mobile_money') {
-        const result = await requestMobileMoneyCollection(defaultMethod.mobileMoneyNumber, request.amount, contract.id, null);
-        if (!result.success) {
-          return res.status(409).json({ error: `The additional $${request.amount} could not be collected from the customer's mobile money account: ${result.message}. Nothing on this booking was changed. Ask the customer to try approving again.` });
-        }
-      }
+  if (contract.payMethod !== 'cash' && scopeChangeCustomer) { // v147: any connected wallet, not only Liberia's
+    const result = await require('../mobile-money').chargeDefaultWallet(scopeChangeCustomer, request.amount, contract.id, null);
+    if (result && !result.success) {
+      return res.status(409).json({ error: `The additional $${request.amount} could not be collected from the customer's mobile money account: ${result.message}. Nothing on this booking was changed. Ask the customer to try approving again.` });
     }
   }
 
@@ -855,6 +888,63 @@ async function handleScopeChangeDecide(req, res, request) {
 
   await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved: ${contract.payMethod === 'cash' ? 'the agreed cash price' : 'the contract and held escrow'} have been updated. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
   res.json({ request: { ...request, status: 'approved' }, contract: updatedContract });
+}
+
+// v147: the pro says the job is finished. The customer then has 3 days to
+// press Complete or report a problem; if they do neither, the job completes
+// by itself and the pro is paid (Airtasker, TaskRabbit and Upwork work the
+// same way). Before, a customer who never pressed Complete left the pro's
+// money held for ever.
+const CONFIRM_DAYS = 3;
+router.post('/contracts/:id/work-done', requireAuth, requireRole('provider'), async (req, res) => {
+  const c = await db.find('contracts', x => x.id === req.params.id && x.providerId === req.user.sub);
+  if (!c) return res.status(404).json({ error: 'Booking not found' });
+  if (c.status !== 'active') return res.status(400).json({ error: 'Only a booking that is on can be marked finished.' });
+  if (c.ride || c.delivery || c.storeOrder) return res.status(400).json({ error: 'Rides, deliveries and store orders finish their own way.' });
+  if (c.workDoneAt) return res.json({ ok: true, autoCompleteAt: c.autoCompleteAt });
+  // v147: the job can only be finished once it has started: the pro has
+  // arrived, or the booking day has come. Stops the money clock being
+  // started on a job nobody has done yet.
+  const today = new Date().toISOString().slice(0, 10);
+  const dayCome = c.date && /^\d{4}-\d{2}-\d{2}$/.test(String(c.date)) && String(c.date) <= today;
+  if (!c.arrivedAt && !dayCome) return res.status(400).json({ code: 'NOT_STARTED', error: 'Press Arrived when you reach the customer first. You can mark the job finished once you have arrived, or from the booking day.' });
+  const note = String((req.body || {}).note || '').trim().slice(0, 300);
+  const at = new Date(Date.now() + CONFIRM_DAYS * 24 * 3600 * 1000).toISOString();
+  await db.update('contracts', c.id, { workDoneAt: new Date().toISOString(), autoCompleteAt: at, workDoneNote: note || null });
+  const pro = await db.find('users', u => u.id === c.providerId);
+  const when = new Date(at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
+  await notify(c.customerId, '✅', `${pro ? pro.name : 'Your pro'} says "${c.service}" is finished${note ? `: "${note}"` : ''}. Check the work, then press Complete${c.payMethod === 'cash' ? ' and say what you paid' : ''}, or Report a Problem. If you do neither by ${when} (UTC), it completes by itself${c.payMethod === 'cash' ? '' : ' and the pro is paid'}.`, 'bookingUpdates', { section: 'bookings' });
+  res.json({ ok: true, autoCompleteAt: at });
+});
+// The hourly check: finished jobs the customer didn't answer complete by themselves.
+async function sweepWorkDone() {
+  const now = Date.now();
+  // v147: a reminder about a day before it completes by itself, as escrow platforms do
+  const soon = await db.filter('contracts', c => c.status === 'active' && c.workDoneAt && c.autoCompleteAt && !c.autoCompleteRemindedAt && Date.parse(c.autoCompleteAt) > now && Date.parse(c.autoCompleteAt) - now <= 24 * 3600 * 1000);
+  for (const c of soon) {
+    try {
+      await db.update('contracts', c.id, { autoCompleteRemindedAt: new Date().toISOString() });
+      await notify(c.customerId, '⏰', `Reminder: "${c.service}" completes by itself within 24 hours${c.payMethod === 'cash' ? '' : ' and the pro is paid'}. If something is wrong with the work, press Report a Problem in My Bookings before then.`, 'bookingUpdates', { section: 'bookings' });
+    } catch (e) { console.error('[work-done] reminder failed:', c.id, e.message); }
+  }
+  const due = await db.filter('contracts', c => c.status === 'active' && c.workDoneAt && c.autoCompleteAt && Date.parse(c.autoCompleteAt) <= now);
+  let n = 0;
+  for (const c of due) {
+    try {
+      if (await db.find('disputes', d => d.contractId === c.id && !['resolved', 'closed', 'dismissed'].includes(d.status))) continue; // a problem was reported: the team decides
+      if (c.payMethod === 'cash') {
+        await db.update('contracts', c.id, { cashPaidAmount: c.amount, autoCompleted: true });
+        await completeContractCore({ ...c, cashPaidAmount: c.amount }, 0, c.customerId);
+      } else {
+        await db.update('contracts', c.id, { autoCompleted: true });
+        await completeContractCore(c, 0, c.customerId);
+      }
+      await notify(c.customerId, '✅', `"${c.service}" was completed automatically: the pro said it was finished ${CONFIRM_DAYS} days ago and no problem was reported. If something is wrong, contact support.`, 'bookingUpdates', { section: 'bookings' });
+      await notify(c.providerId, '💰', `"${c.service}" is complete${c.payMethod === 'cash' ? '' : ': the money is now in your Earnings, ready to pay out'}. The customer didn't answer within ${CONFIRM_DAYS} days.`, 'bookingUpdates', { section: 'earnings' });
+      n++;
+    } catch (e) { console.error('[work-done] auto-complete failed:', c.id, e.message); }
+  }
+  return n;
 }
 
 router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), async (req, res) => {
@@ -1103,8 +1193,10 @@ router.get('/payments/mine', requireAuth, requireRole('customer'), async (req, r
       bookingNumber: c.bookingNumber || c.id,
       date: (c.createdAt || '').slice(0, 10),
       providerName: provider ? provider.name : 'Unknown provider',
-      providerEmail: provider ? provider.email : null,
-      providerPhone: provider ? provider.phone : null,
+      // v147: the pro's phone and email only once the booking is confirmed
+      // (and for 7 days after it's done); before that, the chat.
+      providerEmail: provider && require('../booking-contact').contractConfirmed(c) ? provider.email : null,
+      providerPhone: provider && require('../booking-contact').contractConfirmed(c) ? provider.phone : null,
       service: c.service,
       jobDate: c.date || null,
       jobTime: c.time || null,
@@ -1399,9 +1491,29 @@ router.get('/admin/payouts-to-send', requireAuth, requireRole('admin'), async (r
   const rows = (await db.filter('payouts', p => p.status === 'processing'))
     .filter(p => { const u = users.get(p.providerId); return u && sc.inScope(u); })
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
-    .map(p => { const u = users.get(p.providerId); return { id: p.id, createdAt: p.createdAt, amount: p.amount, payoutCurrency: p.payoutCurrency, payoutAmountLocal: p.payoutAmountLocal, method: p.method, destination: p.destination || null, person: { id: u.id, name: u.name, country: u.country, city: u.city } }; });
-  res.json({ payouts: rows });
+    .map(p => { const u = users.get(p.providerId); return { id: p.id, createdAt: p.createdAt, amount: p.amount, payoutCurrency: p.payoutCurrency, payoutAmountLocal: p.payoutAmountLocal, method: p.method, destination: p.destination || null, status: p.status, problem: p.problem || null, person: { id: u.id, name: u.name, country: u.country, city: u.city } }; });
+  // v147: which can go through a Mobile Money system, and whether that is on
+  const sending = require('../payout-sending');
+  for (const r of rows) { const p = await db.find('payouts', x => x.id === r.id); const route = await sending.momoRoute(p); r.momo = route ? { name: route.name, on: route.disbursement } : null; }
+  const sendingNow = (await db.filter('payouts', p => p.status === 'sending')).filter(p => { const u = users.get(p.providerId); return u && sc.inScope(u); }).map(p => ({ id: p.id, amount: p.amount, destination: p.destination, sentAt: p.momoSentAt, person: { name: (users.get(p.providerId) || {}).name } }));
+  res.json({ payouts: rows, sending: sendingNow, autoSettle: !(await sending.realPaymentsOn()) });
 });
+// POST /api/admin/payouts/:id/sent { reference } · /problem { reason } · /send-momo — v147
+for (const [path, fn] of [['sent', 'markSent'], ['problem', 'markProblem'], ['send-momo', 'sendByMomo']]) {
+  router.post(`/admin/payouts/:id/${path}`, requireAuth, requireRole('admin'), async (req, res) => {
+    const sc = await payoutAdminScope(req);
+    if (sc.error) return res.status(403).json({ error: 'Only the finance team and super admins send payouts.' });
+    const p = await db.find('payouts', x => x.id === req.params.id);
+    const u = p && await db.find('users', x => x.id === p.providerId);
+    if (!p || !u || !sc.inScope(u)) return res.status(404).json({ error: 'Payout not found' });
+    const sending = require('../payout-sending');
+    const arg = path === 'sent' ? (req.body || {}).reference : path === 'problem' ? (req.body || {}).reason : undefined;
+    const r = await sending[fn](p, sc.me, arg);
+    if (r.error) return res.status(400).json({ error: r.error });
+    try { const { logAccess } = require('../access-log'); await logAccess(req, `payout_${path.replace('-', '_')}`, p.id); } catch (e) { /* the action stands */ }
+    res.json(r);
+  });
+}
 router.post('/admin/payouts/:id/reveal', requireAuth, requireRole('admin'), async (req, res) => {
   const sc = await payoutAdminScope(req);
   if (sc.error) return res.status(403).json({ error: 'Only the finance team and super admins see payouts being sent.' });
@@ -1418,3 +1530,5 @@ router.post('/admin/payouts/:id/reveal', requireAuth, requireRole('admin'), asyn
 
 module.exports = router;
 module.exports.completeContractCore = completeContractCore; // v108
+module.exports.sweepWorkDone = sweepWorkDone; // v147
+module.exports.CONFIRM_DAYS = CONFIRM_DAYS;

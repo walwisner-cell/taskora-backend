@@ -87,20 +87,12 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   const custPay = require('../customer-payments');
   const escrowId = `esc_${nanoid(10)}`;
   // v125: a code, a card checkout page, nothing (test sites), or an error where no real payment exists.
-  const codeFields = contract.payMethod === 'protected' ? await custPay.paymentFieldsFor(contract, customer, escrowId) : null;
-
-  let liberiaMoMoReference = null;
-  if (!codeFields && customer && customer.country === 'Liberia') {
-    const { isLiberiaMoMoConfigured, requestMobileMoneyCollection } = require('../liberia-momo');
-    if (isLiberiaMoMoConfigured()) {
-      const defaultMethod = await db.find('paymentMethods', m => m.userId === customer.id && m.isDefault);
-      if (defaultMethod && defaultMethod.type === 'mobile_money') {
-        const result = await requestMobileMoneyCollection(defaultMethod.mobileMoneyNumber, contract.amount, contract.id, rate);
-        if (!result.success) throw new Error(`Mobile money charge could not be started: ${result.message}`);
-        liberiaMoMoReference = result.referenceId;
-      }
-    }
-  }
+  // v147: an MTN wallet (where that system is on) gets a prompt on the
+  // customer's phone and waits for their PIN, like a code or a card page:
+  // nothing is held until MTN says it was approved.
+  let codeFields = contract.payMethod === 'protected' ? await custPay.paymentFieldsFor(contract, customer, escrowId, rate) : null;
+  if (!codeFields && customer && contract.payMethod !== 'cash' && contract.payMethod !== 'protected') codeFields = await custPay.momoFieldsFor(contract, customer, rate);
+  const liberiaMoMoReference = (codeFields && codeFields.momoRef) || null;
 
   // A materials advance is tracked on the SAME escrow record as separate
   // fields, rather than as a second record — every existing feature
@@ -516,8 +508,12 @@ router.get('/geo/place-search', requireAuth, placeSearchLimiter, async (req, res
   const me = await db.find('users', u => u.id === req.user.sub);
   const country = me && me.country ? me.country : '';
   const key = (q + '|' + country).toLowerCase();
+  // v147: Trothen's own list of known places (Admin → Rides → Places) comes
+  // first: free map search knows few Liberian landmarks.
+  const own = (await require('../places').search(country, q, 5)).map(p => ({ name: [p.name, p.area, country].filter(Boolean).join(', '), latitude: p.latitude, longitude: p.longitude, trothen: true }));
+  const withOwn = (list) => [...own, ...list.filter(x => !own.some(o => Math.abs(o.latitude - x.latitude) < 0.0005 && Math.abs(o.longitude - x.longitude) < 0.0005))].slice(0, 8);
   const hit = placeCache.get(key);
-  if (hit && Date.now() - hit.at < 24 * 60 * 60 * 1000) return res.json({ places: hit.places, cached: true });
+  if (hit && Date.now() - hit.at < 24 * 60 * 60 * 1000) return res.json({ places: withOwn(hit.places), cached: true });
   const run = async () => {
     const wait = 1100 - (Date.now() - lastPlaceCallAt);
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
@@ -542,8 +538,9 @@ router.get('/geo/place-search', requireAuth, placeSearchLimiter, async (req, res
     const places = await job;
     if (placeCache.size > 2000) placeCache.clear();
     placeCache.set(key, { at: Date.now(), places });
-    res.json({ places });
+    res.json({ places: withOwn(places) });
   } catch (e) {
+    if (own.length) return res.json({ places: own }); // v147: the map search is down, Trothen's places still work
     res.status(502).json({ error: 'Place search isn\'t available right now. You can still move the map by hand.' });
   }
 });
@@ -1535,6 +1532,7 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
   // other candidates implicitly tied up, no contract sitting in the
   // database for money that was never actually taken.
   const escrow = contract.payMethod === 'cash' ? null : await fundEscrowForContract(contract, req.user.sub, job.payCurrency); // v119: a cash job holds nothing
+  if (escrow && escrow.status === 'awaiting_payment' && contract.status !== 'awaiting_payment') { contract.statusAfterPayment = contract.status; contract.status = 'awaiting_payment'; } // v147: waiting for the wallet PIN
   await db.insert('contracts', contract);
   await db.update('jobs', job.id, { status: 'matched' });
   await db.update('matches', match.id, { status: 'accepted' });
@@ -1956,6 +1954,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   }
   try {
     if (!isNegotiable && contract.payMethod !== 'cash') escrow = await fundEscrowForContract(contract, req.user.sub, payCurrency); // v119: a cash job holds nothing
+    if (escrow && escrow.status === 'awaiting_payment' && contract.status !== 'awaiting_payment') { contract.statusAfterPayment = contract.status; contract.status = 'awaiting_payment'; } // v147: waiting for the wallet PIN
     await db.insert('contracts', contract);
   } catch (e) {
     if (basket.items.length) await proStore.releaseStock(basket.items);
@@ -2123,7 +2122,7 @@ router.post('/contracts/:id/pay', requireAuth, requireRole('customer'), requireC
     const existing = await db.find('escrowTransactions', e => e.contractId === contract.id);
     if (existing && existing.paidBy === 'code') return { status: 400, body: { code: 'USE_CODE', error: 'Pay this booking with your payment code (Pay now in My Bookings).' } };
     // v125: a card page that was opened but not finished: send the customer back to it.
-    if (existing && existing.paidBy === 'card' && existing.status === 'awaiting_payment') return { status: 200, body: { contract, escrow: null, payment: require('../customer-payments').publicPayment(existing) } };
+    if (existing && (existing.paidBy === 'card' || existing.paidBy === 'momo') && existing.status === 'awaiting_payment') return { status: 200, body: { contract, escrow: null, payment: require('../customer-payments').publicPayment(existing) } };
     if (existing) return { status: 400, body: { error: 'This booking is already paid.' } };
     const expected = Number((req.body || {}).total);
     const total = Math.round(((contract.amount || 0) + (contract.serviceFee || 0)) * 100) / 100;
@@ -2518,11 +2517,15 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
   row('Internal Reference ID', contract.id);
 
   sectionHeader('Parties to This Agreement');
+  // v147: phone and email appear on the agreement only once the booking is
+  // confirmed (or was completed); before that it says how to reach them.
+  const showContact = ['active', 'disputed', 'completed', 'released'].includes(contract.status);
+  const reach = (u) => showContact ? `  ·  ${u.email}${u.phone ? '  ·  ' + u.phone : ''}` : '  ·  contact details shared once the booking is confirmed';
   row('Customer', customer
-    ? `${customer.name}  ·  ${customer.email}${customer.phone ? '  ·  ' + customer.phone : ''}${customer.city ? '  ·  ' + customer.city + (customer.country ? ', ' + customer.country : '') : ''}`
+    ? `${customer.name}${reach(customer)}${customer.city ? '  ·  ' + customer.city + (customer.country ? ', ' + customer.country : '') : ''}`
     : 'Account no longer available');
   row('Service Provider', provider
-    ? `${provider.name}  ·  ${provider.email}${provider.phone ? '  ·  ' + provider.phone : ''}${provider.city ? '  ·  ' + provider.city + (provider.country ? ', ' + provider.country : '') : ''}`
+    ? `${provider.name}${reach(provider)}${provider.city ? '  ·  ' + provider.city + (provider.country ? ', ' + provider.country : '') : ''}`
     : 'Account no longer available');
 
   sectionHeader('Service Details');

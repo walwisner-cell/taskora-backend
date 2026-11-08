@@ -1,6 +1,9 @@
-Trothen v146: everything in one place (includes v128 to v145)
+Trothen v147: everything in one place (includes v128 to v146)
 
-  src\ public\ server.js    The 80 files changed since your GitHub main (before v128), in their real folders.
+  src\ public\ server.js    The 97 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v147.md           Sign-in emails by SMTP; Mobile Money ready for MTN (PIN-confirmed); payouts only when sent;
+                            calls only once booked; Liberia ride places; team managers; "I've finished the job";
+                            the store fixes; and a full booking and ride walkthrough.
   CHANGES_v146.md           Calls no longer stuck after a dropped call; Admin, Call health; a Rides switch per country.
   CHANGES_v145.md           Drivers can accept rides whatever their main trade; licences follow the work.
   CHANGES_v144.md           Post a Job redesigned: 5 steps, a real price in L$ or US$ (or pros send prices), when, materials.
@@ -20,30 +23,29 @@ Trothen v146: everything in one place (includes v128 to v145)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v146.md  Byte counts and the cmd.exe steps.
-  deploy_v146.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v146-files.zip    The code files packed; the .bat reads this from Downloads.
-  screenshots\              The new screens.
+  DEPLOYMENT_STEPS_v147.md  Byte counts and the cmd.exe steps.
+  deploy_v147.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v147-files.zip    The code files packed; the .bat reads this from Downloads.
+  screenshots\              The new screens (phone size).
 
-Works whether or not v128 is already live. git status shows 98 files if v128 is live, 100 if not.
+Works whether or not v128 is already live. git status shows 116 files if v128 is live, 118 if not.
+
+BEFORE you deploy (sign-in emails):
+  Render, Environment: add SMTP_HOST = mail.privateemail.com, SMTP_PORT = 465,
+  SMTP_USER = noreply@trothenpro.com, SMTP_PASS = that mailbox's password.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v146.
-  2. copy "%USERPROFILE%\Downloads\trothen-v146\trothen-v146-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v147.
+  2. copy "%USERPROFILE%\Downloads\trothen-v147\trothen-v147-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v146\deploy_v146.bat"
+     "%USERPROFILE%\Downloads\trothen-v147\deploy_v147.bat"
   Nothing goes live until you type YES.
 
 After it is live:
-  - Rides shows only for accounts in a country switched on in Admin, Rides, Rides by country (Liberia). Use a Liberia test account to see it.
-  - For calls, add TURN_API_URL and the VAPID keys on Render. Admin, Call health shows whether calls connect.
-  - Try + Post a New Job as a customer. Keep the L$ exchange rate in Admin current: an L$ price is kept in US$ at that rate.
-  - Tell sellers about returns, sizes, sales and discount codes; phones and laptops in the Market now need their IMEI or serial.
-  - Admin, Categories and Countries, Sync Latest Categories and Countries (adds Driver for Hire).
-  - Admin, Rides, Fares, Liberia: set the L$ fares with a few drivers, and today's pump price.
-  - Tell your pros about Settings, How you charge. Most choose Per job, with a few fixed prices.
-    Drivers choose Per trip or Per day, and apply under Rides to carry passengers.
-  - Pros and sellers add their Mobile Money number or bank account before cashing out.
-    Check ID_FILE_ENCRYPTION_KEY is set on Render (Admin, Go-Live shows it).
-  - Add TURN_API_URL on Render (Metered Open Relay, free 20 GB a month) so calls connect on every network. See CHANGES_v140.md, section 4.
-  - Admin, Categories and Countries, Sync Latest Categories and Countries.
+  - Admin, Go-Live, "Send a test email" to yourself.
+  - Ask someone in Monrovia to pin the 57 starter places in Admin, Rides, Places (about 30 minutes).
+  - Once "Real payments only" is on, finance sends each payout and presses "Mark as sent" with the transaction ID.
+  - When MTN gives you the keys: add the LCMMMI_ settings (see CHANGES_v147.md), then LCMMMI_INTEGRATION_ENABLED = true.
+    Test with about $1 each way first.
+  - Everything from v146 still applies: TURN_API_URL and the VAPID keys for calls, the Rides switch per country,
+    fares in Admin, Rides, Fares, and the L$ exchange rate kept current.

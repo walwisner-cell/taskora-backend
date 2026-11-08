@@ -134,17 +134,75 @@
     const open = list.find(r => ['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status)); // v125
     const past = list.filter(r => r !== open);
     body().innerHTML = (open ? riderTrip(open) : riderForm()) + (past.length ? `<div class="panel"><div class="panel-title">${e(tr('Past rides'))}</div>${past.slice(0, 15).map(pastRow).join('')}</div>` : '');
-    if (open) { R.poll = setInterval(() => { if (!body()) return stopTimers(); loadRiderPage(); }, 8000); } else { renderPins(); }
+    if (open) { R.poll = setInterval(() => { if (!body()) return stopTimers(); loadRiderPage(); }, 8000); } else { renderPins(); loadMyPlaces(); }
   }
   function pastRow(r) {
-    return `<div style="padding:10px 0;border-top:1px solid var(--border);font-size:14px;"><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong><div style="color:var(--slate);">${e(new Date(r.createdAt).toLocaleDateString())} · ${money(r.totalPaid)} · ${e(tr(STATUS_WORDS[r.status] || r.status))}</div></div>`;
+    return `<div style="padding:10px 0;border-top:1px solid var(--border);font-size:14px;"><strong>${e(r.pickup.address)}</strong>${r.pickup.note ? ` <span style="font-size:13px;color:var(--slate);">(📝 ${e(r.pickup.note)})</span>` : ''} → <strong>${e(r.dropoff.address)}</strong><div style="color:var(--slate);">${e(new Date(r.createdAt).toLocaleDateString())} · ${money(r.totalPaid)} · ${e(tr(STATUS_WORDS[r.status] || r.status))}</div></div>`;
   }
+  // v147: the way ride apps in Africa do it: search a landmark by name
+  // (Trothen's own list of known places first), or tap Home, Work or a
+  // recent place, or use GPS, or choose on a map. Then a note for the driver.
   function pinBox(prefix, label) {
-    return `<div class="form-group"><label class="form-label">${e(tr(label))}</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn-sm btn-sm-outline" id="${prefix}-pin-btn" onclick="pinJobLocation('${prefix}')">${e(tr('Use my location'))}</button><button type="button" class="btn-sm btn-sm-outline" onclick="openMapPicker('${prefix}')">${e(tr('Choose on a map'))}</button></div>
+    return `<div class="form-group"><label class="form-label" for="${prefix}-q">${e(tr(label))}</label>
+      <input class="form-input" id="${prefix}-q" type="search" autocomplete="off" placeholder="${e(tr('Search a place, e.g. ELWA Junction, Red Light, JFK'))}" oninput="ridesPlaceSearch('${prefix}')"/>
+      <div id="${prefix}-hits" style="margin-top:6px;"></div>
+      <div id="${prefix}-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"><button type="button" class="btn-sm btn-sm-outline" id="${prefix}-pin-btn" onclick="pinJobLocation('${prefix}')">📍 ${e(tr('Use my location'))}</button><button type="button" class="btn-sm btn-sm-outline" onclick="openMapPicker('${prefix}')">🗺️ ${e(tr('Choose on a map'))}</button></div>
       <div id="${prefix}-pin-status" style="font-size:13.5px;margin-top:8px;" aria-live="polite"></div>
-      <input class="form-input" id="${prefix}-name" maxlength="120" placeholder="${e(tr('Name of the place, e.g. Red Light Market'))}" style="margin-top:8px;"/></div>`;
+      <input class="form-input" id="${prefix}-name" maxlength="120" placeholder="${e(tr('Name of the place, e.g. Red Light Market'))}" style="margin-top:8px;"/>
+      ${prefix === 'ridefrom' ? `<input class="form-input" id="ridefrom-note" maxlength="140" placeholder="${e(tr('Note for the driver (optional), e.g. blue gate, I\'m wearing red'))}" style="margin-top:8px;"/>` : ''}
+      <button type="button" class="btn-sm btn-sm-ghost" style="margin-top:6px;" onclick="ridesSavePlace('${prefix}')">☆ ${e(tr('Save this place'))}</button></div>`;
   }
+  R.places = null;
+  async function loadMyPlaces() {
+    try { R.places = await apiFetch('GET', '/places/mine'); } catch (x) { R.places = { saved: [], recent: [] }; }
+    for (const prefix of ['ridefrom', 'rideto']) {
+      const box = el(prefix + '-chips'); if (!box) continue;
+      const chip = (label, p, icon) => `<button type="button" class="btn-sm btn-sm-outline" style="font-size:13px;" onclick='ridesUsePlace(${JSON.stringify(prefix)}, ${JSON.stringify({ name: p.name, latitude: p.latitude, longitude: p.longitude, note: p.note || '' }).replace(/'/g, '&#39;')})'>${icon} ${e(label)}</button>`;
+      box.innerHTML = (R.places.saved || []).map(p => chip(p.label, p, /home/i.test(p.label) ? '🏠' : /work|office/i.test(p.label) ? '💼' : '⭐')).join('') + (R.places.recent || []).slice(0, 3).map(p => chip(p.name, p, '🕘')).join('');
+    }
+  }
+  window.ridesUsePlace = function (prefix, p) {
+    JOB_PIN[prefix] = { latitude: p.latitude, longitude: p.longitude, accuracyM: null, source: 'place', at: Date.now() };
+    const n = el(prefix + '-name'); if (n) n.value = p.name;
+    const q = el(prefix + '-q'); if (q) q.value = '';
+    const h = el(prefix + '-hits'); if (h) h.innerHTML = '';
+    if (prefix === 'ridefrom' && p.note && el('ridefrom-note') && !el('ridefrom-note').value) el('ridefrom-note').value = p.note;
+    if (typeof renderJobPin === 'function') renderJobPin(prefix);
+  };
+  let searchT = null;
+  window.ridesPlaceSearch = function (prefix) {
+    clearTimeout(searchT);
+    searchT = setTimeout(async () => {
+      const q = (el(prefix + '-q').value || '').trim(), box = el(prefix + '-hits');
+      if (q.length < 2) { box.innerHTML = ''; return; }
+      let r = { saved: [], places: [] }, osm = [];
+      try { r = await apiFetch('GET', `/places/search?q=${encodeURIComponent(q)}`); } catch (x) {}
+      if (!r.places.length && !r.saved.length) { try { osm = ((await apiFetch('GET', `/geo/place-search?q=${encodeURIComponent(q)}`)).places || []).map(p => ({ name: p.name.split(',').slice(0, 2).join(','), latitude: p.latitude, longitude: p.longitude, kind: 'map' })); } catch (x) {} }
+      const all = [...r.saved.map(p => ({ ...p, name: p.name, sub: p.label, icon: '⭐' })), ...r.places.map(p => ({ ...p, sub: p.area, icon: '📌' })), ...osm.map(p => ({ ...p, sub: tr('from the map'), icon: '🗺️' }))].slice(0, 8);
+      box.innerHTML = all.length ? `<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">${all.map(p => `<button type="button" style="display:flex;gap:8px;width:100%;text-align:left;background:var(--white);border:0;border-bottom:1px solid var(--border);padding:9px 12px;cursor:pointer;" onclick='ridesUsePlace(${JSON.stringify(prefix)}, ${JSON.stringify({ name: p.name, latitude: p.latitude, longitude: p.longitude, note: p.note || '' }).replace(/'/g, '&#39;')})'><span>${p.icon}</span><span><strong style="color:var(--navy);">${e(p.name)}</strong>${p.sub ? `<span style="display:block;font-size:12.5px;color:var(--slate);">${e(p.sub)}</span>` : ''}</span></button>`).join('')}</div>`
+        : `<div style="font-size:13px;color:var(--slate);">${e(tr('Not found. Use your location or choose it on the map, then type its name.'))}</div>`;
+    }, 250);
+  };
+  window.ridesSavePlace = async function (prefix) {
+    const pin = JOB_PIN[prefix]; if (!pin) return showToast(tr('Set the place first: search it, use your location or choose it on the map'));
+    const name = (el(prefix + '-name').value || '').trim();
+    const label = (R.places && !(R.places.saved || []).some(p => /^home$/i.test(p.label))) ? 'Home' : (name || 'Saved place');
+    const box = el(prefix + '-chips');
+    if (!el(prefix + '-savelabel')) {
+      box.insertAdjacentHTML('afterend', `<div id="${prefix}-saverow" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;"><input class="form-input" id="${prefix}-savelabel" maxlength="30" value="${e(label)}" style="max-width:180px;padding:6px 10px;"/><button type="button" class="btn-sm btn-sm-primary" onclick="ridesSavePlaceGo('${prefix}')">${e(tr('Save'))}</button></div>`);
+      el(prefix + '-savelabel').focus(); return;
+    }
+  };
+  window.ridesSavePlaceGo = async function (prefix) {
+    const pin = JOB_PIN[prefix]; if (!pin) return;
+    try {
+      await apiFetch('POST', '/places/mine', { label: el(prefix + '-savelabel').value, name: (el(prefix + '-name').value || '').trim(), latitude: pin.latitude, longitude: pin.longitude, note: prefix === 'ridefrom' ? (el('ridefrom-note') || {}).value || '' : '' });
+      const row = el(prefix + '-saverow'); if (row) row.remove();
+      showToast(tr('Saved. It shows as a button next time.'));
+      loadMyPlaces();
+    } catch (x) { showToast(x.message || tr('Could not save')); }
+  };
   function renderPins() { for (const p of ['ridefrom', 'rideto']) if (typeof renderJobPin === 'function') renderJobPin(p); }
   function riderForm() {
     if (R.cfg && !R.cfg.availableHere) return `<div class="panel"><div class="ver-note">${e(tr('Rides are not available in your country yet.'))}</div></div>`;
@@ -163,7 +221,7 @@
     try {
       const pax = Number(el('ride-pax').value) || 1;
       const r = await apiFetch('GET', `/rides/drivers?pLat=${a.latitude}&pLng=${a.longitude}&dLat=${b.latitude}&dLng=${b.longitude}&passengers=${pax}`);
-      R.quote = { a, b, pax, an: (el('ridefrom-name').value || '').trim() || 'Pickup', bn: (el('rideto-name').value || '').trim() || 'Destination', fee: r.feePercent, appPay: r.appPay !== false, payMode: r.payMode };
+      R.quote = { a, b, pax, an: (el('ridefrom-name').value || '').trim() || 'Pickup', bn: (el('rideto-name').value || '').trim() || 'Destination', note: ((el('ridefrom-note') || {}).value || '').trim(), fee: r.feePercent, appPay: r.appPay !== false, payMode: r.payMode };
       if (!r.drivers.length) { out.innerHTML = `<div class="ver-note">${e(tr('No drivers are online near you right now. Try again in a few minutes.'))}</div>`; return; }
       R.floorPct = r.offerFloorPercent; // v142
       R.localOf = {}; r.drivers.forEach(d => { if (d.fareLocal != null && d.fareLocal > 0) R.localOf[d.id] = { per: d.fare / d.fareLocal, symbol: d.symbol || '' }; }); // offers can be typed in L$
@@ -195,7 +253,7 @@
     const cash = payment === 'cash';
     rideCheckout({ title: tr('Request this ride'), sub: `${q.an} → ${q.bn}`, price: fare, cash, onConfirm: async () => {
       try {
-        const res = await apiFetch('POST', '/rides', { driverId, passengers: q.pax, expectedFare: fare, payment: cash ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
+        const res = await apiFetch('POST', '/rides', { driverId, passengers: q.pax, expectedFare: fare, payment: cash ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an, note: q.note || '' }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
         const c = el('checkout'); if (c) c.remove();
         if (typeof handlePaymentStep === 'function' && handlePaymentStep(res && res.payment)) return;
         if (typeof showResult === 'function') showResult({ icon: '🛵', title: tr('Ride requested'), lines: [cash ? tr('Pay the driver in cash at the end of the trip, exactly the fare shown.') : tr('Your fare is held by Trothen and only paid to the driver when you confirm you arrived.'), tr('Waiting for the driver to answer. You\'ll see it here the moment they do.')] });
@@ -211,7 +269,7 @@
     const amount = lc ? Math.round(typed * lc.per * 100) / 100 : typed;
     if (!(typed > 0) || !(amount >= 0.25)) return showToast(tr('Type the fare you want to offer'));
     try {
-      await apiFetch('POST', '/rides', { driverId, passengers: q.pax, offerFare: amount, payment: payment === 'cash' ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
+      await apiFetch('POST', '/rides', { driverId, passengers: q.pax, offerFare: amount, payment: payment === 'cash' ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an, note: q.note || '' }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
       if (typeof showResult === 'function') showResult({ icon: '📨', title: tr('Fare offered'), lines: [`${tr('You offered')} ${lc ? lc.symbol + typed.toLocaleString() + ' (' + money(amount) + ')' : money(amount)}.`, tr('The driver can accept it, suggest a different fare, or decline, within a few minutes. You\'ll see the answer here straight away.'), tr('Nothing is paid until you both agree the fare.')] });
       loadRiderPage();
     } catch (x) { showToast(x.message || 'Could not send your offer'); }
@@ -268,7 +326,7 @@
       const myTurn = r.status === 'pending_agreement' && r.waitingOn === 'customer';
       return `<div class="panel" style="border:2px solid var(--gold, #C9A227);">
         <div class="panel-title">${e(tr(r.status === 'awaiting_payment' ? 'Fare agreed: pay to confirm' : myTurn ? 'The driver suggests a fare' : 'Waiting for the driver to answer your fare'))} <small>#${e(r.number)}</small></div>
-        <div style="font-size:15px;"><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(d.name || '')}</div>
+        <div style="font-size:15px;"><strong>${e(r.pickup.address)}</strong>${r.pickup.note ? ` <span style="font-size:13px;color:var(--slate);">(📝 ${e(r.pickup.note)})</span>` : ''} → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(d.name || '')}</div>
         ${r.negotiation ? fareTalkHTML(r, 'customer') : ''}
         ${r.answerBy && r.status === 'pending_agreement' ? `<div class="ver-note">${e(tr(myTurn ? 'Answer by' : 'The driver answers by'))} ${e(when(r.answerBy))}. ${e(tr('Nothing is paid until you both agree the fare.'))}</div>` : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
@@ -280,7 +338,7 @@
     const waiting = r.status === 'pending_provider_confirmation';
     return `<div class="panel" style="border:2px solid ${r.sosCount ? '#C0392B' : 'var(--teal)'};">
       <div class="panel-title">${e(tr(waiting ? 'Waiting for your driver' : r.startedAt ? 'You are on your way' : 'Your driver is coming'))} <small>#${e(r.number)}</small></div>
-      <div style="font-size:15px;"><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))}</div>
+      <div style="font-size:15px;"><strong>${e(r.pickup.address)}</strong>${r.pickup.note ? ` <span style="font-size:13px;color:var(--slate);">(📝 ${e(r.pickup.note)})</span>` : ''} → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))}</div>
       <div style="margin:10px 0;display:flex;gap:12px;align-items:center;">${d.profilePhotoUrl ? `<img src="${e(d.profilePhotoUrl)}" alt="" style="width:56px;height:56px;border-radius:50%;object-fit:cover;"/>` : `<div style="width:56px;height:56px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;">${e(d.initials || '?')}</div>`}
         <div><div style="font-weight:700;color:var(--navy);">${e(d.name || '')}</div><div style="font-size:14px;color:var(--slate);">${e(tr(d.vehicle || ''))}${d.make ? ' · ' + e(d.make) : ''}${d.helmet ? ' · ' + e(tr('helmet for you')) : ''}</div>
         ${d.plate ? `<div style="margin-top:4px;display:inline-block;border:2px solid #222;border-radius:6px;padding:2px 10px;font-weight:800;letter-spacing:1px;background:#FFE680;">${e(d.plate)}</div>` : ''}</div></div>
@@ -457,15 +515,15 @@
       <button class="btn-sm ${d.online ? 'btn-sm-outline' : 'btn-sm-primary'}" onclick="ridesToggleOnline(${d.online ? 'false' : 'true'})">${e(tr(d.online ? 'Go offline' : 'Go online'))}</button></div>
       <div class="ver-note" style="margin-top:8px;">${e(tr('Keep this page open while you are online so riders can find you. You go offline by yourself after 12 hours.'))}</div></div>
       ${offers.map(r => { const myTurn = r.status === 'pending_agreement' && r.waitingOn === 'provider'; return `<div class="panel" style="border:2px solid #E0A526;"><div class="panel-title">${e(tr(r.status === 'awaiting_payment' ? 'Fare agreed: waiting for the rider to pay' : myTurn ? 'A rider offers a fare' : 'Waiting for the rider'))} <small>#${e(r.number)}</small></div>
-        <div><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(r.passengers)} ${e(tr('passenger(s)'))}${r.cash ? ' · 💵 ' + e(tr('cash')) : ''}</div>
+        <div><strong>${e(r.pickup.address)}</strong>${r.pickup.note ? ` <span style="font-size:13px;color:var(--slate);">(📝 ${e(r.pickup.note)})</span>` : ''} → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(r.passengers)} ${e(tr('passenger(s)'))}${r.cash ? ' · 💵 ' + e(tr('cash')) : ''}</div>
         ${r.negotiation ? fareTalkHTML(r, 'provider') : ''}
         ${myTurn ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-sm-primary" onclick="ridesAnswer(${jsArg(r.id)},'accept')">${e(tr('Accept'))} ${fareL(r, r.fare)}</button><button class="btn-sm btn-sm-outline" onclick="ridesSuggest(${jsArg(r.id)})">${e(tr('Suggest a fare'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAnswer(${jsArg(r.id)},'decline')">${e(tr('Decline'))}</button></div><div style="font-size:13px;color:var(--slate);margin-top:4px;">${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>` : `<div style="font-size:13.5px;color:var(--slate);">${e(tr(r.status === 'awaiting_payment' ? 'You\'ll be told the moment the rider pays. Then go to them.' : 'The rider answers your fare next.'))}</div>`}</div>`; }).join('')}
       ${incoming.map(r => `<div class="panel" style="border:2px solid #E0A526;"><div class="panel-title">${e(tr('New ride request'))} <small>#${e(r.number)}</small></div>
-        <div><strong>${e(r.pickup.address)}</strong> → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(r.passengers)} ${e(tr('passenger(s)'))}</div>
+        <div><strong>${e(r.pickup.address)}</strong>${r.pickup.note ? ` <span style="font-size:13px;color:var(--slate);">(📝 ${e(r.pickup.note)})</span>` : ''} → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(r.passengers)} ${e(tr('passenger(s)'))}</div>
         <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(tr('Fare'))}: <strong>${fareL(r, r.fare)}</strong>${r.cash ? ' · 💵 <strong>' + e(tr('paid in CASH by the rider')) + '</strong>' : ''} · ${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>
         <div style="display:flex;gap:8px;"><button class="btn-sm btn-sm-primary" onclick="ridesAnswer(${jsArg(r.id)},'accept')">${e(tr('Accept'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAnswer(${jsArg(r.id)},'decline')">${e(tr('Decline'))}</button></div></div>`).join('')}
       ${active.map(r => `<div class="panel" style="border:2px solid var(--teal);"><div class="panel-title">${e(tr(r.startedAt ? 'Trip in progress' : 'Go to your rider'))} <small>#${e(r.number)}</small></div>
-        <div><strong>${e(r.pickup.address)}</strong> <a href="https://www.google.com/maps/dir/?api=1&destination=${r.pickup.latitude},${r.pickup.longitude}" target="_blank" rel="noopener">🧭</a> → <strong>${e(r.dropoff.address)}</strong> <a href="https://www.google.com/maps/dir/?api=1&destination=${r.dropoff.latitude},${r.dropoff.longitude}" target="_blank" rel="noopener">🧭</a></div>
+        <div><strong>${e(r.pickup.address)}</strong>${r.pickup.note ? ` <span style="font-size:13px;color:var(--slate);">(📝 ${e(r.pickup.note)})</span>` : ''} <a href="https://www.google.com/maps/dir/?api=1&destination=${r.pickup.latitude},${r.pickup.longitude}" target="_blank" rel="noopener">🧭</a> → <strong>${e(r.dropoff.address)}</strong> <a href="https://www.google.com/maps/dir/?api=1&destination=${r.dropoff.latitude},${r.dropoff.longitude}" target="_blank" rel="noopener">🧭</a></div>
         <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(r.rider ? r.rider.name : '')} · ${e(r.passengers)} ${e(tr('passenger(s)'))} · ${fareL(r, r.fare)}</div>
         ${r.cash ? `<div style="margin:6px 0;padding:8px 12px;border-radius:10px;background:#FFF6DD;border:1px solid #E0A526;font-size:14px;">💵 <strong>${e(tr('CASH ride.'))}</strong> ${e(tr('Collect'))} <strong>${fareL(r, r.payInCash)}</strong> ${e(tr('from the rider at the end. Do not ask for more than this.'))} <a onclick="ridesReport(${jsArg(r.id)})" style="cursor:pointer;text-decoration:underline;">${e(tr('Report a problem'))}</a></div>` : ''}
         ${contactRow(r.contact)}
@@ -779,7 +837,76 @@
         <div style="margin:6px 0;">${Object.keys(o.docKinds || a.docs).map(k => a.docs[k] ? `<button class="btn-sm btn-sm-outline" onclick="ridesAdminDoc(${jsArg(a.userId)},'${k}')">📄 ${e(tr((o.docKinds || {})[k] || k))}${(a.required || []).includes(k) ? '' : ' (' + e(tr('extra')) + ')'}</button> ` : '').join('')}${(a.missing || []).length ? `<div style="margin-top:6px;color:#B4472E;font-weight:600;">⚠️ ${e(tr('Missing required:'))} ${a.missing.map(k => e(tr((o.docKinds || {})[k] || k))).join(', ')}</div>` : ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">${a.status === 'pending' ? `<button class="btn-sm btn-sm-primary" onclick="ridesAdminDecide(${jsArg(a.userId)},'approve')">${e(tr('Approve'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAdminDecide(${jsArg(a.userId)},'reject')">${e(tr('Reject'))}</button>` : ''}${a.status === 'approved' ? `<button class="btn-sm btn-sm-outline" onclick="ridesAdminDecide(${jsArg(a.userId)},'suspend')">${e(tr('Suspend'))}</button>` : ''}</div></div>`).join('') : `<div style="color:var(--slate);">${e(tr('No applications yet.'))}</div>`}</div>`;
     drawAdminFares(); // v142
+    body().insertAdjacentHTML('beforeend', '<div class="panel" id="rides-places"></div>'); drawPlaces(); // v147
   }
+  // ── v147: Admin → Rides → Places ──────────────────────────────────────
+  // The list of places riders can search by name, per country. The
+  // starter list has names only: pin each one once ("Pin it"). Riders'
+  // own named places show as suggestions once 3 or more use the same name.
+  R.plc = { country: 'Liberia', filter: '' };
+  async function drawPlaces() {
+    const box = el('rides-places'); if (!box) return;
+    let d; try { d = await apiFetch('GET', `/admin/rides/places?country=${encodeURIComponent(R.plc.country)}`); } catch (x) { box.remove(); return; }
+    R.plcData = d;
+    const countries = ((R.over && R.over.countryList) || []).filter(c => c.on || c.name === R.plc.country).map(c => c.name);
+    const f = places => places.filter(p => !R.plc.filter || (p.name + ' ' + p.area).toLowerCase().includes(R.plc.filter.toLowerCase()));
+    const needs = f(d.places.filter(p => p.status === 'needs_pin')), live = f(d.places.filter(p => p.status === 'live'));
+    const row = (p) => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0;border-top:1px solid var(--border);font-size:14px;">
+      <div style="flex:1;min-width:200px;"><strong style="color:var(--navy);">${e(p.name)}</strong> <span style="color:var(--slate);">${e(p.area || '')}${p.kind && p.kind !== 'other' ? ' · ' + e(p.kind.replace('_', ' ')) : ''}${p.status === 'live' ? ` · ${p.uses} ${e(tr('rides'))}` : ''}</span>${p.riderPinHint ? `<div style="font-size:12.5px;color:#15803d;">${e(tr('Riders pinned it'))} ${p.riderPinHint.of}×: ${e(tr('"Pin it" starts there'))}</div>` : ''}</div>
+      <button class="btn-sm ${p.status === 'live' ? 'btn-sm-outline' : 'btn-sm-primary'}" onclick="ridesPlacePin(${jsArg(p.id)})">${e(tr(p.status === 'live' ? 'Move pin' : 'Pin it'))}</button>
+      ${p.status === 'live' ? `<a class="btn-sm btn-sm-ghost" href="https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}" target="_blank" rel="noopener">${e(tr('Check'))}</a>` : ''}
+      <button class="btn-sm btn-sm-ghost" onclick="ridesPlaceRemove(${jsArg(p.id)})">${e(tr('Remove'))}</button></div>`;
+    box.innerHTML = `<div class="panel-title">📌 ${e(tr('Places riders can search'))}</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${e(tr('Where there are few street addresses, riders find their pickup by a known name ("ELWA Junction", "Red Light"). Only pinned places are offered. Pin each place on the map once; check it on the satellite view if you are not there.'))}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+        ${countries.length > 1 ? `<select class="form-input form-select" style="max-width:200px;" onchange="ridesPlaceCountry(this.value)">${countries.map(c => `<option ${c === R.plc.country ? 'selected' : ''}>${e(c)}</option>`).join('')}</select>` : ''}
+        <input class="form-input" type="search" placeholder="${e(tr('Find in the list'))}" value="${e(R.plc.filter)}" oninput="ridesPlaceFilter(this.value)" style="max-width:220px;"/>
+        <span style="font-size:13.5px;">✅ ${d.counts.live} ${e(tr('pinned'))} · ⏳ ${d.counts.needsPin} ${e(tr('need a pin'))}</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;"><input class="form-input" id="plc-name" maxlength="80" placeholder="${e(tr('New place, e.g. Total station, Old Road'))}" style="flex:1;min-width:180px;"/><input class="form-input" id="plc-area" maxlength="60" placeholder="${e(tr('Area, e.g. Sinkor'))}" style="max-width:160px;"/><select class="form-input form-select" id="plc-kind" style="max-width:150px;">${d.kinds.map(k => `<option value="${k}">${e(k.replace('_', ' '))}</option>`).join('')}</select><button class="btn-sm btn-sm-primary" onclick="ridesPlaceNew()">${e(tr('Add and pin it'))}</button></div>
+      ${d.suggestions.length ? `<div style="font-weight:700;color:var(--navy);margin-top:8px;">${e(tr('Suggested by riders'))}</div>${d.suggestions.map(x => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0;border-top:1px solid var(--border);font-size:14px;"><div style="flex:1;"><strong>${e(x.name)}</strong> <span style="color:var(--slate);">· ${x.riders} ${e(tr('riders'))}</span></div><button class="btn-sm btn-sm-primary" onclick="ridesPlaceAccept(${jsArg(x.id)})">${e(tr('Check and add'))}</button><button class="btn-sm btn-sm-ghost" onclick="ridesPlaceDismiss(${jsArg(x.id)})">${e(tr('Not a place'))}</button></div>`).join('')}` : ''}
+      ${needs.length ? `<div style="font-weight:700;color:var(--navy);margin-top:10px;">${e(tr('Need a pin'))} (${needs.length})</div>${needs.map(row).join('')}` : ''}
+      ${live.length ? `<div style="font-weight:700;color:var(--navy);margin-top:10px;">${e(tr('Pinned'))} (${live.length})</div>${live.map(row).join('')}` : ''}`;
+  }
+  window.ridesPlaceCountry = (c) => { R.plc.country = c; drawPlaces(); };
+  window.ridesPlaceFilter = (v) => { R.plc.filter = v; clearTimeout(R.plcT); R.plcT = setTimeout(drawPlaces, 250); };
+  // pin with the shared map picker; when it hands back a spot, save it
+  function pickThen(start, done) {
+    R.plcDone = done;
+    JOB_PIN.plcpin = start ? { latitude: start.latitude, longitude: start.longitude, accuracyM: null, source: 'map' } : null;
+    if (!el('plcpin-pin-status')) document.body.insertAdjacentHTML('beforeend', '<div id="plcpin-pin-status" style="display:none;"></div>');
+    openMapPicker('plcpin');
+  }
+  if (typeof renderJobPin === 'function') {
+    const base = renderJobPin;
+    renderJobPin = function (prefix) {
+      if (prefix === 'plcpin' && JOB_PIN.plcpin && R.plcDone) { const fn = R.plcDone; R.plcDone = null; fn(JOB_PIN.plcpin); return; }
+      return base.apply(this, arguments);
+    };
+  }
+  window.ridesPlacePin = function (id) {
+    const p = (R.plcData.places || []).find(x => x.id === id); if (!p) return;
+    pickThen(p.latitude != null ? p : p.riderPinHint || (R.plcData.places.find(x => x.latitude != null) || null), async (pin) => {
+      try { await apiFetch('PATCH', `/admin/rides/places/${encodeURIComponent(id)}`, { latitude: pin.latitude, longitude: pin.longitude }); showToast(`${p.name}: ${tr('pinned')}`); drawPlaces(); }
+      catch (x) { showToast(x.message || tr('Could not save')); }
+    });
+  };
+  window.ridesPlaceNew = function () {
+    const name = (el('plc-name').value || '').trim(); if (name.length < 2) return showToast(tr('Type the name of the place first'));
+    const area = el('plc-area').value.trim(), kind = el('plc-kind').value;
+    pickThen(null, async (pin) => {
+      try { await apiFetch('POST', '/admin/rides/places', { country: R.plc.country, name, area, kind, latitude: pin.latitude, longitude: pin.longitude }); showToast(`${name}: ${tr('added')}`); drawPlaces(); }
+      catch (x) { showToast(x.message || tr('Could not save')); }
+    });
+  };
+  window.ridesPlaceAccept = function (sid) {
+    const sg = (R.plcData.suggestions || []).find(x => x.id === sid); if (!sg) return;
+    pickThen(sg.at, async (pin) => {
+      try { await apiFetch('POST', '/admin/rides/places', { country: R.plc.country, name: sg.name, latitude: pin.latitude, longitude: pin.longitude, fromSuggestion: sid }); showToast(`${sg.name}: ${tr('added')}`); drawPlaces(); }
+      catch (x) { showToast(x.message || tr('Could not save')); }
+    });
+  };
+  window.ridesPlaceDismiss = async (sid) => { try { await apiFetch('POST', `/admin/rides/places/suggestions/${encodeURIComponent(sid)}/dismiss`, {}); drawPlaces(); } catch (x) { showToast(x.message); } };
+  window.ridesPlaceRemove = async (id) => { try { await apiFetch('DELETE', `/admin/rides/places/${encodeURIComponent(id)}`); drawPlaces(); } catch (x) { showToast(x.message); } };
   // ── v142: Admin → Rides → Fares ──────────────────────────────────────
   const FARE_VEH = ['motorbike', 'keke', 'car', 'van'];
   const SPEED = { motorbike: 24, keke: 18, car: 20, van: 18 };

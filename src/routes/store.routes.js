@@ -10,7 +10,7 @@ const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { notify } = require('../notify');
 const { UPLOADS_DIR, PRIVATE_UPLOADS_DIR, verifyImageMagicBytes, verifyPdfMagicBytes } = require('../uploads');
-const { isNonEmptyString, looksLikeRealText } = require('../validators');
+const { isNonEmptyString, looksLikeRealText, looksLikeName } = require('../validators');
 const { adminScopeFor, regionalAdminsFor } = require('../admin-scope');
 const store = require('../store');
 const { money } = store;
@@ -153,7 +153,7 @@ router.put('/store/mine', requireAuth, requireRole('provider'), async (req, res)
   const me = await freshUser(req);
   const { name, description, open, agreeRules, options } = req.body || {};
   const settings = await store.storeSettings();
-  if (!isNonEmptyString(name, { min: 3, max: 60 }) || !looksLikeRealText(name)) return res.status(400).json({ error: 'Give your store a name of 3 to 60 characters' });
+  if (!isNonEmptyString(name, { min: 3, max: 60 }) || !looksLikeName(name)) return res.status(400).json({ error: 'Give your store a name of 3 to 60 characters, in letters' });
   if (description !== undefined && description !== null && description !== '' && !isNonEmptyString(description, { max: 300 })) return res.status(400).json({ error: 'The store description must be under 300 characters' });
   const banned = await bannedReason(name, description);
   if (banned) return res.status(400).json({ error: `A store can't be about ${banned}. That can't be sold on Trothen.` });
@@ -254,7 +254,7 @@ function readGoodBody(body, userId, existing, currencies) {
   const out = {};
   const has = (k) => Object.prototype.hasOwnProperty.call(b, k);
   if (!existing || has('name')) {
-    if (!isNonEmptyString(b.name, { min: 2, max: 80 }) || !looksLikeRealText(b.name)) return { error: 'Give the good a name of 2 to 80 characters' };
+    if (!isNonEmptyString(b.name, { min: 2, max: 80 }) || !looksLikeName(b.name)) return { error: 'Give the good a name of 2 to 80 characters, in letters (for example "Hammer" or "Rice, 25 kg bag")' };
     out.name = b.name.trim();
   }
   if (has('description')) {

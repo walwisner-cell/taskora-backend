@@ -182,9 +182,8 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
   };
   await db.insert('pendingRegistrations', pending);
 
-  const emailDelivered = isEmailConfigured()
-    ? (await sendEmail(email.trim(), 'Verify your Trothen email', `Your Trothen email verification code is ${emailCode}.`)).sent
-    : false;
+  const sendR = isEmailConfigured() ? await sendEmail(email.trim(), 'Verify your Trothen email', `Your Trothen email verification code is ${emailCode}.`) : null;
+  const emailDelivered = !!(sendR && sendR.sent);
 
   if (emailDelivered) {
     return res.status(201).json({
@@ -201,7 +200,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
   // is only for a server that has no email provider connected at all.
   if (isEmailConfigured()) {
     await db.remove('pendingRegistrations', pending.id);
-    return res.status(502).json({ error: "We could not send your code. Please wait a minute and try again." });
+    return res.status(502).json({ error: await emailFailure(sendR, email.trim()) });
   }
 
   // No email provider connected at all — test-mode fallback so signup
@@ -432,9 +431,8 @@ router.post('/signup/resend', otpLimiter, async (req, res) => {
     lastResendAt: new Date().toISOString(),
   });
 
-  const emailDelivered = isEmailConfigured()
-    ? (await sendEmail(pending.payload.email, 'Verify your Trothen email', `Your Trothen email verification code is ${emailCode}.`)).sent
-    : false;
+  const sendR = isEmailConfigured() ? await sendEmail(pending.payload.email, 'Verify your Trothen email', `Your Trothen email verification code is ${emailCode}.`) : null;
+  const emailDelivered = !!(sendR && sendR.sent);
 
   if (emailDelivered) {
     return res.json({ testMode: false });
@@ -442,7 +440,7 @@ router.post('/signup/resend', otpLimiter, async (req, res) => {
   if (isEmailConfigured()) {
     // Same rule as /signup/start: a configured-but-failed send never falls
     // back to showing the code.
-    return res.status(502).json({ error: "We could not send your code. Please wait a minute and try again." });
+    return res.status(502).json({ error: await emailFailure(sendR, pending.payload.email) });
   }
 
   console.log(`[TEST MODE] Resent registration code for ${pending.payload.email}: ${emailCode}`);
@@ -457,6 +455,24 @@ router.post('/signup/resend', otpLimiter, async (req, res) => {
 // rule, and the exact same test-mode-aware 2FA delivery. Extracted here
 // so Google Sign-In doesn't get a second, easier-to-drift-from copy of
 // security-relevant logic — one real implementation, two entry points.
+// v147: when an email can't be sent, say honestly whose problem it is.
+// A refusal by Trothen's email service (an ended SendGrid plan, a wrong
+// password) is not the person's address; tell them so, and tell the
+// super admins (at most once an hour) with the exact reason.
+let lastEmailAlertAt = 0;
+async function emailFailure(r, address) {
+  const mask = String(address || '').replace(/^(.)[^@]*@/, (m, a) => a + '•••@');
+  if (r && r.badAddress) return `We couldn't send the code to ${mask}: the mail server says that address doesn't exist or can't receive mail. Check the address and try again.`;
+  if (Date.now() - lastEmailAlertAt > 60 * 60 * 1000) {
+    lastEmailAlertAt = Date.now();
+    try {
+      const supers = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin === true && u.active !== false);
+      for (const a of supers) await notify(a.id, '📧', `Trothen's email isn't sending: ${(r && r.words) || 'the email service refused'}${r && r.backup ? ` Backup: ${r.backup}` : ''} Sign-in and sign-up codes can't reach people until this is fixed. See Admin → Go-Live → Email.`, null, { section: 'golive' });
+    } catch (e) { /* the message to the person still goes out */ }
+  }
+  return `We couldn't send the code because Trothen's email service isn't working right now. This isn't a problem with your email address. The Trothen team has been told; please try again later.`;
+}
+
 async function issueSessionOrRequire2FA(user, req, res) {
   if (user.active === false) {
     if (user.closedByOwner) return res.status(403).json({ error: 'This account was closed at its owner\'s request. Contact Trothen support if you\'d like it reopened.' });
@@ -487,8 +503,10 @@ async function issueSessionOrRequire2FA(user, req, res) {
       delivered = (await sendSms(user.phone, `Your Trothen sign-in code is ${code}. It expires in 10 minutes.`)).sent;
       if (delivered) sentVia = 'text';
     }
+    let mailR = null;
     if (!delivered && isEmailConfigured()) {
-      delivered = (await sendEmail(user.email, 'Your Trothen sign-in code', `Your sign-in code is ${code}. It expires in 10 minutes.`)).sent;
+      mailR = await sendEmail(user.email, 'Your Trothen sign-in code', `Your sign-in code is ${code}. It expires in 10 minutes.`);
+      delivered = !!mailR.sent;
       if (delivered) sentVia = 'email';
     }
     // v89: say where the code went (partly hidden), so someone signing in
@@ -503,7 +521,7 @@ async function issueSessionOrRequire2FA(user, req, res) {
     // nothing, so the sign-in stops here instead.
     if (isEmailConfigured() || (isSmsConfigured() && user.phone)) {
       await db.remove('pendingLogins', pendingLogin.id);
-      return res.status(502).json({ error: `We couldn't send your sign-in code to ${maskEmail(user.email)}. Check that this email address exists and can receive mail, then try again. If it still doesn't arrive, ask the super admin to check the email address on your account.` });
+      return res.status(502).json({ code: mailR && mailR.badAddress ? 'BAD_ADDRESS' : 'EMAIL_SERVICE_DOWN', error: mailR && mailR.badAddress ? `We couldn't send your sign-in code to ${maskEmail(user.email)}: the mail server says that address can't receive mail. Ask the super admin to check the email address on your account.` : await emailFailure(mailR, user.email) });
     }
     return res.json({
       requires2FA: true,

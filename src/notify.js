@@ -20,8 +20,9 @@ async function notify(userId, icon, text, category = null, linkTo = null) {
     // Default to "on" for any preference the user hasn't explicitly touched.
     if (prefs && prefs[category] === false) return;
   }
+  const id = `ntf_${nanoid(10)}`; // v147: the same id goes in the push, so the phone never shows it twice
   await db.insert('notifications', {
-    id: `ntf_${nanoid(10)}`,
+    id,
     userId,
     icon,
     text,
@@ -45,7 +46,7 @@ async function notify(userId, icon, text, category = null, linkTo = null) {
   // that triggered this notification in the first place.
   const { isPushConfigured, sendPushToUser } = require('./push-notifications');
   if (isPushConfigured()) {
-    sendPushToUser(userId, { icon, text, linkTo }).catch(e => console.error('[notify] push send failed:', e.message));
+    sendPushToUser(userId, { id, icon, text, linkTo }).catch(e => console.error('[notify] push send failed:', e.message));
   }
 }
 

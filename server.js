@@ -395,6 +395,11 @@ seedIfEmpty()
     const { sweepPayoutSettlement } = require('./src/payout-settlement-scheduler');
     setTimeout(() => { sweepPayoutSettlement().catch(e => console.error('[payout-settlement-scheduler] Unexpected error during scheduled sweep:', e)); }, 17000);
     setInterval(() => { sweepPayoutSettlement().catch(e => console.error('[payout-settlement-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+    // v147: finished jobs the customer didn't answer within 3 days complete by themselves
+    setInterval(() => { require('./src/routes/payments.routes').sweepWorkDone().catch(e => console.error('[work-done] sweep failed:', e.message)); }, 60 * 60 * 1000);
+    setTimeout(() => { require('./src/routes/payments.routes').sweepWorkDone().catch(() => {}); }, 31000);
+    // v147: payouts sent through MTN MoMo: check for MTN's answer every 5 minutes
+    setInterval(() => { require('./src/payout-sending').sweepSending().catch(e => console.error('[payout-sending] check failed:', e.message)); }, 5 * 60 * 1000);
 
     // Daily top-scorer free-commission promotion (see
     // src/top-scorer-promotion-scheduler.js). Runs every day — each
@@ -454,6 +459,7 @@ seedIfEmpty()
     // purchases waiting for MTN's answer. Every 5 minutes.
     setInterval(() => { require('./src/tokens').sweep().catch(e => console.error('[tokens] sweep failed:', e)); }, 5 * 60 * 1000);
     // v119: bookings whose payment code ran out without a payment are cancelled.
+    setInterval(() => { require('./src/customer-payments').sweepMomo().catch(e => console.error('[momo] sweep failed:', e.message)); }, 60 * 1000); // v147: wallet payments waiting for the customer's PIN
     setInterval(() => { require('./src/customer-payments').expireUnpaid().catch(e => console.error('[customer-payments] sweep failed:', e)); }, 5 * 60 * 1000);
     setTimeout(() => { require('./src/tokens').sweep().catch(e => console.error('[tokens] sweep failed:', e)); }, 15000);
 

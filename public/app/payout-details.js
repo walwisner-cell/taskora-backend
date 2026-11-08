@@ -120,9 +120,28 @@
     const rows = data.payouts || [];
     box.innerHTML = `<div class="panel-title">${e(t('Payouts being sent'))} <span style="font-weight:400;color:var(--slate);font-size:13px;">(${rows.length})</span></div>
       <div style="font-size:13px;color:var(--slate);margin:-6px 0 8px;">${e(t('Where each payout goes. The full number shows only when you press "Show full number", and each look is recorded in the access log.'))}</div>
-      ${rows.length ? rows.map(p => `<div style="border-top:1px solid var(--border);padding:8px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;"><div style="flex:1;min-width:220px;"><strong style="color:var(--navy);">${e(p.person.name)}</strong> · ${money(p.amount)}${p.payoutAmountLocal ? ` (${e(p.payoutCurrency)} ${e(p.payoutAmountLocal)})` : ''} · ${e(p.person.city || '')}${p.person.country ? ', ' + e(p.person.country) : ''}<div style="font-size:13px;color:var(--slate);">${e(p.destination || p.method + ' · ' + t('no details saved (older payout)'))} · ${e(new Date(p.createdAt).toLocaleString())}</div><div id="pd-rev-${e(p.id)}" style="font-size:13.5px;"></div></div>${p.destination ? `<button class="btn-sm btn-sm-outline" onclick="pdReveal('${e(p.id)}')">${e(t('Show full number'))}</button>` : ''}</div>`).join('') : `<p style="color:var(--slate);margin:0;">${e(t('No payouts waiting.'))}</p>`}`;
+      ${rows.length ? rows.map(p => `<div style="border-top:1px solid var(--border);padding:8px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;"><div style="flex:1;min-width:220px;"><strong style="color:var(--navy);">${e(p.person.name)}</strong> · ${money(p.amount)}${p.payoutAmountLocal ? ` (${e(p.payoutCurrency)} ${e(p.payoutAmountLocal)})` : ''} · ${e(p.person.city || '')}${p.person.country ? ', ' + e(p.person.country) : ''}<div style="font-size:13px;color:var(--slate);">${e(p.destination || p.method + ' · ' + t('no details saved (older payout)'))} · ${e(new Date(p.createdAt).toLocaleString())}</div><div id="pd-rev-${e(p.id)}" style="font-size:13.5px;"></div>${p.problem ? `<div style="font-size:13px;color:#B45309;">⚠️ ${e(p.problem.reason)}</div>` : ''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;" id="pd-act-${e(p.id)}">
+          ${p.momo ? (p.momo.on ? `<button class="btn-sm btn-sm-primary" onclick="pdSendMomo('${e(p.id)}')">${e(t('Send by'))} ${e(p.momo.name)}</button>` : `<span style="font-size:12.5px;color:var(--muted);align-self:center;">${e(p.momo.name)} ${e(t('payouts aren\'t switched on yet: send it by hand'))}</span>`) : ''}
+          <input class="form-input" id="pd-ref-${e(p.id)}" placeholder="${e(t('Transaction ID from the receipt'))}" style="max-width:220px;padding:6px 10px;font-size:13.5px;"/>
+          <button class="btn-sm btn-sm-outline" onclick="pdMarkSent('${e(p.id)}')">${e(t('Mark as sent'))}</button>
+          <button class="btn-sm btn-sm-ghost" onclick="pdProblem('${e(p.id)}')">${e(t("Can't send"))}</button>
+        </div></div>${p.destination ? `<button class="btn-sm btn-sm-outline" onclick="pdReveal('${e(p.id)}')">${e(t('Show full number'))}</button>` : ''}</div>`).join('') : `<p style="color:var(--slate);margin:0;">${e(t('No payouts waiting.'))}</p>`}
+      ${(data.sending || []).length ? `<div style="margin-top:10px;font-size:13.5px;"><strong>${e(t('Waiting for MTN to confirm'))}:</strong> ${(data.sending || []).map(x => `${e(x.person.name)} ${money(x.amount)}`).join(' · ')}</div>` : ''}
+      <div style="font-size:12.5px;color:var(--muted);margin-top:8px;">${e(t(data.autoSettle ? 'Real payments are not switched on, so payouts are marked paid by themselves after 2 days. Once real payments are on, a payout is paid only when you mark it sent with the receipt\'s transaction ID, or MTN confirms it.' : 'A payout is marked paid only when you mark it sent with the receipt\'s transaction ID, or when MTN confirms it. The pro sees the reference.'))}</div>`;
     main.appendChild(box);
   }
+  async function pdAct(id, path, body, okWords) {
+    try { await apiFetch('POST', `/admin/payouts/${encodeURIComponent(id)}/${path}`, body || {}); showToast(t(okWords)); const b = el('admin-payouts-send'); if (b) b.remove(); drawAdminPayouts(); }
+    catch (x) { showToast((x && x.message) || 'Error'); }
+  }
+  window.pdMarkSent = (id) => pdAct(id, 'sent', { reference: (el('pd-ref-' + id) || {}).value || '' }, 'Marked as sent. The pro has been told, with the reference.');
+  window.pdSendMomo = (id) => pdAct(id, 'send-momo', {}, 'Sent to MTN. It is marked paid when MTN confirms.');
+  window.pdProblem = (id) => {
+    const box = el('pd-act-' + id); if (!box || el('pd-why-' + id)) return;
+    box.insertAdjacentHTML('beforeend', `<input class="form-input" id="pd-why-${id}" placeholder="${e(t('What is wrong (the pro is told)'))}" style="max-width:280px;padding:6px 10px;font-size:13.5px;"/><button class="btn-sm btn-sm-outline" onclick="pdProblemSend('${id}')">${e(t('Tell the pro'))}</button>`);
+  };
+  window.pdProblemSend = (id) => pdAct(id, 'problem', { reason: (el('pd-why-' + id) || {}).value || '' }, 'The pro has been told what to fix.');
   window.pdReveal = async function (id) {
     try {
       const r = await apiFetch('POST', `/admin/payouts/${encodeURIComponent(id)}/reveal`, {});

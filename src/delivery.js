@@ -89,8 +89,60 @@ async function checkPhoneVerification(to, code) {
   }
 }
 
-function isEmailConfigured() {
+// v147: email can go through any mailbox's SMTP server (for example the
+// Namecheap Private Email box noreply@trothenpro.com: SMTP_HOST=
+// mail.privateemail.com, SMTP_PORT=465, SMTP_USER=noreply@trothenpro.com,
+// SMTP_PASS=its password), through SendGrid, or both. With both set, SMTP
+// goes first and SendGrid is the backup. SendGrid ended its free plan in
+// 2025: a free or trial account stops sending, which locks every admin out
+// (admins sign in with an emailed code).
+function isSmtpConfigured() {
+  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+function isSendgridConfigured() {
   return !!(process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL);
+}
+function isEmailConfigured() {
+  return isSmtpConfigured() || isSendgridConfigured();
+}
+// What happened to the last email, for Admin → Go-Live (never the content).
+let lastEmail = null;
+function emailStatus() {
+  return { smtp: isSmtpConfigured(), sendgrid: isSendgridConfigured(), smtpHost: process.env.SMTP_HOST || null, from: process.env.SMTP_FROM || process.env.SMTP_USER || process.env.SENDGRID_FROM_EMAIL || null, last: lastEmail };
+}
+// Turns a provider's refusal into plain words, and says whether it's the
+// address (the person can fix it) or Trothen's email account (the team must).
+function explainSendgrid(status, detail) {
+  const d = String(detail || '');
+  if (status === 401) return { words: 'SendGrid refused Trothen\'s API key: the key is wrong or was deleted, or the account\'s plan has ended (SendGrid ended its free plan in 2025). Upgrade the SendGrid plan, or set up SMTP with Trothen\'s own mailbox.', account: true };
+  if (status === 403 && /sender identity|from address/i.test(d)) return { words: `SendGrid refused the sender ${process.env.SENDGRID_FROM_EMAIL}: it isn't a verified sender. Verify it (or the trothenpro.com domain) in SendGrid → Settings → Sender Authentication.`, account: true };
+  if (status === 403) return { words: 'SendGrid refused to send: the account is paused, over its limit, or its plan has ended. Check the account in SendGrid, or set up SMTP with Trothen\'s own mailbox.', account: true };
+  if (status === 429) return { words: 'SendGrid says too many emails were sent: the daily limit of the plan is used up.', account: true };
+  if (status === 400 && /email/i.test(d) && /invalid|does not contain a valid/i.test(d)) return { words: 'SendGrid says the recipient\'s email address isn\'t valid.', account: false, badAddress: true };
+  return { words: `SendGrid refused to send (error ${status}).`, account: true };
+}
+let transport = null;
+function smtpTransport() {
+  if (!transport) {
+    const port = Number(process.env.SMTP_PORT) || 465;
+    transport = require('nodemailer').createTransport({ host: process.env.SMTP_HOST, port, secure: port === 465, auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }, connectionTimeout: 15000, greetingTimeout: 10000, socketTimeout: 20000 });
+  }
+  return transport;
+}
+async function sendViaSmtp(to, subject, text) {
+  try {
+    await smtpTransport().sendMail({ from: { name: 'Trothen', address: process.env.SMTP_FROM || process.env.SMTP_USER }, to, subject, text });
+    return { sent: true, via: 'smtp' };
+  } catch (e) {
+    const code = Number(e.responseCode) || 0;
+    const badAddress = code === 550 || code === 553 || code === 501 || e.code === 'EENVELOPE';
+    const words = e.code === 'EAUTH' ? `The mail server ${process.env.SMTP_HOST} refused the username or password for ${process.env.SMTP_USER}. Check SMTP_USER and SMTP_PASS.`
+      : ['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'EDNS'].includes(e.code) ? `Trothen couldn't reach the mail server ${process.env.SMTP_HOST} on port ${Number(process.env.SMTP_PORT) || 465}. Check SMTP_HOST and SMTP_PORT.`
+      : badAddress ? 'The mail server says the recipient\'s address doesn\'t exist or can\'t receive mail.'
+      : `The mail server refused to send${code ? ` (error ${code})` : ''}.`;
+    console.error('[delivery] SMTP send failed:', e.code || '', code || '', String(e.message || '').slice(0, 300));
+    return { sent: false, via: 'smtp', error: `smtp_${e.code || code || 'failed'}`, words, account: !badAddress, badAddress };
+  }
 }
 
 // Returns { sent: true } on success, { sent: false, error } on any
@@ -123,6 +175,17 @@ async function sendSms(to, body) {
 
 async function sendEmail(to, subject, text) {
   if (!isEmailConfigured()) return { sent: false, error: 'not_configured' };
+  let r = null;
+  if (isSmtpConfigured()) r = await sendViaSmtp(to, subject, text);
+  if ((!r || (!r.sent && !r.badAddress)) && isSendgridConfigured()) {
+    const g = await sendViaSendgrid(to, subject, text);
+    // keep the SMTP reason if SendGrid (the backup) failed too
+    r = g.sent || !r ? g : { ...r, backup: g.words };
+  }
+  lastEmail = { at: new Date().toISOString(), sent: r.sent, via: r.via, error: r.sent ? null : r.error, words: r.sent ? null : r.words, backup: r.backup || null, badAddress: !!r.badAddress };
+  return r;
+}
+async function sendViaSendgrid(to, subject, text) {
   try {
     const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
@@ -137,13 +200,13 @@ async function sendEmail(to, subject, text) {
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
       console.error(`[delivery] SendGrid email send failed (${res.status}): ${detail}`);
-      return { sent: false, error: `sendgrid_${res.status}` };
+      return { sent: false, via: 'sendgrid', error: `sendgrid_${res.status}`, ...explainSendgrid(res.status, detail) };
     }
-    return { sent: true };
+    return { sent: true, via: 'sendgrid' };
   } catch (e) {
     console.error('[delivery] SendGrid email send threw:', e.message);
-    return { sent: false, error: 'network' };
+    return { sent: false, via: 'sendgrid', error: 'network', words: 'Trothen couldn\'t reach SendGrid (network).', account: true };
   }
 }
 
-module.exports = { isSmsConfigured, isVerifyConfigured, sendSms, isEmailConfigured, sendEmail, startPhoneVerification, checkPhoneVerification };
+module.exports = { isSmsConfigured, isVerifyConfigured, sendSms, isEmailConfigured, isSmtpConfigured, isSendgridConfigured, emailStatus, sendEmail, startPhoneVerification, checkPhoneVerification };

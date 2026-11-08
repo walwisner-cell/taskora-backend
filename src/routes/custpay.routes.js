@@ -45,6 +45,16 @@ router.post('/webhooks/stripe', async (req, res) => {
   } catch (e) { console.error('[stripe webhook]', e.message); return res.status(500).json({ error: 'Could not record it yet; Stripe will retry.' }); }
   res.json({ received: true });
 });
+// v147: MTN MoMo's callback (set LCMMMI_CALLBACK_URL to
+// https://<site>/api/webhooks/mtn-momo). MTN is asked directly; the body is
+// only used to know which payment to ask about.
+const momoHook = async (req, res) => {
+  const b = req.body || {};
+  try { await cp.momoCallback(req.get('X-Reference-Id') || b.referenceId, b.externalId); } catch (e) { console.error('[momo callback]', e.message); }
+  res.json({ ok: true });
+};
+router.put('/webhooks/mtn-momo', momoHook);
+router.post('/webhooks/mtn-momo', momoHook);
 // GET /api/customer-payments/:contractId/card-status — after coming back from Stripe.
 router.get('/customer-payments/:contractId/card-status', requireAuth, requireRole('customer'), async (req, res) => {
   const r = await cp.cardStatus(req.params.contractId, req.user.sub);

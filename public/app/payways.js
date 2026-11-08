@@ -147,6 +147,7 @@
       </div>`}`;
   }
   function showPaymentCode(contract, p) {
+    if (p && p.method === 'momo' && typeof payMomoWait === 'function') return payMomoWait(p, contract); // v147
     const old = el('pw-code-overlay'); if (old) old.remove();
     document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="pw-code-overlay"><div class="modal">
       <div class="modal-header"><button class="modal-close" onclick="document.getElementById('pw-code-overlay').remove()">✕</button>
@@ -159,6 +160,7 @@
   window.payWaysShow = function (contractId) {
     const c = typeof RAW_CONTRACTS === 'object' ? RAW_CONTRACTS[contractId] : null;
     const es = c && c.escrow;
+    if (es && es.paidBy === 'momo' && typeof payMomoWait === 'function') return payMomoWait({ method: 'momo', contractId, network: es.momoNetwork, last4: es.momoLast4, amountDue: es.amountDue, currency: es.dueCurrency, expiresAt: es.paymentExpiresAt }, c); // v147
     if (!es || es.paidBy !== 'code') return showToast(tr('Payment details not found. Please refresh.'));
     showPaymentCode(c, { code: es.paymentCode, amountDue: es.amountDue, currency: es.dueCurrency, payTo: es.payTo, expiresAt: es.paymentExpiresAt, customerSaysPaidAt: es.customerSaysPaidAt });
   };
@@ -185,6 +187,7 @@
     if (!box) { main.insertAdjacentHTML('afterbegin', '<div id="pw-waiting"></div>'); box = el('pw-waiting'); }
     box.innerHTML = list.map(c => {
       const es = c.escrow;
+      if (es && es.paidBy === 'momo') return `<div class="panel" style="border-left:4px solid var(--gold);"><div class="panel-title">📱 ${e(tr('Approve the payment on your phone'))}: #${e(c.bookingNumber)} · ${e(c.service)}</div><div style="font-size:14px;margin-bottom:10px;">${e(tr('Enter your Mobile Money PIN on the prompt for'))} LRD ${e(Number(es.amountDue || 0).toLocaleString())}${es.momoLast4 ? ` (${e(tr('number ending'))} ${e(es.momoLast4)})` : ''}. ${e(tr('Nothing is booked until you approve it.'))}</div><button class="confirm-btn" style="max-width:320px;" onclick="payWaysShow(${jsArg(c.id)})">${e(tr('I approved it: check'))}</button></div>`; // v147
       if (!es || es.paidBy !== 'code') { // v125: pay by card, or a test payment
         const total = Math.round(((c.amount || 0) + (c.serviceFee || 0)) * 100) / 100;
         return `<div class="panel" style="border-left:4px solid var(--gold);"><div class="panel-title">💳 ${e(tr('Waiting for your payment'))}: #${e(c.bookingNumber)} · ${e(c.service)}</div><div style="font-size:14px;margin-bottom:10px;">${e(tr('The price is agreed. Pay to confirm the booking; nothing is booked until you pay.'))}</div><button class="confirm-btn" style="max-width:320px;" onclick="payNow(${jsArg(c.id)})">💳 ${e(tr('Pay'))} $${total.toFixed(2)}</button></div>`;

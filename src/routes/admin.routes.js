@@ -1919,6 +1919,17 @@ router.get('/go-live/status', requireSuperAdmin, async (req, res) => {
   res.json(await readinessReport(actor));
 });
 
+// POST /api/admin/go-live/test-email { to } — v147: send a test email and
+// say exactly what happened (super admin).
+router.post('/go-live/test-email', requireSuperAdmin, async (req, res) => {
+  const to = String((req.body && req.body.to) || '').trim();
+  if (!isValidEmail(to)) return res.status(400).json({ error: 'Enter the email address to send the test to' });
+  const delivery = require('../delivery');
+  if (!delivery.isEmailConfigured()) return res.status(400).json({ error: 'No email service is set up. Add SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS (or SendGrid) on Render first.' });
+  const r = await delivery.sendEmail(to, 'Trothen test email', `This is a test from Trothen's Go-Live page, sent ${new Date().toUTCString()}. If you can read this, Trothen's email works.`);
+  res.json({ sent: !!r.sent, via: r.via || null, words: r.sent ? `Sent through ${r.via === 'smtp' ? 'your mailbox' : 'SendGrid'}. Check the inbox (and the spam folder) of ${to}.` : r.words, backup: r.backup || null });
+});
+
 router.post('/go-live/super-admins', requireSuperAdmin, async (req, res) => {
   const { name, email, password } = req.body || {};
   const errors = validate([
@@ -2939,10 +2950,15 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
   // open employee-creation to every regional admin, not just customer
   // service. This route needs exactly two allowed callers: a super
   // admin, or specifically the customer_service department.
-  if (!m.isSuperAdmin && m.adminDepartment !== 'customer_service') {
-    return res.status(403).json({ error: 'Only a super admin or the customer service team can add new employees.' });
+  // v147: a team manager adds people to their own team.
+  const isTeamManager = !m.isSuperAdmin && m.teamManager === true && !!m.adminDepartment && m.adminDepartment !== 'custom';
+  if (!m.isSuperAdmin && m.adminDepartment !== 'customer_service' && !isTeamManager) {
+    return res.status(403).json({ error: 'Only a super admin, a team manager or the customer service team can add new employees.' });
   }
-  const { name, email, password, city, country, department, regionScoped, scope, permissions } = req.body || {};
+  const { name, email, password, city, country, department, regionScoped, scope, permissions, teamManager } = req.body || {};
+  if (isTeamManager && department !== m.adminDepartment) return res.status(403).json({ error: `As the manager of the ${m.adminDepartment.replace('_', ' ')} team, you can add people to your own team only.` });
+  if (teamManager === true && !m.isSuperAdmin) return res.status(403).json({ error: 'Only a super admin can make someone a team manager.' });
+  if (teamManager === true && (!department || department === 'custom')) return res.status(400).json({ error: 'A team manager leads one team: choose the team (not Regional Admin or Custom).' });
   // v135: 'all' (every region) is only for a custom-permissions admin.
   if (scope !== undefined && !['country', 'city', ...(department === 'custom' ? ['all'] : [])].includes(scope)) return res.status(400).json({ error: 'scope must be country or city' });
   const errors = validate([
@@ -2980,6 +2996,12 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
     isSuperAdmin: false,
     adminDepartment: department || null,
     ...(department === 'custom' ? { adminPermissions: customPermissions, regionScoped: scope !== 'all' } : {}), // v135
+    ...(teamManager === true ? { teamManager: true } : {}), // v147
+    // v147: someone a team manager adds covers no more than the manager does
+    // v147: "Limit this role to the area chosen" when adding a team member (before, the tick was ignored and they covered everywhere)
+    ...(regionScoped === true && department && department !== 'custom' && department !== 'sales' ? { regionScoped: true } : {}),
+    ...(isTeamManager && m.regionScoped ? { regionScoped: true, adminScope: m.adminScope || 'city', ...(m.adminScope === 'country' ? { country: m.country } : { city: m.city, country: m.country, region: m.city }) } : {}),
+    createdBy: m.id,
     active: true,
     verified: true,
     initials: name.trim().split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),
@@ -2997,7 +3019,10 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
 
   // Register (or update) the city's entry in the cities registry.
   // v135: a custom-permissions admin is not made the city's manager.
-  if (department === 'custom') return res.status(201).json({ admin: publicAdmin(admin) });
+  // v147: nor is any team member (Verification, Disputes, Finance…): only a
+  // Regional Admin (no team) manages a city. Before, adding a team member
+  // quietly replaced the city's real admin.
+  if (department) return res.status(201).json({ admin: publicAdmin(admin) });
   const existingCity = await db.find('cities', c => c.name.toLowerCase() === city.toLowerCase());
   if (existingCity) {
     await db.update('cities', existingCity.id, { adminId: admin.id, country });
@@ -3006,6 +3031,53 @@ router.post('/sub-admins', requireAuth, requireRole('admin'), async (req, res) =
   }
 
   res.status(201).json({ admin: publicAdmin(admin) });
+});
+
+// ── v147: team managers ──────────────────────────────────────────────────
+// A team manager (Head of Customer Service, Verification lead…) has the same
+// access as their team, and can also see their team, add people to it, and
+// suspend or reactivate them. A super admin makes someone a manager.
+const DEPT_WORDS = { verification: 'Verification', disputes: 'Disputes', financial: 'Financial', accountant: 'Accountant', controller: 'Controller', customer_service: 'Customer Service', legal: 'Legal', sales: 'Sales', hr: 'HR' };
+async function teamView(dept) {
+  const people = await db.filter('users', u => u.role === 'admin' && !u.isSuperAdmin && u.adminDepartment === dept);
+  const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+  const logs = await db.filter('accessLogs', l => Date.parse(l.createdAt) > weekAgo);
+  const sessions = await db.all('sessions');
+  return people.map(u => {
+    const last = sessions.filter(x => x.userId === u.id).map(x => x.createdAt).sort().pop() || null;
+    return { id: u.id, name: u.name, email: u.email, city: u.city || '', country: u.country || '', scope: u.regionScoped ? (u.adminScope === 'country' ? `All of ${u.country}` : `Just ${u.city}`) : 'Everywhere', active: u.active !== false, teamManager: u.teamManager === true, lastSignIn: last, actionsThisWeek: logs.filter(l => l.adminId === u.id).length, mustChangePassword: !!u.mustChangePassword, createdAt: u.createdAt || null };
+  }).sort((a, b) => (b.teamManager - a.teamManager) || a.name.localeCompare(b.name));
+}
+router.get('/team', requireAuth, requireRole('admin'), async (req, res) => {
+  const m = await me(req);
+  const dept = m && m.isSuperAdmin ? String(req.query.department || '') : m && m.teamManager ? m.adminDepartment : null;
+  if (!dept || !DEPT_WORDS[dept]) return res.status(403).json({ error: 'This page is for a team manager.' });
+  res.json({ department: dept, teamName: DEPT_WORDS[dept], youManage: !!(m && m.teamManager), members: await teamView(dept) });
+});
+// PATCH /api/admin/team/:id { active } — a manager suspends or reactivates someone on their team.
+router.patch('/team/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  const m = await me(req);
+  const t = await db.find('users', u => u.id === req.params.id && u.role === 'admin' && !u.isSuperAdmin);
+  if (!m || !t) return res.status(404).json({ error: 'Team member not found' });
+  if (!m.isSuperAdmin && !(m.teamManager && t.adminDepartment === m.adminDepartment)) return res.status(403).json({ error: 'You can only manage people on your own team.' });
+  if (t.id === m.id) return res.status(400).json({ error: "You can't suspend yourself." });
+  if (t.teamManager && !m.isSuperAdmin) return res.status(403).json({ error: 'Only a super admin can suspend a team manager.' });
+  if (typeof (req.body || {}).active !== 'boolean') return res.status(400).json({ error: 'active must be true or false' });
+  const patch = { active: req.body.active };
+  if (req.body.active === false) patch.tokenVersion = (t.tokenVersion || 0) + 1; // signed out at once
+  await db.update('users', t.id, patch);
+  try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: m.id, resourceType: 'team_member', resourceId: `${t.name}: ${req.body.active ? 'reactivated' : 'suspended'}`, ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the change still stands */ }
+  res.json({ ok: true, members: await teamView(t.adminDepartment) });
+});
+// PATCH /api/admin/sub-admins/:id/team-manager { on } — super admin makes or unmakes a team manager.
+router.patch('/sub-admins/:id/team-manager', requireSuperAdmin, async (req, res) => {
+  const t = await db.find('users', u => u.id === req.params.id && u.role === 'admin' && !u.isSuperAdmin);
+  if (!t) return res.status(404).json({ error: 'Sub-admin not found' });
+  if (!t.adminDepartment || t.adminDepartment === 'custom') return res.status(400).json({ error: 'Only someone on a team (not a Regional Admin or a custom admin) can be a team manager.' });
+  const on = (req.body || {}).on === true;
+  await db.update('users', t.id, { teamManager: on });
+  if (on) await notify(t.id, '👥', `You are now the manager of the ${DEPT_WORDS[t.adminDepartment] || t.adminDepartment} team. Open "My Team" in the admin menu to see your team, add people and manage them.`, null, { section: 'myteam' });
+  res.json({ ok: true, teamManager: on });
 });
 
 // GET /api/admin/permission-areas — v135: the sections a custom admin can be

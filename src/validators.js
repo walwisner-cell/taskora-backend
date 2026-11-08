@@ -49,6 +49,16 @@ function looksLikeRealText(str) {
   return wordLikeCount >= 2;
 }
 
+// v147: a NAME (a good, a store) can be one word: "Hammer", "Rice",
+// "Generator", "Grace's". It needs at least two letters together (any
+// language) and can't be one character repeated ("aaaa"). Descriptions
+// still use looksLikeRealText above, which wants two real words.
+function looksLikeName(str) {
+  const s = String(str || '').trim();
+  if (!/\p{L}{2,}/u.test(s)) return false;
+  return !/^(.)\1+$/u.test(s.replace(/\s+/g, ''));
+}
+
 // A short, well-known list of the most common breached/weak passwords
 // (per guidance like NIST 800-63B, which recommends checking against known-
 // compromised passwords over arbitrary complexity rules). This is not
@@ -405,6 +415,7 @@ function namesLikelyMatch(accountName, idLegalName) {
 }
 
 module.exports = {
+  looksLikeName,
   isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode,
   isValidName, isValidCardExpiry, isValidLabel, validate, EMAIL_RE, postalCodeErrorMessage,
   postalCodeIsOptionalFor, looksLikeRealText, namesLikelyMatch,

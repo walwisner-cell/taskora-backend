@@ -91,7 +91,9 @@ async function codeFieldsFor(contract, customer) {
 // v125: the payment fields for a protected booking in this customer's
 // country: a payment code, a card checkout, nothing (test payments), or an
 // error when there's no real way to pay here.
-async function paymentFieldsFor(contract, customer, escrowId) {
+async function paymentFieldsFor(contract, customer, escrowId, rate) {
+  const mf = await momoFieldsFor(contract, customer, rate); // v147: the customer's own MTN wallet first, where that system is on
+  if (mf) return mf;
   const o = await optionsFor(customer && customer.country);
   if (o.protectedMode === 'code') return codeFieldsFor(contract, customer);
   if (o.protectedMode === 'card') {
@@ -104,14 +106,82 @@ async function paymentFieldsFor(contract, customer, escrowId) {
   return null; // simulated: held at once (test sites only)
 }
 
+// v147: paying from the customer's own Mobile Money wallet in the app
+// (MTN in Liberia, once its system is switched on). MTN sends a prompt to
+// the customer's phone; nothing is held until MTN says the customer
+// approved it (a check every minute or two, MTN's callback, or the
+// customer's own screen asking). Declined, failed or not approved in time:
+// the booking is cancelled and nothing was taken.
+const MOMO_MINUTES = (contract) => (contract && contract.ride ? 10 : 30);
+async function momoFieldsFor(contract, customer, rate) {
+  if (!customer || !contract || contract.payMethod === 'cash') return null;
+  const usd = money((contract.amount || 0) + (contract.serviceFee || 0));
+  const r = await require('./mobile-money').chargeDefaultWallet(customer, usd, contract.id, rate);
+  if (!r) return null;
+  if (!r.success) throw Object.assign(new Error(`Mobile money charge could not be started: ${r.message}`), { status: 402, code: 'MOMO_FAILED' });
+  const m = await db.find('paymentMethods', x => x.userId === customer.id && x.isDefault && x.type === 'mobile_money') || {};
+  return {
+    status: 'awaiting_payment', paidBy: 'momo', momoRef: r.referenceId, liberiaMoMoReference: r.referenceId,
+    momoNetwork: m.network || m.brand || 'MTN Mobile Money', momoLast4: m.momoLast4 || m.last4 || null,
+    amountDueUsd: usd, amountDue: Math.round(Number(r.amountLrd) || 0), dueCurrency: 'LRD',
+    paymentExpiresAt: new Date(Date.now() + MOMO_MINUTES(contract) * 60 * 1000).toISOString(),
+  };
+}
+// Ask MTN how one waiting wallet payment went, and act on it. Safe to call
+// more than once and from anywhere (the sweep, the callback, the screen).
+async function checkMomo(e) {
+  if (!e || e.paidBy !== 'momo' || e.status !== 'awaiting_payment' || !e.momoRef) return e && e.status;
+  const lm = require('./liberia-momo');
+  if (!lm.isCollectionsConfigured()) return 'awaiting_payment';
+  let st;
+  try { st = await lm.checkCollectionStatus(e.momoRef); } catch (x) { console.error('[momo] status check:', e.id, x.message); return 'awaiting_payment'; }
+  const status = String(st && st.status || '').toUpperCase();
+  const fresh = await db.find('escrowTransactions', x => x.id === e.id);
+  if (!fresh || fresh.status !== 'awaiting_payment') return fresh && fresh.status;
+  const c = await db.find('contracts', x => x.id === e.contractId);
+  if (status === 'SUCCESSFUL') {
+    const ref = String(st.financialTransactionId || e.momoRef);
+    const got = Number(st.amount) || e.amountDue;
+    if (!c || c.status !== 'awaiting_payment') {
+      // Approved after the booking ended: the money is given back by the finance team (Admin → Customer Payments → Refunds to send).
+      await db.update('escrowTransactions', e.id, { status: 'refunded', receipt: ref, amountReceived: got, refundReason: 'paid after the booking was cancelled' });
+      if (c) await notify(c.customerId, '↩️', `Your ${e.momoNetwork} payment for booking #${c.bookingNumber} came through after the booking had ended, so it will be sent back to your wallet.`, 'bookingUpdates', { section: 'bookings' });
+      return 'refunded';
+    }
+    await finishPayment(e, c, { receipt: ref, amountReceived: got, confirmedByName: 'MTN MoMo' });
+    return 'held';
+  }
+  if (status === 'FAILED' || status === 'REJECTED' || status === 'TIMEOUT' || (e.paymentExpiresAt && new Date(e.paymentExpiresAt).getTime() < Date.now() - 5 * 60 * 1000)) {
+    const why = status === 'FAILED' || status === 'REJECTED' ? 'was declined or didn\'t go through' : 'wasn\'t approved in time';
+    await endUnpaid(e, 'expired', `Your ${e.momoNetwork} payment for booking #${c ? c.bookingNumber : ''} ${why}, so nothing was taken and the booking was cancelled. Book again if you still need it.`, { momoStatus: status || 'NO_ANSWER' });
+    return 'payment_expired';
+  }
+  return 'awaiting_payment';
+}
+async function sweepMomo() {
+  const list = await db.filter('escrowTransactions', e => e.paidBy === 'momo' && e.status === 'awaiting_payment' && e.momoRef);
+  let n = 0;
+  for (const e of list) { const s = await checkMomo(e); if (s !== 'awaiting_payment') n++; }
+  return n;
+}
+// MTN's callback names a reference; it is never trusted on its own: MTN is asked.
+async function momoCallback(referenceId, externalId) {
+  const ref = String(referenceId || '').slice(0, 80), ext = String(externalId || '').slice(0, 80);
+  if (!ref && !ext) return null;
+  const e = await db.find('escrowTransactions', x => x.paidBy === 'momo' && x.status === 'awaiting_payment' && ((ref && x.momoRef === ref) || (ext && x.contractId === ext)));
+  return e ? checkMomo(e) : null;
+}
+
 // v125: what to tell the customer to do to pay, for a code or a card.
 function howToPayWords(e) {
   if (!e) return 'pay in My Bookings.';
+  if (e.paidBy === 'momo') return `approve the ${e.momoNetwork} payment of LRD ${Number(e.amountDue).toLocaleString()} on your phone${e.momoLast4 ? ` (the number ending ${e.momoLast4})` : ''}: enter your PIN when the prompt appears. Nothing is booked until you approve it.`;
   if (e.paidBy === 'card') return `pay $${Number(e.amountDueUsd).toFixed(2)} by card: open My Bookings and press Pay now. Nothing is booked until you pay.`;
   return `send ${e.dueCurrency} ${Number(e.amountDue).toLocaleString()} to ${(e.payTo || []).map(a => `${a.network} ${a.number} (${a.accountName})`).join(' or ')} with code ${e.paymentCode} in the reference, then press "I have sent it" in My Bookings.`;
 }
 
 function publicPayment(e) {
+  if (e && e.paidBy === 'momo') return { method: 'momo', contractId: e.contractId, status: e.status, network: e.momoNetwork, last4: e.momoLast4, amountDue: e.amountDue, currency: e.dueCurrency, amountDueUsd: e.amountDueUsd, expiresAt: e.paymentExpiresAt, receipt: e.receipt || null };
   if (e && e.paidBy === 'card') return { method: 'card', url: e.cardUrl, status: e.status, amountDue: e.amountDue, currency: 'USD', amountDueUsd: e.amountDueUsd, expiresAt: e.paymentExpiresAt, receipt: e.receipt || null };
   if (!e || e.paidBy !== 'code') return null;
   return { method: 'code', code: e.paymentCode, status: e.status, amountDue: e.amountDue, currency: e.dueCurrency, amountDueUsd: e.amountDueUsd, payTo: e.payTo || [], expiresAt: e.paymentExpiresAt, customerSaysPaidAt: e.customerSaysPaidAt || null, customerTransactionId: e.customerTransactionId || null, receipt: e.receipt || null };
@@ -218,9 +288,10 @@ async function confirmCardSession(session) {
 async function cardStatus(contractId, customerId) {
   const c = await db.find('contracts', x => x.id === contractId && x.customerId === customerId);
   if (!c) return { status: 404, error: 'Booking not found' };
-  const e = await db.find('escrowTransactions', x => x.contractId === c.id && x.paidBy === 'card');
+  const e = await db.find('escrowTransactions', x => x.contractId === c.id && (x.paidBy === 'card' || x.paidBy === 'momo'));
   if (!e) return { status: 404, error: 'No card payment for this booking' };
-  if (e.status === 'awaiting_payment' && e.cardSessionId) {
+  if (e.paidBy === 'momo') await checkMomo(e); // v147
+  else if (e.status === 'awaiting_payment' && e.cardSessionId) {
     const session = await require('./stripe-pay').getSession(e.cardSessionId);
     await confirmCardSession(session);
   }
@@ -290,6 +361,7 @@ async function expireUnpaid() {
     } catch (x) { console.error('[customer-payments] card expire failed:', e.id, x.message); }
   }
   try { await sweepCardRefunds(); } catch (x) { console.error('[card refunds] sweep failed:', x.message); }
+  try { await sweepMomo(); } catch (x) { console.error('[momo] sweep failed:', x.message); } // v147
   for (const e of due) {
     try { await endUnpaid(e, 'expired', `Your booking with payment code ${e.paymentCode} was cancelled because no payment was reported in time. If you already sent the money, contact support with your transaction ID.`); }
     catch (x) { console.error('[customer-payments] expire failed:', e.id, x.message); }
@@ -314,16 +386,16 @@ async function expireUnpaid() {
 // came in by code and were later refunded (in full or, after a split
 // dispute, in part), and not yet marked as sent.
 async function refundsToSend() {
-  const rows = await db.filter('escrowTransactions', e => e.paidBy === 'code' && e.receipt && !e.refundSentAt && !e.refundNotNeeded && (e.status === 'refunded' || (e.refundedAmount || 0) > 0));
+  const rows = await db.filter('escrowTransactions', e => (e.paidBy === 'code' || e.paidBy === 'momo') && e.receipt && !e.refundSentAt && !e.refundNotNeeded && (e.status === 'refunded' || (e.refundedAmount || 0) > 0));
   return rows.map(e => {
     const full = e.status === 'refunded';
     const usd = full ? money((e.originalAmount || e.amount) + (e.serviceFee || 0)) : money(e.refundedAmount);
     const local = full ? (e.amountReceived || e.amountDue) : (e.dueCurrency === 'USD' ? usd : Math.round(usd * (e.amountDue / (e.amountDueUsd || 1))));
-    return { escrowId: e.id, contractId: e.contractId, code: e.paymentCode, full, amountUsd: usd, amountLocal: local, currency: e.dueCurrency, receivedWith: e.receipt };
+    return { escrowId: e.id, contractId: e.contractId, code: e.paymentCode || (e.paidBy === 'momo' ? `${e.momoNetwork || 'MoMo'} ••${e.momoLast4 || ''}` : null), full, amountUsd: usd, amountLocal: local, currency: e.dueCurrency, receivedWith: e.receipt };
   });
 }
 async function markRefundSent(admin, escrowId, transactionId) {
-  const e = await db.find('escrowTransactions', x => x.id === escrowId && x.paidBy === 'code');
+  const e = await db.find('escrowTransactions', x => x.id === escrowId && (x.paidBy === 'code' || x.paidBy === 'momo'));
   if (!e) return { status: 404, error: 'Payment not found.' };
   if (e.refundSentAt) return { status: 409, error: 'This refund is already marked as sent.' };
   const tx = typeof transactionId === 'string' ? transactionId.trim() : '';
@@ -339,7 +411,7 @@ async function markRefundSent(admin, escrowId, transactionId) {
 // refunded and paid again. Returns the new escrow, or null.
 async function transferToReassignment(job, newContract) {
   const prior = (await db.filter('contracts', c => c.jobId === job.id && c.id !== newContract.id)).map(c => c.id);
-  const old = (await db.filter('escrowTransactions', e => prior.includes(e.contractId) && (e.paidBy === 'code' || e.paidBy === 'card') && e.status === 'refunded' && e.receipt && !e.refundSentAt && !e.refundNotNeeded))
+  const old = (await db.filter('escrowTransactions', e => prior.includes(e.contractId) && (e.paidBy === 'code' || e.paidBy === 'card' || e.paidBy === 'momo') && e.status === 'refunded' && e.receipt && !e.refundSentAt && !e.refundNotNeeded))
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
   if (!old) return null;
   const esc = {
@@ -354,4 +426,4 @@ async function transferToReassignment(job, newContract) {
   return esc;
 }
 
-module.exports = { howToPayWords, PAY_METHODS, cleanPayMethod, optionsFor, noProtectedError, paymentFieldsFor, confirmCardSession, cardStatus, sweepCardRefunds, usesCodes, codeFieldsFor, publicPayment, customerReportsPaid, confirm, reject, expireUnpaid, refundsToSend, markRefundSent, transferToReassignment, localDue };
+module.exports = { momoFieldsFor, checkMomo, sweepMomo, momoCallback, howToPayWords, PAY_METHODS, cleanPayMethod, optionsFor, noProtectedError, paymentFieldsFor, confirmCardSession, cardStatus, sweepCardRefunds, usesCodes, codeFieldsFor, publicPayment, customerReportsPaid, confirm, reject, expireUnpaid, refundsToSend, markRefundSent, transferToReassignment, localDue };

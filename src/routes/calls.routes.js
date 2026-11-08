@@ -182,6 +182,13 @@ async function reachCheck(me, them, kind) {
   if (!(await connected(me, them))) return { status: 403, code: 'NOT_CONNECTED', error: kind === 'voice' ? 'You can send voice messages once you have a booking, a job response or a conversation with them.' : 'You can call someone once you have a booking, a job response or a conversation with them.' };
   if (await blocked(them.id, me.id)) return { status: 403, code: 'BLOCKED', error: `${firstName(them)} isn't taking calls or voice messages from you. You can still send a text message.` };
   if (await blocked(me.id, them.id)) return { status: 403, code: 'YOU_BLOCKED', error: `You blocked ${firstName(them)}. Unblock them in Settings → Calls & Voice Messages to call or send voice messages.` };
+  // v147: a CALL needs a confirmed booking between them (accepted, and paid
+  // if paid through Trothen), or one completed in the last 7 days. Before
+  // that, people talk in the chat. Voice messages are part of the chat and
+  // keep the chat's rule. The Trothen team can always call (support).
+  if (kind !== 'voice' && me.role !== 'admin' && them.role !== 'admin' && !(await require('../booking-contact').confirmedBetween(me.id, them.id))) {
+    return { status: 403, code: 'NOT_BOOKED', error: `You can call ${firstName(them)} once your booking is confirmed: the pro has accepted it${me.role === 'provider' ? '' : ' and, if you pay through Trothen, you have paid'}. Until then, send a message in the chat.` };
+  }
   if (!(await inCallWindow(me, them))) return { status: 403, code: 'OUTSIDE_WINDOW', error: `Calls and voice messages are open while you have a booking or job together, and for ${WINDOW_DAYS} days after. Send ${firstName(them)} a text message instead.` };
   const s = settingsOf(them);
   if (kind === 'voice') {

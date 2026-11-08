@@ -23,7 +23,8 @@ const store = require('./store');
 const { distanceInMiles } = require('./geo-distance');
 
 const KM_PER_MILE = 1.609344;
-const DELIVERY_RESPONSE_MINUTES = 30; // how long a driver has to answer
+const DELIVERY_RESPONSE_MINUTES = 10; // v147: how long each driver has to answer (was 30), then the next driver is asked
+const DELIVERY_MAX_DRIVERS = 3;      // v147: drivers asked one after another before the customer chooses
 const MAX_DRIVERS_SUGGESTED = 6;
 const money = store.money;
 
@@ -131,11 +132,50 @@ async function deliveryEvent(delivery, event) {
     return;
   }
   const orderStillOpen = order && order.status === 'active';
+  // v147: a driver who declines or doesn't answer: ask the next nearest
+  // driver automatically (the way Glovo, Bolt Food and Jumia do it), at a
+  // price no higher than the customer paid, up to 3 drivers in all.
+  if ((event === 'declined' || event === 'expired') && orderStillOpen && order.deliveryContractId === delivery.id) {
+    try {
+      const next = await nextDriver(delivery, order);
+      if (next) {
+        const { createDelivery } = require('./routes/orders.routes');
+        const where = { address: delivery.address, jobLocation: delivery.jobLocation || null, landmark: delivery.landmark || null };
+        const seller = await db.find('users', u => u.id === d.sellerId);
+        const r = await createDelivery({ order, seller, driver: next.user, where, payCurrency: delivery.payCurrency });
+        if (r && r.delivery) {
+          const tried = [...(d.triedDriverIds || []), delivery.providerId];
+          await db.update('contracts', r.delivery.id, { delivery: { ...r.delivery.delivery, triedDriverIds: tried, reassignedFrom: delivery.id } });
+          const word = event === 'declined' ? "couldn't take" : "didn't answer in time for";
+          await notify(delivery.customerId, '🚚', `${who} ${word} the delivery of your store order #${n}, so Trothen asked ${next.user.name}, the next nearest driver, for $${r.delivery.amount.toFixed(2)}${r.delivery.amount < delivery.amount - 0.009 ? ` (less than before; the difference was refunded)` : ''}. They have ${DELIVERY_RESPONSE_MINUTES} minutes to answer. Nothing for you to do.`, 'bookingUpdates', { section: 'orders' });
+          if (d.sellerId) await notify(d.sellerId, '🚚', `The driver for store order #${n} changed: ${next.user.name} has been asked to collect it.`, 'bookingUpdates', { section: 'store' });
+          return;
+        }
+      }
+    } catch (e) { console.error('[store-orders] next driver:', e.message); }
+  }
   const why = event === 'declined' ? `${who} can't take the delivery of` : event === 'expired' ? `${who} didn't answer in time for the delivery of` : `The delivery was cancelled for`;
   if (orderStillOpen) {
     await notify(delivery.customerId, '🚚', `${why} your store order #${n}. The $${delivery.amount} you paid for delivery was refunded. Choose another driver, or collect it yourself, from Store Orders.`, 'bookingUpdates', { section: 'orders' });
     if (d.sellerId) await notify(d.sellerId, '🚚', `The driver for store order #${n} fell through. The customer has been asked to choose another, or to collect it.`, 'bookingUpdates', { section: 'store' });
   }
+}
+
+// v147: the next driver to ask, or null: not one already asked, priced no
+// higher than what the customer paid, nearest first (the same order the
+// customer saw at checkout).
+async function nextDriver(delivery, order) {
+  const d = delivery.delivery || {};
+  const tried = new Set([...(d.triedDriverIds || []), delivery.providerId]);
+  if (tried.size >= DELIVERY_MAX_DRIVERS) return null;
+  const seller = await db.find('users', u => u.id === d.sellerId);
+  if (!seller) return null;
+  const busy = new Set((await db.filter('contracts', c => c.delivery && c.status === 'pending_provider_confirmation')).map(c => c.providerId));
+  const out = await suggestDrivers({ seller, dropoff: delivery.jobLocation || null, customerId: delivery.customerId, pickup: d.pickupLocation || undefined });
+  const pick = (out.drivers || []).find(x => !tried.has(x.id) && !busy.has(x.id) && x.price <= Number(delivery.amount) + 0.009);
+  if (!pick) return null;
+  const user = await db.find('users', u => u.id === pick.id);
+  return user && isDriver(user) ? { user, price: pick.price } : null;
 }
 
 // Runs after any booking is cancelled.
@@ -188,6 +228,7 @@ async function afterComplete(order, customerId) {
 }
 
 module.exports = {
+  DELIVERY_MAX_DRIVERS, nextDriver,
   DELIVERY_RESPONSE_MINUTES, MAX_DRIVERS_SUGGESTED, kmBetween, distWords, isDriver, driverRates, quoteFor, suggestDrivers,
   rideDeliverer, tableQuote, deliveryPrice, // v143
   isLive, deliveryOf, deliveryEvent, afterCancel, afterComplete,

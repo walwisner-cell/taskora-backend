@@ -105,8 +105,10 @@
     const r = raw(b.id) || {};
     if (r.ride || r.delivery) return legacyNote(b);
     let where = '';
-    if (EDITABLE.includes(b.status) && !b.arrivedAt) {
-      where = !hasPin(b)
+    if (EDITABLE.includes(b.status) && !b.arrivedAt && !r.workDoneAt) { // v147: not once the pro says the job is finished
+      where = !hasPin(b) && r.landmark // v147: a landmark is how most addresses work in Liberia; a pin helps but isn't required
+        ? `<div style="margin-top:4px;font-size:12.5px;color:var(--slate);">${esc(tr('Your pro has your landmark. A pin on the map helps them find you faster.'))} <button type="button" class="link-btn" onclick="openJobLocationEditor(${jsArg(b.id)})">${esc(tr('Add a pin'))}</button></div>`
+        : !hasPin(b)
         ? `<div class="where-warn"><strong>${esc(tr('Location required.'))}</strong> ${esc(tr('Your pro cannot navigate to you until a location is set.'))}<div style="margin-top:6px;"><button type="button" class="btn-sm btn-sm-primary" onclick="openJobLocationEditor(${jsArg(b.id)})">${esc(tr('Set Job Location'))}</button></div></div>`
         : `<div style="margin-top:4px;"><button type="button" class="link-btn" onclick="openJobLocationEditor(${jsArg(b.id)})">${esc(tr('Change Location'))}</button></div>`;
     }

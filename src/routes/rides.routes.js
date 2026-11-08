@@ -157,7 +157,9 @@ const lookupLimiter = rateLimit({ windowMs: 60 * 1000, max: 40, standardHeaders:
 function readPoint(raw, label) {
   if (!raw || typeof raw !== 'object' || !isValidCoordinate(Number(raw.latitude), Number(raw.longitude)) || (Number(raw.latitude) === 0 && Number(raw.longitude) === 0)) return { error: `${label} isn't a valid position. Please pin it again.` };
   const address = typeof raw.address === 'string' ? raw.address.trim().slice(0, 160) : '';
-  return { point: { latitude: Math.round(Number(raw.latitude) * 1e6) / 1e6, longitude: Math.round(Number(raw.longitude) * 1e6) / 1e6, address: address || label } };
+  // v147: a short note for the driver ("blue gate, I'm in a red shirt"). Phone numbers and emails are taken out: those are shared through the app once the ride is on.
+  const note = typeof raw.note === 'string' ? require('../contact-scrub').scrub(raw.note.trim().slice(0, 140)) : '';
+  return { point: { latitude: Math.round(Number(raw.latitude) * 1e6) / 1e6, longitude: Math.round(Number(raw.longitude) * 1e6) / 1e6, address: address || label, ...(note ? { note } : {}) } };
 }
 
 // GET /api/rides/drivers?pLat=&pLng=&dLat=&dLng=&passengers=
@@ -286,7 +288,10 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
     // v125: with card payments the rider pays first; the driver is asked once the payment is confirmed.
     if (!cash && !isOffer && po.protectedMode === 'card') { contract.statusAfterPayment = 'pending_provider_confirmation'; contract.status = 'awaiting_payment'; }
     let escrow = null;
-    if (!cash && !isOffer) try { escrow = await fundEscrowForContract(contract, me.id, contract.payCurrency); }
+    if (!cash && !isOffer) try {
+      escrow = await fundEscrowForContract(contract, me.id, contract.payCurrency);
+      if (escrow && escrow.status === 'awaiting_payment' && contract.status !== 'awaiting_payment') { contract.statusAfterPayment = contract.status; contract.status = 'awaiting_payment'; } // v147: waiting for the wallet PIN
+    }
     catch (e) {
       console.error('[ride] payment failed:', e.message);
       return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be started, so you were not charged and no ride was requested. Please try again.' });
@@ -294,6 +299,7 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
     await db.insert('contracts', contract);
     if (contract.status === 'pending_provider_confirmation') await notify(driver.id, '🛵', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km, $${fare.toFixed(2)}${local(fare, priced.local)}${cash ? ', the rider pays you in CASH' : ''}). Answer within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
     else if (isOffer) await notify(driver.id, '💬', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km). The rider offers $${offerFare.toFixed(2)}${local(offerFare)} (your fare is $${fare.toFixed(2)}${local(fare, priced.local)})${cash ? ', paid in CASH' : ''}. Accept it, suggest a fare, or decline within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
+    places.noteUse(me, pk.point); places.noteUse(me, dp.point); // v147: named places riders use become suggestions for the team
     res.status(201).json({ ride: await rideView(contract, me.id), payment: escrow ? custPay.publicPayment(escrow) : null });
   } finally {
     bookInFlight.delete(me.id);
@@ -711,6 +717,103 @@ router.put('/admin/rides/countries', gate, async (req, res) => {
   await setSetting('rideEnabledCountries', list);
   try { await db.insert('accessLogs', { id: `al_${require('nanoid').nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'rides_country', resourceId: `${rec ? rec.name : name}: ${turnOn ? 'on' : 'off'}`, ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the switch still works */ }
   res.json({ ok: true, enabledCountries: list });
+});
+
+// ── v147: places (see src/places.js) ─────────────────────────────────────
+const places = require('../places');
+setTimeout(() => { places.seedStarter().catch(e => console.error('[places] starter list:', e.message)); }, 8000);
+const placeLimiter = require('express-rate-limit')({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many searches in a row. Wait a moment.' } });
+// GET /api/places/search?q= — my saved places and the country's known places first.
+router.get('/places/search', requireAuth, placeLimiter, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const q = String(req.query.q || '').trim().slice(0, 80);
+  const qn = places.norm(q);
+  const saved = places.savedOf(me).filter(p => qn.length >= 1 && (places.norm(p.label).includes(qn) || places.norm(p.name).includes(qn))).map(p => ({ ...p, kind: 'saved' }));
+  res.json({ saved, places: await places.search(me && me.country, q) });
+});
+// GET /api/places/mine — saved places and the last places I rode from or to.
+router.get('/places/mine', requireAuth, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const rides = (await db.filter('contracts', c => c.ride && c.customerId === req.user.sub)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const recent = []; const seen = new Set();
+  for (const c of rides) for (const pt of [c.ride.dropoff, c.ride.pickup]) {
+    if (!pt || !pt.address || ['Pickup', 'Destination'].includes(pt.address)) continue;
+    const k = places.norm(pt.address); if (seen.has(k)) continue; seen.add(k);
+    recent.push({ name: pt.address, latitude: pt.latitude, longitude: pt.longitude });
+    if (recent.length >= 5) break;
+  }
+  res.json({ saved: places.savedOf(me), recent, max: places.MAX_SAVED });
+});
+router.post('/places/mine', requireAuth, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const r = places.readSaved(req.body);
+  if (r.error) return res.status(400).json({ error: r.error });
+  const list = places.savedOf(me).filter(p => !places.sameText(p.label, r.place.label)); // the same label replaces the old one ("Home")
+  if (list.length >= places.MAX_SAVED) return res.status(400).json({ error: `You can save up to ${places.MAX_SAVED} places. Remove one first.` });
+  list.push(r.place);
+  await db.update('users', me.id, { savedPlaces: list });
+  res.status(201).json({ saved: list });
+});
+router.delete('/places/mine/:id', requireAuth, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const list = places.savedOf(me).filter(p => p.id !== req.params.id);
+  await db.update('users', me.id, { savedPlaces: list });
+  res.json({ saved: list });
+});
+// Admin → Rides → Places
+router.get('/admin/rides/places', gate, async (req, res) => {
+  const country = String(req.query.country || 'Liberia').trim();
+  const list = (await db.filter('places', p => places.sameText(p.country, country))).sort((a, b) => (a.status === 'needs_pin') - (b.status === 'needs_pin') || a.name.localeCompare(b.name));
+  const sugg = (await db.filter('placeSuggestions', x => places.sameText(x.country, country) && (x.riders || 0) >= places.SUGGEST_AFTER && !x.dismissed)).sort((a, b) => (b.riders || 0) - (a.riders || 0));
+  res.json({
+    country, kinds: places.KINDS,
+    places: list.map(p => ({ ...places.publicPlace(p), status: p.status, uses: p.uses || 0, aliases: p.aliases || [], riderPinHint: p.status === 'needs_pin' && (p.riderPins || []).length >= 2 ? places.middle(p.riderPins) : null })),
+    suggestions: sugg.map(x => ({ id: x.id, name: x.name, riders: x.riders, at: places.middle(x.pins) })),
+    counts: { live: list.filter(p => p.status === 'live').length, needsPin: list.filter(p => p.status === 'needs_pin').length },
+  });
+});
+function readPlaceBody(b, existing) {
+  const out = {};
+  if (b.name !== undefined || !existing) { const n = String(b.name || '').trim(); if (n.length < 2 || n.length > 80) return { error: 'Give the place a name (2 to 80 characters)' }; out.name = n; }
+  if (b.area !== undefined) out.area = String(b.area || '').trim().slice(0, 60);
+  if (b.kind !== undefined) out.kind = places.KINDS.includes(b.kind) ? b.kind : 'other';
+  if (b.aliases !== undefined) out.aliases = (Array.isArray(b.aliases) ? b.aliases : String(b.aliases || '').split(',')).map(x => String(x).trim()).filter(x => x.length >= 2).slice(0, 8).map(x => x.slice(0, 60));
+  if (b.latitude !== undefined || b.longitude !== undefined) {
+    const lat = Number(b.latitude), lng = Number(b.longitude);
+    if (!isValidCoordinate(lat, lng) || (lat === 0 && lng === 0)) return { error: 'Pin the place on the map' };
+    out.latitude = Math.round(lat * 1e6) / 1e6; out.longitude = Math.round(lng * 1e6) / 1e6; out.status = 'live';
+  }
+  return { out };
+}
+router.post('/admin/rides/places', gate, async (req, res) => {
+  const b = req.body || {};
+  const r = readPlaceBody(b, null); if (r.error) return res.status(400).json({ error: r.error });
+  if (r.out.latitude === undefined) return res.status(400).json({ error: 'Pin the place on the map' });
+  const country = String(b.country || 'Liberia').trim();
+  if (await db.find('places', p => places.sameText(p.country, country) && places.sameText(p.name, r.out.name))) return res.status(409).json({ error: 'A place with that name is already on the list. Edit it instead.' });
+  const place = { id: `pl_${nanoid(10)}`, country, area: '', kind: 'other', aliases: [], uses: 0, source: 'team', createdBy: req.adminUser.id, createdAt: new Date().toISOString(), ...r.out };
+  await db.insert('places', place);
+  if (b.fromSuggestion) { const sg = await db.find('placeSuggestions', x => x.id === b.fromSuggestion); if (sg) await db.update('placeSuggestions', sg.id, { dismissed: true, acceptedAs: place.id }); }
+  res.status(201).json({ place: places.publicPlace(place) });
+});
+router.patch('/admin/rides/places/:id', gate, async (req, res) => {
+  const p = await db.find('places', x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'Place not found' });
+  const r = readPlaceBody(req.body || {}, p); if (r.error) return res.status(400).json({ error: r.error });
+  await db.update('places', p.id, { ...r.out, updatedBy: req.adminUser.id, updatedAt: new Date().toISOString() });
+  res.json({ ok: true });
+});
+router.delete('/admin/rides/places/:id', gate, async (req, res) => {
+  const p = await db.find('places', x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'Place not found' });
+  await db.remove('places', p.id);
+  res.json({ ok: true });
+});
+router.post('/admin/rides/places/suggestions/:id/dismiss', gate, async (req, res) => {
+  const sg = await db.find('placeSuggestions', x => x.id === req.params.id);
+  if (!sg) return res.status(404).json({ error: 'Suggestion not found' });
+  await db.update('placeSuggestions', sg.id, { dismissed: true });
+  res.json({ ok: true });
 });
 
 router.get('/admin/rides/overview', gate, async (req, res) => {
