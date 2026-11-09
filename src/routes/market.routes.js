@@ -417,20 +417,33 @@ router.post('/market/listings/:id/buy', requireAuth, require('../terms').require
       const quoted = await so.deliveryPrice(driver, km); // v143
       if (Math.abs(Number(b.driverPrice) - quoted) > 0.009) return res.status(409).json({ code: 'PRICE_CHANGED', price: quoted, error: `${driver.name}'s price is now $${quoted.toFixed(2)}. Check it and approve again.` });
     }
+    // v148: the buyer pays once, the item and the driver together; nothing goes to the seller until it is paid
+    let escrow = null, driverPrice = 0;
+    if (driver) { driverPrice = Number(b.driverPrice); order.alsoPaysUsd = store.money(store.money(driverPrice) + store.money(driverPrice * Number(s.deliveryFeePercent || 0) / 100)); }
+    const how = method === 'pickup' ? `${firstAndInitial(buyer.name)} will collect it from ${pickupPlace}. Agree a time in Messages.` : `A driver (${driver.name}) has been asked to collect it from you.`;
+    order.sellerNotice = `Sold through Trothen: "${l.title}" for $${price.toFixed(2)}. ${how} The money is held and is yours when the buyer has the item.`;
     try {
-      await fundEscrowForContract(order, buyer.id, order.payCurrency);
+      escrow = await fundEscrowForContract(order, buyer.id, order.payCurrency);
+      if (escrow && escrow.status === 'awaiting_payment') {
+        order.status = 'awaiting_payment'; order.statusAfterPayment = 'active'; order.signedAt = null;
+        if (driver) order.pendingDelivery = { driverId: driver.id, where, price: driverPrice };
+      }
       await db.insert('contracts', order);
     } catch (e) {
       console.error('[market buy] payment or save failed:', e.message);
+      if (e.code === 'PROTECTED_UNAVAILABLE') return res.status(400).json({ code: 'PAY_UNAVAILABLE', error: 'Paying through Trothen isn\'t switched on in your country yet. Message the seller to meet and pay in person.' });
       return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be completed, so you were not charged. Please try again or use another payment method.' });
     }
+    const waiting = order.status === 'awaiting_payment';
+    // Reserved while the buyer pays, so no one else buys it; it goes back on sale if the payment doesn't come.
     await db.update('marketListings', l.id, { status: 'reserved', reservedForOrderId: order.id });
     try { await require('../fraud-detection').checkNewAccountHighValue(buyer.id, price); } catch (e) { /* the order stands */ }
-    if (driver) await orders.createDelivery({ order, seller, driver, where, payCurrency: order.payCurrency });
-    const how = method === 'pickup' ? `${firstAndInitial(buyer.name)} will collect it from ${pickupPlace}. Agree a time in Messages.` : `A driver (${driver.name}) has been asked to collect it from you.`;
-    await notify(seller.id, '🏷️', `Sold through Trothen: "${l.title}" for $${price.toFixed(2)}. ${how} The money is held and is yours when the buyer has the item.`, 'bookingUpdates', { section: 'market' });
+    if (!waiting) {
+      if (driver) await orders.createDelivery({ order, seller, driver, where, payCurrency: order.payCurrency });
+      await notify(seller.id, '🏷️', order.sellerNotice, 'bookingUpdates', { section: 'market' });
+    }
     const fresh = await db.find('contracts', c => c.id === order.id);
-    res.status(201).json({ order: await orders.orderView(fresh, buyer.id) });
+    res.status(201).json({ order: await orders.orderView(fresh, buyer.id), payment: waiting ? require('../customer-payments').publicPayment(escrow) : null });
   } finally { buying.delete(req.params.id); }
 });
 

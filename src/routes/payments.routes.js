@@ -63,7 +63,7 @@ function publicMethod(m) {
   if (m.type !== 'mobile_money') return m;
   const { momoNumber, mobileMoneyNumber, ...rest } = m;
   const last4 = m.momoLast4 || String(mobileMoneyNumber || '').replace(/\D/g, '').slice(-4);
-  return { ...rest, mobileMoneyNumber: `•••• ${last4}`, brand: m.network || m.brand };
+  return { ...rest, mobileMoneyNumber: `•••• ${last4}`, brand: `${m.network || m.brand}${m.ownerIsMe === false ? ` · ${m.ownerLabel || m.accountName}` : ''}` };
 }
 router.get('/payment-methods/mine', requireAuth, async (req, res) => {
   const methods = await db.filter('paymentMethods', m => m.userId === req.user.sub);
@@ -182,6 +182,8 @@ router.post('/payment-methods', requireAuth, async (req, res) => {
       brand: network, network, country,
       momoNumber: pmx.seal(num.msisdn), momoLast4: num.msisdn.slice(-4),
       accountName,
+      // v148: a wallet can be someone else's (family, a friend, the company): the prompt or payment goes from their phone, and refunds go back to it
+      ownerIsMe: req.body.ownerIsMe !== false, ownerLabel: req.body.ownerIsMe === false ? String(req.body.ownerLabel || '').trim().slice(0, 40) || null : null,
       api: api ? api.name : null, // the Mobile Money system that can charge it, once switched on
       isDefault: existing.length === 0 || !existing.some(m => m.isDefault),
       mode: api && api.collections ? 'live' : 'code',
@@ -1118,6 +1120,7 @@ async function handleContractCancel(req, res) {
     const gone = await db.update('contracts', contract.id, { status: 'cancelled', cancelledByRole: 'customer', cancelReasonCategory: 'not_paid', cancelledAt: new Date().toISOString() });
     await require('../store').giveBackStock(contract);
     await require('../loyalty').givePointsBack(contract);
+    if (contract.marketListingId) { const l = await db.find('marketListings', x => x.id === contract.marketListingId); if (l && l.status === 'reserved' && l.reservedForOrderId === contract.id) await db.update('marketListings', l.id, { status: 'live', reservedForOrderId: null }); } // v148: back on sale
     if (contract.jobId) { const job = await db.find('jobs', j => j.id === contract.jobId); if (job && job.status === 'matched') await db.update('jobs', job.id, { status: 'open' }); }
     return res.json({ contract: gone, escrow: null });
   }
@@ -1494,7 +1497,10 @@ router.get('/admin/payouts-to-send', requireAuth, requireRole('admin'), async (r
     .map(p => { const u = users.get(p.providerId); return { id: p.id, createdAt: p.createdAt, amount: p.amount, payoutCurrency: p.payoutCurrency, payoutAmountLocal: p.payoutAmountLocal, method: p.method, destination: p.destination || null, status: p.status, problem: p.problem || null, person: { id: u.id, name: u.name, country: u.country, city: u.city } }; });
   // v147: which can go through a Mobile Money system, and whether that is on
   const sending = require('../payout-sending');
-  for (const r of rows) { const p = await db.find('payouts', x => x.id === r.id); const route = await sending.momoRoute(p); r.momo = route ? { name: route.name, on: route.disbursement } : null; }
+  for (const r of rows) { const p = await db.find('payouts', x => x.id === r.id); const route = await sending.momoRoute(p); r.momo = route ? { name: route.name, on: route.disbursement } : null;
+    // v148: is the account in the pro's own name (or business name)? If not, finance checks before sending.
+    const st = p.sendTo || {}; const holder = st.name || st.accountName; const u = users.get(p.providerId);
+    r.nameCheck = holder ? { holder, pro: u ? (u.businessName ? `${u.name} / ${u.businessName}` : u.name) : '', ok: require('../payout-methods').nameMatches(u, holder) } : null; }
   const sendingNow = (await db.filter('payouts', p => p.status === 'sending')).filter(p => { const u = users.get(p.providerId); return u && sc.inScope(u); }).map(p => ({ id: p.id, amount: p.amount, destination: p.destination, sentAt: p.momoSentAt, person: { name: (users.get(p.providerId) || {}).name } }));
   res.json({ payouts: rows, sending: sendingNow, autoSettle: !(await sending.realPaymentsOn()) });
 });

@@ -151,6 +151,7 @@ app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; },
 }));
 app.use(morgan('dev'));
+app.use(require('./src/system-check').errorCounter); // v148: server errors are counted for System Check
 
 // ---- API routes ----
 // v123: live updates. Installed before any route runs, so every save in the
@@ -459,6 +460,10 @@ seedIfEmpty()
     // purchases waiting for MTN's answer. Every 5 minutes.
     setInterval(() => { require('./src/tokens').sweep().catch(e => console.error('[tokens] sweep failed:', e)); }, 5 * 60 * 1000);
     // v119: bookings whose payment code ran out without a payment are cancelled.
+    // v148: System Check watches the running system and alerts admins with the cause and the fix
+    require('./src/system-check').install();
+    setTimeout(() => { require('./src/system-check').run().catch(e => console.error('[system-check] failed:', e.message)); }, 2 * 60 * 1000);
+    setInterval(() => { require('./src/system-check').run().catch(e => console.error('[system-check] failed:', e.message)); }, 15 * 60 * 1000);
     setInterval(() => { require('./src/customer-payments').sweepMomo().catch(e => console.error('[momo] sweep failed:', e.message)); }, 60 * 1000); // v147: wallet payments waiting for the customer's PIN
     setInterval(() => { require('./src/customer-payments').expireUnpaid().catch(e => console.error('[customer-payments] sweep failed:', e)); }, 5 * 60 * 1000);
     setTimeout(() => { require('./src/tokens').sweep().catch(e => console.error('[tokens] sweep failed:', e)); }, 15000);

@@ -512,7 +512,7 @@ router.post('/store/price-basket', requireAuth, async (req, res) => {
 router.get('/skills/mine', requireAuth, requireRole('provider'), async (req, res) => {
   const me = await freshUser(req);
   const { LICENSED_TRADE_CATEGORIES } = require('./marketplace.routes');
-  res.json({ main: me.category || null, extraSkills: (me.extraSkills || []).map(publicSkill), max: store.MAX_EXTRA_SKILLS, licensed: [...LICENSED_TRADE_CATEGORIES] });
+  res.json({ main: me.category || null, extraSkills: (me.extraSkills || []).map(publicSkill), max: store.maxExtraSkillsFor(me), business: store.maxExtraSkillsFor(me) > store.MAX_EXTRA_SKILLS, maxPerson: store.MAX_EXTRA_SKILLS, maxBusiness: store.MAX_EXTRA_SKILLS_BUSINESS, licensed: [...LICENSED_TRADE_CATEGORIES] });
 });
 
 router.put('/skills/mine', requireAuth, requireRole('provider'), async (req, res) => {
@@ -520,7 +520,8 @@ router.put('/skills/mine', requireAuth, requireRole('provider'), async (req, res
   const wanted = (req.body || {}).extraCategories;
   if (!Array.isArray(wanted) || wanted.some(c => typeof c !== 'string')) return res.status(400).json({ error: 'Choose your extra skills from the list' });
   const unique = [...new Set(wanted.map(c => c.trim()).filter(Boolean))].filter(c => c !== me.category);
-  if (unique.length > store.MAX_EXTRA_SKILLS) return res.status(400).json({ error: `You can add up to ${store.MAX_EXTRA_SKILLS} extra skills on top of your main one.` });
+  const max = store.maxExtraSkillsFor(me); // v148: 10 for a person, 25 for a business
+  if (unique.length > max) return res.status(400).json({ error: max > store.MAX_EXTRA_SKILLS ? `A business can add up to ${max} extra services on top of its main one.` : `You can add up to ${max} extra skills on top of your main one. A business (add your business name in Settings) can add up to ${store.MAX_EXTRA_SKILLS_BUSINESS}.` });
   const active = new Set((await db.filter('categories', c => c.active)).map(c => c.name));
   const unknown = unique.find(c => !active.has(c));
   if (unknown) return res.status(400).json({ error: `"${unknown}" isn't one of the listed kinds of work.` });

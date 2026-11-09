@@ -31,7 +31,11 @@
         <div class="form-group"><label class="form-label" for="pm-mobile-money-number">Mobile Money number</label>
           <input class="form-input" id="pm-mobile-money-number" inputmode="tel" autocomplete="tel" placeholder="${e(OPT.example || '')}"/>
           <div style="font-size:12.5px;color:var(--muted);margin-top:4px;">The number your Mobile Money wallet is on${OPT.callingCode ? `. You can leave out +${e(OPT.callingCode)}` : ''}.</div></div>
-        <div class="form-group"><label class="form-label" for="pm-mm-name">Name on the Mobile Money account</label><input class="form-input" id="pm-mm-name" autocomplete="name" value="${e((AUTH.user && AUTH.user.name) || '')}"/></div>
+        <div class="form-group"><label class="form-label" for="pm-mm-owner">Whose number is it?</label>
+          <select class="form-input form-select" id="pm-mm-owner"><option value="me">Mine</option><option value="other">Someone else's (family, a friend, my company)</option></select></div>
+        <div class="form-group" id="pm-mm-who-g" style="display:none;"><label class="form-label" for="pm-mm-who">Who is it?</label><input class="form-input" id="pm-mm-who" maxlength="40" placeholder="e.g. My brother, My company"/></div>
+        <div class="form-group"><label class="form-label" for="pm-mm-name" id="pm-mm-name-l">Name on the Mobile Money account</label><input class="form-input" id="pm-mm-name" autocomplete="name" value="${e((AUTH.user && AUTH.user.name) || '')}"/></div>
+        <div class="ver-note" id="pm-mm-other-note" style="display:none;">When you pay, the payment is made from their phone: they approve it with their Mobile Money PIN (or send it with your payment code). Only save a number with the owner's permission. Refunds go back to this number.</div>
         <div class="ver-note" id="pm-mm-how"></div>`;
       const how = () => {
         const n = nets.find(x => x.name === el('pm-mm-network').value) || {};
@@ -42,6 +46,12 @@
             : `You pay with a payment code: Trothen shows you where to send the money and a code to put in the reference, then you press "I have sent it". Your money is held by Trothen until the job is done.`;
       };
       el('pm-mm-network').onchange = how; how();
+      el('pm-mm-owner').onchange = () => { // v148: someone else's wallet
+        const other = el('pm-mm-owner').value === 'other';
+        el('pm-mm-who-g').style.display = other ? '' : 'none'; el('pm-mm-other-note').style.display = other ? '' : 'none';
+        el('pm-mm-name-l').textContent = other ? 'Their name on the Mobile Money account' : 'Name on the Mobile Money account';
+        el('pm-mm-name').value = other ? '' : ((AUTH.user && AUTH.user.name) || '');
+      };
     }
     const badge = document.querySelector('#add-payment-panel .badge-warn');
     if (badge && OPT.africa) badge.style.display = 'none';
@@ -75,7 +85,8 @@
       if (mobileMoneyNumber.replace(/\D/g, '').length < 7) return showToast('Enter your Mobile Money number');
       if (accountName.length < 2) return showToast('Enter the name the Mobile Money account is registered in');
       try {
-        await apiFetch('POST', '/payment-methods', { type: 'mobile_money', network, mobileMoneyProvider: network, mobileMoneyNumber, accountName });
+        const other = el('pm-mm-owner') && el('pm-mm-owner').value === 'other';
+        await apiFetch('POST', '/payment-methods', { type: 'mobile_money', network, mobileMoneyProvider: network, mobileMoneyNumber, accountName, ownerIsMe: !other, ownerLabel: other ? el('pm-mm-who').value.trim() : undefined });
         showToast(`${network} saved`);
         el('add-payment-panel').style.display = 'none';
         el('pm-mobile-money-number').value = '';

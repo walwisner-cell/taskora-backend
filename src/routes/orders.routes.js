@@ -47,7 +47,7 @@ function readDropoff(body) {
 }
 
 // Makes the booking with the driver for one order, and holds the money for it.
-async function createDelivery({ order, seller, driver, where, payCurrency, expectedPrice }) {
+async function createDelivery({ order, seller, driver, where, payCurrency, expectedPrice, paidWith, fixedPrice }) {
   const { generateBookingNumber, fundEscrowForContract } = require('./marketplace.routes');
   const opt = store.storeOptions(seller);
   // v139: a personal listing has its own pick-up place and no store name.
@@ -55,7 +55,7 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
   const sellerLabel = (seller.store && seller.store.name) || seller.name;
   const settings = await store.storeSettings();
   const km = so.kmBetween(opt.pickupLocation, where.jobLocation);
-  const price = await so.deliveryPrice(driver, km); // v143
+  const price = fixedPrice !== undefined ? money(fixedPrice) : await so.deliveryPrice(driver, km); // v143; v148: the price already paid with the order
   // The customer approved one price. If the driver changed their rates in
   // between, they are shown the new price instead of being charged it.
   if (expectedPrice !== undefined && Math.abs(Number(expectedPrice) - price) > 0.009) {
@@ -90,14 +90,49 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
   // delivery fee BEFORE the delivery contract exists on record, so a
   // failed charge never leaves an un-paid-for delivery request sitting
   // in the database (or reaching the driver's notification below).
-  await fundEscrowForContract(delivery, order.customerId, payCurrency);
+  if (paidWith) delivery.prepaidBy = { escrow: paidWith }; // v148: paid together with the goods
+  const escrow = await fundEscrowForContract(delivery, order.customerId, payCurrency);
+  const waiting = escrow && escrow.status === 'awaiting_payment';
+  if (waiting) { delivery.status = 'awaiting_payment'; delivery.statusAfterPayment = 'pending_provider_confirmation'; } // v148: the driver is asked once it is paid
   await db.insert('contracts', delivery);
   // v111: two 4-digit codes. The customer's is given to the driver when the goods arrive; the driver's is shown to the seller when the goods are collected. Kept apart from the contract so no booking list can leak them.
   await db.insert('deliveryCodes', { id: `dc_${nanoid(8)}`, contractId: delivery.id, pickupCode: String(crypto.randomInt(1000, 10000)), dropoffCode: String(crypto.randomInt(1000, 10000)), attempts: 0, lockedUntil: null, createdAt: new Date().toISOString() });
   await db.update('contracts', order.id, { deliveryMethod: 'driver', deliveryContractId: delivery.id, address: where.address, jobLocation: where.jobLocation || null, landmark: where.landmark || null });
-  const by = new Date(delivery.providerResponseDeadline).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  await notify(driver.id, '🚚', `Delivery request: collect order #${order.bookingNumber} (${delivery.delivery.items.slice(0, 80)}) from ${sellerLabel}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver.country)}` : ''}. You are paid $${price.toFixed(2)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by} server time).`, 'bookingUpdates', { section: 'bookings' });
+  if (waiting) return { delivery, payment: require('../customer-payments').publicPayment(escrow) };
+  await askDriver(delivery);
   return { delivery };
+}
+async function askDriver(delivery) {
+  const driver = await db.find('users', u => u.id === delivery.providerId);
+  const km = delivery.delivery.distanceKm;
+  const by = new Date(delivery.providerResponseDeadline).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  await notify(delivery.providerId, '🚚', `Delivery request: collect order #${delivery.delivery.orderNumber} (${delivery.delivery.items.slice(0, 80)}) from ${delivery.delivery.storeName}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver && driver.country)}` : ''}. You are paid $${Number(delivery.amount).toFixed(2)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by} server time).`, 'bookingUpdates', { section: 'bookings' });
+}
+
+// v148: a goods order, or a delivery, has just been paid (a code confirmed
+// by finance, a card page, or an MTN PIN). Only now is the seller told to
+// pack and the driver asked to collect.
+async function afterPaid(c, e) {
+  const paidWords = e.paidBy === 'card' ? `$${Number(e.amountReceived).toFixed(2)} by card` : `${e.dueCurrency} ${Number(e.amountReceived).toLocaleString()}`;
+  if (c.storeOrder) {
+    await notify(c.customerId, '✅', `We received your payment for order #${c.bookingNumber} (${paidWords}). Trothen holds it until you have your goods. The seller has been told to get it ready.`, 'bookingUpdates', { section: 'orders' });
+    if (c.sellerNotice) await notify(c.providerId, c.marketListingId ? '🏷️' : '🛍️', c.sellerNotice, 'bookingUpdates', { section: c.marketListingId ? 'market' : 'store' });
+    if (c.pendingDelivery) {
+      const pd = c.pendingDelivery;
+      const seller = await db.find('users', u => u.id === c.providerId), driver = await db.find('users', u => u.id === pd.driverId);
+      await db.update('contracts', c.id, { pendingDelivery: null });
+      try {
+        if (seller && driver) await createDelivery({ order: c, seller, driver, where: pd.where, payCurrency: c.payCurrency, paidWith: { ...e, id: e.id }, fixedPrice: pd.price });
+      } catch (x) { console.error('[orders] delivery after payment:', c.id, x.message); }
+    }
+    return;
+  }
+  if (c.delivery) {
+    const deadline = new Date(Date.now() + so.DELIVERY_RESPONSE_MINUTES * 60 * 1000).toISOString();
+    const d = await db.update('contracts', c.id, { providerResponseDeadline: deadline });
+    await notify(c.customerId, '✅', `We received your payment for the delivery of order #${c.delivery.orderNumber} (${paidWords}). The driver has been asked.`, 'bookingUpdates', { section: 'orders' });
+    await askDriver(d);
+  }
 }
 
 // One order, as the person asking is allowed to see it.
@@ -132,6 +167,8 @@ async function orderView(order, viewerId) {
     storeFee: order.storeFeePaidBy === 'customer' ? (order.storeFee || 0) : 0, storeFeeFromSeller: order.storeFeePaidBy === 'pro' ? (order.storeFee || 0) : 0,
     serviceFee: order.serviceFee || 0, amount: order.amount, totalPaid: money((order.amount || 0) + (order.serviceFee || 0)),
     paidCurrency: escrow ? escrow.paidCurrency : 'USD', paidAmountLocal: escrow ? escrow.paidAmountLocal : null, moneyStatus: escrow ? escrow.status : 'none',
+    payment: order.status === 'awaiting_payment' && escrow && viewerId === order.customerId ? require('../customer-payments').publicPayment(escrow) : null, // v148
+    alsoPaysUsd: order.alsoPaysUsd || 0, bookingNumber: order.bookingNumber, service: order.service, // v148: the delivery paid with it, and what the pay screen needs
     readyAt: order.readyAt || null, note: order.orderNote || null,
     // v143: discount, returns and reviews
     discount: order.discount || 0, discountCode: order.discountCode || null, goodsBeforeDiscount: order.goodsBeforeDiscount || order.storeGoodsTotal || 0, refundedAmount: order.refundedAmount || 0,
@@ -312,34 +349,46 @@ router.post('/store/orders', requireAuth, requireBuyer, requireCurrentTerms, asy
   // in the database the moment the charge failed.
   // v110: stock is reserved first (one buyer at a time), then the charge is
   // made; if the charge or the save fails, the reservation is undone.
+  // v148: the buyer pays once: the goods, and the driver's delivery with them.
+  let escrow = null, driverPrice = 0;
+  if (driver) { driverPrice = await so.deliveryPrice(driver, so.kmBetween(opt.pickupLocation, where.jobLocation)); order.alsoPaysUsd = money(driverPrice + pct(driverPrice, settings.deliveryFeePercent)); }
   if (buyInFlight.has(customer.id)) return res.status(409).json({ error: 'Your order is already being processed. Please wait a moment.' });
   buyInFlight.add(customer.id);
   try {
     const held = await store.reserveStock(basket.items);
     if (held.error) return res.status(400).json({ error: held.error });
     try {
-      await fundEscrowForContract(order, customer.id, order.payCurrency);
+      escrow = await fundEscrowForContract(order, customer.id, order.payCurrency);
+      if (escrow && escrow.status === 'awaiting_payment') { // v148: nothing goes to the seller until it is paid
+        order.status = 'awaiting_payment'; order.statusAfterPayment = 'active'; order.signedAt = null;
+        if (driver) order.pendingDelivery = { driverId: driver.id, where, price: driverPrice };
+      }
       await db.insert('contracts', order);
     } catch (e) {
       await store.releaseStock(basket.items);
       console.error('[store order] payment or save failed, stock put back:', e.message);
-      return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be completed, so you were not charged and nothing was ordered. Please try again or use another payment method.' });
+      return res.status(e.code === 'PROTECTED_UNAVAILABLE' ? 400 : 402).json({ code: e.code === 'PROTECTED_UNAVAILABLE' ? 'PAY_UNAVAILABLE' : 'PAYMENT_FAILED', error: e.code === 'PROTECTED_UNAVAILABLE' ? 'Paying for goods through Trothen isn\'t switched on in your country yet, so this can\'t be bought in the app. Message the seller instead.' : 'Your payment could not be completed, so you were not charged and nothing was ordered. Please try again or use another payment method.' });
     }
   } finally {
     buyInFlight.delete(customer.id);
   }
+  const waiting = order.status === 'awaiting_payment';
   if (discountCode) { try { await require('../store-extras').useDiscount(seller.id, discountCode); } catch (e) { /* the order stands */ } }
   try { await require('../fraud-detection').checkNewAccountHighValue(customer.id, order.amount); } catch (e) { /* the order stands */ }
   const count = basket.items.reduce((n, i) => n + i.qty, 0);
   const how = method === 'pickup' ? 'The customer will collect it.' : method === 'seller' ? `Bring it to the customer: ${where.address}. Your delivery charge of $${sellerDeliveryFee.toFixed(2)} is included.` : `A driver (${driver.name}) has been asked to collect it.`;
-  await notify(seller.id, '🛍️', `New store order #${order.bookingNumber} from ${firstName(customer.name)}: ${count} good${count === 1 ? '' : 's'} ($${basket.total.toFixed(2)}). ${how} The money is held and is released to you when the customer confirms they have the goods.`, 'bookingUpdates', { section: 'store' });
-  if (driver) await createDelivery({ order, seller, driver, where, payCurrency: order.payCurrency });
-  if (linkedJob) { // v140: the pro doing that job is told the materials are coming
+  const sellerNotice = `New store order #${order.bookingNumber} from ${firstName(customer.name)}: ${count} good${count === 1 ? '' : 's'} ($${basket.total.toFixed(2)}). ${how} The money is held and is released to you when the customer confirms they have the goods.`;
+  if (waiting) await db.update('contracts', order.id, { sellerNotice });
+  else {
+    await notify(seller.id, '🛍️', sellerNotice, 'bookingUpdates', { section: 'store' });
+    if (driver) await createDelivery({ order, seller, driver, where, payCurrency: order.payCurrency });
+  }
+  if (linkedJob && !waiting) { // v140: the pro doing that job is told the materials are coming
     const hired = await db.find('contracts', c => c.jobId === linkedJob.id && !c.storeOrder && !['cancelled', 'declined', 'refunded'].includes(c.status));
     if (hired && hired.providerId !== seller.id) await notify(hired.providerId, '🧰', `${firstName(customer.name)} bought materials for "${String(linkedJob.description || '').slice(0, 50)}": ${itemsLine(basket.items).slice(0, 120)} from ${seller.store.name} (${method === 'pickup' ? 'they will collect them' : 'being delivered'}).`, 'bookingUpdates', { section: 'contracts' });
   }
   const fresh = await db.find('contracts', c => c.id === order.id);
-  res.status(201).json({ order: await orderView(fresh, customer.id) });
+  res.status(201).json({ order: await orderView(fresh, customer.id), payment: waiting ? require('../customer-payments').publicPayment(escrow) : null });
 });
 
 // ── v111: CONTACTS AND LIVE TRACKING ───────────────────────────────────
@@ -430,6 +479,8 @@ function contactsFor(order, d, driverUser, seller, viewerId, customerUser) {
 }
 
 // GET /api/store/orders/mine
+// v148: sellers and drivers only see orders that were paid for.
+const paidForSeller = (c) => c.status !== 'awaiting_payment' && !(c.cancelReason === 'Not paid' && !c.paidAt);
 router.get('/store/orders/mine', requireAuth, async (req, res) => {
   const me = req.user.sub;
   const newest = (a, b) => String(b.createdAt).localeCompare(String(a.createdAt));
@@ -437,12 +488,12 @@ router.get('/store/orders/mine', requireAuth, async (req, res) => {
   const bought = (await db.filter('contracts', c => c.customerId === me && c.storeOrder === true)).sort(newest);
   const buying = await Promise.all(bought.slice(0, 100).map(o => orderView(o, me)));
   if (req.user.role === 'customer') {
-    const sold = (await db.filter('contracts', c => c.providerId === me && c.storeOrder === true)).sort(newest);
+    const sold = (await db.filter('contracts', c => c.providerId === me && c.storeOrder === true && paidForSeller(c))).sort(newest);
     return res.json({ orders: buying, buying, selling: await Promise.all(sold.slice(0, 100).map(o => orderView(o, me))) });
   }
   if (req.user.role !== 'provider') return res.status(403).json({ error: 'Store orders are for customers and pros' });
-  const selling = (await db.filter('contracts', c => c.providerId === me && c.storeOrder === true)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  const mine = (await db.filter('contracts', c => c.providerId === me && c.delivery)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const selling = (await db.filter('contracts', c => c.providerId === me && c.storeOrder === true && paidForSeller(c))).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const mine = (await db.filter('contracts', c => c.providerId === me && c.delivery && paidForSeller(c))).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   const delivering = [];
   for (const d of mine.slice(0, 100)) {
     const order = await db.find('contracts', c => c.id === d.delivery.forContractId);
@@ -513,9 +564,9 @@ router.post('/store/orders/:id/delivery', requireAuth, requireBuyer, requireCurr
     if (b.driverPrice === undefined) return res.status(400).json({ error: 'Approve the driver\'s price first.' });
     const made = await createDelivery({ order, seller, driver, where, payCurrency: order.payCurrency, expectedPrice: b.driverPrice });
     if (made.error) return res.status(409).json({ code: made.code, price: made.price, error: made.error });
-    await notify(seller.id, '🚚', `A driver (${driver.name}) has been asked to collect store order #${order.bookingNumber}.`, 'bookingUpdates', { section: 'store' });
+    if (!made.payment) await notify(seller.id, '🚚', `A driver (${driver.name}) has been asked to collect store order #${order.bookingNumber}.`, 'bookingUpdates', { section: 'store' });
     const fresh = await db.find('contracts', c => c.id === order.id);
-    res.json({ order: await orderView(fresh, req.user.sub) });
+    res.json({ order: await orderView(fresh, req.user.sub), payment: made.payment || null, delivery: made.payment ? { id: made.delivery.id, bookingNumber: made.delivery.bookingNumber, service: made.delivery.service } : undefined });
   } finally { contractStatusLocks.delete(req.params.id); }
 });
 
@@ -752,5 +803,6 @@ module.exports = router;
 module.exports.sweepReturns = sweepReturns;
 module.exports.createDelivery = createDelivery; // v139: the Market's personal listings
 module.exports.orderView = orderView;
+module.exports.afterPaid = afterPaid; // v148
 module.exports.readDropoff = readDropoff;
 module.exports.customerCanBuy = customerCanBuy;

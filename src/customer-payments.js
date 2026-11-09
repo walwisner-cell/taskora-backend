@@ -33,6 +33,9 @@ function cleanPayMethod(v) { return PAY_METHODS.includes(v) ? v : 'protected'; }
 //   'code'      the customer sends money to one of Trothen's own accounts with a code
 //   'simulated' escrow shown, no real money moves yet (until payments are connected)
 //   'none'      "Real payments only" is ticked and nothing is set up here: Protected isn't offered
+// v148: what the customer pays in one go. A goods order with a driver also
+// carries the driver's delivery (alsoPaysUsd), so the buyer pays once.
+const dueUsd = (c) => money((c.amount || 0) + (c.serviceFee || 0) + (c.alsoPaysUsd || 0));
 async function optionsFor(country) {
   const tokens = require('./tokens');
   const s = await tokens.settingsFor(country);
@@ -75,7 +78,7 @@ function localDue(usd, currency, rate) {
 async function codeFieldsFor(contract, customer) {
   const tokens = require('./tokens');
   const o = await optionsFor(customer && customer.country);
-  const usd = money((contract.amount || 0) + (contract.serviceFee || 0));
+  const usd = dueUsd(contract);
   return {
     status: 'awaiting_payment',
     paidBy: 'code',
@@ -97,7 +100,7 @@ async function paymentFieldsFor(contract, customer, escrowId, rate) {
   const o = await optionsFor(customer && customer.country);
   if (o.protectedMode === 'code') return codeFieldsFor(contract, customer);
   if (o.protectedMode === 'card') {
-    const usd = money((contract.amount || 0) + (contract.serviceFee || 0));
+    const usd = dueUsd(contract);
     const expiresAt = new Date(Date.now() + (contract.ride ? 0.5 : await codeHours()) * 60 * 60 * 1000).toISOString(); // v125: a ride's card page runs out after about half an hour
     const session = await require('./stripe-pay').createCheckout({ contract, escrowId, amountUsd: usd, customerEmail: customer && customer.email, expiresAt });
     return { status: 'awaiting_payment', paidBy: 'card', cardSessionId: session.id, cardUrl: session.url, amountDueUsd: usd, amountDue: usd, dueCurrency: 'USD', paymentExpiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : expiresAt };
@@ -115,7 +118,7 @@ async function paymentFieldsFor(contract, customer, escrowId, rate) {
 const MOMO_MINUTES = (contract) => (contract && contract.ride ? 10 : 30);
 async function momoFieldsFor(contract, customer, rate) {
   if (!customer || !contract || contract.payMethod === 'cash') return null;
-  const usd = money((contract.amount || 0) + (contract.serviceFee || 0));
+  const usd = dueUsd(contract);
   const r = await require('./mobile-money').chargeDefaultWallet(customer, usd, contract.id, rate);
   if (!r) return null;
   if (!r.success) throw Object.assign(new Error(`Mobile money charge could not be started: ${r.message}`), { status: 402, code: 'MOMO_FAILED' });
@@ -210,7 +213,16 @@ async function customerReportsPaid(customer, contractId, transactionId) {
 }
 
 // Finance: the money is on Trothen's statement.
+// v149 audit: one confirmation at a time for a code or a transaction ID, so two
+// finance staff pressing Confirm together can't use one receipt twice.
+const confirming = new Set();
 async function confirm(admin, code, transactionId, amountReceived) {
+  const k1 = 'c:' + String(code || '').trim().toUpperCase(), k2 = 't:' + String(transactionId || '').trim().toLowerCase();
+  if (confirming.has(k1) || confirming.has(k2)) return { status: 409, error: 'This payment is being confirmed by someone else right now. Refresh in a moment.' };
+  confirming.add(k1); confirming.add(k2);
+  try { return await confirmOnce(admin, code, transactionId, amountReceived); } finally { confirming.delete(k1); confirming.delete(k2); }
+}
+async function confirmOnce(admin, code, transactionId, amountReceived) {
   const c0 = String(code || '').trim().toUpperCase();
   const e = await db.find('escrowTransactions', x => x.paymentCode === c0 && x.paidBy === 'code');
   if (!e) return { status: 404, error: `No customer payment with code ${c0}.` };
@@ -246,6 +258,10 @@ async function finishPayment(e, c, { receipt, amountReceived, confirmedBy, confi
     if (e.materialsAdvanceAmount > 0) await db.update('escrowTransactions', e.id, { materialsAdvanceReleased: true });
   }
   const updated = await db.update('contracts', c.id, patch);
+  if (c.storeOrder || c.delivery) { // v148: goods orders and deliveries have their own messages and next steps
+    await require('./routes/orders.routes').afterPaid(updated, { ...e, receipt: tx, amountReceived: got });
+    return { ok: true, contract: updated };
+  }
   await notify(c.customerId, '✅', `We received your payment for booking #${c.bookingNumber} (${e.paidBy === 'card' ? `$${Number(got).toFixed(2)} by card` : `${e.dueCurrency} ${got}`}). Trothen is holding it safely until you confirm the job is done.${next === 'pending_provider_confirmation' ? ' Your pro has been asked to confirm.' : ''}`, 'bookingUpdates', { section: 'bookings' });
   if (next === 'pending_provider_confirmation') {
     const by = new Date(patch.providerResponseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
@@ -297,18 +313,19 @@ async function cardStatus(contractId, customerId) {
   }
   const now = await db.find('escrowTransactions', x => x.id === e.id);
   const cNow = await db.find('contracts', x => x.id === c.id);
-  return { ok: true, paid: now.status !== 'awaiting_payment' && now.status !== 'payment_expired', escrowStatus: now.status, bookingStatus: cNow.status, bookingNumber: cNow.bookingNumber, isRide: !!cNow.ride };
+  return { ok: true, paid: now.status !== 'awaiting_payment' && now.status !== 'payment_expired', escrowStatus: now.status, bookingStatus: cNow.status, bookingNumber: cNow.bookingNumber, isRide: !!cNow.ride, isOrder: !!(cNow.storeOrder || cNow.delivery) };
 }
 // Card refunds go back to the card by themselves. Runs every few minutes;
 // the idempotency key means a refund is never sent twice.
 async function sweepCardRefunds() {
   const sp = require('./stripe-pay');
   if (!process.env.STRIPE_SECRET_KEY) return 0;
-  const rows = await db.filter('escrowTransactions', e => e.paidBy === 'card' && e.receipt && !e.refundSentAt && !e.refundNotNeeded && (e.status === 'refunded' || (e.refundedAmount || 0) > 0));
+  const rows = await db.filter('escrowTransactions', e => (e.paidBy === 'card' || (e.paidBy === 'order' && e.parentPaidBy === 'card')) && e.receipt && !e.refundSentAt && !e.refundNotNeeded && (e.status === 'refunded' || (e.refundedAmount || 0) > 0));
   let n = 0;
   for (const e of rows) {
     const full = e.status === 'refunded';
-    const usd = full ? money(e.amountReceived || ((e.originalAmount || e.amount) + (e.serviceFee || 0))) : money(e.refundedAmount);
+    // v148: an order paid together with its delivery gives back each part on its own
+    const usd = full ? money(e.alsoPaysUsd || e.paidBy === 'order' ? (e.originalAmount || e.amount) + (e.serviceFee || 0) : (e.amountReceived || ((e.originalAmount || e.amount) + (e.serviceFee || 0)))) : money(e.refundedAmount);
     if (!(usd > 0)) continue;
     try {
       const r = await sp.refund(e.receipt, Math.round(usd * 100), `refund-${e.id}-${Math.round(usd * 100)}`);
@@ -342,9 +359,10 @@ async function endUnpaid(e, why, message, extra) {
   if (!c || c.status !== 'awaiting_payment') return;
   await db.update('contracts', c.id, { status: 'cancelled', cancelledByRole: 'system', cancelReason: 'Not paid', cancelledAt: new Date().toISOString() });
   try { await require('./store').giveBackStock(c); } catch (x) { /* nothing held */ }
+  if (c.marketListingId) { const l = await db.find('marketListings', x => x.id === c.marketListingId); if (l && l.status === 'reserved' && l.reservedForOrderId === c.id) await db.update('marketListings', l.id, { status: 'live', reservedForOrderId: null }); } // v148
   try { await require('./loyalty').givePointsBack(c); } catch (x) { /* none */ }
   if (c.jobId) { const job = await db.find('jobs', j => j.id === c.jobId); if (job && job.status === 'matched') await db.update('jobs', job.id, { status: 'open' }); }
-  await notify(c.customerId, '⌛', message, 'bookingUpdates', { section: 'bookings' });
+  await notify(c.customerId, '⌛', c.storeOrder ? String(message).replace(/booking/g, 'order').replace(/Book again/g, 'Order again') : message, 'bookingUpdates', { section: c.storeOrder ? 'orders' : 'bookings' });
 }
 async function expireUnpaid() {
   const now = Date.now();
@@ -374,6 +392,7 @@ async function expireUnpaid() {
       if (await db.find('escrowTransactions', e => e.contractId === c.id)) continue;
       await db.update('contracts', c.id, { status: 'cancelled', cancelledByRole: 'system', cancelReason: 'Not paid', cancelledAt: new Date().toISOString() });
       try { await require('./store').giveBackStock(c); } catch (x) { /* nothing held */ }
+  if (c.marketListingId) { const l = await db.find('marketListings', x => x.id === c.marketListingId); if (l && l.status === 'reserved' && l.reservedForOrderId === c.id) await db.update('marketListings', l.id, { status: 'live', reservedForOrderId: null }); } // v148
       if (c.jobId) { const job = await db.find('jobs', j => j.id === c.jobId); if (job && job.status === 'matched') await db.update('jobs', job.id, { status: 'open' }); }
       await notify(c.customerId, '⌛', `Your booking for "${c.service}" was cancelled because it wasn't paid in time. Nothing was charged. Book again if you still need it.`, 'bookingUpdates', { section: 'bookings' });
       await notify(c.providerId, '⌛', `The customer didn't pay for "${c.service}" in time, so the booking was cancelled.`, null, { section: 'contracts' });
@@ -386,16 +405,18 @@ async function expireUnpaid() {
 // came in by code and were later refunded (in full or, after a split
 // dispute, in part), and not yet marked as sent.
 async function refundsToSend() {
-  const rows = await db.filter('escrowTransactions', e => (e.paidBy === 'code' || e.paidBy === 'momo') && e.receipt && !e.refundSentAt && !e.refundNotNeeded && (e.status === 'refunded' || (e.refundedAmount || 0) > 0));
+  // v148: a delivery paid together with its goods order (paidBy 'order') is listed on its own, with the order's payment details.
+  const rows = await db.filter('escrowTransactions', e => (e.paidBy === 'code' || e.paidBy === 'momo' || (e.paidBy === 'order' && e.parentPaidBy !== 'card')) && e.receipt && !e.refundSentAt && !e.refundNotNeeded && (e.status === 'refunded' || (e.refundedAmount || 0) > 0));
   return rows.map(e => {
     const full = e.status === 'refunded';
     const usd = full ? money((e.originalAmount || e.amount) + (e.serviceFee || 0)) : money(e.refundedAmount);
-    const local = full ? (e.amountReceived || e.amountDue) : (e.dueCurrency === 'USD' ? usd : Math.round(usd * (e.amountDue / (e.amountDueUsd || 1))));
+    const rate = e.amountDue / (e.amountDueUsd || 1);
+    const local = full && !e.alsoPaysUsd && e.paidBy !== 'order' ? (e.amountReceived || e.amountDue) : (e.dueCurrency === 'USD' ? usd : Math.round(usd * rate));
     return { escrowId: e.id, contractId: e.contractId, code: e.paymentCode || (e.paidBy === 'momo' ? `${e.momoNetwork || 'MoMo'} ••${e.momoLast4 || ''}` : null), full, amountUsd: usd, amountLocal: local, currency: e.dueCurrency, receivedWith: e.receipt };
   });
 }
 async function markRefundSent(admin, escrowId, transactionId) {
-  const e = await db.find('escrowTransactions', x => x.id === escrowId && (x.paidBy === 'code' || x.paidBy === 'momo'));
+  const e = await db.find('escrowTransactions', x => x.id === escrowId && (x.paidBy === 'code' || x.paidBy === 'momo' || x.paidBy === 'order'));
   if (!e) return { status: 404, error: 'Payment not found.' };
   if (e.refundSentAt) return { status: 409, error: 'This refund is already marked as sent.' };
   const tx = typeof transactionId === 'string' ? transactionId.trim() : '';

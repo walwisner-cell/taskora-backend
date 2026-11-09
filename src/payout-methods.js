@@ -129,8 +129,18 @@ function cleanBank(input) {
 }
 
 // What the person themselves (and their screens) see: never the full number.
-function publicMobile(m) { return m ? { network: m.network, name: m.name, last4: m.last4 } : null; }
-function publicBank(b) { return b ? { bankName: b.bankName, accountName: b.accountName, last4: b.last4, branch: b.branch || '', swift: b.swift || '' } : null; }
+// v148: payouts go to an account in the pro's own name or their business's
+// name (the usual know-your-customer rule for paying out money). A different
+// name is allowed but flagged, so finance checks it before sending.
+function nameMatches(u, accountName) {
+  const words = (x) => String(x || '').toLowerCase().normalize('NFKD').replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(w => w.length >= 3);
+  const acc = new Set(words(accountName));
+  if (!acc.size) return false;
+  const mine = [...words(u && u.name), ...words(u && u.businessName)];
+  return mine.filter(w => acc.has(w)).length >= Math.min(2, Math.max(1, words(u && u.name).length - 1)) || words(u && u.businessName).some(w => acc.has(w));
+}
+function publicMobile(m) { return m ? { network: m.network, name: m.name, last4: m.last4, nameMatch: m.nameMatch !== false } : null; }
+function publicBank(b) { return b ? { bankName: b.bankName, accountName: b.accountName, last4: b.last4, branch: b.branch || '', swift: b.swift || '', nameMatch: b.nameMatch !== false } : null; }
 
 // Where a payout goes, in words, e.g. "Orange Money •••• 4567 (J. Doe)".
 function destinationText(u, method) {
@@ -160,4 +170,4 @@ function sendTo(u, method) {
   return { method: m };
 }
 
-module.exports = { AFRICA, NETWORKS, isAfrica, networksFor, methodsFor, intlMethodsFor, normalMethod, seal, open, cleanMobile, cleanBank, publicMobile, publicBank, destinationText, readyToPay, sendTo };
+module.exports = { nameMatches, AFRICA, NETWORKS, isAfrica, networksFor, methodsFor, intlMethodsFor, normalMethod, seal, open, cleanMobile, cleanBank, publicMobile, publicBank, destinationText, readyToPay, sendTo };

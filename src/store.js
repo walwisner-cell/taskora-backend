@@ -36,7 +36,7 @@ const STORE_DEFAULTS = {
   // and on a pick-and-drop driver's price. Never on the goods.
   deliveryFeePercent: 9,
   // v110: days a seller has to pack a paid order. After that the customer is refunded automatically.
-  sellerPackDays: 7,
+  sellerPackDays: 3, // v148: 3 days to get an order ready (Jumia and Amazon expect 1 to 3), with a reminder after 1
   // v139: how Trothen earns on goods. 'percent' (the marketplace standard,
   // like Jumia or Amazon's referral fee): a share of the goods total, with a
   // minimum, paid by the seller from their money at payout. The buyer sees
@@ -78,7 +78,10 @@ const DEFAULT_STORE_RULES = [
 const MAX_PHOTOS_PER_GOOD = 4;
 const MAX_QTY_PER_LINE = 99;
 const MAX_LINES_PER_ORDER = 20;
-const MAX_EXTRA_SKILLS = 4;
+const MAX_EXTRA_SKILLS = 10; // v148: was 4. Thumbtack, TaskRabbit and Upwork let a pro list every service they really offer (Upwork: 15 skills).
+// A business or company (a business name, or part of an organisation) runs a team and offers more.
+const MAX_EXTRA_SKILLS_BUSINESS = 25;
+const maxExtraSkillsFor = (u) => (u && (String(u.businessName || '').trim() || u.organizationId) ? MAX_EXTRA_SKILLS_BUSINESS : MAX_EXTRA_SKILLS);
 
 const money = (n) => Math.round(Number(n) * 100) / 100;
 
@@ -458,7 +461,7 @@ function hasSkill(user, category) {
 
 module.exports = {
   goodsFeeFor, protectionFeeFor,
-  STORE_DEFAULTS, DEFAULT_STORE_RULES, MAX_PHOTOS_PER_GOOD, MAX_QTY_PER_LINE, MAX_EXTRA_SKILLS, money,
+  STORE_DEFAULTS, DEFAULT_STORE_RULES, MAX_PHOTOS_PER_GOOD, MAX_QTY_PER_LINE, MAX_EXTRA_SKILLS, MAX_EXTRA_SKILLS_BUSINESS, maxExtraSkillsFor, money,
   storeSettings, storeSettingsCached, saveStoreSettings,
   isOnShelf, inStock, storeIsLive, publicStore, refreshStoreLive,
   DELIVERY_METHODS, DELIVERY_LABELS, DRIVER_SKILL, VEHICLES, storeApproval, whyNotLive, WHY_NOT_LIVE_WORDS, storeOptions,

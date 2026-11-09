@@ -37,7 +37,7 @@
     if (m < 24 * 60) return `${tr('in')} ${Math.floor(m / 60)} h ${m % 60 ? (m % 60) + ' min' : ''}`.trim();
     const d = Math.round(m / 1440); return `${tr('in')} ${d} ${tr(d === 1 ? 'day' : 'days')}`;
   }
-  const canSchedule = (c) => c && OPEN.includes(c.status) && !c.onMyWayAt && !c.arrivedAt && !c.ride && !c.delivery;
+  const canSchedule = (c) => c && OPEN.includes(c.status) && !c.onMyWayAt && !c.arrivedAt && !c.ride && !c.delivery && !c.storeOrder; // v148: goods orders have no arrival time
   const otherName = (c) => role() === 'provider' ? nameFix(c.customerName, tr('the customer')) : nameFix(c.providerName, tr('your pro'));
   const timeToLeave = (c) => !!(c && c.arrival && c.arrival.agreed && (Date.parse(c.arrival.agreed.at) - Date.now()) / 60000 <= LEAD_MIN + 15);
 
@@ -70,7 +70,7 @@
 
   // ── the arrival line inside each booking ──────────────────────────────
   function arrivalBlockHTML(c) {
-    if (!c || c.ride || c.delivery) return '';
+    if (!c || c.ride || c.delivery || c.storeOrder) return '';
     const a = c.arrival || {};
     const meId = AUTH.user && AUTH.user.id;
     const isPro = role() === 'provider';
@@ -182,7 +182,7 @@
   // ── the "next job" card ───────────────────────────────────────────────
   function nextUp() {
     const list = Object.values(RAW_CONTRACTS || {}).filter(c => {
-      if (c.ride || c.delivery) return false;
+      if (c.ride || c.delivery || c.storeOrder) return false;
       const mine = role() === 'provider' ? c.providerId === AUTH.user.id : c.customerId === AUTH.user.id;
       return mine && OPEN.includes(c.status);
     });

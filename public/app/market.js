@@ -231,9 +231,9 @@
     if (B.method === 'driver') Object.assign(body, { driverId: dr && dr.id, driverPrice: dr && dr.price, landmark: B.landmark || undefined, address: B.landmark || undefined, ...(B.pin ? { jobLocation: B.pin } : {}) });
     B.busy = true; drawBuy();
     try {
-      await apiFetch('POST', `/market/listings/${encodeURIComponent(CUR.id)}/buy`, body);
+      const r = await apiFetch('POST', `/market/listings/${encodeURIComponent(CUR.id)}/buy`, body);
       v105Close('mk-buy');
-      showToast(t('Bought. Your money is held until you have the item.'));
+      showToast(r && r.payment ? t('Reserved for you. Pay to confirm it.') : t('Bought. Your money is held until you have the item.')); // v148
       openMarket('orders');
     } catch (x) { B.busy = false; drawBuy(); showToast(x.message || t('Could not complete the purchase')); }
   };
@@ -474,6 +474,8 @@
       const el = document.querySelector(`.store-order[data-order="${CSS.escape(o.id)}"]`); if (!el || el.dataset.mk) continue;
       el.dataset.mk = '1';
       const extra = [];
+      // v148: an order waiting for the buyer's payment
+      if (o.status === 'awaiting_payment' && o.payment) el.insertAdjacentHTML('afterbegin', `<div class="mk-pay" style="background:#fff8e6;border-left:4px solid var(--gold);border-radius:8px;padding:10px 12px;margin-bottom:8px;"><div style="font-weight:700;color:var(--navy);">⏳ ${e(t('Waiting for your payment'))}</div><div style="font-size:13px;color:var(--slate);margin:4px 0 8px;">${e(t('The seller is told once it is paid. If it isn\'t paid in time, the order is cancelled and nothing is taken.'))}</div><button class="btn-sm btn-sm-primary" onclick="payWaysOrder(${jsArg(o.id)})">${e(t('Pay now'))}</button> <button class="btn-sm btn-sm-outline" onclick="mkCancelUnpaid(${jsArg(o.id)})">${e(t('Cancel order'))}</button></div>`);
       if (o.listing) extra.push(`<div style="font-size:13.5px;margin-bottom:6px;">🏷️ ${e(o.listing.title)} <span style="color:var(--slate);">· ${e(t('from a person, bought with Trothen protection'))}</span></div>`);
       if (o.status === 'active' && o.autoCompleteAt) extra.push(`<div class="mk-auto" style="font-size:13px;color:#8a5a00;background:#fff8e6;border-radius:8px;padding:6px 10px;margin:6px 0;">${e(t('Completes by itself on'))} ${e(new Date(o.autoCompleteAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}. ${e(t('If something is wrong, report a problem before then.'))}</div>`);
       if (o.status === 'completed' && !o.review) extra.push(`<button class="btn-sm btn-sm-primary mk-rate" onclick="rateSeller(${jsArg(o.id)})">★ ${e(t('Rate the seller'))}</button>`);
@@ -481,6 +483,10 @@
       if (extra.length) el.insertAdjacentHTML('beforeend', `<div class="mk-extra" style="margin-top:8px;">${extra.join(' ')}</div>`);
     }
   }
+  window.mkCancelUnpaid = async function (id) { // v148
+    if (!(await confirmDialog(t('Cancel this order? Nothing has been paid, so nothing is taken.'), { confirmLabel: t('Cancel order') }))) return;
+    try { await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/cancel`, { reason: 'Not paid', reasonCategory: 'changed_mind' }); showToast(t('Order cancelled')); if (typeof loadMyOrders === 'function') loadMyOrders(); } catch (x) { showToast(x.message); }
+  };
   window.rateSeller = async function (id) {
     const p = confirmDialog('', { confirmLabel: t('Send rating') });
     const m = document.getElementById('confirm-dialog-message');

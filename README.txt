@@ -1,6 +1,12 @@
-Trothen v147: everything in one place (includes v128 to v146)
+Trothen v149: everything in one place (includes v128 to v148)
 
-  src\ public\ server.js    The 97 files changed since your GitHub main (before v128), in their real folders.
+  src\ public\ server.js    The 101 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v149.md           A full recheck: every screen opened on a phone and a computer; 2 gaps fixed;
+                            a new System Check that money and bookings agree.
+  CHANGES_v148.md           Market goods paid before the seller is told; cash rides with commission from tokens;
+                            maps, GPS and navigation like other apps; Admin, System Check with alerts;
+                            "Get ready" checks for every user; account country shown; more skills;
+                            paying with someone else's Mobile Money.
   CHANGES_v147.md           Sign-in emails by SMTP; Mobile Money ready for MTN (PIN-confirmed); payouts only when sent;
                             calls only once booked; Liberia ride places; team managers; "I've finished the job";
                             the store fixes; and a full booking and ride walkthrough.
@@ -23,29 +29,27 @@ Trothen v147: everything in one place (includes v128 to v146)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v147.md  Byte counts and the cmd.exe steps.
-  deploy_v147.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v147-files.zip    The code files packed; the .bat reads this from Downloads.
-  screenshots\              The new screens (phone size).
+  DEPLOYMENT_STEPS_v149.md  Byte counts and the cmd.exe steps.
+  deploy_v149.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v149-files.zip    The code files packed; the .bat reads this from Downloads.
+  screenshots\              The new screens (phone and computer).
 
-Works whether or not v128 is already live. git status shows 116 files if v128 is live, 118 if not.
+Works whether or not v128 is already live. git status shows 122 files if v128 is live, 124 if not.
 
-BEFORE you deploy (sign-in emails):
+BEFORE you deploy (only if v147 is not live yet, for sign-in emails):
   Render, Environment: add SMTP_HOST = mail.privateemail.com, SMTP_PORT = 465,
   SMTP_USER = noreply@trothenpro.com, SMTP_PASS = that mailbox's password.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v147.
-  2. copy "%USERPROFILE%\Downloads\trothen-v147\trothen-v147-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v149.
+  2. copy "%USERPROFILE%\Downloads\trothen-v149\trothen-v149-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v147\deploy_v147.bat"
+     "%USERPROFILE%\Downloads\trothen-v149\deploy_v149.bat"
   Nothing goes live until you type YES.
 
 After it is live:
-  - Admin, Go-Live, "Send a test email" to yourself.
-  - Ask someone in Monrovia to pin the 57 starter places in Admin, Rides, Places (about 30 minutes).
-  - Once "Real payments only" is on, finance sends each payout and presses "Mark as sent" with the transaction ID.
-  - When MTN gives you the keys: add the LCMMMI_ settings (see CHANGES_v147.md), then LCMMMI_INTEGRATION_ENABLED = true.
-    Test with about $1 each way first.
-  - Everything from v146 still applies: TURN_API_URL and the VAPID keys for calls, the Rides switch per country,
-    fares in Admin, Rides, Fares, and the L$ exchange rate kept current.
+  - Admin, System Check: fix anything red. Alerts come to your notifications from then on.
+  - Add MAPBOX_TOKEN on Render before many people use the maps (free tier, business use allowed).
+  - "Real payments only" now refuses to switch on until customers have a way to pay and email works.
+  - Everything from v147 still applies: pin the 57 starter places, the MTN keys when MTN gives them,
+    TURN_API_URL and the VAPID keys for calls, and the L$ exchange rate kept current.

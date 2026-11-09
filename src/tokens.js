@@ -393,10 +393,16 @@ function autopayOf(u) {
 //   3. If the job doesn't happen and it isn't the pro's doing, the
 //      commission goes back (see commissionRefundReason).
 const cashRef = (contractId) => `cashjob:${contractId}`;
-async function cashCommissionRate(provider) {
+async function cashCommissionRate(provider, contract) {
   const { effectiveCommissionRate } = require('./commission');
   const org = provider.organizationId ? await db.find('organizations', o => o.id === provider.organizationId && o.status !== 'suspended') : null;
-  return effectiveCommissionRate(provider, org);
+  const base = effectiveCommissionRate(provider, org);
+  // v148: a cash ride carries the same ride commission as a ride paid in the app (never above the plan rate)
+  if (contract && contract.ride) {
+    const pct = Number(await require('./platform-settings').getSetting('rideCommissionPercent'));
+    return Math.min(base, (Number.isFinite(pct) ? pct : 5) / 100);
+  }
+  return base;
 }
 function jobPriceOf(contract) {
   return Number(contract.laborAmount !== undefined && contract.laborAmount !== null ? contract.laborAmount : contract.amount) || 0;
@@ -410,9 +416,15 @@ async function takenFor(ref) {
 // with a message the page shows; nothing changes in that case.
 async function chargeCashCommission(provider, contract) {
   if (!contract || contract.payMethod !== 'cash') return null;
-  if (contract.ride) return null; // v125: a cash ride is covered by the driver's ride pass, not tokens
   const ref = cashRef(contract.id);
   if (await db.find('tokenLedger', l => l.ref === ref && l.kind === 'spend')) return null; // already taken for this job
+  // v148: a cash ride, the way Bolt, Uber and SafeBoda do it: Trothen's
+  // commission comes off the driver's balance (tokens) when they accept.
+  // A driver with an active Driver Pass pays no per-ride commission.
+  if (contract.ride && await require('./ride-pass').activePass(provider.id)) {
+    await db.update('contracts', contract.id, { cashCommission: { rate: 0, tokens: 0, freeCredit: true, coveredByPass: true } });
+    return { pass: true };
+  }
   const debt = money(provider.tokenDebt || 0);
   if (debt > 0) throw tokenError(402, 'OWES_TOKENS', `You still owe ${debt} tokens of commission from an earlier cash job. Buy tokens on your Tokens page (what you owe is taken first), then accept this job.`, { debt });
   // A top-scorer free-commission credit covers one cash job.
@@ -421,15 +433,16 @@ async function chargeCashCommission(provider, contract) {
     await db.update('contracts', contract.id, { cashCommission: { rate: 0, tokens: 0, freeCredit: true } });
     return { free: true };
   }
-  const rate = await cashCommissionRate(provider);
+  const rate = await cashCommissionRate(provider, contract);
   const due = money(jobPriceOf(contract) * rate);
   if (!(due > 0)) return null;
   try {
-    const line = await spend(provider.id, due, ref, `Commission ${Math.round(rate * 1000) / 10}% on cash job: ${String(contract.service || '').slice(0, 70)}`, { bookingNumber: contract.bookingNumber || null });
+    const line = await spend(provider.id, due, ref, `Commission ${Math.round(rate * 1000) / 10}% on cash ${contract.ride ? 'ride' : 'job'}: ${String(contract.service || '').slice(0, 70)}`, { bookingNumber: contract.bookingNumber || null });
     await db.update('contracts', contract.id, { cashCommission: { rate, tokens: due, takenAt: new Date().toISOString() } });
     return line;
   } catch (e) {
-    if (e.code === 'TOKENS_SHORT') e.message = `This is a cash job: the customer pays you directly, so Trothen's ${Math.round(rate * 1000) / 10}% commission (${due} token${due === 1 ? '' : 's'}) is paid from your tokens when you accept. You have ${e.extra.have}. Buy tokens on your Tokens page, then accept it. The booking stays open until the answer deadline.`;
+    if (e.code === 'TOKENS_SHORT' && contract.ride) e.message = `This is a cash ride: the rider pays you directly, so Trothen's ${Math.round(rate * 1000) / 10}% commission (${due} token${due === 1 ? '' : 's'}) is paid from your tokens when you accept. You have ${e.extra.have}. Buy tokens, or a Driver Pass (no commission per ride), then accept it.`;
+    else if (e.code === 'TOKENS_SHORT') e.message = `This is a cash job: the customer pays you directly, so Trothen's ${Math.round(rate * 1000) / 10}% commission (${due} token${due === 1 ? '' : 's'}) is paid from your tokens when you accept. You have ${e.extra.have}. Buy tokens on your Tokens page, then accept it. The booking stays open until the answer deadline.`;
     throw e;
   }
 }
@@ -438,12 +451,13 @@ async function chargeCashCommission(provider, contract) {
 // BEFORE a cash booking or hire is created, so the customer is told at
 // once instead of waiting hours for a pro who can't press Accept.
 // Returns { ok } only; the customer never sees the pro's balance.
-async function cashReady(provider, jobPrice) {
+async function cashReady(provider, jobPrice, opts) {
   if (!provider) return { ok: false };
+  if (opts && opts.ride && await require('./ride-pass').activePass(provider.id)) return { ok: true, pass: true }; // v148
   const debt = money(provider.tokenDebt || 0);
   if (debt > 0) return { ok: false, debt };
   if ((provider.freeCommissionCredits || 0) > 0) return { ok: true, free: true };
-  const rate = await cashCommissionRate(provider);
+  const rate = await cashCommissionRate(provider, opts && opts.ride ? { ride: true } : null);
   const need = money((Number(jobPrice) || 0) * rate);
   if (!(need > 0)) return { ok: true };
   const have = await balance(provider.id);

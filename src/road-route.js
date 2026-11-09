@@ -50,4 +50,32 @@ async function routeTrip(a, b, vehicle) {
   return { km: Math.round(road.km * 10) / 10, minutes, source: 'road' };
 }
 
-module.exports = { routeTrip, estimate, ROAD_FACTOR, CITY_KMH };
+// v148: the road itself, to draw on a map (as Uber and Bolt show the route).
+// [[lat, lng], ...] along the roads, or null (then the app draws a straight
+// dashed line). Remembered for 10 minutes.
+const shapes = new Map();
+async function routeShape(a, b) {
+  const base = (process.env.ROUTING_URL || '').trim().replace(/\/+$/, '');
+  if (!base) return null;
+  const key = [a.latitude, a.longitude, b.latitude, b.longitude].map(n => Number(n).toFixed(4)).join(',');
+  const hit = shapes.get(key);
+  if (hit && hit.until > Date.now()) return hit.shape;
+  let shape = null;
+  try {
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch(`${base}/route/v1/driving/${a.longitude},${a.latitude};${b.longitude},${b.latitude}?overview=full&geometries=geojson`, { signal: ctl.signal });
+    clearTimeout(timer);
+    const j = await r.json();
+    const best = j && j.code === 'Ok' && j.routes && j.routes[0];
+    if (best && best.geometry && Array.isArray(best.geometry.coordinates)) {
+      const pts = best.geometry.coordinates.map(([lng, lat]) => [Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5]);
+      const step = Math.max(1, Math.ceil(pts.length / 400)); // at most about 400 points
+      shape = { points: pts.filter((p, i) => i % step === 0 || i === pts.length - 1), km: Math.round(best.distance / 100) / 10, carMinutes: Math.round(best.duration / 60) };
+    }
+  } catch (e) { shape = null; }
+  shapes.set(key, { shape, until: Date.now() + 10 * 60 * 1000 });
+  if (shapes.size > 1000) shapes.delete(shapes.keys().next().value);
+  return shape;
+}
+
+module.exports = { routeTrip, routeShape, estimate, ROAD_FACTOR, CITY_KMH };

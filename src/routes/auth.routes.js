@@ -1098,11 +1098,12 @@ router.patch('/me', requireAuth, async (req, res) => {
     if ('payoutMobile' in patch && patch.payoutMobile !== null) {
       const c = pm.cleanMobile(patch.payoutMobile, country);
       if (c.error) return res.status(400).json({ error: c.error });
-      patch.payoutMobile = c.value;
+      patch.payoutMobile = { ...c.value, nameMatch: pm.nameMatches({ ...(await db.find('users', x => x.id === req.user.sub)), ...patch }, c.value.name) }; // v148
     }
     if ('payoutBank' in patch && patch.payoutBank !== null) {
       const c = pm.cleanBank(patch.payoutBank);
       if (c.error) return res.status(400).json({ error: c.error });
+      if (c.value) c.value.nameMatch = pm.nameMatches({ ...(await db.find('users', x => x.id === req.user.sub)), ...patch }, c.value.accountName); // v148
       patch.payoutBank = c.value;
     }
   }

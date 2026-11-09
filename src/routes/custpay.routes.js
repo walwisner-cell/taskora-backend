@@ -56,14 +56,14 @@ const momoHook = async (req, res) => {
 router.put('/webhooks/mtn-momo', momoHook);
 router.post('/webhooks/mtn-momo', momoHook);
 // GET /api/customer-payments/:contractId/card-status — after coming back from Stripe.
-router.get('/customer-payments/:contractId/card-status', requireAuth, requireRole('customer'), async (req, res) => {
+router.get('/customer-payments/:contractId/card-status', requireAuth, requireRole('customer', 'provider'), async (req, res) => {
   const r = await cp.cardStatus(req.params.contractId, req.user.sub);
   if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
   res.json(r);
 });
 
 // POST /api/customer-payments/:contractId/paid { transactionId } — "I have sent it".
-router.post('/customer-payments/:contractId/paid', requireAuth, requireRole('customer'), limiter, async (req, res) => {
+router.post('/customer-payments/:contractId/paid', requireAuth, requireRole('customer', 'provider'), limiter, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   const r = await cp.customerReportsPaid(me, req.params.contractId, (req.body || {}).transactionId);
   if (!r.ok) return res.status(r.status || 400).json({ error: r.error });

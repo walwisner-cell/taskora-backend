@@ -30,8 +30,19 @@ async function refundOne(order) {
 
 async function sweepUnpackedStoreOrders() {
   const { sellerPackDays } = await store.storeSettings();
+  // v148: a reminder to the seller after a day, and to the buyer what happens next
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const slow = await db.filter('contracts', c => c.storeOrder === true && c.status === 'active' && !c.readyAt && !c.handedOverAt && !c.packReminderAt && new Date(c.paidAt || c.createdAt).getTime() < dayAgo);
+  for (const o of slow) {
+    try {
+      await db.update('contracts', o.id, { packReminderAt: new Date().toISOString() });
+      const due = new Date(new Date(o.paidAt || o.createdAt).getTime() + sellerPackDays * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const { notify } = require('./notify');
+      await notify(o.providerId, '⏰', `Order #${o.bookingNumber} is still waiting to be packed. Press "Ready" in your orders by ${due}, or it is cancelled and the buyer refunded.`, 'bookingUpdates', { section: o.marketListingId ? 'market' : 'store' });
+    } catch (e) { console.error('[store-order-sweep] reminder:', o.id, e.message); }
+  }
   const cutoff = Date.now() - sellerPackDays * 24 * 60 * 60 * 1000;
-  const orders = await db.filter('contracts', c => c.storeOrder === true && c.status === 'active' && !c.readyAt && new Date(c.createdAt).getTime() < cutoff);
+  const orders = await db.filter('contracts', c => c.storeOrder === true && c.status === 'active' && !c.readyAt && new Date(c.paidAt || c.createdAt).getTime() < cutoff);
   let n = 0;
   for (const o of orders) {
     try { if (await refundOne(o)) n++; } catch (e) { console.error('[store-order-sweep] one order failed:', o.id, e.message); }

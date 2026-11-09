@@ -209,6 +209,7 @@
     try { if (navigator.wakeLock && navigator.wakeLock.request) LIVE_TRIP.wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
     const onPos = (pos) => {
       LIVE_TRIP.geoError = null;
+      if (pos.timestamp && Date.now() - pos.timestamp > 60000) return; // v148: an old position the phone kept, not where they are now
       LIVE_TRIP.latest = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracyM: Math.max(1, Math.round(pos.coords.accuracy || 0)) };
       sendLivePoint(!LIVE_TRIP.lastSent);
     };
@@ -526,6 +527,7 @@
     place('jobMarker', null, d.jobLocation, '#C0392B', tr('Job'));
     place('proMarker', 'accCircle', d.proLocation, '#1F5FBF', pro ? tr('You') : d.proName.split(' ')[0] || tr('Pro'));
     place('custMarker', 'custCircle', d.customerLocation, '#1E8E5A', pro ? d.customerName.split(' ')[0] || tr('Customer') : tr('You'));
+    if (window.TrothenMap && d.proLocation && d.jobLocation) TrothenMap.drawRoute(TRIP_VIEW.map, d.proLocation, d.jobLocation, { slot: 'trip' }); // v148: the road to the job
     const framePts = pts.filter(p => !(p.accuracyM > 3000) || pts.length === 1);
     const bounds = L.latLngBounds((framePts.length ? framePts : pts).map(p => [p.latitude, p.longitude]));
     if (!TRIP_VIEW.fitted || !TRIP_VIEW.map.getBounds().contains(bounds)) {

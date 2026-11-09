@@ -21,6 +21,7 @@
   // tile provider set by MAP_TILE_URL on the server, so changing provider never
   // needs a code change. Without that setting nothing is altered.
   (function patchTiles() {
+    return; // v148: maps.js now sets the provider for every map (from /api/geo/map-config)
     const orig = window.loadLeaflet; if (typeof orig !== 'function') return;
     window.loadLeaflet = async function () {
       const ok = await orig.apply(this, arguments);
@@ -463,7 +464,7 @@
         : `<div class="ver-note">${e(tr('No pass at the moment. App rides pay Trothen'))} ${e(d.commissionPercent)}% ${e(tr('when you are paid out. With a pass you pay one flat price and keep every fare.'))}</div>`}
       ${(p.queued || []).map(q => `<div class="ver-note" style="margin-top:6px;">${e(q.label)} ${e(tr('starts'))} ${e(when2(q.startsAt))}.</div>`).join('')}
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">${(d.passPlans || []).map(pl => `<button class="btn-sm btn-sm-outline" onclick="ridesBuyPass(${jsArg(pl.id)},${pl.priceUsd},${jsArg(pl.label)})"><strong>${e(pl.label)}</strong> · ${money(pl.priceUsd)} · ${pl.days} ${e(tr(pl.days === 1 ? 'day' : 'days'))}</button>`).join('')}</div>
-      ${d.cashEnabled ? `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px;"><input type="checkbox" id="rd-cash" ${d.acceptsCash ? 'checked' : ''} onchange="ridesCashToggle(this.checked)" style="margin-top:4px;"/> <span>${e(tr('I take cash rides.'))} <span style="color:var(--slate);">${e(tr('Riders can then pay you in cash. This only works while you have an active pass. You collect the fare yourself and Trothen takes nothing from it.'))}</span></span></label>` : ''}
+      ${d.cashEnabled ? `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px;"><input type="checkbox" id="rd-cash" ${d.acceptsCash ? 'checked' : ''} onchange="ridesCashToggle(this.checked)" style="margin-top:4px;"/> <span>${e(tr('I take cash rides.'))} <span style="color:var(--slate);">${e(tr('Riders can then pay you in cash. You collect the fare yourself. With an active Driver Pass Trothen takes nothing from it; without one, Trothen\'s ride commission comes from your tokens when you accept the ride.'))}</span></span></label>` : ''}
       <div class="ver-note" style="margin-top:10px;">${e(tr('Passes are paid like other payments in Trothen. Buying a second pass while one is running starts it when the first ends.'))}</div></div>`;
   }
   window.ridesBuyPass = async function (id, price, label) {
@@ -472,7 +473,7 @@
     catch (x) { showToast(x.message || 'Could not buy the pass'); if (x.data && x.data.code === 'PRICE_CHANGED') loadDriverPage(); }
   };
   window.ridesCashToggle = async function (on) {
-    try { const r = await apiFetch('PUT', '/rides/driver/cash', { accepts: on }); showToast(on ? (r.hasPass ? tr('You now take cash rides') : tr('Saved. Cash rides start once you buy a pass.')) : tr('You no longer take cash rides')); }
+    try { const r = await apiFetch('PUT', '/rides/driver/cash', { accepts: on }); showToast(on ? (r.hasPass ? tr('You now take cash rides') : tr('You now take cash rides. Keep tokens for the commission, or buy a Driver Pass.')) : tr('You no longer take cash rides')); }
     catch (x) { showToast(x.message || 'Could not save'); loadDriverPage(); }
   };
   // v143: approved drivers also carry store and Market deliveries (Deliveries in the menu)
@@ -565,12 +566,26 @@
   // chat is the Messages page. Numbers are only sent by the server while the
   // trip or delivery is open.
   function digits(p) { return String(p || '').replace(/[^\d]/g, ''); }
+  // v148: WhatsApp needs the number with its country code (231 77…), not as
+  // dialled at home (077…). A number saved as 0886 123 456 used to open
+  // WhatsApp on a wrong number.
+  const CC = { Liberia: '231', Ghana: '233', Nigeria: '234', 'Sierra Leone': '232', Guinea: '224', "Côte d'Ivoire": '225', Senegal: '221', Gambia: '220', Kenya: '254', Uganda: '256', Tanzania: '255', Rwanda: '250', Cameroon: '237', 'United States': '1', Canada: '1', 'United Kingdom': '44' };
+  function waDigits(phone, country) {
+    let s = String(phone || '').trim(); if (!s) return '';
+    if (s.startsWith('+')) return digits(s);
+    let d = digits(s);
+    if (d.startsWith('00')) return d.slice(2);
+    const cc = CC[country || (AUTH.user && AUTH.user.country) || ''];
+    if (cc && d.startsWith('0')) return cc + d.slice(1);
+    if (cc && !d.startsWith(cc) && d.length <= 10) return cc + d;
+    return d;
+  }
   function contactRow(c, label) {
     if (!c) return '';
     const who = label ? `<span style="font-weight:600;">${e(label)}${c.name ? ': ' + e(c.name) : ''}</span> ` : '';
     if (!c.phone) return `<div style="font-size:13.5px;margin-top:8px;color:var(--slate);">${who}${e(tr('No phone number on file. Use Messages.'))} <a onclick="ridesOpenMessages()" style="cursor:pointer;color:var(--teal);text-decoration:underline;">${e(tr('Open Messages'))}</a></div>`;
     const ph = c.phone.replace(/[^\d+]/g, ''), d = digits(c.phone);
-    return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;">${who}<a class="btn-sm btn-sm-outline" href="tel:${e(ph)}">📞 ${e(tr('Call'))}</a><a class="btn-sm btn-sm-outline" href="sms:${e(ph)}">💬 ${e(tr('Text'))}</a>${d.length >= 8 ? `<a class="btn-sm btn-sm-outline" href="https://wa.me/${e(d)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}<a class="btn-sm btn-sm-ghost" onclick="ridesOpenMessages()" style="cursor:pointer;">✉️ ${e(tr('In-app message'))}</a></div>`;
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;">${who}<a class="btn-sm btn-sm-outline" href="tel:${e(ph)}">📞 ${e(tr('Call'))}</a><a class="btn-sm btn-sm-outline" href="sms:${e(ph)}">💬 ${e(tr('Text'))}</a>${d.length >= 8 ? `<a class="btn-sm btn-sm-outline" href="https://wa.me/${e(waDigits(c.phone, c.country))}" target="_blank" rel="noopener">WhatsApp</a>` : ''}<a class="btn-sm btn-sm-ghost" onclick="ridesOpenMessages()" style="cursor:pointer;">✉️ ${e(tr('In-app message'))}</a></div>`;
   }
   window.ridesOpenMessages = function () {
     closeTrack();
@@ -583,7 +598,7 @@
   window.closeTrack = function () {
     clearInterval(T.timer); T.timer = null;
     if (T.map) { try { T.map.remove(); } catch (x) {} }
-    T.map = null; T.layer = null; T.fitted = false;
+    T.map = null; T.layer = null; T.fitted = false; T.m = null; T.framePts = null;
     v105Close('track-overlay');
   };
   function norm(kind, j) {
@@ -629,18 +644,36 @@
     const cs = n.contacts || {};
     el('trk-contacts').innerHTML = [['driver', 'Driver'], ['rider', 'Rider'], ['customer', 'Customer'], ['seller', 'Seller']].filter(([k]) => cs[k]).map(([k, l]) => contactRow(cs[k], tr(l))).join('');
     if (!T.map || !T.layer) return;
-    T.layer.clearLayers();
+    // v148: the markers stay and move (they used to be redrawn every few seconds), the
+    // road route is drawn, and the map follows the trip until you move it yourself.
     const dot = (c) => L.divIcon({ className: '', iconSize: [18, 18], iconAnchor: [9, 9], html: `<div style="width:18px;height:18px;border-radius:50%;background:${c};border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.45);"></div>` });
+    const M = T.m || (T.m = {});
+    const put = (key, p, make) => {
+      if (!p || p.latitude == null) { if (M[key]) { T.layer.removeLayer(M[key]); M[key] = null; } return null; }
+      const ll = [p.latitude, p.longitude];
+      if (!M[key]) M[key] = make(ll).addTo(T.layer); else if (window.TrothenMap) TrothenMap.glide(M[key], ll); else M[key].setLatLng(ll);
+      return ll;
+    };
     const pts = [];
-    if (n.pickup && n.pickup.latitude != null) { L.marker([n.pickup.latitude, n.pickup.longitude], { icon: dot('#2E8C6F') }).addTo(T.layer).bindTooltip(tr('Pick-up'), { direction: 'top', offset: [0, -8] }); pts.push([n.pickup.latitude, n.pickup.longitude]); }
-    if (n.dropoff && n.dropoff.latitude != null) { L.marker([n.dropoff.latitude, n.dropoff.longitude], { icon: dot('#C0392B') }).addTo(T.layer).bindTooltip(tr('Drop-off'), { direction: 'top', offset: [0, -8] }); pts.push([n.dropoff.latitude, n.dropoff.longitude]); }
-    if (n.trail && n.trail.length > 1) L.polyline(n.trail, { color: '#1F5FBF', weight: 4, opacity: 0.8 }).addTo(T.layer);
-    if (n.live) {
-      const ll = [n.live.latitude, n.live.longitude]; pts.push(ll);
-      if (n.live.accuracyM && n.live.accuracyM < 500) L.circle(ll, { radius: n.live.accuracyM, color: '#1F5FBF', weight: 1, fillOpacity: 0.08 }).addTo(T.layer);
-      L.marker(ll, { icon: L.divIcon({ className: '', iconSize: [36, 36], iconAnchor: [18, 18], html: `<div style="font-size:26px;line-height:36px;text-align:center;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));">${VEH[n.vehicle] || '🚚'}</div>` }) }).addTo(T.layer);
-    }
-    if (pts.length && (!T.fitted || n.live)) { try { T.map.fitBounds(L.latLngBounds(pts), { padding: [34, 34], maxZoom: 17 }); T.fitted = true; } catch (x) {} }
+    const pk = put('pickup', n.pickup, (ll) => L.marker(ll, { icon: dot('#2E8C6F') }).bindTooltip(tr('Pick-up'), { direction: 'top', offset: [0, -8] }));
+    const dp = put('dropoff', n.dropoff, (ll) => L.marker(ll, { icon: dot('#C0392B') }).bindTooltip(tr('Drop-off'), { direction: 'top', offset: [0, -8] }));
+    if (n.trail && n.trail.length > 1) { if (!M.trail) M.trail = L.polyline(n.trail, { color: '#5B6B82', weight: 4, opacity: 0.55 }).addTo(T.layer); else M.trail.setLatLngs(n.trail); }
+    const lv = put('driver', n.live, (ll) => L.marker(ll, { zIndexOffset: 900, icon: L.divIcon({ className: '', iconSize: [36, 36], iconAnchor: [18, 18], html: `<div style="font-size:26px;line-height:36px;text-align:center;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));">${VEH[n.vehicle] || '🚚'}</div>` }) }));
+    if (n.live && n.live.accuracyM && n.live.accuracyM < 500) { const ll = [n.live.latitude, n.live.longitude]; if (!M.acc) M.acc = L.circle(ll, { radius: n.live.accuracyM, color: '#1F5FBF', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(T.layer); else { M.acc.setLatLng(ll); M.acc.setRadius(n.live.accuracyM); } }
+    else if (M.acc) { T.layer.removeLayer(M.acc); M.acc = null; }
+    // What matters now: the driver and where they are heading next.
+    const toPickup = ['to_pickup', 'to_store', 'waiting', 'arrived'].includes(n.phase);
+    const next = toPickup ? pk : dp;
+    if (lv) pts.push(lv);
+    if (next) pts.push(next);
+    if (!lv) { if (pk) pts.push(pk); if (dp) pts.push(dp); }
+    if (window.TrothenMap) {
+      if (pk && dp) TrothenMap.drawRoute(T.map, n.pickup, n.dropoff, { slot: 'trip', color: '#1A73E8', vehicle: n.vehicle });
+      if (n.live && toPickup && n.pickup && n.pickup.latitude != null) TrothenMap.drawRoute(T.map, n.live, n.pickup, { slot: 'approach', color: '#2E8C6F', vehicle: n.vehicle });
+      const f = TrothenMap.follow(T.map, () => (T.framePts && T.framePts.length ? L.latLngBounds(T.framePts) : null));
+      T.framePts = pts;
+      if (!T.fitted) { f.frame(true); T.fitted = true; } else f.frame(false);
+    } else if (pts.length && !T.fitted) { try { T.map.fitBounds(L.latLngBounds(pts), { padding: [34, 34], maxZoom: 17 }); T.fitted = true; } catch (x) {} }
   }
 
   // ── DRIVER BEACON: sends this phone's position while a job is open ────
@@ -669,7 +702,7 @@
   function startWatch() {
     if (BCN.watch != null || !navigator.geolocation) return;
     BCN.denied = false;
-    BCN.watch = navigator.geolocation.watchPosition(p => { BCN.denied = false; BCN.latest = { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: p.coords.accuracy, speedMps: p.coords.speed, at: Date.now() }; renderBar(); },
+    BCN.watch = navigator.geolocation.watchPosition(p => { BCN.denied = false; if (p.timestamp && Date.now() - p.timestamp > 60000) return; /* v148: an old cached position */ if (BCN.latest && p.coords.accuracy > 1000 && BCN.latest.accuracyM <= 200 && Date.now() - BCN.latest.at < 120000) return; /* a rough network fix right after a good GPS one */ BCN.latest = { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: p.coords.accuracy, speedMps: p.coords.speed, at: Date.now() }; renderBar(); },
       err => { if (err && err.code === 1) { BCN.denied = true; renderBar(); } }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
     try { if (navigator.wakeLock) navigator.wakeLock.request('screen').then(l => { BCN.lock = l; }).catch(() => {}); } catch (x) {}
   }
@@ -781,7 +814,7 @@
     if (!on && c.online && !confirm(`${country}: ${c.online} ${tr('driver(s) are online. Turn Rides off? New ride requests stop; rides under way finish.')}`)) { box.checked = true; return; }
     box.disabled = true;
     try {
-      await apiFetch('PUT', '/admin/rides/countries', { country, on });
+      const rr = await apiFetch('PUT', '/admin/rides/countries', { country, on }); if (rr && rr.warnings && rr.warnings.length) setTimeout(() => showToast('⚠️ ' + rr.warnings.join(' ')), 1500); // v148
       c.on = on;
       const w = document.querySelector(`[data-rc-word="${CSS.escape(country)}"]`); if (w) { w.textContent = tr(on ? 'On' : 'Off'); w.style.color = on ? '#15803d' : 'var(--slate)'; }
       showToast(`${tr('Rides')} ${tr(on ? 'on' : 'off')}: ${country}`);
@@ -790,7 +823,7 @@
   };
   window.ridesCountryAdd = async function () {
     const v = (el('rc-add') || {}).value; if (!v) return showToast(tr('Choose a country'));
-    try { await apiFetch('PUT', '/admin/rides/countries', { country: v, on: true }); R.rcAdded = [...(R.rcAdded || []), v]; showToast(`${tr('Rides')} ${tr('on')}: ${v}`); loadAdminRides(); }
+    try { const rr = await apiFetch('PUT', '/admin/rides/countries', { country: v, on: true }); if (rr && rr.warnings && rr.warnings.length) setTimeout(() => showToast('⚠️ ' + rr.warnings.join(' ')), 1500); R.rcAdded = [...(R.rcAdded || []), v]; showToast(`${tr('Rides')} ${tr('on')}: ${v}`); loadAdminRides(); }
     catch (x) { showToast(x.message || tr('Could not save')); }
   };
   async function loadAdminRides() {
@@ -811,7 +844,7 @@
         <div class="form-group"><label class="form-label" for="rs-docs">${e(tr('Papers a driver must upload, by country and vehicle. One rule per line: country | vehicle | papers. Use * for any.'))}</label><textarea class="form-input" id="rs-docs" rows="4" style="font-family:monospace;" placeholder="Liberia | motorbike | licence, registration, vehicle, insurance, police, helmet">${e((o.docRules || []).map(r => [r.country, r.vehicle, r.docs.join(', ')].join(' | ')).join('\n'))}</textarea>
         <div class="ver-note" style="margin-top:4px;">${e(tr('Papers you can name:'))} ${Object.keys(o.docKinds || {}).map(k => '<code>' + e(k) + '</code> = ' + e(tr(o.docKinds[k]))).join('; ')}. ${e(tr('Every rule must include licence, registration and vehicle. With no rule the standard list applies:'))} ${(o.standardDocs || []).map(k => e(k)).join(', ')}. ${e(tr('The most specific rule wins. Drivers already approved are not removed when you add a paper: you will see a warning on their line and can ask them for it or suspend them. Ask a Liberian lawyer or the Ministry of Transport which papers are legally required before you set these.'))}</div></div>
         <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-pass">${e(tr('Driver Pass'))}</label><select class="form-input form-select" id="rs-pass"><option value="1" ${s.passEnabled ? 'selected' : ''}>${e(tr('On: drivers can buy passes'))}</option><option value="0" ${!s.passEnabled ? 'selected' : ''}>${e(tr('Off'))}</option></select></div>
-        <div class="form-group"><label class="form-label" for="rs-cash">${e(tr('Cash rides'))}</label><select class="form-input form-select" id="rs-cash"><option value="0" ${!s.cashEnabled ? 'selected' : ''}>${e(tr('Off (app payment only)'))}</option><option value="1" ${s.cashEnabled ? 'selected' : ''}>${e(tr('On: only for drivers with an active pass'))}</option></select></div></div>
+        <div class="form-group"><label class="form-label" for="rs-cash">${e(tr('Cash rides'))}</label><select class="form-input form-select" id="rs-cash"><option value="0" ${!s.cashEnabled ? 'selected' : ''}>${e(tr('Off (app payment only)'))}</option><option value="1" ${s.cashEnabled ? 'selected' : ''}>${e(tr('On: commission from the driver\'s tokens, none with a Driver Pass'))}</option></select></div></div>
         <div class="form-group"><label class="form-label" for="rs-plans">${e(tr('Pass prices, one per line: short-name, label, days, price in US$'))}</label><textarea class="form-input" id="rs-plans" rows="4" style="font-family:monospace;">${e((s.passPlans || []).map(p => [p.id, p.label, p.days, Number(p.priceUsd).toFixed(2)].join(', ')).join('\n'))}</textarea>
         <div class="ver-note" style="margin-top:4px;">${e(tr('These starting prices are placeholders. Set the real ones after checking what drivers in your country can pay. Cash rides carry no held money, so have your lawyer add a line about them to the Ride Rules before turning them on.'))}</div></div>
         <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-auto">${e(tr('Release the fare automatically after the driver ends the trip (hours, 0 = never)'))}</label><input class="form-input" id="rs-auto" type="number" min="0" max="168" value="${e(s.autoReleaseHours)}"/></div>

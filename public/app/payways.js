@@ -92,6 +92,12 @@
       }
       try {
         const res = await f.apply(this, [method, path, body]);
+        // v148: goods orders (a store, the Market, a driver added later) are paid the same ways
+        if (method === 'POST' && res && res.payment && (path === '/store/orders' || /^\/market\/listings\/[^/]+\/buy$/.test(path) || /^\/store\/orders\/[^/]+\/delivery$/.test(path))) {
+          const what = res.delivery ? { ...res.delivery, isDelivery: true } : res.order;
+          if (res.payment.method === 'card') setTimeout(() => { if (typeof handlePaymentStep === 'function') handlePaymentStep(res.payment, { id: what.id }); }, 400);
+          else setTimeout(() => showPaymentCode(what, res.payment), 500);
+        }
         if (method === 'POST' && /^\/contracts\/[^/]+\/(agree|pay)$/.test(path) && res && res.payment && res.payment.method !== 'card') setTimeout(() => showPaymentCode(res.contract, res.payment), 300); // v125
         if (method === 'POST' && (path === '/contracts' || /^\/jobs\/[^/]+\/select-provider$/.test(path)) && res) {
           if (res.payment && res.payment.method === 'card') setTimeout(() => { if (typeof handlePaymentStep === 'function') handlePaymentStep(res.payment, res.contract); }, 400); // v125
@@ -136,9 +142,10 @@
         <li>${e(tr('Send exactly'))} <strong style="color:var(--navy);">${e(amountText(p))}</strong> ${e(tr('to'))} ${(p.payTo || []).map(a => `<strong>${e(a.network)} ${e(a.number)}</strong> (${e(a.accountName)})`).join(' ' + e(tr('or')) + ' ')}.</li>
         <li>${e(tr('Write'))} <strong>${e(p.code)}</strong> ${e(tr('in the reference or note.'))}</li>
         <li>${e(tr('Check the account name before you confirm. It must be the name above.'))}</li>
-        <li>${e(tr('Press "I have sent it". Your pro is asked to confirm once we see your payment.'))}</li>
+        <li>${e(tr(isOrderLike(contract) ? 'Press "I have sent it". The seller is told to get your order ready once we see your payment.' : 'Press "I have sent it". Your pro is asked to confirm once we see your payment.'))}</li>
       </ol>
-      <div style="font-size:12.5px;color:var(--muted);margin-top:8px;">${e(tr('If you don\'t pay by'))} ${e(new Date(p.expiresAt).toLocaleString())}, ${e(tr('the booking is cancelled. Trothen will never ask you to pay any other number or person, or for your PIN.'))}</div>
+      <div style="font-size:12.5px;color:var(--slate);margin:-4px 0 6px;">${e(tr('Someone else can send it for you (family, a friend, your company) from their Mobile Money: give them the number, the amount and the code. A refund goes back to the number the money came from.'))}</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:8px;">${e(tr('If you don\'t pay by'))} ${e(new Date(p.expiresAt).toLocaleString())}, ${e(tr(isOrderLike(contract) ? 'the order is cancelled. Trothen will never ask you to pay any other number or person, or for your PIN.' : 'the booking is cancelled. Trothen will never ask you to pay any other number or person, or for your PIN.'))}</div>
       ${p.customerSaysPaidAt ? `<div class="ver-note" style="margin-top:10px;">${e(tr('Thank you. You told us you have paid. The team is checking it, and you will get a message.'))}</div>` : `
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
         <input class="form-input" style="flex:1;min-width:180px;" id="pw-tx-${e(contract.id)}" maxlength="60" placeholder="${e(tr('Transaction ID from your SMS (optional)'))}"/>
@@ -146,12 +153,14 @@
         <button class="btn-sm btn-sm-outline" onclick="payWaysCopy(${jsArg(p.code)})">${e(tr('Copy code'))}</button>
       </div>`}`;
   }
+  // v148: a goods order (or its delivery) rather than a booking with a pro
+  function isOrderLike(c) { return !!(c && (c.storeOrder || c.items || c.isDelivery || c.delivery)); }
   function showPaymentCode(contract, p) {
     if (p && p.method === 'momo' && typeof payMomoWait === 'function') return payMomoWait(p, contract); // v147
     const old = el('pw-code-overlay'); if (old) old.remove();
     document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="pw-code-overlay"><div class="modal">
       <div class="modal-header"><button class="modal-close" onclick="document.getElementById('pw-code-overlay').remove()">✕</button>
-        <h3>💳 ${e(tr('Pay to confirm your booking'))}</h3><p>${e(tr('Booking'))} #${e(contract.bookingNumber || '')}: ${e(contract.service || '')}</p></div>
+        <h3>💳 ${e(tr(isOrderLike(contract) ? 'Pay to confirm your order' : 'Pay to confirm your booking'))}</h3><p>${e(tr(isOrderLike(contract) ? 'Order' : 'Booking'))} #${e(contract.bookingNumber || contract.number || '')}: ${e(contract.service || '')}</p></div>
       <div class="modal-body">${codeBoxHTML(contract, p)}</div>
       <div class="modal-footer"><button class="btn-sm btn-sm-outline" onclick="document.getElementById('pw-code-overlay').remove()">${e(tr('I\'ll pay later (see My Bookings)'))}</button></div>
     </div></div>`);
@@ -163,6 +172,13 @@
     if (es && es.paidBy === 'momo' && typeof payMomoWait === 'function') return payMomoWait({ method: 'momo', contractId, network: es.momoNetwork, last4: es.momoLast4, amountDue: es.amountDue, currency: es.dueCurrency, expiresAt: es.paymentExpiresAt }, c); // v147
     if (!es || es.paidBy !== 'code') return showToast(tr('Payment details not found. Please refresh.'));
     showPaymentCode(c, { code: es.paymentCode, amountDue: es.amountDue, currency: es.dueCurrency, payTo: es.payTo, expiresAt: es.paymentExpiresAt, customerSaysPaidAt: es.customerSaysPaidAt });
+  };
+  // v148: "Pay now" on a goods order waiting for payment
+  window.payWaysOrder = function (orderId) {
+    const o = (typeof CUSTOMER_ORDERS !== 'undefined' && CUSTOMER_ORDERS || []).find(x => x.id === orderId);
+    if (!o || !o.payment) return showToast(tr('Payment details not found. Please refresh.'));
+    if (o.payment.method === 'card' && typeof handlePaymentStep === 'function') return handlePaymentStep(o.payment, { id: o.id });
+    showPaymentCode(o, o.payment);
   };
   window.payWaysCopy = async function (code) { try { await navigator.clipboard.writeText(code); showToast(tr('Code copied')); } catch (x) { showToast(`${tr('Your code is')} ${code}`); } };
   window.payWaysSent = async function (contractId) {

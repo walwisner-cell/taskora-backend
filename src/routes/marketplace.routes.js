@@ -90,7 +90,17 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
   // v147: an MTN wallet (where that system is on) gets a prompt on the
   // customer's phone and waits for their PIN, like a code or a card page:
   // nothing is held until MTN says it was approved.
-  let codeFields = contract.payMethod === 'protected' ? await custPay.paymentFieldsFor(contract, customer, escrowId, rate) : null;
+  // v148: goods orders and deliveries are paid through Trothen too (the
+  // same code, card or wallet as a protected booking). Before, they were
+  // marked "held" with no payment at all, even with real payments on.
+  // A delivery paid together with its goods order copies that payment.
+  const needsPayment = contract.payMethod === 'protected' || contract.storeOrder === true || !!contract.delivery;
+  let codeFields = null;
+  if (contract.prepaidBy && contract.prepaidBy.escrow) {
+    const pe = contract.prepaidBy.escrow;
+    codeFields = { paidBy: 'order', parentPaidBy: pe.paidBy, paidWithEscrowId: pe.id, receipt: pe.receipt || null, dueCurrency: pe.dueCurrency, amountDue: pe.amountDue, amountDueUsd: pe.amountDueUsd, amountReceived: Math.round(((contract.amount || 0) + (contract.serviceFee || 0)) * 100) / 100 };
+    delete contract.prepaidBy;
+  } else if (needsPayment) codeFields = await custPay.paymentFieldsFor(contract, customer, escrowId, rate);
   if (!codeFields && customer && contract.payMethod !== 'cash' && contract.payMethod !== 'protected') codeFields = await custPay.momoFieldsFor(contract, customer, rate);
   const liberiaMoMoReference = (codeFields && codeFields.momoRef) || null;
 
@@ -121,6 +131,7 @@ async function fundEscrowForContract(contract, customerId, payCurrencyChoice) {
     liberiaMoMoReference, // null unless a real LCMMMI collection request was actually made for this escrow — see above
     createdAt: new Date().toISOString(),
     ...(codeFields || {}), // v119: status awaiting_payment + the payment code, when paying by code
+    ...(codeFields && contract.alsoPaysUsd ? { alsoPaysUsd: contract.alsoPaysUsd } : {}), // v148: a delivery paid with this order
   };
   await db.insert('escrowTransactions', escrow);
 
@@ -501,6 +512,44 @@ let lastPlaceCallAt = 0;
 const placeSearchLimiter = require('express-rate-limit')({
   windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
   message: { error: 'Too many searches in a row. Wait a moment, or move the map by hand.' },
+});
+// v148: "Are you ready?" for the person signed in (src/readiness.js), for one action or all.
+router.get('/me/readiness', requireAuth, async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me) return res.status(404).json({ error: 'Account not found' });
+  const action = typeof req.query.action === 'string' && /^[a-zA-Z]{2,20}$/.test(req.query.action) ? req.query.action : null;
+  res.json(await require('../readiness').forAction(me, action));
+});
+// v148: which map pictures the app uses, in one place for every map.
+//  - MAPBOX_TOKEN set: Mapbox streets and satellite (allowed for a business
+//    app; the free tier covers a young app).
+//  - or MAP_TILE_URL (+ MAP_TILE_ATTRIBUTION) for any other provider;
+//  - otherwise OpenStreetMap's own tiles, with a satellite view from Esri.
+router.get('/geo/map-config', (req, res) => {
+  const mb = (process.env.MAPBOX_TOKEN || '').trim();
+  const mbLayer = (style) => ({ url: `https://api.mapbox.com/styles/v1/mapbox/${style}/tiles/{z}/{x}/{y}?access_token=${encodeURIComponent(mb)}`, tileSize: 512, zoomOffset: -1, maxZoom: 20, attribution: '&copy; <a href="https://www.mapbox.com/about/maps/" target="_blank" rel="noopener">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' });
+  const osm = { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' };
+  const street = mb ? mbLayer('streets-v12') : process.env.MAP_TILE_URL ? { url: process.env.MAP_TILE_URL, maxZoom: 19, attribution: process.env.MAP_TILE_ATTRIBUTION || osm.attribution } : osm;
+  const satellite = mb ? mbLayer('satellite-streets-v12') : {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, maxNativeZoom: 18,
+    attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
+    labels: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, maxNativeZoom: 18 },
+  };
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.json({ provider: mb ? 'mapbox' : process.env.MAP_TILE_URL ? 'custom' : 'openstreetmap', street, satellite, fallback: osm, routing: !!(process.env.ROUTING_URL || '').trim() });
+});
+// v148: the road between two points, to draw on the map.
+const routeLimiter = require('express-rate-limit')({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many route requests. Please wait a moment.' } });
+router.get('/geo/route', requireAuth, routeLimiter, async (req, res) => {
+  const q = req.query || {};
+  const a = { latitude: Number(q.fromLat), longitude: Number(q.fromLng) }, b = { latitude: Number(q.toLat), longitude: Number(q.toLng) };
+  const okPt = (p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180 && !(p.latitude === 0 && p.longitude === 0);
+  if (!okPt(a) || !okPt(b)) return res.status(400).json({ error: 'Two valid points are needed.' });
+  const { routeShape, estimate } = require('../road-route');
+  const shape = await routeShape(a, b);
+  if (shape) return res.json({ source: 'road', points: shape.points, km: shape.km, minutes: shape.carMinutes });
+  const est = estimate(a, b, String(q.vehicle || 'car'));
+  res.json({ source: 'straight', points: [[a.latitude, a.longitude], [b.latitude, b.longitude]], km: est.km, minutes: est.minutes });
 });
 router.get('/geo/place-search', requireAuth, placeSearchLimiter, async (req, res) => {
   const q = String(req.query.q || '').trim();
@@ -2370,7 +2419,7 @@ router.patch('/contracts/:id/job-location', requireAuth, requireRole('customer')
 // GET /api/contracts/mine — works for both customers and providers
 router.get('/contracts/mine', requireAuth, async (req, res) => {
   const field = req.user.role === 'provider' ? 'providerId' : 'customerId';
-  const contracts = await db.filter('contracts', c => c[field] === req.user.sub && !(field === 'providerId' && c.status === 'awaiting_payment' && c.statusAfterPayment !== 'active')); // v119: a pro sees a new booking once it is paid (an offer they already accepted stays in view)
+  const contracts = await db.filter('contracts', c => c[field] === req.user.sub && !(field === 'providerId' && c.status === 'awaiting_payment' && (c.statusAfterPayment !== 'active' || c.storeOrder)));  // v148 audit: an unpaid goods order stays hidden from the seller // v119: a pro sees a new booking once it is paid (an offer they already accepted stays in view)
   const withNames = await Promise.all(contracts.map(async c => {
     const customer = await db.find('users', u => u.id === c.customerId);
     const provider = await db.find('users', u => u.id === c.providerId);

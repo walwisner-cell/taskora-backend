@@ -1913,6 +1913,17 @@ router.get('/data-cleanup/audit-log', requireSuperAdmin, async (req, res) => {
 
 // ---- Go-Live: real super admins, demo removal, readiness checklist ----------
 // See src/go-live.js for the full reasoning. Super admin only.
+// v148: System Check (src/system-check.js): what is wrong right now, why, and what to do.
+router.get('/system-check', requireSuperAdmin, async (req, res) => {
+  const sc = require('../system-check');
+  const r = sc.report();
+  res.json(r.lastRun ? { ...r, text: sc.reportText() } : { ...(await sc.run()), text: sc.reportText() });
+});
+router.post('/system-check/run', requireSuperAdmin, async (req, res) => {
+  const sc = require('../system-check');
+  const r = await sc.run();
+  res.json({ ...r, text: sc.reportText() });
+});
 router.get('/go-live/status', requireSuperAdmin, async (req, res) => {
   const { readinessReport } = require('../go-live');
   const actor = await me(req);

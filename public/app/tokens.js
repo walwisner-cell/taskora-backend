@@ -395,7 +395,16 @@
     const body = { enabled: !!(el('tka-enabled') || {}).checked, cashJobsEnabled: !!(el('tka-cash') || {}).checked, testPurchases: !!(el('tka-test') || {}).checked, realPaymentsOnly: !!(el('tka-realonly-pay') || {}).checked, payoutsRealOnly: !!(el('tka-realonly') || {}).checked, maxBalance: Number((el('tka-max') || {}).value), dailyLimitUsd: Number((el('tka-day') || {}).value), countries, packs: readPacks() };
     if (T.admin && T.admin.settings.enabled && !body.enabled && !(await confirmDialog(tr('Turn tokens off? Pros keep their balances but can\'t buy or pay with tokens until you turn them back on.'), { confirmLabel: tr('Turn off') }))) return;
     try { await apiFetch('PATCH', '/admin/tokens/settings', body); showToast(tr('Token settings saved')); drawAdminPage(); }
-    catch (x) { showToast(x.message || 'Could not save'); }
+    catch (x) {
+      // v148: a safety check stopped it: say why, and let the super admin decide
+      if (x.data && x.data.code === 'NOT_READY') {
+        const go = await confirmDialog(`${tr('Not ready yet:')}\n\n${x.data.reasons.map(r => '• ' + r).join('\n\n')}\n\n${tr('Switch it on anyway?')}`, { confirmLabel: tr('Switch on anyway'), danger: true });
+        if (!go) return;
+        try { await apiFetch('PATCH', '/admin/tokens/settings', { ...body, confirmAnyway: true }); showToast(tr('Token settings saved')); drawAdminPage(); } catch (y) { showToast(y.message || 'Could not save'); }
+        return;
+      }
+      showToast(x.message || 'Could not save');
+    }
   };
   window.tokensAdminLookup = async function () {
     const q = ((el('tka-q') || {}).value || '').trim(), out = el('tka-results'); if (!out) return;

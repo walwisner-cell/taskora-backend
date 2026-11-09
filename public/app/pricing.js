@@ -182,7 +182,7 @@
         const r = await apiFetch('GET', `/customer-payments/${encodeURIComponent(id)}/card-status`);
         if (r && r.paid && r.escrowStatus !== 'payment_expired') {
           close(); await refresh();
-          showResult({ title: tr('Payment approved'), lines: [`${tr('We received')} ${amount}${r.bookingNumber ? ` ${tr('for booking')} #${r.bookingNumber}` : ''}.`, tr('Trothen is holding it safely until the job is done.'), r.isRide ? tr('Your driver has been asked to confirm.') : tr('Your pro has been asked to confirm.')] });
+          showResult({ title: tr('Payment approved'), lines: [`${tr('We received')} ${amount}${r.bookingNumber ? ` ${tr('for booking')} #${r.bookingNumber}` : ''}.`, tr('Trothen is holding it safely until the job is done.'), r.isOrder ? tr('The seller has been told to get it ready.') : r.isRide ? tr('Your driver has been asked to confirm.') : tr('Your pro has been asked to confirm.')] });
         } else if (r && (r.escrowStatus === 'payment_expired' || r.bookingStatus === 'cancelled')) {
           close(); await refresh();
           showResult({ icon: '⚠️', title: tr('The payment was not approved'), lines: [tr('Nothing was taken from your wallet, and the booking was cancelled.'), tr('You can book again, or choose another way to pay.')] });

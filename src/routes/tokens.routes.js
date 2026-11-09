@@ -149,6 +149,10 @@ router.get('/admin/tokens', gate, async (req, res) => {
 router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
   const b = req.body || {};
   const before = await tokens.settings();
+  if (b.realPaymentsOnly === true && (await getSetting('realPaymentsOnly')) !== true) { // v148: a safety gate: only when customers can really pay
+    const reasons = await require('../system-check').gate('realPaymentsOnly');
+    if (reasons.length && b.confirmAnyway !== true) return res.status(409).json({ code: 'NOT_READY', reasons, error: `"Real payments only" can't be switched on yet: ${reasons.join(' ')}` });
+  }
   if (b.packs !== undefined) {
     const list = Array.isArray(b.packs) ? b.packs.map(p => ({ id: String(p.id || '').trim().toLowerCase(), label: String(p.label || '').trim(), priceUsd: tokens.money(p.priceUsd), tokens: tokens.money(p.tokens) })) : null;
     if (!list || list.length < 1 || list.length > 8 || list.some(p => !tokens.cleanPack(p)) || new Set(list.map(p => p.id)).size !== list.length) {

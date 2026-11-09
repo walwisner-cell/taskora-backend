@@ -187,7 +187,7 @@ router.get('/rides/drivers', requireAuth, requireRole('customer'), lookupLimiter
     const away = loc ? kmBetween(loc, pickup) : null;
     if (away === null || away > searchKm) continue;
     const f = await rideFares.fareFor(u, await tripFor(u.rideDriver.vehicle), { table: fareTable, rateRows });
-    rows.push({ ...publicDriver(u), awayKm: away, fare: f.fare, fareLocal: f.local, currency: f.currency, symbol: f.symbol, trothenFare: f.proposed, trothenFareLocal: f.proposedLocal, fareAdjust: f.adjust, fareSource: f.source, seats: RIDE_VEHICLES[u.rideDriver.vehicle], cashOk: cashOn && u.rideDriver.acceptsCash === true && !!(await ridePass.activePass(u.id)) });
+    rows.push({ ...publicDriver(u), awayKm: away, fare: f.fare, fareLocal: f.local, currency: f.currency, symbol: f.symbol, trothenFare: f.proposed, trothenFareLocal: f.proposedLocal, fareAdjust: f.adjust, fareSource: f.source, seats: RIDE_VEHICLES[u.rideDriver.vehicle], cashOk: cashOn && u.rideDriver.acceptsCash === true && (await require('../tokens').cashReady(u, f.fare, { ride: true })).ok });
   }
   rows.sort((a, b) => a.awayKm - b.awayKm || (b.rating || 0) - (a.rating || 0));
   const po = await require('../customer-payments').optionsFor(me.country);
@@ -243,10 +243,13 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
     if (!isOffer && (b.expectedFare === undefined || Math.abs(Number(b.expectedFare) - fare) > 0.009)) {
       return res.status(409).json({ code: 'PRICE_CHANGED', fare, error: `${driver.name}'s fare for this trip is now $${fare.toFixed(2)}. Check it and approve again.` });
     }
-    // v113: cash rides. Allowed only when a super admin has switched cash on, the driver has said they take
-    // cash, and the driver has an active pass (so Trothen has nothing to collect from them per ride).
+    // v113: cash rides. Allowed when a super admin has switched cash on and the driver takes cash.
+    // v148: Trothen's commission comes from the driver's tokens when they accept (as Bolt, Uber and
+    // SafeBoda take it from the driver's balance); a driver with a Driver Pass pays none per ride.
     const cash = b.payment === 'cash';
-    if (cash && !((await getSetting('rideCashEnabled')) === true && driver.rideDriver.acceptsCash === true && await ridePass.activePass(driver.id))) {
+    const cashCheck = cash ? await require('../tokens').cashReady(driver, fare, { ride: true }) : null;
+    if (cash && cashCheck && !cashCheck.ok) await require('../tokens').nudgeCashNotReady(driver, cashCheck, fare);
+    if (cash && !((await getSetting('rideCashEnabled')) === true && driver.rideDriver.acceptsCash === true && cashCheck.ok)) {
       return res.status(400).json({ code: 'CASH_NOT_AVAILABLE', error: 'This driver does not take cash rides right now. Pay in the app, or choose another driver.' });
     }
     // v125: paying in the app is a real card payment (or a test payment on a test site). A ride can't wait
@@ -512,7 +515,7 @@ router.post('/rides/driver/online', requireAuth, requireRole('provider'), async 
     if (!isValidCoordinate(latitude, longitude)) return res.status(400).json({ error: 'We need your location to show you to riders nearby. Allow location and try again.' });
     const busy = await db.find('contracts', c => c.providerId === u.id && c.ride && OPEN_STATUSES.includes(c.status));
     // v142: drivers approved before Driver for Hire existed get it the first time they go online
-    if (u.category !== 'Driver for Hire' && !(u.extraSkills || []).some(x => x.category === 'Driver for Hire') && (u.extraSkills || []).length < require('../store').MAX_EXTRA_SKILLS && await db.find('categories', c => c.name === 'Driver for Hire' && c.active)) {
+    if (u.category !== 'Driver for Hire' && !(u.extraSkills || []).some(x => x.category === 'Driver for Hire') && (u.extraSkills || []).length < require('../store').maxExtraSkillsFor(u) && await db.find('categories', c => c.name === 'Driver for Hire' && c.active)) {
       const now = new Date().toISOString();
       await db.update('users', u.id, { extraSkills: [...(u.extraSkills || []), { category: 'Driver for Hire', status: 'approved', requestedAt: now, decidedAt: now, via: 'rides' }] });
     }
@@ -715,8 +718,10 @@ router.put('/admin/rides/countries', gate, async (req, res) => {
     list.push(rec.name);
   }
   await setSetting('rideEnabledCountries', list);
+  // v148: what still needs doing in that country (it works meanwhile, with each driver's own rates)
+  const warnings = turnOn && rec ? await require('../system-check').gate('rideCountry', { country: rec.name }) : [];
   try { await db.insert('accessLogs', { id: `al_${require('nanoid').nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'rides_country', resourceId: `${rec ? rec.name : name}: ${turnOn ? 'on' : 'off'}`, ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the switch still works */ }
-  res.json({ ok: true, enabledCountries: list });
+  res.json({ ok: true, enabledCountries: list, warnings });
 });
 
 // ── v147: places (see src/places.js) ─────────────────────────────────────
@@ -875,7 +880,7 @@ router.post('/admin/rides/applications/:userId/decision', gate, async (req, res)
     const had = list.find(s => s.category === DRIVER_CAT);
     if (decision === 'approve') {
       if (had && had.via === 'rides') Object.assign(had, { status: 'approved', decidedAt: now });
-      else if (!had && list.length < require('../store').MAX_EXTRA_SKILLS) list.push({ category: DRIVER_CAT, status: 'approved', requestedAt: now, decidedAt: now, via: 'rides' });
+      else if (!had && list.length < require('../store').maxExtraSkillsFor(u)) list.push({ category: DRIVER_CAT, status: 'approved', requestedAt: now, decidedAt: now, via: 'rides' });
     } else if (had && had.via === 'rides') Object.assign(had, { status: 'paused', decidedAt: now });
     extraSkills = list;
   }

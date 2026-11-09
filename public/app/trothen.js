@@ -2415,6 +2415,7 @@ function navbarHTML(active) {
         <div class="account-dropdown-head">
           <div class="account-dropdown-name">${escapeHtml((AUTH.user && AUTH.user.name) || '')}</div>
           <div class="account-dropdown-role">${escapeHtml(roleLabel)}</div>
+          ${AUTH.user && AUTH.user.country && AUTH.user.role !== 'admin' ? `<div class="account-dropdown-role" title="${escapeHtml(tr('Prices, payment methods, pros and rules are for this country. To move your account to another country, contact support.'))}">📍 ${escapeHtml(tr('Account in'))} ${escapeHtml(AUTH.user.country)}</div>` : ''}
         </div>
         <div class="account-menu-item" onclick="closeAccountMenu();goHome()">🏠 Explore</div>
         ${active === 'customer' ? `
@@ -5786,12 +5787,23 @@ function selectCustomerSection(key) {
   if (key === 'favorites') loadFavoritesPanel();
 }
 
+// v148: which country this account is registered in, shown under the name, so
+// people know which country's prices, payments, pros and rules they see.
+function showAccountCountry(afterId, u) {
+  const anchor = document.getElementById(afterId); if (!anchor || !u) return;
+  let line = document.getElementById(afterId + '-country');
+  if (!u.country) { if (line) line.remove(); return; }
+  if (!line) { anchor.insertAdjacentHTML('afterend', `<div id="${afterId}-country" class="account-country" style="font-size:12.5px;color:var(--slate);margin-top:2px;"></div>`); line = document.getElementById(afterId + '-country'); }
+  line.textContent = `📍 ${tr('Account in')} ${u.country}${u.city ? ` · ${u.city}` : ''}`;
+  line.title = tr('Prices, payment methods, pros and rules are for this country. To move your account to another country, contact support.');
+}
 function updateCustomerSidebar() {
   const u = AUTH.user;
   if (!u) return;
   document.getElementById('customer-sidebar-avatar').textContent = u.initials || 'CU';
   document.getElementById('customer-sidebar-name').textContent = u.name;
   document.getElementById('customer-sidebar-role').textContent = `Customer · ${u.verified ? 'Verified ✓' : 'Verification pending'}`;
+  showAccountCountry('customer-sidebar-role', u); // v148
 }
 
 async function initCustomerDash() { await loadCustomerData(); updateCustomerSidebar(); selectCustomerSection('overview'); }
@@ -7689,6 +7701,7 @@ function updateProviderSidebar() {
   document.getElementById('provider-sidebar-avatar').style.background = u.color || '#2E8C6F';
   document.getElementById('provider-sidebar-name').textContent = u.name;
   document.getElementById('provider-sidebar-role').textContent = `Provider · ${u.verified ? 'Verified ✓' : 'Verification pending'}`;
+  showAccountCountry('provider-sidebar-role', u); // v148
 }
 
 function portfolioGridHTML(photos) {
@@ -14373,7 +14386,7 @@ async function loadExtraSkillsPanel() {
   const have = new Map((data.extraSkills || []).map(s => [s.category, s]));
   const cats = (CATEGORIES || []).map(c => c.name).filter(n => n !== data.main);
   box.innerHTML = `
-    <div style="font-size:13.5px;color:var(--slate);margin-bottom:10px;">${escapeHtml(tr('Your main skill is'))} <strong>${escapeHtml(data.main || '—')}</strong>. ${escapeHtml(tr('Tick up to'))} ${data.max} ${escapeHtml(tr('more. Customers will find you under any of them.'))}</div>
+    <div style="font-size:13.5px;color:var(--slate);margin-bottom:10px;">${escapeHtml(tr('Your main skill is'))} <strong>${escapeHtml(data.main || '—')}</strong>. ${escapeHtml(tr('Tick up to'))} ${data.max} ${escapeHtml(tr('more. Customers will find you under any of them.'))}${data.business ? '' : ` ${escapeHtml(tr('A business (with its business name in Settings) can add up to'))} ${data.maxBusiness || 25}.`}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px 14px;margin-bottom:12px;">
       ${cats.map(n => { const s = have.get(n); return `<label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;"><input type="checkbox" class="extra-skill-cb" value="${escapeHtml(n)}" ${s ? 'checked' : ''} onchange="limitExtraSkills(this, ${data.max})"/> <span>${escapeHtml(n)}${s && s.status === 'pending' ? ` <span class="badge badge-warn" style="font-size:11px;">${escapeHtml(tr('being checked'))}</span>` : s && s.status === 'rejected' ? ` <span class="badge badge-danger" style="font-size:11px;">${escapeHtml(tr('not approved'))}</span>` : ''}</span></label>`; }).join('')}
     </div>
@@ -15757,6 +15770,8 @@ const DELIVERY_WORDS = { pickup: 'I collect it myself', seller: 'The seller brin
 const VEHICLE_ICON = { motorbike: '🏍️', keke: '🛺', car: '🚗', van: '🚐', truck: '🚚', bicycle: '🚲', 'on foot': '🚶' };
 function orderStatusHTML(o) {
   if (o.status === 'completed') return `<span class="badge badge-success">${escapeHtml(tr('Received'))}</span>`;
+  if (o.status === 'awaiting_payment') return `<span class="badge badge-warn">${escapeHtml(tr('Waiting for your payment'))}</span>`; // v148
+  if ((o.status === 'cancelled' || o.status === 'expired') && /^payment_/.test(o.moneyStatus || '')) return `<span class="badge badge-neutral">${escapeHtml(tr('Cancelled, not paid'))}</span>`;
   if (o.status === 'cancelled' || o.status === 'declined' || o.status === 'expired') return `<span class="badge badge-neutral">${escapeHtml(tr('Cancelled, refunded'))}</span>`;
   if (o.status === 'disputed') return `<span class="badge badge-danger">${escapeHtml(tr('Problem reported'))}</span>`;
   const d = o.delivery;
@@ -16257,7 +16272,7 @@ async function submitCheckout() {
     delete STORE_BASKET[CHECKOUT.pid];
     v105Close('store-checkout-overlay'); v105Close('pro-store-overlay');
     if (typeof closeProQuickView === 'function') { try { closeProQuickView(); } catch (e) {} }
-    showToast(`${tr('Paid. Order')} #${r.order.number}`);
+    showToast(r.payment ? `${tr('Order')} #${r.order.number}: ${tr('pay to confirm it')}` : `${tr('Paid. Order')} #${r.order.number}`); // v148
     await goToCustomerDashboard('orders');
   } catch (e) {
     showToast(e.message || 'Could not place the order');
@@ -16306,7 +16321,7 @@ function customerOrderHTML(o) {
       <div>${orderStatusHTML(o)}</div>
     </div>
     ${orderItemsHTML(o)}
-    <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px;border-top:1px solid var(--border);margin-top:8px;padding-top:8px;"><span>${escapeHtml(tr('Paid'))}${o.sellerDeliveryFee > 0 ? ` (${escapeHtml(tr('with the seller\'s delivery'))} ${usd2(o.sellerDeliveryFee)})` : ''}${driverPaid ? ` + ${escapeHtml(tr('driver'))} ${usd2(driverPaid)}` : ''}</span><strong>${usd2(o.totalPaid + driverPaid)}</strong></div>
+    <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px;border-top:1px solid var(--border);margin-top:8px;padding-top:8px;"><span>${escapeHtml(tr(o.status === 'awaiting_payment' ? 'To pay' : /^payment_/.test(o.moneyStatus || '') ? 'Not paid' : 'Paid'))}${o.sellerDeliveryFee > 0 ? ` (${escapeHtml(tr('with the seller\'s delivery'))} ${usd2(o.sellerDeliveryFee)})` : ''}${driverPaid ? ` + ${escapeHtml(tr('driver'))} ${usd2(driverPaid)}` : (o.alsoPaysUsd && o.status === 'awaiting_payment' ? ` + ${escapeHtml(tr('driver'))} ${usd2(o.alsoPaysUsd)}` : '')}</span><strong>${usd2(o.totalPaid + (driverPaid || (o.status === 'awaiting_payment' ? o.alsoPaysUsd || 0 : 0)))}</strong></div>
     <div style="font-size:13.5px;margin-top:8px;line-height:1.6;">${how}</div>
     ${active && o.deliveryMethod === 'pickup' && !o.readyAt ? `<div style="font-size:13px;color:var(--slate);">${escapeHtml(tr('You will be told when it is packed and ready.'))}</div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
