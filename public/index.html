@@ -2405,6 +2405,99 @@
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="/app/theme.js?v=5c6b140a47"></script>
+
+<style id="phone-v154">
+  /* ═══ v154: Trothen on a phone ═══════════════════════════════════════════
+     Touch targets of at least 44 x 44 px (Apple HIG 44pt, Google Material 48dp,
+     WCAG 2.5.8), a tab bar at the bottom within reach of the thumb, nothing floating
+     over the page on the dashboards, and the phone's own keyboard for numbers,
+     phone numbers and email addresses. */
+  .sr-only { position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  #mtab { display:none; }
+  button.notif-bell { font:inherit; color:inherit; cursor:pointer; padding:0; }
+  @media (max-width: 760px) {
+    /* the tab bar */
+    #mtab { display:flex; position:fixed; left:0; right:0; bottom:0; z-index:550; background:#fff; border-top:1px solid var(--border); padding:0 4px env(safe-area-inset-bottom, 0px); box-shadow:0 -4px 16px rgba(15,38,64,.06); }
+    .mtab-item { flex:1 1 0; min-width:0; min-height:58px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; background:none; border:none; color:var(--slate); font:600 12px/1.15 var(--font-body); cursor:pointer; padding:6px 2px; -webkit-tap-highlight-color:transparent; }
+    .mtab-item.on { color:var(--teal); }
+    .mtab-item.on .mtab-ic { background:rgba(29,95,168,.11); }
+    .mtab-item:not(.on) .mtab-ic svg, .mtab-item:not(.on) .mtab-ic .ui-icon { filter:grayscale(1); opacity:.8; } /* one colour for the places you're not on, as in most apps */
+    .mtab-panel:focus { outline:none; }
+    .mtab-ic { position:relative; display:inline-flex; width:44px; height:28px; border-radius:14px; align-items:center; justify-content:center; font-size:19px; line-height:1; }
+    .mtab-ic svg, .mtab-ic .ui-icon { width:22px; height:22px; }
+    .mtab-dot { position:absolute; top:1px; right:8px; width:9px; height:9px; border-radius:50%; background:#B3261E; border:2px solid #fff; }
+    .mtab-dot.inline { position:static; margin-left:auto; border:none; }
+    .mtab-l { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    body.has-mtab .dash-sidebar { display:none; }
+    /* the tab bar steps aside for anything that needs the whole screen: pop-ups, a live trip, an open chat, the keyboard */
+    body.trip-open #mtab, body:has(.modal-overlay.open) #mtab, body:has(.support-chat-panel.open) #mtab, body.chat-thread-open #mtab, body.kb-open #mtab { display:none; }
+    body.has-mtab .dash-main { padding-bottom:calc(96px + env(safe-area-inset-bottom, 0px)); }
+    body.has-mtab { padding-bottom:calc(64px + env(safe-area-inset-bottom, 0px)); } /* the end of the page can always be scrolled clear of the tab bar */
+    body.has-mtab .support-chat-bubble { display:none !important; }
+    body.has-mtab .toast { bottom:calc(74px + env(safe-area-inset-bottom, 0px)); }
+    body.has-mtab #install-banner { bottom:calc(70px + env(safe-area-inset-bottom, 0px)); } /* above the tab bar, never over it */
+    #install-banner .ib-yes, #install-banner .ib-no { min-height:44px; }
+    /* a compact card: icon and words on one line, the two buttons side by side under them */
+    #install-banner { flex-wrap:wrap; padding:12px 14px; gap:8px 12px; }
+    #install-banner img { width:40px; height:40px; }
+    #install-banner .ib-text { flex:1 1 200px; font-size:14px; }
+    #install-banner .ib-text strong { font-size:15.5px; }
+    #install-banner .ib-actions { flex-direction:row-reverse; width:100%; justify-content:flex-start; gap:8px; }
+    #install-banner .ib-yes { flex:1; }
+    body.has-mtab .share-bar { bottom:calc(66px + env(safe-area-inset-bottom, 0px)); }
+    /* "More": a sheet from the bottom */
+    #mtab-sheet { position:fixed; inset:0; z-index:1000; }
+    .mtab-back { position:absolute; inset:0; background:rgba(15,38,64,.45); animation:mtabFade .15s ease-out; }
+    .mtab-panel { position:absolute; left:0; right:0; bottom:0; background:#fff; border-radius:16px 16px 0 0; max-height:85vh; max-height:85dvh; overflow:auto; padding:4px 8px calc(12px + env(safe-area-inset-bottom, 0px)); box-shadow:0 -10px 30px rgba(0,0,0,.2); animation:mtabUp .18s ease-out; }
+    .mtab-grab { width:40px; height:4px; border-radius:2px; background:#cfd6de; margin:6px auto 0; }
+    .mtab-head { display:flex; align-items:center; justify-content:space-between; padding:2px 4px 2px 12px; }
+    .mtab-head h2 { font-size:18px; margin:0; color:var(--navy); font-family:var(--font-body); }
+    .mtab-x { width:44px; height:44px; border:none; background:none; font-size:20px; color:var(--slate); cursor:pointer; }
+    .mtab-row { display:flex; align-items:center; gap:14px; width:100%; min-height:52px; padding:0 12px; border:none; background:none; border-radius:10px; font:500 16px var(--font-body); color:var(--text); text-align:left; cursor:pointer; }
+    .mtab-row .mtab-ic { width:28px; height:28px; }
+    .mtab-row.on { background:rgba(29,95,168,.09); color:var(--teal); font-weight:600; }
+    .mtab-row:active, .mtab-item:active { background:rgba(15,38,64,.06); }
+    body.mtab-sheet-open { overflow:hidden; }
+    /* help chat on a dashboard: a sheet from the bottom, like More */
+    body.has-mtab .support-chat-panel.open { left:0 !important; right:0 !important; top:auto !important; bottom:0 !important; width:100% !important; max-width:100% !important; height:85vh !important; height:85dvh !important; max-height:none !important; border-radius:16px 16px 0 0 !important; z-index:1001; }
+    @keyframes mtabUp { from { transform:translateY(24px); opacity:.6; } to { transform:none; opacity:1; } }
+    @keyframes mtabFade { from { opacity:0; } to { opacity:1; } }
+    @media (prefers-reduced-motion: reduce) { .mtab-panel, .mtab-back { animation:none; } }
+
+    /* a slimmer top bar on the dashboards, so more of the page shows */
+    body.has-mtab .navbar { height:60px; }
+    body.has-mtab .navbar-logo-img { height:44px; }
+
+    /* touch targets: at least 44 px tall (and wide, for icon buttons) */
+    .btn, .btn-sm, .btn-solid, .btn-line, .btn-primary, .btn-outline, .chat-filter, .rd-act, .link-btn.block { min-height:44px; }
+    .btn-sm { display:inline-flex; align-items:center; justify-content:center; padding-left:14px; padding-right:14px; font-size:14px; }
+    .form-input, .form-select, select, input[type="text"], input[type="email"], input[type="password"], input[type="tel"], input[type="number"], input[type="search"], input[type="date"], input[type="time"], input[type="url"] { min-height:44px; }
+    .notif-bell { width:44px !important; height:44px !important; }
+    .lang-switcher-btn, .nav-menu-btn { min-height:44px; }
+    .navbar .nav-btn { min-height:44px; }
+    .modal-close { width:44px; height:44px; }
+    #test-mode-banner .tm-close { display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; right:2px !important; padding:0 !important; }
+    .banner-more { min-height:32px; }
+    [data-theme-choice] { min-height:44px; min-width:52px; }
+    input[type="checkbox"], input[type="radio"] { width:24px; height:24px; }
+    label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { padding-top:10px; padding-bottom:10px; }
+    .switch input { width:0 !important; height:0 !important; }
+    .switch::after { content:''; position:absolute; inset:-11px -4px; } /* a 48 x 44 px tap area around the small switch */
+    #rd-card .link-btn, .see-all, .link-btn.more { min-height:44px; display:inline-flex; align-items:center; }
+    .navbar .nav-btn, .navbar button { min-height:44px; }
+    .hero-shortcuts button { min-height:44px; padding:0 2px; }
+    .composer-locate { min-width:44px; min-height:44px; }
+    .auth-tab { min-height:44px; display:flex; align-items:center; justify-content:center; }
+    .ticket-foot button, .two-way button, .two-way a { min-height:44px; }
+    .back-link, [onclick*="showScreen('screen-home')"], [onclick*="goHome"] { min-height:44px; display:inline-flex; align-items:center; }
+    .footer a, .footer-links a, .footer-col a { display:inline-flex; align-items:center; min-height:44px; }
+    .password-toggle-icon, .pw-toggle { min-width:44px; min-height:44px; }
+    a, button, [role="button"], input, select, textarea, label { touch-action:manipulation; }
+
+    /* small print no smaller than 12 px */
+    .rd-chip { font-size:12px !important; }
+  }
+</style>
 </head>
 <body>
 
@@ -3379,7 +3472,7 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=fdc0c9f69c" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/trothen.js?v=6d56475d02" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
 <script src="/app/rides.js?v=f292589ac6"></script>
 <script src="/app/tokens.js?v=5697c68ad9"></script>
 <script src="/app/payways.js?v=5c991088aa"></script>
@@ -3395,7 +3488,7 @@
 <script src="/app/callhealth.js?v=04d5713002"></script>
 <script src="/app/teams.js?v=0a22b63b77"></script>
 <script src="/app/voice.js?v=7554f61733"></script>
-<script src="/app/market.js?v=be303b7aa4"></script>
+<script src="/app/market.js?v=0c2e36c860"></script>
 <script src="/app/commission.js?v=2fd7aaa6b7"></script>
 <script src="/app/categories.js?v=9ac65b7765"></script>
 <script src="/app/acceptquote.js?v=3d4d251ecf"></script>
@@ -3407,9 +3500,10 @@
 <script src="/app/payout-details.js?v=f2e785bbae"></script>
 <script src="/app/paymethods.js?v=497f245785"></script>
 <script src="/app/maps.js?v=aaa2141068"></script>
-<script src="/app/checks.js?v=7114985e04"></script>
+<script src="/app/checks.js?v=071de1a6a3"></script>
 <script src="/app/polish.js?v=ae2a86ef1b"></script>
 <script src="/app/a11y.js?v=7a13a5f443"></script>
-<script src="/app/es-v152.js?v=1da0046429"></script>
+<script src="/app/es-v152.js?v=11b8442799"></script>
+<script src="/app/mobile.js?v=d4850238eb"></script>
 </body>
 </html>

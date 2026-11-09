@@ -619,6 +619,8 @@
   window.proModeChanged = function (v) {
     const f = document.getElementById('auth-service-fields'); if (f) f.style.display = v === 'goods' ? 'none' : '';
   };
+  // v154: the line under the choice describes the choice that is selected
+  window.proModeHint = (v) => t(v === 'goods' ? 'Your store appears in the Market. You won\'t appear in service search.' : v === 'both' ? 'You appear in service search, and your store appears in the Market.' : 'Customers find you in service search and job matches.');
   function addProModePanel() {
     if (!(AUTH && AUTH.user && AUTH.user.role === 'provider')) return;
     const main = document.getElementById('provider-main'); if (!main || document.getElementById('pro-mode-panel')) return;
@@ -626,10 +628,10 @@
     main.insertAdjacentHTML('afterbegin', '');
     const box = document.createElement('div'); box.className = 'panel'; box.id = 'pro-mode-panel';
     box.innerHTML = `<div class="panel-title">${e(t('What you do on Trothen'))}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><select class="form-input form-select" id="pro-mode-select" style="width:auto;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><select class="form-input form-select" id="pro-mode-select" style="width:auto;" onchange="document.getElementById('pro-mode-hint').textContent = proModeHint(this.value)">
         ${[['services', 'Offer my services'], ['goods', 'Sell goods (a store)'], ['both', 'Both: services and a store']].map(([v, l]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${e(t(l))}</option>`).join('')}</select>
         <button class="btn-sm btn-sm-primary" onclick="saveProMode()">${e(t('Save'))}</button></div>
-      <div style="font-size:13px;color:var(--slate);margin-top:6px;">${e(t('Sell goods only. Your store appears in the Market, and you won\'t appear in service search.'))}</div>`;
+      <div id="pro-mode-hint" style="font-size:13px;color:var(--slate);margin-top:6px;">${e(proModeHint(cur))}</div>`;
     const header = main.querySelector('.dash-header');
     if (header) header.insertAdjacentElement('afterend', box); else main.prepend(box);
   }

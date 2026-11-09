@@ -130,7 +130,7 @@
     const pref = (k) => { try { return localStorage.getItem(k) === '1'; } catch (x) { return false; } };
     const open = pref('rd_done_open'), more = pref('rd_more_open');
     // v152: the required items, then the two most useful recommended ones; the rest on request
-    const todo = [...need, ...rec], shown = more ? todo : todo.slice(0, need.length + 2), hiddenN = todo.length - shown.length;
+    const todo = [...need, ...rec], shown = more ? todo : todo.slice(0, need.length + (window.matchMedia && window.matchMedia('(max-width: 760px)').matches ? 1 : 2)) /* v154: one recommended item on a phone, two on a larger screen */, hiddenN = todo.length - shown.length;
     const isPro = AUTH.user && AUTH.user.role === 'provider';
     const html = `<div class="panel" id="rd-card" style="border-left:4px solid ${need.length ? '#B3261E' : '#E0A526'};">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;"><div class="panel-title" style="margin:0;">${e(t(isPro ? 'Complete your profile' : 'Complete your account'))}</div><span style="font-size:13px;color:var(--slate);">${done.length} ${e(t('of'))} ${all.length} ${e(t('complete'))}</span></div>

@@ -1,6 +1,8 @@
-Trothen v153: everything in one place (includes v128 to v152)
+Trothen v154: everything in one place (includes v128 to v153)
 
-  src\ public\ server.js    The 106 files changed since your GitHub main (before v128), in their real folders.
+  src\ public\ server.js    The 107 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v154.md           The phone view: a tab bar at the bottom like other phone apps, every button big
+                            enough to tap, the right keyboard for numbers and emails, fewer pop-ups.
   CHANGES_v153.md           Fourth recheck: a double-tap or two staff at once can't do anything twice (tested on
                             Postgres), timed jobs never clash with a person, All pros search by skill fixed,
                             the pro's dashboard in Spanish.
@@ -40,22 +42,22 @@ Trothen v153: everything in one place (includes v128 to v152)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v153.md  Byte counts and the cmd.exe steps.
-  deploy_v153.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v153-files.zip    The code files packed; the .bat reads this from Downloads.
-  screenshots\              The pro's Earnings page in Spanish.
+  DEPLOYMENT_STEPS_v154.md  Byte counts and the cmd.exe steps.
+  deploy_v154.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v154-files.zip    The code files packed; the .bat reads this from Downloads.
+  screenshots\              The phone view, before and after.
 
-Works whether or not v128 is already live. git status shows 130 files if v128 is live, 132 if not.
+Works whether or not v128 is already live. git status shows 132 files if v128 is live, 134 if not.
 
 BEFORE you deploy (only if v147 is not live yet, for sign-in emails):
   Render, Environment: add SMTP_HOST = mail.privateemail.com, SMTP_PORT = 465,
   SMTP_USER = noreply@trothenpro.com, SMTP_PASS = that mailbox's password.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v153.
-  2. copy "%USERPROFILE%\Downloads\trothen-v153\trothen-v153-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v154.
+  2. copy "%USERPROFILE%\Downloads\trothen-v154\trothen-v154-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v153\deploy_v153.bat"
+     "%USERPROFILE%\Downloads\trothen-v154\deploy_v154.bat"
   Nothing goes live until you type YES.
 
 After it is live:
