@@ -1014,8 +1014,8 @@ router.get('/payout-options', requireAuth, async (req, res) => {
   if (!me) return res.status(404).json({ error: 'Account not found' });
   const pm = require('../payout-methods');
   res.json({
-    country: me.country || null, africa: pm.isAfrica(me.country),
-    methods: pm.methodsFor(me.country), intlMethods: pm.intlMethodsFor(me.country), networks: pm.networksFor(me.country),
+    country: pm.canonCountry(me.country) || null, africa: pm.isAfrica(me.country), // v150: however the country was typed
+    methods: pm.methodsFor(me.country), intlMethods: pm.intlMethodsFor(me.country), networks: pm.networksFor(me.country), prefixes: require('../mobile-money').prefixesFor(me.country), // v150
     method: pm.normalMethod(me.payoutMethod) || null, intlMethod: me.payoutMethodIntl || null,
     mobile: pm.publicMobile(me.payoutMobile), bank: pm.publicBank(me.payoutBank), paypalEmail: me.payoutPaypalEmail || null,
     destination: me.payoutMethod ? pm.destinationText(me, me.payoutMethod) : null,

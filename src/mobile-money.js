@@ -29,7 +29,9 @@ const PREFIX = {
 };
 
 // Reads a typed number. Returns { msisdn, nsn, display, network } or { error }.
+const canon = (country) => { const c = String(country || '').trim(); const low = c.toLowerCase(); return Object.keys(COUNTRY).find(k => k.toLowerCase() === low) || c; }; // v150: however it was typed
 function readNumber(input, country) {
+  country = canon(country);
   let d = String(input || '').replace(/[^\d+]/g, '');
   if (d.startsWith('+')) d = d.slice(1); else if (d.startsWith('00')) d = d.slice(2);
   d = d.replace(/\D/g, '');
@@ -52,7 +54,7 @@ function readNumber(input, country) {
 const isMtn = (network) => /\bMTN\b/i.test(String(network || ''));
 // Can this wallet go through a real Mobile Money system, and is it on?
 function apiFor(country, network) {
-  if (String(country || '').trim() === 'Liberia' && isMtn(network)) {
+  if (canon(country) === 'Liberia' && isMtn(network)) {
     let on = { collections: false, disbursement: false };
     try { const m = require('./liberia-momo'); on = { collections: m.isCollectionsConfigured(), disbursement: m.isDisbursementConfigured() }; } catch (e) { /* not available */ }
     return { name: 'Lonestar Cell MTN MoMo', ...on };
@@ -81,4 +83,6 @@ async function chargeDefaultWallet(customer, amountUsd, ref, rate) {
   return require('./liberia-momo').requestMobileMoneyCollection(msisdn, amountUsd, ref, rate);
 }
 
-module.exports = { COUNTRY, readNumber, apiFor, isMtn, numberOf, chargeDefaultWallet };
+// v150: the first digits that tell a network, for the app to pick the network as the number is typed
+function prefixesFor(country) { return (PREFIX[canon(country)] || []).map(([re, name]) => ({ re: re.source, network: name })); }
+module.exports = { canon, prefixesFor, COUNTRY, readNumber, apiFor, isMtn, numberOf, chargeDefaultWallet };

@@ -58,8 +58,10 @@ const NETWORKS = {
   'South Africa': [],
 };
 
-const isAfrica = (country) => AFRICA.has(String(country || '').trim());
-const networksFor = (country) => [...(NETWORKS[String(country || '').trim()] || []), 'Other'];
+// v150: a country is matched however it was typed ("liberia", "Liberia ", "LIBERIA").
+const canonCountry = (country) => { const c = String(country || '').trim(); if (!c) return ''; const low = c.toLowerCase(); for (const k of [...Object.keys(NETWORKS), ...AFRICA]) if (k.toLowerCase() === low) return k; return c; };
+const isAfrica = (country) => AFRICA.has(canonCountry(country));
+const networksFor = (country) => [...(NETWORKS[canonCountry(country)] || []), 'Other'];
 
 // The methods offered to someone in this country, most used first.
 function methodsFor(country) {
@@ -170,4 +172,4 @@ function sendTo(u, method) {
   return { method: m };
 }
 
-module.exports = { nameMatches, AFRICA, NETWORKS, isAfrica, networksFor, methodsFor, intlMethodsFor, normalMethod, seal, open, cleanMobile, cleanBank, publicMobile, publicBank, destinationText, readyToPay, sendTo };
+module.exports = { canonCountry, nameMatches, AFRICA, NETWORKS, isAfrica, networksFor, methodsFor, intlMethodsFor, normalMethod, seal, open, cleanMobile, cleanBank, publicMobile, publicBank, destinationText, readyToPay, sendTo };

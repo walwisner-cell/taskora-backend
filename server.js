@@ -150,6 +150,16 @@ app.use(cors(allowedOrigins.length ? {
 app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; },
 }));
+// v150: send pages, code and data compressed (gzip), about a quarter of the size: much
+// faster on a slow mobile connection. Live updates (event streams) are never
+// compressed, because that would hold them back.
+{
+  const compression = require('compression');
+  app.use(compression({
+    threshold: 1024,
+    filter: (req, res) => !/\/live\/stream|\/calls\/.*stream/.test(req.path) && !String(res.getHeader('Content-Type') || '').includes('text/event-stream') && compression.filter(req, res),
+  }));
+}
 app.use(morgan('dev'));
 app.use(require('./src/system-check').errorCounter); // v148: server errors are counted for System Check
 
@@ -247,7 +257,10 @@ app.use(express.static(path.join(__dirname, 'public'), {
     if (filePath.endsWith('index.html')) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     } else if (/[\\/]app[\\/][^\\/]+\.js$/.test(filePath)) {
-      res.setHeader('Cache-Control', 'no-cache');
+      // v150: index.html asks for each file with its own fingerprint (?v=...), which
+      // changes whenever the file does, so that exact copy can be kept for a year.
+      // Asked for without one, the browser checks first, as before.
+      res.setHeader('Cache-Control', res.req && res.req.query && /^[0-9a-f]{6,}$/.test(String(res.req.query.v || '')) ? 'public, max-age=31536000, immutable' : 'no-cache');
     }
   },
 }));

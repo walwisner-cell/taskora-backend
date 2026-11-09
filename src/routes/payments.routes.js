@@ -76,11 +76,11 @@ router.get('/payment-methods/mine', requireAuth, async (req, res) => {
 router.get('/payment-methods/options', requireAuth, async (req, res) => {
   const u = await db.find('users', x => x.id === req.user.sub);
   const pmx = require('../payout-methods'), mm = require('../mobile-money');
-  const country = (u && u.country) || '';
+  const country = pmx.canonCountry((u && u.country) || '');
   const africa = pmx.isAfrica(country);
   const networks = pmx.networksFor(country).map(n => { const api = n === 'Other' ? null : mm.apiFor(country, n); return { name: n, api: api ? api.name : null, apiOn: !!(api && api.collections) }; });
   const c = mm.COUNTRY[country];
-  res.json({ country, africa, types: africa ? ['mobile_money', 'card'] : ['card', 'paypal', 'apple_pay', 'mobile_money'], networks, callingCode: c ? c[0] : null, example: country === 'Liberia' ? '0777 123 456 (Orange) or 0886 123 456 (MTN)' : c ? `+${c[0]} …` : '+231 77 123 4567' });
+  res.json({ country, africa, types: africa ? ['mobile_money', 'card'] : ['card', 'paypal', 'apple_pay', 'mobile_money'], networks, prefixes: mm.prefixesFor(country), callingCode: c ? c[0] : null, example: country === 'Liberia' ? '0777 123 456 (Orange) or 0886 123 456 (MTN)' : c ? `+${c[0]} …` : '+231 77 123 4567' });
 });
 
 // POST /api/payment-methods — add a test payment method. Three types:

@@ -1,7 +1,7 @@
 {
   "name": "trothen-backend",
   "version": "1.0.0",
-  "description": "Trothen API \u2014 auth, marketplace, matching, contracts, escrow, disputes, admin",
+  "description": "Trothen API — auth, marketplace, matching, contracts, escrow, disputes, admin",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "compression": "1.8.2",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "express-async-errors": "^3.1.1",

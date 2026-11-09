@@ -16,7 +16,11 @@
   const e = (s) => escapeHtml(String(s == null ? '' : s));
   const t = (s) => (typeof tr === 'function' ? tr(s) : s);
   const el = (id) => document.getElementById(id);
-  if (!el('chk-css')) { const st = document.createElement('style'); st.id = 'chk-css'; st.textContent = '.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}'; document.head.appendChild(st); }
+  if (!el('chk-css')) { const st = document.createElement('style'); st.id = 'chk-css'; st.textContent = '.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}' +
+      '.rd-spot{outline:3px solid #E0A526 !important;outline-offset:4px;border-radius:10px;animation:rdPulse 1s ease-in-out 3;}@keyframes rdPulse{50%{outline-color:rgba(224,165,38,.25);}}' +
+      '.rd-chip{display:inline-block;font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 8px;margin-left:8px;vertical-align:2px;}' +
+      '.rd-row{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--border);}.rd-row .rd-act{flex-shrink:0;}' +
+      '@media (max-width:560px){.rd-row{flex-wrap:wrap;}.rd-row .rd-act{width:100%;margin-left:24px;}}'; document.head.appendChild(st); }
   const isSuper = () => !!(AUTH && AUTH.user && AUTH.user.role === 'admin' && AUTH.user.isSuperAdmin);
 
   // ── 1. Admin → System Check ─────────────────────────────────────────
@@ -63,47 +67,85 @@
   };
 
   // ── 2. "Get ready" for everyone ─────────────────────────────────────
-  const goFix = (fix) => {
+  // v150: a fix goes straight to the exact place: opens the section, scrolls to the
+  // field or button, highlights it, and puts the cursor in it.
+  const goFix = async (fix) => {
     if (!fix) return;
     const box = el('rd-modal'); if (box) box.remove();
-    if (fix.action === 'terms' && typeof showTermsPrompt === 'function') return showTermsPrompt();
+    if (fix.action === 'notify') { try { if (typeof notifyAskNow === 'function') await notifyAskNow(); else await Notification.requestPermission(); } catch (x) {} return setTimeout(() => drawCard(AUTH.user.role === 'provider' ? 'provider-main' : 'customer-main'), 400); }
     const role = AUTH.user && AUTH.user.role;
-    if (fix.section === 'rides' && typeof openRides === 'function') return openRides();
-    if (role === 'provider' && typeof selectProviderSection === 'function') return selectProviderSection(fix.section || 'settings');
-    if (typeof goToCustomerDashboard === 'function') return goToCustomerDashboard(fix.section || 'settings');
+    const mainId = role === 'provider' ? 'provider-main' : 'customer-main';
+    if (role === 'provider' && typeof selectProviderSection === 'function') selectProviderSection(fix.section || 'settings');
+    else if (typeof goToCustomerDashboard === 'function') await goToCustomerDashboard(fix.section || 'settings');
+    if (fix.run && typeof window[fix.run] === 'function') { try { await window[fix.run](); } catch (x) {} }
+    const find = () => {
+      const main = el(mainId) || document; let t = null;
+      if (fix.target && fix.target.startsWith('panel:')) { // a panel by its title; the cursor goes in its first field
+        const want = fix.target.slice(6).toLowerCase();
+        const panel = [...main.querySelectorAll('.panel')].find(pn => { const h = pn.querySelector('.panel-title'); return h && h.textContent.trim().toLowerCase().startsWith(want); });
+        return panel ? (panel.querySelector('input:not([type=hidden]):not([type=checkbox]):not([type=file]), select, textarea') || panel) : null;
+      }
+      if (fix.target) { try { t = main.querySelector(fix.target) || document.querySelector(fix.target); } catch (x) {} }
+      return t;
+    };
+    let target = null;
+    for (let i = 0; i < 25 && !(target = find()); i++) await new Promise(r => setTimeout(r, 120));
+    if (!target) { const main = el(mainId); target = main && main.querySelector('.panel'); }
+    if (!target) return;
+    const spot = target.closest('.form-group') || target.closest('.panel') || target;
+    spot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    spot.classList.add('rd-spot'); setTimeout(() => spot.classList.remove('rd-spot'), 3200);
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) setTimeout(() => { try { target.focus({ preventScroll: true }); } catch (x) {} }, 450);
   };
   window.readyFix = (key) => { const it = (READY.items || []).find(i => i.key === key); goFix(it && it.fix); };
   const READY = { items: [], at: 0 };
   async function load(action) {
     try { const r = await apiFetch('GET', '/me/readiness' + (action ? '?action=' + encodeURIComponent(action) : '')); READY.items = r.items || []; READY.at = Date.now(); return r; } catch (x) { return null; }
   }
+  const CHIP = { block: ['Needed', '#C0392B', '#fdecea'], warn: ['Recommended', '#8a5a00', '#fff4dc'] };
   function rowHTML(i) {
-    return `<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border);">
+    const [word, fg, bg] = CHIP[i.level] || CHIP.warn;
+    return `<div class="rd-row">
       ${dotHTML(i.level === 'block' ? '#C0392B' : '#E0A526')}
-      <div style="flex:1;min-width:0;"><div style="font-weight:700;color:var(--navy);">${e(t(i.label))}</div><div style="font-size:13.5px;color:var(--slate);margin-top:2px;">${e(t(i.why || ''))}</div></div>
-      ${i.fix ? `<button type="button" class="btn-sm ${i.level === 'block' ? 'btn-sm-primary' : 'btn-sm-outline'}" style="flex-shrink:0;" onclick="readyFix(${jsArg(i.key)})">${e(t(i.fix.label))}</button>` : ''}</div>`;
+      <div style="flex:1;min-width:0;"><div style="font-weight:700;color:var(--navy);font-size:15px;">${e(t(i.todo || i.label))}<span class="rd-chip" style="color:${fg};background:${bg};">${e(t(word))}</span></div><div style="font-size:13.5px;color:var(--slate);margin-top:3px;line-height:1.5;">${e(t(i.why || ''))}</div></div>
+      ${i.fix ? `<button type="button" class="btn-sm rd-act ${i.level === 'block' ? 'btn-sm-primary' : 'btn-sm-outline'}" onclick="readyFix(${jsArg(i.key)})">${e(t(i.fix.label))} →</button>` : ''}</div>`;
+  }
+  // The phone or computer itself: notifications (for everyone on the Overview).
+  function deviceItems() {
+    const out = [];
+    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') out.push({ key: 'dev_notif', ok: false, level: 'warn', todo: 'Turn on notifications', why: Notification.permission === 'denied' ? 'Notifications are blocked for Trothen on this device, so you miss new bookings and messages when the app is closed. Allow them in your browser\'s site settings (the lock icon by the web address).' : 'So you hear about new bookings, messages and payments even when Trothen is closed.', fix: Notification.permission === 'denied' ? null : { label: 'Turn on', action: 'notify' } });
+    return out;
   }
   // The "Get ready" card on the Overview
+  let SECTION = null; // which section is on screen, so a slow answer never lands on another page
   async function drawCard(mainId) {
     const main = el(mainId); if (!main) return;
-    const r = await load(null); if (!r) return;
-    const todo = (r.items || []).filter(i => !i.ok);
+    const r = await load(null); if (!r || SECTION !== 'overview') return;
+    const all = [...(r.items || []), ...deviceItems()];
+    READY.items = all;
+    const need = all.filter(i => !i.ok && i.level === 'block'), rec = all.filter(i => !i.ok && i.level !== 'block'), done = all.filter(i => i.ok);
     let card = el('rd-card');
-    if (!todo.length) { if (card) card.remove(); return; }
-    const done = (r.items || []).filter(i => i.ok).length, total = (r.items || []).length;
-    const html = `<div class="panel" id="rd-card" style="border-left:4px solid ${todo.some(i => i.level === 'block') ? '#C0392B' : '#E0A526'};">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;"><div class="panel-title" style="margin:0;">✅ ${e(t('Get ready'))}</div><span style="font-size:13px;color:var(--slate);">${done} ${e(t('of'))} ${total} ${e(t('done'))}</span></div>
-      <div style="height:6px;background:var(--offwhite);border-radius:4px;margin:8px 0 4px;"><div style="height:6px;width:${Math.round(done / total * 100)}%;background:#2E8C6F;border-radius:4px;"></div></div>
-      ${todo.map(rowHTML).join('')}</div>`;
+    if (!need.length && !rec.length) { if (card) card.remove(); return; }
+    const pct = Math.round(done.length / all.length * 100);
+    const open = (() => { try { return localStorage.getItem('rd_done_open') === '1'; } catch (x) { return false; } })();
+    const html = `<div class="panel" id="rd-card" style="border-left:4px solid ${need.length ? '#C0392B' : '#E0A526'};">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;"><div class="panel-title" style="margin:0;">${e(t('Finish setting up your account'))}</div><span style="font-size:13px;color:var(--slate);">${done.length} ${e(t('of'))} ${all.length} ${e(t('done'))}</span></div>
+      <div style="font-size:13.5px;color:var(--slate);margin-top:4px;">${need.length ? `${e(t('You have'))} <strong style="color:#C0392B;">${need.length} ${e(t(need.length === 1 ? 'thing you need to do' : 'things you need to do'))}</strong>${rec.length ? ` ${e(t('and'))} ${rec.length} ${e(t(rec.length === 1 ? 'recommended one' : 'recommended ones'))}` : ''}. ${e(t('Each button takes you straight to it.'))}` : `${e(t('Everything needed is done.'))} ${rec.length} ${e(t(rec.length === 1 ? 'more thing will help you' : 'more things will help you'))}.`}</div>
+      <div style="height:8px;background:var(--offwhite);border-radius:4px;margin:10px 0 2px;" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div style="height:8px;width:${pct}%;background:#2E8C6F;border-radius:4px;"></div></div>
+      ${need.map(rowHTML).join('')}${rec.map(rowHTML).join('')}
+      ${done.length ? `<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px;"><button type="button" class="link-btn" style="font-size:13.5px;" onclick="readyToggleDone()">${open ? '▾' : '▸'} ${e(t('Done'))} (${done.length})</button>
+        ${open ? `<div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:13.5px;color:var(--slate);">${done.map(i => `<span>✓ ${e(t(i.label))}</span>`).join('')}</div>` : ''}</div>` : ''}
+    </div>`;
     if (card) card.outerHTML = html; else main.insertAdjacentHTML('afterbegin', html);
   }
+  window.readyToggleDone = () => { try { localStorage.setItem('rd_done_open', localStorage.getItem('rd_done_open') === '1' ? '0' : '1'); } catch (x) {} const role = AUTH.user && AUTH.user.role; drawCard(role === 'provider' ? 'provider-main' : 'customer-main'); };
   if (typeof selectProviderSection === 'function') {
     const f = selectProviderSection;
-    selectProviderSection = function (key) { const r = f.apply(this, arguments); if (key === 'overview') setTimeout(() => drawCard('provider-main'), 50); return r; };
+    selectProviderSection = function (key) { SECTION = key; const r = f.apply(this, arguments); if (key === 'overview') setTimeout(() => drawCard('provider-main'), 50); return r; };
   }
   if (typeof selectCustomerSection === 'function') {
     const f = selectCustomerSection;
-    selectCustomerSection = function (key) { const r = f.apply(this, arguments); if (key === 'overview') setTimeout(() => drawCard('customer-main'), 50); return r; };
+    selectCustomerSection = function (key) { SECTION = key; const r = f.apply(this, arguments); if (key === 'overview') setTimeout(() => drawCard('customer-main'), 50); return r; };
   }
 
   // The phone itself: location and notifications, for drivers and pros on the move.
@@ -112,11 +154,11 @@
     if (action !== 'goOnline') return out;
     let geo = 'unknown';
     try { if (navigator.permissions) geo = (await navigator.permissions.query({ name: 'geolocation' })).state; } catch (x) {}
-    if (!navigator.geolocation) out.push({ key: 'dev_geo', level: 'block', label: 'Location works on this device', why: 'This browser can\'t share your location. Riders can\'t see you coming. Use Chrome or Safari on your phone.' });
-    else if (geo === 'denied') out.push({ key: 'dev_geo', level: 'block', label: 'Location is allowed for Trothen', why: window.TrothenMap ? TrothenMap.locationHelp('denied') : 'Location is blocked for this site. Allow it in your browser settings.' });
+    if (!navigator.geolocation) out.push({ key: 'dev_geo', level: 'block', label: 'Location works on this device', todo: 'Use a browser that shares location', why: 'This browser can\'t share your location. Riders can\'t see you coming. Use Chrome or Safari on your phone.' });
+    else if (geo === 'denied') out.push({ key: 'dev_geo', level: 'block', label: 'Location is allowed for Trothen', todo: 'Allow location for Trothen', why: window.TrothenMap ? TrothenMap.locationHelp('denied') : 'Location is blocked for this site. Allow it in your browser settings.' });
     let notif = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
-    if (notif === 'denied') out.push({ key: 'dev_notif', level: 'warn', label: 'Notifications are allowed', why: 'Notifications are blocked, so you won\'t hear new ride requests while the app is in the background. Allow notifications for this site in your browser settings.' });
-    else if (notif === 'default') out.push({ key: 'dev_notif', level: 'warn', label: 'Notifications are allowed', why: 'Turn on notifications so you hear new ride requests even when Trothen is in the background.', fix: { label: 'Turn on', action: 'notify' } });
+    if (notif === 'denied') out.push({ key: 'dev_notif', level: 'warn', label: 'Notifications are allowed', todo: 'Allow notifications for Trothen', why: 'Notifications are blocked, so you won\'t hear new ride requests while the app is in the background. Allow notifications for this site in your browser settings.' });
+    else if (notif === 'default') out.push({ key: 'dev_notif', level: 'warn', label: 'Notifications are allowed', todo: 'Turn on notifications', why: 'So you hear new ride requests even when Trothen is in the background.', fix: { label: 'Turn on', action: 'notify' } });
     return out;
   }
   // Before an action: check, and show what to fix. Resolves true to go ahead.

@@ -2415,7 +2415,7 @@ function navbarHTML(active) {
         <div class="account-dropdown-head">
           <div class="account-dropdown-name">${escapeHtml((AUTH.user && AUTH.user.name) || '')}</div>
           <div class="account-dropdown-role">${escapeHtml(roleLabel)}</div>
-          ${AUTH.user && AUTH.user.country && AUTH.user.role !== 'admin' ? `<div class="account-dropdown-role" title="${escapeHtml(tr('Prices, payment methods, pros and rules are for this country. To move your account to another country, contact support.'))}">📍 ${escapeHtml(tr('Account in'))} ${escapeHtml(AUTH.user.country)}</div>` : ''}
+          ${AUTH.user && AUTH.user.country && AUTH.user.role !== 'admin' ? `<div class="account-dropdown-role" title="${escapeHtml(tr('Prices, payment methods, pros and rules are for this country. To move your account to another country, contact support.'))}">📍 ${escapeHtml(tr('Account in'))} ${escapeHtml(String(AUTH.user.country).trim().toLowerCase().replace(/(^|[\s'-])([a-zà-ÿ])/g, (m, a, b) => a + b.toUpperCase()))}</div>` : ''}
         </div>
         <div class="account-menu-item" onclick="closeAccountMenu();goHome()">🏠 Explore</div>
         ${active === 'customer' ? `
@@ -5794,7 +5794,8 @@ function showAccountCountry(afterId, u) {
   let line = document.getElementById(afterId + '-country');
   if (!u.country) { if (line) line.remove(); return; }
   if (!line) { anchor.insertAdjacentHTML('afterend', `<div id="${afterId}-country" class="account-country" style="font-size:12.5px;color:var(--slate);margin-top:2px;"></div>`); line = document.getElementById(afterId + '-country'); }
-  line.textContent = `📍 ${tr('Account in')} ${u.country}${u.city ? ` · ${u.city}` : ''}`;
+  const nice = (x) => String(x || '').trim().toLowerCase().replace(/(^|[\s'-])([a-zà-ÿ])/g, (m, a, b) => a + b.toUpperCase()); // "liberia" → "Liberia"
+  line.textContent = `📍 ${tr('Account in')} ${nice(u.country)}${u.city ? ` · ${nice(u.city)}` : ''}`;
   line.title = tr('Prices, payment methods, pros and rules are for this country. To move your account to another country, contact support.');
 }
 function updateCustomerSidebar() {

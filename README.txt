@@ -1,6 +1,9 @@
-Trothen v149: everything in one place (includes v128 to v148)
+Trothen v150: everything in one place (includes v128 to v149)
 
   src\ public\ server.js    The 101 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v150.md           A deeper recheck (every route with bad input, every screen on 3 sizes); the app starts
+                            about 3x faster on a slow connection; a clearer "Finish setting up your account";
+                            the Mobile Money network picked from the number.
   CHANGES_v149.md           A full recheck: every screen opened on a phone and a computer; 2 gaps fixed;
                             a new System Check that money and bookings agree.
   CHANGES_v148.md           Market goods paid before the seller is told; cash rides with commission from tokens;
@@ -29,22 +32,22 @@ Trothen v149: everything in one place (includes v128 to v148)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v149.md  Byte counts and the cmd.exe steps.
-  deploy_v149.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v149-files.zip    The code files packed; the .bat reads this from Downloads.
+  DEPLOYMENT_STEPS_v150.md  Byte counts and the cmd.exe steps.
+  deploy_v150.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v150-files.zip    The code files packed; the .bat reads this from Downloads.
   screenshots\              The new screens (phone and computer).
 
-Works whether or not v128 is already live. git status shows 122 files if v128 is live, 124 if not.
+Works whether or not v128 is already live. git status shows 123 files if v128 is live, 125 if not.
 
 BEFORE you deploy (only if v147 is not live yet, for sign-in emails):
   Render, Environment: add SMTP_HOST = mail.privateemail.com, SMTP_PORT = 465,
   SMTP_USER = noreply@trothenpro.com, SMTP_PASS = that mailbox's password.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v149.
-  2. copy "%USERPROFILE%\Downloads\trothen-v149\trothen-v149-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v150.
+  2. copy "%USERPROFILE%\Downloads\trothen-v150\trothen-v150-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v149\deploy_v149.bat"
+     "%USERPROFILE%\Downloads\trothen-v150\deploy_v150.bat"
   Nothing goes live until you type YES.
 
 After it is live:

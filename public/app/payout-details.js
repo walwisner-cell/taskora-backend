@@ -27,6 +27,16 @@
   } catch (x) {}
 
   const S = { opts: null, editing: false, method: null };
+  // v150: pick the network from the number's first digits, and say so
+  window.pdNetPicked = function (prefix) { const v = el(prefix + '-net').value; el(prefix + '-net').dataset.picked = '1'; const o2 = el(prefix + '-netother'); if (o2) o2.style.display = v === 'Other' ? '' : 'none'; };
+  window.pdNumTyped = function (prefix) {
+    const o = S.opts || {}; const pre = (o.prefixes || []).map(x => ({ re: new RegExp(x.re), network: x.network }));
+    let d = el(prefix + '-num').value.replace(/\D/g, ''); if (d.startsWith('231') && d.length > 9) d = d.slice(3); else if (d.startsWith('0')) d = d.slice(1);
+    const hit = d.length >= 2 && pre.find(x => x.re.test(d)); const hint = el(prefix + '-numhint'), sel = el(prefix + '-net');
+    if (!hit || !hint || !sel) return;
+    if (sel.value && sel.value !== hit.network && sel.dataset.picked === '1') { hint.innerHTML = `⚠️ ${e(t('This looks like a'))} <strong>${e(hit.network)}</strong> ${e(t('number, but you chose'))} ${e(sel.value)}.`; hint.style.color = '#8a5a00'; }
+    else { sel.value = hit.network; window.pdNetPicked(prefix); sel.dataset.picked = ''; hint.innerHTML = `✓ <strong>${e(hit.network)}</strong> ${e(t('number'))}`; hint.style.color = 'var(--teal)'; }
+  };
   async function load() { S.opts = await apiFetch('GET', '/auth/payout-options'); S.method = S.opts.method && S.opts.methods.includes(S.opts.method) ? S.opts.method : S.opts.methods[0]; return S.opts; }
 
   function savedLine(o, m) {
@@ -42,9 +52,12 @@
     const sel = `<div class="form-group"><label class="form-label" for="${prefix}-pm">${e(t('Paid by'))}</label><select class="form-input form-select" id="${prefix}-pm" onchange="pdMethod('${prefix}', this.value)" style="max-width:260px;">${o.methods.map(x => `<option value="${e(x)}" ${x === m ? 'selected' : ''}>${e(t(x))}</option>`).join('')}</select></div>`;
     let fields = '';
     if (showForm && m === 'Mobile Money') {
+      // v150: the number first; the network is picked from its first digits; "Other" asks which
+      const tip = o.country === 'Liberia' ? t('Orange numbers start with 077, MTN numbers with 088 or 055.') : '';
       fields = `<div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <div class="form-group" style="flex:1 1 180px;"><label class="form-label" for="${prefix}-net">${e(t('Mobile Money network'))}</label><select class="form-input form-select" id="${prefix}-net">${o.networks.map(n => `<option ${o.mobile && o.mobile.network === n ? 'selected' : ''}>${e(n)}</option>`).join('')}</select></div>
-        <div class="form-group" style="flex:1 1 180px;"><label class="form-label" for="${prefix}-num">${e(t('Mobile Money number'))}</label><input class="form-input" id="${prefix}-num" inputmode="tel" autocomplete="off" placeholder="+231 77 123 4567"/></div>
+        <div class="form-group" style="flex:1 1 200px;"><label class="form-label" for="${prefix}-num">${e(t('Your Mobile Money number'))}</label><input class="form-input" id="${prefix}-num" inputmode="tel" autocomplete="off" placeholder="${o.country === 'Liberia' ? '0886 123 456' : '+231 77 123 4567'}" oninput="pdNumTyped('${prefix}')"/><div id="${prefix}-numhint" style="font-size:12.5px;color:var(--muted);margin-top:4px;">${e(tip)}</div></div>
+        <div class="form-group" style="flex:1 1 200px;"><label class="form-label" for="${prefix}-net">${e(t('Mobile Money network'))}</label><select class="form-input form-select" id="${prefix}-net" onchange="pdNetPicked('${prefix}')"><option value="">${e(t('Choose your network…'))}</option>${o.networks.map(n => `<option value="${e(n)}" ${o.mobile && o.mobile.network === n ? 'selected' : ''}>${e(n === 'Other' ? t('Another network (not listed)') : n)}</option>`).join('')}</select>
+          <input class="form-input" id="${prefix}-netother" style="display:${o.mobile && o.mobile.network && !o.networks.includes(o.mobile.network) ? '' : 'none'};margin-top:6px;" maxlength="40" placeholder="${e(t('Which network?'))}" value="${e(o.mobile && !o.networks.includes(o.mobile.network) ? o.mobile.network : '')}"/></div>
         <div class="form-group" style="flex:1 1 200px;"><label class="form-label" for="${prefix}-nm">${e(t('Name on the account'))}</label><input class="form-input" id="${prefix}-nm" value="${e(o.mobile ? o.mobile.name : ((AUTH && AUTH.user && AUTH.user.name) || ''))}"/></div></div>
         <div style="font-size:12.5px;color:var(--muted);margin:-4px 0 10px;">${e(t('Use the name the wallet is registered in, so the money reaches you. Payouts go to a wallet in your own name (or your business name); a wallet in someone else\'s name is checked by our finance team first, which can delay your payout.'))}</div>${o.mobile && o.mobile.nameMatch === false ? `<div style="font-size:12.5px;color:#8a5a00;margin:-6px 0 10px;">⚠️ ${e(t('The name on this wallet is different from your account name, so finance checks it before each payout.'))}</div>` : ''}`;
     } else if (showForm && m === 'Bank Transfer') {
@@ -71,7 +84,12 @@
   window.pdSave = async function (prefix) {
     const m = S.method; const body = { payoutMethod: m };
     const editing = S.editing || !savedLine(S.opts, m);
-    if (editing && m === 'Mobile Money') body.payoutMobile = { network: el(prefix + '-net').value, number: el(prefix + '-num').value, name: el(prefix + '-nm').value };
+    if (editing && m === 'Mobile Money') {
+      let net = el(prefix + '-net').value;
+      if (!net) { el(prefix + '-net').focus(); return showToast(t('Choose your Mobile Money network')); }
+      if (net === 'Other') { net = (el(prefix + '-netother').value || '').trim(); if (net.length < 2) { el(prefix + '-netother').focus(); return showToast(t('Type the name of your Mobile Money network')); } }
+      body.payoutMobile = { network: net, number: el(prefix + '-num').value, name: el(prefix + '-nm').value };
+    }
     if (editing && m === 'Bank Transfer') body.payoutBank = { bankName: el(prefix + '-bank').value, accountName: el(prefix + '-an').value, accountNumber: el(prefix + '-acct').value, branch: el(prefix + '-br').value, swift: el(prefix + '-sw').value };
     if (editing && m === 'PayPal') body.payoutPaypalEmail = el(prefix + '-pp').value.trim();
     try {

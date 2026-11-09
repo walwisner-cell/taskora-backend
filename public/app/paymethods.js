@@ -25,27 +25,46 @@
     if (form && !el('pm-mm-network')) {
       const nets = OPT.networks || [];
       const anyApi = nets.some(n => n.api);
+      // v150: clearer: the number first (the network is picked from it), the network spelled out, "Other" asks which
+      const pre = (OPT.prefixes || []).map(x => ({ re: new RegExp(x.re), network: x.network }));
+      const tip = OPT.country === 'Liberia' ? 'Orange numbers start with 077, MTN numbers with 088 or 055.' : '';
       form.innerHTML = `
-        <div class="form-group"><label class="form-label" for="pm-mm-network">Network</label>
-          <select class="form-input form-select" id="pm-mm-network">${nets.map(n => `<option value="${e(n.name)}">${e(n.name)}${n.apiOn ? ' · pays in the app' : ''}</option>`).join('')}</select></div>
-        <div class="form-group"><label class="form-label" for="pm-mobile-money-number">Mobile Money number</label>
+        <div class="form-group"><label class="form-label" for="pm-mobile-money-number">Your Mobile Money number</label>
           <input class="form-input" id="pm-mobile-money-number" inputmode="tel" autocomplete="tel" placeholder="${e(OPT.example || '')}"/>
-          <div style="font-size:12.5px;color:var(--muted);margin-top:4px;">The number your Mobile Money wallet is on${OPT.callingCode ? `. You can leave out +${e(OPT.callingCode)}` : ''}.</div></div>
+          <div id="pm-mm-numhint" style="font-size:12.5px;color:var(--muted);margin-top:4px;">The phone number your Mobile Money wallet is registered on${OPT.callingCode ? ` (you can leave out +${e(OPT.callingCode)})` : ''}. ${e(tip)}</div></div>
+        <div class="form-group"><label class="form-label" for="pm-mm-network">Mobile Money network <span style="font-weight:400;color:var(--slate);">(the company your wallet is with)</span></label>
+          <select class="form-input form-select" id="pm-mm-network"><option value="">Choose your network…</option>${nets.map(n => `<option value="${e(n.name)}">${n.name === 'Other' ? 'Another network (not listed)' : e(n.name)}${n.apiOn ? ' · pays in the app' : ''}</option>`).join('')}</select></div>
+        <div class="form-group" id="pm-mm-other-g" style="display:none;"><label class="form-label" for="pm-mm-other">Which network?</label><input class="form-input" id="pm-mm-other" maxlength="40" placeholder="The name of your Mobile Money service"/></div>
         <div class="form-group"><label class="form-label" for="pm-mm-owner">Whose number is it?</label>
           <select class="form-input form-select" id="pm-mm-owner"><option value="me">Mine</option><option value="other">Someone else's (family, a friend, my company)</option></select></div>
         <div class="form-group" id="pm-mm-who-g" style="display:none;"><label class="form-label" for="pm-mm-who">Who is it?</label><input class="form-input" id="pm-mm-who" maxlength="40" placeholder="e.g. My brother, My company"/></div>
-        <div class="form-group"><label class="form-label" for="pm-mm-name" id="pm-mm-name-l">Name on the Mobile Money account</label><input class="form-input" id="pm-mm-name" autocomplete="name" value="${e((AUTH.user && AUTH.user.name) || '')}"/></div>
+        <div class="form-group"><label class="form-label" for="pm-mm-name" id="pm-mm-name-l">Name the wallet is registered in</label><input class="form-input" id="pm-mm-name" autocomplete="name" value="${e((AUTH.user && AUTH.user.name) || '')}"/></div>
         <div class="ver-note" id="pm-mm-other-note" style="display:none;">When you pay, the payment is made from their phone: they approve it with their Mobile Money PIN (or send it with your payment code). Only save a number with the owner's permission. Refunds go back to this number.</div>
         <div class="ver-note" id="pm-mm-how"></div>`;
       const how = () => {
-        const n = nets.find(x => x.name === el('pm-mm-network').value) || {};
+        const v = el('pm-mm-network').value;
+        el('pm-mm-other-g').style.display = v === 'Other' ? '' : 'none';
+        const n = nets.find(x => x.name === v) || {};
+        el('pm-mm-how').style.display = v ? '' : 'none';
         el('pm-mm-how').textContent = n.apiOn
           ? `When you pay, ${n.api} sends a prompt to this phone: enter your PIN to approve. Your money is held by Trothen until the job is done.`
           : n.api
             ? `Paying straight from ${n.name} in the app is being connected. Until then you pay with a payment code: Trothen shows you its ${n.name} number and a code, you send the money, and press "I have sent it". Your money is held by Trothen until the job is done.`
             : `You pay with a payment code: Trothen shows you where to send the money and a code to put in the reference, then you press "I have sent it". Your money is held by Trothen until the job is done.`;
       };
-      el('pm-mm-network').onchange = how; how();
+      el('pm-mm-network').onchange = () => { el('pm-mm-network').dataset.picked = '1'; how(); };
+      el('pm-mobile-money-number').oninput = () => { // the network from the first digits
+        let d = el('pm-mobile-money-number').value.replace(/\D/g, '');
+        if (OPT.callingCode && d.startsWith(OPT.callingCode) && d.length > OPT.callingCode.length + 6) d = d.slice(OPT.callingCode.length); else if (d.startsWith('0')) d = d.slice(1);
+        const hit = d.length >= 2 && pre.find(x => x.re.test(d));
+        const hint = el('pm-mm-numhint');
+        if (hit) {
+          const sel = el('pm-mm-network');
+          if (sel.value !== hit.network && sel.dataset.picked === '1' && sel.value) { hint.innerHTML = `⚠️ ${e('This looks like a')} <strong>${e(hit.network)}</strong> ${e('number, but you chose')} ${e(sel.value)}. ${e('Check the network.')}`; hint.style.color = '#8a5a00'; }
+          else { sel.value = hit.network; how(); hint.innerHTML = `✓ <strong>${e(hit.network)}</strong> ${e('number')}`; hint.style.color = 'var(--teal)'; }
+        }
+      };
+      how();
       el('pm-mm-owner').onchange = () => { // v148: someone else's wallet
         const other = el('pm-mm-owner').value === 'other';
         el('pm-mm-who-g').style.display = other ? '' : 'none'; el('pm-mm-other-note').style.display = other ? '' : 'none';
@@ -81,8 +100,10 @@
     const base = submitPaymentMethod;
     submitPaymentMethod = async function () {
       if (typeof selectedPaymentMethodType === 'undefined' || selectedPaymentMethodType !== 'mobile_money' || !el('pm-mm-network')) return base.apply(this, arguments);
-      const network = el('pm-mm-network').value, mobileMoneyNumber = el('pm-mobile-money-number').value.trim(), accountName = el('pm-mm-name').value.trim();
-      if (mobileMoneyNumber.replace(/\D/g, '').length < 7) return showToast('Enter your Mobile Money number');
+      let network = el('pm-mm-network').value; const mobileMoneyNumber = el('pm-mobile-money-number').value.trim(), accountName = el('pm-mm-name').value.trim();
+      if (mobileMoneyNumber.replace(/\D/g, '').length < 7) { el('pm-mobile-money-number').focus(); return showToast('Enter your Mobile Money number'); }
+      if (!network) { el('pm-mm-network').focus(); return showToast('Choose your Mobile Money network'); }
+      if (network === 'Other') { network = (el('pm-mm-other').value || '').trim(); if (network.length < 2) { el('pm-mm-other').focus(); return showToast('Type the name of your Mobile Money network'); } }
       if (accountName.length < 2) return showToast('Enter the name the Mobile Money account is registered in');
       try {
         const other = el('pm-mm-owner') && el('pm-mm-owner').value === 'other';
