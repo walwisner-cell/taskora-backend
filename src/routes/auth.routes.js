@@ -52,16 +52,21 @@ async function sendVerificationInviteEmail(req, user) {
 // many times a 6-digit OTP code could be guessed for signup/login
 // verification or password reset. Keyed by IP, generous enough that a
 // real person fumbling their password a few times never notices it.
+// v151: in Liberia many phones on the same mobile network share one internet address
+// (carrier NAT), so only FAILED sign-ins count, and the limit is higher. Each account
+// still locks itself after a few wrong passwords (see LOCKED_MESSAGE below).
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, max: 30, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false,
   message: { error: 'Too many login attempts. Please wait 15 minutes and try again.' },
 });
 const otpLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 15, standardHeaders: true, legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, max: 40, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false,
   message: { error: 'Too many attempts. Please wait 15 minutes and try again.' },
 });
+// v151: a 6-digit code may be guessed at most 5 times, then a new one is needed (OWASP / NIST 800-63B).
+const MAX_CODE_TRIES = 5;
 const signupLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false,
+  windowMs: 60 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
   message: { error: 'Too many signup attempts from this connection. Please try again in an hour.' },
 });
 
@@ -96,7 +101,7 @@ function publicUser(u) {
 const REGISTRATION_TTL_MS = 15 * 60 * 1000; // 15 minutes to complete both codes
 
 function generateSixDigitCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(require('crypto').randomInt(100000, 1000000)); // v151: a secure random code, not Math.random
 }
 
 // POST /api/auth/signup/start — validates everything and issues both codes,
@@ -256,7 +261,11 @@ async function completeSignupVerify(req, res, pending) {
   // /send-phone-otp and /verify-phone-otp below) once that's useful to
   // them, e.g. for 2FA.
   if (hashResetToken(emailCode.trim()) !== pending.emailCodeHash) {
-    return res.status(400).json({ error: 'That email code is incorrect' });
+    // v151: 5 wrong tries and this code is finished, whatever internet address the tries come from
+    const wrong = (pending.wrongTries || 0) + 1;
+    if (wrong >= MAX_CODE_TRIES) { await db.remove('pendingRegistrations', pending.id); return res.status(429).json({ error: 'Too many wrong codes. Please start sign-up again to get a new code.', code: 'CODE_LOCKED' }); }
+    await db.update('pendingRegistrations', pending.id, { wrongTries: wrong });
+    return res.status(400).json({ error: `That email code is incorrect. ${MAX_CODE_TRIES - wrong} ${MAX_CODE_TRIES - wrong === 1 ? 'try' : 'tries'} left.` });
   }
 
   // Re-check email uniqueness — someone else could have registered the same
@@ -389,7 +398,7 @@ async function completeSignupVerify(req, res, pending) {
     // test-mode rather than silently not happening).
     const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
     for (const admin of superAdmins) {
-      await notify(admin.id, '🆕', `${user.name} signed up wanting to offer "${user.category}" is not a listed category. Review it within 24 hours in Categories & Countries → Category Requests.`, null, { section: 'categories' });
+      await notify(admin.id, '🆕', `${user.name} signed up to offer "${user.category}", which is not a listed category. Review it within 24 hours in Categories & Countries → Category Requests.`, null, { section: 'categories' });
       console.log(`[TEST MODE — no email provider connected] Would email ${admin.email}: New category request "${user.category}" from ${user.name} needs review within 24 hours.`);
     }
   }
@@ -860,7 +869,10 @@ router.post('/login/verify-2fa', otpLimiter, async (req, res) => {
     return res.status(400).json({ error: 'This code has expired. Please sign in again.' });
   }
   if (hashResetToken(code.trim()) !== pending.codeHash) {
-    return res.status(400).json({ error: 'Incorrect code' });
+    const wrong = (pending.wrongTries || 0) + 1; // v151: 5 wrong tries ends this sign-in
+    if (wrong >= MAX_CODE_TRIES) { await db.remove('pendingLogins', pending.id); return res.status(429).json({ error: 'Too many wrong codes. Please sign in again to get a new code.', code: 'CODE_LOCKED' }); }
+    await db.update('pendingLogins', pending.id, { wrongTries: wrong });
+    return res.status(400).json({ error: `Incorrect code. ${MAX_CODE_TRIES - wrong} ${MAX_CODE_TRIES - wrong === 1 ? 'try' : 'tries'} left.` });
   }
   await db.remove('pendingLogins', pending.id);
   const user = await db.find('users', u => u.id === pending.userId);
@@ -1269,7 +1281,7 @@ router.patch('/me', requireAuth, async (req, res) => {
       await db.insert('categoryRequests', request);
       const superAdmins = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin);
       for (const admin of superAdmins) {
-        await notify(admin.id, '🆕', `${current.name} updated their category to "${patch.category}" is not a listed category. Review it within 24 hours in Categories & Countries → Category Requests.`, null, { section: 'categories' });
+        await notify(admin.id, '🆕', `${current.name} changed their category to "${patch.category}", which is not a listed category. Review it within 24 hours in Categories & Countries → Category Requests.`, null, { section: 'categories' });
         console.log(`[TEST MODE — no email provider connected] Would email ${admin.email}: category update request "${patch.category}" from ${current.name} needs review within 24 hours.`);
       }
     }
@@ -1475,15 +1487,23 @@ router.post('/reset-password', otpLimiter, async (req, res) => {
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 function generateOtp() {
-  return String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+  return String(require('crypto').randomInt(100000, 1000000)); // 6 digits (v151: secure random)
 }
 
 // POST /api/auth/send-phone-otp — sends (in test mode: returns) a code to the
 // phone number already on the requesting user's account.
-router.post('/send-phone-otp', requireAuth, async (req, res) => {
+router.post('/send-phone-otp', requireAuth, otpLimiter, async (req, res) => {
   const user = await db.find('users', u => u.id === req.user.sub);
   if (!user) return res.status(404).json({ error: 'Account not found' });
   if (!user.phone) return res.status(400).json({ error: 'Add a phone number to your account first' });
+  // v151: each text message costs money and can be abused ("SMS pumping"): one code per
+  // 30 seconds and 5 an hour for each account.
+  {
+    const hourAgo = Date.now() - 3600e3;
+    const recent = (await db.filter('phoneVerifications', v => v.userId === user.id && new Date(v.createdAt).getTime() > hourAgo)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    if (recent[0] && Date.now() - new Date(recent[0].createdAt).getTime() < 30e3) return res.status(429).json({ error: 'Please wait 30 seconds before asking for another code.' });
+    if (recent.length >= 5) return res.status(429).json({ error: 'That\'s the most codes we can send in an hour. Please try again later.' });
+  }
 
   // Invalidate any previous outstanding code before issuing a new one.
   const outstanding = await db.filter('phoneVerifications', v => v.userId === user.id && !v.used);
@@ -1535,7 +1555,7 @@ router.post('/send-phone-otp', requireAuth, async (req, res) => {
 });
 
 // POST /api/auth/verify-phone-otp — confirms the code and marks the phone verified
-router.post('/verify-phone-otp', requireAuth, async (req, res) => {
+router.post('/verify-phone-otp', requireAuth, otpLimiter, async (req, res) => {
   const { code } = req.body || {};
   if (!isNonEmptyString(code)) return res.status(400).json({ error: 'Enter the code you received' });
 
@@ -1552,7 +1572,12 @@ router.post('/verify-phone-otp', requireAuth, async (req, res) => {
     if (!result.approved) return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
   } else {
     const codeHash = hashResetToken(code.trim());
-    if (record.codeHash !== codeHash) return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
+    if (record.codeHash !== codeHash) {
+      const wrong = (record.wrongTries || 0) + 1; // v151: 5 wrong tries ends this code
+      await db.update('phoneVerifications', record.id, wrong >= MAX_CODE_TRIES ? { wrongTries: wrong, used: true } : { wrongTries: wrong });
+      if (wrong >= MAX_CODE_TRIES) return res.status(429).json({ error: 'Too many wrong codes. Request a new one.', code: 'CODE_LOCKED' });
+      return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
+    }
   }
   await db.update('phoneVerifications', record.id, { used: true });
   await db.update('users', req.user.sub, { phoneVerified: true });

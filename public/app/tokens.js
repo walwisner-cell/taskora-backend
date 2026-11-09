@@ -15,7 +15,8 @@
   const n2 = (n) => (Math.round(Number(n || 0) * 100) / 100);
   const tok = (n) => { const v = n2(n); return (Number.isInteger(v) ? String(v) : v.toFixed(2)) + ' ' + tr(Math.abs(v) === 1 ? 'token' : 'tokens'); };
   const usd = (n) => '$' + n2(n).toFixed(2);
-  const local = (cur, amount) => (cur && cur.code !== 'USD' && amount != null) ? `${cur.symbol}${Number(amount).toLocaleString()} ${cur.code}` : '';
+  // v152: "L$190", not "L$190 LRD" (the symbol already says which dollar); the code only when the symbol is ambiguous
+  const local = (cur, amount) => (cur && cur.code !== 'USD' && amount != null) ? (cur.symbol && cur.symbol !== '$' ? `${cur.symbol}${Number(amount).toLocaleString()}` : `${Number(amount).toLocaleString()} ${cur.code}`) : '';
   const isPro = () => !!(BACKEND_AVAILABLE && AUTH.user && AUTH.user.role === 'provider');
 
   async function loadMe(force) {
@@ -43,7 +44,7 @@
     items.splice(at === -1 ? items.length : at + 1, 0, item);
   }
   addNav(PROVIDER_NAV_ITEMS, 'earnings', { key: 'tokens', label: 'Tokens', icon: '🪙' });
-  PROVIDER_SECTIONS.tokens = () => `<div class="dash-header"><div><div class="dash-title">🪙 ${e(tr('Tokens'))}</div><div class="dash-sub">${e(tr('Top up once, then pay what you owe Trothen from your balance'))}</div></div></div><div id="tokens-body"><div class="panel">${e(tr('Loading…'))}</div></div>`;
+  PROVIDER_SECTIONS.tokens = () => `<div class="dash-header"><div><div class="dash-title">${e(tr('Tokens'))}</div><div class="dash-sub">${e(tr('Prepaid credit for commission and fees'))}</div></div></div><div id="tokens-body"><div class="panel">${e(tr('Loading…'))}</div></div>`;
   { const f = selectProviderSection; selectProviderSection = function (key) { const r = f.apply(this, arguments); if (key === 'tokens') drawCustomerPage(true); return r; }; }
 
   const KIND_ICON = { purchase: '➕', spend: '➖', refund: '↩️', admin_add: '🛠️', admin_remove: '🛠️' };
@@ -81,38 +82,35 @@
     </div>`;
     const hist = me.history.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>${e(tr('Date'))}</th><th>${e(tr('What'))}</th><th>${e(tr('Tokens'))}</th><th>${e(tr('Balance'))}</th></tr></thead><tbody>
       ${me.history.map(h => `<tr><td>${e(new Date(h.createdAt).toLocaleDateString())}</td><td>${KIND_ICON[h.kind] || ''} ${e(tr(h.what))}${h.packLabel ? ' · ' + e(h.packLabel) : ''}${h.kind === 'purchase' && h.priceLocal != null && h.currency && h.currency !== 'USD' ? ' · ' + e(local({ code: h.currency, symbol: h.currency === cur.code ? cur.symbol : '' }, h.priceLocal)) : (h.kind === 'purchase' && h.priceUsd != null ? ' · ' + e(usd(h.priceUsd)) : '')}${h.bookingNumber ? ' · #' + e(h.bookingNumber) : ''}${h.note || h.reference ? `<div style="font-size:12.5px;color:var(--slate);">${h.note ? e(h.note) : ''}${h.note && h.reference ? ' · ' : ''}${h.reference ? e(tr('Ref')) + ' ' + e(h.reference) : ''}</div>` : ''}</td><td style="font-weight:700;color:${h.tokens < 0 ? '#B4472E' : '#2E8C6F'};">${h.tokens > 0 ? '+' : ''}${e(n2(h.tokens))}</td><td>${e(n2(h.balanceAfter))}</td></tr>`).join('')}
-      </tbody></table></div>` : `<div style="color:var(--slate);font-size:14px;">${e(tr('Nothing yet. Your purchases and what you spend will show here.'))}</div>`;
+      </tbody></table></div>` : `<div style="color:var(--slate);font-size:14px;">${e(tr('No activity yet.'))}</div>`;
     box.innerHTML = `
       <div class="panel" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
-        <div style="font-size:44px;line-height:1;">🪙</div>
         <div style="flex:1;min-width:200px;">
           <div style="font-size:13px;color:var(--slate);text-transform:uppercase;letter-spacing:.04em;">${e(tr('Your balance'))}</div>
           <div style="font-size:34px;font-weight:800;color:var(--navy);line-height:1.15;">${e(tok(me.balance))}</div>
-          <div style="font-size:14px;color:var(--slate);">${e(tr('Worth'))} ${hasLocal && me.balanceLocal != null ? `≈ ${e(local(cur, me.balanceLocal))} (${usd(me.balance)})` : usd(me.balance)} ${e(tr('on Trothen'))}</div>
-          <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${hasLocal && me.tokenLocal != null ? `1 ${e(tr('token'))} = $1 ≈ ${e(local(cur, me.tokenLocal))} ${e(tr('today'))} · ` : ''}${e(tr('Most you can hold'))}: ${e(tok(me.maxBalance))} · ${e(tr('You can still buy'))} ${usd(leftToday)} ${e(tr('in the next 24 hours'))}</div>
+          <div style="font-size:14px;color:var(--slate);">${hasLocal && me.balanceLocal != null ? `${usd(me.balance)} (≈ ${e(local(cur, me.balanceLocal))})` : usd(me.balance)}</div>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${hasLocal && me.tokenLocal != null ? `1 ${e(tr('token'))} = US$1 ≈ ${e(local(cur, me.tokenLocal))} · ` : ''}${e(tr('Maximum balance'))}: ${e(tok(me.maxBalance))} · ${e(tr('Available to buy today'))}: ${usd(leftToday)}</div>
         </div>
       </div>
-      ${me.pending.length ? `<div class="ver-note">${me.pending.map(p => `${e(tr('Waiting for your mobile money payment:'))} ${e(p.packLabel)} (${e(tok(p.tokens))}). ${e(tr('Approve it on your phone. The tokens are added as soon as the payment goes through. If it fails, you are not charged.'))} ${e(tr('Reference'))}: <strong>${e(p.id)}</strong>`).join('<br>')}</div>` : ''}
+      ${me.pending.length ? `<div class="ver-note">${me.pending.map(p => `${e(tr('Waiting for your mobile money payment:'))} ${e(p.packLabel)} (${e(tok(p.tokens))}). ${e(tr('Approve it on your phone. Tokens are added once the payment goes through.'))} ${e(tr('Reference'))}: <strong>${e(p.id)}</strong>`).join('<br>')}</div>` : ''}
       ${codesHTML(me)}
       ${usesHTML(me)}
-      ${!me.verified ? `<div class="ver-note">${e(tr('Verify your identity first to buy tokens. A token balance is stored money, so we need to know who holds it.'))} <a style="color:var(--gold);cursor:pointer;" onclick="selectProviderSection('verification')">${e(tr('Verify now'))}</a></div>` : ''}
+      ${!me.verified ? `<div class="ver-note">${e(tr('Verify your ID to buy tokens.'))} <a style="color:var(--gold);cursor:pointer;" onclick="selectProviderSection('verification')">${e(tr('Verify now'))}</a></div>` : ''}
       <div class="panel"><div class="panel-title">${e(tr('Buy tokens'))}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;">${me.packs.map(pack).join('')}</div>
-        ${hasLocal ? `<div style="font-size:12.5px;color:var(--muted);margin-top:10px;">${e(tr('Prices in'))} ${e(cur.name)}. ${e(tr('The dollar amount is a guide at today\'s exchange rate.'))}</div>` : ''}
+        ${hasLocal ? `<div style="font-size:12.5px;color:var(--muted);margin-top:10px;">${e(tr('Prices in'))} ${e(cur.name)}. ${e(tr('US dollar amounts are approximate.'))}</div>` : ''}
       </div>
       ${buyBox}
-      <div class="panel"><div class="panel-title">${e(tr('No card? Pay in cash or by mobile money'))}</div>
-        <div style="font-size:14px;color:var(--slate);line-height:1.6;">${e(tr('You can also pay at a Trothen office or agent, by bank deposit, or by sending mobile money to Trothen\'s own number. Contact support first to get the right details, and keep your receipt or transaction number. Once the payment is checked, the tokens are added to your balance and you get a message with the receipt number. Only pay Trothen staff or agents through these official ways, never a private number.'))}</div>
+      <div class="panel"><div class="panel-title">${e(tr('Other Ways to Pay'))}</div>
+        <div style="font-size:14px;color:var(--slate);line-height:1.6;">${e(tr('You can also pay at a Trothen office or agent, or by bank deposit. Contact support for payment details and keep your receipt. Tokens are added once the payment is confirmed. Never pay to a private number.'))}</div>
       </div>
       <div class="panel"><div class="panel-title">${e(tr('How tokens work'))}</div>
         <ul style="margin:0;padding-left:18px;font-size:14px;color:var(--slate);line-height:1.6;">
-          <li>${e(tr('1 token pays $1 of what you owe Trothen, so your tokens keep their value even if the exchange rate changes. Bigger packs come with bonus tokens.'))}</li>
-          <li>${e(tr('Tokens pay Trothen only: commission on cash jobs (always), and, if you choose, commission on protected jobs, your plan fee, ads and driver passes.'))}</li>
-          <li>${e(tr('Tokens never touch your customers\' money. A customer still pays for the job into Trothen\'s safe hold (escrow), and it is paid to you when they confirm the job is done, the same as always.'))}</li>
-          <li>${e(tr('Commission on a cash job comes back to you if the customer cancels, if you cancel for a reason that doesn\'t count against you (for example it became unsafe), or if Trothen cancels the job. If you cancel for an ordinary reason, it is kept. An ad you withdraw before it runs, or one that is turned down, is given back too.'))}</li>
-          <li>${e(tr('Tokens are for paying on Trothen only. They can\'t be sent to another person, and unused tokens are not paid out as cash unless you arrange it with support.'))}</li>
-          <li>${e(tr('To keep your money safe, there is a limit on how many tokens you can hold and buy in a day. Trothen staff will never ask for your PIN or a code.'))}</li>
-          <li>${e(tr('Your tokens don\'t expire. Before closing your account, spend them or contact support about the rest.'))}</li>
+          <li>${e(tr('1 token = US$1, so your balance keeps its value when exchange rates change. Larger packs include bonus tokens.'))}</li>
+          <li>${e(tr('Tokens pay Trothen fees only. Customer payments are always held separately in escrow.'))}</li>
+          <li>${e(tr('Commission on a cash job is refunded if the job is cancelled by the customer or by Trothen, or for a reason that doesn\'t count against you.'))}</li>
+          <li>${e(tr('Tokens can\'t be transferred or cashed out, and they don\'t expire.'))}</li>
+          <li>${e(tr('Balance and daily purchase limits apply. Trothen staff will never ask for your PIN.'))}</li>
         </ul>
       </div>
       <div class="panel"><div class="panel-title">${e(tr('History'))}</div>${hist}</div>`;
@@ -122,22 +120,22 @@
   // What this pro's tokens pay for: the job fee (set by Trothen) and the
   // bills they choose to pay from tokens first.
   const USE_ROWS = [
-    ['commission', 'Commission on protected jobs, when I cash out', 'Trothen\'s commission is paid from tokens, so you keep the full amount you earned. If your tokens don\'t cover all of it, the rest comes out of the payout as usual.'],
-    ['plan', 'My monthly plan fee', 'Paid from tokens as soon as the month\'s invoice is made, instead of from your payouts.'],
-    ['ad', 'Ads I place', 'Paid from tokens when your balance covers the whole price; otherwise the usual way.'],
-    ['pass', 'Driver passes', 'Paid from tokens when your balance covers the whole price; otherwise the usual way.'],
+    ['commission', 'Commission at payout', 'You receive your full earnings. Any amount your tokens don\'t cover is deducted from the payout.'],
+    ['plan', 'Monthly plan fee', 'Paid when each invoice is issued, instead of from your payouts.'],
+    ['ad', 'Ads', 'Paid from tokens when your balance covers the full price.'],
+    ['pass', 'Driver passes', 'Paid from tokens when your balance covers the full price.'],
   ];
   function usesHTML(me) {
     const a = me.autopay || {};
     const pct = Math.round((me.cashCommissionRate || 0) * 1000) / 10;
     const inv = me.planInvoices || [];
-    return `<div class="panel"><div class="panel-title">${e(tr('What your tokens pay for'))}</div>
+    return `<div class="panel"><div class="panel-title">${e(tr('What Tokens Pay For'))}</div>
       <div style="padding:10px 12px;border-radius:10px;background:var(--offwhite);margin-bottom:12px;font-size:14px;color:var(--slate);line-height:1.55;">
-        <strong style="color:var(--navy);">💵 ${e(tr('Cash jobs'))}:</strong> ${me.cashJobsOn === false ? e(tr('Cash jobs are not on in your country right now.')) : `${e(tr('the customer pays you directly after the work, so Trothen\'s commission of'))} <strong>${e(pct)}%</strong> ${e(tr('of the job price is taken from your tokens when you press Accept. Keep enough tokens to accept cash jobs. When the customer marks the job done, the commission is corrected to what they say they paid. If they cancel, it comes back.'))}`}
-        ${me.tokenDebt > 0 ? `<div style="margin-top:8px;color:#B4472E;font-weight:600;">${e(tr('You owe'))} ${e(tok(me.tokenDebt))} ${e(tr('of commission from a cash job. It is taken first from the next tokens you buy, and you can\'t accept cash jobs until it is paid.'))}</div>` : ''}
-        <div style="margin-top:8px;"><strong style="color:var(--navy);">🛡️ ${e(tr('Protected jobs'))}:</strong> ${e(tr('the customer pays Trothen first and Trothen holds it until they confirm the job is done. Commission comes out of your payout, or from your tokens if you tick the first box below.'))}</div>
+        <strong style="color:var(--navy);">${e(tr('Cash jobs'))}:</strong> ${me.cashJobsOn === false ? e(tr('Cash jobs aren\'t available in your country yet.')) : `${e(tr('Commission of'))} <strong>${e(pct)}%</strong> ${e(tr('is paid from your tokens when you accept the job, and adjusted to the final price when the job is complete.'))}`}
+        ${me.tokenDebt > 0 ? `<div style="margin-top:8px;color:#B4472E;font-weight:600;">${e(tr('You owe'))} ${e(tok(me.tokenDebt))} ${e(tr('from a cash job. It is deducted from your next purchase, and cash jobs are paused until then.'))}</div>` : ''}
+        <div style="margin-top:8px;"><strong style="color:var(--navy);">${e(tr('Jobs paid through Trothen'))}:</strong> ${e(tr('Commission is deducted from your payout, or paid from tokens if you choose below.'))}</div>
       </div>
-      <div style="font-size:14px;color:var(--slate);margin-bottom:8px;">${e(tr('Choose what else to pay from your tokens first:'))}</div>
+      <div style="font-size:14px;color:var(--slate);margin-bottom:8px;">${e(tr('Also pay these from tokens:'))}</div>
       ${USE_ROWS.map(([k, label, sub]) => `<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border);cursor:pointer;">
         <input type="checkbox" ${a[k] ? 'checked' : ''} onchange="tokensSetAutopay('${k}', this.checked)" style="width:18px;height:18px;margin-top:2px;flex-shrink:0;"/>
         <span><strong style="color:var(--navy);">${e(tr(label))}</strong><br><span style="font-size:12.5px;color:var(--slate);">${e(tr(sub))}</span></span></label>`).join('')}
@@ -294,7 +292,7 @@
         ${stat('Sold, all time', '$' + n2(st.allTime.soldUsd).toFixed(2), `${n2(st.allTime.tokensSpent)} tokens spent all time${st.allTime.testTokens > 0 ? `. Not counted: ${n2(st.allTime.testTokens)} tokens from test purchases (no payment)` : ''}`)}
         ${st.pendingPurchases ? stat('Waiting for mobile money', st.pendingPurchases, 'Purchases not yet confirmed by MTN') : ''}
       </div>
-      <div class="ver-note" style="margin-bottom:14px;">${e(tr('Money paid for tokens is not revenue until the tokens are spent. Until then it is a balance Trothen owes its pros. Bonus tokens are a discount Trothen pays for when they are spent.'))}</div>
+      <div class="ver-note" style="margin-bottom:14px;">${e(tr('Token sales are recorded as revenue only when tokens are spent. Unspent tokens are a balance owed to pros. Bonus tokens are a discount, recognized when spent.'))}</div>
       <div class="panel"><div class="panel-title">${e(tr('Settings'))}${edit ? '' : ` <small style="font-weight:400;color:var(--slate);">${e(tr('(only a super admin can change these)'))}</small>`}</div>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-enabled" ${s.enabled ? 'checked' : ''} ${edit ? '' : 'disabled'}/> ${e(tr('Tokens are on (pros can buy them and pay Trothen with them)'))}</label>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="tka-realonly" ${s.payoutsRealOnly ? 'checked' : ''} ${edit ? '' : 'disabled'}/> <span>${e(tr('LIVE SITE: pay out only money Trothen really received (bookings paid by code or mobile money). Test-mode bookings are left out of payouts.'))}</span></label>

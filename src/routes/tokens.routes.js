@@ -264,7 +264,7 @@ router.post('/admin/tokens/adjust', gate, superOnly, async (req, res) => {
   const r = await tokens.adminAdjust(req.adminUser, b.userId, Number(b.tokens), b.reason);
   if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
   await logIt(req, 'tokens_adjust', `${b.userId} ${r.line.tokens}`.slice(0, 250));
-  res.status(201).json({ line: tokens.publicLine(r.line) });
+  res.status(201).json({ line: r.line ? tokens.publicLine(r.line) : null });
 });
 
 
@@ -299,7 +299,7 @@ router.post('/admin/tokens/offline-topup', gate, financeOnly, async (req, res) =
   const r = await tokens.recordOfflineTopUp(req.adminUser, { userId: b.userId, packId: b.packId || null, amountPaid: b.amountPaid, method: b.method, receipt: b.receipt, note: b.note });
   if (!r.ok) return res.status(r.status || 400).json({ code: r.code, error: r.error });
   await logIt(req, 'tokens_offline_topup', `${b.userId} ${r.purchase.tokens} ${b.method} ${r.purchase.receipt}`.slice(0, 250));
-  res.status(201).json({ purchase: r.purchase, line: tokens.publicLine(r.line) });
+  res.status(201).json({ purchase: r.purchase, line: r.line ? tokens.publicLine(r.line) : null });
 });
 
 
@@ -320,7 +320,7 @@ router.post('/admin/tokens/codes/confirm', gate, financeOnly, async (req, res) =
   const r = await tokens.confirmPaymentCode(req.adminUser, b.code, b.transactionId, b.amountReceived);
   if (!r.ok) return res.status(r.status || 400).json({ code: r.code, error: r.error });
   await logIt(req, 'tokens_code_confirm', `${r.purchase.paymentCode} ${r.purchase.receipt} ${r.purchase.amountReceived}`.slice(0, 250));
-  res.json({ paymentCode: tokens.publicCode(r.purchase), line: tokens.publicLine(r.line) });
+  res.json({ paymentCode: tokens.publicCode(r.purchase), line: r.line ? tokens.publicLine(r.line) : null });
 });
 router.post('/admin/tokens/codes/reject', gate, financeOnly, async (req, res) => {
   const b = req.body || {};

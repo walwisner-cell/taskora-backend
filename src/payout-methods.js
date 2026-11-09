@@ -147,8 +147,8 @@ function publicBank(b) { return b ? { bankName: b.bankName, accountName: b.accou
 // Where a payout goes, in words, e.g. "Orange Money •••• 4567 (J. Doe)".
 function destinationText(u, method) {
   const m = normalMethod(method);
-  if (m === 'Mobile Money' && u.payoutMobile) return `${u.payoutMobile.network} •••• ${u.payoutMobile.last4} (${u.payoutMobile.name})`;
-  if (m === 'Bank Transfer' && u.payoutBank) return `${u.payoutBank.bankName} •••• ${u.payoutBank.last4} (${u.payoutBank.accountName})`;
+  if (m === 'Mobile Money' && u.payoutMobile) return `${u.payoutMobile.network}${u.payoutMobile.last4 ? ` •••• ${u.payoutMobile.last4}` : ''}${u.payoutMobile.name ? ` (${u.payoutMobile.name})` : ''}`;
+  if (m === 'Bank Transfer' && u.payoutBank) return `${u.payoutBank.bankName}${u.payoutBank.last4 ? ` •••• ${u.payoutBank.last4}` : ''}${u.payoutBank.accountName ? ` (${u.payoutBank.accountName})` : ''}`;
   if (m === 'PayPal' && u.payoutPaypalEmail) return `PayPal ${u.payoutPaypalEmail}`;
   return null;
 }

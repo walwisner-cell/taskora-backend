@@ -770,7 +770,7 @@ router.post('/contracts/:id/scope-change-request', requireAuth, requireRole('pro
     createdAt: new Date().toISOString(),
   };
   await db.insert('scopeChangeRequests', request);
-  await notify(contract.customerId, '📋', `${requestingProvider ? requestingProvider.name : 'Your provider'} is requesting an additional $${request.amount} for "${contract.service}": "${request.reason.slice(0, 80)}${request.reason.length > 80 ? '…' : ''}": review and approve or decline.`, null, { section: 'bookings' });
+  await notify(contract.customerId, '📋', `${requestingProvider ? requestingProvider.name : 'Your provider'} is requesting an additional $${request.amount} for "${contract.service}": "${request.reason.slice(0, 80)}${request.reason.length > 80 ? '…' : ''}". Review it in My Bookings.`, null, { section: 'bookings' });
   res.status(201).json({ request });
 });
 
@@ -888,7 +888,7 @@ async function handleScopeChangeDecide(req, res, request) {
   }
   await db.update('scopeChangeRequests', request.id, { status: 'approved', decidedAt: new Date().toISOString() });
 
-  await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved: ${contract.payMethod === 'cash' ? 'the agreed cash price' : 'the contract and held escrow'} have been updated. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
+  await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
   res.json({ request: { ...request, status: 'approved' }, contract: updatedContract });
 }
 
@@ -931,20 +931,28 @@ async function sweepWorkDone() {
   }
   const due = await db.filter('contracts', c => c.status === 'active' && c.workDoneAt && c.autoCompleteAt && Date.parse(c.autoCompleteAt) <= now);
   let n = 0;
-  for (const c of due) {
+  for (const c0 of due) {
     try {
-      if (await db.find('disputes', d => d.contractId === c.id && !['resolved', 'closed', 'dismissed'].includes(d.status))) continue; // a problem was reported: the team decides
-      if (c.payMethod === 'cash') {
-        await db.update('contracts', c.id, { cashPaidAmount: c.amount, autoCompleted: true });
-        await completeContractCore({ ...c, cashPaidAmount: c.amount }, 0, c.customerId);
-      } else {
-        await db.update('contracts', c.id, { autoCompleted: true });
-        await completeContractCore(c, 0, c.customerId);
-      }
+      // v153: not while the customer or pro is changing it, and only if it is still due now
+      const r = await require('../contract-locks').whenFree(c0.id, async () => {
+        const c = await db.find('contracts', x => x.id === c0.id);
+        if (!c || c.status !== 'active' || !c.workDoneAt || !c.autoCompleteAt || Date.parse(c.autoCompleteAt) > Date.now()) return { skipped: true };
+        if (await db.find('disputes', d => d.contractId === c.id && !['resolved', 'closed', 'dismissed'].includes(d.status))) return { skipped: true }; // a problem was reported: the team decides
+        if (c.payMethod === 'cash') {
+          await db.update('contracts', c.id, { cashPaidAmount: c.amount, autoCompleted: true });
+          await completeContractCore({ ...c, cashPaidAmount: c.amount }, 0, c.customerId);
+        } else {
+          await db.update('contracts', c.id, { autoCompleted: true });
+          await completeContractCore(c, 0, c.customerId);
+        }
+        return { done: true, c };
+      });
+      if (!r || !r.done) continue;
+      const c = r.c;
       await notify(c.customerId, '✅', `"${c.service}" was completed automatically: the pro said it was finished ${CONFIRM_DAYS} days ago and no problem was reported. If something is wrong, contact support.`, 'bookingUpdates', { section: 'bookings' });
       await notify(c.providerId, '💰', `"${c.service}" is complete${c.payMethod === 'cash' ? '' : ': the money is now in your Earnings, ready to pay out'}. The customer didn't answer within ${CONFIRM_DAYS} days.`, 'bookingUpdates', { section: 'earnings' });
       n++;
-    } catch (e) { console.error('[work-done] auto-complete failed:', c.id, e.message); }
+    } catch (e) { console.error('[work-done] auto-complete failed:', c0.id, e.message); }
   }
   return n;
 }
@@ -1057,7 +1065,7 @@ async function completeContractCore(contract, tip, customerId) {
   }
   await notify(contract.providerId, '💰', `Escrow released: $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts', { section: 'earnings' });
   if (tip > 0) {
-    await notify(contract.providerId, '🌟', `${(await db.find('users', u => u.id === customerId))?.name || 'The customer'} left you a $${tip} tip on "${contract.service}": 100% yours, no commission, added to your next payout.`, 'payoutAlerts', { section: 'earnings' });
+    await notify(contract.providerId, '🌟', `${(await db.find('users', u => u.id === customerId))?.name || 'The customer'} left you a $${tip} tip on "${contract.service}". Tips have no commission and are added to your next payout.`, 'payoutAlerts', { section: 'earnings' });
   }
   return { contract: updated, escrow: escrow ? { ...escrow, status: 'released' } : null };
 }
@@ -1514,7 +1522,12 @@ for (const [path, fn] of [['sent', 'markSent'], ['problem', 'markProblem'], ['se
     if (!p || !u || !sc.inScope(u)) return res.status(404).json({ error: 'Payout not found' });
     const sending = require('../payout-sending');
     const arg = path === 'sent' ? (req.body || {}).reference : path === 'problem' ? (req.body || {}).reason : undefined;
-    const r = await sending[fn](p, sc.me, arg);
+    // v153: two finance staff pressing at the same moment: one goes ahead, the other is told it's in hand
+    const lockKey = 'payout:' + p.id;
+    if (contractStatusLocks.has(lockKey)) return res.status(409).json({ error: 'Someone else is updating this payout right now. Refresh in a moment.' });
+    contractStatusLocks.add(lockKey);
+    let r;
+    try { r = await sending[fn]((await db.find('payouts', x => x.id === p.id)) || p, sc.me, arg); } finally { contractStatusLocks.delete(lockKey); }
     if (r.error) return res.status(400).json({ error: r.error });
     try { const { logAccess } = require('../access-log'); await logAccess(req, `payout_${path.replace('-', '_')}`, p.id); } catch (e) { /* the action stands */ }
     res.json(r);

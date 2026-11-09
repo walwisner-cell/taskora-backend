@@ -59,7 +59,7 @@
         <div class="form-group" style="flex:1 1 200px;"><label class="form-label" for="${prefix}-net">${e(t('Mobile Money network'))}</label><select class="form-input form-select" id="${prefix}-net" onchange="pdNetPicked('${prefix}')"><option value="">${e(t('Choose your network…'))}</option>${o.networks.map(n => `<option value="${e(n)}" ${o.mobile && o.mobile.network === n ? 'selected' : ''}>${e(n === 'Other' ? t('Another network (not listed)') : n)}</option>`).join('')}</select>
           <input class="form-input" id="${prefix}-netother" style="display:${o.mobile && o.mobile.network && !o.networks.includes(o.mobile.network) ? '' : 'none'};margin-top:6px;" maxlength="40" placeholder="${e(t('Which network?'))}" value="${e(o.mobile && !o.networks.includes(o.mobile.network) ? o.mobile.network : '')}"/></div>
         <div class="form-group" style="flex:1 1 200px;"><label class="form-label" for="${prefix}-nm">${e(t('Name on the account'))}</label><input class="form-input" id="${prefix}-nm" value="${e(o.mobile ? o.mobile.name : ((AUTH && AUTH.user && AUTH.user.name) || ''))}"/></div></div>
-        <div style="font-size:12.5px;color:var(--muted);margin:-4px 0 10px;">${e(t('Use the name the wallet is registered in, so the money reaches you. Payouts go to a wallet in your own name (or your business name); a wallet in someone else\'s name is checked by our finance team first, which can delay your payout.'))}</div>${o.mobile && o.mobile.nameMatch === false ? `<div style="font-size:12.5px;color:#8a5a00;margin:-6px 0 10px;">⚠️ ${e(t('The name on this wallet is different from your account name, so finance checks it before each payout.'))}</div>` : ''}`;
+        <div style="font-size:12.5px;color:var(--muted);margin:-4px 0 10px;">${e(t('Enter the name the wallet is registered in. Wallets in another person\'s name are reviewed first, which can delay payouts.'))}</div>${o.mobile && o.mobile.nameMatch === false ? `<div style="font-size:12.5px;color:#8a5a00;margin:-6px 0 10px;">⚠️ ${e(t('The name on this wallet is different from your account name, so finance checks it before each payout.'))}</div>` : ''}`;
     } else if (showForm && m === 'Bank Transfer') {
       fields = `<div style="display:flex;gap:10px;flex-wrap:wrap;">
         <div class="form-group" style="flex:1 1 200px;"><label class="form-label" for="${prefix}-bank">${e(t('Bank name'))}</label><input class="form-input" id="${prefix}-bank" placeholder="${o.country === 'Liberia' ? 'e.g. Ecobank Liberia' : ''}" value="${e(o.bank ? o.bank.bankName : '')}"/></div>
@@ -74,8 +74,8 @@
     }
     const savedBox = saved && !S.editing ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;"><div style="flex:1;min-width:0;"><div style="font-size:12.5px;color:var(--slate);">${e(t('Your money is sent to'))}</div><strong style="color:var(--navy);overflow-wrap:anywhere;">${e(saved)}</strong></div><button class="btn-sm btn-sm-outline" onclick="pdEdit('${prefix}')">${e(t('Change'))}</button></div>` : '';
     const wait = o.waitUntil ? `<div class="ver-note" style="margin-bottom:10px;">🔒 ${e(t('Your payout details changed recently. For your safety, payouts can start again from'))} ${e(new Date(o.waitUntil).toLocaleString())}.</div>` : '';
-    const africaNote = o.africa ? `<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;">${e(t('PayPal can\'t pay people out in'))} ${e(o.country)}, ${e(t('so you are paid by Mobile Money or bank transfer.'))}</div>` : '';
-    return `${wait}${sel}${savedBox}${fields}${africaNote}${showForm ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-sm-primary" onclick="pdSave('${prefix}')">${e(t('Save payout details'))}</button>${saved ? `<button class="btn-sm btn-sm-ghost" onclick="pdCancel('${prefix}')">${e(t('Cancel'))}</button>` : ''}</div><div style="font-size:12.5px;color:var(--muted);margin-top:8px;">${e(t('Only the last 4 digits are ever shown. A change makes payouts wait 24 hours, in case someone else got into your account.'))}</div>` : (saved && S.method !== (S.opts.method || '') ? `<button class="btn-sm btn-sm-primary" onclick="pdSave('${prefix}')">${e(t('Use this'))}</button>` : '')}`;
+    const africaNote = o.africa ? `<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;">${e(t('In'))} ${e(o.country)}, ${e(t('payouts are made by Mobile Money or bank transfer.'))}</div>` : '';
+    return `${wait}${sel}${savedBox}${fields}${africaNote}${showForm ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm btn-sm-primary" onclick="pdSave('${prefix}')">${e(t('Save payout details'))}</button>${saved ? `<button class="btn-sm btn-sm-ghost" onclick="pdCancel('${prefix}')">${e(t('Cancel'))}</button>` : ''}</div><div style="font-size:12.5px;color:var(--muted);margin-top:8px;">${e(t('Only the last 4 digits are shown. For your security, payouts are held for 24 hours after a change.'))}</div>` : (saved && S.method !== (S.opts.method || '') ? `<button class="btn-sm btn-sm-primary" onclick="pdSave('${prefix}')">${e(t('Use this'))}</button>` : '')}`;
   }
   function draw(prefix) { const box = el(prefix + '-box'); if (box && S.opts) box.innerHTML = formHTML(prefix); }
   window.pdMethod = function (prefix, m) { S.method = m; S.editing = false; draw(prefix); };
@@ -112,7 +112,7 @@
     const sel = el('set-prov-payout-method'); if (!sel) return;
     const panel = sel.closest('.panel'); if (!panel || panel.id === 'pd-settings') return;
     panel.id = 'pd-settings';
-    panel.innerHTML = `<div class="panel-title">${e(t('Where your money is paid'))}</div><div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">${e(t('For payouts of your earnings. You choose this account each time you cash out.'))}</div><div id="pd-settings-host"></div>`;
+    panel.innerHTML = `<div class="panel-title">${e(t('Where your money is paid'))}</div><div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">${e(t('Where your earnings are paid. You choose the account each time you request a payout.'))}</div><div id="pd-settings-host"></div>`;
     ['prov-payout-paypal-panel', 'prov-billing-card-panel'].forEach(id => { const p = el(id); if (p) p.remove(); });
     payoutFormMount('pd-settings-host', 'pds');
     // International: only methods that work from this country.
@@ -121,7 +121,7 @@
       const cur = intl.value;
       intl.innerHTML = `<option value="">${e(t('Not set up'))}</option>` + o.intlMethods.map(m => `<option value="${e(m)}" ${m === cur ? 'selected' : ''}>${e(m === 'Bank Transfer' ? t('International Bank Transfer') : m)}</option>`).join('');
       const note = intl.closest('.panel') && intl.closest('.panel').querySelector('div[style*="font-size:13.5px"]');
-      if (note && o.africa) note.textContent = t('For payments from customers abroad, paid to your bank account by international transfer (add the SWIFT / BIC code above).');
+      if (note && o.africa) note.textContent = t('For payments from customers abroad, by international bank transfer (SWIFT/BIC required).');
       const g = el('prov-payout-paypal-intl-group'); if (g && o.africa) g.remove();
     }).catch(() => {});
   }

@@ -86,14 +86,14 @@
     }
     const unread = CHATS.list.reduce((s, c) => s + (c.unread || 0), 0);
     return `
-    <div class="dash-header"><div><div class="dash-title">${escapeHtml(tr('Messages'))}</div><div class="dash-sub">${escapeHtml(tr('Every conversation you\'ve had on Trothen, newest first. Old chats stay here.'))}</div></div></div>
+    <div class="dash-header"><div><div class="dash-title">${escapeHtml(tr('Messages'))}</div><div class="dash-sub">${escapeHtml(tr('All your conversations, newest first'))}</div></div></div>
     <div class="chat-layout ${CHATS.showThread && isPhone() ? 'show-thread' : ''}" id="chat-layout">
       <div class="chat-side">
         <div class="chat-tools">
           <input type="search" class="form-input" id="chat-q" value="${escapeHtml(CHATS.q)}" placeholder="${escapeHtml(tr('Search names, bookings or jobs'))}" oninput="chatsSearch(this.value)" aria-label="${escapeHtml(tr('Search conversations'))}"/>
-          <div class="chat-filters" role="tablist">
-            <button type="button" class="chat-filter ${CHATS.filter === 'all' ? 'on' : ''}" onclick="chatsFilter('all')">${escapeHtml(tr('All'))}</button>
-            <button type="button" class="chat-filter ${CHATS.filter === 'unread' ? 'on' : ''}" onclick="chatsFilter('unread')">${escapeHtml(tr('Unread'))}${unread ? ` (${unread})` : ''}</button>
+          <div class="chat-filters" role="group" aria-label="${escapeHtml(tr('Show'))}">
+            <button type="button" class="chat-filter ${CHATS.filter === 'all' ? 'on' : ''}" aria-pressed="${CHATS.filter === 'all'}" onclick="chatsFilter('all')">${escapeHtml(tr('All'))}</button>
+            <button type="button" class="chat-filter ${CHATS.filter === 'unread' ? 'on' : ''}" aria-pressed="${CHATS.filter === 'unread'}" onclick="chatsFilter('unread')">${escapeHtml(tr('Unread'))}${unread ? ` (${unread})` : ''}</button>
           </div>
         </div>
         <div class="chat-list" id="chat-list">${listHTML()}</div>

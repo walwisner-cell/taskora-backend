@@ -1,6 +1,14 @@
-Trothen v150: everything in one place (includes v128 to v149)
+Trothen v153: everything in one place (includes v128 to v152)
 
-  src\ public\ server.js    The 101 files changed since your GitHub main (before v128), in their real folders.
+  src\ public\ server.js    The 106 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v153.md           Fourth recheck: a double-tap or two staff at once can't do anything twice (tested on
+                            Postgres), timed jobs never clash with a person, All pros search by skill fixed,
+                            the pro's dashboard in Spanish.
+  CHANGES_v152.md           Professional wording across the app: short help lines, the same names everywhere,
+                            a compact "Complete your profile" card, figures that agree between pages, no "I".
+  CHANGES_v151.md           A third recheck: a pro's exact location no longer public; usable with a screen reader
+                            or keyboard (WCAG 2.1 AA); other websites can't read the API; codes allow 5 wrong tries;
+                            phone codes limited; sign-in limits that suit shared mobile connections.
   CHANGES_v150.md           A deeper recheck (every route with bad input, every screen on 3 sizes); the app starts
                             about 3x faster on a slow connection; a clearer "Finish setting up your account";
                             the Mobile Money network picked from the number.
@@ -32,22 +40,22 @@ Trothen v150: everything in one place (includes v128 to v149)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v150.md  Byte counts and the cmd.exe steps.
-  deploy_v150.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v150-files.zip    The code files packed; the .bat reads this from Downloads.
-  screenshots\              The new screens (phone and computer).
+  DEPLOYMENT_STEPS_v153.md  Byte counts and the cmd.exe steps.
+  deploy_v153.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v153-files.zip    The code files packed; the .bat reads this from Downloads.
+  screenshots\              The pro's Earnings page in Spanish.
 
-Works whether or not v128 is already live. git status shows 123 files if v128 is live, 125 if not.
+Works whether or not v128 is already live. git status shows 130 files if v128 is live, 132 if not.
 
 BEFORE you deploy (only if v147 is not live yet, for sign-in emails):
   Render, Environment: add SMTP_HOST = mail.privateemail.com, SMTP_PORT = 465,
   SMTP_USER = noreply@trothenpro.com, SMTP_PASS = that mailbox's password.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v150.
-  2. copy "%USERPROFILE%\Downloads\trothen-v150\trothen-v150-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v153.
+  2. copy "%USERPROFILE%\Downloads\trothen-v153\trothen-v153-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v150\deploy_v150.bat"
+     "%USERPROFILE%\Downloads\trothen-v153\deploy_v153.bat"
   Nothing goes live until you type YES.
 
 After it is live:

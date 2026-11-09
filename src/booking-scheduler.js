@@ -74,8 +74,14 @@ async function expireOverdueBookingResponses() {
   let expired = 0;
   for (const contract of pending) {
     try {
-      await expireOneBooking(contract);
-      expired += 1;
+      // v153: not while someone is answering it, and only if it is still unanswered now
+      const r = await require('./contract-locks').whenFree(contract.id, async () => {
+        const now2 = await db.find('contracts', c => c.id === contract.id);
+        if (!now2 || !['pending_agreement', 'pending_provider_confirmation'].includes(now2.status) || !now2.providerResponseDeadline || new Date(now2.providerResponseDeadline) >= new Date()) return { skipped: true };
+        await expireOneBooking(now2);
+        return { done: true };
+      });
+      if (r && r.done) expired += 1;
     } catch (e) {
       console.error(`[booking-scheduler] Failed to expire contract ${contract.id}:`, e.message);
     }

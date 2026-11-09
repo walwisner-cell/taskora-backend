@@ -2112,7 +2112,8 @@
   /* v64 verification queue */
   .ver-howto { background:#EEF4FB; border:1px solid #C9DAEE; border-radius:var(--r-control); padding:12px 14px; font-size:14.5px; color:var(--navy); margin-bottom:14px; line-height:1.55; }
   .ver-note { font-size:13px; color:var(--muted); margin-top:3px; }
-  .badge-success { color:var(--success); background:rgba(31,122,85,.12); }
+  .badge-success { color:#17603F; background:rgba(31,122,85,.12); }
+  html.dark .badge-success { color:#7FD6AE; }
   .badge-danger { color:var(--red); background:rgba(179,66,58,.12); }
 
   /* ═══════════════════════════════════════════════════════════════════
@@ -2408,7 +2409,7 @@
 <body>
 
 <div id="test-mode-banner" style="background:#FBF3E4;color:var(--navy);text-align:center;font-size:13.5px;font-weight:500;padding:9px 40px;position:relative;z-index:500;line-height:1.5;border-bottom:1px solid #E9D6A8;">
-  <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--gold);color:#fff;font-size:11.5px;font-weight:800;vertical-align:-3px;margin-right:6px;">!</span><span id="test-mode-banner-short"><strong>Early access:</strong> payments are simulated.</span><span id="test-mode-banner-text"><strong>Early access</strong> . Accounts and ID verification are live. Payments are not connected yet, so all payments and payouts are simulated and no money moves.</span>
+  <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--gold);color:#fff;font-size:11.5px;font-weight:800;vertical-align:-3px;margin-right:6px;">!</span><span id="test-mode-banner-short"><strong>Early access:</strong> payments are simulated.</span><span id="test-mode-banner-text"><strong>Early access.</strong> Payments are in test mode. No real money is charged.</span>
   <span onclick="document.getElementById('test-mode-banner').style.display='none'" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);cursor:pointer;font-weight:700;padding:3px 7px;border-radius:5px;color:var(--slate);opacity:.7;transition:opacity .15s ease,background .15s ease;" onmouseover="this.style.opacity=1;this.style.background='rgba(18,22,31,.06)'" onmouseout="this.style.opacity=.7;this.style.background='transparent'">✕</span>
 </div>
 
@@ -2429,7 +2430,7 @@
         <div class="composer" role="search">
           <label class="composer-field composer-what">
             <span class="composer-label" data-i18n="composer_what">I need help with</span>
-            <input type="text" id="search-input" autocomplete="off" placeholder="a leaking tap, a deep clean, maths lessons…" data-i18n-placeholder="search_placeholder" onkeydown="composerKeydown(event)" oninput="composerSuggest()" onfocus="composerSuggest()" aria-autocomplete="list" aria-controls="composer-suggest" aria-expanded="false"/>
+            <input type="text" id="search-input" autocomplete="off" placeholder="a leaking tap, a deep clean, maths lessons…" data-i18n-placeholder="search_placeholder" onkeydown="composerKeydown(event)" oninput="composerSuggest()" onfocus="composerSuggest()" role="combobox" aria-label="What do you need done?" aria-autocomplete="list" aria-controls="composer-suggest" aria-expanded="false"/>
           </label>
           <label class="composer-field composer-where">
             <span class="composer-label" data-i18n="composer_where">in</span>
@@ -2510,7 +2511,7 @@
         <h2 class="checks-title" data-i18n="checks_title">Before a pro can take your job</h2>
         <p class="checks-sub" data-i18n="checks_sub">Four things Trothen does on every pro and every booking, so you're not taking anyone's word for it.</p>
       </div>
-      <ul class="checks-list">
+      <ul class="checks-list" role="none">
         <li class="check-card" data-check="0" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="id"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check1_t">Their ID is checked</strong><p data-i18n="check1_d">A person on our team reviews a government ID for every pro before they appear in search.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
         <li class="check-card" data-check="1" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="doc"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check2_t">The job is written down</strong><p data-i18n="check2_d">Each booking comes with a short agreement: what's being done, when, and for how much.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
         <li class="check-card" data-check="2" role="button" tabindex="0" aria-expanded="false" aria-controls="checks-panel"><span class="checks-icon" data-icon="lock"></span><div><span class="checks-tag" data-i18n="checks_tag">Every time</span><strong data-i18n="check3_t">Your money waits</strong><p data-i18n="check3_d">You pay your pro through Trothen. The payment is held in escrow and released when you mark the job complete.</p><span class="checks-more" data-i18n="checks_more">See how it works</span></div></li>
@@ -2595,7 +2596,7 @@
   <div class="section faq-section">
     <div class="faq-wrap">
       <h2 class="section-title" data-i18n="faq_title">Common questions</h2>
-      <div class="section-sub" data-i18n="faq_sub">Tap a question to see the answer. Our support chat gives the same answers.</div>
+      <div class="section-sub" data-i18n="faq_sub">Tap a question to see the answer.</div>
     </div>
     <div class="faq-list" id="homepage-faq-list"></div>
   </div>
@@ -2688,9 +2689,9 @@
     <div class="pricing-inner" style="max-width:760px;">
       <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
       <div class="pricing-eyebrow">Careers</div>
-      <div class="pricing-title" style="font-size:32px;" data-i18n="careers_title">Help build the trust layer for local services</div>
+      <div class="pricing-title" style="font-size:32px;" data-i18n="careers_title">Work at Trothen</div>
       <div style="font-size:15px;line-height:1.8;color:var(--slate);margin-top:24px;margin-bottom:28px;">
-        <p data-i18n="careers_body">We are a small, early-stage team. We have few open roles listed at the moment, but we welcome applications from people interested in this work. If you're excited about identity verification, marketplace trust & safety, or building for underserved markets across the US, Nigeria, and Ghana, we'd like to hear from you.</p>
+        <p data-i18n="careers_body">We're a small team making it safer to hire local help. We have few open roles right now, but we welcome applications from people who share that goal.</p>
       </div>
       <div class="panel" style="text-align:left;">
         <div class="panel-title" data-i18n="careers_form_title">Get in touch about opportunities</div>
@@ -2725,7 +2726,7 @@
       <div class="profile-back" onclick="goHome()" style="margin-bottom:18px;color:var(--slate);">← Back to Home</div>
       <div class="pricing-eyebrow">Contact Us</div>
       <div class="pricing-title" style="font-size:32px;" data-i18n="contact_title">We're glad to help</div>
-      <div style="font-size:14px;line-height:1.7;color:var(--slate);margin-top:16px;margin-bottom:24px;" data-i18n="contact_intro">For account-specific issues (a booking, a dispute, verification), signing in and using the in-app support chat gets you help fastest. For everything else, use the form below.</div>
+      <div style="font-size:14px;line-height:1.7;color:var(--slate);margin-top:16px;margin-bottom:24px;" data-i18n="contact_intro">For questions about a booking, dispute or verification, sign in and use the support chat for the fastest help. For anything else, use the form below.</div>
       <div class="panel" id="contact-direct-info" style="display:none;margin-bottom:16px;"></div>
       <div class="panel" id="contact-form-panel">
         <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" type="text" id="contact-name"/></div>
@@ -2918,10 +2919,10 @@
       <div class="auth-brand-panel">
         <div class="auth-brand-content">
           <div class="auth-brand-wordmark" data-brand-mark></div>
-          <div class="auth-brand-headline">Local services shouldn't require a leap of faith.</div>
-          <div class="auth-brand-sub">Every pro is identity-verified. Every job runs on an auto-generated contract with funds held in escrow until you're satisfied.</div>
+          <div class="auth-brand-headline">Hire local pros with confidence.</div>
+          <div class="auth-brand-sub">Every pro's ID is checked, every job is agreed in writing, and your payment is held until the work is done.</div>
           <div class="auth-trust-list">
-            <div class="auth-trust-item"><span class="icon" data-icon="id"></span> Identity verified, every pro</div>
+            <div class="auth-trust-item"><span class="icon" data-icon="id"></span> Every pro's ID checked</div>
             <div class="auth-trust-item"><span class="icon" data-icon="lock"></span> Payment held until the job is done</div>
             <div class="auth-trust-item"><span class="icon" data-icon="doc"></span> Every booking written down</div>
             <div class="auth-trust-item"><span class="icon" data-icon="shield"></span> Automated fraud screening</div>
@@ -2937,7 +2938,7 @@
       <div class="auth-card">
       <div id="auth-main-form">
       <div class="auth-card-title" id="auth-title">Welcome to Trothen</div>
-      <div class="auth-card-sub" id="auth-sub">Verified pros. Protected payments. Zero guesswork.</div>
+      <div class="auth-card-sub" id="auth-sub">Sign in to your account.</div>
       <div class="auth-tabs">
         <div class="auth-tab active" id="tab-login" onclick="exitGoogleFlow();setAuthMode('login')" data-i18n="auth_signin_tab">Sign In</div>
         <div class="auth-tab" id="tab-signup" onclick="exitGoogleFlow();setAuthMode('signup')" data-i18n="auth_signup_tab">Sign Up</div>
@@ -3378,13 +3379,13 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=3ffc1d033c" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
-<script src="/app/rides.js?v=35ff86c11c"></script>
-<script src="/app/tokens.js?v=b2ede40dfe"></script>
-<script src="/app/payways.js?v=168a474823"></script>
+<script src="/app/trothen.js?v=fdc0c9f69c" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/rides.js?v=f292589ac6"></script>
+<script src="/app/tokens.js?v=5697c68ad9"></script>
+<script src="/app/payways.js?v=5c991088aa"></script>
 <script src="/app/review.js?v=86c2ff86bf"></script>
 <script src="/app/pricing.js?v=4fdcba4521"></script>
-<script src="/app/chats.js?v=1823d38f9c"></script>
+<script src="/app/chats.js?v=56f10dfd90"></script>
 <script src="/app/where.js?v=521dbda842"></script>
 <script src="/app/arrival.js?v=14e3639ac9"></script>
 <script src="/app/live.js?v=d049a42ced"></script>
@@ -3393,20 +3394,22 @@
 <script src="/app/calls.js?v=5aeb576115"></script>
 <script src="/app/callhealth.js?v=04d5713002"></script>
 <script src="/app/teams.js?v=0a22b63b77"></script>
-<script src="/app/voice.js?v=e069aafd33"></script>
-<script src="/app/market.js?v=3f8a205d99"></script>
-<script src="/app/commission.js?v=13eff24a79"></script>
+<script src="/app/voice.js?v=7554f61733"></script>
+<script src="/app/market.js?v=be303b7aa4"></script>
+<script src="/app/commission.js?v=2fd7aaa6b7"></script>
 <script src="/app/categories.js?v=9ac65b7765"></script>
 <script src="/app/acceptquote.js?v=3d4d251ecf"></script>
-<script src="/app/listing.js?v=a623d4b3fe"></script>
+<script src="/app/listing.js?v=7dec72f4f4"></script>
 <script src="/app/permissions.js?v=640782242f"></script>
 <script src="/app/postjob.js?v=f70359e917"></script>
-<script src="/app/store-plus.js?v=76c0818a6d"></script>
-<script src="/app/price-units.js?v=55dcee30ae"></script>
-<script src="/app/payout-details.js?v=d52ce7f99b"></script>
+<script src="/app/store-plus.js?v=f392b9652a"></script>
+<script src="/app/price-units.js?v=1d2df9e851"></script>
+<script src="/app/payout-details.js?v=f2e785bbae"></script>
 <script src="/app/paymethods.js?v=497f245785"></script>
 <script src="/app/maps.js?v=aaa2141068"></script>
-<script src="/app/checks.js?v=27c606fda9"></script>
-<script src="/app/polish.js?v=66eb8232da"></script>
+<script src="/app/checks.js?v=7114985e04"></script>
+<script src="/app/polish.js?v=ae2a86ef1b"></script>
+<script src="/app/a11y.js?v=7a13a5f443"></script>
+<script src="/app/es-v152.js?v=1da0046429"></script>
 </body>
 </html>

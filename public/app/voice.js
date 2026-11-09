@@ -21,7 +21,7 @@
       'Voice message sent': 'Mensaje de voz enviado', 'Up to 2 minutes': 'Hasta 2 minutos', 'Close': 'Cerrar', 'Block': 'Bloquear', 'Unblock': 'Desbloquear',
       'Calls & Voice Messages': 'Llamadas y mensajes de voz', 'Sounds': 'Sonidos', 'Ringtone for calls': 'Tono de llamada', 'Message and alert sound': 'Sonido de mensajes y avisos', 'Play': 'Reproducir', 'Take calls on Trothen': 'Recibir llamadas en Trothen', 'Take voice messages': 'Recibir mensajes de voz',
       'Only take calls at set times': 'Recibir llamadas solo en horario', 'From': 'Desde', 'To': 'Hasta', 'Save': 'Guardar', 'Saved': 'Guardado',
-      'People you blocked': 'Personas bloqueadas', 'Nobody. Block someone from the top of your chat with them.': 'Nadie. Bloquea a alguien desde la parte superior de tu chat con esa persona.',
+      'People you blocked': 'Personas bloqueadas', 'No one. To block someone, open your chat with them.': 'Nadie. Bloquea a alguien desde la parte superior de tu chat con esa persona.',
       'This voice message was deleted.': 'Este mensaje de voz fue eliminado.', 'Delete': 'Eliminar', 'Could not play this voice message.': 'No se pudo reproducir este mensaje de voz.',
       'Allow the microphone to record a voice message. Check the permission in your browser settings, then try again.': 'Permite el micrófono para grabar un mensaje de voz. Revisa el permiso en la configuración del navegador e inténtalo de nuevo.',
       'This browser cannot record voice messages.': 'Este navegador no puede grabar mensajes de voz.',
@@ -254,7 +254,7 @@
     const data = await loadSettings(); if (!data) return;
     const s = data.settings, h = s.hours || {};
     panel.innerHTML = `<div class="panel-title" style="font-weight:700;color:var(--navy);font-size:17px;margin-bottom:4px;">${e(t('Calls & Voice Messages'))}</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Customers and pros you have a booking or job with can call you inside Trothen. Your phone number is never shared, and calls are never recorded.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">People you have a booking with can call you in Trothen. Your number is never shared and calls aren't recorded.</div>
       <label style="display:flex;gap:10px;align-items:center;margin:8px 0;font-size:14.5px;"><input type="checkbox" id="cs-calls" ${s.calls ? 'checked' : ''}> ${e(t('Take calls on Trothen'))}</label>
       <label style="display:flex;gap:10px;align-items:center;margin:8px 0;font-size:14.5px;"><input type="checkbox" id="cs-voice" ${s.voice ? 'checked' : ''}> ${e(t('Take voice messages'))}</label>
       <label style="display:flex;gap:10px;align-items:center;margin:14px 0 6px;font-size:14.5px;"><input type="checkbox" id="cs-hours-on" ${h.on ? 'checked' : ''}> ${e(t('Only take calls at set times'))}</label>
@@ -271,10 +271,10 @@
           <div><label class="form-label" for="cs-ring">${e(t('Ringtone for calls'))}</label><div style="display:flex;gap:6px;"><select class="form-input form-select" id="cs-ring" style="width:auto;">${Object.entries(S.RINGTONES).map(([k, v]) => `<option value="${k}" ${p.ringtone === k ? 'selected' : ''}>${e(t(v.label))}</option>`).join('')}</select><button type="button" class="btn-sm btn-sm-outline" onclick="TrothenSounds.preview('ring', document.getElementById('cs-ring').value)">▶ ${e(t('Play'))}</button></div></div>
           <div><label class="form-label" for="cs-alert">${e(t('Message and alert sound'))}</label><div style="display:flex;gap:6px;"><select class="form-input form-select" id="cs-alert" style="width:auto;">${Object.entries(S.ALERTS).map(([k, v]) => `<option value="${k}" ${p.alertTone === k ? 'selected' : ''}>${e(t(v.label))}</option>`).join('')}</select><button type="button" class="btn-sm btn-sm-outline" onclick="TrothenSounds.preview('alert', document.getElementById('cs-alert').value)">▶ ${e(t('Play'))}</button></div></div>
         </div>
-        <div style="font-size:12.5px;color:var(--slate);margin-top:6px;">${e(t('Message sounds play when "Message sound alert" is on in your notification settings.'))}</div>`; })() : ''}
+        <div style="font-size:12.5px;color:var(--slate);margin-top:6px;">${e(t('Message sounds follow your notification settings.'))}</div>`; })() : ''}
       <div style="margin-top:12px;"><button type="button" class="btn-sm btn-sm-primary" id="cs-save">${e(t('Save'))}</button></div>
       <div style="font-weight:600;color:var(--navy);margin:18px 0 6px;">${e(t('People you blocked'))}</div>
-      ${(data.blocked || []).length ? data.blocked.map(b => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--border);font-size:14px;"><span>${e(b.name)}</span><button type="button" class="btn-sm btn-sm-outline" data-uid="${e(b.userId)}" data-name="${e(b.name)}" onclick="toggleCallBlock(this.dataset.uid, this.dataset.name)">${e(t('Unblock'))}</button></div>`).join('') : `<div style="font-size:13.5px;color:var(--slate);">${e(t('Nobody. Block someone from the top of your chat with them.'))}</div>`}`;
+      ${(data.blocked || []).length ? data.blocked.map(b => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--border);font-size:14px;"><span>${e(b.name)}</span><button type="button" class="btn-sm btn-sm-outline" data-uid="${e(b.userId)}" data-name="${e(b.name)}" onclick="toggleCallBlock(this.dataset.uid, this.dataset.name)">${e(t('Unblock'))}</button></div>`).join('') : `<div style="font-size:13.5px;color:var(--slate);">${e(t('No one. To block someone, open your chat with them.'))}</div>`}`;
     document.getElementById('cs-hours-on').onchange = (ev) => { document.getElementById('cs-hours').style.display = ev.target.checked ? 'block' : 'none'; };
     document.getElementById('cs-save').onclick = async () => {
       const body = {

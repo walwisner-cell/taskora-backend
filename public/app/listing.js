@@ -8,7 +8,7 @@
   try {
     if (typeof ES_TEXT === 'object') Object.assign(ES_TEXT, {
       'Customers cannot find you yet': 'Los clientes todavía no pueden encontrarte',
-      'Add a profile photo. Until you do, you do not appear in search results or on the homepage, and you are not matched to new jobs.': 'Agrega una foto de perfil. Hasta que lo hagas, no apareces en los resultados de búsqueda ni en la página principal, y no recibes trabajos nuevos.',
+      'Add a profile photo to appear in search and receive job matches.': 'Agrega una foto de perfil. Hasta que lo hagas, no apareces en los resultados de búsqueda ni en la página principal, y no recibes trabajos nuevos.',
       'Add Profile Photo': 'Agregar foto de perfil',
     });
   } catch (err) {}
@@ -27,7 +27,7 @@
     div.style.cssText = 'border:1px solid rgba(217,119,6,.45);background:rgba(217,119,6,.08);display:flex;gap:14px;align-items:center;flex-wrap:wrap;';
     div.innerHTML = `<div style="flex:1 1 260px;min-width:0;">
         <div style="font-weight:700;color:#92400E;font-size:15px;">${e(t('Customers cannot find you yet'))}</div>
-        <div style="font-size:14px;color:var(--text);margin-top:4px;line-height:1.5;">${e(t('Add a profile photo. Until you do, you do not appear in search results or on the homepage, and you are not matched to new jobs.'))}</div>
+        <div style="font-size:14px;color:var(--text);margin-top:4px;line-height:1.5;">${e(t('Add a profile photo to appear in search and receive job matches.'))}</div>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="selectProviderSection('settings')">${e(t('Add Profile Photo'))}</button>`;
     const header = main.querySelector('.dash-header');
@@ -36,6 +36,6 @@
   window.showListingBanner = banner;
   if (typeof selectProviderSection === 'function') {
     const f = selectProviderSection;
-    selectProviderSection = function (key) { const r = f.apply(this, arguments); if (key === 'overview' || key === 'matches' || key === 'settings') banner(); return r; };
+    selectProviderSection = function (key) { const r = f.apply(this, arguments); if (key === 'matches' || key === 'settings') banner(); else { const o = document.getElementById('listing-banner'); if (o) o.remove(); } /* v152: on the Overview, "Complete your profile" lists the photo as Required */ return r; };
   }
 })();

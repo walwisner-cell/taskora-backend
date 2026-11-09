@@ -8,4 +8,15 @@
 // in the first place.
 const contractStatusLocks = new Set();
 
-module.exports = { contractStatusLocks };
+// v153: for the timed jobs (expire unanswered bookings, complete finished
+// jobs by themselves, cancel unpaid ones). If a person is changing the same
+// booking at that moment, the timed job leaves it for the next round. Inside
+// the lock it reads the booking again, so it acts on how things are now, not
+// on how they were when the list was made.
+async function whenFree(id, fn) {
+  if (!id || contractStatusLocks.has(id)) return { skipped: true };
+  contractStatusLocks.add(id);
+  try { return await fn(); } finally { contractStatusLocks.delete(id); }
+}
+
+module.exports = { contractStatusLocks, whenFree };

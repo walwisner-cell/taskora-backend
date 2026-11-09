@@ -34,7 +34,7 @@
     days.sort((a, b) => a - b);
     return `<div style="border-top:1px solid var(--border);margin:14px 0 10px;"></div>
       <div style="font-weight:700;color:var(--navy);margin-bottom:4px;">↩️ ${e(t('Returns'))}</div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${min ? `${e(t('Every store takes back faulty, wrong, damaged or not-as-described goods for at least'))} ${min} ${e(t('days. You can give longer, and accept change-of-mind returns too. Buyers see this before they pay.'))}` : e(t('Buyers see your returns policy before they pay.'))}</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${min ? `${e(t('All stores accept returns of faulty, damaged or incorrect items for at least'))} ${min} ${e(t('days. You can offer longer, or accept change-of-mind returns. Buyers see your policy before they pay.'))}` : e(t('Buyers see your returns policy before they pay.'))}</div>
       <div class="dates-row"><div class="form-group"><label class="form-label" for="so-ret-days">${e(t('Returns accepted for'))}</label><select class="form-input form-select" id="so-ret-days">${days.map(d => `<option value="${d}" ${d === p.days ? 'selected' : ''}>${d ? d + ' ' + e(t(d === 1 ? 'day' : 'days')) : e(t('No returns'))}</option>`).join('')}</select></div>
       <div class="form-group"><label class="form-label" for="so-ret-ship">${e(t('Who pays to send it back'))}</label><select class="form-input form-select" id="so-ret-ship"><option value="buyer" ${p.returnShipping !== 'seller' ? 'selected' : ''}>${e(t('The buyer (unless I sent the wrong or a faulty item)'))}</option><option value="seller" ${p.returnShipping === 'seller' ? 'selected' : ''}>${e(t('I do'))}</option></select></div></div>
       <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="so-ret-mind" ${p.changeOfMind ? 'checked' : ''}/> ${e(t('I also accept change-of-mind returns'))}</label>
@@ -51,7 +51,7 @@
   const DC = { list: null };
   window.storeDiscountsPanelHTML = function () {
     setTimeout(loadCodes, 0);
-    return `<div class="panel" id="store-codes-panel"><div class="panel-title">🏷️ ${e(t('Discount codes'))}</div><div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${e(t('Codes your customers type at checkout. The discount comes off your goods money; Trothen\'s fee is worked out on what the customer pays. Each customer can use a code once.'))}</div><div id="store-codes-body">${e(t('Loading…'))}</div></div>`;
+    return `<div class="panel" id="store-codes-panel"><div class="panel-title">🏷️ ${e(t('Discount codes'))}</div><div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${e(t('Customers enter these codes at checkout. Discounts come out of your sale amount, and each customer can use a code once.'))}</div><div id="store-codes-body">${e(t('Loading…'))}</div></div>`;
   };
   async function loadCodes() { try { DC.list = (await apiFetch('GET', '/store/discounts')).discounts; } catch (x) { DC.list = []; } drawCodes(); }
   function drawCodes() {

@@ -62,8 +62,8 @@
   // v114: a pro who has not applied (or has not finished) is invited to give rides. The sign-up box "I also want to
   // give rides" sends them straight to the application the first time they sign in.
   function inviteCard(st) {
-    const word = st === 'rejected' ? 'Your ride driver application was not approved. Open Rides to see why and fix it.' : st === 'draft' ? 'You started a ride driver application. Finish it and send it for review.' : 'Earn more by giving rides to passengers. You need a driving licence and a vehicle, and the Trothen team checks your papers before you can start.';
-    return `<div class="panel" id="rides-invite" style="border-left:4px solid var(--gold,#C9A227);display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><div style="flex:1;min-width:220px;"><div class="panel-title" style="margin-bottom:4px;">🛵 ${e(tr('Give rides'))}</div><div style="font-size:14px;color:var(--slate);">${e(tr(word))}</div></div><button class="btn-sm btn-sm-primary" onclick="selectProviderSection('rides')">${e(tr(st === 'draft' || st === 'rejected' ? 'Open Rides' : 'See what is needed'))}</button></div>`;
+    const word = st === 'rejected' ? 'Your driver application was not approved. Open Rides to see why.' : st === 'draft' ? 'Your driver application isn\'t finished. Complete it and submit it for review.' : 'Earn more by giving rides. You need a driver\'s license and a vehicle, and your documents are checked before you start.';
+    return `<div class="panel" id="rides-invite" style="border-left:4px solid var(--gold,#C9A227);display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><div style="flex:1;min-width:220px;"><div class="panel-title" style="margin-bottom:4px;">🛵 ${e(tr('Give rides'))}</div><div style="font-size:14px;color:var(--slate);">${e(tr(word))}</div></div><button class="btn-sm btn-sm-primary" onclick="selectProviderSection('rides')">${e(tr(st === 'draft' || st === 'rejected' ? 'Open Rides' : 'Learn More'))}</button></div>`;
   }
   async function inviteDriver() {
     let d; try { d = await apiFetch('GET', '/rides/driver/me'); } catch (x) { return; }
@@ -72,7 +72,7 @@
     let want = false; try { want = localStorage.getItem('trothen_want_rides') === '1'; if (want) localStorage.removeItem('trothen_want_rides'); } catch (x) { /* no storage: just show the card */ }
     if (want) return setTimeout(() => selectProviderSection('rides'), 400);
     const m = el('provider-main'), act = document.querySelector('#provider-nav .dash-nav-item.active');
-    if (m && !el('rides-invite') && act && /overview/i.test(act.textContent)) m.insertAdjacentHTML('afterbegin', inviteCard(d.status));
+    if (m && !el('rides-invite') && act && /overview/i.test(act.textContent)) { const after = el('rd-card') || m.querySelector('.dash-header'); if (after) after.insertAdjacentHTML('afterend', inviteCard(d.status)); else m.insertAdjacentHTML('afterbegin', inviteCard(d.status)); }
   }
   function rerenderNav(id, items, fn) {
     const box = el(id); if (!box) return;
@@ -82,7 +82,7 @@
   }
   CUSTOMER_SECTIONS.rides = () => section('Rides', 'Get a safe ride from a verified driver');
   PROVIDER_SECTIONS.rides = () => section('Rides', 'Give rides to passengers');
-  { const f = PROVIDER_SECTIONS.overview; PROVIDER_SECTIONS.overview = function () { const h = f.apply(this, arguments); return (R.invite ? inviteCard(R.invite) : '') + h; }; }
+  { const f = PROVIDER_SECTIONS.overview; PROVIDER_SECTIONS.overview = function () { const h = f.apply(this, arguments); if (!R.invite) return h; const at = h.indexOf('<div id="provider-promotions-banner">'); return at > 0 ? h.slice(0, at) + inviteCard(R.invite) + h.slice(at) : inviteCard(R.invite) + h; }; }
   if (typeof ADMIN_SECTIONS !== 'undefined') ADMIN_SECTIONS.rides = () => section('Rides', 'Drivers, safety alerts and where rides are on');
 
   { const f = selectCustomerSection; selectCustomerSection = function (key) { stopTimers(); const r = f.apply(this, arguments); if (key === 'rides') loadRiderPage(); return r; }; }
@@ -512,7 +512,7 @@
     const incoming = list.filter(r => r.status === 'pending_provider_confirmation'), active = list.filter(r => r.status === 'active');
     const offers = list.filter(r => r.status === 'pending_agreement' || r.status === 'awaiting_payment'); // v125
     return `<div class="panel"><div class="panel-title">${e(tr('Rides'))}</div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span style="font-weight:700;color:${d.online ? '#2E8C6F' : 'var(--slate)'};">● ${e(tr(d.online ? 'You are online. Riders near you can see you.' : 'You are offline'))}</span>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span style="font-weight:700;color:${d.online ? '#1F7A55' : 'var(--slate)'};">● ${e(tr(d.online ? 'You are online. Riders near you can see you.' : 'You are offline'))}</span>
       <button class="btn-sm ${d.online ? 'btn-sm-outline' : 'btn-sm-primary'}" onclick="ridesToggleOnline(${d.online ? 'false' : 'true'})">${e(tr(d.online ? 'Go offline' : 'Go online'))}</button></div>
       <div class="ver-note" style="margin-top:8px;">${e(tr('Keep this page open while you are online so riders can find you. You go offline by yourself after 12 hours.'))}</div></div>
       ${offers.map(r => { const myTurn = r.status === 'pending_agreement' && r.waitingOn === 'provider'; return `<div class="panel" style="border:2px solid #E0A526;"><div class="panel-title">${e(tr(r.status === 'awaiting_payment' ? 'Fare agreed: waiting for the rider to pay' : myTurn ? 'A rider offers a fare' : 'Waiting for the rider'))} <small>#${e(r.number)}</small></div>
@@ -804,7 +804,7 @@
         ? `<label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;"><span style="font-size:13px;font-weight:600;color:${c.on ? '#15803d' : 'var(--slate)'};" data-rc-word="${e(c.name)}">${e(tr(c.on ? 'On' : 'Off'))}</span><input type="checkbox" class="rc-switch" data-country="${e(c.name)}" ${c.on ? 'checked' : ''} ${!c.live && !c.on ? 'disabled' : ''} onchange="ridesCountrySwitch(this)" style="width:20px;height:20px;cursor:pointer;" aria-label="${e(tr('Rides in'))} ${e(c.name)}"/></label>`
         : `<strong style="color:${c.on ? '#15803d' : 'var(--slate)'};">${e(tr(c.on ? 'On' : 'Off'))}</strong>`}</td></tr>`;
     return `<div style="font-weight:700;color:var(--navy);margin:4px 0 2px;">${e(tr('Rides by country'))}</div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">${e(tr('Rides can be on in any country Trothen is live in. Switch it on or off for each country; it takes effect straight away. Turning a country off stops new ride requests there; rides already under way finish normally. Check the country\'s transport rules (and set its fares below) before switching it on.'))}</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">${e(tr('Turn rides on or off for each live country. Changes take effect immediately; rides already under way finish normally. Check local transport rules and set fares before turning a country on.'))}</div>
       <div style="overflow-x:auto;"><table id="rides-countries" style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:${rest.length ? 6 : 12}px;"><tbody>${shown.map(row).join('')}</tbody></table></div>
       ${rest.length && o.canEditSettings ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;font-size:13.5px;"><span style="color:var(--slate);">${e(tr('Switch Rides on in another live country'))} (${rest.length}):</span><select class="form-input form-select" id="rc-add" style="max-width:240px;"><option value="">${e(tr('Choose a country'))}</option>${rest.map(c => `<option>${e(c.name)}</option>`).join('')}</select><button type="button" class="btn-sm btn-sm-primary" onclick="ridesCountryAdd()">${e(tr('Switch on'))}</button></div>` : ''}`;
   }
@@ -846,7 +846,7 @@
         <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-pass">${e(tr('Driver Pass'))}</label><select class="form-input form-select" id="rs-pass"><option value="1" ${s.passEnabled ? 'selected' : ''}>${e(tr('On: drivers can buy passes'))}</option><option value="0" ${!s.passEnabled ? 'selected' : ''}>${e(tr('Off'))}</option></select></div>
         <div class="form-group"><label class="form-label" for="rs-cash">${e(tr('Cash rides'))}</label><select class="form-input form-select" id="rs-cash"><option value="0" ${!s.cashEnabled ? 'selected' : ''}>${e(tr('Off (app payment only)'))}</option><option value="1" ${s.cashEnabled ? 'selected' : ''}>${e(tr('On: commission from the driver\'s tokens, none with a Driver Pass'))}</option></select></div></div>
         <div class="form-group"><label class="form-label" for="rs-plans">${e(tr('Pass prices, one per line: short-name, label, days, price in US$'))}</label><textarea class="form-input" id="rs-plans" rows="4" style="font-family:monospace;">${e((s.passPlans || []).map(p => [p.id, p.label, p.days, Number(p.priceUsd).toFixed(2)].join(', ')).join('\n'))}</textarea>
-        <div class="ver-note" style="margin-top:4px;">${e(tr('These starting prices are placeholders. Set the real ones after checking what drivers in your country can pay. Cash rides carry no held money, so have your lawyer add a line about them to the Ride Rules before turning them on.'))}</div></div>
+        <div class="ver-note" style="margin-top:4px;">${e(tr('These are placeholder prices. Set real ones for your market. Before allowing cash rides, have your lawyer add them to the Ride Rules.'))}</div></div>
         <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-auto">${e(tr('Release the fare automatically after the driver ends the trip (hours, 0 = never)'))}</label><input class="form-input" id="rs-auto" type="number" min="0" max="168" value="${e(s.autoReleaseHours)}"/></div>
         <div class="form-group"><label class="form-label" for="rs-nostart">${e(tr('Cancel and refund a ride that never started after (hours)'))}</label><input class="form-input" id="rs-nostart" type="number" min="1" max="48" value="${e(s.noStartHours)}"/></div></div>
         <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-stuck">${e(tr('Flag a started trip nobody ended after (hours)'))}</label><input class="form-input" id="rs-stuck" type="number" min="1" max="48" value="${e(s.stuckHours)}"/></div>
@@ -890,7 +890,7 @@
       ${p.status === 'live' ? `<a class="btn-sm btn-sm-ghost" href="https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}" target="_blank" rel="noopener">${e(tr('Check'))}</a>` : ''}
       <button class="btn-sm btn-sm-ghost" onclick="ridesPlaceRemove(${jsArg(p.id)})">${e(tr('Remove'))}</button></div>`;
     box.innerHTML = `<div class="panel-title">📌 ${e(tr('Places riders can search'))}</div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${e(tr('Where there are few street addresses, riders find their pickup by a known name ("ELWA Junction", "Red Light"). Only pinned places are offered. Pin each place on the map once; check it on the satellite view if you are not there.'))}</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${e(tr('Riders can choose a pickup by a known name, such as "ELWA Junction" or "Red Light". Only pinned places are offered. Use the satellite view to check each pin.'))}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
         ${countries.length > 1 ? `<select class="form-input form-select" style="max-width:200px;" onchange="ridesPlaceCountry(this.value)">${countries.map(c => `<option ${c === R.plc.country ? 'selected' : ''}>${e(c)}</option>`).join('')}</select>` : ''}
         <input class="form-input" type="search" placeholder="${e(tr('Find in the list'))}" value="${e(R.plc.filter)}" oninput="ridesPlaceFilter(this.value)" style="max-width:220px;"/>

@@ -42,7 +42,7 @@
   }
   try { addNav(CUSTOMER_NAV_ITEMS, 'bookings'); } catch (x) {}
   try { addNav(PROVIDER_NAV_ITEMS, 'contracts'); } catch (x) {}
-  const shell = () => `<div class="dash-header"><div><div class="dash-title">${e(t('Market'))}</div><div class="dash-sub">${e(t('Goods from stores and from people near you. Pay through Trothen and your money is held until you have it.'))}</div></div></div>
+  const shell = () => `<div class="dash-header"><div><div class="dash-title">${e(t('Market'))}</div><div class="dash-sub">${e(t('Items from stores and people near you. Your payment is held until you receive your order.'))}</div></div></div>
     <div class="market-tabs" role="tablist" style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
       ${[['browse', 'Browse'], ['sell', 'Sell'], ['orders', 'My orders']].map(([k, l]) => `<button type="button" role="tab" class="btn-sm ${M.tab === k ? 'btn-sm-primary' : 'btn-sm-outline'}" data-mtab="${k}" onclick="marketTab('${k}')">${e(t(l))}</button>`).join('')}
     </div>
@@ -529,7 +529,7 @@
           <div class="row-actions" style="display:flex;gap:6px;"><button class="btn-sm btn-sm-outline" onclick="adminListing(${jsArg(l.id)},'restore')">${l.status === 'review' ? 'Approve' : 'Keep it on sale'}</button><button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="adminListing(${jsArg(l.id)},'remove')">Take it down</button></div>
         </div>`).join('') : '<p style="color:var(--slate);margin:0;">No reported listings.</p>'}</div>` : ''}
       ${st && isSuper ? `<div class="panel"><div class="panel-title">Market fees and timing</div>
-        <div style="font-size:13.5px;color:var(--slate);margin-bottom:10px;">Store goods: a share of the goods total, paid by the seller when they are paid (the buyer pays nothing extra). Items from people: the buyer pays a small protection fee; the seller gets their full price. Orders complete by themselves a few days after hand-over unless the buyer reports a problem.</div>
+        <div style="font-size:13.5px;color:var(--slate);margin-bottom:10px;">Store items: a percentage of the sale, deducted from the seller's payment. Items from individuals: the buyer pays a small protection fee. Orders complete automatically a few days after hand-over unless the buyer reports a problem.</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           ${[['adm-gfp', 'Fee on store goods (%)', st.goodsFeePercent], ['adm-gfm', 'Minimum fee (US$)', st.goodsFeeMin], ['adm-pfp', 'Buyer protection (%)', st.protectionFeePercent], ['adm-pfm', 'Minimum protection fee (US$)', st.protectionFeeMin], ['adm-arp', 'Days after collection', st.autoReleasePickupDays], ['adm-ard', 'Days after delivery', st.autoReleaseDeliveryDays]].map(([id, l, v]) => `<div class="form-group" style="flex:1 1 150px;margin:0;"><label class="form-label" for="${id}">${l}</label><input class="form-input" id="${id}" type="number" step="0.01" min="0" value="${e(v)}"/></div>`).join('')}
           <div class="form-group" style="flex:1 1 150px;margin:0;"><label class="form-label" for="adm-fm">How the store fee works</label><select class="form-input form-select" id="adm-fm"><option value="percent" ${st.feeMode !== 'flat' ? 'selected' : ''}>A percentage (recommended)</option><option value="flat" ${st.feeMode === 'flat' ? 'selected' : ''}>The flat fee per purchase</option></select></div>
@@ -629,7 +629,7 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><select class="form-input form-select" id="pro-mode-select" style="width:auto;">
         ${[['services', 'Offer my services'], ['goods', 'Sell goods (a store)'], ['both', 'Both: services and a store']].map(([v, l]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${e(t(l))}</option>`).join('')}</select>
         <button class="btn-sm btn-sm-primary" onclick="saveProMode()">${e(t('Save'))}</button></div>
-      <div style="font-size:13px;color:var(--slate);margin-top:6px;">${e(t('Sell goods only: you are not shown in service search or matched to jobs; your store shows in the Market.'))}</div>`;
+      <div style="font-size:13px;color:var(--slate);margin-top:6px;">${e(t('Sell goods only. Your store appears in the Market, and you won\'t appear in service search.'))}</div>`;
     const header = main.querySelector('.dash-header');
     if (header) header.insertAdjacentElement('afterend', box); else main.prepend(box);
   }

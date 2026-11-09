@@ -141,12 +141,17 @@ app.use(helmet({
 // server calls) will be allowed. Leave it unset and behavior is
 // unchanged from today, so this can't break your live site by itself.
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
-app.use(cors(allowedOrigins.length ? {
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error('Not allowed by CORS'));
-  },
-} : undefined));
+// v151: by default only Trothen's own pages may read the API from a browser (the same site
+// address the request came to, so trothenpro.com, www. and the onrender.com address all work).
+// Another website's page can no longer read answers from the API. Requests with no Origin
+// (the app's own page loads, payment webhooks, server-to-server, curl) are unchanged.
+// ALLOWED_ORIGINS still adds extra sites if ever needed.
+app.use(cors((req, callback) => {
+  const origin = req.headers.origin;
+  let same = false;
+  try { same = !!origin && new URL(origin).host === String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim(); } catch (e) {}
+  callback(null, { origin: !origin || same || allowedOrigins.includes(origin) });
+}));
 app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; },
 }));
@@ -171,6 +176,9 @@ live.install(require('./src/db'));
 // v135: custom admin permissions are checked here, before any route runs
 // (see src/admin-permissions.js). Super admins and fixed roles pass straight through.
 app.use('/api', require('./src/admin-permissions').customAdminGate);
+// v153: changes from one account are handled one after the other, so a double-tap can't do something twice (see src/request-queue.js).
+app.use('/api', require('./src/request-queue').oneAtATime);
+app.use('/api', require('./src/request-queue').oneStaffAtATime);
 app.use('/api', live.router);
 app.use('/api/auth', authRoutes);
 // v105: pro stores, extra skills, pick-up/drop-off, and the pro's business tools.

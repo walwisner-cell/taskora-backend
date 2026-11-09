@@ -106,7 +106,7 @@
       <div style="font-size:12.5px;color:var(--slate);margin-top:4px;line-height:1.45;">${sub}</div></div>`;
   }
   function statementRowsHTML(rows) {
-    if (!rows.length) return `<div style="color:var(--slate);font-size:14px;padding:8px 0;">${e(t('No commission yet. It appears here once you have a booking.'))}</div>`;
+    if (!rows.length) return `<div style="color:var(--slate);font-size:14px;padding:8px 0;">${e(t('No commission yet.'))}</div>`;
     const shown = showAllRows ? rows : rows.slice(0, 10);
     return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>${e(t('Date'))}</th><th>${e(t('Booking'))}</th><th>${e(t('Service'))}</th><th>${e(t('Job Amount'))}</th><th>${e(t('Rate'))}</th><th>${e(t('Commission'))}</th><th>${e(t('How It Is Paid'))}</th><th>${e(t('Status'))}</th></tr></thead><tbody>
       ${shown.map(r => `<tr>
@@ -132,15 +132,15 @@
     const step = (n, title, text, extra) => `<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border);">
       <div style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:rgba(37,99,235,.1);color:#2563eb;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;">${n}</div>
       <div style="font-size:14px;color:var(--text);line-height:1.55;"><strong style="color:var(--navy);">${e(t(title))}.</strong> ${text}${extra || ''}</div></div>`;
-    return `<div class="panel-title">${e(t('How Your Commission Is Paid'))}</div>
+    return `<div class="panel-title">${e(t('How Commission Works'))}</div>
       <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
         ${tile(e(t('Your commission rate')), e(pct(s.rate)), `${rateLine(s)}. ${e(t('Rides'))}: ${e(pct(s.rideRate))}. ${e(t('Tips and store goods: no commission.'))}`)}
         ${tile(e(t('Due at your next payout')), usd(a.commissionAmount), `${dueLine(s)}${a.grossAmount > 0 ? ` ${usd(a.grossAmount)} ${t('earned')}, ${t('You receive').toLowerCase()} ${usd(a.net)}.` : ''}`)}
         ${tile(e(t('Commission paid so far')), usd(tot.all), paidParts.join(' · '))}
       </div>
-      ${step(1, 'Jobs paid through Trothen', e(t(tokensOn ? 'The customer\'s payment is held until they mark the job complete. When you request a payout, the commission is paid from your tokens first (see 3), and anything they do not cover is taken from the payout. You never pay it separately.' : 'The customer\'s payment is held until they mark the job complete. When you request a payout, Trothen\'s commission is taken out first and you receive the rest. You never pay it separately.')))}
-      ${step(2, 'Cash jobs', e(t('The customer pays you directly, so the commission is paid with tokens when you accept the job. If the price changes or the job does not go ahead, the tokens are corrected or given back.')))}
-      ${step(3, 'Tokens', e(t(tokensOn ? 'On: tokens pay the commission at payout first, so you keep more of the payout. You can turn this off on your Tokens page.' : 'Off: the commission is taken out of the job money before the rest is paid to you. Tokens are for the commission on cash jobs.')), ` <a onclick="selectProviderSection('tokens')" style="color:var(--teal);cursor:pointer;font-weight:600;white-space:nowrap;">${e(t('Open Tokens'))} →</a>`)}
+      ${step(1, 'Paid through Trothen', e(t(tokensOn ? 'The customer\'s payment is held until they confirm the job is complete. At payout, commission is paid from your tokens first, then from the payout.' : 'The customer\'s payment is held until they confirm the job is complete. Commission is deducted when you request a payout.')))}
+      ${step(2, 'Cash jobs', e(t('The customer pays you directly. Commission is paid with tokens when you accept the job, and refunded if the job is cancelled.')))}
+      ${step(3, 'Tokens at payout', e(t(tokensOn ? 'On. Your tokens pay commission at payout, so you receive more of the payout.' : 'Off. Commission is deducted from your payout.')), ` <a onclick="selectProviderSection('tokens')" style="color:var(--teal);cursor:pointer;font-weight:600;white-space:nowrap;">${e(t('Manage Tokens'))}</a>`)}
       ${s.tokenDebt > 0 ? `<div style="margin-top:8px;padding:10px 12px;border-radius:8px;background:rgba(220,38,38,.08);color:#B42318;font-size:14px;">${e(t('You owe'))} ${e(toks(s.tokenDebt))} ${e(t('of commission from a cash job.'))}</div>` : ''}
       <div style="font-weight:700;color:var(--navy);margin:16px 0 8px;">${e(t('Commission Statement'))}</div>
       <div id="commission-statement-wrap">${statementRowsHTML(s.rows)}</div>`;
@@ -159,7 +159,7 @@
       const rows = s.rows.filter(r => r.status === 'pending');
       const gross = rows.reduce((x, r) => x + (r.amount || 0), 0), com = rows.reduce((x, r) => x + (r.commission || 0), 0);
       const v = pend.querySelector('.stat-card-val'); const sub = v && v.nextElementSibling;
-      if (sub) sub.textContent = `${t('After commission is taken once the customer confirms')}: ${usd(gross - com)} · ${t('View details')}`;
+      if (sub) sub.textContent = `${usd(gross - com)} ${t('after commission, once confirmed')} · ${t('View details')}`;
     }
   }
 

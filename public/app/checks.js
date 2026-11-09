@@ -20,7 +20,7 @@
       '.rd-spot{outline:3px solid #E0A526 !important;outline-offset:4px;border-radius:10px;animation:rdPulse 1s ease-in-out 3;}@keyframes rdPulse{50%{outline-color:rgba(224,165,38,.25);}}' +
       '.rd-chip{display:inline-block;font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 8px;margin-left:8px;vertical-align:2px;}' +
       '.rd-row{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--border);}.rd-row .rd-act{flex-shrink:0;}' +
-      '@media (max-width:560px){.rd-row{flex-wrap:wrap;}.rd-row .rd-act{width:100%;margin-left:24px;}}'; document.head.appendChild(st); }
+      '@media (max-width:560px){.rd-row{flex-wrap:wrap;}.rd-row .rd-act{width:calc(100% - 24px);margin-left:24px;}}'; document.head.appendChild(st); }
   const isSuper = () => !!(AUTH && AUTH.user && AUTH.user.role === 'admin' && AUTH.user.isSuperAdmin);
 
   // ── 1. Admin → System Check ─────────────────────────────────────────
@@ -102,18 +102,18 @@
   async function load(action) {
     try { const r = await apiFetch('GET', '/me/readiness' + (action ? '?action=' + encodeURIComponent(action) : '')); READY.items = r.items || []; READY.at = Date.now(); return r; } catch (x) { return null; }
   }
-  const CHIP = { block: ['Needed', '#C0392B', '#fdecea'], warn: ['Recommended', '#8a5a00', '#fff4dc'] };
+  const CHIP = { block: ['Required', '#B3261E', '#fdecea'], warn: ['Recommended', '#7A5600', '#fff4dc'] };
   function rowHTML(i) {
     const [word, fg, bg] = CHIP[i.level] || CHIP.warn;
     return `<div class="rd-row">
       ${dotHTML(i.level === 'block' ? '#C0392B' : '#E0A526')}
-      <div style="flex:1;min-width:0;"><div style="font-weight:700;color:var(--navy);font-size:15px;">${e(t(i.todo || i.label))}<span class="rd-chip" style="color:${fg};background:${bg};">${e(t(word))}</span></div><div style="font-size:13.5px;color:var(--slate);margin-top:3px;line-height:1.5;">${e(t(i.why || ''))}</div></div>
-      ${i.fix ? `<button type="button" class="btn-sm rd-act ${i.level === 'block' ? 'btn-sm-primary' : 'btn-sm-outline'}" onclick="readyFix(${jsArg(i.key)})">${e(t(i.fix.label))} →</button>` : ''}</div>`;
+      <div style="flex:1;min-width:0;"><div style="font-weight:600;color:var(--navy);font-size:15px;">${e(t(i.todo || i.label))}<span class="rd-chip" style="color:${fg};background:${bg};">${e(t(word))}</span></div>${i.why ? `<div style="font-size:13.5px;color:var(--slate);margin-top:2px;line-height:1.45;">${e(t(i.why))}</div>` : ''}</div>
+      ${i.fix ? `<button type="button" class="btn-sm rd-act ${i.level === 'block' ? 'btn-sm-primary' : 'btn-sm-outline'}" onclick="readyFix(${jsArg(i.key)})">${e(t(i.fix.label))}</button>` : ''}</div>`;
   }
   // The phone or computer itself: notifications (for everyone on the Overview).
   function deviceItems() {
     const out = [];
-    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') out.push({ key: 'dev_notif', ok: false, level: 'warn', todo: 'Turn on notifications', why: Notification.permission === 'denied' ? 'Notifications are blocked for Trothen on this device, so you miss new bookings and messages when the app is closed. Allow them in your browser\'s site settings (the lock icon by the web address).' : 'So you hear about new bookings, messages and payments even when Trothen is closed.', fix: Notification.permission === 'denied' ? null : { label: 'Turn on', action: 'notify' } });
+    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') out.push({ key: 'dev_notif', ok: false, level: 'warn', todo: 'Turn on notifications', why: Notification.permission === 'denied' ? 'Blocked on this device. Allow them in your browser\'s site settings.' : 'Get alerts for new bookings, messages and payments.', fix: Notification.permission === 'denied' ? null : { label: 'Turn On', action: 'notify' } });
     return out;
   }
   // The "Get ready" card on the Overview
@@ -127,17 +127,24 @@
     let card = el('rd-card');
     if (!need.length && !rec.length) { if (card) card.remove(); return; }
     const pct = Math.round(done.length / all.length * 100);
-    const open = (() => { try { return localStorage.getItem('rd_done_open') === '1'; } catch (x) { return false; } })();
-    const html = `<div class="panel" id="rd-card" style="border-left:4px solid ${need.length ? '#C0392B' : '#E0A526'};">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;"><div class="panel-title" style="margin:0;">${e(t('Finish setting up your account'))}</div><span style="font-size:13px;color:var(--slate);">${done.length} ${e(t('of'))} ${all.length} ${e(t('done'))}</span></div>
-      <div style="font-size:13.5px;color:var(--slate);margin-top:4px;">${need.length ? `${e(t('You have'))} <strong style="color:#C0392B;">${need.length} ${e(t(need.length === 1 ? 'thing you need to do' : 'things you need to do'))}</strong>${rec.length ? ` ${e(t('and'))} ${rec.length} ${e(t(rec.length === 1 ? 'recommended one' : 'recommended ones'))}` : ''}. ${e(t('Each button takes you straight to it.'))}` : `${e(t('Everything needed is done.'))} ${rec.length} ${e(t(rec.length === 1 ? 'more thing will help you' : 'more things will help you'))}.`}</div>
-      <div style="height:8px;background:var(--offwhite);border-radius:4px;margin:10px 0 2px;" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div style="height:8px;width:${pct}%;background:#2E8C6F;border-radius:4px;"></div></div>
-      ${need.map(rowHTML).join('')}${rec.map(rowHTML).join('')}
-      ${done.length ? `<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px;"><button type="button" class="link-btn" style="font-size:13.5px;" onclick="readyToggleDone()">${open ? '▾' : '▸'} ${e(t('Done'))} (${done.length})</button>
-        ${open ? `<div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:13.5px;color:var(--slate);">${done.map(i => `<span>✓ ${e(t(i.label))}</span>`).join('')}</div>` : ''}</div>` : ''}
+    const pref = (k) => { try { return localStorage.getItem(k) === '1'; } catch (x) { return false; } };
+    const open = pref('rd_done_open'), more = pref('rd_more_open');
+    // v152: the required items, then the two most useful recommended ones; the rest on request
+    const todo = [...need, ...rec], shown = more ? todo : todo.slice(0, need.length + 2), hiddenN = todo.length - shown.length;
+    const isPro = AUTH.user && AUTH.user.role === 'provider';
+    const html = `<div class="panel" id="rd-card" style="border-left:4px solid ${need.length ? '#B3261E' : '#E0A526'};">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;"><div class="panel-title" style="margin:0;">${e(t(isPro ? 'Complete your profile' : 'Complete your account'))}</div><span style="font-size:13px;color:var(--slate);">${done.length} ${e(t('of'))} ${all.length} ${e(t('complete'))}</span></div>
+      <div style="height:6px;background:var(--offwhite);border-radius:3px;margin:10px 0 4px;" role="progressbar" aria-label="${e(t('Setup progress'))}" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div style="height:6px;width:${pct}%;background:#1F7A55;border-radius:3px;"></div></div>
+      ${shown.map(rowHTML).join('')}
+      <div style="display:flex;gap:18px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:10px;margin-top:2px;">
+        ${hiddenN > 0 || more ? `<button type="button" class="link-btn" style="font-size:13.5px;" onclick="readyToggle('rd_more_open')">${more ? e(t('Show less')) : `${e(t('Show'))} ${hiddenN} ${e(t('more'))}`}</button>` : ''}
+        ${done.length ? `<button type="button" class="link-btn" style="font-size:13.5px;" onclick="readyToggle('rd_done_open')">${open ? '▾' : '▸'} ${e(t('Completed'))} (${done.length})</button>` : ''}
+      </div>
+      ${open && done.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:13.5px;color:var(--slate);">${done.map(i => `<span>✓ ${e(t(i.label))}</span>`).join('')}</div>` : ''}
     </div>`;
-    if (card) card.outerHTML = html; else main.insertAdjacentHTML('afterbegin', html);
+    if (card) card.outerHTML = html; else { const hd = main.querySelector('.dash-header'); if (hd) hd.insertAdjacentHTML('afterend', html); else main.insertAdjacentHTML('afterbegin', html); } // v152: below the greeting
   }
+  window.readyToggle = (k) => { try { localStorage.setItem(k, localStorage.getItem(k) === '1' ? '0' : '1'); } catch (x) {} const role = AUTH.user && AUTH.user.role; drawCard(role === 'provider' ? 'provider-main' : 'customer-main'); };
   window.readyToggleDone = () => { try { localStorage.setItem('rd_done_open', localStorage.getItem('rd_done_open') === '1' ? '0' : '1'); } catch (x) {} const role = AUTH.user && AUTH.user.role; drawCard(role === 'provider' ? 'provider-main' : 'customer-main'); };
   if (typeof selectProviderSection === 'function') {
     const f = selectProviderSection;
@@ -154,11 +161,11 @@
     if (action !== 'goOnline') return out;
     let geo = 'unknown';
     try { if (navigator.permissions) geo = (await navigator.permissions.query({ name: 'geolocation' })).state; } catch (x) {}
-    if (!navigator.geolocation) out.push({ key: 'dev_geo', level: 'block', label: 'Location works on this device', todo: 'Use a browser that shares location', why: 'This browser can\'t share your location. Riders can\'t see you coming. Use Chrome or Safari on your phone.' });
+    if (!navigator.geolocation) out.push({ key: 'dev_geo', level: 'block', label: 'Location works on this device', todo: 'Use a browser that shares location', why: 'This browser can\'t share your location. Use Chrome or Safari on your phone.' });
     else if (geo === 'denied') out.push({ key: 'dev_geo', level: 'block', label: 'Location is allowed for Trothen', todo: 'Allow location for Trothen', why: window.TrothenMap ? TrothenMap.locationHelp('denied') : 'Location is blocked for this site. Allow it in your browser settings.' });
     let notif = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
-    if (notif === 'denied') out.push({ key: 'dev_notif', level: 'warn', label: 'Notifications are allowed', todo: 'Allow notifications for Trothen', why: 'Notifications are blocked, so you won\'t hear new ride requests while the app is in the background. Allow notifications for this site in your browser settings.' });
-    else if (notif === 'default') out.push({ key: 'dev_notif', level: 'warn', label: 'Notifications are allowed', todo: 'Turn on notifications', why: 'So you hear new ride requests even when Trothen is in the background.', fix: { label: 'Turn on', action: 'notify' } });
+    if (notif === 'denied') out.push({ key: 'dev_notif', level: 'warn', label: 'Notifications are allowed', todo: 'Allow notifications for Trothen', why: 'Blocked on this device, so you may miss ride requests. Allow them in your browser\'s site settings.' });
+    else if (notif === 'default') out.push({ key: 'dev_notif', level: 'warn', label: 'Notifications are allowed', todo: 'Turn on notifications', why: 'Get alerts for ride requests when Trothen is in the background.', fix: { label: 'Turn On', action: 'notify' } });
     return out;
   }
   // Before an action: check, and show what to fix. Resolves true to go ahead.
@@ -175,7 +182,7 @@
     return new Promise((resolve) => {
       const old = el('rd-modal'); if (old) old.remove();
       document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="rd-modal" role="dialog" aria-modal="true"><div class="modal" style="max-width:520px;">
-        <div class="modal-header"><button class="modal-close" id="rd-x" aria-label="${e(t('Close'))}">✕</button><h3>${blocking.length ? e(t('Before you can')) + ' ' + e(t(label)) : e(t('Before you')) + ' ' + e(t(label))}</h3><p>${e(t(blocking.length ? 'Fix these first. Each one says why and where.' : 'You can go ahead, but these will cause problems. Fixing them takes a minute.'))}</p></div>
+        <div class="modal-header"><button class="modal-close" id="rd-x" aria-label="${e(t('Close'))}">✕</button><h3>${blocking.length ? e(t('Before you can')) + ' ' + e(t(label)) : e(t('Before you')) + ' ' + e(t(label))}</h3><p>${e(t(blocking.length ? 'Complete the following first.' : 'You can continue, but we recommend completing these first.'))}</p></div>
         <div class="modal-body">${[...blocking, ...warnings].map(rowHTML).join('')}</div>
         <div class="modal-footer"><button class="btn-sm btn-sm-outline" id="rd-cancel">${e(t('Not now'))}</button>${blocking.length ? '' : `<button class="btn-sm btn-sm-primary" id="rd-go">${e(t('Continue anyway'))}</button>`}</div></div></div>`);
       const done = (v) => { const m = el('rd-modal'); if (m) m.remove(); resolve(v); };

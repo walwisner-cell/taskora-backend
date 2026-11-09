@@ -49,7 +49,7 @@ async function createFlag({ type, severity, userId, relatedUserId, contractId, d
     const user = await db.find('users', u => u.id === userId);
     if (user && !user.onHold && user.active !== false) {
       await db.update('users', userId, { onHold: true, holdReason: details, holdSince: new Date().toISOString() });
-      await require('./notify').notify(userId, '⏸️', `Your account has been temporarily paused pending a quick review. You can still log in and see your history, but can't start new bookings or request payouts until this is cleared, usually within a couple hours. Contact support if you believe this is a mistake.`, null, { section: 'settings' });
+      await require('./notify').notify(userId, '⏸️', `Your account is paused for a short review. You can still sign in and see your history, but new bookings and payouts are paused until it's cleared, usually within a few hours. Contact support if you think this is a mistake.`, null, { section: 'settings' });
     }
   }
 

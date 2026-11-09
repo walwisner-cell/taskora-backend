@@ -65,7 +65,12 @@ router.get('/customer-payments/:contractId/card-status', requireAuth, requireRol
 // POST /api/customer-payments/:contractId/paid { transactionId } — "I have sent it".
 router.post('/customer-payments/:contractId/paid', requireAuth, requireRole('customer', 'provider'), limiter, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
-  const r = await cp.customerReportsPaid(me, req.params.contractId, (req.body || {}).transactionId);
+  // v153: the booking is locked so the "not paid in time" timer can't cancel it at this moment
+  const { contractStatusLocks } = require('../contract-locks');
+  if (contractStatusLocks.has(req.params.contractId)) return res.status(409).json({ error: 'This booking is being updated right now. Try again in a moment.' });
+  contractStatusLocks.add(req.params.contractId);
+  let r;
+  try { r = await cp.customerReportsPaid(me, req.params.contractId, (req.body || {}).transactionId); } finally { contractStatusLocks.delete(req.params.contractId); }
   if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
   res.json({ ok: true });
 });

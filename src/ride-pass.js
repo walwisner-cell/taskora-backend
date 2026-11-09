@@ -80,7 +80,7 @@ async function buy(driver, planId, expectedPrice) {
     try { await db.insert('ridePasses', row); }
     catch (e) { if (paymentStatus === 'tokens') await tokens.refundRef(`pass:${id}`, 'the pass could not be saved'); throw e; }
     const later = start > Date.now() + 1000;
-    await notify(driver.id, '🎟️', `Your ${plan.label} is ${later ? 'booked. It starts when your current pass ends' : 'active'} and runs until ${row.endsAt.slice(0, 16).replace('T', ' ')} UTC. You keep the whole fare on every ride while it runs.`, 'bookingUpdates', { section: 'rides' });
+    await notify(driver.id, '🎟️', `Your ${plan.label} is ${later ? 'booked. It starts when your current pass ends' : 'active'} and runs until ${row.endsAt.slice(0, 16).replace('T', ' ')} UTC. You keep the full fare on every ride during this time.`, 'bookingUpdates', { section: 'rides' });
     return { ok: true, pass: row };
   } finally { inFlight.delete(driver.id); }
 }

@@ -284,13 +284,13 @@
       ${can ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"><input class="form-input" style="flex:1;min-width:200px;" id="cpr-tx-${e(r.escrowId)}" maxlength="60" placeholder="${e(tr('Transaction ID of the refund you sent'))}"/><button class="btn-sm btn-sm-primary" onclick="custPayRefundSent(${jsArg(r.escrowId)})">${e(tr('Mark refund sent'))}</button></div>` : ''}
     </div>`;
     box.innerHTML = `
-      <div class="ver-note" style="margin-bottom:12px;">${e(tr('Turn payment codes on per country in Admin → Tokens → Countries ("Protected payments"), with Trothen\'s official accounts. Only confirm a payment once you can see it on Trothen\'s statement with the code in the reference.'))}</div>
+      <div class="ver-note" style="margin-bottom:12px;">${e(tr('Turn on payment codes for each country in Admin → Tokens → Countries. Confirm a payment only when it appears on Trothen\'s statement with the code in the reference.'))}</div>
       <div class="panel"><div class="panel-title">${e(tr('Payments to confirm'))}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;"><input class="form-input" style="flex:1;min-width:200px;text-transform:uppercase;" id="cp-q" value="${e(q || '')}" placeholder="${e(tr('Code, or a transaction ID'))}" onkeydown="if(event.key==='Enter')custPayFind()"/><button class="btn-sm btn-sm-primary" onclick="custPayFind()">${e(tr('Find'))}</button><button class="btn-sm btn-sm-outline" onclick="custPayFind(true)">${e(tr('Show all waiting'))}</button></div>
         ${d.payments.length ? d.payments.map(pay).join('') : `<div style="color:var(--slate);font-size:14px;margin-top:10px;">${e(tr(q ? 'Nothing matches that.' : 'No payments waiting.'))}</div>`}
       </div>
       <div class="panel"><div class="panel-title">${e(tr('Refunds to send'))}${d.refunds.length ? ` <span class="badge badge-warn">${d.refunds.length}</span>` : ''}</div>
-        <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">${e(tr('Customers who paid by code and were then refunded (booking cancelled, declined, not answered, or a dispute). Send the money back by mobile money to the number they paid from, then mark it sent.'))}</div>
+        <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">${e(tr('Refunds due to customers who paid by code. Send the money to the number they paid from, then mark it sent.'))}</div>
         ${d.refunds.length ? d.refunds.map(ref).join('') : `<div style="color:var(--slate);font-size:14px;">${e(tr('Nothing to send.'))}</div>`}
       </div>`;
   }

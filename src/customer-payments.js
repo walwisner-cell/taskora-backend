@@ -220,7 +220,13 @@ async function confirm(admin, code, transactionId, amountReceived) {
   const k1 = 'c:' + String(code || '').trim().toUpperCase(), k2 = 't:' + String(transactionId || '').trim().toLowerCase();
   if (confirming.has(k1) || confirming.has(k2)) return { status: 409, error: 'This payment is being confirmed by someone else right now. Refresh in a moment.' };
   confirming.add(k1); confirming.add(k2);
-  try { return await confirmOnce(admin, code, transactionId, amountReceived); } finally { confirming.delete(k1); confirming.delete(k2); }
+  // v153: the booking itself is locked too, so the "not paid in time" timer can't cancel it at the same moment
+  const e0 = await db.find('escrowTransactions', x => x.paymentCode === String(code || '').trim().toUpperCase() && x.paidBy === 'code');
+  const { contractStatusLocks } = require('./contract-locks');
+  const lockId = e0 && e0.contractId;
+  if (lockId && contractStatusLocks.has(lockId)) { confirming.delete(k1); confirming.delete(k2); return { status: 409, error: 'This booking is being updated right now. Refresh in a moment.' }; }
+  if (lockId) contractStatusLocks.add(lockId);
+  try { return await confirmOnce(admin, code, transactionId, amountReceived); } finally { confirming.delete(k1); confirming.delete(k2); if (lockId) contractStatusLocks.delete(lockId); }
 }
 async function confirmOnce(admin, code, transactionId, amountReceived) {
   const c0 = String(code || '').trim().toUpperCase();
@@ -380,9 +386,15 @@ async function expireUnpaid() {
   }
   try { await sweepCardRefunds(); } catch (x) { console.error('[card refunds] sweep failed:', x.message); }
   try { await sweepMomo(); } catch (x) { console.error('[momo] sweep failed:', x.message); } // v147
-  for (const e of due) {
-    try { await endUnpaid(e, 'expired', `Your booking with payment code ${e.paymentCode} was cancelled because no payment was reported in time. If you already sent the money, contact support with your transaction ID.`); }
-    catch (x) { console.error('[customer-payments] expire failed:', e.id, x.message); }
+  for (const e0 of due) {
+    // v153: not while finance is confirming it or the customer is answering, and only if it is still unpaid now
+    try {
+      await require('./contract-locks').whenFree(e0.contractId, async () => {
+        const e = await db.find('escrowTransactions', x => x.id === e0.id);
+        if (!e || e.status !== 'awaiting_payment' || e.customerSaysPaidAt) return;
+        await endUnpaid(e, 'expired', `Your booking with payment code ${e.paymentCode} was cancelled because no payment was reported in time. If you already sent the money, contact support with your transaction ID.`);
+      });
+    } catch (x) { console.error('[customer-payments] expire failed:', e0.id, x.message); }
   }
   // v125: a price the pro accepted that the customer never paid (test-mode
   // countries; payment-code countries are handled above).

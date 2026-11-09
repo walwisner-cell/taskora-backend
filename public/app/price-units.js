@@ -164,7 +164,7 @@
     const fee = feeFor(amount);
     slot.innerHTML = `<div class="summary-row"><span>${e(t('Job amount'))}</span><span>${amount > 0 ? money(amount) : e(t('Set once you choose'))}</span></div>
       <div class="summary-row"><span>Service fee <small style="color:var(--muted);">(9%, $2.99–$25)</small></span><span id="offer-service-fee">${amount > 0 ? '$' + fee.toFixed(2) : e(t('Calculated from the amount'))}</span></div>
-      <div class="summary-row"><span>Smart Contract</span><span style="color:#2E8C6F">Included ✓</span></div>
+      <div class="summary-row"><span>Smart Contract</span><span style="color:#1F7A55">Included ✓</span></div>
       <div class="summary-row total"><span>Total charged</span><span id="offer-total-charged">${amount > 0 ? '$' + (amount + fee).toFixed(2) : e(t('Set once you choose'))}</span></div>`;
     buttonText();
   }
@@ -247,7 +247,7 @@
     const unit = UNITS[ED.unit];
     const optBox = (k) => `<div class="auth-role-opt ${ED.unit === k ? 'active' : ''}" id="pu-unit-${k}" onclick="puSetUnit('${k}')"><span class="r-icon">${UNITS[k].icon}</span>${e(t(UNITS[k].label))}</div>`;
     return `<div class="panel-title">${e(t('How you charge'))}</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">${e(t('Choose what fits your work. Most work in Liberia is priced per job: the customer describes it and you send a price.'))}</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">${e(t('Most work is priced per job: the customer describes the job and you send a price.'))}</div>
       <div class="auth-role-grid" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));margin-bottom:8px;">${['job', 'hour', 'day', 'trip'].map(optBox).join('')}</div>
       <div style="font-size:13px;color:var(--slate);margin-bottom:12px;">${e(t(unit.help))}</div>
       ${ED.unit === 'job' ? `<div class="form-group"><label class="form-label" for="pu-from">${e(t('Usual starting price, optional ($)'))}</label><input class="form-input" type="number" min="0" step="0.01" id="pu-from" placeholder="e.g. 20" value="${q.unit === 'job' && q.from ? e(q.from) : ''}" style="max-width:180px;"/><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">${e(t('Shown as "From $20 per job" so customers know roughly what to expect. Leave blank to show "Price per job".'))}</div></div>`
@@ -256,7 +256,7 @@
           <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:10px;"><input type="checkbox" id="pu-offers" ${q.offers ? 'checked' : ''}/> ${e(t('Customers may also make me an offer'))}</label>`}
       <div style="border-top:1px solid var(--border);margin:12px 0 10px;"></div>
       <div style="font-weight:700;color:var(--navy);">${e(t('Fixed prices'))} <span style="font-weight:400;color:var(--slate);font-size:13px;">(${e(t('optional, up to 20'))})</span></div>
-      <div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${e(t('Jobs you always do for the same price. Customers can book them straight away, without waiting for a quote.'))}</div>
+      <div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${e(t('Fixed-price services customers can book without a quote.'))}</div>
       <div id="pu-list">${ED.list.map((it, i) => `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;"><input class="form-input pu-li-name" data-i="${i}" placeholder="${e(t('e.g. Fix a leaking tap'))}" value="${e(it.name || '')}" style="flex:2 1 180px;"/><input class="form-input pu-li-price" data-i="${i}" type="number" min="1" step="0.01" placeholder="$" value="${it.price != null ? e(it.price) : ''}" style="flex:0 1 90px;"/><input class="form-input pu-li-note" data-i="${i}" placeholder="${e(t('What it includes (optional)'))}" value="${e(it.note || '')}" style="flex:2 1 160px;"/><button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="puRemoveItem(${i})" aria-label="Remove">✕</button></div>`).join('')}</div>
       ${ED.list.length < 20 ? `<button class="btn-sm btn-sm-outline" onclick="puAddItem()">+ ${e(t('Add a fixed price'))}</button>` : ''}
       <div style="margin-top:14px;"><button class="btn-sm btn-sm-primary" onclick="puSavePricing()">${e(t('Save pricing'))}</button></div>`;

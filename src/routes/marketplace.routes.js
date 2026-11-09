@@ -45,7 +45,7 @@ const orgSeatLocks = new Set();
 // number instead, purely for humans to reference the same booking by.
 async function generateBookingNumber() {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const candidate = String(Math.floor(100000 + Math.random() * 900000));
+    const candidate = String(require('crypto').randomInt(100000, 1000000));
     const collision = await db.find('contracts', c => c.bookingNumber === candidate);
     if (!collision) return candidate;
   }
@@ -214,8 +214,10 @@ function publicProvider(u) {
   return {
     id: u.id, name: u.name, initials: u.initials, role: u.providerRole, category: u.category,
     rating: u.rating, jobs: u.jobs, price: u.price, tags: u.tags, color: u.color, since: u.since,
-    verified: u.verified, country: u.country, city: u.city, state: u.state, zipCode: u.zipCode,
-    latitude: u.latitude != null ? u.latitude : null, longitude: u.longitude != null ? u.longitude : null,
+    verified: u.verified, country: u.country, city: u.city, state: u.state, // v151: no postal code (data minimisation; "same community" is worked out on the server)
+    // v151: only the area (about 1 km), never the exact spot: a pro's location is often their home.
+    // The exact place is only shared with a customer once a booking is confirmed.
+    latitude: u.latitude != null ? Math.round(u.latitude * 100) / 100 : null, longitude: u.longitude != null ? Math.round(u.longitude * 100) / 100 : null,
     availability: u.availability && u.availability.length ? u.availability : ['Morning (8–12pm)', 'Afternoon (12–5pm)', 'Evening (5–8pm)'],
     pricingModel: u.pricingModel || 'hourly',
     // v141: how this pro charges, and what their card shows
