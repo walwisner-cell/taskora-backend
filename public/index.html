@@ -2498,6 +2498,96 @@
     .rd-chip { font-size:12px !important; }
   }
 </style>
+
+<style id="align-v155">
+  /* ═══ v155: one grid on a phone ═══════════════════════════════════════════
+     Everything lines up on the same left and right edge (16 px from the screen
+     edge), spacing comes from one scale (4, 8, 12, 16, 24 px), the top bar's
+     controls are the same height and shape, and headings, cards and buttons are
+     sized the same way on every page. */
+  .lang-code { display:none; }
+  @media (max-width: 760px) {
+    :root { --gutter:16px; }
+    /* the early-access notice: icon, words and ✕ on one line, centred */
+    #test-mode-banner { display:flex; align-items:center; gap:10px; padding:8px 4px 8px var(--gutter) !important; text-align:left !important; line-height:1.4 !important; }
+    #test-mode-banner > span:first-child { flex-shrink:0; margin:0 !important; }
+    #test-mode-banner .tm-close { position:static !important; transform:none !important; margin-left:auto; flex-shrink:0; }
+    #test-mode-banner-short, #test-mode-banner-text { flex:1; min-width:0; }
+
+    /* the top bar: the logo and three equal 44 px controls, on the page's edges */
+    .navbar, body.has-mtab .navbar { height:64px; padding:0 var(--gutter) !important; }
+    .navbar-logo-img, body.has-mtab .navbar-logo-img { height:44px; width:auto; border-radius:8px; }
+    .navbar-nav { gap:8px !important; align-items:center; }
+    .navbar .lang-switcher-btn { min-width:44px; height:44px; padding:0 10px !important; border:1px solid rgba(255,255,255,.28) !important; border-radius:var(--r-control); font-size:14px !important; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+    .navbar .lang-switcher-btn .lang-name { display:none; }
+    .navbar .lang-switcher-btn .lang-code { display:inline; letter-spacing:.04em; }
+    .navbar .notif-bell { border-radius:var(--r-control) !important; }
+    .navbar .account-menu-btn { height:44px; min-height:44px; padding:0 12px; display:inline-flex; align-items:center; gap:4px; border-radius:var(--r-control); font-size:15px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    /* the page: one left and right edge for everything */
+    .dash-main { padding-left:var(--gutter) !important; padding-right:var(--gutter) !important; padding-top:20px !important; }
+    .dash-header { gap:12px; margin-bottom:20px !important; }
+    .dash-title { font-size:26px !important; line-height:1.2; letter-spacing:-.01em; }
+    .dash-sub { font-size:15px !important; margin-top:4px !important; line-height:1.45; }
+    .dash-header .btn-sm, .dash-header .btn, .dash-header button { width:100%; }
+
+    /* cards: the same padding, corner and gap everywhere */
+    .panel { padding:16px !important; margin-bottom:16px !important; border-radius:14px !important; }
+    .panel-title { font-size:18px !important; margin-bottom:12px !important; gap:8px; flex-wrap:wrap; line-height:1.3; }
+    .panel .panel { border:none !important; background:var(--offwhite) !important; padding:14px !important; margin-bottom:12px !important; } /* no box inside a box */
+    .stat-cards { grid-template-columns:1fr 1fr !important; gap:12px !important; margin-bottom:16px !important; }
+    .stat-card { padding:14px !important; border-radius:14px !important; min-width:0; }
+    .stat-cards > .stat-card:last-child:nth-child(odd) { grid-column:1 / -1; } /* an odd one out takes the full width, no gap beside it */
+    .stat-card-value, .stat-val { overflow-wrap:anywhere; }
+
+    /* lists shown as cards: no extra frame around them, the cards sit on the page edge */
+    .panel:has(table.tbl-cards) { background:transparent !important; border:none !important; padding:0 !important; box-shadow:none !important; }
+    .panel:has(table.tbl-cards) > .panel-title { padding:0 2px; }
+    table.tbl-cards tr { border-radius:14px !important; padding:6px 16px !important; }
+    table.tbl-cards td { grid-template-columns:108px minmax(0,1fr) !important; }
+    table.tbl-cards td.td-actions { margin-top:6px !important; padding-top:12px !important; padding-bottom:10px !important; }
+    table.tbl-cards td.td-actions > * { flex:1 1 calc(50% - 8px); }
+    table.tbl-cards td.td-actions.row-actions { display:flex !important; } /* an older rule kept action cells as table cells, so the line and the buttons only spanned the button */
+
+    /* forms: a lone main button fills the width, like the fields above it */
+    .panel > .btn-sm-primary, .panel > button.btn-primary, .panel > .form-actions > .btn-sm, .panel > div > .btn-sm-primary:only-child, .panel > .btn-sm:only-of-type { width:100%; justify-content:center; }
+
+    /* date filters: from and to side by side, then the two buttons side by side */
+    .panel-title:has(.date-range) > span:first-child { width:100%; }
+    .date-range { display:grid !important; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); gap:8px !important; width:100%; }
+    .date-range input { width:100% !important; min-width:0; }
+    .date-range > span { align-self:center; }
+    .date-range > button:nth-of-type(1) { grid-column:1 / 2; }
+    .date-range > button:nth-of-type(2) { grid-column:2 / 4; }
+
+    /* the tab bar: one colour for the icons, blue for where you are */
+    #mtab .mtab-ic svg, #mtab .mtab-ic .ui-icon, #mtab-sheet .mtab-ic svg, #mtab-sheet .mtab-ic .ui-icon { color:inherit !important; } /* one ink colour: the icons carried their own tints */
+    #mtab .mtab-ic svg, #mtab .mtab-ic svg * { stroke:currentColor !important; }
+    #mtab .mtab-ic svg [fill]:not([fill="none"]) { fill:currentColor !important; }
+    #mtab .mtab-item:not(.on) .mtab-ic svg, #mtab .mtab-item:not(.on) .mtab-ic .ui-icon { filter:none; opacity:1; }
+    #mtab-sheet .mtab-row .mtab-ic { color:var(--slate); }
+    #mtab-sheet .mtab-row.on .mtab-ic { color:var(--teal); }
+
+    /* "Saved to your account" under a section's subtitle: on its own line, lined up with the text, not indented */
+    .dash-sub > .badge { display:table; margin:6px 0 0 !important; }
+    /* All pros: the search box full width, the two dropdowns side by side under it */
+    .directory-controls { display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px !important; }
+    .directory-controls > #directory-search, .directory-controls > .directory-chips, .directory-controls > :not(input):not(select) { grid-column:1 / -1; }
+    .directory-controls > select { max-width:none !important; width:100% !important; min-width:0; }
+    /* "What you do on Trothen": the dropdown takes the room, Save beside it */
+    #pro-mode-select { flex:1 1 0; min-width:0; }
+    /* sign-in and sign-up: the same 16 px edge as every other screen, and the form near the top rather than floating mid-screen */
+    .auth-wrap { padding:20px 16px !important; align-items:flex-start !important; }
+    /* All pros and the other public pages: the same 16 px edge */
+    .has-page-hero .pricing-wrap, .has-page-hero .browse-wrap { padding-left:16px !important; padding-right:16px !important; }
+    /* the kind-of-work chips: a 44 px tall tap area (reaching into the gap between rows) without making them look bigger */
+    .directory-chip { position:relative; }
+    .directory-chip::after { content:""; position:absolute; left:0; right:0; top:-4px; bottom:-4px; }
+    /* "Complete your profile": the label sits beside the title when it fits, and lines up under it when it doesn't */
+    #rd-card .rd-chip { margin-left:6px; vertical-align:2px; }
+    #rd-card .rd-act { width:calc(100% - 24px) !important; }
+  }
+</style>
 </head>
 <body>
 
@@ -3472,7 +3562,7 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=6d56475d02" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/trothen.js?v=74fd7d9908" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
 <script src="/app/rides.js?v=f292589ac6"></script>
 <script src="/app/tokens.js?v=5697c68ad9"></script>
 <script src="/app/payways.js?v=5c991088aa"></script>
@@ -3480,7 +3570,7 @@
 <script src="/app/pricing.js?v=4fdcba4521"></script>
 <script src="/app/chats.js?v=56f10dfd90"></script>
 <script src="/app/where.js?v=521dbda842"></script>
-<script src="/app/arrival.js?v=14e3639ac9"></script>
+<script src="/app/arrival.js?v=c0b71d99c0"></script>
 <script src="/app/live.js?v=d049a42ced"></script>
 <script src="/app/instant.js?v=71f47a10f6"></script>
 <script src="/app/sounds.js?v=80c9ab4c9a"></script>
@@ -3501,7 +3591,7 @@
 <script src="/app/paymethods.js?v=497f245785"></script>
 <script src="/app/maps.js?v=aaa2141068"></script>
 <script src="/app/checks.js?v=071de1a6a3"></script>
-<script src="/app/polish.js?v=ae2a86ef1b"></script>
+<script src="/app/polish.js?v=0ae5f38a4e"></script>
 <script src="/app/a11y.js?v=7a13a5f443"></script>
 <script src="/app/es-v152.js?v=11b8442799"></script>
 <script src="/app/mobile.js?v=d4850238eb"></script>

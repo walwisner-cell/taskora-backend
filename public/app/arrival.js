@@ -270,7 +270,9 @@
         [...tr.children].forEach((td, i) => {
           const label = heads[i] || '';
           td.setAttribute('data-label', label);
-          if (/^actions?$/i.test(label) || td.classList.contains('row-actions')) { td.classList.add('td-actions'); return; }
+          // v155: a cell holding only buttons or links is an actions row too (a line across the card, buttons full width)
+          const onlyButtons = td.children.length > 0 && [...td.children].every(c => /^(BUTTON|A)$/.test(c.tagName) || c.classList.contains('btn-sm')) && !(td.textContent.replace([...td.children].map(c => c.textContent).join(''), '').trim());
+          if (/^actions?$/i.test(label) || td.classList.contains('row-actions') || onlyButtons) { td.classList.add('td-actions'); return; }
           // Everything in the cell goes in one box, so it all sits in the value column.
           if (td.childNodes.length && !(td.childNodes.length === 1 && td.firstChild.classList && td.firstChild.classList.contains('td-v'))) {
             const box = document.createElement('div'); box.className = 'td-v';

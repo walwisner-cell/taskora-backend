@@ -2383,7 +2383,7 @@ function languageSwitcherHTML() {
   // many navbar instances exist in the page at once.
   return `
     <div class="lang-switcher">
-      <button class="nav-btn lang-switcher-btn" onclick="this.nextElementSibling.classList.toggle('open')">🌐 ${I18N[CURRENT_LANG].lang_name}</button>
+      <button class="nav-btn lang-switcher-btn" onclick="this.nextElementSibling.classList.toggle('open')" aria-label="Language: ${I18N[CURRENT_LANG].lang_name}"><span class="lang-name">🌐 ${I18N[CURRENT_LANG].lang_name}</span><span class="lang-code" aria-hidden="true">${String(CURRENT_LANG).toUpperCase()}</span></button>
       <div class="lang-dropdown">${options}</div>
     </div>`;
 }
@@ -5286,7 +5286,7 @@ const CUSTOMER_SECTIONS = {
     <div class="panel">
       <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <span>Payment History</span>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
+        <div class="date-range" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
           <input type="date" class="form-input" id="payment-filter-from" aria-label="Payments from date" style="padding:6px 10px;font-size:13.5px;width:auto;" onchange="filterPaymentHistory()"/>
           <span style="font-size:13px;color:var(--slate);">to</span>
           <input type="date" class="form-input" id="payment-filter-to" aria-label="Payments to date" style="padding:6px 10px;font-size:13.5px;width:auto;" onchange="filterPaymentHistory()"/>
@@ -6375,7 +6375,7 @@ const PROVIDER_SECTIONS = {
     <div class="panel">
       <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <span>Payout History</span>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
+        <div class="date-range" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:400;">
           <input type="date" class="form-input" id="payout-filter-from" aria-label="Payouts from date" style="padding:6px 10px;font-size:13.5px;width:auto;" onchange="filterPayoutHistory()"/>
           <span style="font-size:13px;color:var(--slate);">to</span>
           <input type="date" class="form-input" id="payout-filter-to" aria-label="Payouts to date" style="padding:6px 10px;font-size:13.5px;width:auto;" onchange="filterPayoutHistory()"/>
