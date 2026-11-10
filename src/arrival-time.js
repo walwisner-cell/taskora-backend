@@ -144,7 +144,7 @@ async function adoptBookedTime(contract, userId, at, tz) {
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(t));
     const get = (k) => (parts.find(x => x.type === k) || {}).value;
     const dateOk = `${get('year')}-${get('month')}-${get('day')}` === String(contract.date).slice(0, 10);
-    const timeOk = `${get('hour')}:${get('minute')}` === (require('./booking-rules').timeHM(contract.time) || String(contract.time).slice(0, 5)); // v156: "9:00 AM" and "10:00 PM" read correctly
+    const timeOk = `${get('hour')}:${get('minute')}` === require('./booking-rules').clockHM(contract.time); // v156: "9:00 AM" and "10:00 PM" read correctly
     if (!dateOk || !timeOk) return { status: 400, error: 'That is not the booked date and time.' };
   } catch (e) { return { status: 400, error: 'Invalid time zone' }; }
   if (t < Date.now()) return { status: 400, error: 'The booked time has passed.' };
@@ -181,7 +181,7 @@ const COUNTRY_ZONE = require('./booking-rules').COUNTRY_ZONE;
 async function adoptOnServer(nowMs = Date.now()) {
   const rules = require('./booking-rules');
   const list = await db.filter('contracts', c => c.status === 'active' && !c.ride && !c.delivery && !c.storeOrder && !c.topUpFor && !c.onMyWayAt && !c.arrivedAt
-    && !(c.arrival && (c.arrival.agreed || c.arrival.proposal)) && rules.isRealDate(c.date) && /^\s*\d{1,2}(:\d{2})?\s*(am|pm|a\.m\.|p\.m\.)?\s*$/i.test(String(c.time || '')) && rules.timeHM(c.time));
+    && !(c.arrival && (c.arrival.agreed || c.arrival.proposal)) && rules.isRealDate(c.date) && rules.clockHM(c.time));
   let n = 0;
   for (const c of list) {
     try {
@@ -199,7 +199,7 @@ async function adoptOnServer(nowMs = Date.now()) {
 }
 
 // Runs every minute. Sends each reminder once.
-async function sweepArrivalReminders(nowMs = Date.now()) {
+const sweepArrivalReminders = require('./single-flight').singleFlight(async function sweepArrivalReminders(nowMs = Date.now()) { // v160: never two runs at once
   let sent = 0;
   try { await adoptOnServer(nowMs); } catch (e) { console.error('[arrival] adopt sweep:', e.message); } // v158
   const list = await db.filter('contracts', c => c.status === 'active' && c.arrival && c.arrival.agreed && !c.onMyWayAt && !c.arrivedAt);
@@ -259,6 +259,6 @@ async function sweepArrivalReminders(nowMs = Date.now()) {
     }
   }
   return sent;
-}
+});
 
 module.exports = { adoptOnServer, propose, accept, adoptBookedTime, sweepArrivalReminders, personName, formatWhen, leadMinutes, validTimeZone, DEFAULT_LEAD_MIN };

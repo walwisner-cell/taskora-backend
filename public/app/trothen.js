@@ -1068,19 +1068,20 @@ function timeAgo(isoString) {
 // rather than a flat unstructured line of text.
 function openJobCardHTML(j) {
   return `
-    <div class="panel" style="margin:0;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;">
+    <div class="panel job-card" style="margin:0;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;">
       <div style="font-size:22px;line-height:1;flex-shrink:0;">${categoryIcon(j.category)}</div>
-      <div style="flex:1;min-width:0;">
+      <div class="job-card-body" style="flex:1;min-width:0;">
         <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;">
           <div style="font-weight:700;color:var(--navy);font-size:14px;">${escapeHtml(j.category)}</div>
           <div style="font-size:12.5px;color:var(--muted);white-space:nowrap;">${timeAgo(j.createdAt)}</div>
         </div>
         <div style="font-size:14px;color:var(--slate);margin-top:2px;line-height:1.5;">${escapeHtml(j.description)}</div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:10px;flex-wrap:wrap;" class="job-card-foot">
           ${typeof jobFactsLine === 'function' ? jobFactsLine(j) : (j.budget ? `<span class="badge badge-neutral">Budget: ${escapeHtml(j.budget)}</span>` : '<span></span>')}
-          <div style="display:flex;gap:8px;">
+          <div class="job-card-actions">
             <button class="btn-sm btn-sm-primary" onclick="viewJobCandidates('${j.id}')">View Responses</button>
-            <button class="btn-sm btn-sm-ghost" onclick="cancelJobRequest('${j.id}')">Cancel Request</button>
+            <!--job-actions-end-->
+            <button class="btn-sm btn-sm-ghost job-cancel" onclick="cancelJobRequest('${j.id}')">Cancel Request</button>
           </div>
         </div>
       </div>
@@ -3802,9 +3803,9 @@ function renderDashNav(containerId, items, activeKey, fnName) {
   ).join('');
 }
 
-// v156: a booking's time, whatever form it was saved in ("14:30", "9:00 AM",
-// "Morning (8-12pm)"), as 24-hour "HH:MM", or null. Same rules as the server
-// (src/booking-rules.js).
+// v156: a booking's clock time, whatever form it was saved in ("14:30" or
+// "9:00 AM"), as 24-hour "HH:MM", or null (for "Morning" and the like). Same
+// rules as the server's clockHM (src/booking-rules.js).
 function timeHM24(t) {
   const s = String(t == null ? '' : t).trim().toLowerCase();
   if (!s) return null;
@@ -3816,11 +3817,7 @@ function timeHM24(t) {
     else if (!m[2] || h > 23) return null;
     return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
   }
-  if (/morning/.test(s)) return '08:00';
-  if (/afternoon|midday|noon/.test(s)) return '12:00';
-  if (/evening/.test(s)) return '17:00';
-  if (/night/.test(s)) return '19:00';
-  return null;
+  return null; // v159 review: a part of the day ("Morning") is shown as words, never turned into an exact time
 }
 // v156: when the job is, for the bookings and contracts lists: "Tue, Nov 10 · 9:00 AM".
 function jobWhenText(date, time) {
@@ -6106,6 +6103,17 @@ function getUploadedJobPhotoUrls(prefix) {
   return (JOB_PHOTO_STATE[prefix] || []).filter(p => p.url && !p.uploading).map(p => p.url);
 }
 
+// v159: share a link that opens Trothen's sign-up for pros (a friend, a
+// tradesperson the customer already uses). Uses the phone's own share sheet
+// where there is one (WhatsApp, SMS), otherwise copies the link.
+async function invitePro(cat) {
+  const url = `${location.origin}/?join=pro${cat ? `&work=${encodeURIComponent(cat)}` : ''}`;
+  const text = cat ? `${tr('I posted a job for')} ${cat} ${tr('on Trothen. Join as a pro to get jobs like this:')}` : tr('Join Trothen as a pro to get jobs near you:');
+  try { if (navigator.share) { await navigator.share({ title: 'Trothen', text, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(`${text} ${url}`); showToast(tr('Link copied. Send it to the pro by WhatsApp, SMS or email.')); }
+  catch (e) { showToast(`${tr('Send this link to the pro:')} ${url}`); }
+}
+
 function openPostJobModal() {
   JOB_PHOTO_STATE.pj = [];
   JOB_PIN.pj = null; // v92: start each new job without an old pin
@@ -6173,7 +6181,11 @@ async function runAIMatch() {
         openPostJobModal();
         return;
       }
-      showToast('Could not reach the matching service. Showing sample matches.');
+      // v159: a signed-in customer's job wasn't posted: say so plainly, keep what they typed, and never show made-up pros
+      showToast(tr('Your job could not be posted just now. Check your connection and press Find My Matches again.'));
+      const ft = document.querySelector('#postjob-modal .modal-footer');
+      if (ft) ft.innerHTML = `<button class="confirm-btn" onclick="runAIMatch()">🤖 Find My Matches</button>`;
+      return;
     }
   }
   // Fake demo matches are ONLY appropriate when there was no real API call
@@ -6191,15 +6203,29 @@ async function runAIMatch() {
 
   setTimeout(() => {
     if (realCallSucceeded && !pool.length) {
+      // v159: no pro nearby yet. Say honestly what happens next (it now really
+      // does: src/job-backfill.js), and offer the next steps people expect.
+      let until = '';
+      try { if (postedJob && postedJob.expiresAt) until = new Date(postedJob.expiresAt).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) {}
+      const c = escapeHtml(cat);
       body.innerHTML = `
-        <div style="text-align:center;padding:24px 10px;">
-          <div style="font-size:28px;margin-bottom:10px;">📋</div>
-          <div style="font-weight:600;color:var(--navy);margin-bottom:6px;">Job posted. No immediate match yet.</div>
-          <div style="font-size:13.5px;color:var(--slate);line-height:1.6;">${isKnownCategory
-            ? `We don't have a verified "${cat}" pro in your area right now. Your request is saved, and we'll notify you the moment someone's available.`
-            : `"${cat}" is not a category we list yet, so there is no automatic match. Your request has been recorded and our team will follow up.`}</div>
+        <div style="padding:8px 2px 4px;">
+          <div style="font-size:28px;margin-bottom:8px;" aria-hidden="true">📋</div>
+          <h4 style="font-weight:700;color:var(--navy);margin:0 0 8px;font-size:18px;">${escapeHtml(tr('Your job is posted. No pro is free nearby yet.'))}</h4>
+          <div style="font-size:14.5px;color:var(--slate);line-height:1.6;margin-bottom:14px;">${isKnownCategory
+            ? `${escapeHtml(tr('Your job stays open'))}${until ? ` ${escapeHtml(tr('until'))} ${escapeHtml(until)}` : ''}. ${escapeHtml(tr('We send it to new'))} ${c} ${escapeHtml(tr('pros in your area as they join or become free, and tell you straight away. Nothing is charged until you choose a pro.'))}`
+            : `"${c}" ${escapeHtml(tr('is not a kind of work we list yet. Your job stays open, our team has been told, and we send it to the first pro who offers it. Nothing is charged until you choose a pro.'))}`}</div>
+          <div style="font-weight:600;color:var(--navy);margin-bottom:8px;">${escapeHtml(tr('What you can do now'))}</div>
+          <ul style="margin:0 0 4px;padding-left:20px;font-size:14px;color:var(--slate);line-height:1.7;">
+            <li>${escapeHtml(tr('Look at all pros: some work across cities, or online.'))}</li>
+            <li>${escapeHtml(tr('Know a good pro? Invite them to join Trothen. Your job is sent to them once they are verified.'))}</li>
+            <li>${escapeHtml(tr('Try a related kind of work, or change the date, by posting the job again.'))}</li>
+          </ul>
         </div>`;
-      document.querySelector('#postjob-modal .modal-footer').innerHTML = `<button class="pricing-cta" style="border-color:var(--border);" onclick="closePostJobModal()">Done</button>`;
+      document.querySelector('#postjob-modal .modal-footer').innerHTML = `
+        <button class="confirm-btn" style="margin-bottom:8px;" onclick="closePostJobModal();goDirectory(${jsArg(cat)})">${escapeHtml(tr('See all pros'))}</button>
+        <button type="button" class="pj-alt-btn" style="margin-bottom:8px;" onclick="invitePro(${jsArg(cat)})">${escapeHtml(tr('Invite a pro you know'))}</button>
+        <button type="button" class="pj-alt-btn pj-alt-quiet" onclick="closePostJobModal()">${escapeHtml(tr('Done'))}</button>`;
       return;
     }
     body.innerHTML = `
@@ -6623,7 +6649,7 @@ const PROVIDER_SECTIONS = {
     <div class="panel"><div class="panel-title">Notifications</div>
       ${notifToggleHTML('newMatches', 'New job matches', 'New jobs in your category', true)}
       ${notifToggleHTML('payoutAlerts', 'Payout alerts', 'When a payout is released', true)}
-      ${notifToggleHTML('emailUpdates', 'Email me updates', 'New bookings, booking changes and payouts by email too, when you are not in Trothen', true)}
+      ${notifToggleHTML('emailUpdates', 'Email me updates', 'New job matches, bookings, booking changes and payouts by email too, when you are not in Trothen', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from customers', true)}
       ${notifToggleHTML('messageSound', 'Message sound alert', 'Play a sound when a new message arrives, so it doesn\'t come in silently', false)}
       ${pushToggleHTML()}
@@ -7455,7 +7481,7 @@ function contractsTable(list) {
       actions = `<button class="btn-sm btn-sm-primary" onclick="respondToOffer('${c.id}','accept')">Confirm Booking</button> <button class="btn-sm btn-sm-outline" onclick="respondToOffer('${c.id}','decline')">Can't Take This</button>`;
     } else if (c.status === 'active') {
       const gpsButtons = !c.onMyWayAt
-        ? `<button class="btn-sm btn-sm-outline" onclick="markContractOnMyWay('${c.id}')">🚗 On My Way</button> `
+        ? (leaveSoon(c) ? `<button class="btn-sm btn-sm-outline" onclick="markContractOnMyWay('${c.id}')">🚗 On My Way</button> ` : '')
         : !c.arrivedAt
           ? `<button class="btn-sm btn-sm-primary" onclick="openTripTracking('${c.id}')">${escapeHtml(tr('Trip map'))}</button> <button class="btn-sm btn-sm-outline" onclick="markContractArrived('${c.id}')">📍 Arrived</button> `
           : `<span style="font-size:12.5px;color:var(--slate);margin-right:6px;">🚗 On the way · 📍 Arrived</span>`;
@@ -7673,6 +7699,14 @@ async function submitScopeChangeRequest(contractId) {
   } catch (e) { showToast(e.message || 'Could not send this request'); }
 }
 
+// v160: "On My Way" shows from 12 hours before the job (the server refuses earlier).
+function leaveSoon(c) {
+  const full = (c && typeof RAW_CONTRACTS === 'object' && RAW_CONTRACTS[c.id]) || c || {}; // the list rows carry jobDate/jobTime, the full record carries arrival
+  const agreed = full.arrival && full.arrival.agreed && Date.parse(full.arrival.agreed.at);
+  const d = (c && (c.jobDate || c.date)) || full.date || '', t = (c && (c.jobTime || c.time)) || full.time || '';
+  const due = Number.isFinite(agreed) ? agreed : (/^\d{4}-\d{2}-\d{2}$/.test(d) ? Date.parse(`${d}T${timeHM24(t) || '08:00'}:00`) : NaN);
+  return !Number.isFinite(due) || due - Date.now() < 12 * 3600e3;
+}
 async function markContractOnMyWay(contractId) {
   if (!BACKEND_AVAILABLE) return showToast('Marked on the way (demo mode)');
   // v93: the pro agrees to share their live position for this trip.
@@ -8442,6 +8476,8 @@ const ADMIN_SECTIONS = {
       </div>
       <div id="report-builder-results" style="margin-top:16px;"></div>
     </div>
+
+    <div class="panel"><div class="panel-title">Customers Waiting With No Pro <small style="font-weight:400;color:var(--slate);">last 30 days · where to find pros</small></div>${(ra.unmetDemand || []).length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Kind of work</th><th>City</th><th>Country</th><th>Jobs with no pro</th><th>Last</th></tr></thead><tbody>${ra.unmetDemand.map(u => `<tr><td>${escapeHtml(u.category)}</td><td>${escapeHtml(u.city || '—')}</td><td>${escapeHtml(u.country || '—')}</td><td>${Number(u.jobs) || 0}</td><td>${escapeHtml(u.lastDay || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div style="color:var(--slate);font-size:14px;">None. Every job posted in the last 30 days had a pro to send it to.</div>'}</div>
 
     <div class="panel"><div class="panel-title">Demand by Category (Bookings) <small style="font-weight:400;color:var(--slate);">${categoriesWithActivity ? `top ${Math.min(10, categoriesWithActivity)} of ${categoriesWithActivity} with activity` : `0 of ${ra.totalCategories} categories`}</small></div>${topDemand.length ? barChart(topDemand, { clickable: true }) : '<div style="color:var(--slate);font-size:14px;padding:12px 0;">No bookings yet. This chart shows completed and active jobs.</div>'}${topDemand.length ? `<div style="font-size:13px;color:var(--slate);margin-top:10px;">Select a bar to filter the tables below by category. <span id="reports-filter-note"></span></div>` : ''}</div>
 
@@ -12188,11 +12224,21 @@ async function confirmBooking() {
   window.scrollTo(0,0);
 }
 
+// v159: the message shows in front of any open pop-up (at the top, clear of its
+// buttons), stays long enough to read (4 to 9 seconds, by its length), and a
+// new message is never hidden early by the timer of the one before it.
+let _toastTimer = null;
 function showToast(msg) {
   const t = document.getElementById('toast');
-  document.getElementById('toast-msg').textContent = msg;
+  if (!t) return;
+  const text = String(msg == null ? '' : msg);
+  document.getElementById('toast-msg').textContent = text;
+  const modalOpen = [...document.querySelectorAll('.modal-overlay.open, .modal-overlay[style*="flex"], [role="dialog"][aria-modal="true"]')].some(el => { const b = el.getBoundingClientRect(); const cs = getComputedStyle(el); return b.width > 0 && b.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0; });
+  document.body.classList.toggle('toast-over-modal', modalOpen);
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), Math.min(9000, Math.max(4000, text.length * 60)));
+  if (!t.__tapToClose) { t.__tapToClose = true; t.addEventListener('click', () => { clearTimeout(_toastTimer); t.classList.remove('show'); }); } // tap it to put it away
 }
 
 // Real in-app confirm dialog — replaces native browser confirm() popups,
@@ -14117,6 +14163,11 @@ async function resetAllWording() {
       showAuth('login');
       showToast('Sign in to finish verifying your identity');
     }
+  } else if (urlParams.get('join') === 'pro' && !getSavedAuthToken()) {
+    // v159: a "join as a pro" link a customer shared from a job with no pro nearby
+    try { history.replaceState(null, '', window.location.pathname); } catch (e) {}
+    showAuth('signup');
+    setAuthRole('provider');
   } else if (urlInviteCode && !getSavedAuthToken()) {
     // An organization invite link — jump straight to a provider signup
     // form with the code pre-filled and already validated, rather than
@@ -15968,7 +16019,7 @@ function renderMyStore() {
   const local = (MY_STORE.currencies || []).find(c => c.code !== 'USD');
   const state = MY_STORE.live
     ? `<span class="badge badge-success">${escapeHtml(tr('Open: customers can see your store'))}</span>`
-    : `<span class="badge ${['store_turned_down', 'closed_by_team'].includes(why) ? 'badge-danger' : ['store_waiting', 'no_approved_goods', 'id_not_verified'].includes(why) ? 'badge-warn' : 'badge-neutral'}">${escapeHtml(tr(WHY_NOT_LIVE[why] || 'Not showing'))}</span>${why === 'closed_by_team' && s && s.closedReason ? ` <span style="font-size:13.5px;">${escapeHtml(s.closedReason)}</span>` : ''}`;
+    : `<span class="badge badge-msg ${['store_turned_down', 'closed_by_team'].includes(why) ? 'badge-danger' : ['store_waiting', 'no_approved_goods', 'id_not_verified'].includes(why) ? 'badge-warn' : 'badge-neutral'}">${escapeHtml(tr(WHY_NOT_LIVE[why] || 'Not showing'))}</span>${why === 'closed_by_team' && s && s.closedReason ? ` <span style="font-size:13.5px;">${escapeHtml(s.closedReason)}</span>` : ''}`;
   const steps = s && s.name ? [
     [ap && ap.status === 'approved', tr('A manager approved your store'), ap && ap.status === 'rejected' ? tr('Not approved') : tr('Waiting')],
     [(s.liveGoods || 0) > 0, tr('At least one good is approved'), tr('Not yet')],
@@ -16742,6 +16793,17 @@ function termsLanguageNote() {
   css.textContent = `.toast:not(.show){pointer-events:none;} .support-chat-bubble{touch-action:none;-webkit-tap-highlight-color:transparent;} @media (hover:none){.support-chat-bubble:hover{transform:none;}} /* once pressed, the grow-in animation never replays */ .support-chat-bubble.settled{animation:chatBubbleBreathe 3.5s ease-in-out 1s infinite;} @media (prefers-reduced-motion: reduce){.support-chat-bubble.settled{animation:none !important;}} .support-chat-bubble:focus-visible{outline:3px solid #F6C544;outline-offset:3px;}`;
   document.head.appendChild(css);
 })();
+// v160: where a moved chat bubble comes to rest: the nearest side of the
+// screen, 16 px in, clear of the top bar and the bottom tab bar (as chat
+// bubbles do in other apps). Before, it stayed exactly where it was let go,
+// even half off the edge and over the page's words.
+function snapBubble(left, top, size) {
+  const m = 16, w = window.innerWidth, h = window.innerHeight;
+  const tab = document.body.classList.contains('has-mtab') ? ((document.getElementById('mtab') || {}).offsetHeight || 64) : 0;
+  const x = (left + size / 2) < w / 2 ? m : Math.max(m, w - size - m);
+  const y = Math.min(Math.max(72, top), Math.max(72, h - size - tab - m));
+  return { left: x, top: y };
+}
 let CHAT_PTR = null;          // the press in progress
 let CHAT_TAP_HANDLED_AT = 0;  // so the click that follows a tap doesn't toggle twice
 function initChatBubbleDrag() {
@@ -16755,7 +16817,8 @@ function initChatBubbleDrag() {
     const saved = JSON.parse(localStorage.getItem('trothen_chat_bubble_pos') || 'null');
     if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
       const size = bubble.offsetWidth || 60;
-      applyBubblePosition(Math.min(Math.max(0, saved.left), window.innerWidth - size), Math.min(Math.max(0, saved.top), window.innerHeight - size));
+      const p = snapBubble(saved.left, saved.top, size);
+      applyBubblePosition(p.left, p.top);
     }
   } catch (e) { /* a broken saved value: use the default corner */ }
   bubble.addEventListener('pointerdown', (e) => {
@@ -16781,7 +16844,8 @@ function initChatBubbleDrag() {
     // to replay the button's grow-in animation, so the place read was the
     // middle of a button of size zero, half a button out. That is why a
     // moved button came back in a slightly different spot.
-    const left = parseFloat(bubble.style.left), top = parseFloat(bubble.style.top);
+    let left = parseFloat(bubble.style.left), top = parseFloat(bubble.style.top);
+    if (wasDrag && Number.isFinite(left) && Number.isFinite(top)) { const p = snapBubble(left, top, bubble.offsetWidth || 60); left = p.left; top = p.top; applyBubblePosition(left, top); }
     bubble.classList.add('settled');
     bubble.classList.remove('dragging');
     if (wasDrag) {

@@ -1201,6 +1201,8 @@ router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, 
     matches.push({ ...match, provider: publicProvider(provider) });
   }
 
+  // v159: no pro for it: the team hears where customers are waiting (src/job-backfill.js), and the job is sent to new pros as they become available
+  if (!matches.length && !askedPro && customer) { try { await require('../job-backfill').noteUnmet(job, customer, Date.now()); } catch (e) { console.error('[jobs] unmet:', e.message); } }
   res.status(201).json({ job, matches, isKnownCategory, matchScope });
 });
 
@@ -1860,7 +1862,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   const rules = require('../booking-rules');
   const dateError = rules.bookingDateError(date);
   if (dateError) return res.status(400).json({ error: dateError });
-  const timeHM = rules.timeHM(time);
+  const timeHM = rules.clockHM(time); // a clock time becomes "HH:MM"; "Morning" stays as words (v159 review)
   const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
   if (providerId === req.user.sub) return res.status(400).json({ error: 'You can\'t book yourself.' });
@@ -2397,7 +2399,8 @@ async function acceptAndStart(contract, acceptingProvider, { isDirectBooking, is
   }
   const updated = await db.update('contracts', contract.id, { status: 'active', signedAt: new Date().toISOString().slice(0, 10), ...(contract.status === 'pending_agreement' ? { waitingOn: null } : {}) });
   if (contract.status === 'pending_agreement') await settleJobAfterAgreement(updated); // v125: a price agreed for a posted job
-  if (cashLine && !cashLine.free) await notify(acceptingProvider.id, '🪙', `${-cashLine.tokens} tokens of commission were taken for cash job "${contract.service}". Balance: ${cashLine.balanceAfter} tokens. Collect the agreed price from the customer after the work.`, null, { section: 'tokens' });
+  // v160: a Driver Pass or a free credit takes no tokens, so there is nothing to report (it said "NaN tokens" for a pass)
+  if (cashLine && !cashLine.free && !cashLine.pass && Number.isFinite(Number(cashLine.tokens))) await notify(acceptingProvider.id, '🪙', `${-cashLine.tokens} tokens of commission were taken for cash job "${contract.service}". Balance: ${cashLine.balanceAfter} tokens. Collect the agreed price from the customer after the work.`, null, { section: 'tokens' });
   if (isDirectBooking) {
     // Already funded at booking time — but the materials advance was
     // deliberately held back until now (see fundEscrowForContract). This
@@ -2623,7 +2626,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
 
   sectionHeader('Service Details');
   row('Service Requested', contract.service);
-  if (contract.date) row('Scheduled Date & Time', `${contract.date}${contract.time ? '  ·  ' + require('../booking-rules').time12(require('../booking-rules').timeHM(contract.time) || contract.time) : ''}`); // v156: "2:30 PM", whatever form the time was saved in
+  if (contract.date) row('Scheduled Date & Time', `${contract.date}${contract.time ? '  ·  ' + require('../booking-rules').time12(require('../booking-rules').clockHM(contract.time) || contract.time) : ''}`); // v156: "2:30 PM", whatever form the time was saved in
   if (contract.address) row('Service Address', contract.address);
   // v96: for places with no street address, the agreement names the spot.
   if (contract.landmark && contract.landmark !== contract.address) row('Landmark', contract.landmark);
@@ -3013,3 +3016,4 @@ module.exports.generateBookingNumber = generateBookingNumber;
 module.exports.fundEscrowForContract = fundEscrowForContract;
 module.exports.readJobLocation = readJobLocation;
 module.exports.computeServiceFee = computeServiceFee; // v111: rides
+module.exports.weeklyMatchCountsForProviders = weeklyMatchCountsForProviders; // v159: job backfill

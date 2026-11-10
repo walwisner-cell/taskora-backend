@@ -1,6 +1,13 @@
-Trothen v158: everything in one place (includes v128 to v157)
+Trothen v160: everything in one place (includes v128 to v159)
 
-  src\ public\ server.js    The 110 files changed since your GitHub main (before v128), in their real folders.
+  src\ public\ server.js    The 112 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v160.md           A deeper recheck: background checks never run twice at once; a job goes to at most
+                            15 pros; job matches emailed to pros; "Booking request sent" with View my booking;
+                            Leave Now from 12 hours before; the phone screens you sent lined up (posted-job card,
+                            Live now in, welcome card, chat bubble) plus store status, tab labels, long categories;
+                            an extra-work payment can no longer clash with completing the job.
+  CHANGES_v159.md           Messages show in front of pop-ups. A job posted with no pro nearby stays open,
+                            goes to new pros as they join, offers next steps; the team sees where to recruit.
   CHANGES_v158.md           More gaps: booking updates by email when away, reminders that don't wait for
                             the page (and the day before, and before a payment code runs out), times in each
                             person's own time zone, GMV that counts only real bookings, posted-job fixes.
@@ -53,24 +60,26 @@ Trothen v158: everything in one place (includes v128 to v157)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v158.md  Byte counts and the cmd.exe steps.
-  deploy_v158.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v158-files.zip    The code files packed; the .bat reads this from Downloads.
-  screenshots\              Extra work waiting for the customer's payment, on a phone.
+  DEPLOYMENT_STEPS_v160.md  Byte counts and the cmd.exe steps.
+  deploy_v160.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v160-files.zip    The code files packed; the .bat reads this from Downloads.
+  screenshots\              A posted job's card, the home page's Live now in and welcome card, and the
+                            new booking confirmation, on a phone.
 
-Works whether or not v128 is already live. git status shows 139 files if v128 is live, 141 if not.
+Works whether or not v128 is already live. git status shows 143 files if v128 is live, 145 if not.
 
 Email: your SMTP settings on Render are already in and working (System Check shows emails
 being sent), so nothing to add before this deploy.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v158.
-  2. copy "%USERPROFILE%\Downloads\trothen-v158\trothen-v158-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v160.
+  2. copy "%USERPROFILE%\Downloads\trothen-v160\trothen-v160-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v158\deploy_v158.bat"
+     "%USERPROFILE%\Downloads\trothen-v160\deploy_v160.bat"
   Nothing goes live until you type YES.
 
 After it is live:
+  - Set APP_URL on Render to https://trothenpro.com (if it isn't already), so links in emails are right.
   - Admin, System Check: fix anything red. Alerts come to your notifications from then on.
   - Add MAPBOX_TOKEN on Render before many people use the maps (free tier, business use allowed).
   - "Real payments only" now refuses to switch on until customers have a way to pay and email works.

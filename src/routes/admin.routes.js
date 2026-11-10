@@ -339,8 +339,12 @@ router.get('/reports/analytics', async (req, res) => {
     };
   }).sort((a, b) => b.jobsCompleted - a.jobsCompleted || b.jobsBooked - a.jobsBooked).slice(0, 10);
 
+  // v159: where customers posted jobs and no pro was there (to recruit pros), in this admin's area
+  let unmetDemand = [];
+  try { unmetDemand = (await require('../job-backfill').unmetSummary()).filter(r => !region || inRegion(region, { city: r.city, country: r.country, region: r.city })).slice(0, 20); } catch (e) { /* none yet */ }
   res.json({
     region: region || 'All Locations',
+    unmetDemand,
     categoryPerformance,
     totalCategories: allCategories.length,
     jobsOverTime,

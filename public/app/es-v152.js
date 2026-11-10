@@ -3,6 +3,8 @@
   try {
     if (typeof ES_TEXT !== 'object') return;
     Object.assign(ES_TEXT, {
+      // v160: the booking confirmation screen
+      'View my booking': 'Ver mi reserva', 'Back to Explore': 'Volver a explorar', 'Booking request sent': 'Solicitud de reserva enviada', "Your pro has been asked to confirm, and we'll tell you as soon as they answer. Your booking comes with Trothen's contract, and any payment is held until you confirm the job is done.": 'Se pidió a tu profesional que confirme y te avisaremos en cuanto responda. Tu reserva incluye el contrato de Trothen, y cualquier pago se retiene hasta que confirmes que el trabajo está hecho.',
       // Complete your profile / account
       'Complete your profile': 'Completa tu perfil', 'Complete your account': 'Completa tu cuenta', 'complete': 'completado',
       'Required': 'Obligatorio', 'Recommended': 'Recomendado', 'Show': 'Mostrar', 'more': 'más', 'Show less': 'Mostrar menos', 'Completed': 'Completado',
@@ -152,6 +154,18 @@
       'Press "I have sent it". Your pro gets the tip once we see your payment.': 'Pulsa "Ya lo envié". Tu profesional recibe la propina cuando veamos tu pago.',
       'Press "I have sent it". The extra work is added to your booking once we see your payment.': 'Pulsa "Ya lo envié". El trabajo adicional se añade a tu reserva cuando veamos tu pago.',
       'it is dropped and your booking carries on as before. Trothen will never ask you to pay any other number or person, or for your PIN.': 'se descarta y tu reserva sigue como antes. Trothen nunca te pedirá pagar a otro número o persona, ni tu PIN.',
+      'Your job could not be posted just now. Check your connection and press Find My Matches again.': 'No se pudo publicar tu trabajo ahora. Revisa tu conexión y pulsa Buscar coincidencias otra vez.',
+      'Your job is posted. No pro is free nearby yet.': 'Tu trabajo está publicado. Aún no hay un profesional libre cerca.',
+      'Your job stays open': 'Tu trabajo sigue abierto', 'until': 'hasta', 'We send it to new': 'Lo enviamos a nuevos profesionales de',
+      'pros in your area as they join or become free, and tell you straight away. Nothing is charged until you choose a pro.': 'en tu zona a medida que se unen o quedan libres, y te avisamos enseguida. No se cobra nada hasta que elijas un profesional.',
+      'is not a kind of work we list yet. Your job stays open, our team has been told, and we send it to the first pro who offers it. Nothing is charged until you choose a pro.': 'aún no es un tipo de trabajo que listemos. Tu trabajo sigue abierto, nuestro equipo ya lo sabe y lo enviamos al primer profesional que lo ofrezca. No se cobra nada hasta que elijas un profesional.',
+      'What you can do now': 'Lo que puedes hacer ahora', 'Look at all pros: some work across cities, or online.': 'Mira todos los profesionales: algunos trabajan en varias ciudades o en línea.',
+      'Know a good pro? Invite them to join Trothen. Your job is sent to them once they are verified.': '¿Conoces a un buen profesional? Invítalo a unirse a Trothen. Tu trabajo le llega cuando esté verificado.',
+      'Try a related kind of work, or change the date, by posting the job again.': 'Prueba un tipo de trabajo parecido, o cambia la fecha, publicando el trabajo otra vez.',
+      'See all pros': 'Ver todos los profesionales', 'Invite a pro you know': 'Invitar a un profesional que conozcas', 'Done': 'Listo',
+      'I posted a job for': 'Publiqué un trabajo de', 'on Trothen. Join as a pro to get jobs like this:': 'en Trothen. Únete como profesional para recibir trabajos así:',
+      'Join Trothen as a pro to get jobs near you:': 'Únete a Trothen como profesional para recibir trabajos cerca de ti:',
+      'Link copied. Send it to the pro by WhatsApp, SMS or email.': 'Enlace copiado. Envíalo al profesional por WhatsApp, SMS o correo.', 'Send this link to the pro:': 'Envía este enlace al profesional:',
       'Approved. Now pay for the extra work.': 'Aprobado. Ahora paga el trabajo adicional.', 'Approved: waiting for payment': 'Aprobado: esperando el pago',
       'Pay your tip; it goes to your pro in full.': 'Paga tu propina; va íntegra a tu profesional.',
       'Pay to add the extra work to your booking; nothing changes until you pay.': 'Paga para añadir el trabajo adicional a tu reserva; nada cambia hasta que pagues.',

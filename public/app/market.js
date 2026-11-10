@@ -607,7 +607,10 @@
       const html = base(j);
       try {
         if (!j || !j.id || !j.category) return html;
-        const btn = `<button type="button" class="btn-sm btn-sm-outline mk-mat-btn" style="margin-top:8px;" onclick="event.stopPropagation();openMaterials(${jsArg(j.id)},${jsArg(j.category)})">🧰 ${e(t('Materials for this job'))}</button>`;
+        const btn = `<button type="button" class="btn-sm btn-sm-outline mk-mat-btn" onclick="event.stopPropagation();openMaterials(${jsArg(j.id)},${jsArg(j.category)})">🧰 ${e(t('Materials for this job'))}</button>`;
+        // v160: with the card's other buttons (it used to be put after the text column, which squeezed the text to one word a line on phones)
+        const k = html.indexOf('<!--job-actions-end-->');
+        if (k > -1) return html.slice(0, k) + btn + html.slice(k);
         const i = html.lastIndexOf('</div>');
         return i > -1 ? html.slice(0, i) + btn + html.slice(i) : html + btn;
       } catch (x) { return html; }

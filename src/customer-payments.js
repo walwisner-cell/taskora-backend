@@ -248,7 +248,12 @@ async function confirmOnce(admin, code, transactionId, amountReceived) {
 
 // v125: the money for a booking really arrived (finance confirmed a code,
 // or Stripe confirmed a card payment). Holds it and moves the booking on.
-async function finishPayment(e, c, { receipt, amountReceived, confirmedBy, confirmedByName }) {
+async function finishPayment(e, c, opts) {
+  // v160: money for extra work or a tip is recorded while its booking is held, never during a Complete or Cancel of that booking
+  if (c && c.topUpFor) return require('./contract-locks').waitAndHold(c.topUpFor, () => finishPaymentNow(e, c, opts));
+  return finishPaymentNow(e, c, opts);
+}
+async function finishPaymentNow(e, c, { receipt, amountReceived, confirmedBy, confirmedByName }) {
   const got = amountReceived, tx = receipt;
   const now = new Date().toISOString();
   await db.update('escrowTransactions', e.id, { status: 'held', receipt: tx, amountReceived: got, overpaid: got > e.amountDue + 0.009 ? money(got - e.amountDue) : 0, confirmedBy: confirmedBy || null, confirmedByName: confirmedByName || null, confirmedAt: now });
@@ -384,7 +389,7 @@ async function endUnpaid(e, why, message, extra) {
 // v158: one reminder before a payment code or card page runs out (when about
 // a quarter of the time is left, at least 30 minutes before). A customer who
 // meant to pay later used to find the booking simply cancelled.
-async function remindUnpaid(now) {
+const remindUnpaid = require('./single-flight').singleFlight(async function remindUnpaid(now) { // v160: never two runs at once
   const list = await db.filter('escrowTransactions', e => ['code', 'card'].includes(e.paidBy) && e.status === 'awaiting_payment' && !e.customerSaysPaidAt && !e.payReminderAt && e.paymentExpiresAt && e.createdAt);
   for (const e of list) {
     const end = Date.parse(e.paymentExpiresAt), start = Date.parse(e.createdAt);
@@ -400,7 +405,7 @@ async function remindUnpaid(now) {
     const after = c.topUpFor ? 'it is dropped' : c.storeOrder ? 'the order is cancelled' : 'the booking is cancelled';
     await notify(c.customerId, '⏳', `Reminder: ${what} isn't paid yet. ${e.paidBy === 'code' ? `Send it with code ${e.paymentCode}` : 'Pay on the card page'} by ${by}, or ${after}. Open it from ${c.storeOrder ? 'My Orders' : 'My Bookings'} with Pay now.`, 'bookingUpdates', { section: c.storeOrder ? 'orders' : 'bookings' });
   }
-}
+});
 async function expireUnpaid() {
   const now = Date.now();
   try { await remindUnpaid(now); } catch (e) { console.error('[custpay] reminders:', e.message); } // v158

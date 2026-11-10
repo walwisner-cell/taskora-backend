@@ -510,11 +510,23 @@ router.get('/plan-billing/mine', requireAuth, requireRole('provider'), async (re
 // battery/privacy than streaming location the whole time). The customer
 // gets a real, timestamped notification either way, with or without a
 // coordinate.
+const EARLIEST_LEAVE_MS = 12 * 3600 * 1000; // v160
 router.post('/contracts/:id/on-my-way', requireAuth, requireRole('provider'), async (req, res) => {
   const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
   if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status}. It can't be marked on the way` });
   if (contract.onMyWayAt) return res.status(400).json({ error: 'Already marked on the way for this booking' });
+  // v160: a trip starts on the day, not days ahead (a tap by mistake told the
+  // customer the pro was on the way, and opened a live trip, days early).
+  {
+    const br = require('../booking-rules');
+    const due = contract.arrival && contract.arrival.agreed && Date.parse(contract.arrival.agreed.at);
+    const start = Number.isFinite(due) ? due : (contract.date ? (br.jobStart(contract.date, br.clockHM(contract.time), contract.tz || null) || { getTime: () => NaN }).getTime() : NaN);
+    if (Number.isFinite(start) && start - Date.now() > EARLIEST_LEAVE_MS) {
+      const me = await db.find('users', u => u.id === req.user.sub);
+      return res.status(400).json({ code: 'TOO_EARLY', error: `This job is on ${br.whenFor(new Date(start).toISOString(), me)}. You can tap Leave Now from 12 hours before it.` });
+    }
+  }
 
   const { latitude, longitude } = req.body || {};
   const hasValidCoords = typeof latitude === 'number' && typeof longitude === 'number' && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
@@ -1032,6 +1044,7 @@ async function sweepUnstartedBookings() {
 }
 
 router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), async (req, res) => {
+  await require('../contract-locks').freeOfPayment(req.params.id); // v160
   if (contractStatusLocks.has(req.params.id)) {
     return res.status(409).json({ error: 'This booking is already being updated. Please try again in a moment.' });
   }
@@ -1168,6 +1181,7 @@ async function completeContractCore(contract, tip, customerId) {
 // were never held until the provider actually agreed to a number. The other
 // party is notified either way.
 router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
+  await require('../contract-locks').freeOfPayment(req.params.id); // v160
   if (contractStatusLocks.has(req.params.id)) {
     return res.status(409).json({ error: 'This booking is already being updated. Please try again in a moment.' });
   }

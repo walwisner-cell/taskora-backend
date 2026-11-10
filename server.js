@@ -44,6 +44,8 @@ require('./src/push-notifications');
 
 const helmet = require('helmet');
 
+// v160: every timed check runs once at a time; a slow run is never overlapped by the next (src/single-flight.js)
+const __once = (name, start) => require('./src/single-flight').onceAtATime(name, start);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -370,8 +372,8 @@ seedIfEmpty()
     require('./src/platform-settings').publicSupportEmail().catch(() => {});
 
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-    setTimeout(() => { refreshLiveExchangeRates().catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, 5000);
-    setInterval(() => { refreshLiveExchangeRates().catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, ONE_DAY_MS);
+    setTimeout(() => { __once('refreshLiveExchangeRates()', () => refreshLiveExchangeRates()).catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, 5000);
+    setInterval(() => { __once('refreshLiveExchangeRates()', () => refreshLiveExchangeRates()).catch(e => console.error('[exchange-rates] Unexpected error during scheduled refresh:', e)); }, ONE_DAY_MS);
 
     // Booking-response expiry sweep (see src/booking-scheduler.js). Runs
     // every 5 minutes — much more frequent than the FX refresh, since a
@@ -380,81 +382,85 @@ seedIfEmpty()
     // consequence.
     const { expireOverdueBookingResponses } = require('./src/booking-scheduler');
     const FIVE_MINUTES_MS = 5 * 60 * 1000;
-    setTimeout(() => { expireOverdueBookingResponses().catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, 8000);
-    setInterval(() => { expireOverdueBookingResponses().catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, FIVE_MINUTES_MS);
+    setTimeout(() => { __once('expireOverdueBookingResponses()', () => expireOverdueBookingResponses()).catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, 8000);
+    setInterval(() => { __once('expireOverdueBookingResponses()', () => expireOverdueBookingResponses()).catch(e => console.error('[booking-scheduler] Unexpected error during scheduled sweep:', e)); }, FIVE_MINUTES_MS);
     // v144: posted jobs nobody was hired for close by themselves (src/job-details.js)
     const { sweepExpiredJobs } = require('./src/job-details');
-    setTimeout(() => { sweepExpiredJobs().catch(e => console.error('[job-expiry] Unexpected error:', e)); }, 26000);
-    setInterval(() => { sweepExpiredJobs().catch(e => console.error('[job-expiry] Unexpected error:', e)); }, 60 * 60 * 1000);
+    setTimeout(() => { __once('sweepExpiredJobs()', () => sweepExpiredJobs()).catch(e => console.error('[job-expiry] Unexpected error:', e)); }, 26000);
+    setInterval(() => { __once('sweepExpiredJobs()', () => sweepExpiredJobs()).catch(e => console.error('[job-expiry] Unexpected error:', e)); }, 60 * 60 * 1000);
+    // v159: open jobs are sent to pros who have become available since they were posted (src/job-backfill.js)
+    const { sweepOpenJobs } = require('./src/job-backfill');
+    setTimeout(() => { __once('sweepOpenJobs()', () => sweepOpenJobs()).catch(e => console.error('[job-backfill] Unexpected error:', e)); }, 40000);
+    setInterval(() => { __once('sweepOpenJobs()', () => sweepOpenJobs()).catch(e => console.error('[job-backfill] Unexpected error:', e)); }, 10 * 60 * 1000);
     const { sweepUnpackedStoreOrders } = require('./src/store-order-sweep');
     const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
-    setTimeout(() => { sweepUnpackedStoreOrders().catch(e => console.error('[store-order-sweep] Unexpected error:', e)); }, 20000);
-    setInterval(() => { sweepUnpackedStoreOrders().catch(e => console.error('[store-order-sweep] Unexpected error:', e)); }, SIX_HOURS_MS);
+    setTimeout(() => { __once('sweepUnpackedStoreOrders()', () => sweepUnpackedStoreOrders()).catch(e => console.error('[store-order-sweep] Unexpected error:', e)); }, 20000);
+    setInterval(() => { __once('sweepUnpackedStoreOrders()', () => sweepUnpackedStoreOrders()).catch(e => console.error('[store-order-sweep] Unexpected error:', e)); }, SIX_HOURS_MS);
 
     // v112: ride housekeeping (unconfirmed rides, never-started rides, stuck trips, old GPS data, expired papers)
     const { runRideSweeps } = require('./src/ride-sweep');
-    setTimeout(() => { runRideSweeps().catch(e => console.error('[ride-sweep] Unexpected error:', e)); }, 40000);
-    setInterval(() => { runRideSweeps().catch(e => console.error('[ride-sweep] Unexpected error:', e)); }, 10 * 60 * 1000);
+    setTimeout(() => { __once('runRideSweeps()', () => runRideSweeps()).catch(e => console.error('[ride-sweep] Unexpected error:', e)); }, 40000);
+    setInterval(() => { __once('runRideSweeps()', () => runRideSweeps()).catch(e => console.error('[ride-sweep] Unexpected error:', e)); }, 10 * 60 * 1000);
 
     // Document (license) expiry reminder sweep (see
     // src/document-expiry-scheduler.js). Runs once shortly after boot, then
     // once every 24 hours — a 30-day warning has no reason to run more
     // often than that, same cadence as the exchange-rate refresh above.
     const { sweepExpiringDocuments } = require('./src/document-expiry-scheduler');
-    setTimeout(() => { sweepExpiringDocuments().catch(e => console.error('[document-expiry-scheduler] Unexpected error during scheduled sweep:', e)); }, 11000);
-    setInterval(() => { sweepExpiringDocuments().catch(e => console.error('[document-expiry-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+    setTimeout(() => { __once('sweepExpiringDocuments()', () => sweepExpiringDocuments()).catch(e => console.error('[document-expiry-scheduler] Unexpected error during scheduled sweep:', e)); }, 11000);
+    setInterval(() => { __once('sweepExpiringDocuments()', () => sweepExpiringDocuments()).catch(e => console.error('[document-expiry-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
 
     // Provider trust score sweep (see src/provider-score-scheduler.js).
     // Same daily cadence — a score built from job history and account
     // data has no reason to be recomputed more often than that.
     const { sweepProviderScores } = require('./src/provider-score-scheduler');
-    setTimeout(() => { sweepProviderScores().catch(e => console.error('[provider-score-scheduler] Unexpected error during scheduled sweep:', e)); }, 14000);
-    setInterval(() => { sweepProviderScores().catch(e => console.error('[provider-score-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+    setTimeout(() => { __once('sweepProviderScores()', () => sweepProviderScores()).catch(e => console.error('[provider-score-scheduler] Unexpected error during scheduled sweep:', e)); }, 14000);
+    setInterval(() => { __once('sweepProviderScores()', () => sweepProviderScores()).catch(e => console.error('[provider-score-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
 
     // Payout settlement sweep (see src/payout-settlement-scheduler.js).
     // Same daily cadence — settlement is simulated as "a couple of days,"
     // not something that needs to be precise to the hour.
     const { sweepPayoutSettlement } = require('./src/payout-settlement-scheduler');
-    setTimeout(() => { sweepPayoutSettlement().catch(e => console.error('[payout-settlement-scheduler] Unexpected error during scheduled sweep:', e)); }, 17000);
-    setInterval(() => { sweepPayoutSettlement().catch(e => console.error('[payout-settlement-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+    setTimeout(() => { __once('sweepPayoutSettlement()', () => sweepPayoutSettlement()).catch(e => console.error('[payout-settlement-scheduler] Unexpected error during scheduled sweep:', e)); }, 17000);
+    setInterval(() => { __once('sweepPayoutSettlement()', () => sweepPayoutSettlement()).catch(e => console.error('[payout-settlement-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
     // v147: finished jobs the customer didn't answer within 3 days complete by themselves
-    setInterval(() => { require('./src/routes/payments.routes').sweepWorkDone().catch(e => console.error('[work-done] sweep failed:', e.message)); }, 60 * 60 * 1000);
-    setTimeout(() => { require('./src/routes/payments.routes').sweepWorkDone().catch(() => {}); }, 31000);
+    setInterval(() => { __once("require('./src/routes/payments.routes').sweepWorkDone()", () => require('./src/routes/payments.routes').sweepWorkDone()).catch(e => console.error('[work-done] sweep failed:', e.message)); }, 60 * 60 * 1000);
+    setTimeout(() => { __once("require('./src/routes/payments.routes').sweepWorkDone()", () => require('./src/routes/payments.routes').sweepWorkDone()).catch(() => {}); }, 31000);
     // v147: payouts sent through MTN MoMo: check for MTN's answer every 5 minutes
-    setInterval(() => { require('./src/payout-sending').sweepSending().catch(e => console.error('[payout-sending] check failed:', e.message)); }, 5 * 60 * 1000);
+    setInterval(() => { __once("require('./src/payout-sending').sweepSending()", () => require('./src/payout-sending').sweepSending()).catch(e => console.error('[payout-sending] check failed:', e.message)); }, 5 * 60 * 1000);
 
     // Daily top-scorer free-commission promotion (see
     // src/top-scorer-promotion-scheduler.js). Runs every day — each
     // city's highest Trust Score that day earns a real, consumable
     // free-commission credit for their next payout.
     const { sweepTopScorerPromotion } = require('./src/top-scorer-promotion-scheduler');
-    setTimeout(() => { sweepTopScorerPromotion().catch(e => console.error('[top-scorer-promotion-scheduler] Unexpected error during scheduled sweep:', e)); }, 20000);
-    setInterval(() => { sweepTopScorerPromotion().catch(e => console.error('[top-scorer-promotion-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+    setTimeout(() => { __once('sweepTopScorerPromotion()', () => sweepTopScorerPromotion()).catch(e => console.error('[top-scorer-promotion-scheduler] Unexpected error during scheduled sweep:', e)); }, 20000);
+    setInterval(() => { __once('sweepTopScorerPromotion()', () => sweepTopScorerPromotion()).catch(e => console.error('[top-scorer-promotion-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
 
     // Post-signup document upload reminder (see
     // src/document-upload-reminder-scheduler.js).
     const { sweepDocumentUploadReminders } = require('./src/document-upload-reminder-scheduler');
-    setTimeout(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, 23000);
-    setInterval(() => { sweepDocumentUploadReminders().catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+    setTimeout(() => { __once('sweepDocumentUploadReminders()', () => sweepDocumentUploadReminders()).catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, 23000);
+    setInterval(() => { __once('sweepDocumentUploadReminders()', () => sweepDocumentUploadReminders()).catch(e => console.error('[document-reminder-scheduler] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
 
     // v107: ads come down when their time is up (see src/ads.js). Hourly.
     // v108.1: customers marked verified before v75 without an approved ID
-    setTimeout(() => { require('./src/customer-id-rule').applyCustomerIdRule().catch(e => console.error('[customer-id-rule] failed:', e)); }, 5000);
+    setTimeout(() => { __once("require('./src/customer-id-rule').applyCustomerIdRule()", () => require('./src/customer-id-rule').applyCustomerIdRule()).catch(e => console.error('[customer-id-rule] failed:', e)); }, 5000);
     const { endExpiredAds } = require('./src/ads');
-    setTimeout(() => { endExpiredAds().catch(e => console.error('[ads] sweep failed:', e)); }, 37000);
-    setInterval(() => { endExpiredAds().catch(e => console.error('[ads] sweep failed:', e)); }, 60 * 60 * 1000);
+    setTimeout(() => { __once('endExpiredAds()', () => endExpiredAds()).catch(e => console.error('[ads] sweep failed:', e)); }, 37000);
+    setInterval(() => { __once('endExpiredAds()', () => endExpiredAds()).catch(e => console.error('[ads] sweep failed:', e)); }, 60 * 60 * 1000);
 
     // v96: remove exact job locations once they're no longer needed (see
     // src/location-retention-scheduler.js). Shortly after boot, then daily.
     const { sweepLocationRetention } = require('./src/location-retention-scheduler');
-    setTimeout(() => { sweepLocationRetention().catch(e => console.error('[location-retention] sweep failed:', e)); }, 34000);
-    setInterval(() => { sweepLocationRetention().catch(e => console.error('[location-retention] sweep failed:', e)); }, ONE_DAY_MS);
+    setTimeout(() => { __once('sweepLocationRetention()', () => sweepLocationRetention()).catch(e => console.error('[location-retention] sweep failed:', e)); }, 34000);
+    setInterval(() => { __once('sweepLocationRetention()', () => sweepLocationRetention()).catch(e => console.error('[location-retention] sweep failed:', e)); }, ONE_DAY_MS);
     // v129: reminders before an agreed arrival time ("time to leave"), every minute.
     const { sweepArrivalReminders } = require('./src/arrival-time');
-    setInterval(() => { sweepArrivalReminders().catch(e => console.error('[arrival-reminders] sweep failed:', e)); }, 60 * 1000);
+    setInterval(() => { __once('sweepArrivalReminders()', () => sweepArrivalReminders()).catch(e => console.error('[arrival-reminders] sweep failed:', e)); }, 60 * 1000);
     // v128: live trip positions are cleared soon after a trip ends, not after 90 days.
     const { clearEndedTripPositions } = require('./src/location-retention-scheduler');
-    setInterval(() => { clearEndedTripPositions().catch(e => console.error('[location-retention] trip cleanup failed:', e)); }, 10 * 60 * 1000);
+    setInterval(() => { __once('clearEndedTripPositions()', () => clearEndedTripPositions()).catch(e => console.error('[location-retention] trip cleanup failed:', e)); }, 10 * 60 * 1000);
 
     // v82: nightly copy of the data files (see src/backup-scheduler.js).
     // A minute after boot if today's copy doesn't exist yet, then daily.
@@ -474,33 +480,33 @@ seedIfEmpty()
       for (const p of stale) await db.remove('pendingRegistrations', p.id);
       if (stale.length) console.log(`[signup] Removed ${stale.length} expired unfinished sign-up${stale.length === 1 ? '' : 's'}.`);
     };
-    setTimeout(() => { sweepExpiredSignups().catch(e => console.error('[signup] sweep failed:', e)); }, 31000);
-    setInterval(() => { sweepExpiredSignups().catch(e => console.error('[signup] sweep failed:', e)); }, 60 * 60 * 1000);
+    setTimeout(() => { __once('sweepExpiredSignups()', () => sweepExpiredSignups()).catch(e => console.error('[signup] sweep failed:', e)); }, 31000);
+    setInterval(() => { __once('sweepExpiredSignups()', () => sweepExpiredSignups()).catch(e => console.error('[signup] sweep failed:', e)); }, 60 * 60 * 1000);
 
     // v115: tokens owed back on refunded bookings, and mobile-money token
     // purchases waiting for MTN's answer. Every 5 minutes.
-    setInterval(() => { require('./src/tokens').sweep().catch(e => console.error('[tokens] sweep failed:', e)); }, 5 * 60 * 1000);
+    setInterval(() => { __once("require('./src/tokens').sweep()", () => require('./src/tokens').sweep()).catch(e => console.error('[tokens] sweep failed:', e)); }, 5 * 60 * 1000);
     // v119: bookings whose payment code ran out without a payment are cancelled.
     // v148: System Check watches the running system and alerts admins with the cause and the fix
     require('./src/system-check').install();
-    setTimeout(() => { require('./src/system-check').run().catch(e => console.error('[system-check] failed:', e.message)); }, 2 * 60 * 1000);
-    setInterval(() => { require('./src/system-check').run().catch(e => console.error('[system-check] failed:', e.message)); }, 15 * 60 * 1000);
-    setInterval(() => { require('./src/customer-payments').sweepMomo().catch(e => console.error('[momo] sweep failed:', e.message)); }, 60 * 1000); // v147: wallet payments waiting for the customer's PIN
-    setInterval(() => { require('./src/customer-payments').expireUnpaid().catch(e => console.error('[customer-payments] sweep failed:', e)); }, 5 * 60 * 1000);
-    setTimeout(() => { require('./src/tokens').sweep().catch(e => console.error('[tokens] sweep failed:', e)); }, 15000);
+    setTimeout(() => { __once("require('./src/system-check').run()", () => require('./src/system-check').run()).catch(e => console.error('[system-check] failed:', e.message)); }, 2 * 60 * 1000);
+    setInterval(() => { __once("require('./src/system-check').run()", () => require('./src/system-check').run()).catch(e => console.error('[system-check] failed:', e.message)); }, 15 * 60 * 1000);
+    setInterval(() => { __once("require('./src/customer-payments').sweepMomo()", () => require('./src/customer-payments').sweepMomo()).catch(e => console.error('[momo] sweep failed:', e.message)); }, 60 * 1000); // v147: wallet payments waiting for the customer's PIN
+    setInterval(() => { __once("require('./src/customer-payments').expireUnpaid()", () => require('./src/customer-payments').expireUnpaid()).catch(e => console.error('[customer-payments] sweep failed:', e)); }, 5 * 60 * 1000);
+    setTimeout(() => { __once("require('./src/tokens').sweep()", () => require('./src/tokens').sweep()).catch(e => console.error('[tokens] sweep failed:', e)); }, 15000);
 
     // v78: monthly provider plan invoices (see src/plan-billing.js). Does
     // nothing unless billing is switched on. Shortly after boot, then daily;
     // it only ever creates one invoice per provider per month.
     const { sweepPlanInvoices } = require('./src/plan-billing');
-    setTimeout(() => { sweepPlanInvoices().catch(e => console.error('[plan-billing] Unexpected error during scheduled sweep:', e)); }, 29000);
-    setInterval(() => { sweepPlanInvoices().catch(e => console.error('[plan-billing] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+    setTimeout(() => { __once('sweepPlanInvoices()', () => sweepPlanInvoices()).catch(e => console.error('[plan-billing] Unexpected error during scheduled sweep:', e)); }, 29000);
+    setInterval(() => { __once('sweepPlanInvoices()', () => sweepPlanInvoices()).catch(e => console.error('[plan-billing] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
 
     // v77: delete ID files once they're past the retention period (see
     // src/id-retention-scheduler.js). Shortly after boot, then daily.
     const { sweepIdDocumentRetention } = require('./src/id-retention-scheduler');
-    setTimeout(() => { sweepIdDocumentRetention().catch(e => console.error('[id-retention] Unexpected error during scheduled sweep:', e)); }, 26000);
-    setInterval(() => { sweepIdDocumentRetention().catch(e => console.error('[id-retention] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
+    setTimeout(() => { __once('sweepIdDocumentRetention()', () => sweepIdDocumentRetention()).catch(e => console.error('[id-retention] Unexpected error during scheduled sweep:', e)); }, 26000);
+    setInterval(() => { __once('sweepIdDocumentRetention()', () => sweepIdDocumentRetention()).catch(e => console.error('[id-retention] Unexpected error during scheduled sweep:', e)); }, ONE_DAY_MS);
 
     // Scheduled announcement sweep (see src/announcement-scheduler.js) —
     // checked every 5 minutes, same cadence as the booking-response sweep,
@@ -508,8 +514,8 @@ seedIfEmpty()
     // announcement meant to go out at 9am shouldn't sit unsent until the
     // next daily sweep).
     const { sweepScheduledAnnouncements } = require('./src/announcement-scheduler');
-    setTimeout(() => { sweepScheduledAnnouncements().catch(e => console.error('[announcement-scheduler] Unexpected error during scheduled sweep:', e)); }, 26000);
-    setInterval(() => { sweepScheduledAnnouncements().catch(e => console.error('[announcement-scheduler] Unexpected error during scheduled sweep:', e)); }, FIVE_MINUTES_MS);
+    setTimeout(() => { __once('sweepScheduledAnnouncements()', () => sweepScheduledAnnouncements()).catch(e => console.error('[announcement-scheduler] Unexpected error during scheduled sweep:', e)); }, 26000);
+    setInterval(() => { __once('sweepScheduledAnnouncements()', () => sweepScheduledAnnouncements()).catch(e => console.error('[announcement-scheduler] Unexpected error during scheduled sweep:', e)); }, FIVE_MINUTES_MS);
   })
   .catch(err => {
     console.error('Failed to start server:', err);

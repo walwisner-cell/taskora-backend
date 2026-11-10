@@ -10,8 +10,8 @@
 //
 // What is emailed: booking updates (requests, confirmations, payments,
 // cancellations, refunds, reminders), payout alerts, and account-critical
-// notices (suspension, verification, disputes). Never chat messages, new
-// job matches or promotions.
+// notices (suspension, verification, disputes), and (v160) new job matches
+// for pros. Never chat messages or promotions.
 //
 // So it never becomes noise:
 //   - not while the person has Trothen open (they see it there): the app
@@ -23,7 +23,8 @@
 
 const db = require('./db');
 
-const EMAIL_CATEGORIES = new Set(['bookingUpdates', 'payoutAlerts']);
+// v160: and new job matches for pros: a lead missed for hours is a job lost (Thumbtack and Bark email every lead)
+const EMAIL_CATEGORIES = new Set(['bookingUpdates', 'payoutAlerts', 'newMatches']);
 const SEEN_WINDOW_MS = 3 * 60 * 1000;
 const PER_HOUR = 8;
 const SAME_TEXT_MS = 30 * 60 * 1000;

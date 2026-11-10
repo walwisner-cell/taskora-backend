@@ -337,8 +337,13 @@
   .confirm-card h2 { font-family:var(--font-display); font-size:26px; font-weight:800; color:var(--navy); margin-bottom:10px; }
   .confirm-card p { color:var(--slate); font-size:15px; line-height:1.6; margin-bottom:24px; }
   .confirm-details { background:var(--offwhite); border-radius:10px; padding:16px; margin-bottom:28px; text-align:left; }
-  .confirm-detail { display:flex; justify-content:space-between; font-size:14px; padding:5px 0; color:var(--slate); }
-  .confirm-detail strong { color:var(--navy); }
+  .confirm-detail { display:flex; justify-content:space-between; align-items:baseline; gap:16px; font-size:14px; padding:5px 0; color:var(--slate); }
+  .confirm-detail > span { flex:0 0 auto; }
+  .confirm-detail strong { color:var(--navy); text-align:right; min-width:0; overflow-wrap:anywhere; }
+  .confirm-actions { display:flex; flex-direction:column; gap:10px; align-items:stretch; }
+  .confirm-actions .back-home-btn { width:100%; margin:0; }
+  .confirm-actions .back-home-btn:not(.view-booking-btn) { background:transparent; color:var(--navy); border:1.5px solid var(--border); }
+  .confirm-actions .back-home-btn:not(.view-booking-btn):hover { background:var(--offwhite); color:var(--navy); }
   .back-home-btn {
     background:var(--navy); color:var(--white); border:none; border-radius:8px;
     padding:14px 32px; font-family:var(--font-display); font-weight:700; font-size:15px;
@@ -652,6 +657,18 @@
   .chat-nav-badge { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; padding:0 6px; margin-left:8px; border-radius:10px; background:#C0392B; color:#fff; font-size:11.5px; font-weight:700; line-height:1; }
   /* ── v129: trip screen, arrival times, next-job card, phone layout (where.js, arrival.js) ── */
   #confirm-dialog-modal { z-index:5450 !important; }
+  /* v159: a message always shows in front, including over a pop-up (it used to sit behind the dimmed backdrop).
+     While a pop-up is open it shows at the top, so it never covers the pop-up's own buttons. */
+  .toast { z-index:6000 !important; max-width:min(560px, calc(100vw - 24px)); pointer-events:none; cursor:pointer; }
+  .toast.show { pointer-events:auto; }
+  /* v159: the secondary buttons on the "no pro nearby yet" screen */
+  .pj-alt-btn { display:block; width:100%; min-height:48px; padding:12px 16px; border-radius:var(--r-control, 10px); background:#fff; color:var(--navy); border:1.5px solid var(--navy); font:inherit; font-weight:600; font-size:15px; cursor:pointer; }
+  .pj-alt-btn:hover { background:var(--offwhite); }
+  .pj-alt-btn:focus-visible { outline:3px solid var(--teal); outline-offset:2px; }
+  .pj-alt-btn.pj-alt-quiet { color:var(--slate); border-color:var(--border); }
+  body.toast-over-modal .toast { top:16px; bottom:auto !important; left:50%; right:auto; transform:translate(-50%, -24px); }
+  body.toast-over-modal .toast.show { transform:translate(-50%, 0); }
+  @media (max-width:760px) { body.toast-over-modal .toast { top:calc(10px + env(safe-area-inset-top, 0px)); left:12px; right:12px; transform:translateY(-24px); max-width:none; } body.toast-over-modal .toast.show { transform:translateY(0); } }
   #confirm-dialog-message { white-space:pre-line; }
   .link-btn { background:none; border:none; padding:0; color:var(--teal); font-size:13px; font-weight:600; text-decoration:underline; text-underline-offset:2px; cursor:pointer; font-family:inherit; }
   .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11.5px; font-weight:700; letter-spacing:.02em; vertical-align:middle; }
@@ -1974,6 +1991,8 @@
   #install-banner .ib-no { background:none; border:none; color:#55637A; font-size:13px; cursor:pointer; padding:4px; }
   html.dark #install-banner { background:#16233A; color:#fff; border-color:#2B3B57; }
   html.dark #install-banner .ib-no { color:#B7C2D6; }
+  /* v160: never over an open pop-up (it covered the review form's Submit button on phones) */
+  body:has(.modal-overlay.open) #install-banner { display:none !important; }
   .nav-install { display:none !important; }
   @media (max-width:760px) { html.can-install .navbar.menu-open .nav-more .nav-install { display:block !important; color:var(--signal); } }
   .install-sheet { margin:auto auto 0; background:#fff; border-radius:18px 18px 0 0; padding:24px 22px calc(22px + env(safe-area-inset-bottom, 0px)); width:100%; max-width:480px; }
@@ -2499,6 +2518,47 @@
   }
 </style>
 
+<style id="align-v160">
+  /* ═══ v160: three things that didn't line up on a phone ═══ */
+  /* "Live now in": every item had a 22 px side margin from an older rule, so
+     the label and chips sat in uneven, lopsided rows. Even 8 px gaps now, and
+     on a phone the label has its own centred line above the chips. */
+  .hero-locales-track .loc-set > span, .hero-locales-track .loc-set > .loc-chip { margin:0 !important; }
+  .hero-locales-track .loc-set { gap:8px !important; column-gap:8px !important; row-gap:10px !important; }
+  @media (max-width: 760px) {
+    .hero-locales .loc-label { flex:0 0 100%; justify-content:center; margin-bottom:2px !important; }
+    /* the welcome card's two buttons: the same height, one line each */
+    .customer-welcome-actions { display:grid !important; grid-template-columns:1fr 1fr; gap:12px; width:100%; }
+    .customer-welcome-actions > button { width:100%; min-height:48px; margin:0 !important; padding:0 12px !important; white-space:nowrap; font-size:15px !important; display:inline-flex; align-items:center; justify-content:center; }
+  }
+  /* A posted job's card: its buttons (View Responses, Cancel Request,
+     Materials) in one row that wraps, sharing the width on a phone; the
+     words above always use the card's full width. */
+  /* a badge that holds a sentence (the store's status) wraps inside the card
+     instead of running off its edge */
+  .badge.badge-msg { white-space:normal; display:inline-block; max-width:100%; text-align:left; line-height:1.4; border-radius:10px; padding:6px 10px; }
+  /* the store's ON/OFF switch: on a phone its help line goes under it */
+  @media (max-width: 760px) {
+    .store-switch { flex-wrap:wrap; }
+    .store-switch > span:last-child { flex:1 1 100%; margin-left:30px !important; }
+  }
+  /* a long kind of work ("HVAC & Air Conditioning") takes two lines instead of being cut to "HVAC & Air Con…" */
+  .cat-row .cat-name { white-space:normal !important; text-overflow:clip !important; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.25; }
+  html.dark .job-card-actions > .job-cancel { color:#FF8A80 !important; }
+  /* the tab bar on a small phone (iPhone SE): "Messages" and "Contracts" in full */
+  @media (max-width: 380px) {
+    #mtab .mtab-item { padding-left:1px !important; padding-right:1px !important; font-size:11px !important; letter-spacing:-.01em; }
+  }
+  .job-card-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  @media (max-width: 760px) {
+    .job-card-foot { flex-direction:column; align-items:stretch !important; }
+    .job-card-actions { width:100%; }
+    .job-card-actions > .btn-sm { flex:1 1 calc(50% - 4px); min-height:44px; margin:0 !important; white-space:nowrap; }
+    .job-card-actions > .btn-sm { flex-basis:100%; }
+    /* cancelling is last and quieter than the other two, as in most apps */
+    .job-card-actions > .job-cancel { border-color:transparent !important; background:none !important; color:#B3261E !important; min-height:40px; }
+  }
+</style>
 <style id="align-v155">
   /* ═══ v155: one grid on a phone ═══════════════════════════════════════════
      Everything lines up on the same left and right edge (16 px from the screen
@@ -2932,10 +2992,14 @@
   <div class="confirm-screen" style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px;">
     <div class="confirm-card fade-up">
       <div class="confirm-icon">✓</div>
-      <h2>Booking Confirmed</h2>
-      <p>Your booking is protected by Trothen's auto-generated contract and held in escrow. Your pro will confirm shortly.</p>
+      <h2>Booking request sent</h2>
+      <p>Your pro has been asked to confirm, and we'll tell you as soon as they answer. Your booking comes with Trothen's contract, and any payment is held until you confirm the job is done.</p>
       <div class="confirm-details" id="confirm-details"></div>
-      <button class="back-home-btn" onclick="goHome()">Back to Explore</button>
+      <!-- v160: the next step after booking is to see the booking (its status, chat with the pro, pay or cancel) -->
+      <div class="confirm-actions">
+        <button type="button" class="back-home-btn view-booking-btn" onclick="goToCustomerDashboard('bookings')">View my booking</button>
+        <button type="button" class="back-home-btn" onclick="goHome()">Back to Explore</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3513,7 +3577,7 @@
 </div>
 
 <!-- TOAST -->
-<div class="toast" id="toast"><span class="toast-icon">✦</span><span id="toast-msg"></span></div>
+<div class="toast" id="toast" role="status" aria-live="polite"><span class="toast-icon" aria-hidden="true">✦</span><span id="toast-msg"></span></div>
 
 <!-- AI SUPPORT CHAT WIDGET -->
 <div id="support-chat-bubble" class="support-chat-bubble" onclick="handleChatBubbleClick(event)">
@@ -3562,7 +3626,7 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=2b91bf1667" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/trothen.js?v=fd40ed0ec0" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
 <script src="/app/rides.js?v=f292589ac6"></script>
 <script src="/app/tokens.js?v=5697c68ad9"></script>
 <script src="/app/payways.js?v=06dccae9e7"></script>
@@ -3570,7 +3634,7 @@
 <script src="/app/pricing.js?v=4fdcba4521"></script>
 <script src="/app/chats.js?v=56f10dfd90"></script>
 <script src="/app/where.js?v=521dbda842"></script>
-<script src="/app/arrival.js?v=1eb642e9e9"></script>
+<script src="/app/arrival.js?v=ca8869278d"></script>
 <script src="/app/live.js?v=d049a42ced"></script>
 <script src="/app/instant.js?v=71f47a10f6"></script>
 <script src="/app/sounds.js?v=80c9ab4c9a"></script>
@@ -3578,7 +3642,7 @@
 <script src="/app/callhealth.js?v=04d5713002"></script>
 <script src="/app/teams.js?v=0a22b63b77"></script>
 <script src="/app/voice.js?v=7554f61733"></script>
-<script src="/app/market.js?v=0c2e36c860"></script>
+<script src="/app/market.js?v=c05a3a021e"></script>
 <script src="/app/commission.js?v=2fd7aaa6b7"></script>
 <script src="/app/categories.js?v=9ac65b7765"></script>
 <script src="/app/acceptquote.js?v=3d4d251ecf"></script>
@@ -3593,7 +3657,7 @@
 <script src="/app/checks.js?v=071de1a6a3"></script>
 <script src="/app/polish.js?v=0ae5f38a4e"></script>
 <script src="/app/a11y.js?v=7a13a5f443"></script>
-<script src="/app/es-v152.js?v=d441f920f2"></script>
+<script src="/app/es-v152.js?v=0c40c97730"></script>
 <script src="/app/mobile.js?v=d4850238eb"></script>
 </body>
 </html>

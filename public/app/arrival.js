@@ -220,8 +220,9 @@
       label = isPro ? (overdue ? tr('Overdue') : leave ? tr('Time to leave') : tr('Next job')) : tr('Upcoming arrival');
       head = isPro ? `${tr('Due at')} ${who}'s ${when(due)}` : `${who} ${tr('arrives')} ${when(due)}`;
       sub = `${sentence(inWords(due))}${isPro && !leave ? ` · ${tr('you will be reminded when it is time to leave')}` : ''}`;
+      const soon = Date.parse(due) - Date.now() < 12 * 3600e3; // v160: Leave Now from 12 hours before, not days ahead
       btns = isPro
-        ? `<button type="button" class="btn-sm ${leave ? 'btn-sm-primary' : 'btn-sm-outline'}" onclick="markContractOnMyWay(${jsArg(c.id)})">${esc(tr('Leave Now'))}</button>${c.jobLocation ? `<a class="btn-sm btn-sm-outline" href="https://www.google.com/maps/dir/?api=1&destination=${c.jobLocation.latitude},${c.jobLocation.longitude}" target="_blank" rel="noopener noreferrer">${esc(tr('Directions'))}</a>` : ''}`
+        ? `${soon ? `<button type="button" class="btn-sm ${leave ? 'btn-sm-primary' : 'btn-sm-outline'}" onclick="markContractOnMyWay(${jsArg(c.id)})">${esc(tr('Leave Now'))}</button>` : ''}${c.jobLocation ? `<a class="btn-sm btn-sm-outline" href="https://www.google.com/maps/dir/?api=1&destination=${c.jobLocation.latitude},${c.jobLocation.longitude}" target="_blank" rel="noopener noreferrer">${esc(tr('Directions'))}</a>` : ''}`
         : `<button type="button" class="btn-sm btn-sm-outline" onclick="openArrivalTime(${jsArg(c.id)})">${esc(tr('Change Time'))}</button>`;
       if (isPro && (leave || overdue)) label = `<span class="pill pill-live">${esc(label)}</span>`;
     } else if (n.kind === 'ask') {

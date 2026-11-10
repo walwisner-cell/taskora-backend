@@ -34,6 +34,13 @@ function timeHM(t) {
 }
 
 // "14:30" -> "2:30 PM" for people to read.
+// v159 review: only a clock time ("14:30", "9:00 AM") -> "HH:MM"; a part of the
+// day ("Morning") stays as words, so it is never saved or used as an exact time.
+function clockHM(t) {
+  const s = String(t == null ? '' : t).trim().toLowerCase();
+  return /^(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?$/.test(s) ? timeHM(s) : null;
+}
+
 function time12(hm) {
   const m = /^(\d{2}):(\d{2})$/.exec(String(hm || ''));
   if (!m) return String(hm || '');
@@ -95,8 +102,8 @@ function paidForReal(escrow) {
 
 // The date and time a posted job carries onto its booking.
 function jobWhen(job) {
-  if (job && job.when === 'date' && isRealDate(job.preferredDate)) return { date: job.preferredDate, time: timeHM(job.preferredTime) || job.preferredTime || null };
-  if (job && isRealDate(job.preferredDate) && !job.when) return { date: job.preferredDate, time: timeHM(job.preferredTime) || job.preferredTime || null };
+  if (job && job.when === 'date' && isRealDate(job.preferredDate)) return { date: job.preferredDate, time: clockHM(job.preferredTime) || job.preferredTime || null };
+  if (job && isRealDate(job.preferredDate) && !job.when) return { date: job.preferredDate, time: clockHM(job.preferredTime) || job.preferredTime || null };
   return { date: null, time: null };
 }
 
@@ -124,4 +131,4 @@ function whenFor(iso, user, opts) {
   try { return d.toLocaleString('en-US', { ...o, timeZone: zoneOf(user), timeZoneName: o.hour ? 'short' : undefined }); } catch (e) { return d.toUTCString(); }
 }
 
-module.exports = { zoneOf, whenFor, COUNTRY_ZONE, countsForGmv, jobStartOf, jobWhen, timeHM, time12, isRealDate, bookingDateError, jobStart, whyNotBookable, paidForReal };
+module.exports = { clockHM, zoneOf, whenFor, COUNTRY_ZONE, countsForGmv, jobStartOf, jobWhen, timeHM, time12, isRealDate, bookingDateError, jobStart, whyNotBookable, paidForReal };
