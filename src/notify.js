@@ -48,6 +48,9 @@ async function notify(userId, icon, text, category = null, linkTo = null) {
   if (isPushConfigured()) {
     sendPushToUser(userId, { id, icon, text, linkTo }).catch(e => console.error('[notify] push send failed:', e.message));
   }
+  // v158: booking updates, payout alerts and account notices also go by email
+  // when the person isn't in the app (src/email-notify.js). In the background.
+  require('./email-notify').maybeEmail(userId, text, category, linkTo).catch(() => {});
 }
 
 module.exports = { notify };

@@ -109,7 +109,18 @@ async function accept(contract, userId, tz) {
     sent: {}, // a new time gets its own reminders
     history: [...(contract.arrival.history || []).slice(-19), { action: 'agreed', at: p.at, byRole: role, when: new Date().toISOString() }],
   };
-  const updated = await db.update('contracts', contract.id, { arrival });
+  // v156: the booking's own date and time follow the agreed time (in the
+  // customer's time zone), so every list, the PDF and "the booking day" agree.
+  const patch = { arrival };
+  try {
+    const cust = await db.find('users', u => u.id === contract.customerId);
+    const zone = (cust && cust.timeZone) || validTimeZone(tz) || 'UTC';
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(p.at));
+    const get = (k) => (parts.find(x => x.type === k) || {}).value;
+    patch.date = `${get('year')}-${get('month')}-${get('day')}`;
+    patch.time = `${get('hour')}:${get('minute')}`;
+  } catch (e) { /* the arrival time is what counts */ }
+  const updated = await db.update('contracts', contract.id, patch);
   const me = await db.find('users', u => u.id === userId);
   const proposer = await db.find('users', u => u.id === p.byId);
   await notify(p.byId, '✅', `${personName(me, role === 'customer' ? 'The customer' : 'The pro')} accepted the arrival time for "${contract.service}": ${formatWhen(p.at, (proposer && proposer.timeZone) || tz)}.`, 'bookingUpdates', { section: role === 'customer' ? 'contracts' : 'bookings' });
@@ -133,7 +144,7 @@ async function adoptBookedTime(contract, userId, at, tz) {
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(t));
     const get = (k) => (parts.find(x => x.type === k) || {}).value;
     const dateOk = `${get('year')}-${get('month')}-${get('day')}` === String(contract.date).slice(0, 10);
-    const timeOk = `${get('hour')}:${get('minute')}` === String(contract.time).slice(0, 5);
+    const timeOk = `${get('hour')}:${get('minute')}` === (require('./booking-rules').timeHM(contract.time) || String(contract.time).slice(0, 5)); // v156: "9:00 AM" and "10:00 PM" read correctly
     if (!dateOk || !timeOk) return { status: 400, error: 'That is not the booked date and time.' };
   } catch (e) { return { status: 400, error: 'Invalid time zone' }; }
   if (t < Date.now()) return { status: 400, error: 'The booked time has passed.' };
@@ -159,9 +170,38 @@ function leadMinutes(contract, pro) {
   return DEFAULT_LEAD_MIN;
 }
 
+// v158: a confirmed booking with a booked clock time gets its arrival time
+// set on the server, so the reminders run even if nobody opens the booking.
+// Before, this only happened when the customer's page opened the booking,
+// so a customer who booked and then didn't come back got no reminders, and
+// neither did the pro. The time is read in the customer's time zone (saved
+// when they booked or used the app), else the pro's, else the country's own
+// single time zone; with none of these it waits for the page, as before.
+const COUNTRY_ZONE = require('./booking-rules').COUNTRY_ZONE;
+async function adoptOnServer(nowMs = Date.now()) {
+  const rules = require('./booking-rules');
+  const list = await db.filter('contracts', c => c.status === 'active' && !c.ride && !c.delivery && !c.storeOrder && !c.topUpFor && !c.onMyWayAt && !c.arrivedAt
+    && !(c.arrival && (c.arrival.agreed || c.arrival.proposal)) && rules.isRealDate(c.date) && /^\s*\d{1,2}(:\d{2})?\s*(am|pm|a\.m\.|p\.m\.)?\s*$/i.test(String(c.time || '')) && rules.timeHM(c.time));
+  let n = 0;
+  for (const c of list) {
+    try {
+      const cust = await db.find('users', u => u.id === c.customerId), pro = await db.find('users', u => u.id === c.providerId);
+      const zone = validTimeZone(cust && cust.timeZone) || validTimeZone(pro && pro.timeZone) || COUNTRY_ZONE[(cust && cust.country) || ''] || null;
+      if (!zone) continue;
+      const at = rules.jobStart(c.date, c.time, zone);
+      if (!at || at.getTime() <= nowMs) continue;
+      const arrival = { agreed: { at: at.toISOString(), agreedAt: new Date(nowMs).toISOString(), proposedBy: 'booking' }, proposal: null, sent: {}, history: [{ action: 'booked', at: at.toISOString(), byRole: 'system', zone, when: new Date(nowMs).toISOString() }] };
+      await db.update('contracts', c.id, { arrival });
+      n++;
+    } catch (e) { console.error('[arrival] adopt:', c.id, e.message); }
+  }
+  return n;
+}
+
 // Runs every minute. Sends each reminder once.
 async function sweepArrivalReminders(nowMs = Date.now()) {
   let sent = 0;
+  try { await adoptOnServer(nowMs); } catch (e) { console.error('[arrival] adopt sweep:', e.message); } // v158
   const list = await db.filter('contracts', c => c.status === 'active' && c.arrival && c.arrival.agreed && !c.onMyWayAt && !c.arrivedAt);
   for (const c of list) {
     const at = Date.parse(c.arrival.agreed.at);
@@ -174,6 +214,14 @@ async function sweepArrivalReminders(nowMs = Date.now()) {
     const minsTo = (at - nowMs) / 60000;
     const tell = async (key, fn) => { if (s[key]) return; s[key] = new Date(nowMs).toISOString(); await fn(); sent++; };
     try {
+      // v158: a reminder the day before (common practice), unless the time was only agreed in the last few hours
+      if (minsTo <= 24 * 60 && minsTo > 120 && nowMs - Date.parse(c.arrival.agreed.agreedAt || 0) > 6 * 3600e3) {
+        await tell('day', async () => {
+          await notify(c.providerId, '📅', `Coming up: "${c.service}" at ${custName}'s, ${formatWhen(c.arrival.agreed.at, pro && pro.timeZone)}. If anything has changed, agree a new time in My Contracts.`, 'bookingUpdates', { section: 'contracts' });
+          await notify(c.customerId, '📅', `Coming up: ${proName} is coming for "${c.service}", ${formatWhen(c.arrival.agreed.at, cust && cust.timeZone)}. If anything has changed, agree a new time in My Bookings.`, 'bookingUpdates', { section: 'bookings' });
+        });
+      }
+      if (minsTo <= 120) s.day = s.day || new Date(nowMs).toISOString(); // too close for a "tomorrow" message
       if (minsTo <= 60 && minsTo > lead && minsTo > 0) {
         await tell('hour', async () => {
           await notify(c.providerId, '🕒', `Reminder: you are due at ${custName}'s for "${c.service}" at ${clock(c.arrival.agreed.at, pro && pro.timeZone)}.`, 'bookingUpdates', { section: 'contracts' });
@@ -213,4 +261,4 @@ async function sweepArrivalReminders(nowMs = Date.now()) {
   return sent;
 }
 
-module.exports = { propose, accept, adoptBookedTime, sweepArrivalReminders, personName, formatWhen, leadMinutes, validTimeZone, DEFAULT_LEAD_MIN };
+module.exports = { adoptOnServer, propose, accept, adoptBookedTime, sweepArrivalReminders, personName, formatWhen, leadMinutes, validTimeZone, DEFAULT_LEAD_MIN };

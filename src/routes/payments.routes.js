@@ -755,6 +755,9 @@ router.post('/contracts/:id/scope-change-request', requireAuth, requireRole('pro
     return res.status(400).json({ error: 'Explain what changed about the job (at least 10 characters). The customer needs a real reason to approve this' });
   }
 
+  // v157: where the customer really paid (card, code or wallet), the extra is paid the same way once approved (src/top-ups.js)
+  if (await require('../top-ups').pendingExtra(contract.id)) return res.status(400).json({ error: 'Extra work on this job is waiting for the customer\'s payment. Wait for that first.' });
+  if (contract.storeOrder || contract.goodsOnly || contract.ride || contract.delivery) return res.status(400).json({ error: 'Extra work can only be added to a job.' });
   const existing = await db.find('scopeChangeRequests', r => r.contractId === contract.id && r.status === 'pending');
   if (existing) return res.status(400).json({ error: 'There\'s already a pending additional request for this job: wait for the customer to respond to it first' });
 
@@ -867,6 +870,23 @@ async function handleScopeChangeDecide(req, res, request) {
   // ever actually charged to the customer for the added work. Harmless
   // today (MoMo is still gated, so this call is a no-op for everyone),
   // but this closes the same gap before it can matter.
+  // v157: a booking paid for real (card, payment code or wallet): the extra is
+  // a payment of its own, made the same way. The job's total only goes up once
+  // it is paid (src/top-ups.js). Before v156 the total went up with nothing
+  // collected; v156 refused it.
+  const parentEscrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+  if (contract.payMethod !== 'cash' && require('../booking-rules').paidForReal(parentEscrow)) {
+    if (await require('../top-ups').pendingExtra(contract.id)) return res.status(409).json({ error: 'Another extra payment on this job is still waiting. Pay or cancel that one first.' });
+    let t;
+    try { t = await require('../top-ups').create(contract, 'extra', request.amount, { serviceFee: money2(Math.max(0, newServiceFee - (contract.serviceFee || 0))), scopeRequestId: request.id }); }
+    catch (e) { return res.status(e.status || 402).json({ code: e.code || 'PAYMENT_FAILED', error: e.message || 'The payment for the extra work could not be started. Nothing was changed.' }); }
+    if (t.paidAtOnce) return res.json({ request: { ...request, status: 'approved' }, contract: await db.find('contracts', c => c.id === contract.id) });
+    await db.update('scopeChangeRequests', request.id, { status: 'awaiting_payment', approvedAt: new Date().toISOString(), topUpContractId: t.child.id });
+    const custPay = require('../customer-payments');
+    await notify(contract.customerId, '💳', `To add the extra work on "${contract.service}", ${custPay.howToPayWords(t.escrow).replace(/Nothing is booked until you pay\./, 'Nothing changes until you pay.')}`, 'bookingUpdates', { section: 'bookings' });
+    await notify(request.providerId, '👍', `The customer approved your extra $${request.amount} for "${contract.service}". It's added once they pay it; you'll be told.`, null, { section: 'contracts' });
+    return res.json({ request: { ...request, status: 'awaiting_payment' }, topUp: { id: t.child.id, bookingNumber: t.child.bookingNumber, total: money2(t.child.amount + t.child.serviceFee) }, payment: t.payment });
+  }
   const scopeChangeCustomer = customerForFee;
   if (contract.payMethod !== 'cash' && scopeChangeCustomer) { // v147: any connected wallet, not only Liberia's
     const result = await require('../mobile-money').chargeDefaultWallet(scopeChangeCustomer, request.amount, contract.id, null);
@@ -954,7 +974,61 @@ async function sweepWorkDone() {
       n++;
     } catch (e) { console.error('[work-done] auto-complete failed:', c0.id, e.message); }
   }
+  try { await sweepUnstartedBookings(); } catch (e) { console.error('[bookings] unstarted sweep failed:', e.message); } // v156
   return n;
+}
+
+// v156: a confirmed job whose day came and went with nothing happening: the
+// pro never set off, never arrived and never said it was finished. Before,
+// the customer's money stayed held for good unless they thought to cancel.
+// Two days after the booking day both are asked; a week after it, the
+// booking is cancelled and the customer refunded. Anyone pressing a button
+// in between (Mark Complete, I've finished, Report a Problem) stops this.
+const UNSTARTED_ASK_DAYS = 2, UNSTARTED_CANCEL_DAYS = 7;
+async function sweepUnstartedBookings() {
+  const today = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+  // the booking day, or a later agreed arrival day; a new time being agreed right now waits
+  const dayOf = (c) => {
+    if (c.arrival && c.arrival.proposal) return null;
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(String(c.date || '')) ? Date.parse(c.date + 'T00:00:00Z') : null;
+    const a = c.arrival && c.arrival.agreed ? Date.parse(String(c.arrival.agreed.at).slice(0, 10) + 'T00:00:00Z') : null;
+    return d == null ? a : a == null ? d : Math.max(d, a);
+  };
+  const list = await db.filter('contracts', c => c.status === 'active' && !c.ride && !c.delivery && !c.storeOrder && !c.goodsOnly
+    && !c.onMyWayAt && !c.arrivedAt && !c.workDoneAt && dayOf(c) != null && today - dayOf(c) >= UNSTARTED_ASK_DAYS * 86400e3);
+  let asked = 0, cancelled = 0;
+  for (const c0 of list) {
+    try {
+      await require('../contract-locks').whenFree(c0.id, async () => {
+        const c = await db.find('contracts', x => x.id === c0.id);
+        if (!c || c.status !== 'active' || c.onMyWayAt || c.arrivedAt || c.workDoneAt) return;
+        if (await db.find('disputes', d => d.contractId === c.id && !['resolved', 'closed', 'dismissed', 'rejected'].includes(d.status))) return;
+        const late = (today - dayOf(c)) / 86400e3;
+        const by = new Date(dayOf(c) + UNSTARTED_CANCEL_DAYS * 86400e3).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+        const cash = c.payMethod === 'cash';
+        if (late < UNSTARTED_CANCEL_DAYS) {
+          if (c.unstartedAskedAt) return;
+          await db.update('contracts', c.id, { unstartedAskedAt: new Date().toISOString() });
+          await notify(c.customerId, '❓', `Was "${c.service}" done on ${c.date}? If it was, press Mark Complete in My Bookings. If the pro didn't come, press Cancel${cash ? '' : ' and you are refunded'}. If nothing happens by ${by}, the booking is cancelled${cash ? '' : ' and refunded'} by itself.`, 'bookingUpdates', { section: 'bookings' });
+          await notify(c.providerId, '❓', `"${c.service}" was booked for ${c.date}, and nothing has been recorded since. If you did the job, press "I've finished the job" in My Contracts. If nothing happens by ${by}, the booking is cancelled${cash ? '' : ' and the customer refunded'}.`, 'bookingUpdates', { section: 'contracts' });
+          asked++;
+          return;
+        }
+        const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
+        if (escrow && escrow.materialsAdvancePayoutId) return; // money already went to the pro: the team decides
+        if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+        try { await require('../top-ups').follow(c.id, 'refunded'); } catch (e) { /* the extra stays for the team */ }
+        await db.update('contracts', c.id, { status: 'cancelled', cancelledByRole: 'system', cancelReasonCategory: 'not_started', cancelledAt: new Date().toISOString() });
+        try { await require('../store').giveBackStock(c); } catch (e) { /* nothing held */ }
+        try { await require('../loyalty').givePointsBack(c); } catch (e) { /* none spent */ }
+        if (cash) { try { await require('../tokens').sweep(c.providerId); } catch (e) { /* the 5-minute sweep gives it back */ } }
+        await notify(c.customerId, '🚫', `"${c.service}" (booked for ${c.date}) was cancelled because nothing happened within ${UNSTARTED_CANCEL_DAYS} days.${cash ? '' : ' Your payment is refunded.'} Book again if you still need it.`, 'bookingUpdates', { section: 'bookings' });
+        await notify(c.providerId, '🚫', `"${c.service}" (booked for ${c.date}) was cancelled because nothing was recorded within ${UNSTARTED_CANCEL_DAYS} days.${cash ? '' : ' The customer was refunded.'}`, 'bookingUpdates', { section: 'contracts' });
+        cancelled++;
+      });
+    } catch (e) { console.error('[bookings] unstarted:', c0.id, e.message); }
+  }
+  return { asked, cancelled };
 }
 
 router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), async (req, res) => {
@@ -990,7 +1064,13 @@ async function handleContractComplete(req, res) {
     }
     tip = Math.round(tipAmount * 100) / 100;
   }
-
+  // v157: where the customer really paid (card, code or wallet), the tip is a
+  // payment of its own, made the same way after the job is completed.
+  let tipToCollect = 0;
+  if (tip > 0 && contract.payMethod !== 'cash') {
+    const esc0 = await db.find('escrowTransactions', e => e.contractId === contract.id);
+    if (require('../booking-rules').paidForReal(esc0)) { tipToCollect = tip; tip = 0; }
+  }
   // v119: a cash job. The customer pays the pro directly, so there is no
   // escrow to release and no tip through Trothen. The customer confirms the
   // cash they paid; Trothen's commission (already taken from the pro's
@@ -1014,6 +1094,15 @@ async function handleContractComplete(req, res) {
   const done = await completeContractCore(contract, tip, req.user.sub);
   // v108: a store order's driver is paid when the customer has the goods.
   try { await require('../store-orders').afterComplete(contract, req.user.sub); } catch (e) { console.error('[store-orders] after complete:', e.message); }
+  if (tipToCollect > 0) { // v157
+    try {
+      const t = await require('../top-ups').create({ ...contract, status: 'completed' }, 'tip', tipToCollect);
+      if (!t.paidAtOnce) await notify(contract.customerId, '💳', `To send your $${tipToCollect.toFixed(2)} tip for "${contract.service}", ${require('../customer-payments').howToPayWords(t.escrow).replace(/Nothing is booked until you pay\./, '')}`.trim(), 'bookingUpdates', { section: 'bookings' });
+      return res.json({ ...done, tip: { id: t.child.id, bookingNumber: t.child.bookingNumber, amount: tipToCollect, paid: !!t.paidAtOnce }, tipPayment: t.payment });
+    } catch (e) {
+      return res.json({ ...done, tipError: 'The job is complete, but the tip payment could not be started. You can give the tip to your pro directly.' });
+    }
+  }
   res.json(done);
 }
 
@@ -1025,6 +1114,7 @@ async function completeContractCore(contract, tip, customerId) {
   // v109: only money that is still held can be released. A refunded or
   // already-released record is never changed back.
   if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'released' });
+  try { await require('../top-ups').follow(contract.id, 'released'); } catch (e) { console.error('[top-ups] release:', e.message); } // v157: paid extra work goes with it
   await require('../loyalty').awardLoyaltyPoint(customerId, 'booking'); // v109: the booking point is earned when the job is done
   const updated = await db.update('contracts', contract.id, { status: 'completed', tipAmount: tip, tipPaid: false, completedAt: new Date().toISOString() }); // v105: the day it was completed, for invoices and the tax report
 
@@ -1125,6 +1215,10 @@ async function handleContractCancel(req, res) {
       // v125: close the card page so it can't be paid any more.
       if (escrow.paidBy === 'card' && escrow.cardSessionId) { try { await require('../stripe-pay').expireSession(escrow.cardSessionId); } catch (x) { /* already closed or paid: a late payment is refunded automatically */ } }
     }
+    if (contract.topUpFor) { // v157: dropping an extra or a tip leaves the booking as it was (v158: and isn't counted as a cancellation)
+      const gone = await db.update('contracts', contract.id, { status: 'topup_lapsed', cancelReason: 'Dropped by the customer' });
+      await require('../top-ups').lapsed(contract); return res.json({ contract: gone, escrow: null });
+    }
     const gone = await db.update('contracts', contract.id, { status: 'cancelled', cancelledByRole: 'customer', cancelReasonCategory: 'not_paid', cancelledAt: new Date().toISOString() });
     await require('../store').giveBackStock(contract);
     await require('../loyalty').givePointsBack(contract);
@@ -1147,10 +1241,17 @@ async function handleContractCancel(req, res) {
   let linked = null;
   if (contract.deliveryContractId) linked = await db.find('contracts', c => c.id === contract.deliveryContractId);
   else if (contract.delivery && contract.delivery.forContractId) linked = await db.find('contracts', c => c.id === contract.delivery.forContractId);
+  // v156: once the pro has arrived or said the work is finished, the customer
+  // can't cancel for a full refund: work may have been done, so a person looks
+  // at it (Report a Problem). The pro can still cancel; the customer is refunded.
+  if (contract.status === 'active' && contract.customerId === req.user.sub && !contract.ride && !contract.delivery && !contract.storeOrder && (contract.arrivedAt || contract.workDoneAt)) {
+    return res.status(409).json({ code: 'USE_DISPUTE', error: contract.workDoneAt ? 'The pro has said the work is finished, so this booking can\'t be cancelled for a refund. Press Complete if the work is done, or Report a Problem if it isn\'t, and our team will look at it.' : 'The pro has already arrived, so this booking can\'t be cancelled for a refund. If something is wrong, use Report a Problem and our team will sort out what is owed.' });
+  }
   if (contract.status === 'active' && (handedOver(contract) || handedOver(linked))) {
     return res.status(409).json({ code: 'USE_DISPUTE', error: 'The goods have already been handed over, so this can\'t be cancelled for a refund. If something is wrong, use "Report a Problem" on the booking.' });
   }
   if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+  try { await require('../top-ups').follow(contract.id, 'refunded'); } catch (e) { console.error('[top-ups] refund:', e.message); } // v157
   await require('../loyalty').givePointsBack(contract); // v109
   const iAmProvider = contract.providerId === req.user.sub;
   const isProtected = iAmProvider && PROTECTED_CANCEL_REASONS.has(reasonCategory);
@@ -1167,6 +1268,21 @@ async function handleContractCancel(req, res) {
   // cancelling tells the customer and the seller so another can be chosen.
   try { await require('../store-orders').afterCancel(updated, req.user.sub); } catch (e) { console.error('[store-orders] after cancel:', e.message); }
 
+  // v156: a booking made from a posted job: the job opens again, so the
+  // customer can choose another pro who replied (or cancel the job). Before,
+  // it stayed "matched" to a booking that no longer existed.
+  if (contract.jobId) {
+    try {
+      const job = await db.find('jobs', j => j.id === contract.jobId);
+      if (job && job.status === 'matched') {
+        await db.update('jobs', job.id, { status: 'open' });
+        const m = await db.find('matches', x => x.jobId === job.id && x.providerId === contract.providerId);
+        if (m) await db.update('matches', m.id, { status: 'cancelled' });
+        for (const o of await db.filter('matches', x => x.jobId === job.id && x.status === 'not_selected')) await db.update('matches', o.id, { status: o.price || o.coverLetter ? 'interested' : 'pending' }); // the others who replied can be chosen again
+        if (iAmProvider) await notify(contract.customerId, '🔁', `Your job "${String(job.description || contract.service).slice(0, 60)}" is open again, so you can choose another pro who replied, or wait for new replies.`, 'bookingUpdates', { section: 'bookings' });
+      }
+    } catch (e) { console.error('[cancel] could not reopen the job:', e.message); }
+  }
   if (isProtected) {
     const { checkProtectedCancellationAbuse } = require('../fraud-detection');
     await checkProtectedCancellationAbuse(contract.providerId);
@@ -1190,7 +1306,7 @@ async function handleContractCancel(req, res) {
 // provider's payout history, just from the other side of the transaction.
 router.get('/payments/mine', requireAuth, requireRole('customer'), async (req, res) => {
   const { from, to } = req.query;
-  let contracts = await db.filter('contracts', c => c.customerId === req.user.sub);
+  let contracts = await db.filter('contracts', c => c.customerId === req.user.sub && c.topUpKind !== 'extra'); // v157: paid extra work is in its booking's total
   if (from) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) >= from);
   if (to) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) <= to);
   contracts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -1218,17 +1334,32 @@ router.get('/payments/mine', requireAuth, requireRole('customer'), async (req, r
       paidCurrency: escrow ? escrow.paidCurrency : 'USD',
       paidAmountLocal: escrow ? escrow.paidAmountLocal : null,
       disputeStatus: dispute ? dispute.status : null,
+      ...paidFigures(c, escrow), // v156: what was really paid and refunded
     };
   }));
-  res.json({ payments });
+  const m2 = (n) => Math.round(n * 100) / 100;
+  res.json({ payments, totalPaid: m2(payments.reduce((t, x) => t + x.amountPaid, 0)), totalRefunded: m2(payments.reduce((t, x) => t + x.amountRefunded, 0)) });
 });
+
+// v156: what the customer really paid through Trothen for a booking, and what
+// came back. Before, the history and its PDF added up the price of every
+// booking, including ones declined, expired or cancelled before any payment.
+function paidFigures(c, escrow) {
+  const m2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  if (c.payMethod === 'cash' || (c.ride && c.ride.cash)) return { amountPaid: 0, amountRefunded: 0, paidHow: 'cash', cashPaid: c.cashPaidAmount != null ? m2(c.cashPaidAmount) : null };
+  const paid = !!(escrow && ['held', 'released', 'refunded', 'collected'].includes(escrow.status)); // v157: a paid tip is "collected"
+  if (!paid) return { amountPaid: 0, amountRefunded: 0, paidHow: escrow && escrow.status === 'awaiting_payment' ? 'not_paid_yet' : 'not_paid' };
+  const amountPaid = m2((c.amount || 0) + (c.serviceFee || 0));
+  const amountRefunded = escrow.status === 'refunded' ? amountPaid : m2(escrow.refundedAmount || 0);
+  return { amountPaid, amountRefunded, paidHow: 'trothen' };
+}
 
 // GET /api/payments/pdf — a real, downloadable payment history report for a
 // customer, same date-range concept as the provider's payout report.
 router.get('/payments/pdf', requireAuth, requireRole('customer'), async (req, res) => {
   const { from, to } = req.query;
   const customer = await db.find('users', u => u.id === req.user.sub);
-  let contracts = await db.filter('contracts', c => c.customerId === req.user.sub);
+  let contracts = await db.filter('contracts', c => c.customerId === req.user.sub && c.topUpKind !== 'extra'); // v157
   if (from) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) >= from);
   if (to) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) <= to);
   contracts.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
@@ -1252,16 +1383,21 @@ router.get('/payments/pdf', requireAuth, requireRole('customer'), async (req, re
 
   sectionHeader('Report Summary');
   twoColumnRow('Customer', `${customer.name} (${customer.email})`, 'Date Range', rangeLabel);
-  const totalPaid = contracts.reduce((s, c) => s + c.amount, 0);
-  row('Total Paid (USD)', `$${totalPaid.toFixed(2)} across ${contracts.length} booking${contracts.length === 1 ? '' : 's'}`);
+  // v156: only what was really paid (price plus service fee), and what came back
+  const figs = rows.map(({ c, escrow }) => paidFigures(c, escrow));
+  const totalPaid = figs.reduce((t, f) => t + f.amountPaid, 0);
+  const totalRefunded = figs.reduce((t, f) => t + f.amountRefunded, 0);
+  const nPaid = figs.filter(f => f.amountPaid > 0).length;
+  row('Total Paid (USD)', `$${totalPaid.toFixed(2)} across ${nPaid} paid booking${nPaid === 1 ? '' : 's'} (${contracts.length} in this range)`);
+  if (totalRefunded > 0) row('Refunded (USD)', `$${totalRefunded.toFixed(2)}`);
 
   sectionHeader('Bookings & Payments');
   if (rows.length === 0) {
     row('No payments', 'No payments were found in this date range.');
   } else {
     table(
-      [{ label: 'Date', width: 65 }, { label: 'Provider', width: 100 }, { label: 'Service', width: 165 }, { label: 'Booking #', width: 75 }, { label: 'Amount', width: 55, align: 'right' }],
-      rows.map(({ c, provider }) => [(c.createdAt || '').slice(0, 10), provider ? provider.name : 'Unknown', c.service, c.bookingNumber || c.id, `$${c.amount}`])
+      [{ label: 'Date', width: 65 }, { label: 'Provider', width: 95 }, { label: 'Service', width: 140 }, { label: 'Booking #', width: 60 }, { label: 'Paid', width: 100, align: 'right' }],
+      rows.map(({ c, provider }, i) => { const f = figs[i]; return [(c.createdAt || '').slice(0, 10), provider ? provider.name : 'Unknown', c.service, c.bookingNumber || c.id, f.paidHow === 'cash' ? 'Cash to the pro' : f.amountPaid > 0 ? `$${f.amountPaid.toFixed(2)}${f.amountRefunded > 0 ? (f.amountRefunded >= f.amountPaid ? ' (refunded)' : ` ($${f.amountRefunded.toFixed(2)} back)`) : ''}` : 'Not paid']; })
     );
   }
 
@@ -1455,6 +1591,7 @@ router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (re
     if (country && provider.country !== country) continue;
     if (category && provider.category !== category) continue;
     if (status && c.status !== status) continue;
+    if (c.topUpKind === 'extra' || c.status === 'topup_lapsed') continue; // v158: paid extra work is already in its booking's amount; an unpaid extra or tip never happened
     if (providerTier && (provider.plan || 'starter') !== providerTier) continue;
     const created = c.createdAt ? c.createdAt.slice(0, 10) : null;
     if (dateFrom && created && created < dateFrom) continue;
@@ -1472,8 +1609,9 @@ router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (re
 
   const total = {
     count: rows.length,
-    gmv: Math.round(rows.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100,
-    serviceFeeRevenue: Math.round(rows.filter(r => !['cancelled', 'declined', 'expired', 'refunded', 'awaiting_payment'].includes(r.status) && r.payMethod !== 'cash').reduce((s, r) => s + (r.serviceFee || 0), 0) * 100) / 100, // v109: refunded bookings' fees are not revenue
+    // v158: only bookings that went ahead count (GMV used to add up cancelled, declined and never-paid bookings too)
+    gmv: Math.round(rows.filter(r => !['cancelled', 'declined', 'expired', 'refunded', 'awaiting_payment', 'pending_agreement', 'topup_refunded'].includes(r.status)).reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100,
+    serviceFeeRevenue: Math.round(rows.filter(r => !['cancelled', 'declined', 'expired', 'refunded', 'awaiting_payment', 'pending_agreement', 'topup_refunded'].includes(r.status) && r.payMethod !== 'cash').reduce((s, r) => s + (r.serviceFee || 0), 0) * 100) / 100, // v109: refunded bookings' fees are not revenue
     completed: rows.filter(r => r.status === 'completed').length,
     cancelled: rows.filter(r => r.status === 'cancelled').length,
   };
@@ -1550,4 +1688,5 @@ router.post('/admin/payouts/:id/reveal', requireAuth, requireRole('admin'), asyn
 module.exports = router;
 module.exports.completeContractCore = completeContractCore; // v108
 module.exports.sweepWorkDone = sweepWorkDone; // v147
+module.exports.sweepUnstartedBookings = sweepUnstartedBookings; // v156
 module.exports.CONFIRM_DAYS = CONFIRM_DAYS;

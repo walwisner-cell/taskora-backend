@@ -257,20 +257,25 @@ async function finishPayment(e, c, { receipt, amountReceived, confirmedBy, confi
   if (next === 'pending_provider_confirmation') {
     // The pro gets the same time to answer as they would have had at booking.
     const window = c.providerResponseDeadline && c.createdAt ? Math.max(60 * 60 * 1000, new Date(c.providerResponseDeadline).getTime() - new Date(c.createdAt).getTime()) : 4 * 60 * 60 * 1000;
-    patch.providerResponseDeadline = new Date(Date.now() + window).toISOString();
+    let until = Date.now() + window;
+    // v156: never after the job is due to start (15 minutes at the least), the same rule as at booking
+    const start = require('./booking-rules').jobStart(c.date, c.time, null);
+    if (start && Number.isFinite(start.getTime())) until = Math.min(until, Math.max(Date.now() + 15 * 60 * 1000, start.getTime()));
+    patch.providerResponseDeadline = new Date(until).toISOString();
   }
   if (next === 'active') {
     patch.signedAt = now.slice(0, 10);
     if (e.materialsAdvanceAmount > 0) await db.update('escrowTransactions', e.id, { materialsAdvanceReleased: true });
   }
   const updated = await db.update('contracts', c.id, patch);
+  if (c.topUpFor) { await require('./top-ups').applyPaid(updated, { ...e, status: 'held' }); return { ok: true, contract: updated }; } // v157: extra work or a tip
   if (c.storeOrder || c.delivery) { // v148: goods orders and deliveries have their own messages and next steps
     await require('./routes/orders.routes').afterPaid(updated, { ...e, receipt: tx, amountReceived: got });
     return { ok: true, contract: updated };
   }
   await notify(c.customerId, '✅', `We received your payment for booking #${c.bookingNumber} (${e.paidBy === 'card' ? `$${Number(got).toFixed(2)} by card` : `${e.dueCurrency} ${got}`}). Trothen is holding it safely until you confirm the job is done.${next === 'pending_provider_confirmation' ? ' Your pro has been asked to confirm.' : ''}`, 'bookingUpdates', { section: 'bookings' });
   if (next === 'pending_provider_confirmation') {
-    const by = new Date(patch.providerResponseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
+    const by = require('./booking-rules').whenFor(patch.providerResponseDeadline, await db.find('users', u => u.id === c.providerId)); // v158
     await notify(c.providerId, '📋', `New paid booking: "${c.service}" on ${c.date || 'a date to agree'}. The customer has paid and Trothen is holding the money. Confirm by ${by} or it is cancelled and refunded.`, null, { section: 'bookings' });
   } else {
     await notify(c.providerId, '✅', `The customer paid for "${c.service}". Trothen is holding the money; the job is now active.`, null, { section: 'contracts' });
@@ -363,6 +368,12 @@ async function endUnpaid(e, why, message, extra) {
   await db.update('escrowTransactions', e.id, { status: why === 'rejected' ? 'payment_rejected' : 'payment_expired', ...(extra || {}) });
   const c = await db.find('contracts', x => x.id === e.contractId);
   if (!c || c.status !== 'awaiting_payment') return;
+  if (c.topUpFor) { // v157: an extra or a tip that wasn't paid just lapses; the booking carries on
+    await db.update('contracts', c.id, { status: 'topup_lapsed', cancelReason: 'Not paid' }); // v158: never counted as a cancellation
+    await require('./top-ups').lapsed(c);
+    await notify(c.customerId, '⌛', `Your payment for "${c.service}" wasn't made in time, so it was dropped. Nothing was charged, and the booking itself carries on as before.`, 'bookingUpdates', { section: 'bookings' });
+    return;
+  }
   await db.update('contracts', c.id, { status: 'cancelled', cancelledByRole: 'system', cancelReason: 'Not paid', cancelledAt: new Date().toISOString() });
   try { await require('./store').giveBackStock(c); } catch (x) { /* nothing held */ }
   if (c.marketListingId) { const l = await db.find('marketListings', x => x.id === c.marketListingId); if (l && l.status === 'reserved' && l.reservedForOrderId === c.id) await db.update('marketListings', l.id, { status: 'live', reservedForOrderId: null }); } // v148
@@ -370,8 +381,29 @@ async function endUnpaid(e, why, message, extra) {
   if (c.jobId) { const job = await db.find('jobs', j => j.id === c.jobId); if (job && job.status === 'matched') await db.update('jobs', job.id, { status: 'open' }); }
   await notify(c.customerId, '⌛', c.storeOrder ? String(message).replace(/booking/g, 'order').replace(/Book again/g, 'Order again') : message, 'bookingUpdates', { section: c.storeOrder ? 'orders' : 'bookings' });
 }
+// v158: one reminder before a payment code or card page runs out (when about
+// a quarter of the time is left, at least 30 minutes before). A customer who
+// meant to pay later used to find the booking simply cancelled.
+async function remindUnpaid(now) {
+  const list = await db.filter('escrowTransactions', e => ['code', 'card'].includes(e.paidBy) && e.status === 'awaiting_payment' && !e.customerSaysPaidAt && !e.payReminderAt && e.paymentExpiresAt && e.createdAt);
+  for (const e of list) {
+    const end = Date.parse(e.paymentExpiresAt), start = Date.parse(e.createdAt);
+    if (!Number.isFinite(end) || !Number.isFinite(start)) continue;
+    const left = end - now, span = end - start;
+    if (left <= 0 || left > Math.max(30 * 60 * 1000, span / 4) || span < 60 * 60 * 1000) continue;
+    const c = await db.find('contracts', x => x.id === e.contractId);
+    if (!c || c.status !== 'awaiting_payment') continue;
+    await db.update('escrowTransactions', e.id, { payReminderAt: new Date(now).toISOString() });
+    const cust = await db.find('users', u => u.id === c.customerId);
+    const by = require('./booking-rules').whenFor(e.paymentExpiresAt, cust);
+    const what = c.topUpFor ? `your payment for "${c.service}"` : c.storeOrder ? `order #${c.bookingNumber}` : `booking #${c.bookingNumber} ("${c.service}")`;
+    const after = c.topUpFor ? 'it is dropped' : c.storeOrder ? 'the order is cancelled' : 'the booking is cancelled';
+    await notify(c.customerId, '⏳', `Reminder: ${what} isn't paid yet. ${e.paidBy === 'code' ? `Send it with code ${e.paymentCode}` : 'Pay on the card page'} by ${by}, or ${after}. Open it from ${c.storeOrder ? 'My Orders' : 'My Bookings'} with Pay now.`, 'bookingUpdates', { section: c.storeOrder ? 'orders' : 'bookings' });
+  }
+}
 async function expireUnpaid() {
   const now = Date.now();
+  try { await remindUnpaid(now); } catch (e) { console.error('[custpay] reminders:', e.message); } // v158
   const due = await db.filter('escrowTransactions', e => e.paidBy === 'code' && e.status === 'awaiting_payment' && !e.customerSaysPaidAt && e.paymentExpiresAt && new Date(e.paymentExpiresAt).getTime() < now);
   // v125: card pages that ran out. Ask Stripe first, in case it was paid and the webhook was missed.
   const cardDue = await db.filter('escrowTransactions', e => e.paidBy === 'card' && e.status === 'awaiting_payment' && e.paymentExpiresAt && new Date(e.paymentExpiresAt).getTime() < now);

@@ -79,7 +79,8 @@ async function buildExport(userId) {
 async function closureBlockers(user) {
   const reasons = [];
   const contracts = (await safeAll('contracts')).filter(c => c.customerId === user.id || c.providerId === user.id);
-  const open = contracts.filter(c => !['completed', 'cancelled', 'declined', 'expired', 'rejected'].includes(c.status));
+  // v158: an extra-work or tip payment (v157) is never "a booking in progress" itself; its money is checked below
+  const open = contracts.filter(c => !['completed', 'cancelled', 'declined', 'expired', 'rejected', 'topup_paid', 'topup_released', 'topup_refunded', 'topup_lapsed'].includes(c.status));
   if (open.some(c => c.status === 'disputed')) reasons.push('You have a booking with an open dispute. It has to be settled first.');
   const live = open.filter(c => c.status !== 'disputed');
   if (live.length) reasons.push(`You have ${live.length} booking${live.length === 1 ? '' : 's'} still in progress. Finish or cancel ${live.length === 1 ? 'it' : 'them'} first.`);
@@ -88,7 +89,7 @@ async function closureBlockers(user) {
   if (escrow.some(e => e.status === 'held')) reasons.push('There is a payment still being held on one of your bookings.');
   if (user.role === 'provider') {
     const provContractIds = new Set(contracts.filter(c => c.providerId === user.id).map(c => c.id));
-    if (escrow.some(e => provContractIds.has(e.contractId) && e.status === 'released' && !e.payoutId)) reasons.push('You have earnings you haven\'t cashed out yet. Request your payout first.');
+    if (escrow.some(e => provContractIds.has(e.contractId) && e.status === 'released' && !e.payoutId) || contracts.some(c => c.providerId === user.id && (c.tipAmount || 0) > 0 && !c.tipPaid)) reasons.push('You have earnings you haven\'t cashed out yet. Request your payout first.'); // v158: tips not yet paid out count too
     if ((await safeAll('payouts')).some(p => p.providerId === user.id && p.status === 'processing')) reasons.push('A payout to you is still being processed.');
   }
   // v115: unspent tokens are the customer's stored money; closing would strand them.

@@ -105,7 +105,7 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
 async function askDriver(delivery) {
   const driver = await db.find('users', u => u.id === delivery.providerId);
   const km = delivery.delivery.distanceKm;
-  const by = new Date(delivery.providerResponseDeadline).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const by = require('../booking-rules').whenFor(delivery.providerResponseDeadline, driver, { hour: 'numeric', minute: '2-digit' }); // v158: the driver's own time zone
   await notify(delivery.providerId, '🚚', `Delivery request: collect order #${delivery.delivery.orderNumber} (${delivery.delivery.items.slice(0, 80)}) from ${delivery.delivery.storeName}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver && driver.country)}` : ''}. You are paid $${Number(delivery.amount).toFixed(2)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by} server time).`, 'bookingUpdates', { section: 'bookings' });
 }
 

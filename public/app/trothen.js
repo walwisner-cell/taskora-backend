@@ -3802,6 +3802,38 @@ function renderDashNav(containerId, items, activeKey, fnName) {
   ).join('');
 }
 
+// v156: a booking's time, whatever form it was saved in ("14:30", "9:00 AM",
+// "Morning (8-12pm)"), as 24-hour "HH:MM", or null. Same rules as the server
+// (src/booking-rules.js).
+function timeHM24(t) {
+  const s = String(t == null ? '' : t).trim().toLowerCase();
+  if (!s) return null;
+  const m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?$/);
+  if (m) {
+    let h = Number(m[1]); const min = Number(m[2] || 0); const ap = m[3] ? m[3][0] : null;
+    if (min > 59) return null;
+    if (ap) { if (h < 1 || h > 12) return null; if (ap === 'p' && h !== 12) h += 12; if (ap === 'a' && h === 12) h = 0; }
+    else if (!m[2] || h > 23) return null;
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+  if (/morning/.test(s)) return '08:00';
+  if (/afternoon|midday|noon/.test(s)) return '12:00';
+  if (/evening/.test(s)) return '17:00';
+  if (/night/.test(s)) return '19:00';
+  return null;
+}
+// v156: when the job is, for the bookings and contracts lists: "Tue, Nov 10 · 9:00 AM".
+function jobWhenText(date, time) {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) return '';
+  let d = '';
+  try { d = new Date(String(date) + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { d = String(date); }
+  const hm = timeHM24(time);
+  let t = '';
+  if (hm) { try { t = new Date(`2000-01-01T${hm}:00`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); } catch (e) { t = hm; } }
+  else if (time) t = String(time);
+  return t ? `${d} · ${t}` : d;
+}
+
 function statusBadge(status) {
   const map = {
     confirmed: ['badge-pending', 'Confirmed'], completed: ['badge-success', 'Completed'],
@@ -3815,6 +3847,8 @@ function statusBadge(status) {
     verified: ['badge-success', 'Verified'], unverified: ['badge-warn', 'Unverified'],
     reviewed: ['badge-success', 'Reviewed'], dismissed: ['badge-neutral', 'Dismissed'],
     processing: ['badge-warn', 'Processing'], sending: ['badge-pending', 'Being sent'], paid: ['badge-success', 'Paid'],
+    // v158: an extra-work or tip payment (v157)
+    topup_paid: ['badge-success', 'Paid, held'], topup_released: ['badge-success', 'Paid to the pro'], topup_refunded: ['badge-neutral', 'Refunded'], topup_lapsed: ['badge-neutral', 'Not paid'],
   };
   const m = map[status] || ['badge-neutral', status];
   return `<span class="badge ${m[0]}">${m[1]}</span>`;
@@ -4414,7 +4448,7 @@ async function loadCustomerData() {
     const { contracts } = await apiFetch('GET', '/contracts/mine');
     cacheRawContracts(contracts); // v105
     customerData.bookings = contracts.map(c => ({
-      id: c.id, bookingNumber: c.bookingNumber, pro: c.providerName, providerId: c.providerId, service: c.service, address: c.address, jobLocation: c.jobLocation || null, landmark: c.landmark || null, date: c.signedAt || (c.createdAt || '').slice(0, 10),
+      id: c.id, bookingNumber: c.bookingNumber, pro: c.providerName, providerId: c.providerId, service: c.service, address: c.address, jobLocation: c.jobLocation || null, landmark: c.landmark || null, date: c.signedAt || (c.createdAt || '').slice(0, 10), jobDate: c.date || null, jobTime: c.time || null,
       escrow: c.escrow && c.escrow.status === 'held' ? c.escrow.amount : 0, status: c.status, amount: c.amount, serviceFee: c.serviceFee || 0, reviewed: c.reviewed, providerResponseDeadline: c.providerResponseDeadline,
       onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt, createdAt: c.createdAt, workDoneAt: c.workDoneAt || null, autoCompleteAt: c.autoCompleteAt || null, // v147
       payMethod: c.payMethod || 'protected', // v119
@@ -4474,13 +4508,25 @@ function paymentMethodsTableHTML() {
   </tbody></table></div>`;
 }
 
+// v156: what was really paid for a booking: the price plus the service fee
+// once paid, "Not paid" for one declined or cancelled before paying, "Cash to
+// the pro" for a cash job, and what came back if it was refunded.
+function paidCellHTML(p) {
+  if (p.paidHow === 'cash') return `<span style="color:var(--slate);">${escapeHtml(tr('Cash to the pro'))}</span>`;
+  if (p.amountPaid === undefined) return `$${Number(p.amount || 0).toFixed(2)}`; // an older server
+  if (!(p.amountPaid > 0)) return `<span style="color:var(--slate);">${escapeHtml(tr(p.paidHow === 'not_paid_yet' ? 'Not paid yet' : 'Not paid'))}</span>`;
+  const local = p.paidCurrency && p.paidCurrency !== 'USD' && p.paidAmountLocal ? ` <span style="color:var(--muted);font-size:12.5px;">(${escapeHtml(p.paidAmountLocal)} ${escapeHtml(p.paidCurrency)})</span>` : '';
+  const back = p.amountRefunded > 0 ? `<div style="font-size:12.5px;color:var(--slate);">${p.amountRefunded >= p.amountPaid ? escapeHtml(tr('Refunded')) : `$${p.amountRefunded.toFixed(2)} ${escapeHtml(tr('refunded'))}`}</div>` : '';
+  return `$${p.amountPaid.toFixed(2)}${local}${back}`;
+}
+
 function paymentHistoryTableHTML(payments) {
   if (!payments.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No payments in this range.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th></th><th>Date</th><th>Paid To</th><th>Service</th><th>Booking #</th><th>Amount</th><th>Status</th></tr></thead><tbody>
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th></th><th>Date</th><th>Paid To</th><th>Service</th><th>Booking #</th><th>Paid</th><th>Status</th></tr></thead><tbody>
   ${payments.map(p => `
     <tr style="cursor:pointer;" onclick="togglePaymentBreakdown('${p.contractId}')">
       <td><span id="payment-caret-${p.contractId}">▸</span></td>
-      <td>${escapeHtml(p.date)}</td><td>${escapeHtml(p.providerName)}</td><td>${escapeHtml(p.service)}</td><td>${escapeHtml(p.bookingNumber)}</td><td>$${p.amount}${p.paidCurrency && p.paidCurrency !== 'USD' && p.paidAmountLocal ? ` <span style="color:var(--muted);font-size:12.5px;">(${p.paidAmountLocal} ${p.paidCurrency})</span>` : ''}</td><td>${statusBadge(p.status)}</td>
+      <td>${escapeHtml(p.date)}</td><td>${escapeHtml(p.providerName)}</td><td>${escapeHtml(p.service)}</td><td>${escapeHtml(p.bookingNumber)}</td><td>${paidCellHTML(p)}</td><td>${statusBadge(p.status)}</td>
     </tr>
     <tr id="payment-breakdown-${p.contractId}" style="display:none;">
       <td colspan="7" style="background:var(--offwhite);padding:0;">
@@ -4491,13 +4537,13 @@ function paymentHistoryTableHTML(payments) {
               <div style="font-size:13px;color:var(--slate);margin-top:2px;">Booking #${p.bookingNumber} · Escrow ${p.escrowStatus}${p.disputeStatus ? ` · Dispute: ${p.disputeStatus}` : ''}</div>
             </div>
             <div style="text-align:right;">
-              <div style="font-weight:700;color:var(--navy);">$${p.amount}</div>
+              <div style="font-weight:700;color:var(--navy);">${paidCellHTML(p)}</div>
               <a onclick="downloadFileWithAuth('${API_BASE}/contracts/${p.contractId}/pdf', 'Trothen-Contract-${p.bookingNumber}.pdf')" style="font-size:13px;color:var(--gold);cursor:pointer;">View full contract PDF →</a>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:13px;">
             <div><span style="color:var(--muted);">Provider:</span> ${escapeHtml(p.providerName)}${p.providerEmail ? ` · ${escapeHtml(p.providerEmail)}` : ''}${p.providerPhone ? ` · ${escapeHtml(p.providerPhone)}` : ''}</div>
-            <div><span style="color:var(--muted);">Scheduled:</span> ${escapeHtml(p.jobDate || '—')}${p.jobTime ? ` · ${p.jobTime}` : ''}</div>
+            <div><span style="color:var(--muted);">Scheduled:</span> ${escapeHtml(jobWhenText(p.jobDate, p.jobTime) || '—')}</div>
             <div style="grid-column:1/-1;"><span style="color:var(--muted);">Address:</span> ${escapeHtml(p.address || '—')}</div>
           </div>
         </div>
@@ -4637,8 +4683,8 @@ async function removePaymentMethod(id) {
 
 function bookingsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">You have no bookings yet. Post a job or book a pro to get started.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Pro</th><th>Service</th><th>Date</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${escapeHtml(b.pro)}</td><td>${escapeHtml(b.service)}${whereHTML(b)}${contractGoodsHTML(b.id)}</td><td>${escapeHtml(b.date)}</td><td>${b.payMethod === 'cash' ? `💵 ${escapeHtml(tr('Cash'))}` : (b.escrow ? '$' + b.escrow : '—')}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)} ${handoverButtonHTML(b.id, b.status)}${b.status === 'completed' ? ` <button class="btn-sm btn-sm-outline" onclick="v105Download('/business/booking-invoices/${encodeURIComponent(b.id)}/pdf', ${jsArg('Invoice-TR-' + (b.bookingNumber || b.id) + '.pdf')})">🧾 ${escapeHtml(tr('Invoice'))}</button>` : ''}</td></tr>`).join('')}
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Pro</th><th>Service</th><th>When</th><th>Escrow</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  ${list.map(b => `<tr><td>${b.bookingNumber || b.id}</td><td>${escapeHtml(b.pro)}</td><td>${escapeHtml(b.service)}${whereHTML(b)}${contractGoodsHTML(b.id)}</td><td>${escapeHtml(jobWhenText(b.jobDate, b.jobTime) || tr('To agree'))}</td><td>${b.payMethod === 'cash' ? `💵 ${escapeHtml(tr('Cash'))}` : (b.escrow ? '$' + b.escrow : '—')}</td><td>${statusBadge(b.status)}${responseDeadlineNote(b)}${gpsStatusNote(b)}</td><td class="row-actions">${bookingActionHTML(b)} ${handoverButtonHTML(b.id, b.status)}${b.status === 'completed' ? ` <button class="btn-sm btn-sm-outline" onclick="v105Download('/business/booking-invoices/${encodeURIComponent(b.id)}/pdf', ${jsArg('Invoice-TR-' + (b.bookingNumber || b.id) + '.pdf')})">🧾 ${escapeHtml(tr('Invoice'))}</button>` : ''}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -4692,7 +4738,7 @@ function bookingActionHTML(b) {
     return `<span style="font-size:13px;color:var(--slate);">Waiting on the provider</span> <button class="btn-sm btn-sm-ghost" onclick="selectCustomerSection('messages');setTimeout(()=>selectMessageContact('${b.providerId}'),50)">💬 Message</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button>`;
   }
   if (b.status === 'active' || b.status === 'confirmed') {
-    return `${b.workDoneAt ? `<div style="font-size:12.5px;color:#B45309;margin-bottom:4px;">✅ ${escapeHtml(b.pro || 'The pro')} ${escapeHtml(tr('says it is finished. Check the work, then press Mark Complete or Report a Problem. If you do neither, it completes by itself on'))} ${escapeHtml(new Date(b.autoCompleteAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}.</div>` : ''}<button class="btn-sm btn-sm-primary" onclick="completeBooking('${b.id}')">Mark Complete</button> <button class="btn-sm btn-sm-outline" onclick="viewScopeChangeRequests('${b.id}')">📋 Additional Requests</button> <button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button> <button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${b.id}')">Report a Problem</button> ${downloadBtn}`;
+    return `${b.workDoneAt ? `<div style="font-size:12.5px;color:#B45309;margin-bottom:4px;">✅ ${escapeHtml(b.pro || 'The pro')} ${escapeHtml(tr('says it is finished. Check the work, then press Mark Complete or Report a Problem. If you do neither, it completes by itself on'))} ${escapeHtml(new Date(b.autoCompleteAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}.</div>` : ''}<button class="btn-sm btn-sm-primary" onclick="completeBooking('${b.id}')">Mark Complete</button> <button class="btn-sm btn-sm-outline" onclick="viewScopeChangeRequests('${b.id}')">📋 Additional Requests</button> ${b.arrivedAt || b.workDoneAt ? '' : `<button class="btn-sm btn-sm-outline" onclick="cancelBooking('${b.id}')">Cancel</button> `}<button class="btn-sm btn-sm-ghost" onclick="openDisputeForm('${b.id}')">Report a Problem</button> ${downloadBtn}`; // v156: once the pro has arrived or finished, a problem goes to Report a Problem
   }
   if (b.status === 'completed') {
     return `${b.reviewed
@@ -5112,6 +5158,20 @@ async function cancelBooking(contractId) {
 }
 
 function completeBooking(contractId) {
+  // v157: where the booking was paid by card, payment code or wallet, the tip
+  // is paid the same way right after completing (src/top-ups.js).
+  const esc0 = (RAW_CONTRACTS[contractId] || {}).escrow || null;
+  const realPay = !!(esc0 && ['code', 'card', 'momo'].includes(esc0.paidBy === 'order' ? esc0.parentPaidBy : esc0.paidBy));
+  const tipBox = realPay
+    ? `<div class="form-group">
+            <label class="form-label" for="complete-booking-tip">Add a tip? <span style="color:var(--slate);font-weight:400;">(optional; 100% goes to your pro, no commission is taken)</span></label>
+            <input class="form-input" type="number" min="0" step="0.01" inputmode="decimal" id="complete-booking-tip" placeholder="$0.00"/>
+            <div style="font-size:12.5px;color:var(--slate);margin-top:4px;">${escapeHtml(tr('You pay the tip the same way you paid for the booking, right after completing.'))}</div>
+          </div>`
+    : `<div class="form-group">
+            <label class="form-label" for="complete-booking-tip">Add a tip? <span style="color:var(--slate);font-weight:400;">(optional; 100% goes to your pro, no commission is taken)</span></label>
+            <input class="form-input" type="number" min="0" step="0.01" inputmode="decimal" id="complete-booking-tip" placeholder="$0.00"/>
+          </div>`;
   const modalHtml = `
     <div class="modal-overlay open" id="complete-booking-overlay" onclick="if(event.target===this)document.getElementById('complete-booking-overlay').remove()">
       <div class="modal">
@@ -5121,10 +5181,7 @@ function completeBooking(contractId) {
           <p>This releases the escrowed funds to your pro</p>
         </div>
         <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">Add a tip? <span style="color:var(--slate);font-weight:400;">(optional; 100% goes to your pro, no commission is taken)</span></label>
-            <input class="form-input" type="number" min="0" step="0.01" id="complete-booking-tip" placeholder="$0.00"/>
-          </div>
+          ${tipBox}
         </div>
         <div class="modal-footer">
           <button class="confirm-btn" onclick="confirmCompleteBooking('${contractId}')">Confirm Complete</button>
@@ -5135,7 +5192,8 @@ function completeBooking(contractId) {
 }
 
 async function confirmCompleteBooking(contractId) {
-  const raw = document.getElementById('complete-booking-tip').value.trim();
+  const tipEl = document.getElementById('complete-booking-tip');
+  const raw = tipEl ? tipEl.value.trim() : '';
   const tipAmount = raw ? parseFloat(raw) : undefined;
   if (raw && !(tipAmount >= 0)) return showToast('Enter a valid tip amount, or leave it blank');
   const overlay = document.getElementById('complete-booking-overlay');
@@ -5144,11 +5202,13 @@ async function confirmCompleteBooking(contractId) {
     return showToast('Marked complete (demo mode)');
   }
   try {
-    await apiFetch('POST', `/contracts/${contractId}/complete`, tipAmount !== undefined ? { tipAmount } : {});
+    const done = await apiFetch('POST', `/contracts/${contractId}/complete`, tipAmount !== undefined ? { tipAmount } : {});
     if (overlay) overlay.remove();
-    showToast(tipAmount ? `Job marked complete. Payment released, plus a $${tipAmount} tip` : 'Job marked complete. Payment released to your pro.');
+    const tipWaits = done && done.tip && !done.tip.paid;
+    showToast(tipWaits ? tr('Job marked complete. Payment released to your pro. Now pay your tip.') : done && done.tipError ? done.tipError : tipAmount ? `Job marked complete. Payment released, plus a $${tipAmount} tip` : 'Job marked complete. Payment released to your pro.');
     await loadCustomerData();
     selectCustomerSection('bookings');
+    if (tipWaits) openTopUpPayment(done.tip.id); // v157
   } catch (e) { showToast(e.message || 'Could not complete this booking'); }
 }
 
@@ -5353,6 +5413,7 @@ const CUSTOMER_SECTIONS = {
     <div class="panel" id="handbook-panel" style="display:none;"><div class="panel-title">Getting Started Guide</div><div style="font-size:13.5px;color:var(--slate);margin-bottom:10px;">A quick walkthrough of how Trothen works.</div><a class="btn-sm btn-sm-outline" id="handbook-download-link" href="#" target="_blank" rel="noopener noreferrer">📄 Download Guide</a></div>
     <div class="panel"><div class="panel-title">Notifications</div>
       ${notifToggleHTML('bookingUpdates', 'Booking updates', 'Status changes on your active bookings', true)}
+      ${notifToggleHTML('emailUpdates', 'Email me updates', 'Booking updates and payments by email too, when you are not in Trothen', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from pros', true)}
       ${notifToggleHTML('messageSound', 'Message sound alert', 'Play a sound when a new message arrives, so it doesn\'t come in silently', false)}
       ${pushToggleHTML()}
@@ -6216,7 +6277,7 @@ async function loadProviderData() {
     }));
     resumeLiveTripIfAny(contracts); // v93
     cacheRawContracts(contracts); resumeCarryIfAny(contracts); // v105
-    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, address: c.address, jobLocation: c.jobLocation || null, landmark: c.landmark || null, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt, materialsOnHand: c.materialsOnHand, createdAt: c.createdAt, payMethod: c.payMethod || 'protected', workDoneAt: c.workDoneAt || null, autoCompleteAt: c.autoCompleteAt || null, ride: c.ride || null, delivery: c.delivery || null, storeOrder: !!c.storeOrder })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    providerData.contracts = contracts.map(c => ({ id: c.id, bookingNumber: c.bookingNumber, customer: c.customerName, customerId: c.customerId, service: c.service, address: c.address, jobLocation: c.jobLocation || null, landmark: c.landmark || null, amount: c.amount, status: c.status, signed: c.signedAt || (c.createdAt || '').slice(0, 10), jobDate: c.date || null, jobTime: c.time || null, escrow: c.escrow, providerResponseDeadline: c.providerResponseDeadline, photoUrls: c.photoUrls || [], cancelReasonCategory: c.cancelReasonCategory, protectedCancellation: c.protectedCancellation, onMyWayAt: c.onMyWayAt, arrivedAt: c.arrivedAt, materialsOnHand: c.materialsOnHand, createdAt: c.createdAt, payMethod: c.payMethod || 'protected', workDoneAt: c.workDoneAt || null, autoCompleteAt: c.autoCompleteAt || null, ride: c.ride || null, delivery: c.delivery || null, storeOrder: !!c.storeOrder })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     providerData.payouts = payouts;
     providerData.portfolioPhotos = photos;
   } catch (e) { console.warn('Could not load provider data', e); showToast('Could not load your dashboard. Please refresh the page.'); }
@@ -6562,6 +6623,7 @@ const PROVIDER_SECTIONS = {
     <div class="panel"><div class="panel-title">Notifications</div>
       ${notifToggleHTML('newMatches', 'New job matches', 'New jobs in your category', true)}
       ${notifToggleHTML('payoutAlerts', 'Payout alerts', 'When a payout is released', true)}
+      ${notifToggleHTML('emailUpdates', 'Email me updates', 'New bookings, booking changes and payouts by email too, when you are not in Trothen', true)}
       ${notifToggleHTML('messages', 'Messages', 'New messages from customers', true)}
       ${notifToggleHTML('messageSound', 'Message sound alert', 'Play a sound when a new message arrives, so it doesn\'t come in silently', false)}
       ${pushToggleHTML()}
@@ -7382,7 +7444,7 @@ async function sendJobNegotiationReply() {
 
 function contractsTable(list) {
   if (!list.length) return `<div style="color:var(--slate);font-size:14px;padding:12px 0;">No contracts yet.</div>`;
-  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Customer</th><th>Service</th><th>Amount</th><th>Signed</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Booking #</th><th>Customer</th><th>Service</th><th>Amount</th><th>When</th><th>Status</th><th>Action</th></tr></thead><tbody>
   ${list.map(c => {
     let actions = '';
     if (c.status === 'pending_agreement' && typeof priceActionsHTML === 'function') { // v122
@@ -7407,7 +7469,7 @@ function contractsTable(list) {
     } else if (c.status === 'expired') {
       actions = `<span style="font-size:13px;color:var(--slate);">Cancelled automatically: no response in time</span>`;
     }
-    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${c.payMethod === 'cash' ? ` <span class="badge badge-warn" title="${escapeHtml(tr('The customer pays you directly after the work. Trothen\'s commission was taken from your tokens.'))}">💵 ${escapeHtml(tr('Cash job'))}</span>` : ''}${whereHTML(c)}${c.photoUrls && c.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(c.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${c.photoUrls.length} file${c.photoUrls.length===1?'':'s'}</a>` : ''}${c.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(c.materialsOnHand)}</div>` : ''}${contractGoodsHTML(c.id)}</td><td>$${c.amount}</td><td>${escapeHtml(c.signed) || '—'}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} ${handoverButtonHTML(c.id, c.status)} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
+    return `<tr><td>${escapeHtml(c.bookingNumber || c.id)}</td><td>${escapeHtml(c.customer)}</td><td>${escapeHtml(c.service)}${c.payMethod === 'cash' ? ` <span class="badge badge-warn" title="${escapeHtml(tr('The customer pays you directly after the work. Trothen\'s commission was taken from your tokens.'))}">💵 ${escapeHtml(tr('Cash job'))}</span>` : ''}${whereHTML(c)}${c.photoUrls && c.photoUrls.length ? ` <a onclick='openJobPhotoViewer(${JSON.stringify(c.photoUrls)})' style="color:var(--teal);cursor:pointer;font-size:13px;white-space:nowrap;">📎 ${c.photoUrls.length} file${c.photoUrls.length===1?'':'s'}</a>` : ''}${c.materialsOnHand ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">🧰 Already has: ${escapeHtml(c.materialsOnHand)}</div>` : ''}${contractGoodsHTML(c.id)}</td><td>$${c.amount}</td><td>${escapeHtml(jobWhenText(c.jobDate, c.jobTime) || tr('To agree'))}</td><td>${statusBadge(c.status)}${responseDeadlineNote(c)}</td><td class="row-actions">${actions} ${handoverButtonHTML(c.id, c.status)} <button class="btn-sm btn-sm-outline" onclick="downloadContractPDF('${c.id}')" title="Download a PDF record of this contract">📄 PDF</button></td></tr>`;
   }).join('')}
   </tbody></table></div>`;
 }
@@ -7533,7 +7595,7 @@ async function viewScopeChangeRequests(contractId) {
       body.innerHTML = `<div style="color:var(--slate);font-size:13.5px;padding:12px 0;">No additional requests on this job.</div>`;
       return;
     }
-    const STATUS_BADGE = { pending: '<span class="badge badge-warn">Awaiting your decision</span>', approved: '<span class="badge badge-success">Approved</span>', declined: '<span class="badge badge-neutral">Declined</span>' };
+    const STATUS_BADGE = { awaiting_payment: `<span class="badge badge-warn">${escapeHtml(tr('Approved: waiting for payment'))}</span>`, not_paid: `<span class="badge badge-neutral">${escapeHtml(tr('Not paid'))}</span>`, pending: '<span class="badge badge-warn">Awaiting your decision</span>', approved: '<span class="badge badge-success">Approved</span>', declined: '<span class="badge badge-neutral">Declined</span>' };
     body.innerHTML = requests.map(r => `
       <div class="panel" style="margin:0 0 12px 0;padding:14px 16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -7553,14 +7615,28 @@ async function viewScopeChangeRequests(contractId) {
 }
 
 async function decideScopeChangeRequest(requestId, decision, contractId) {
-  if (decision === 'approve' && !(await confirmDialog('Approve this additional amount? This will update the contract total and the held escrow immediately.'))) return;
+  const esc0 = (RAW_CONTRACTS[contractId] || {}).escrow || null;
+  const realPay = !!(esc0 && ['code', 'card', 'momo'].includes(esc0.paidBy === 'order' ? esc0.parentPaidBy : esc0.paidBy));
+  if (decision === 'approve' && !(await confirmDialog(realPay ? tr('Approve this additional amount? You then pay it the same way you paid for the booking. The job total goes up once it is paid.') : 'Approve this additional amount? This will update the contract total and the held escrow immediately.'))) return;
   try {
-    await apiFetch('POST', `/scope-change-requests/${requestId}/decide`, { decision });
-    showToast(decision === 'approve' ? 'Approved. Contract updated.' : 'Declined');
+    const r = await apiFetch('POST', `/scope-change-requests/${requestId}/decide`, { decision });
+    const waits = r && r.topUp;
+    showToast(decision !== 'approve' ? 'Declined' : waits ? tr('Approved. Now pay for the extra work.') : 'Approved. Contract updated.');
     document.getElementById('scope-requests-overlay')?.remove();
     await loadCustomerData();
     selectCustomerSection('bookings');
+    if (waits) openTopUpPayment(r.topUp.id); // v157
   } catch (e) { showToast(e.message || 'Could not process this decision'); }
+}
+
+// v157: open the payment for extra work or a tip, the same way as the booking was paid.
+function openTopUpPayment(childId) {
+  const c = RAW_CONTRACTS[childId];
+  const by = c && c.escrow && c.escrow.paidBy;
+  try {
+    if ((by === 'code' || by === 'momo') && typeof payWaysShow === 'function') return payWaysShow(childId);
+    if (typeof payNow === 'function') return payNow(childId);
+  } catch (e) { /* it is in My Bookings with Pay now */ }
 }
 
 function openScopeChangeRequestForm(contractId) {
@@ -11909,8 +11985,12 @@ async function openBooking(id) {
     `;
   }
   // Default date to tomorrow
+  // v156: in the customer's own calendar, and only from today up to a year ahead (the server checks the same)
+  const ymd = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
   const d = new Date(); d.setDate(d.getDate()+1);
-  document.getElementById('job-date').value = d.toISOString().split('T')[0];
+  const dateEl = document.getElementById('job-date');
+  dateEl.min = ymd(new Date()); dateEl.max = ymd(new Date(Date.now() + 365 * 86400000));
+  dateEl.value = ymd(d);
 
   // Only shown when the customer actually has enough points — never a
   // checkbox offering a discount they haven't earned.
@@ -11997,7 +12077,7 @@ async function confirmBooking() {
   const desc = document.getElementById('job-desc').value.trim();
   const date = document.getElementById('job-date').value;
   const rawTime = document.getElementById('job-time').value;
-  const time = rawTime ? new Date(`2000-01-01T${rawTime}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+  const time = rawTime || ''; // v156: sent as 24-hour "HH:MM"; it used to be sent as "9:00 AM", which the arrival reminders misread
   const addr = document.getElementById('job-address').value.trim();
 
   // Client-side validation — mirrors what the backend requires, so the user
@@ -12007,6 +12087,7 @@ async function confirmBooking() {
   const goodsOnly = goods.goodsOnly === true;
   if (!goodsOnly && (!desc || desc.length < 3)) return showToast('Describe the job in at least 3 characters');
   if (!date) return showToast('Pick a date for the job');
+  { const n = new Date(); const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; if (date < today) return showToast('That date has already passed. Pick today or a later day.'); } // v156
   if (!time) return showToast('Pick a time for the job');
   const bookWhere = readJobWhere('book'); // v92: a pin or a landmark is enough where there is no street address
   if ((!addr || addr.length < 5) && !bookWhere.jobLocation && !(bookWhere.landmark && bookWhere.landmark.length >= 5)) return showToast('Tell your pro where the job is: pin the location, describe a landmark, or type an address');
@@ -12058,7 +12139,7 @@ async function confirmBooking() {
   if (BACKEND_AVAILABLE) {
     try {
       const { contract } = await apiFetch('POST', '/contracts', {
-        providerId: currentPro.id, service: goodsOnly ? undefined : desc, date, time, address: addr, ...bookWhere, amount: goodsOnly ? undefined : total, ...(pick ? pick.payload : {}), ...goods, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls: goodsOnly ? [] : photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked, materialsOnHand: document.getElementById('job-materials-on-hand')?.value.trim() || undefined,
+        providerId: currentPro.id, service: goodsOnly ? undefined : desc, date, time, tz: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return undefined; } })(), address: addr, ...bookWhere, amount: goodsOnly ? undefined : total, ...(pick ? pick.payload : {}), ...goods, payCurrency: selectedPayCurrency, materialsAdvance, photoUrls: goodsOnly ? [] : photoUrls, isOffer: wantsOffer, useLoyaltyPoints: !!document.getElementById('booking-use-loyalty-points')?.checked, materialsOnHand: document.getElementById('job-materials-on-hand')?.value.trim() || undefined,
       });
       contractId = contract.bookingNumber || contract.id;
       isPendingOffer = contract.status === 'pending_agreement';
@@ -12088,7 +12169,7 @@ async function confirmBooking() {
     <div class="confirm-detail"><span>Booking #</span><strong>${contractId}</strong></div>
     <div class="confirm-detail"><span>Pro</span><strong>${escapeHtml(currentPro.name)}</strong></div>
     <div class="confirm-detail"><span>Service</span><strong>${escapeHtml(desc)}</strong></div>
-    <div class="confirm-detail"><span>Date</span><strong>${escapeHtml(date)} · ${escapeHtml(time)}</strong></div>
+    <div class="confirm-detail"><span>Date</span><strong>${escapeHtml(jobWhenText(date, time) || (date + ' · ' + time))}</strong></div>
     <div class="confirm-detail"><span>${escapeHtml(tr('Where'))}</span><strong>${escapeHtml(savedContract ? savedContract.address : addr)}</strong></div>
     <div class="confirm-detail"><span>Your Offer</span><strong>$${total}</strong></div>
     ${confirmGoodsRows(savedContract)}
@@ -12097,7 +12178,7 @@ async function confirmBooking() {
     <div class="confirm-detail"><span>Booking #</span><strong>${contractId}</strong></div>
     <div class="confirm-detail"><span>Pro</span><strong>${escapeHtml(currentPro.name)}</strong></div>
     <div class="confirm-detail"><span>Service</span><strong>${escapeHtml(savedContract ? savedContract.service : desc)}</strong></div>
-    <div class="confirm-detail"><span>Date</span><strong>${escapeHtml(date)} · ${escapeHtml(time)}</strong></div>
+    <div class="confirm-detail"><span>Date</span><strong>${escapeHtml(jobWhenText(date, time) || (date + ' · ' + time))}</strong></div>
     <div class="confirm-detail"><span>${escapeHtml(tr('Where'))}</span><strong>${escapeHtml(savedContract ? savedContract.address : addr)}</strong></div>
     ${confirmGoodsRows(savedContract)}
     <div class="confirm-detail"><span>Escrow held</span><strong>${savedContract ? usd2(savedContract.amount) : '$' + total}</strong></div>
@@ -14067,6 +14148,15 @@ async function resetAllWording() {
         const { user } = await fetchMeWithRetry();
         AUTH.user = user;
         await completeAuthAndResumeIntent(user.role);
+        // v158: a link from an update email (?section=bookings) opens that section
+        const sec = urlParams.get('section');
+        if (sec && /^[a-z_-]{2,30}$/.test(sec)) {
+          try { history.replaceState(null, '', window.location.pathname); } catch (x) {}
+          try {
+            if (user.role === 'customer' && typeof selectCustomerSection === 'function' && CUSTOMER_NAV_ITEMS.some(i => i.key === sec)) selectCustomerSection(sec);
+            else if (user.role === 'provider' && typeof selectProviderSection === 'function' && PROVIDER_NAV_ITEMS.some(i => i.key === sec)) selectProviderSection(sec);
+          } catch (x) { /* the dashboard is open anyway */ }
+        }
       } catch (e) {
         AUTH.token = null;
         AUTH.user = null;

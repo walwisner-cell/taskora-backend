@@ -138,3 +138,24 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
   } catch (x) {}
 })();
+
+/* v156: bookings. */
+(function () {
+  try {
+    if (typeof ES_TEXT === 'object') Object.assign(ES_TEXT, {
+      'To agree': 'Por acordar', 'Cash to the pro': 'Efectivo al profesional', 'Not paid': 'No pagado', 'Not paid yet': 'Aún no pagado',
+      'Refunded': 'Reembolsado', 'refunded': 'reembolsado', 'When': 'Cuándo',
+      'If you would like to tip your pro, give it to them directly.': 'Si quieres dejar una propina a tu profesional, dásela directamente.',
+      'You pay the tip the same way you paid for the booking, right after completing.': 'Pagas la propina de la misma forma que pagaste la reserva, justo después de completar.',
+      'Job marked complete. Payment released to your pro. Now pay your tip.': 'Trabajo completado. El pago se liberó a tu profesional. Ahora paga tu propina.',
+      'Approve this additional amount? You then pay it the same way you paid for the booking. The job total goes up once it is paid.': '¿Aprobar este importe adicional? Luego lo pagas de la misma forma que pagaste la reserva. El total del trabajo sube cuando se paga.',
+      'Press "I have sent it". Your pro gets the tip once we see your payment.': 'Pulsa "Ya lo envié". Tu profesional recibe la propina cuando veamos tu pago.',
+      'Press "I have sent it". The extra work is added to your booking once we see your payment.': 'Pulsa "Ya lo envié". El trabajo adicional se añade a tu reserva cuando veamos tu pago.',
+      'it is dropped and your booking carries on as before. Trothen will never ask you to pay any other number or person, or for your PIN.': 'se descarta y tu reserva sigue como antes. Trothen nunca te pedirá pagar a otro número o persona, ni tu PIN.',
+      'Approved. Now pay for the extra work.': 'Aprobado. Ahora paga el trabajo adicional.', 'Approved: waiting for payment': 'Aprobado: esperando el pago',
+      'Pay your tip; it goes to your pro in full.': 'Paga tu propina; va íntegra a tu profesional.',
+      'Pay to add the extra work to your booking; nothing changes until you pay.': 'Paga para añadir el trabajo adicional a tu reserva; nada cambia hasta que pagues.',
+    });
+    if (typeof PAGE_ES === 'object' && PAGE_ES.pages) Object.assign(PAGE_ES.pages, { 'When': 'Cuándo', 'Paid': 'Pagado' });
+  } catch (e) { /* English stays */ }
+})();

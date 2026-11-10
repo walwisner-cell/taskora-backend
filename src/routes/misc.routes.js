@@ -396,6 +396,7 @@ router.post('/sales-inquiry', publicFormLimiter, async (req, res) => {
 // of the list rather than wherever raw insertion order happened to leave
 // it.
 router.get('/notifications/mine', requireAuth, async (req, res) => {
+  require('../email-notify').markSeen(req.user.sub); // v158: the app is open, so updates aren't also emailed
   const mine = await db.filter('notifications', n => n.userId === req.user.sub);
   // v109.2: cleared notifications are kept, so they can be looked at again
   // and brought back. ?cleared=1 lists them, newest cleared first.

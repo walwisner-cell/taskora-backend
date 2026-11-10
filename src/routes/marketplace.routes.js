@@ -936,7 +936,7 @@ router.get('/providers', async (req, res) => {
 
 // GET /api/providers/:id  (profile page: includes reviews and portfolio photos)
 router.get('/providers/:id', async (req, res) => {
-  const p = await db.find('users', u => u.id === req.params.id && u.role === 'provider' && u.verified);
+  const p = await db.find('users', u => u.id === req.params.id && u.role === 'provider' && u.verified && u.active !== false && !u.closedAt); // v156: not a suspended or closed account
   if (!p) return res.status(404).json({ error: 'Provider not found' });
   const reviews = await db.filter('reviews', r => r.providerId === p.id);
   const portfolio = await db.filter('portfolioPhotos', ph => ph.providerId === p.id);
@@ -1000,7 +1000,7 @@ function readJobLocation(body) {
   }
   return out;
 }
-router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
+router.post('/jobs', requireAuth, requireRole('customer'), requireCurrentTerms, (req, res, next) => jobPostLimiter(req, res, next), async (req, res) => {
   const customer = await db.find('users', u => u.id === req.user.sub);
   if (!customer || customer.verified !== true) {
     // v75: say what's actually needed. "code" lets the page open the
@@ -1232,7 +1232,13 @@ router.post('/jobs/:id/cancel', requireAuth, requireRole('customer'), async (req
   if (job.status !== 'open') {
     return res.status(400).json({ error: `This request is already ${job.status} and can't be cancelled here` });
   }
-  const updated = await db.update('jobs', job.id, { status: 'cancelled' });
+  const updated = await db.update('jobs', job.id, { status: 'cancelled', closedReason: 'cancelled_by_customer', closedAt: new Date().toISOString() });
+  // v158: the pros it was sent to stop seeing it, and those who replied are told
+  // (before, it stayed in their Job Matches and they could keep replying)
+  for (const m of await db.filter('matches', x => x.jobId === job.id && ['pending', 'interested'].includes(x.status))) {
+    await db.update('matches', m.id, { status: 'not_selected' });
+    if (m.status === 'interested') { try { await notify(m.providerId, 'ℹ️', `The customer cancelled the job "${String(job.description).slice(0, 60)}", so it's closed. Thank you for replying.`, 'newMatches', { section: 'matches' }); } catch (e) { /* closed anyway */ } }
+  }
   res.json({ job: updated });
 });
 
@@ -1353,6 +1359,8 @@ router.post('/matches/:id/respond', requireAuth, requireRole('provider'), requir
   const match = await db.find('matches', m => m.id === req.params.id && m.providerId === req.user.sub);
   if (!match) return res.status(404).json({ error: 'Match not found' });
   if (!['accept', 'decline'].includes(decision)) return res.status(400).json({ error: 'decision must be accept or decline' });
+  // v158: only while the job is still open (it could be answered after it was cancelled, filled or closed)
+  if (decision === 'accept') { const j0 = await db.find('jobs', j => j.id === match.jobId); if (!j0 || j0.status !== 'open' || !['pending', 'interested'].includes(match.status)) return res.status(409).json({ code: 'JOB_CLOSED', error: 'This job is no longer open, so it can\'t be answered.' }); }
   // Item 3 / Cover Letter: an optional short note a provider can attach
   // when expressing interest — genuinely optional (a provider who just
   // clicks "Interested" isn't blocked), but real and visible to the
@@ -1538,7 +1546,7 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
   // Posted jobs have no fixed date/time (unlike a direct booking), so
   // jobDateTime is null — computeResponseWindowHours already handles that
   // by falling back to the middle tier rather than guessing wrong.
-  const windowHours = computeResponseWindowHours({ now: new Date(), jobDateTime: null, tiers, categoryOverrideHours: null });
+  const windowHours = computeResponseWindowHours({ now: new Date(), jobDateTime: require('../booking-rules').jobStartOf(job) /* v156 */, tiers, categoryOverrideHours: null });
   const responseDeadline = new Date(Date.now() + windowHours * 60 * 60 * 1000).toISOString();
 
   const contract = {
@@ -1551,6 +1559,10 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
     jobLocation: job.jobLocation || null, // v92: now the hired pro can see where to go
     landmark: job.landmark || null,
     address: job.landmark || null,
+    ...require('../booking-rules').jobWhen(job), // v156: the job's date and time, photos and materials come with it
+    photoUrls: job.photoUrls || [],
+    materialsOnHand: job.materialsOnHand || null,
+    payCurrency: job.payCurrency === 'local' ? 'local' : 'usd',
     amount: finalAmount,
     serviceFee: job.payMethod === 'cash' ? 0 : computeServiceFee(finalAmount), // v119: no Trothen fee for the customer on a cash job
     payMethod: job.payMethod === 'cash' ? 'cash' : 'protected',
@@ -1596,7 +1608,7 @@ router.post('/jobs/:id/select-provider', requireAuth, requireRole('customer'), a
   await checkPriceAnomaly(provider.category, contract.amount, contract.id, req.user.sub, providerId);
   await checkNewAccountHighValue(req.user.sub, contract.amount);
 
-  const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
+  const deadlineLabel = require('../booking-rules').whenFor(responseDeadline, provider); // v158: in the pro's own time zone
   await notify(providerId, '🎉', `You were selected for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" at $${finalAmount}${contract.payMethod === 'cash' ? ' (CASH job: the customer pays you after the work; Trothen\'s commission comes from your tokens when you accept)' : ''}. Confirm by ${deadlineLabel} or it's automatically offered to the next candidate.`, null, { section: 'bookings' });
   await notify(req.user.sub, '⏳', `Your booking for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" is awaiting the provider's confirmation.`, null, { section: 'bookings' });
 
@@ -1643,7 +1655,7 @@ async function buildJobOffer(customerId, { job, match, provider, amount, note })
   const { feeDiscountForTier } = require('../membership');
   const fee = payMethod === 'cash' ? 0 : Math.round(computeServiceFee(amount) * (1 - feeDiscountForTier(customer && customer.membershipTier)) * 100) / 100;
   const { getSetting, computeResponseWindowHours } = require('../platform-settings');
-  const hours = computeResponseWindowHours({ now: new Date(), jobDateTime: null, tiers: await getSetting('bookingResponseTiers'), categoryOverrideHours: null });
+  const hours = computeResponseWindowHours({ now: new Date(), jobDateTime: require('../booking-rules').jobStartOf(job) /* v156 */, tiers: await getSetting('bookingResponseTiers'), categoryOverrideHours: null });
   const cleanNote = typeof note === 'string' && note.trim() ? note.trim().slice(0, 300) : null;
   const now = new Date().toISOString();
   const contract = {
@@ -1656,6 +1668,7 @@ async function buildJobOffer(customerId, { job, match, provider, amount, note })
     jobLocation: job.jobLocation || null,
     landmark: job.landmark || null,
     address: job.landmark || null,
+    ...require('../booking-rules').jobWhen(job), // v156
     amount, laborAmount: amount, serviceFee: fee,
     payMethod,
     payCurrency: job.payCurrency === 'local' ? 'local' : 'usd',
@@ -1742,7 +1755,7 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
   const provider = await db.find('users', u => u.id === next.providerId);
   const { getSetting, computeResponseWindowHours } = require('../platform-settings');
   const tiers = await getSetting('bookingResponseTiers');
-  const windowHours = computeResponseWindowHours({ now: new Date(), jobDateTime: null, tiers, categoryOverrideHours: null });
+  const windowHours = computeResponseWindowHours({ now: new Date(), jobDateTime: require('../booking-rules').jobStartOf(job) /* v156 */, tiers, categoryOverrideHours: null });
   const responseDeadline = new Date(Date.now() + windowHours * 60 * 60 * 1000).toISOString();
 
   const contract = {
@@ -1755,6 +1768,10 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
     jobLocation: job.jobLocation || null, // v128: the next pro gets the location too (it used to be dropped here)
     landmark: job.landmark || null,
     address: job.landmark || null,
+    ...require('../booking-rules').jobWhen(job), // v156
+    photoUrls: job.photoUrls || [],
+    materialsOnHand: job.materialsOnHand || null,
+    payCurrency: job.payCurrency === 'local' ? 'local' : 'usd',
     amount: failedAmount,
     serviceFee: job.payMethod === 'cash' ? 0 : computeServiceFee(failedAmount), // v119
     payMethod: job.payMethod === 'cash' ? 'cash' : 'protected',
@@ -1779,7 +1796,7 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
   await db.insert('contracts', contract);
   await db.update('matches', next.id, { status: 'accepted' });
 
-  const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
+  const deadlineLabel = require('../booking-rules').whenFor(responseDeadline, await db.find('users', u => u.id === next.providerId)); // v158
   await notify(next.providerId, '🎉', `You were selected for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" at $${failedAmount}. Confirm by ${deadlineLabel} or it's automatically offered to the next candidate.`, null, { section: 'bookings' });
   await notify(job.customerId, '🔁', `Your first pick didn't confirm in time, so your job for "${job.description.slice(0, 50)}${job.description.length > 50 ? '…' : ''}" was automatically offered to the next candidate${provider ? `, ${provider.name},` : ''} at the same price.`, null, { section: 'bookings' });
 
@@ -1789,7 +1806,12 @@ async function attemptJobReassignment(job, failedProviderId, failedAmount) {
 // ---- Contracts / bookings ----------------------------------------------------
 
 // POST /api/contracts — direct booking of a specific provider (skips matching)
-router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
+// v158: a customer can make plenty of bookings and post plenty of jobs, but not
+// hundreds an hour: each one notifies (and now emails) a pro, so a flood
+// would be harassment. Refused requests don't count.
+const bookingLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 40, skipFailedRequests: true, keyGenerator: (req) => (req.user && req.user.sub) || 'anon', validate: false, standardHeaders: true, legacyHeaders: false, message: { error: 'You have made a lot of bookings in the last hour. Please wait a while before making more.' } });
+const jobPostLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 20, skipFailedRequests: true, keyGenerator: (req) => (req.user && req.user.sub) || 'anon', validate: false, standardHeaders: true, legacyHeaders: false, message: { error: 'You have posted a lot of jobs in the last hour. Please wait a while before posting more.' } });
+router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTerms, bookingLimiter, async (req, res) => {
   const customer = await db.find('users', u => u.id === req.user.sub);
   if (!customer || customer.verified !== true) {
     // v75: say what's actually needed. "code" lets the page open the
@@ -1834,8 +1856,19 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     ['address', isNonEmptyString(address, { min: 5, max: 200 }), 'Tell the pro where the job is: pin the location, describe a landmark, or type an address'],
   ]);
   if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  // v156: a real date from today up to a year ahead, and the time kept as 24-hour "HH:MM"
+  const rules = require('../booking-rules');
+  const dateError = rules.bookingDateError(date);
+  if (dateError) return res.status(400).json({ error: dateError });
+  const timeHM = rules.timeHM(time);
   const provider = await db.find('users', u => u.id === providerId && u.role === 'provider');
   if (!provider) return res.status(404).json({ error: 'Provider not found' });
+  if (providerId === req.user.sub) return res.status(400).json({ error: 'You can\'t book yourself.' });
+  // v156: a suspended, closed, paused or not-yet-verified pro can't be booked
+  // v158: the customer's time zone, so the booked time is read correctly for reminders
+  { const zone = require('../arrival-time').validTimeZone(req.body && req.body.tz); if (zone && customer.timeZone !== zone) { try { await db.update('users', req.user.sub, { timeZone: zone }); customer.timeZone = zone; } catch (e) { /* not needed to book */ } } }
+  const notBookable = rules.whyNotBookable(provider);
+  if (notBookable) return res.status(provider.acceptingBookings === false && !provider.closedAt && provider.active !== false ? 400 : 403).json({ code: 'PRO_NOT_BOOKABLE', error: notBookable });
   const prohibitedHit = findProhibitedContent(service, provider.category);
   if (prohibitedHit) {
     return res.status(400).json({ error: `This can't be booked on Trothen: jobs involving ${prohibitedHit} are never permitted on the platform.` });
@@ -1860,9 +1893,6 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   // "vacation mode" pattern TaskRabbit and Thumbtack both have. Checked
   // before anything else so a customer isn't left holding a pending
   // request the provider was never going to see.
-  if (provider.acceptingBookings === false) {
-    return res.status(400).json({ error: `${provider.name} isn't currently accepting new bookings. Try another provider, or check back later.` });
-  }
 
   // v141: what the job costs is worked out here from the pro's own prices
   // (a fixed price from their list, hours/days/trips at their rate, or the
@@ -1872,6 +1902,17 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   if (priced.error) return res.status(400).json({ error: priced.error });
   const isNegotiable = !goodsOnly && priced.isOffer; // v105: goods have a fixed price, so a goods-only order is never an offer
   if (materialsAdvance && !goodsOnly && materialsAdvance > priced.amount) return res.status(400).json({ error: 'The materials advance can\'t be more than the total job amount' });
+  // v156: the same booking sent twice (a double tap, or a slow connection
+  // that retried) is made once, not twice with two payments.
+  {
+    const twoMinAgo = Date.now() - 2 * 60 * 1000;
+    const sameTime = timeHM || String(time).trim().slice(0, 40);
+    const dup = await db.find('contracts', c => c.customerId === req.user.sub && c.providerId === providerId && c.date === date && c.time === sameTime
+      && String(c.service || '').trim() === String(service || '').trim() && Date.parse(c.createdAt) > twoMinAgo
+      && Math.abs(Number(c.laborAmount != null ? c.laborAmount : c.amount) - Number(priced.amount)) < 0.005 && (c.storeItems || []).length === basket.items.length
+      && ['pending_agreement', 'pending_provider_confirmation', 'awaiting_payment', 'active'].includes(c.status));
+    if (dup) return res.status(409).json({ code: 'DUPLICATE_BOOKING', contractId: dup.id, error: 'You have just made this booking. It\'s in My Bookings.' });
+  }
 
   // Every new booking — direct or a Mutual Agreement offer — now genuinely
   // requires the provider to accept before it's a real, confirmed job.
@@ -1894,7 +1935,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   const { getSetting, computeResponseWindowHours } = require('../platform-settings');
   const tiers = await getSetting('bookingResponseTiers');
   const categoryRecord = await db.find('categories', c => c.name === provider.category);
-  const jobDateTime = new Date(`${date} ${time}`);
+  const jobDateTime = rules.jobStart(date, time, customer.timeZone || null); // v156: "9:00 AM", "14:30" and "Morning" all read correctly
   const windowHours = computeResponseWindowHours({
     now: new Date(),
     jobDateTime,
@@ -1935,7 +1976,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     customerId: req.user.sub,
     providerId,
     service: service.trim(),
-    date, time, address: address.trim(),
+    date, time: timeHM || String(time).trim().slice(0, 40), address: address.trim(), // v156: 24-hour "HH:MM" when it is a clock time
     jobLocation: bookWhere.jobLocation, // v92
     landmark: bookWhere.landmark,
     amount: finalContractAmount,
@@ -2037,7 +2078,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
   // src/booking-scheduler.js). (The actual charge now happens earlier,
   // above, before the contract is inserted — `escrow` here is just the
   // result already computed there.)
-  const deadlineLabel = new Date(responseDeadline).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' });
+  const deadlineLabel = require('../booking-rules').whenFor(responseDeadline, provider); // v158: in the pro's own time zone
 
   // This app's booking form uses free-text time slots ("Morning (8–12pm)",
   // "10:00 AM"), not precise start/end timestamps — so there's no reliable
@@ -2063,7 +2104,7 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     await notify(providerId, '🤝', `${customer ? customer.name : 'A customer'} sent an offer of $${contract.amount} for "${contract.service}": respond by ${deadlineLabel} or it expires automatically.${cashNote}${conflictNote}`, null, { section: 'bookings' });
   } else {
     const goodsNote = basket.items.length ? ` It includes ${basket.items.reduce((n, i) => n + i.qty, 0)} good${basket.items.reduce((n, i) => n + i.qty, 0) === 1 ? '' : 's'} from your store ($${goodsTotal}); they are held for this customer.` : ''; // v106
-    await notify(providerId, '📋', `${customer ? customer.name : 'A customer'} booked you for "${contract.service}" on ${date}. Confirm by ${deadlineLabel} or the booking is automatically cancelled${contract.payMethod === 'cash' ? '' : ' and refunded'}.${cashNote}${goodsNote}${conflictNote}`, null, { section: 'bookings' });
+    await notify(providerId, '📋', `${customer ? customer.name : 'A customer'} booked you for "${contract.service}" on ${date}${timeHM ? ' at ' + rules.time12(timeHM) : ''}. Confirm by ${deadlineLabel} or the booking is automatically cancelled${contract.payMethod === 'cash' ? '' : ' and refunded'}.${cashNote}${goodsNote}${conflictNote}`, null, { section: 'bookings' });
   }
   res.status(201).json({ contract, escrow, sameDayConflict: !!sameDayConflict });
 });
@@ -2421,7 +2462,8 @@ router.patch('/contracts/:id/job-location', requireAuth, requireRole('customer')
 // GET /api/contracts/mine — works for both customers and providers
 router.get('/contracts/mine', requireAuth, async (req, res) => {
   const field = req.user.role === 'provider' ? 'providerId' : 'customerId';
-  const contracts = await db.filter('contracts', c => c[field] === req.user.sub && !(field === 'providerId' && c.status === 'awaiting_payment' && (c.statusAfterPayment !== 'active' || c.storeOrder)));  // v148 audit: an unpaid goods order stays hidden from the seller // v119: a pro sees a new booking once it is paid (an offer they already accepted stays in view)
+  const contracts = await db.filter('contracts', c => c[field] === req.user.sub && !(field === 'providerId' && c.status === 'awaiting_payment' && (c.statusAfterPayment !== 'active' || c.storeOrder))
+    && !(c.topUpFor && (field === 'providerId' || c.status !== 'awaiting_payment'))); // v157: an extra or a tip shows only to the customer, only while it waits to be paid  // v148 audit: an unpaid goods order stays hidden from the seller // v119: a pro sees a new booking once it is paid (an offer they already accepted stays in view)
   const withNames = await Promise.all(contracts.map(async c => {
     const customer = await db.find('users', u => u.id === c.customerId);
     const provider = await db.find('users', u => u.id === c.providerId);
@@ -2581,7 +2623,7 @@ router.get('/contracts/:id/pdf', requireAuth, async (req, res) => {
 
   sectionHeader('Service Details');
   row('Service Requested', contract.service);
-  if (contract.date) row('Scheduled Date & Time', `${contract.date}${contract.time ? '  ·  ' + contract.time : ''}`);
+  if (contract.date) row('Scheduled Date & Time', `${contract.date}${contract.time ? '  ·  ' + require('../booking-rules').time12(require('../booking-rules').timeHM(contract.time) || contract.time) : ''}`); // v156: "2:30 PM", whatever form the time was saved in
   if (contract.address) row('Service Address', contract.address);
   // v96: for places with no street address, the agreement names the spot.
   if (contract.landmark && contract.landmark !== contract.address) row('Landmark', contract.landmark);

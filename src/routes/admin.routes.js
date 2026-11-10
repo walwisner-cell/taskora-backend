@@ -235,7 +235,7 @@ router.get('/stats', async (req, res) => {
     if (customer && inRegion(region, customer)) contracts.push(c);
   }
   const pendingUsers = users.filter(u => u.role !== 'admin' && u.verified === false).length;
-  const gmv = contracts.reduce((s, c) => s + (c.amount || 0), 0);
+  const gmv = Math.round(contracts.filter(require('../booking-rules').countsForGmv).reduce((s, c) => s + (c.amount || 0), 0) * 100) / 100; // v158: only bookings that went ahead
   res.json({
     totalUsers: users.length,
     pendingApprovals: pendingUsers,
@@ -277,6 +277,7 @@ router.get('/reports/analytics', async (req, res) => {
   // ── Category performance: REAL demand (bookings), not provider supply ──
   const catStats = new Map(); // category -> { jobsBooked, gmv, ratings: [] }
   for (const c of contracts) {
+    if (!require('../booking-rules').countsForGmv(c)) continue; // v158: declined, expired, cancelled and unpaid bookings aren't demand that happened
     const provider = providerById.get(c.providerId);
     const category = provider ? (provider.category || 'Uncategorized') : 'Uncategorized';
     if (!catStats.has(category)) catStats.set(category, { jobsBooked: 0, gmv: 0 });
@@ -1447,10 +1448,11 @@ router.get('/transactions/pdf', requireDepartment(['financial', 'accountant', 'c
 
   sectionHeader('Report Summary');
   twoColumnRow('Scope', region || 'All locations', 'Date Range', rangeLabel);
-  const totalGMV = scoped.reduce((s, r) => s + r.c.amount, 0);
+  const gmvRows = scoped.filter(r => require('../booking-rules').countsForGmv(r.c)); // v158: only bookings that went ahead; paid extra work is already in its booking
+  const totalGMV = gmvRows.reduce((s, r) => s + r.c.amount, 0);
   const totalHeld = scoped.filter(r => r.escrow && r.escrow.status === 'held').reduce((s, r) => s + r.escrow.amount, 0);
   const totalReleased = scoped.filter(r => r.escrow && r.escrow.status === 'released').reduce((s, r) => s + r.escrow.amount, 0);
-  const totalEstCommission = scoped.reduce((s, r) => s + Math.max(0, r.c.amount - (r.c.storeGoodsTotal || 0)) * effectiveCommissionRate(r.provider, orgsById.get(r.provider && r.provider.organizationId)), 0);
+  const totalEstCommission = gmvRows.filter(r => r.c.topUpKind !== 'tip').reduce((s, r) => s + Math.max(0, r.c.amount - (r.c.storeGoodsTotal || 0)) * effectiveCommissionRate(r.provider, orgsById.get(r.provider && r.provider.organizationId)), 0);
   twoColumnRow('Total GMV', `$${totalGMV.toFixed(2)}`, 'Transactions', String(scoped.length));
   twoColumnRow('Escrow Held', `$${totalHeld.toFixed(2)}`, 'Escrow Released', `$${totalReleased.toFixed(2)}`);
   twoColumnRow('Est. Commission (unpaid + paid)', `$${totalEstCommission.toFixed(2)}`, 'Realized Commission (paid out)', `$${payoutsCommissionInScope.toFixed(2)}`);
@@ -1573,6 +1575,10 @@ router.post('/disputes/:id/resolve', requireDepartment(['disputes', 'customer_se
     }
   }
 
+  // v157: paid extra work on the booking follows the decision: refunded with a
+  // refund, released with a release or a split (the split is on the booking's
+  // own payment, as before).
+  try { await require('../top-ups').follow(dispute.contractId, outcome === 'refund_customer' ? 'refunded' : 'released'); } catch (e) { console.error('[top-ups] dispute:', e.message); }
   if (outcome === 'split') {
     const released = Math.round((escrow.amount - splitRefund) * 100) / 100;
     // The payment record now carries the part released to the pro (so
@@ -1691,6 +1697,7 @@ router.post('/disputes/:id/action', requireSuperAdmin, async (req, res) => {
         if (pro && (pro.jobs || 0) > 0) await db.update('users', pro.id, { jobs: pro.jobs - 1 });
       }
       await db.update('contracts', contract.id, { status: 'disputed', completedVia: null });
+      try { await require('../top-ups').follow(contract.id, 'held'); } catch (e) { /* the team settles it by hand */ } // v157
     } else if ((action === 'reject' || action === 'close') && contract.status === 'disputed') {
       // not upheld, or closed without a decision: the booking carries on as
       // it was, with the payment still held, instead of staying frozen forever.

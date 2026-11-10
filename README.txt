@@ -1,6 +1,15 @@
-Trothen v155: everything in one place (includes v128 to v154)
+Trothen v158: everything in one place (includes v128 to v157)
 
-  src\ public\ server.js    The 107 files changed since your GitHub main (before v128), in their real folders.
+  src\ public\ server.js    The 110 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v158.md           More gaps: booking updates by email when away, reminders that don't wait for
+                            the page (and the day before, and before a payment code runs out), times in each
+                            person's own time zone, GMV that counts only real bookings, posted-job fixes.
+  CHANGES_v157.md           Extra work and tips on a booking paid by card, code or mobile money are paid
+                            the same way as the booking, with their own receipt, before the pro gets them.
+  CHANGES_v156.md           Bookings checked from start to finish: real dates only, suspended pros can't be
+                            booked, no refund-cancel once the pro arrived, no uncollected tips or extra work,
+                            payment history counts real payments, posted-job bookings keep their date and time,
+                            a job nobody started is refunded after a week.
   CHANGES_v155.md           The phone view lined up: one 16 px edge for everything, an even top bar
                             (logo, EN, bell, name), one-colour tab icons, tidy cards, filters and buttons.
   CHANGES_v154.md           The phone view: a tab bar at the bottom like other phone apps, every button big
@@ -44,21 +53,21 @@ Trothen v155: everything in one place (includes v128 to v154)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v155.md  Byte counts and the cmd.exe steps.
-  deploy_v155.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v155-files.zip    The code files packed; the .bat reads this from Downloads.
-  screenshots\              The phone view, before and after.
+  DEPLOYMENT_STEPS_v158.md  Byte counts and the cmd.exe steps.
+  deploy_v158.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v158-files.zip    The code files packed; the .bat reads this from Downloads.
+  screenshots\              Extra work waiting for the customer's payment, on a phone.
 
-Works whether or not v128 is already live. git status shows 133 files if v128 is live, 135 if not.
+Works whether or not v128 is already live. git status shows 139 files if v128 is live, 141 if not.
 
 Email: your SMTP settings on Render are already in and working (System Check shows emails
 being sent), so nothing to add before this deploy.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v155.
-  2. copy "%USERPROFILE%\Downloads\trothen-v155\trothen-v155-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v158.
+  2. copy "%USERPROFILE%\Downloads\trothen-v158\trothen-v158-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v155\deploy_v155.bat"
+     "%USERPROFILE%\Downloads\trothen-v158\deploy_v158.bat"
   Nothing goes live until you type YES.
 
 After it is live:

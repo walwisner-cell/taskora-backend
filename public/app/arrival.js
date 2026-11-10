@@ -55,7 +55,9 @@
     for (const c of Object.values(RAW_CONTRACTS || {})) {
       if (adopted.has(c.id) || !c.date || !c.time || c.arrival || !canSchedule(c) || c.status !== 'active') continue;
       adopted.add(c.id);
-      const local = new Date(`${String(c.date).slice(0, 10)}T${String(c.time).slice(0, 5)}`);
+      const hm = typeof timeHM24 === 'function' ? timeHM24(c.time) : String(c.time).slice(0, 5); // v156: "9:00 AM" used to be misread
+      if (!hm) continue;
+      const local = new Date(`${String(c.date).slice(0, 10)}T${hm}`);
       if (isNaN(local) || local.getTime() < Date.now() + 5 * 60000) continue;
       try { const { contract } = await apiFetch('POST', `/contracts/${encodeURIComponent(c.id)}/arrival-time/adopt`, { at: local.toISOString(), tz: myTz() }); if (contract) RAW_CONTRACTS[c.id] = { ...c, ...contract }; } catch (e) { /* stays as it is */ }
     }
@@ -112,7 +114,7 @@
     closeArrivalTime();
     const c = raw(contractId) || {};
     const a = c.arrival || {};
-    let start = a.proposal ? new Date(a.proposal.at) : a.agreed ? new Date(a.agreed.at) : (c.date && c.time ? new Date(`${String(c.date).slice(0, 10)}T${String(c.time).slice(0, 5)}`) : null);
+    let start = a.proposal ? new Date(a.proposal.at) : a.agreed ? new Date(a.agreed.at) : (c.date && c.time && typeof timeHM24 === 'function' && timeHM24(c.time) ? new Date(`${String(c.date).slice(0, 10)}T${timeHM24(c.time)}`) : null);
     if (!start || isNaN(start) || start.getTime() < Date.now() + 10 * 60000) { start = new Date(Date.now() + 60 * 60000); start.setMinutes(start.getMinutes() < 30 ? 30 : 60, 0, 0); }
     const p = localParts(start), today = localParts(new Date());
     const tz = myTz();
