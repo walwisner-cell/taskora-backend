@@ -115,6 +115,7 @@
         <div style="font-size:14px;color:var(--text,#1b2533);line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${e(it.title)}</div>
         <div>${badge}</div>
         ${it.tradePrice ? `<div style="font-size:12.5px;color:#0f766e;font-weight:700;">${e(t('Trade price for pros'))}: ${money(it.tradePrice)}</div>` : ''}
+        ${it.kind === 'store' && typeof cartAddFromMarket === 'function' ? `<button type="button" class="btn-sm ${it.hasOptions ? 'btn-sm-outline' : 'btn-sm-primary'} mk-cart-btn" style="margin-top:4px;" onkeydown="event.stopPropagation()" onclick="event.stopPropagation();${it.hasOptions ? `openProStore(${jsArg(it.providerId)})` : `cartAddFromMarket(${jsArg(it.providerId)},${jsArg(it.id)},this)`}">${e(t(it.hasOptions ? 'Choose options' : 'Add to cart'))}</button>` : ''}
         <div style="font-size:12px;color:var(--slate);margin-top:auto;">${e(it.city || '')}${it.seller ? ` · ${e(it.seller.name)}${it.seller.verified ? ' ✓' : ''} ${stars(it.seller)}${it.seller.isNew ? ` · <span style="color:#8a5a00;">${e(t('New seller'))}</span>` : ''}` : ''}</div>
       </div></div>`;
   }

@@ -387,6 +387,7 @@ router.post('/store/orders', requireAuth, requireBuyer, requireCurrentTerms, asy
     const hired = await db.find('contracts', c => c.jobId === linkedJob.id && !c.storeOrder && !['cancelled', 'declined', 'refunded'].includes(c.status));
     if (hired && hired.providerId !== seller.id) await notify(hired.providerId, '🧰', `${firstName(customer.name)} bought materials for "${String(linkedJob.description || '').slice(0, 50)}": ${itemsLine(basket.items).slice(0, 120)} from ${seller.store.name} (${method === 'pickup' ? 'they will collect them' : 'being delivered'}).`, 'bookingUpdates', { section: 'contracts' });
   }
+  await require('../cart').removeOrdered(customer.id, seller.id, basket.items); // v162: ordered goods leave the cart
   const fresh = await db.find('contracts', c => c.id === order.id);
   res.status(201).json({ order: await orderView(fresh, customer.id), payment: waiting ? require('../customer-payments').publicPayment(escrow) : null });
 });

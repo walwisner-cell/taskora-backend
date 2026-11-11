@@ -155,6 +155,13 @@ function inStock(g, qty = 1, variantId) {
   const st = stockOf(g, variantId);
   return st === null || st >= qty;
 }
+// v162: a good with sizes or colours is in stock when any of them is. (Asking
+// inStock() without choosing one always said "none", which hid every such
+// good from the Market.)
+function anyInStock(g) {
+  if (Array.isArray(g.variants) && g.variants.length) return g.variants.some(v => v.stock === null || v.stock === undefined || v.stock > 0);
+  return inStock(g, 1);
+}
 
 // v108: a manager approves the STORE itself (its name and what it says it
 // sells), as well as each good. Stores made before this are 'pending'.
@@ -463,7 +470,7 @@ module.exports = {
   goodsFeeFor, protectionFeeFor,
   STORE_DEFAULTS, DEFAULT_STORE_RULES, MAX_PHOTOS_PER_GOOD, MAX_QTY_PER_LINE, MAX_EXTRA_SKILLS, MAX_EXTRA_SKILLS_BUSINESS, maxExtraSkillsFor, money,
   storeSettings, storeSettingsCached, saveStoreSettings,
-  isOnShelf, inStock, storeIsLive, publicStore, refreshStoreLive,
+  isOnShelf, inStock, anyInStock, storeIsLive, publicStore, refreshStoreLive,
   DELIVERY_METHODS, DELIVERY_LABELS, DRIVER_SKILL, VEHICLES, storeApproval, whyNotLive, WHY_NOT_LIVE_WORDS, storeOptions,
   currenciesFor, usdFromLocal, goodUsdPrice, goodPriceFields,
   priceBasket, holdStock, reserveStock, releaseStock, giveBackStock,

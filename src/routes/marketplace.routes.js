@@ -2055,6 +2055,8 @@ router.post('/contracts', requireAuth, requireRole('customer'), requireCurrentTe
     console.error('[booking] payment or save failed, stock put back:', e.message);
     return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be completed, so you were not charged and nothing was booked. Please try again or use another payment method.' });
   }
+  if (basket.items.length) await require('../cart').removeOrdered(req.user.sub, providerId, basket.items); // v162: goods booked with the pro leave the cart
+
 
   if (canRedeemPoints) {
     await db.update('users', customerForPoints.id, { loyaltyPoints: (customerForPoints.loyaltyPoints || 0) - POINTS_FOR_FREE_BOOKING });

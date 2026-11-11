@@ -118,7 +118,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
     ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider. Admin accounts are created by a super admin.'],
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
     ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
-    ['address', isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address'],
+    ['address', (address === undefined || address === null || String(address).trim() === '') || isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address, or leave it empty'], // v163: optional (much of Liberia has no street addresses; each job has its own place)
     ['country', isNonEmptyString(country, { min: 2, max: 100 }), 'Select your country'],
     ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
     ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
@@ -178,7 +178,7 @@ router.post('/signup/start', signupLimiter, async (req, res) => {
     id: `preg_${nanoid(12)}`,
     // v81: the password is hashed right here. It used to sit in this waiting
     // record as typed until the code was entered (and forever if it never was).
-    payload: { name: name.trim(), email: email.trim(), passwordHash: hashPassword(password), role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: address.trim(), zipCode: (zipCode || '').trim(), category: sellsOnly ? null : category, skills: sellsOnly ? '' : skills, proMode: role === 'provider' ? proMode : undefined, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null },
+    payload: { name: name.trim(), email: email.trim(), passwordHash: hashPassword(password), role, country: country.trim(), state: state.trim(), city: city.trim(), phone: phone.trim(), address: typeof address === 'string' ? address.trim() : '', zipCode: (zipCode || '').trim(), category: sellsOnly ? null : category, skills: sellsOnly ? '' : skills, proMode: role === 'provider' ? proMode : undefined, inviteCode: trimmedInviteCode || null, referredByUserId: referrer ? referrer.id : null },
     emailCodeHash: hashResetToken(emailCode),
     phoneVerified: false,
     emailVerified: false,
@@ -720,7 +720,7 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
     ['role', ['customer', 'provider'].includes(role), 'Role must be customer or provider. Admin accounts are created by a super admin.'],
     ['phone', isValidPhone(phone), 'Enter a valid phone number (7-15 digits)'],
     ['zipCode', isValidPostalCode(zipCode, country), postalCodeErrorMessage(country)],
-    ['address', isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address'],
+    ['address', (address === undefined || address === null || String(address).trim() === '') || isNonEmptyString(address, { min: 3, max: 200 }), 'Enter a valid address, or leave it empty'], // v163: optional (much of Liberia has no street addresses; each job has its own place)
     ['country', isNonEmptyString(country, { min: 2, max: 100 }), 'Select your country'],
     ['state', isNonEmptyString(state, { min: 2, max: 100 }), 'Select your state/region'],
     ['city', isNonEmptyString(city, { min: 2, max: 100 }), 'Enter your city'],
@@ -779,7 +779,7 @@ router.post('/google/signup', signupLimiter, async (req, res) => {
     state: state.trim(),
     city: city.trim(),
     phone: phone.trim(),
-    address: address.trim(),
+    address: typeof address === 'string' ? address.trim() : '',
     zipCode: (zipCode || '').trim(),
     phoneVerified: false,
     initials: trimmedName.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase(),

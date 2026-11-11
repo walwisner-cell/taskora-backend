@@ -1,6 +1,18 @@
-Trothen v160: everything in one place (includes v128 to v159)
+Trothen v163: everything in one place (includes v128 to v162)
 
-  src\ public\ server.js    The 112 files changed since your GitHub main (before v128), in their real folders.
+  src\ public\ server.js    The 115 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v163.md           Gaps found by walking store orders, sign-up and password reset with real taps:
+                            View cart at once, messages kept off pop-up buttons, star ratings by keyboard,
+                            sign-up errors under each field and the street address optional, nothing of an
+                            account left after signing out, no install banner over forms.
+  CHANGES_v162.md           A shopping cart: one cart across every store, kept on your account (and for visitors
+                            until they sign in), a cart icon and count in the top bar, a cart page with + and -,
+                            Save for later and Remove, Add to cart in the Market, checkout one store at a time.
+                            Also: goods with sizes or colours now show in the Market.
+  CHANGES_v161.md           Checked in Spanish, in dark mode, on iPhone SE, iPhone 13, iPad and laptop, and the
+                            admin pages: the four checks' icons drawn whole, dashboard headings visible in dark
+                            mode, admin tables as cards on a phone, about 150 phrases added in Spanish, clearer
+                            dark-mode links, the welcome card on the smallest phones.
   CHANGES_v160.md           A deeper recheck: background checks never run twice at once; a job goes to at most
                             15 pros; job matches emailed to pros; "Booking request sent" with View my booking;
                             Leave Now from 12 hours before; the phone screens you sent lined up (posted-job card,
@@ -60,22 +72,24 @@ Trothen v160: everything in one place (includes v128 to v159)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v160.md  Byte counts and the cmd.exe steps.
-  deploy_v160.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v160-files.zip    The code files packed; the .bat reads this from Downloads.
-  screenshots\              A posted job's card, the home page's Live now in and welcome card, and the
-                            new booking confirmation, on a phone.
+  DEPLOYMENT_STEPS_v163.md  Byte counts and the cmd.exe steps.
+  deploy_v163.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v163-files.zip    The code files packed; the .bat reads this from Downloads.
+  screenshots\              A missing postcode shown under its box at sign-up, the store order and return on
+                            a phone, the cart, and the v160 and v161 screens.
 
-Works whether or not v128 is already live. git status shows 143 files if v128 is live, 145 if not.
+Works whether or not v128 is already live. git status shows 149 files if v128 is live, 151 if not.
+If you already deployed v162, it is safe on top of it, and git status shows only the 6 files that changed
+since (5 code files and CHANGES_v163.md).
 
 Email: your SMTP settings on Render are already in and working (System Check shows emails
 being sent), so nothing to add before this deploy.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v160.
-  2. copy "%USERPROFILE%\Downloads\trothen-v160\trothen-v160-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v163.
+  2. copy "%USERPROFILE%\Downloads\trothen-v163\trothen-v163-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v160\deploy_v160.bat"
+     "%USERPROFILE%\Downloads\trothen-v163\deploy_v163.bat"
   Nothing goes live until you type YES.
 
 After it is live:

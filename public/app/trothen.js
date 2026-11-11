@@ -296,7 +296,7 @@ async function submitGoogleSignup() {
   const skills = document.getElementById('auth-skills').value.trim();
 
   const zipRequired = !(GEO_DATA.noPostalCodeCountries || []).includes(country);
-  if (!phone || !address || !city || !state || !country || (zipRequired && !zipCode)) return showToast('Please fill in all fields');
+  if (!phone || !city || !state || !country || (zipRequired && !zipCode)) return showToast('Please fill in all fields'); // v163: a street address is optional
   const proMode = (document.getElementById('auth-pro-mode') || {}).value || 'services'; // v139: services, goods or both
   if (authState.role === 'provider' && proMode !== 'goods' && !skills) return showToast('List at least one skill or specialty');
   if (authState.role === 'provider' && proMode !== 'goods' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
@@ -2998,6 +2998,19 @@ async function logout() {
   AUTH.token = null;
   AUTH.user = null;
   clearAuthSession();
+  // v163: nothing of the account stays on screen or in the page: every open
+  // window closes (the "Before you book" agreement stayed up after signing
+  // out), and the dashboards are emptied, which matters on a shared phone.
+  try {
+    document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    document.querySelectorAll('body > .modal-overlay[style*="z-index:5200"]').forEach(m => m.remove()); // the windows made on the fly (v105Overlay)
+    ['customer-main', 'provider-main', 'admin-main'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+    document.querySelectorAll('.notif-panel.open, .account-dropdown.open').forEach(x => x.classList.remove('open'));
+    document.body.classList.remove('toast-over-modal');
+    // the sign-in and sign-up forms keep nothing of hers (name, phone, home address) for the next person on this phone
+    document.querySelectorAll('#auth-main-form input:not([type=checkbox]):not([type=radio]):not([type=hidden]), #screen-forgot input').forEach(i => { i.value = ''; i.removeAttribute('aria-invalid'); });
+    document.querySelectorAll('#auth-main-form .field-error').forEach(x => x.remove());
+  } catch (e) { /* signing out never fails on this */ }
   showToast('Signed out');
   goHome();
 }
@@ -3357,19 +3370,19 @@ async function mockAuth() {
     const zipRequired = !(GEO_DATA.noPostalCodeCountries || []).includes(country);
     { const missing = firstMissingSignupField({ name, email, password, phone, address, city, state, zipCode, zipRequired }); if (missing) return missing; }
     const proModeNow = (document.getElementById('auth-pro-mode') || {}).value || 'services'; // v139
-    if (authState.role === 'provider' && proModeNow !== 'goods' && !skills) return showToast('List at least one skill or specialty');
-    if (authState.role === 'provider' && proModeNow !== 'goods' && categorySelect === '__other__' && category.length < 2) return showToast('Tell us what service you offer');
+    if (authState.role === 'provider' && proModeNow !== 'goods' && !skills) return authFieldFail('auth-skills', 'List at least one skill or specialty');
+    if (authState.role === 'provider' && proModeNow !== 'goods' && categorySelect === '__other__' && category.length < 2) return authFieldFail('auth-custom-category', 'Tell us what service you offer');
   }
   if (!isValidEmailClient(email)) {
-    return showToast('Enter a valid email address');
+    return authFieldFail('auth-email', 'Enter a valid email address');
   }
   if (authState.mode === 'signup') {
-    if (name.length < 2) return showToast('Full name must be at least 2 characters');
-    if (password.length < 8 || password.length > 72) return showToast('Password must be 8-72 characters');
+    if (name.length < 2) return authFieldFail('auth-name', 'Full name must be at least 2 characters');
+    if (password.length < 8 || password.length > 72) return authFieldFail('auth-password', 'Password must be 8-72 characters');
     const phoneDigits = phone.replace(/[^0-9]/g, '');
-    if (phoneDigits.length < 7) return showToast('Enter a valid phone number');
-    if (zipCode && zipCode.length < 3 && !(GEO_DATA.noPostalCodeCountries || []).includes(country)) return showToast('Enter a valid zip/postal code');
-    if (city.length < 2) return showToast('Enter your city');
+    if (phoneDigits.length < 7) return authFieldFail('auth-phone', 'Enter a valid phone number');
+    if (zipCode && zipCode.length < 3 && !(GEO_DATA.noPostalCodeCountries || []).includes(country)) return authFieldFail('auth-zip', 'Enter a valid zip/postal code');
+    if (city.length < 2) return authFieldFail('auth-city', 'Enter your city');
   }
   try {
     if (authState.mode === 'login') {
@@ -12611,14 +12624,14 @@ function supportContactHTML(category) {
   const whatsapp = own ? own.whatsapp : SUPPORT_CONTACT.whatsapp;
   const phoneDisplay = own ? own.phoneDisplay : SUPPORT_CONTACT.phoneDisplay;
   const email = own ? own.email : SUPPORT_CONTACT.email;
-  return `<br/><br/>📱 WhatsApp: <a href="https://wa.me/${whatsapp}" target="_blank" style="color:var(--gold);">Chat with us</a><br/>☎️ Call: <a href="tel:+${whatsapp}" style="color:var(--gold);">${phoneDisplay}</a>${email ? `<br/>✉️ Email: <a href="mailto:${escapeHtml(email)}" style="color:var(--gold);">${escapeHtml(email)}</a>` : ''}`;
+  return `<br/><br/>📱 WhatsApp: <a href="https://wa.me/${whatsapp}" target="_blank" style="color:inherit;font-weight:700;text-decoration:underline;">Chat with us</a><br/>☎️ Call: <a href="tel:+${whatsapp}" style="color:inherit;font-weight:700;text-decoration:underline;">${phoneDisplay}</a>${email ? `<br/>✉️ Email: <a href="mailto:${escapeHtml(email)}" style="color:inherit;font-weight:700;text-decoration:underline;">${escapeHtml(email)}</a>` : ''}`;
 }
 
 const SUPPORT_FAQ = [
   { keywords: ['escrow', 'hold', 'held', 'release fund'], answer: "With escrow, payment for your job is held by Trothen, not paid to the pro, until you confirm the work is done. Once you mark a booking \"Complete\" in My Bookings, the funds release to your pro automatically." },
   { keywords: ['verif', 'id check', 'background check', 'kyc'], answer: "Every customer and pro on Trothen verifies their identity with a government ID, submitted in Settings. Pros can also add references who vouch for them." },
   { keywords: ['dispute', 'problem', 'complaint', 'refund', 'bad job', 'not happy'], answer: "If there is a problem with a job, do not mark it complete, as this releases the payment. Instead, message your pro first to try to resolve it, and if that doesn't work, our Finance & Dispute team can step in to review and resolve it fairly." + supportContactHTML('dispute') },
-  { keywords: ['pay', 'payment', 'card', 'billing'], answer: "You can add a payment method in Customer → Payments. Payments are currently in test mode and no charges are made." },
+  { keywords: ['pay', 'payment', 'card', 'billing'], answer: "You pay through Trothen when you book, in the ways offered in your country (card, payment code or Mobile Money). Trothen holds the money until you confirm the job is done. Your payment history and receipts are in Payments." },
   { keywords: ['become a pro', 'sign up as provider', 'join as provider', 'provider account'], answer: "Click \"Become a Pro\" at the top of the page, or choose \"Provider\" when you sign up. You will need your category, skills and location. New providers remain unverified until their documents are approved." },
   { keywords: ['price', 'pricing', 'plan', 'cost', 'subscription', 'fee'], get answer() { return `Trothen has three plans for pros. Starter takes ${PLAN_COMMISSION.starter}% commission on each job. Pro takes ${PLAN_COMMISSION.pro}% and is reached automatically once you qualify. Super Pro takes ${PLAN_COMMISSION.superpro}% and is confirmed by our team once you qualify. Each plan also has a monthly price, which depends on your country: the Provider Plans page shows yours. ${PLAN_BILLING_PUBLIC.active ? 'The monthly fee comes out of your payouts, never a card.' : 'The monthly fee isn\'t being charged during early access.'} Customers don't pay to join.`; } },
   { keywords: ['categor', 'service', 'what can i book', 'what do you offer'], answer: "Trothen covers plumbing, cleaning, tutoring, electrical work, moving, painting, landscaping, fitness, pick and drop, and more. Browse all categories from \"See all categories\" on the homepage." },
@@ -13283,9 +13296,19 @@ function setupTicketMotion() {
 function setupChecksDrawing() {
   const section = document.querySelector('.checks');
   if (!section || V57_REDUCED_MOTION) return;
-  section.querySelectorAll('.checks-icon svg *').forEach(shape => shape.setAttribute('pathLength', '1'));
-  section.classList.add('pre-draw');
-  whenVisible(section, () => { section.classList.add('drawing'); section.classList.remove('pre-draw'); }, 0.4);
+  // v160: each line is measured and drawn in over its real length, and the
+  // drawing leaves nothing behind when it ends. Before, a "length 1" shortcut
+  // left the icons as a dot in some browsers.
+  whenVisible(section, () => {
+    section.querySelectorAll('.checks-list > li').forEach((li, i) => {
+      li.querySelectorAll('.checks-icon svg *').forEach(shape => {
+        if (typeof shape.getTotalLength !== 'function' || typeof shape.animate !== 'function') return;
+        let len = 0; try { len = shape.getTotalLength(); } catch (e) { return; }
+        if (!(len > 0)) return;
+        try { shape.animate([{ strokeDasharray: `${len} ${len}`, strokeDashoffset: len }, { strokeDasharray: `${len} ${len}`, strokeDashoffset: 0 }], { duration: 900, delay: i * 150, easing: 'cubic-bezier(.6,0,.3,1)', fill: 'backwards' }); } catch (e) { /* shown whole */ }
+      });
+    });
+  }, 0.4);
 }
 
 // Search results arriving: cards settle in and the heading is marked.
@@ -16936,14 +16959,28 @@ function navRoleNow() {
     }`;
   document.head.appendChild(css);
 })();
+// v163: the message also shows under the field itself, in red, and is read
+// out with it (WCAG 3.3.1), until the person types there. A message only at
+// the bottom of the screen was easy to miss, and gone after a few seconds.
+function authFieldFail(id, msg) { const el = document.getElementById(id); if (el) { fieldError(el, tr(msg)); try { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} } showToast(tr(msg)); return true; }
+function fieldError(el, msg) {
+  const id = 'err-' + el.id;
+  let box = document.getElementById(id);
+  if (!box) { box = document.createElement('div'); box.id = id; box.className = 'field-error'; box.setAttribute('role', 'alert'); (el.closest('.form-group') || el.parentElement).appendChild(box); }
+  box.textContent = msg;
+  el.setAttribute('aria-invalid', 'true');
+  const d = (el.getAttribute('aria-describedby') || '').split(' ').filter(Boolean); if (!d.includes(id)) el.setAttribute('aria-describedby', d.concat(id).join(' '));
+  const clear = () => { box.remove(); el.removeAttribute('aria-invalid'); el.setAttribute('aria-describedby', (el.getAttribute('aria-describedby') || '').split(' ').filter(x => x && x !== id).join(' ')); el.removeEventListener('input', clear); el.removeEventListener('change', clear); };
+  el.addEventListener('input', clear); el.addEventListener('change', clear);
+}
 // v109: one plain message per missing sign-up field, with the cursor put on it.
 function firstMissingSignupField(v) {
   const checks = [['name', 'auth-name', 'Enter your full name'], ['email', 'auth-email', 'Enter your email address'], ['password', 'auth-password', 'Choose a password'],
     ['phone', 'auth-phone', 'Enter your phone number'], ['state', 'auth-state', 'Choose your state or region'], ['city', 'auth-city', 'Enter your city'],
-    ['address', 'auth-address', 'Enter your address'], ['zipCode', 'auth-zip', 'Enter your zip or postal code']];
+    ['zipCode', 'auth-zip', 'Enter your zip or postal code']]; // v163: a street address is optional (each job has its own place)
   for (const [k, id, msg] of checks) {
     if (k === 'zipCode' && !v.zipRequired) continue;
-    if (!v[k]) { const el = document.getElementById(id); if (el) { try { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} } showToast(tr(msg)); return true; }
+    if (!v[k]) { const el = document.getElementById(id); if (el) { fieldError(el, tr(msg)); try { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} } showToast(tr(msg)); return true; }
   }
   return false;
 }

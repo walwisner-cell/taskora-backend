@@ -310,11 +310,17 @@
   window.storeRateOpen = function (orderId, goodId, name) {
     window.__rate = { orderId, goodId, stars: 5 };
     v105Overlay('rate-good', `<div class="modal-header"><button class="modal-close" onclick="v105Close('rate-good')" aria-label="Close">✕</button><h3>${e(t('Rate'))} ${e(name)}</h3></div>
-      <div class="modal-body"><div id="rg-stars" style="font-size:30px;color:#B08A3C;cursor:pointer;" role="radiogroup" aria-label="${e(t('Stars'))}">${[1, 2, 3, 4, 5].map(n => `<span role="radio" tabindex="0" onclick="storeRateStars(${n})" aria-label="${n}">★</span>`).join('')}</div>
+      <div class="modal-body"><div id="rg-stars" style="font-size:30px;color:#B08A3C;cursor:pointer;" role="radiogroup" aria-label="${e(t('Stars'))}">${[1, 2, 3, 4, 5].map(n => `<span role="radio" tabindex="${n === 5 ? 0 : -1}" aria-checked="${n === 5}" onclick="storeRateStars(${n})" onkeydown="storeRateKey(event, ${n})" aria-label="${n} ${e(t(n === 1 ? 'star' : 'stars'))}">★</span>`).join('')}</div>
         <div class="form-group" style="margin-top:8px;"><label class="form-label" for="rg-text">${e(t('What did you think?'))} <small style="font-weight:400;color:var(--slate);">${e(t('optional'))}</small></label><textarea class="form-input" id="rg-text" rows="3" maxlength="600"></textarea></div></div>
       <div class="modal-footer"><button class="confirm-btn" onclick="storeRateSend()">${e(t('Post my review'))}</button></div>`, 440);
   };
-  window.storeRateStars = function (n) { window.__rate.stars = n; [...document.querySelectorAll('#rg-stars span')].forEach((s, i) => { s.textContent = i < n ? '★' : '☆'; }); };
+  window.storeRateStars = function (n) { window.__rate.stars = n; [...document.querySelectorAll('#rg-stars span')].forEach((s, i) => { s.textContent = i < n ? '★' : '☆'; s.setAttribute('aria-checked', String(i + 1 === n)); s.tabIndex = i + 1 === n ? 0 : -1; }); };
+  // v163: the stars work from a keyboard too (Enter or Space to choose, arrows to move), as a radio group should
+  window.storeRateKey = function (ev, n) {
+    let to = null;
+    if (ev.key === 'Enter' || ev.key === ' ') to = n; else if (ev.key === 'ArrowRight' || ev.key === 'ArrowUp') to = Math.min(5, n + 1); else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowDown') to = Math.max(1, n - 1);
+    if (to === null) return; ev.preventDefault(); storeRateStars(to); const sp = document.querySelectorAll('#rg-stars span')[to - 1]; if (sp) sp.focus();
+  };
   window.storeRateSend = async function () {
     const r = window.__rate; try { await apiFetch('POST', `/store/goods/${encodeURIComponent(r.goodId)}/reviews`, { orderId: r.orderId, stars: r.stars, text: el('rg-text').value.trim() }); v105Close('rate-good'); showToast(t('Thank you for your review')); await reloadOrders(); }
     catch (x) { showToast(x.message || 'Could not post'); }

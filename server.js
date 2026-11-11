@@ -187,6 +187,7 @@ app.use('/api/auth', authRoutes);
 // These come first so their /api/admin/store addresses are reached before the main admin routes.
 app.use('/api', require('./src/routes/store.routes'));
 app.use('/api', require('./src/routes/orders.routes')); // v108: store orders, drivers, receipts
+app.use('/api', require('./src/routes/cart.routes')); // v162: the shopping cart
 app.use('/api', require('./src/routes/rides.routes')); // v111: passenger rides
 app.use('/api', require('./src/routes/tokens.routes')); // v115: Trothen Tokens
 app.use('/api', require('./src/routes/custpay.routes')); // v119: customer payments by code

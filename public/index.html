@@ -666,9 +666,9 @@
   .pj-alt-btn:hover { background:var(--offwhite); }
   .pj-alt-btn:focus-visible { outline:3px solid var(--teal); outline-offset:2px; }
   .pj-alt-btn.pj-alt-quiet { color:var(--slate); border-color:var(--border); }
-  body.toast-over-modal .toast { top:16px; bottom:auto !important; left:50%; right:auto; transform:translate(-50%, -24px); }
-  body.toast-over-modal .toast.show { transform:translate(-50%, 0); }
-  @media (max-width:760px) { body.toast-over-modal .toast { top:calc(10px + env(safe-area-inset-top, 0px)); left:12px; right:12px; transform:translateY(-24px); max-width:none; } body.toast-over-modal .toast.show { transform:translateY(0); } }
+  body.toast-over-modal .toast, body:has(.modal-overlay.open) .toast { top:16px; bottom:auto !important; left:50%; right:auto; transform:translate(-50%, -24px); }
+  body.toast-over-modal .toast.show, body:has(.modal-overlay.open) .toast.show { transform:translate(-50%, 0); } /* v163: also a message already showing when a pop-up opens (it sat over the pop-up's main button) */
+  @media (max-width:760px) { body.toast-over-modal .toast, body:has(.modal-overlay.open) .toast { top:calc(10px + env(safe-area-inset-top, 0px)); left:12px; right:12px; transform:translateY(-24px); max-width:none; } body.toast-over-modal .toast.show, body:has(.modal-overlay.open) .toast.show { transform:translateY(0); } }
   #confirm-dialog-message { white-space:pre-line; }
   .link-btn { background:none; border:none; padding:0; color:var(--teal); font-size:13px; font-weight:600; text-decoration:underline; text-underline-offset:2px; cursor:pointer; font-family:inherit; }
   .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11.5px; font-weight:700; letter-spacing:.02em; vertical-align:middle; }
@@ -1535,12 +1535,7 @@
   .cat-row:hover .cat-leader, .cat-row:focus-visible .cat-leader { background-size:100% 1px; }
   .cat-row .cat-name { transition:color .15s ease; }
 
-  .checks-icon svg * { stroke-dasharray:1; stroke-dashoffset:0; }
-  .checks.pre-draw .checks-icon svg * { stroke-dashoffset:1; }
-  .checks.drawing .checks-icon svg * { animation:v57Stroke .9s cubic-bezier(.6,0,.3,1) both; }
-  .checks.drawing li:nth-child(2) .checks-icon svg * { animation-delay:.15s; }
-  .checks.drawing li:nth-child(3) .checks-icon svg * { animation-delay:.3s; }
-  .checks.drawing li:nth-child(4) .checks-icon svg * { animation-delay:.45s; }
+  /* v160: the four checks' icons draw themselves in with real lengths, set by the script (setupChecksDrawing); nothing here can leave them hidden */
 
   .provider-card { transition:border-color .15s ease, box-shadow .15s ease; }
   .providers-grid.just-arrived .provider-card { animation:v57Rise .45s cubic-bezier(.2,.7,.2,1) both; }
@@ -1565,7 +1560,6 @@
     .ticket-step.is-on span, .tf.is-new dd, .ticket-note.is-swapping,
     .composer-suggest:not([hidden]), .providers-grid.just-arrived .provider-card,
     .faq-item.open .faq-answer-inner, .checks.drawing .checks-icon svg * { animation:none !important; }
-    .checks.pre-draw .checks-icon svg * { stroke-dashoffset:0 !important; }
     .hero-blank, .cat-row .cat-leader, #providers-title, .popular-project-photo, .faq-answer { transition:none !important; }
     .ticket-timer { display:none; }
   }
@@ -1993,6 +1987,8 @@
   html.dark #install-banner .ib-no { color:#B7C2D6; }
   /* v160: never over an open pop-up (it covered the review form's Submit button on phones) */
   body:has(.modal-overlay.open) #install-banner { display:none !important; }
+  /* v163: and never over a form being filled in: signing in, signing up, resetting a password, or any box being typed in (it covered the email box and the Send button) */
+  body:has(#screen-auth.active) #install-banner, body:has(#screen-forgot.active) #install-banner, body:has(input:focus, textarea:focus, select:focus) #install-banner { display:none !important; }
   .nav-install { display:none !important; }
   @media (max-width:760px) { html.can-install .navbar.menu-open .nav-more .nav-install { display:block !important; color:var(--signal); } }
   .install-sheet { margin:auto auto 0; background:#fff; border-radius:18px 18px 0 0; padding:24px 22px calc(22px + env(safe-area-inset-bottom, 0px)); width:100%; max-width:480px; }
@@ -2117,7 +2113,7 @@
   html.dark :is(#screen-about, #screen-terms, #screen-careers, #screen-contact) .pricing-inner,
   html.dark .directory-controls, html.dark #screen-categories .cats-grid, html.dark .pricing-card { background:#12263D; border-color:#24405E; color:#E6EDF5; }
   html.dark :is(#screen-about, #screen-terms, #screen-careers, #screen-contact, #screen-pricing) { --text:#E6EDF5; --slate:#B7C7D8; --muted:#93A5B8; --border:#24405E; --offwhite:#0E2034; }
-  html.dark #about-us-body h3, html.dark #terms-of-service-body h3, html.dark .pricing-card h3, html.dark .pricing-plan-name, html.dark .pricing-price, html.dark .panel-title { color:#fff !important; }
+  html.dark #about-us-body h3, html.dark #terms-of-service-body h3, html.dark .pricing-card h3, html.dark .pricing-plan-name, html.dark .pricing-price, html.dark :is(#screen-contact, #screen-careers, #screen-pricing, #screen-directory, #screen-home, #screen-categories) .panel-title { color:#fff !important; } /* v160: only on the pages that turn dark; the dashboards stay light, where white headings were invisible */
   html.dark #terms-of-service-body h3 { border-top-color:#24405E; }
   html.dark :is(#screen-contact, #screen-careers, #screen-directory, #screen-pricing) .form-input { background:#0B1A2B; border-color:#2E4B6B; color:#E6EDF5; }
   html.dark :is(#screen-contact, #screen-careers) .panel { background:transparent; border-color:#24405E; box-shadow:none; }
@@ -2132,7 +2128,8 @@
   .ver-howto { background:#EEF4FB; border:1px solid #C9DAEE; border-radius:var(--r-control); padding:12px 14px; font-size:14.5px; color:var(--navy); margin-bottom:14px; line-height:1.55; }
   .ver-note { font-size:13px; color:var(--muted); margin-top:3px; }
   .badge-success { color:#17603F; background:rgba(31,122,85,.12); }
-  html.dark .badge-success { color:#7FD6AE; }
+  /* v160: the light mint only on dark pages; the dashboards stay light, where it read 1.6 : 1 */
+  html.dark .badge-success:not(:is(.dash-main, .modal-overlay) .badge-success) { color:#7FD6AE; }
   .badge-danger { color:var(--red); background:rgba(179,66,58,.12); }
 
   /* ═══════════════════════════════════════════════════════════════════
@@ -2315,6 +2312,14 @@
   html.dark #screen-home .checks { background-color:#0B1A2B; background-image:var(--grain); border-color:#1F3650; }
   html.dark #screen-home .checks-list > li { background:#12263D; border-color:#24405E; border-top-color:var(--c-ink); }
   html.dark #screen-home .checks-list > li[data-check="3"] { --c-ink:#7FB2EC; --c-tint:#1B3553; }
+  /* v160: on the dark cards each accent is a light shade, so "See how it works" reads clearly (it was 2.3 to 2.9 : 1) */
+  html.dark #screen-home .checks-list > li { --c-ink:#8DB8F0; --c-tint:#1B3553; }
+  html.dark #screen-home .checks-list > li[data-check="1"] { --c-ink:#F2C230; --c-tint:#3A3216; }
+  html.dark #screen-home .checks-list > li[data-check="2"] { --c-ink:#7FD6AE; --c-tint:#173B30; }
+  html.dark #screen-home .checks-list > li[data-check="3"] { --c-ink:#B7C2D6; --c-tint:#1B3553; }
+  html.dark .v107-readmore { color:#8DB8F0 !important; }
+  html.dark .pc-verified { color:#7FD6AE; }
+  html.dark .provider-price span, html.dark .pp-price span { color:#9FB0C4 !important; } /* the "/hr" after a price, on the dark cards */
   html.dark .checks-sub { color:#B7C7D8; }
   html.dark .checks-tag { color:#5FD39A; background:rgba(95,211,154,.12); }
 
@@ -2518,6 +2523,46 @@
   }
 </style>
 
+<style id="cart-v162">
+  /* ═══ v162: the shopping cart ═══ */
+  .nav-cart { position:relative; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; font:inherit; font-size:16px; color:inherit; cursor:pointer; padding:0; flex-shrink:0; }
+  .nav-cart:hover { background:rgba(255,255,255,.15); }
+  .nav-cart { color:#F59E5B; } .nav-cart svg { width:20px; height:20px; display:block; }
+  .nav-cart:focus-visible { outline:3px solid #F2C230; outline-offset:2px; }
+  .nav-cart-count { position:absolute; top:-6px; right:-6px; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#F2C230; color:#0F2640; font-size:11px; font-weight:800; line-height:18px; text-align:center; box-shadow:0 0 0 2px var(--navy, #0F2640); }
+  .nav-cart-count[hidden] { display:none; }
+  @media (max-width: 760px) { .nav-cart { width:44px; height:44px; } }
+  /* v163: a field's own error message, under it */
+  .field-error { color:#B3261E; font-size:13.5px; font-weight:600; margin-top:6px; }
+  .form-input[aria-invalid="true"] { border-color:#B3261E !important; box-shadow:0 0 0 3px rgba(179,38,30,.12); }
+  .cart-store { padding:14px 16px !important; margin:0 0 14px !important; }
+  .cart-store-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  .cart-store-name { font-weight:800; color:var(--navy); font-size:15.5px; text-align:left; }
+  .cart-line { display:grid; grid-template-columns:64px 1fr auto; gap:12px; align-items:start; padding:12px 0; border-bottom:1px solid var(--border); }
+  .cart-line.is-off .cart-photo, .cart-line.is-off .cart-name { opacity:.55; }
+  .cart-photo { width:64px; height:64px; border-radius:8px; object-fit:cover; background:#EEF1F4; display:block; }
+  .cart-info { min-width:0; display:flex; flex-direction:column; gap:3px; }
+  .cart-name { font-weight:700; color:var(--navy); font-size:14.5px; line-height:1.3; overflow-wrap:anywhere; }
+  .cart-price { font-size:13.5px; }
+  .cart-total { font-weight:800; color:var(--navy); font-size:14.5px; white-space:nowrap; text-align:right; }
+  .cart-actions { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; margin-top:6px; }
+  .cart-qty { display:inline-flex; align-items:center; gap:6px; }
+  .cart-qty .btn-sm { min-width:36px; min-height:36px; padding:0; font-size:17px; line-height:1; }
+  .cart-qty span { min-width:22px; text-align:center; font-weight:700; }
+  .btn-link { background:none; border:0; padding:6px 0; min-height:32px; font:inherit; font-size:13.5px; font-weight:600; color:var(--teal, #1F6F64); cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+  .btn-link.cart-remove { color:#B3261E; }
+  .cart-store-foot { display:flex; flex-direction:column; gap:8px; padding-top:12px; }
+  .cart-subtotal { display:flex; justify-content:space-between; gap:10px; font-size:15px; color:var(--navy); }
+  .cart-store-foot .confirm-btn { width:100%; margin:0; }
+  .cart-empty { text-align:center; padding:28px 12px; color:var(--slate); display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .cart-empty-title { font-weight:800; color:var(--navy); font-size:18px; }
+  .mk-cart-btn { width:100%; min-height:40px; }
+  @media (max-width: 480px) {
+    .cart-line { grid-template-columns:56px 1fr; }
+    .cart-photo { width:56px; height:56px; }
+    .cart-total { grid-column:2; text-align:left; }
+  }
+</style>
 <style id="align-v160">
   /* ═══ v160: three things that didn't line up on a phone ═══ */
   /* "Live now in": every item had a 22 px side margin from an older rule, so
@@ -2527,9 +2572,9 @@
   .hero-locales-track .loc-set { gap:8px !important; column-gap:8px !important; row-gap:10px !important; }
   @media (max-width: 760px) {
     .hero-locales .loc-label { flex:0 0 100%; justify-content:center; margin-bottom:2px !important; }
-    /* the welcome card's two buttons: the same height, one line each */
+    /* the welcome card's two buttons: the same width and height; one line when it fits (longer Spanish words wrap evenly instead of running off a small phone) */
     .customer-welcome-actions { display:grid !important; grid-template-columns:1fr 1fr; gap:12px; width:100%; }
-    .customer-welcome-actions > button { width:100%; min-height:48px; margin:0 !important; padding:0 12px !important; white-space:nowrap; font-size:15px !important; display:inline-flex; align-items:center; justify-content:center; }
+    .customer-welcome-actions > button { width:100%; min-width:0; min-height:48px; margin:0 !important; padding:6px 10px !important; white-space:normal; text-wrap:balance; line-height:1.2; text-align:center; font-size:15px !important; display:inline-flex; align-items:center; justify-content:center; }
   }
   /* A posted job's card: its buttons (View Responses, Cancel Request,
      Materials) in one row that wraps, sharing the width on a phone; the
@@ -2544,7 +2589,6 @@
   }
   /* a long kind of work ("HVAC & Air Conditioning") takes two lines instead of being cut to "HVAC & Air Con…" */
   .cat-row .cat-name { white-space:normal !important; text-overflow:clip !important; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.25; }
-  html.dark .job-card-actions > .job-cancel { color:#FF8A80 !important; }
   /* the tab bar on a small phone (iPhone SE): "Messages" and "Contracts" in full */
   @media (max-width: 380px) {
     #mtab .mtab-item { padding-left:1px !important; padding-right:1px !important; font-size:11px !important; letter-spacing:-.01em; }
@@ -2553,7 +2597,7 @@
   @media (max-width: 760px) {
     .job-card-foot { flex-direction:column; align-items:stretch !important; }
     .job-card-actions { width:100%; }
-    .job-card-actions > .btn-sm { flex:1 1 calc(50% - 4px); min-height:44px; margin:0 !important; white-space:nowrap; }
+    .job-card-actions > .btn-sm { flex:1 1 calc(50% - 4px); min-height:44px; margin:0 !important; white-space:normal; line-height:1.2; }
     .job-card-actions > .btn-sm { flex-basis:100%; }
     /* cancelling is last and quieter than the other two, as in most apps */
     .job-card-actions > .job-cancel { border-color:transparent !important; background:none !important; color:#B3261E !important; min-height:40px; }
@@ -3207,13 +3251,13 @@
       <div class="dates-row">
         <div class="form-group" id="auth-country-group" style="display:none">
           <label class="form-label">Country</label>
-          <select class="form-input form-select" id="auth-country" onchange="populateAuthStates()">
+          <select class="form-input form-select" id="auth-country" autocomplete="country-name" onchange="populateAuthStates()">
             <option value="">Loading countries…</option>
           </select>
         </div>
         <div class="form-group" id="auth-state-group" style="display:none">
           <label class="form-label">State / Region</label>
-          <select class="form-input form-select" id="auth-state">
+          <select class="form-input form-select" id="auth-state" autocomplete="address-level1">
             <option value="">Select a country first</option>
           </select>
         </div>
@@ -3226,7 +3270,7 @@
         </div>
       </div>
       <div class="form-group" id="auth-address-group" style="display:none">
-        <label class="form-label">Street Address</label>
+        <label class="form-label">Street Address <small style="font-weight:400;color:var(--slate);">optional</small></label>
         <input class="form-input" type="text" id="auth-address" autocomplete="street-address"/>
       </div>
       <div class="dates-row">
@@ -3364,11 +3408,11 @@
         <div class="auth-card-title">Choose a new password</div>
         <div class="auth-card-sub">Your reset link has been verified.</div>
         <div class="form-group">
-          <label class="form-label">New Password</label>
+          <label class="form-label" for="reset-new-password">New Password</label>
           <input class="form-input" type="password" id="reset-new-password" autocomplete="new-password"/>
         </div>
         <div class="form-group">
-          <label class="form-label">Confirm New Password</label>
+          <label class="form-label" for="reset-confirm-password">Confirm New Password</label>
           <input class="form-input" type="password" id="reset-confirm-password" autocomplete="new-password" onkeydown="if(event.key==='Enter')submitResetPassword()"/>
         </div>
         <button class="auth-submit" onclick="submitResetPassword()">Reset Password</button>
@@ -3626,15 +3670,15 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=fd40ed0ec0" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
-<script src="/app/rides.js?v=f292589ac6"></script>
+<script src="/app/trothen.js?v=208706349e" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/rides.js?v=d9284ecb74"></script>
 <script src="/app/tokens.js?v=5697c68ad9"></script>
 <script src="/app/payways.js?v=06dccae9e7"></script>
 <script src="/app/review.js?v=86c2ff86bf"></script>
 <script src="/app/pricing.js?v=4fdcba4521"></script>
 <script src="/app/chats.js?v=56f10dfd90"></script>
 <script src="/app/where.js?v=521dbda842"></script>
-<script src="/app/arrival.js?v=ca8869278d"></script>
+<script src="/app/arrival.js?v=aa3e97aea4"></script>
 <script src="/app/live.js?v=d049a42ced"></script>
 <script src="/app/instant.js?v=71f47a10f6"></script>
 <script src="/app/sounds.js?v=80c9ab4c9a"></script>
@@ -3642,14 +3686,15 @@
 <script src="/app/callhealth.js?v=04d5713002"></script>
 <script src="/app/teams.js?v=0a22b63b77"></script>
 <script src="/app/voice.js?v=7554f61733"></script>
-<script src="/app/market.js?v=c05a3a021e"></script>
+<script src="/app/market.js?v=5f0829ec6e"></script>
 <script src="/app/commission.js?v=2fd7aaa6b7"></script>
 <script src="/app/categories.js?v=9ac65b7765"></script>
 <script src="/app/acceptquote.js?v=3d4d251ecf"></script>
 <script src="/app/listing.js?v=7dec72f4f4"></script>
 <script src="/app/permissions.js?v=640782242f"></script>
 <script src="/app/postjob.js?v=f70359e917"></script>
-<script src="/app/store-plus.js?v=f392b9652a"></script>
+<script src="/app/store-plus.js?v=81469cdf26"></script>
+<script src="/app/cart.js?v=b32f085ffd"></script>
 <script src="/app/price-units.js?v=1d2df9e851"></script>
 <script src="/app/payout-details.js?v=f2e785bbae"></script>
 <script src="/app/paymethods.js?v=497f245785"></script>
@@ -3657,7 +3702,7 @@
 <script src="/app/checks.js?v=071de1a6a3"></script>
 <script src="/app/polish.js?v=0ae5f38a4e"></script>
 <script src="/app/a11y.js?v=7a13a5f443"></script>
-<script src="/app/es-v152.js?v=0c40c97730"></script>
+<script src="/app/es-v152.js?v=b6086f117d"></script>
 <script src="/app/mobile.js?v=d4850238eb"></script>
 </body>
 </html>

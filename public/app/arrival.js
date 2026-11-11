@@ -263,8 +263,11 @@
 
   // ── phone layout: tables become labelled cards ────────────────────────
   function cardify(root) {
-    (root || document).querySelectorAll('#customer-main table.data-table, #provider-main table.data-table').forEach(t => {
+    // v160: the admin's tables too, on phones only (they were cut at the card's edge, badges and buttons sliced)
+    const adminPhone = window.innerWidth <= 640;
+    (root || document).querySelectorAll('#customer-main table.data-table, #provider-main table.data-table' + (adminPhone ? ', #admin-main table.data-table' : '')).forEach(t => {
       if (t.dataset.cardified === '1') return;
+      if (t.querySelector('thead input, tbody td input:not([type=checkbox]), tbody td select, tbody td textarea')) return; // tables you type into keep their columns
       if (t.querySelector('td[colspan]')) return; // tables with expandable rows keep their own layout
       const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent.trim());
       if (!heads.length) return;
@@ -309,6 +312,6 @@
   setInterval(() => { if (AUTH.user) tidyChrome(); }, 1500);
   let pending = null;
   const obs = new MutationObserver(() => { if (pending) return; pending = setTimeout(() => { pending = null; cardify(); }, 30); });
-  function watch() { ['customer-main', 'provider-main'].forEach(id => { const el = $(id); if (el && !el.dataset.cardWatch) { el.dataset.cardWatch = '1'; obs.observe(el, { childList: true, subtree: true }); } }); }
+  function watch() { ['customer-main', 'provider-main', 'admin-main'].forEach(id => { const el = $(id); if (el && !el.dataset.cardWatch) { el.dataset.cardWatch = '1'; obs.observe(el, { childList: true, subtree: true }); } }); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();
 })();

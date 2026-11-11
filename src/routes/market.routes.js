@@ -100,7 +100,7 @@ router.get('/market/items', listLimiter, async (req, res) => {
       if (category && !cats.includes(category)) continue;
       const currencies = await store.currenciesFor(sel);
       for (const g of await db.filter('storeGoods', x => x.providerId === sel.id)) {
-        if (!store.isOnShelf(g) || !store.inStock(g, 1)) continue;
+        if (!store.isOnShelf(g) || !store.anyInStock(g)) continue; // v162: goods with sizes or colours too
         if (!matches(`${g.name} ${g.description || ''} ${sel.store.name} ${cats.join(' ')}`)) continue;
         const pf = store.goodPriceFields(g, currencies);
         items.push({
@@ -108,6 +108,7 @@ router.get('/market/items', listLimiter, async (req, res) => {
           localPrice: pf.priceCurrency && pf.priceCurrency !== 'USD' ? { amount: pf.priceLocal, code: pf.priceCurrency, symbol: pf.priceSymbol || '' } : null,
           unit: g.unit || '', photo: (g.photoUrls || [])[0] || null, city: sel.city || '', country: sel.country || '',
           providerId: sel.id, storeName: sel.store.name, seller: await sellerInfo(sel, cache), createdAt: g.updatedAt || g.createdAt,
+          hasOptions: Array.isArray(g.variants) && g.variants.length > 0, soldOut: !store.anyInStock(g), // v162: for Add to cart
           ...(isTradeBuyer(me, sel.id) && Number(g.tradePrice) > 0 && Number(g.tradePrice) < store.goodUsdPrice(g, currencies) ? { tradePrice: money(g.tradePrice) } : {}), // v140
         });
       }
@@ -534,8 +535,8 @@ router.get('/market/suggest', listLimiter, async (req, res) => {
   for (const sel of sellers) {
     const currencies = await store.currenciesFor(sel);
     for (const g of await db.filter('storeGoods', x => x.providerId === sel.id)) {
-      if (!store.isOnShelf(g) || !store.inStock(g, 1)) continue;
-      items.push({ kind: 'store', id: g.id, title: g.name, price: store.goodUsdPrice(g, currencies), unit: g.unit || '', photo: (g.photoUrls || [])[0] || null, providerId: sel.id, storeName: sel.store.name, city: sel.city || '', seller: await sellerInfo(sel, cache), yourPro: sel.id === preferId, ...(isTradeBuyer(me, sel.id) && Number(g.tradePrice) > 0 ? { tradePrice: money(g.tradePrice) } : {}) });
+      if (!store.isOnShelf(g) || !store.anyInStock(g)) continue; // v162: goods with sizes or colours too
+      items.push({ kind: 'store', id: g.id, title: g.name, price: store.goodUsdPrice(g, currencies), unit: g.unit || '', photo: (g.photoUrls || [])[0] || null, providerId: sel.id, storeName: sel.store.name, city: sel.city || '', seller: await sellerInfo(sel, cache), yourPro: sel.id === preferId, hasOptions: Array.isArray(g.variants) && g.variants.length > 0, soldOut: false, ...(isTradeBuyer(me, sel.id) && Number(g.tradePrice) > 0 ? { tradePrice: money(g.tradePrice) } : {}) });
     }
   }
   items.sort((a, b) => (b.yourPro - a.yourPro) || (((b.seller && b.seller.rating) || 0) - ((a.seller && a.seller.rating) || 0)) || a.price - b.price);
