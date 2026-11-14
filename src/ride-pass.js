@@ -96,4 +96,36 @@ async function stats() {
     recent: all.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 10).map(p => ({ id: p.id, userId: p.userId, label: p.label, priceUsd: p.priceUsd, createdAt: p.createdAt, endsAt: p.endsAt, paymentStatus: p.paymentStatus })),
   };
 }
-module.exports = { plans, cleanPlan, activePass, summary, buy, stats, passesOf };
+// v164: a free first week. Every approved driver can start one free pass,
+// once, when they choose (so the week isn't used up before they drive). As
+// ride-hailing apps do to welcome new drivers while a service is starting
+// out. A super admin sets how many days (0 = off) in Admin → Rides.
+async function freeDays() {
+  const n = Number(await getSetting('ridePassFreeDays'));
+  return Number.isInteger(n) && n >= 0 && n <= 30 ? n : 7;
+}
+async function freeOffer(userId) {
+  const days = await freeDays();
+  if (!days) return null;
+  if ((await passesOf(userId)).some(p => p.planId === 'welcome')) return null;
+  return { days };
+}
+async function claimFree(driver) {
+  if ((await getSetting('ridePassEnabled')) === false) return { status: 403, error: 'Driver passes are not on right now.' };
+  if (inFlight.has(driver.id)) return { status: 409, error: 'Please wait a moment.' };
+  inFlight.add(driver.id);
+  try {
+    const offer = await freeOffer(driver.id);
+    if (!offer) return { status: 400, code: 'USED', error: 'Your free week has already been used.' };
+    const all = await passesOf(driver.id);
+    const lastEnd = all.length ? Math.max(...all.map(p => new Date(p.endsAt).getTime())) : 0;
+    const start = Math.max(Date.now(), lastEnd);
+    const label = offer.days === 7 ? 'Free first week' : `Free first ${offer.days} days`;
+    const row = { id: `rp_${nanoid(10)}`, userId: driver.id, planId: 'welcome', label, days: offer.days, priceUsd: 0, startsAt: new Date(start).toISOString(), endsAt: new Date(start + offer.days * DAY).toISOString(), paymentRef: null, paymentStatus: 'free', createdAt: new Date().toISOString() };
+    await db.insert('ridePasses', row);
+    await notify(driver.id, '🎁', `Your ${label.toLowerCase()} has started. Until ${row.endsAt.slice(0, 16).replace('T', ' ')} UTC you keep the full fare on every ride.`, 'bookingUpdates', { section: 'rides' });
+    return { ok: true, pass: row };
+  } finally { inFlight.delete(driver.id); }
+}
+
+module.exports = { plans, cleanPlan, activePass, summary, buy, stats, passesOf, freeDays, freeOffer, claimFree };

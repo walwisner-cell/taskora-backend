@@ -82,6 +82,25 @@ function createReportDoc({ res, filename, title, subtitle, docId, verificationSe
     y += 38;
   }
 
+  // v164: where a place is (see plus-code.js placeLines): short label/value
+  // lines that wrap, with the map line as a link that opens Google Maps.
+  function placeBlock(lines) {
+    for (const [label, value] of lines || []) {
+      const isLink = /(^|\s)map$/i.test(label);
+      const shown = isLink ? 'Open in Google Maps' : String(value);
+      doc.fontSize(10.5).font('Helvetica');
+      const vh = doc.heightOfString(shown, { width: CONTENT_WIDTH - 120 });
+      doc.fontSize(8.5).font('Helvetica-Bold');
+      const h = Math.max(vh, doc.heightOfString(label.toUpperCase(), { width: 112, characterSpacing: 0.4 }));
+      ensureSpace(h + 8);
+      doc.fillColor(SLATE).fontSize(8.5).font('Helvetica-Bold').text(label.toUpperCase(), MARGIN, y + 1.5, { width: 112, characterSpacing: 0.4 });
+      if (isLink) doc.fillColor('#1B6F6A').fontSize(10.5).font('Helvetica').text(shown, MARGIN + 120, y, { width: CONTENT_WIDTH - 120, link: String(value), underline: true });
+      else doc.fillColor(NAVY).fontSize(10.5).font('Helvetica').text(shown, MARGIN + 120, y, { width: CONTENT_WIDTH - 120 });
+      y += h + 7;
+    }
+    if (lines && lines.length) y += 6;
+  }
+
   function paragraph(text, opts = {}) {
     const height = doc.heightOfString(text, { width: CONTENT_WIDTH, lineGap: 2 });
     ensureSpace(height + 8);
@@ -143,7 +162,7 @@ function createReportDoc({ res, filename, title, subtitle, docId, verificationSe
     doc.end();
   }
 
-  return { doc, sectionHeader, row, twoColumnRow, paragraph, table, finish, get y() { return y; }, set y(v) { y = v; } };
+  return { doc, sectionHeader, row, twoColumnRow, paragraph, table, finish, placeBlock, get y() { return y; }, set y(v) { y = v; } };
 }
 
 module.exports = { createReportDoc, CONTENT_WIDTH, MARGIN };

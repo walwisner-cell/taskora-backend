@@ -1987,6 +1987,7 @@
   html.dark #install-banner .ib-no { color:#B7C2D6; }
   /* v160: never over an open pop-up (it covered the review form's Submit button on phones) */
   body:has(.modal-overlay.open) #install-banner { display:none !important; }
+  body:has(.live-toast) #install-banner { display:none !important; } /* v164: one card at the bottom at a time; a new notification comes first */
   /* v163: and never over a form being filled in: signing in, signing up, resetting a password, or any box being typed in (it covered the email box and the Send button) */
   body:has(#screen-auth.active) #install-banner, body:has(#screen-forgot.active) #install-banner, body:has(input:focus, textarea:focus, select:focus) #install-banner { display:none !important; }
   .nav-install { display:none !important; }
@@ -2556,6 +2557,36 @@
   .cart-store-foot .confirm-btn { width:100%; margin:0; }
   .cart-empty { text-align:center; padding:28px 12px; color:var(--slate); display:flex; flex-direction:column; align-items:center; gap:10px; }
   .cart-empty-title { font-weight:800; color:var(--navy); font-size:18px; }
+  .cart-empty p { margin:0; max-width:36ch; line-height:1.5; }
+  .cart-empty-icon { color:var(--teal); line-height:0; }
+  .cart-empty-icon svg { width:44px; height:44px; }
+  .cart-empty-actions { display:flex; flex-direction:column; align-items:center; gap:6px; width:100%; margin-top:6px; }
+  .cart-empty-actions .confirm-btn { width:auto; min-width:220px; max-width:100%; padding-left:22px; padding-right:22px; }
+  .cart-empty-signin { min-height:44px; font-weight:600; }
+  /* v164: Admin → Market */
+  .am-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 14px; }
+  .am-filter { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+  .am-search { display:flex; gap:6px; flex:1 1 260px; min-width:0; margin-left:auto; }
+  .am-search .form-input { flex:1 1 auto; min-width:0; }
+  .am-tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; }
+  .am-tile { display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:12px 14px; border:1px solid var(--border); border-radius:10px; background:var(--white, #fff); text-align:left; cursor:pointer; font:inherit; color:inherit; min-height:72px; }
+  .am-tile:hover, .am-tile:focus-visible { border-color:var(--teal); }
+  .am-tile-warn { border-color:#E0B25B; background:#FFF8E8; }
+  .am-n { font-size:22px; font-weight:800; color:var(--navy); }
+  .am-l { font-size:13px; color:var(--slate); }
+  .am-row { display:flex; gap:12px; padding:12px 0; border-top:1px solid var(--border); align-items:flex-start; flex-wrap:wrap; }
+  .am-thumb { width:64px; height:64px; object-fit:cover; border-radius:8px; flex:0 0 auto; background:var(--offwhite); }
+  .am-main { flex:1 1 240px; min-width:0; }
+  .am-title { font-weight:700; color:var(--navy); overflow-wrap:anywhere; }
+  .am-meta { font-size:13px; color:var(--slate); margin-top:3px; overflow-wrap:anywhere; }
+  .am-warn { font-size:13px; color:#7A4F00; background:#FFF8E8; border-radius:8px; padding:6px 10px; margin-top:6px; }
+  .am-warn ul { margin:4px 0 0 18px; padding:0; }
+  .am-more summary { font-size:13px; color:var(--teal); cursor:pointer; margin-top:4px; }
+  .am-actions { display:flex; gap:6px; flex-wrap:wrap; align-items:flex-start; }
+  .am-danger { color:#A5352B !important; }
+  .am-empty { color:var(--slate); margin:6px 0; }
+  html.dark .am-tile-warn, html.dark .am-warn { background:#3A2E14; color:#F3D9A4; border-color:#7A5A20; }
+  html.dark .am-tile { background:transparent; }
   .mk-cart-btn { width:100%; min-height:40px; }
   @media (max-width: 480px) {
     .cart-line { grid-template-columns:56px 1fr; }
@@ -3670,8 +3701,8 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=208706349e" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
-<script src="/app/rides.js?v=d9284ecb74"></script>
+<script src="/app/trothen.js?v=395f0ad470" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/rides.js?v=f7f8ac55a5"></script>
 <script src="/app/tokens.js?v=5697c68ad9"></script>
 <script src="/app/payways.js?v=06dccae9e7"></script>
 <script src="/app/review.js?v=86c2ff86bf"></script>
@@ -3686,15 +3717,16 @@
 <script src="/app/callhealth.js?v=04d5713002"></script>
 <script src="/app/teams.js?v=0a22b63b77"></script>
 <script src="/app/voice.js?v=7554f61733"></script>
-<script src="/app/market.js?v=5f0829ec6e"></script>
+<script src="/app/market.js?v=bcb2d65e4a"></script>
+<script src="/app/market-admin.js?v=568e9ca2b7"></script>
 <script src="/app/commission.js?v=2fd7aaa6b7"></script>
 <script src="/app/categories.js?v=9ac65b7765"></script>
 <script src="/app/acceptquote.js?v=3d4d251ecf"></script>
 <script src="/app/listing.js?v=7dec72f4f4"></script>
-<script src="/app/permissions.js?v=640782242f"></script>
+<script src="/app/permissions.js?v=790e421988"></script>
 <script src="/app/postjob.js?v=f70359e917"></script>
 <script src="/app/store-plus.js?v=81469cdf26"></script>
-<script src="/app/cart.js?v=b32f085ffd"></script>
+<script src="/app/cart.js?v=079e200af7"></script>
 <script src="/app/price-units.js?v=1d2df9e851"></script>
 <script src="/app/payout-details.js?v=f2e785bbae"></script>
 <script src="/app/paymethods.js?v=497f245785"></script>
@@ -3702,7 +3734,7 @@
 <script src="/app/checks.js?v=071de1a6a3"></script>
 <script src="/app/polish.js?v=0ae5f38a4e"></script>
 <script src="/app/a11y.js?v=7a13a5f443"></script>
-<script src="/app/es-v152.js?v=b6086f117d"></script>
+<script src="/app/es-v152.js?v=c794b4c09f"></script>
 <script src="/app/mobile.js?v=d4850238eb"></script>
 </body>
 </html>

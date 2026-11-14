@@ -1043,6 +1043,25 @@ function whereHTML(c) {
   return `<div style="font-size:13px;margin-top:4px;line-height:1.5;"><a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;white-space:nowrap;">${escapeHtml(tr('Open in Maps'))}</a> · <span title="Plus Code: works in Google Maps, even offline">${plusCodeFor(pin.latitude, pin.longitude)}</span>${rough ? ` <span style="color:#8C6423;">(${describeAccuracy(pin.accuracyM)})</span>` : ''}${lm ? `<div style="color:var(--slate);">${escapeHtml(lm)}</div>` : ''}</div>`;
 }
 
+// v164: where the job is, as rows on the booking confirmation: the address
+// and landmark the customer typed or picked, and the pinned spot as its Plus
+// Code (readable over the phone, and Google Maps finds it), with a link.
+const PIN_PLACEHOLDER = 'Location pinned on the map';
+function whereRowsHTML(c, typedAddr) {
+  const row = (label, html) => `<div class="confirm-detail"><span>${escapeHtml(tr(label))}</span><strong>${html}</strong></div>`;
+  const addr = String((c && c.address) || typedAddr || '').trim();
+  const lm = String((c && c.landmark) || '').trim();
+  const pin = c && c.jobLocation && typeof c.jobLocation.latitude === 'number' ? c.jobLocation : null;
+  const out = [];
+  if (addr && addr !== PIN_PLACEHOLDER && addr !== lm) out.push(row('Address', escapeHtml(addr)));
+  if (lm) out.push(row('Landmark', escapeHtml(lm)));
+  if (pin) {
+    const code = plusCodeFor(pin.latitude, pin.longitude);
+    out.push(row('Pinned location', `<span class="pin-code" style="font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.03em;">${code}</span><br><span style="font-weight:400;font-size:12.5px;color:var(--slate);">${pin.latitude.toFixed(5)}, ${pin.longitude.toFixed(5)}</span> · <a href="https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;font-size:12.5px;">${escapeHtml(tr('Open in Maps'))}</a>`));
+  }
+  return out.length ? out.join('') : row('Where', escapeHtml(addr || '—'));
+}
+
 function addressLinkHTML(address) {
   if (!address) return '';
   const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
@@ -7976,6 +7995,8 @@ function getAdminNavItems() {
       { key: 'approvals', label: 'User Approvals', icon: '✅' },
       { key: 'verification', label: 'Verification Queue', icon: '🪪' },
       { key: 'stores', label: 'Stores & Skills', icon: '🛍️' },
+    { key: 'market', label: 'Market', icon: '🛒' },
+      { key: 'market', label: 'Market', icon: '🛒' },
       { key: 'providerscores', label: 'Provider Scores', icon: '📊' },
       { key: 'settings', label: 'Settings', icon: '⚙️' },
     ];
@@ -7998,6 +8019,8 @@ function getAdminNavItems() {
       { key: 'approvals', label: 'User Approvals', icon: '✅' },
       { key: 'verification', label: 'Verification Queue', icon: '🪪' },
       { key: 'stores', label: 'Stores & Skills', icon: '🛍️' },
+    { key: 'market', label: 'Market', icon: '🛒' },
+      { key: 'market', label: 'Market', icon: '🛒' },
       { key: 'disputes', label: 'Disputes', icon: '⚖️' },
       { key: 'settings', label: 'Settings', icon: '⚙️' },
     ];
@@ -8030,6 +8053,7 @@ function getAdminNavItems() {
     { key: 'people', label: 'Customers & Providers', icon: '👥' },
     { key: 'verification', label: 'Verification Queue', icon: '🪪' },
     { key: 'stores', label: 'Stores & Skills', icon: '🛍️' },
+    { key: 'market', label: 'Market', icon: '🛒' },
     { key: 'providerscores', label: 'Provider Scores', icon: '📊' },
     { key: 'disputes', label: 'Disputes', icon: '⚖️' },
     { key: 'fraud', label: 'Fraud & Safety', icon: '🚩' },
@@ -11564,6 +11588,7 @@ function selectAdminSection(key) {
   if (key === 'datacleanup') loadDataCleanupLogPanel();
   if (key === 'golive') loadGoLivePanel();
   if (key === 'stores') loadAdminStores(); // v105
+  if (key === 'market' && typeof loadAdminMarket === 'function') loadAdminMarket(); // v164
 }
 
 function updateAdminSidebar() {
@@ -12219,7 +12244,7 @@ async function confirmBooking() {
     <div class="confirm-detail"><span>Pro</span><strong>${escapeHtml(currentPro.name)}</strong></div>
     <div class="confirm-detail"><span>Service</span><strong>${escapeHtml(desc)}</strong></div>
     <div class="confirm-detail"><span>Date</span><strong>${escapeHtml(jobWhenText(date, time) || (date + ' · ' + time))}</strong></div>
-    <div class="confirm-detail"><span>${escapeHtml(tr('Where'))}</span><strong>${escapeHtml(savedContract ? savedContract.address : addr)}</strong></div>
+    ${whereRowsHTML(savedContract || { address: addr, ...bookWhere }, addr)}
     <div class="confirm-detail"><span>Your Offer</span><strong>$${total}</strong></div>
     ${confirmGoodsRows(savedContract)}
     <div class="confirm-detail"><span>Status</span><strong style="color:var(--gold)">⏳ Awaiting ${escapeHtml(currentPro.name)}'s response</strong></div>
@@ -12228,7 +12253,7 @@ async function confirmBooking() {
     <div class="confirm-detail"><span>Pro</span><strong>${escapeHtml(currentPro.name)}</strong></div>
     <div class="confirm-detail"><span>Service</span><strong>${escapeHtml(savedContract ? savedContract.service : desc)}</strong></div>
     <div class="confirm-detail"><span>Date</span><strong>${escapeHtml(jobWhenText(date, time) || (date + ' · ' + time))}</strong></div>
-    <div class="confirm-detail"><span>${escapeHtml(tr('Where'))}</span><strong>${escapeHtml(savedContract ? savedContract.address : addr)}</strong></div>
+    ${whereRowsHTML(savedContract || { address: addr, ...bookWhere }, addr)}
     ${confirmGoodsRows(savedContract)}
     <div class="confirm-detail"><span>Escrow held</span><strong>${savedContract ? usd2(savedContract.amount) : '$' + total}</strong></div>
     ${savedContract ? `<div class="confirm-detail"><span>${escapeHtml(tr('Fees to Trothen'))}</span><strong>${usd2(savedContract.serviceFee)}</strong></div><div class="confirm-detail"><span>${escapeHtml(tr('Total charged'))}</span><strong>${usd2(savedContract.amount + savedContract.serviceFee)}</strong></div>` : ''}
@@ -13659,6 +13684,21 @@ let INSTALL_BANNER_TIMER = null;
 function installBannerSnoozed() { try { return Number(localStorage.getItem(INSTALL_SNOOZE_KEY) || 0) > Date.now(); } catch (e) { return false; } }
 function hideInstallBanner() { const b = document.getElementById('install-banner'); if (b) b.remove(); }
 function snoozeInstallBanner(days) { try { localStorage.setItem(INSTALL_SNOOZE_KEY, String(Date.now() + days * 24 * 60 * 60 * 1000)); } catch (e) {} hideInstallBanner(); }
+function installMomentIsCalm() {
+  const scr = document.querySelector('.screen.active');
+  if (!scr) return false;
+  if (scr.id === 'screen-home') return true;
+  if (!/^screen-(customer|provider|admin)$/.test(scr.id)) return false;
+  const first = scr.querySelector('.dash-nav .dash-nav-item');
+  return !!(first && first.classList.contains('active'));
+}
+// Moving on to a task puts the card away (not snoozed); it can come back at the next calm moment.
+function recheckInstallBanner() {
+  setTimeout(() => { if (document.getElementById('install-banner') && !installMomentIsCalm()) { hideInstallBanner(); if (typeof refreshInstallButtons === 'function') refreshInstallButtons(); } }, 0);
+}
+for (const fn of ['showScreen', 'selectCustomerSection', 'selectProviderSection', 'selectAdminSection']) {
+  setTimeout(() => { const f = window[fn]; if (typeof f !== 'function' || f.__ibWrapped) return; const w = function () { const r = f.apply(this, arguments); recheckInstallBanner(); return r; }; w.__ibWrapped = true; window[fn] = w; }, 0);
+}
 function scheduleInstallBanner() {
   if (INSTALL_BANNER_TIMER || document.getElementById('install-banner') || installBannerSnoozed()) return;
   INSTALL_BANNER_TIMER = setTimeout(function tryShow() {
@@ -13666,7 +13706,10 @@ function scheduleInstallBanner() {
     if (!document.documentElement.classList.contains('can-install') || installBannerSnoozed() || document.getElementById('install-banner')) return;
     // v154: also not while typing, in an open conversation, or with the More sheet up
     const busy = document.querySelector('.modal-overlay.open') || document.getElementById('live-trip-bar') || (document.getElementById('install-help') && !document.getElementById('install-help').hidden) || document.body.classList.contains('kb-open') || document.body.classList.contains('chat-thread-open') || document.getElementById('mtab-sheet') || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '');
-    if (busy) { INSTALL_BANNER_TIMER = setTimeout(tryShow, 20000); return; }
+    // v164: only at a calm moment (Google's guidance for install prompts): on the
+    // home page, or on the first page of a dashboard, never in the middle of a
+    // task (an order, a delivery, a checkout) and never with a new notification up.
+    if (busy || !installMomentIsCalm() || document.querySelector('.live-toast')) { INSTALL_BANNER_TIMER = setTimeout(tryShow, 20000); return; }
     const ios = !DEFERRED_INSTALL; // no one-tap offer from the browser (yet): the button shows the steps instead
     document.body.insertAdjacentHTML('beforeend', `<div id="install-banner" role="dialog" aria-label="${escapeHtml(tr('Install the Trothen app'))}">
       <img src="/icon-192.png" alt=""/>
@@ -14816,7 +14859,7 @@ async function saveHandover() {
   // If the phone is already being followed (carrying, or on the way), use
   // that position straight away. Otherwise allow up to 12 seconds for one.
   // The record is saved either way.
-  const known = (CARRY.contractId && CARRY.latest) || (typeof LIVE_TRIP !== 'undefined' && LIVE_TRIP.contractId && LIVE_TRIP.latest) || null;
+  const known = (CARRY.contractId && CARRY.latest) || (typeof LIVE_TRIP !== 'undefined' && LIVE_TRIP.contractId && LIVE_TRIP.latest) || (typeof window.ridesLatestFix === 'function' && window.ridesLatestFix()) || null; // v164: a driver's live tracking too
   const fix = known ? { ...known } : await getBestLocation({ goodEnoughM: 60, maxWaitMs: 12000 });
   const id = HANDOVER.contractId, stage = HANDOVER.stage;
   try {
@@ -15951,6 +15994,11 @@ function orderStatusHTML(o) {
   }
   return `<span class="badge badge-pending">${escapeHtml(tr(o.readyAt ? (o.deliveryMethod === 'pickup' ? 'Ready to collect' : 'Packed') : 'Paid, being packed'))}</span>`;
 }
+// v164: a pinned place's Plus Code, to read out or type into Google Maps.
+function pinCodeHTML(loc) {
+  return loc && typeof loc.latitude === 'number' ? ` · <span class="pin-code" title="${escapeHtml(tr('Plus Code: works in Google Maps, even offline'))}">📍 ${plusCodeFor(loc.latitude, loc.longitude)}</span>` : '';
+}
+function vehicleWord(v) { const w = tr(v || ''); return w ? w.charAt(0).toUpperCase() + w.slice(1) : ''; }
 function mapsLink(loc, label) {
   return loc && typeof loc.latitude === 'number' ? ` · <a href="https://www.google.com/maps/search/?api=1&query=${loc.latitude},${loc.longitude}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">${escapeHtml(tr(label || 'Open in Maps'))}</a>` : '';
 }
@@ -16294,8 +16342,13 @@ function renderProStore() {
 
 // ── BUYING: choose how to get the goods, then pay ──────────────────────
 const CHECKOUT = { pid: null, orderId: null, priced: null, method: null, pin: null, drivers: null, driverId: null, loadingDrivers: false, busy: false };
+// v164: the distances a driver goes, in words: "up to 10 km", "2 to 50 km".
+function rangeWords(d) {
+  if (!d || !(d.maxKm > 0)) return '';
+  return d.minKm > 0 ? `${kmWords(d.minKm)} ${tr('to')} ${kmWords(d.maxKm)}` : `${tr('up to')} ${kmWords(d.maxKm)}`;
+}
 function driverCardHTML(dr, picked) {
-  const veh = dr.vehicle ? `${VEHICLE_ICON[dr.vehicle] || '🚚'} ${tr(dr.vehicle)}` : `🚚 ${tr('driver')}`;
+  const veh = (dr.vehicle ? `${VEHICLE_ICON[dr.vehicle] || '🚚'} ${vehicleWord(dr.vehicle)}` : `🚚 ${tr('Driver')}`) + (rangeWords(dr) ? ` (${rangeWords(dr)})` : '');
   return `<label class="driver-card" style="display:flex;gap:10px;align-items:center;border:2px solid ${picked ? 'var(--teal)' : 'var(--border)'};border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;background:${picked ? 'var(--offwhite)' : 'var(--white)'};">
     <input type="radio" name="co-driver" value="${escapeHtml(dr.id)}" ${picked ? 'checked' : ''} onchange="CHECKOUT.driverId=this.value;drawCheckout()" style="width:18px;height:18px;flex-shrink:0;"/>
     ${avatarHTML(dr, 38)}
@@ -16368,7 +16421,7 @@ function drawCheckout() {
     ${checkoutPlaceHTML()}
     <div style="font-weight:700;color:var(--navy);margin:10px 0 6px;">${escapeHtml(tr('Choose your driver'))}</div>
     ${CHECKOUT.loadingDrivers ? `<p style="color:var(--slate);font-size:14px;">${escapeHtml(tr('Finding drivers near the store…'))}</p>`
-      : !(CHECKOUT.drivers || []).length ? `<div class="ver-note">${escapeHtml(tr('No pick-and-drop driver is available near this store right now.'))} ${del.methods.includes('pickup') ? escapeHtml(tr('You can collect it yourself, or check again in a bit.')) : escapeHtml(tr('Please check again in a bit.'))}
+      : !(CHECKOUT.drivers || []).length ? `<div class="ver-note">${escapeHtml(tr(CHECKOUT.outOfRange ? 'No driver who goes this distance is available right now.' : 'No pick-and-drop driver is available near this store right now.'))} ${del.methods.includes('pickup') ? escapeHtml(tr('You can collect it yourself, or check again in a bit.')) : escapeHtml(tr('Please check again in a bit.'))}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
           ${del.methods.includes('pickup') ? `<button type="button" class="btn-sm btn-sm-primary" onclick="setCheckoutMethod('pickup')">${escapeHtml(tr('Collect it myself instead'))}</button>` : ''}
           <button type="button" class="btn-sm btn-sm-outline" onclick="loadCheckoutDrivers()">🔄 ${escapeHtml(tr('Check again'))}</button>
@@ -16401,7 +16454,7 @@ async function loadCheckoutDrivers() {
   const q = CHECKOUT.pin ? `&latitude=${CHECKOUT.pin.latitude}&longitude=${CHECKOUT.pin.longitude}` : '';
   try {
     const r = await apiFetch('GET', '/store/drivers?providerId=' + encodeURIComponent(CHECKOUT.pid) + q);
-    CHECKOUT.drivers = r.drivers || []; CHECKOUT.distanceKm = r.distanceKm; CHECKOUT.answerMinutes = r.answerMinutes;
+    CHECKOUT.drivers = r.drivers || []; CHECKOUT.distanceKm = r.distanceKm; CHECKOUT.answerMinutes = r.answerMinutes; CHECKOUT.outOfRange = r.outOfRange || 0;
     if (!CHECKOUT.drivers.find(x => x.id === CHECKOUT.driverId)) CHECKOUT.driverId = null;
   } catch (e) { CHECKOUT.drivers = []; showToast(e.message || 'Could not load drivers'); }
   CHECKOUT.loadingDrivers = false; drawCheckout();
@@ -16548,8 +16601,8 @@ async function loadDeliveries() {
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;"><div style="font-weight:700;color:var(--navy);">${escapeHtml(d.storeName)} <span style="font-weight:400;color:var(--slate);">· ${escapeHtml(tr('order'))} #${escapeHtml(d.orderNumber)}</span></div><div style="font-weight:800;color:var(--navy);">${usd2(d.price)}</div></div>
       <div style="font-size:13.5px;margin-top:4px;line-height:1.6;">
         <div>📦 ${escapeHtml(d.items || '')}</div>
-        <div><strong>${escapeHtml(tr('Collect from:'))}</strong> ${escapeHtml(d.pickup.place || '')}${mapsLink(d.pickup.location)}</div>
-        <div><strong>${escapeHtml(tr('Take to:'))}</strong> ${escapeHtml(d.dropoff.landmark || d.dropoff.address || '')}${mapsLink(d.dropoff.location)}${d.distanceKm ? ' · ' + escapeHtml(kmWords(d.distanceKm)) : ''}</div>
+        <div><strong>${escapeHtml(tr('Collect from:'))}</strong> ${escapeHtml(d.pickup.place || '')}${pinCodeHTML(d.pickup.location)}${mapsLink(d.pickup.location)}</div>
+        <div><strong>${escapeHtml(tr('Take to:'))}</strong> ${escapeHtml([d.dropoff.landmark, d.dropoff.address && d.dropoff.address !== d.dropoff.landmark && d.dropoff.address !== PIN_PLACEHOLDER ? d.dropoff.address : ''].filter(Boolean).join(', '))}${pinCodeHTML(d.dropoff.location)}${mapsLink(d.dropoff.location)}${d.distanceKm ? ' · ' + escapeHtml(kmWords(d.distanceKm)) : ''}</div>
         ${d.status === 'active' ? `<div style="color:var(--slate);">${escapeHtml(tr(d.droppedOffAt ? 'Dropped off. You are paid when the customer confirms.' : d.pickedUpAt ? 'Collected. Take it to the customer and record the drop-off.' : d.orderReadyAt ? 'The seller says it is packed and ready.' : 'The seller is packing it.'))}</div>` : ''}
         ${d.status === 'pending_provider_confirmation' && d.answerBy ? `<div style="color:#8C6423;">${escapeHtml(tr('Answer by'))} ${escapeHtml(new Date(d.answerBy).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</div>` : ''}
         ${!['pending_provider_confirmation', 'active'].includes(d.status) ? `<div>${statusBadge(d.status)}</div>` : ''}
@@ -16571,16 +16624,35 @@ async function loadDeliveries() {
         <div class="form-group"><label class="form-label" for="dr-base">${escapeHtml(tr('Starting price (US$)'))}</label><input class="form-input" id="dr-base" type="number" min="1" max="500" step="0.01" inputmode="decimal" value="${escapeHtml(r.baseFee)}"/></div>
         <div class="form-group"><label class="form-label" for="dr-per">${escapeHtml(tr(mi ? 'Plus, for each mile (US$)' : 'Plus, for each kilometre (US$)'))}</label><input class="form-input" id="dr-per" type="number" min="0" step="0.01" inputmode="decimal" value="${escapeHtml(Math.round(perUnit * 100) / 100)}"/></div>
       </div>
+      ${deliveryRangeFieldsHTML(r)}
       <button class="btn-sm btn-sm-primary" onclick="saveDriverRates()">${escapeHtml(tr('Save my prices'))}</button>
       <div class="ver-note" style="margin-top:12px;">${escapeHtml(tr('The customer sees your price for their trip before they choose you, and approves it. Distance is measured in a straight line from the store to the customer. The customer also pays Trothen'))} ${DRIVER_INFO.feePercent}% ${escapeHtml(tr('on top. Your normal commission applies when you are paid.'))} ${DRIVER_INFO.hasLocation ? '' : escapeHtml(tr('Add your location in Settings so you are offered jobs near you first.'))}</div>
     </div>`}
     ${done.length ? `<div class="panel"><div class="panel-title">${escapeHtml(tr('Past deliveries'))} <small>${done.length}</small></div>${done.slice(0, 20).map(job).join('')}</div>` : ''}`;
 }
+// v164: "I deliver from … up to …", in miles or kilometres as the country uses.
+function deliveryRangeFieldsHTML(r) {
+  const mi = usesMiles(), f = mi ? 1 / KM_PER_MI : 1, round = (x) => Math.round(x * f * 10) / 10;
+  const caps = (DRIVER_INFO && DRIVER_INFO.vehicleMaxKm) || {};
+  return `<fieldset class="dr-range" style="border:0;padding:0;margin:4px 0 10px;"><legend class="form-label" style="padding:0;">${escapeHtml(tr('How far I go on one delivery'))}</legend>
+    <div class="dates-row">
+      <div class="form-group"><label class="form-label" for="dr-min">${escapeHtml(tr(mi ? 'Shortest trip (miles)' : 'Shortest trip (km)'))}</label><input class="form-input" id="dr-min" type="number" min="0" step="0.5" inputmode="decimal" value="${escapeHtml(round(r.minKm || 0))}"/></div>
+      <div class="form-group"><label class="form-label" for="dr-max">${escapeHtml(tr(mi ? 'Longest trip (miles)' : 'Longest trip (km)'))}</label><input class="form-input" id="dr-max" type="number" min="0.5" step="0.5" inputmode="decimal" value="${escapeHtml(round(r.maxKm || r.vehicleMaxKm || 10))}"/></div>
+    </div>
+    <div style="font-size:12.5px;color:var(--slate);margin-top:-4px;">${escapeHtml(tr('You are only offered deliveries inside this range, measured in a straight line from the pick-up. The most for each vehicle:'))} ${Object.keys(caps).map(v => `${VEHICLE_ICON[v] || ''} ${escapeHtml(tr(v))} ${escapeHtml(kmWords(caps[v]))}`).join(' · ')}</div>
+  </fieldset>`;
+}
+function readRangeFields() {
+  const f = usesMiles() ? KM_PER_MI : 1;
+  const min = document.getElementById('dr-min'), max = document.getElementById('dr-max');
+  if (!min || !max) return {};
+  return { minKm: min.value === '' ? 0 : Number(min.value) * f, maxKm: max.value === '' ? null : Number(max.value) * f };
+}
 async function saveDriverRates() {
   const baseFee = Number(document.getElementById('dr-base').value), per = Number(document.getElementById('dr-per').value);
   if (!(baseFee >= 1)) return showToast(tr('Your starting price must be at least $1'));
   if (!(per >= 0)) return showToast(tr('Enter a price for each mile or kilometre, or 0'));
-  try { await apiFetch('PUT', '/delivery/rates', { vehicle: document.getElementById('dr-vehicle').value, baseFee, perKm: usesMiles() ? per / KM_PER_MI : per }); showToast(tr('Your delivery prices are saved')); loadDeliveries(); }
+  try { await apiFetch('PUT', '/delivery/rates', { vehicle: document.getElementById('dr-vehicle').value, baseFee, perKm: usesMiles() ? per / KM_PER_MI : per, ...readRangeFields() }); showToast(tr('Your delivery prices are saved')); loadDeliveries(); }
   catch (e) { showToast(e.message || 'Could not save your prices'); }
 }
 async function answerDelivery(contractId, decision) {

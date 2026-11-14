@@ -32,6 +32,20 @@ const MAX_QTY = store.MAX_QTY_PER_LINE; // 99
 const STALE_MS = 90 * 86400e3;
 
 const keyOf = (goodId, variantId) => `${goodId}::${variantId || ''}`;
+
+// v164: one person's cart changes are made one at a time. Each change reads
+// the whole cart and writes it back, so two at the same moment (two quick
+// "Add to cart" taps in the Market, or two tabs) could each miss the other's
+// good. Trothen runs as one server, so a queue per person is enough.
+const queues = new Map();
+function oneAtATime(userId, fn) {
+  const prev = queues.get(userId) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.catch(() => {});
+  queues.set(userId, tail);
+  tail.then(() => { if (queues.get(userId) === tail) queues.delete(userId); });
+  return run;
+}
 const now = () => new Date().toISOString();
 
 async function cartOf(userId) {
@@ -76,7 +90,7 @@ async function goodState(providerId, goodId, variantId, buyer, cache) {
 }
 
 // Add goods (or set how many). Returns { cart, notice } or { error, status }.
-async function put(user, { providerId, goodId, variantId, qty, mode }) {
+async function putNow(user, { providerId, goodId, variantId, qty, mode }) {
   if (!['customer', 'provider'].includes(user.role)) return { status: 403, error: 'The cart is for customer and pro accounts.' };
   if (typeof providerId !== 'string' || typeof goodId !== 'string' || (variantId != null && typeof variantId !== 'string')) return { status: 400, error: 'Choose a good from a store.' };
   const n = qty === undefined ? 1 : Number(qty);
@@ -101,17 +115,18 @@ async function put(user, { providerId, goodId, variantId, qty, mode }) {
     if (lines.filter(l => l.providerId === providerId && !l.saved).length >= MAX_PER_STORE) return { status: 400, error: `One order can hold up to ${MAX_PER_STORE} different goods from a store. Check out these first.` };
     lines.push({ key, providerId, goodId, variantId: variantId || null, qty: q, priceSeen: st.price, saved: false, addedAt: now(), touchedAt: now() });
   } else {
+    if (lines[i].saved && lines.filter(l => l.providerId === providerId && !l.saved).length >= MAX_PER_STORE) return { status: 400, error: `One order can hold up to ${MAX_PER_STORE} different goods from a store. Check out these first.` };
     lines[i] = { ...lines[i], qty: q, saved: false, touchedAt: now() };
   }
   return { cart: await saveLines(cart, lines), notice };
 }
 
-async function remove(user, key) {
+async function removeNow(user, key) {
   const cart = await cartOf(user.id);
   return saveLines(cart, cart.lines.filter(l => l.key !== key));
 }
 
-async function setSaved(user, key, saved) {
+async function setSavedNow(user, key, saved) {
   const cart = await cartOf(user.id);
   const l = cart.lines.find(x => x.key === key);
   if (!l) return { status: 404, error: 'That isn\'t in your cart any more.' };
@@ -119,22 +134,22 @@ async function setSaved(user, key, saved) {
   return { cart: await saveLines(cart, cart.lines.map(x => x.key === key ? { ...x, saved: !!saved, touchedAt: now() } : x)) };
 }
 
-async function clearStore(user, providerId) {
+async function clearStoreNow(user, providerId) {
   const cart = await cartOf(user.id);
   return saveLines(cart, cart.lines.filter(l => l.providerId !== providerId || l.saved));
 }
 
 // A guest's cart (kept in their browser) joins their account when they sign
 // in. Goods already in the account keep the larger amount.
-async function merge(user, incoming) {
+async function mergeNow(user, incoming) {
   if (!Array.isArray(incoming)) return { status: 400, error: 'The cart could not be read.' };
   let skipped = 0, notice = null;
   for (const it of incoming.slice(0, MAX_LINES)) {
     if (!it || typeof it.goodId !== 'string' || typeof it.providerId !== 'string') { skipped++; continue; }
     const cart = await cartOf(user.id);
     const have = cart.lines.find(l => l.key === keyOf(it.goodId, it.variantId));
-    const want = Math.max(Number(it.qty) || 1, have && !have.saved ? have.qty : 0);
-    const r = await put(user, { providerId: it.providerId, goodId: it.goodId, variantId: it.variantId || null, qty: Math.min(MAX_QTY, want), mode: 'set' });
+    const want = Math.max(Math.max(1, Math.floor(Number(it.qty)) || 1), have && !have.saved ? have.qty : 0);
+    const r = await putNow(user, { providerId: it.providerId, goodId: it.goodId, variantId: it.variantId || null, qty: Math.min(MAX_QTY, want), mode: 'set' });
     if (r.error) skipped++; else if (r.notice) notice = r.notice;
   }
   return { cart: await cartOf(user.id), skipped, notice };
@@ -142,7 +157,7 @@ async function merge(user, incoming) {
 
 // What the cart page shows: lines grouped by store, with today's prices and
 // stock, and the subtotal that store's checkout will start from.
-async function view(user) {
+async function viewNow(user) {
   const cart = await cartOf(user.id);
   const cache = new Map();
   const groups = new Map(); const saved = [];
@@ -199,7 +214,7 @@ async function count(userId) {
 
 // After an order (or a booking with goods) is placed: those goods leave the
 // cart. Anything else from that store stays.
-async function removeOrdered(userId, providerId, items) {
+async function removeOrderedNow(userId, providerId, items) {
   try {
     const c = await db.find('carts', x => x.userId === userId);
     if (!c || !Array.isArray(items) || !items.length) return;
@@ -208,5 +223,13 @@ async function removeOrdered(userId, providerId, items) {
     if (lines.length !== (c.lines || []).length) await db.update('carts', c.id, { lines, updatedAt: now() });
   } catch (e) { console.error('[cart] removeOrdered', e.message); }
 }
+
+const put = (user, a) => oneAtATime(user.id, () => putNow(user, a));
+const remove = (user, key) => oneAtATime(user.id, () => removeNow(user, key));
+const setSaved = (user, key, saved) => oneAtATime(user.id, () => setSavedNow(user, key, saved));
+const clearStore = (user, providerId) => oneAtATime(user.id, () => clearStoreNow(user, providerId));
+const merge = (user, incoming) => oneAtATime(user.id, () => mergeNow(user, incoming));
+const view = (user) => oneAtATime(user.id, () => viewNow(user));
+const removeOrdered = (userId, providerId, items) => oneAtATime(userId, () => removeOrderedNow(userId, providerId, items));
 
 module.exports = { put, remove, setSaved, clearStore, merge, view, count, removeOrdered, keyOf, MAX_LINES, MAX_PER_STORE };

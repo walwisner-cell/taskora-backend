@@ -16,8 +16,8 @@
     return AREAS;
   }
   const NAV_KEY = { contact: 'contact-submissions' };
-  const LABELS = { overview: 'Overview', approvals: 'User Approvals', people: 'Customers & Providers', verification: 'Verification Queue', stores: 'Stores & Skills', rides: 'Rides', providerscores: 'Provider Scores', disputes: 'Disputes', fraud: 'Fraud & Safety', payments: 'Payments', tokens: 'Tokens', custpay: 'Customer Payments', pricing: 'Plans & Pricing', advertising: 'Advertising', promotions: 'Promotions', careers: 'Job Applications', contact: 'Contact Us Messages', reports: 'Reports', sales: 'Sales Inquiries', organizations: 'Organizations', accesslogs: 'Access Logs' };
-  const ICON = { overview: '📊', approvals: '✅', people: '👥', verification: '🪪', stores: '🛍️', rides: '🛵', providerscores: '📊', disputes: '⚖️', fraud: '🚩', payments: '💳', tokens: '🪙', custpay: '💵', pricing: '💲', advertising: '📣', promotions: '🎉', careers: '💼', contact: '✉️', reports: '📈', sales: '💼', organizations: '🏢', accesslogs: '🔍' };
+  const LABELS = { overview: 'Overview', approvals: 'User Approvals', people: 'Customers & Providers', verification: 'Verification Queue', stores: 'Stores & Skills', market: 'Market', rides: 'Rides', providerscores: 'Provider Scores', disputes: 'Disputes', fraud: 'Fraud & Safety', payments: 'Payments', tokens: 'Tokens', custpay: 'Customer Payments', pricing: 'Plans & Pricing', advertising: 'Advertising', promotions: 'Promotions', careers: 'Job Applications', contact: 'Contact Us Messages', reports: 'Reports', sales: 'Sales Inquiries', organizations: 'Organizations', accesslogs: 'Access Logs' };
+  const ICON = { overview: '📊', approvals: '✅', people: '👥', verification: '🪪', stores: '🛍️', market: '🛒', rides: '🛵', providerscores: '📊', disputes: '⚖️', fraud: '🚩', payments: '💳', tokens: '🪙', custpay: '💵', pricing: '💲', advertising: '📣', promotions: '🎉', careers: '💼', contact: '✉️', reports: '📈', sales: '💼', organizations: '🏢', accesslogs: '🔍' };
 
   // The fixed roles as starting points.
   const M = 'manage', V = 'view';
@@ -272,7 +272,7 @@
       const u = AUTH.user || {};
       if (u.adminDepartment !== 'custom' || u.isSuperAdmin) return base.apply(this, arguments);
       const p = u.adminPermissions || {};
-      const order = ['overview', 'approvals', 'people', 'verification', 'stores', 'rides', 'providerscores', 'disputes', 'fraud', 'payments', 'tokens', 'custpay', 'pricing', 'advertising', 'promotions', 'careers', 'contact', 'reports', 'sales', 'organizations', 'accesslogs'];
+      const order = ['overview', 'approvals', 'people', 'verification', 'stores', 'market', 'rides', 'providerscores', 'disputes', 'fraud', 'payments', 'tokens', 'custpay', 'pricing', 'advertising', 'promotions', 'careers', 'contact', 'reports', 'sales', 'organizations', 'accesslogs'];
       const items = order.filter(k => p[k]).map(k => ({ key: NAV_KEY[k] || k, label: LABELS[k], icon: ICON[k] || '•' }));
       items.push({ key: 'settings', label: 'Settings', icon: '⚙️' });
       return items;

@@ -373,7 +373,7 @@ function driverState(u) {
   return {
     status: r.status || 'none', vehicle: r.vehicle || null, make: r.make || '', plate: r.plate || '', licenceNumber: r.licenceNumber || '', licenceExpiry: r.licenceExpiry || '', insuranceExpiry: r.insuranceExpiry || '', roadworthyExpiry: r.roadworthyExpiry || '',
     acceptsCash: r.acceptsCash === true, helmet: r.helmet === true, docs: Object.fromEntries(Object.keys(DOC_KINDS).map(k => [k, !!(r.docs && r.docs[k])])),
-    rates: rates(u), fareAdjust: Number(r.fareAdjust) || 0, delivers: r.delivers !== false, online: isOnline(u), onlineUntil: isOnline(u) ? r.onlineUntil : null, rejectReason: r.rejectReason || null,
+    rates: rates(u), fareAdjust: Number(r.fareAdjust) || 0, delivers: r.delivers !== false, deliveryRange: (() => { const x = require('../store-orders').rangeOf(u, r.vehicle); return x; })(), // v164 online: isOnline(u), onlineUntil: isOnline(u) ? r.onlineUntil : null, rejectReason: r.rejectReason || null,
   };
 }
 router.get('/rides/driver/me', requireAuth, requireRole('provider'), async (req, res) => {
@@ -389,7 +389,7 @@ router.get('/rides/driver/me', requireAuth, requireRole('provider'), async (req,
     fareTable = { currency: t.currency, symbol: require('../currency-data').currencyForCountry(t.country).symbol, band: Number.isFinite(Number(t.band)) ? Number(t.band) : 20, row: t.vehicles[veh], fuelFactor: rideFares.fuelFactor(t), nightPct: Number((t.night || {}).pct) || 0, examples };
   }
   res.json({ ...driverState(u), fareTable, requiredDocs: await requiredDocs(u.country, u.rideDriver && u.rideDriver.vehicle), requiredByVehicle: byVehicle, rules: await rulesState(u), commissionPercent: await getSetting('rideCommissionPercent'), availableHere: await ridesOnFor(u.country), country: u.country, vehicles: RIDE_VEHICLES, docKinds: DOC_KINDS, feePercent: await getSetting('rideFeePercent'),
-    passEnabled: (await getSetting('ridePassEnabled')) !== false, passPlans: await ridePass.plans(), pass: await ridePass.summary(u.id), cashEnabled: (await getSetting('rideCashEnabled')) === true });
+    passEnabled: (await getSetting('ridePassEnabled')) !== false, passPlans: await ridePass.plans(), pass: await ridePass.summary(u.id), freePass: isApproved(u) ? await ridePass.freeOffer(u.id) : null, cashEnabled: (await getSetting('rideCashEnabled')) === true });
 });
 // v113: buy a Driver Pass. The price the driver saw must still be the price.
 const passLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 20, keyGenerator: (req) => (req.user && req.user.sub) || 'anon', validate: false, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many purchases. Please wait a little.' } });
@@ -399,6 +399,15 @@ router.post('/rides/driver/pass', requireAuth, requireRole('provider'), passLimi
   if (!(await ridesOnFor(u.country))) return res.status(403).json({ error: 'Rides are not open in your country right now.' });
   const r = await ridePass.buy(u, (req.body || {}).planId, (req.body || {}).expectedPrice);
   if (!r.ok) return res.status(r.status).json({ code: r.code, price: r.price, error: r.error });
+  res.status(201).json({ pass: await ridePass.summary(u.id) });
+});
+// v164: start the free first week (once)
+router.post('/rides/driver/pass/free', requireAuth, requireRole('provider'), passLimiter, async (req, res) => {
+  const u = await db.find('users', x => x.id === req.user.sub);
+  if (!isApproved(u)) return res.status(403).json({ error: 'Your free week can start once your driver application is approved and your papers are in date.' });
+  if (!(await ridesOnFor(u.country))) return res.status(403).json({ error: 'Rides are not open in your country right now.' });
+  const r = await ridePass.claimFree(u);
+  if (!r.ok) return res.status(r.status).json({ code: r.code, error: r.error });
   res.status(201).json({ pass: await ridePass.summary(u.id) });
 });
 // v113: whether this driver takes cash rides (they only get them while a pass is active)
@@ -827,7 +836,7 @@ router.get('/admin/rides/overview', gate, async (req, res) => {
   const open = await db.filter('contracts', c => c.ride && OPEN_STATUSES.includes(c.status));
   const sos = (await db.all('rideSafetyEvents')).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 30);
   res.json({
-    settings: { passEnabled: (await getSetting('ridePassEnabled')) !== false, passPlans: await ridePass.plans(), cashEnabled: (await getSetting('rideCashEnabled')) === true, autoReleaseHours: await getSetting('rideAutoReleaseHours'), noStartHours: await getSetting('rideNoStartHours'), stuckHours: await getSetting('rideStuckHours'), waitMinutes: await getSetting('rideWaitMinutes'), trackKeepDays: await getSetting('rideTrackKeepDays'), enabledCountries: await getSetting('rideEnabledCountries'), maxKm: await getSetting('rideMaxKm'), searchKm: await getSetting('rideSearchKm'), answerMinutes: await getSetting('rideAnswerMinutes'), feePercent: await getSetting('rideFeePercent'), commissionPercent: await getSetting('rideCommissionPercent'), requireInsurance: (await getSetting('rideRequireInsurance')) !== false, motorbikeNight: await getSetting('rideMotorbikeNight'), rulesVersion: await getSetting('rideRulesVersion'), rulesRider: await getSetting('rideRulesRider'), rulesDriver: await getSetting('rideRulesDriver') },
+    settings: { passEnabled: (await getSetting('ridePassEnabled')) !== false, passPlans: await ridePass.plans(), passFreeDays: await ridePass.freeDays(), cashEnabled: (await getSetting('rideCashEnabled')) === true, autoReleaseHours: await getSetting('rideAutoReleaseHours'), noStartHours: await getSetting('rideNoStartHours'), stuckHours: await getSetting('rideStuckHours'), waitMinutes: await getSetting('rideWaitMinutes'), trackKeepDays: await getSetting('rideTrackKeepDays'), enabledCountries: await getSetting('rideEnabledCountries'), maxKm: await getSetting('rideMaxKm'), searchKm: await getSetting('rideSearchKm'), answerMinutes: await getSetting('rideAnswerMinutes'), feePercent: await getSetting('rideFeePercent'), commissionPercent: await getSetting('rideCommissionPercent'), requireInsurance: (await getSetting('rideRequireInsurance')) !== false, motorbikeNight: await getSetting('rideMotorbikeNight'), rulesVersion: await getSetting('rideRulesVersion'), rulesRider: await getSetting('rideRulesRider'), rulesDriver: await getSetting('rideRulesDriver') },
     canEditSettings: req.adminUser.isSuperAdmin === true,
     docKinds: DOC_KINDS, docRules: (await getSetting('rideDocRules')) || [], standardDocs: await requiredDocs('', ''),
     counts: { pending: by('pending'), approved: by('approved'), rejected: by('rejected'), suspended: by('suspended'), openRides: open.length, openAlerts: sos.filter(s => s.status === 'open').length },
@@ -938,7 +947,8 @@ router.put('/admin/rides/fares', gate, async (req, res) => {
 
 router.put('/admin/rides/settings', gate, async (req, res) => {
   if (!req.adminUser.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
-  const { docRules, enabledCountries, maxKm, searchKm, answerMinutes, feePercent, commissionPercent, requireInsurance, motorbikeNight, rulesRider, rulesDriver, autoReleaseHours, noStartHours, stuckHours, waitMinutes, trackKeepDays, passEnabled, passPlans, cashEnabled } = req.body || {};
+  const { docRules, enabledCountries, maxKm, searchKm, answerMinutes, feePercent, commissionPercent, requireInsurance, motorbikeNight, rulesRider, rulesDriver, autoReleaseHours, noStartHours, stuckHours, waitMinutes, trackKeepDays, passEnabled, passPlans, cashEnabled, passFreeDays } = req.body || {};
+  if (passFreeDays !== undefined) { if (!Number.isInteger(passFreeDays) || passFreeDays < 0 || passFreeDays > 30) return res.status(400).json({ error: 'The free first pass: 0 to 30 days (0 = off).' }); await setSetting('ridePassFreeDays', passFreeDays); } // v164
   if (passEnabled !== undefined) await setSetting('ridePassEnabled', passEnabled === true);
   if (cashEnabled !== undefined) await setSetting('rideCashEnabled', cashEnabled === true);
   if (passPlans !== undefined) {

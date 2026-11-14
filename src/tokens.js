@@ -58,8 +58,10 @@ function cleanPack(p) {
 function cleanCountryPack(p) {
   if (!p || typeof p.id !== 'string' || !/^[a-z0-9_-]{2,20}$/.test(p.id)) return false;
   if (typeof p.label !== 'string' || p.label.trim().length < 2 || p.label.trim().length > 30) return false;
-  if (typeof p.tokens !== 'number' || p.tokens < 0.5 || p.tokens > 2000) return false;
-  const hasUsd = typeof p.priceUsd === 'number' && p.priceUsd >= 0.5 && p.priceUsd <= 1000;
+  // v164: a country's packs can start as small as US$0.25 (L$50), the way
+  // airtime and mobile money are sold in small amounts ("sachet" pricing).
+  if (typeof p.tokens !== 'number' || p.tokens < 0.25 || p.tokens > 2000) return false;
+  const hasUsd = typeof p.priceUsd === 'number' && p.priceUsd >= 0.25 && p.priceUsd <= 1000;
   const hasLocal = p.localPrice === undefined || p.localPrice === null || (typeof p.localPrice === 'number' && p.localPrice > 0 && p.localPrice <= 100000000);
   return hasUsd && hasLocal && p.tokens >= p.priceUsd;
 }

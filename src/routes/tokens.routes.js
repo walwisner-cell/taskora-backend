@@ -225,7 +225,7 @@ router.patch('/admin/tokens/settings', gate, superOnly, async (req, res) => {
       if (Array.isArray(r.packs) && r.packs.length) {
         const list = r.packs.map(p => ({ id: String(p.id || '').trim().toLowerCase(), label: String(p.label || '').trim(), priceUsd: tokens.money(p.priceUsd), tokens: tokens.money(p.tokens), ...(p.localPrice !== undefined && p.localPrice !== null && p.localPrice !== '' ? { localPrice: Number(p.localPrice) } : {}) }));
         if (list.length > 8 || list.some(p => !tokens.cleanCountryPack(p)) || new Set(list.map(p => p.id)).size !== list.length) {
-          return res.status(400).json({ error: `${country} packs: up to 8. Each needs a short code, a name, a US$ price from 0.50 to 1,000, at least as many tokens as dollars, and (optional) a fixed local price above 0. No two codes the same.` });
+          return res.status(400).json({ error: `${country} packs: up to 8. Each needs a short code, a name, a US$ price from 0.25 to 1,000, at least as many tokens as dollars, and (optional) a fixed local price above 0. No two codes the same.` });
         }
         rule.packs = list;
       }

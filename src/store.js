@@ -64,7 +64,14 @@ const STORE_DEFAULTS = {
 const DELIVERY_METHODS = ['pickup', 'seller', 'driver'];
 const DELIVERY_LABELS = { pickup: 'I collect it myself', seller: 'The seller brings it', driver: 'A pick-and-drop driver brings it' };
 const DRIVER_SKILL = 'Pick & Drop';
-const VEHICLES = ['motorbike', 'keke', 'car', 'van', 'truck', 'bicycle', 'on foot'];
+const VEHICLES = ['motorbike', 'bicycle', 'keke', 'car', 'van', 'truck', 'on foot']; // v164: bicycle second, after the motorbike
+// v164: how far each kind of vehicle goes on one delivery (straight line from
+// the pick-up), as courier companies set it: on foot and by bicycle for short
+// trips across a town (Glovo, Uber Eats and Deliveroo keep bicycles to a few
+// kilometres), a motorbike or keke across a city, a car, van or truck further.
+// Each driver can narrow their own range ("from 2 km, up to 8 km"); they are
+// only offered deliveries inside it.
+const VEHICLE_MAX_KM = { 'on foot': 3, bicycle: 10, motorbike: 50, keke: 30, car: 200, van: 300, truck: 500 };
 // The built-in store rules, used until a super admin writes their own.
 // Plain commitments, not a contract an attorney has approved.
 const DEFAULT_STORE_RULES = [
@@ -471,7 +478,7 @@ module.exports = {
   STORE_DEFAULTS, DEFAULT_STORE_RULES, MAX_PHOTOS_PER_GOOD, MAX_QTY_PER_LINE, MAX_EXTRA_SKILLS, MAX_EXTRA_SKILLS_BUSINESS, maxExtraSkillsFor, money,
   storeSettings, storeSettingsCached, saveStoreSettings,
   isOnShelf, inStock, anyInStock, storeIsLive, publicStore, refreshStoreLive,
-  DELIVERY_METHODS, DELIVERY_LABELS, DRIVER_SKILL, VEHICLES, storeApproval, whyNotLive, WHY_NOT_LIVE_WORDS, storeOptions,
+  DELIVERY_METHODS, DELIVERY_LABELS, DRIVER_SKILL, VEHICLES, VEHICLE_MAX_KM, storeApproval, whyNotLive, WHY_NOT_LIVE_WORDS, storeOptions,
   currenciesFor, usdFromLocal, goodUsdPrice, goodPriceFields,
   priceBasket, holdStock, reserveStock, releaseStock, giveBackStock,
   saleOn, variantOf, stockOf, adjustStock, notifyBackInStock, returnPolicyOf, returnPolicyWords, // v143

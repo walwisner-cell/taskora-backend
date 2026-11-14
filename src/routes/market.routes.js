@@ -120,7 +120,7 @@ router.get('/market/items', listLimiter, async (req, res) => {
     for (const l of listings) {
       if (!matches(`${l.title} ${l.description || ''} ${l.category}`)) continue;
       const seller = await db.find('users', u => u.id === l.sellerId);
-      if (!seller || seller.active === false || seller.closedAt) continue;
+      if (!seller || seller.active === false || seller.closedAt || require('./market-admin.routes').banOf(seller)) continue;
       if (!curCache.has(l.country)) curCache.set(l.country, await store.currenciesFor(seller));
       const v = await listingView(l, me, curCache.get(l.country), cache);
       items.push({ ...v, description: v.description.slice(0, 140), photo: v.photoUrls[0] || null });
@@ -158,6 +158,7 @@ async function verifiedSeller(req, res) {
   const me = await db.find('users', u => u.id === req.user.sub);
   if (!me || !['customer', 'provider'].includes(me.role)) { res.status(403).json({ error: 'Selling is for customer and pro accounts' }); return null; }
   if (me.verified !== true) { res.status(403).json({ code: 'VERIFY_IDENTITY', error: 'To sell in the Market, verify your identity first (Verification in your menu). Buyers only see sellers Trothen has checked.' }); return null; }
+  { const ban = require('./market-admin.routes').banOf(me); if (ban) { res.status(403).json({ code: 'MARKET_STOPPED', error: `The Trothen team has stopped you selling in the Market${ban.until ? ' until ' + new Date(ban.until).toDateString() : ''}: ${ban.reason}` }); return null; } } // v164
   if (me.onHold || me.active === false) { res.status(403).json({ error: 'Your account is paused, so you can\'t sell right now.' }); return null; }
   return me;
 }
@@ -415,6 +416,7 @@ router.post('/market/listings/:id/buy', requireAuth, require('../terms').require
     if (driver) {
       // Checked before anything is charged, so a changed driver price never leaves a half-made order.
       const km = so.kmBetween(l.pickupLocation || null, where.jobLocation);
+      if (!so.inRange(so.driverRates(driver), km)) return res.status(400).json({ code: 'OUT_OF_RANGE', error: `${driver.name} doesn't go that far (about ${so.distWords(km, seller.country)}). Choose another driver.` }); // v164
       const quoted = await so.deliveryPrice(driver, km); // v143
       if (Math.abs(Number(b.driverPrice) - quoted) > 0.009) return res.status(409).json({ code: 'PRICE_CHANGED', price: quoted, error: `${driver.name}'s price is now $${quoted.toFixed(2)}. Check it and approve again.` });
     }
@@ -630,7 +632,7 @@ router.post('/admin/market/listings/:id/decide', adminOnly, async (req, res) => 
     await db.update('marketListings', l.id, { status: 'live', reports: [], hiddenByReports: false, removedReason: null, reviewReasons: [], reviewedBy: req.adminUser.id, expiresAt: new Date(Date.now() + market.LISTING_DAYS * market.DAY).toISOString() });
     await notify(l.sellerId, '✅', `Your Market listing "${l.title}" is ${l.status === 'review' ? 'checked and now on sale' : 'back on sale after the Trothen team looked at it'}.`, 'bookingUpdates', { section: 'market' });
   } else return res.status(400).json({ error: 'Choose remove or restore' });
-  try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'market_listing', resourceId: `${l.id} ${decision}`, ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the decision stands */ }
+  try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'market_listing', resourceId: `${l.id} "${String(l.title).slice(0, 60)}": ${decision === 'remove' ? 'taken down - ' + String(reason).trim().slice(0, 150) : 'kept on sale'}`, ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the decision stands */ }
   res.json({ ok: true });
 });
 

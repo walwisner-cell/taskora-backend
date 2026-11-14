@@ -78,6 +78,7 @@ const DEFAULTS = {
   // take cash rides. Without a pass, digital rides pay the commission above. The prices below are
   // placeholders (US dollars): set the real ones in Admin > Rides after checking what drivers can pay.
   ridePassEnabled: true,
+  ridePassFreeDays: 7, // v164: every approved driver can start one free pass of this many days (0 = off)
   ridePassPlans: [
     { id: 'day', label: 'Daily pass', days: 1, priceUsd: 2 },
     { id: 'week', label: 'Weekly pass', days: 7, priceUsd: 10 },
@@ -114,7 +115,11 @@ const DEFAULTS = {
   customerPaymentCodeHours: 24, // how long a customer has to pay a booking by code
   tokenPaymentCodeHours: 48, // v117: how long a mobile money payment code stays open if no payment is reported       // countries where tokens are on; empty = every country
   tokenCountryRules: {
+    // v164: in Liberia packs start at L$50 and L$100 (fixed local prices), so a
+    // pro just starting can top up a little at a time, as with airtime.
     Liberia: { maxBalance: 200, dailyLimitUsd: 100, momoAccounts: [], packs: [
+      { id: 'l50', label: 'L$50', priceUsd: 0.26, tokens: 0.26, localPrice: 50 },
+      { id: 'l100', label: 'L$100', priceUsd: 0.52, tokens: 0.52, localPrice: 100 },
       { id: 'mini', label: 'Mini', priceUsd: 2, tokens: 2 },
       { id: 'small', label: 'Small', priceUsd: 5, tokens: 5 },
       { id: 'medium', label: 'Medium', priceUsd: 10, tokens: 10.5 },

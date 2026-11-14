@@ -193,6 +193,7 @@ app.use('/api', require('./src/routes/tokens.routes')); // v115: Trothen Tokens
 app.use('/api', require('./src/routes/custpay.routes')); // v119: customer payments by code
 app.use('/api', require('./src/routes/calls.routes')); // v136: in-app voice and video calls
 app.use('/api', require('./src/routes/market.routes')); // v139: the Market (stores and personal listings)
+app.use('/api', require('./src/routes/market-admin.routes')); // v164: Admin → Market
 require('./src/market').startMarketScheduler(); // v139: orders complete by themselves; listings end
 app.use('/api', require('./src/routes/business.routes'));
 app.use('/api', marketplaceRoutes);

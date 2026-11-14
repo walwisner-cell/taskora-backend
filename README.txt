@@ -1,6 +1,12 @@
-Trothen v163: everything in one place (includes v128 to v162)
+Trothen v164: everything in one place (includes v128 to v163)
 
-  src\ public\ server.js    The 115 files changed since your GitHub main (before v128), in their real folders.
+  src\ public\ server.js    The 119 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v164.md           Everything re-checked, Joseph's notes, and deliveries end to end: the pinned location
+                            as a Plus Code on every receipt and on "Booking request sent"; Admin -> Market to
+                            regulate the Market (check, take down, stop sellers, orders, stolen items, activity);
+                            bicycle deliveries and each driver's distance range; tokens from L$50 in Liberia;
+                            a free first week of the Driver Pass; a clearer empty cart; carts that never lose a
+                            change made at the same moment; a delivery walked through on three phones.
   CHANGES_v163.md           Gaps found by walking store orders, sign-up and password reset with real taps:
                             View cart at once, messages kept off pop-up buttons, star ratings by keyboard,
                             sign-up errors under each field and the street address optional, nothing of an
@@ -72,27 +78,31 @@ Trothen v163: everything in one place (includes v128 to v162)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v163.md  Byte counts and the cmd.exe steps.
-  deploy_v163.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v163-files.zip    The code files packed; the .bat reads this from Downloads.
-  screenshots\              A missing postcode shown under its box at sign-up, the store order and return on
-                            a phone, the cart, and the v160 and v161 screens.
+  DEPLOYMENT_STEPS_v164.md  Byte counts and the cmd.exe steps.
+  deploy_v164.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v164-files.zip    The code files packed; the .bat reads this from Downloads.
+  screenshots\              The courier's delivery card with both Plus Codes, the checkout with a bicycle
+                            courier and her range, Admin -> Market on a laptop and a phone, the visitor's
+                            empty cart, and the earlier screens.
 
-Works whether or not v128 is already live. git status shows 149 files if v128 is live, 151 if not.
-If you already deployed v162, it is safe on top of it, and git status shows only the 6 files that changed
-since (5 code files and CHANGES_v163.md).
+Works whether or not v128 is already live. git status shows 155 files if v128 is live, 157 if not.
+If you already deployed v163, it is safe on top of it, and git status shows only the 27 files that changed
+since (25 code files, CHANGES_v164.md and DEPLOYMENT_STEPS_v164.md).
 
 Email: your SMTP settings on Render are already in and working (System Check shows emails
 being sent), so nothing to add before this deploy.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v163.
-  2. copy "%USERPROFILE%\Downloads\trothen-v163\trothen-v163-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v164.
+  2. copy "%USERPROFILE%\Downloads\trothen-v164\trothen-v164-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v163\deploy_v163.bat"
+     "%USERPROFILE%\Downloads\trothen-v164\deploy_v164.bat"
   Nothing goes live until you type YES.
 
 After it is live:
+  - Liberia tokens from L$50: if you ever saved the Liberia packs in Admin -> Tokens, add "L$50"
+    (US$0.26, 0.26 tokens, local price 50) and "L$100" (US$0.52, 0.52, 100) there. See CHANGES_v164.md.
+  - Tell drivers about "Start my free week" (Rides) and "How far I go on one delivery" (Deliveries).
   - Set APP_URL on Render to https://trothenpro.com (if it isn't already), so links in emails are right.
   - Admin, System Check: fix anything red. Alerts come to your notifications from then on.
   - Add MAPBOX_TOKEN on Render before many people use the maps (free tier, business use allowed).

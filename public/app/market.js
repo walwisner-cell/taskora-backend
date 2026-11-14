@@ -201,7 +201,7 @@
       ${CUR.driver ? card('driver', 'A pick-and-drop driver brings it', t('Choose a driver and approve their price.')) : ''}
       ${B.method === 'driver' ? `<div class="form-group" style="margin-top:8px;"><label class="form-label" for="mkb-landmark">${e(t('Where should it be brought?'))}</label><input class="form-input" id="mkb-landmark" maxlength="200" value="${e(B.landmark)}" oninput="MARKET_BUY.landmark=this.value" placeholder="${e(t('A landmark or address'))}"/></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13.5px;margin-bottom:8px;">${B.pin ? `📍 ${e(t('Pinned'))}` : e(t('Add a pin so the driver can find you.'))} <button type="button" class="btn-sm btn-sm-outline" onclick="mkbPin()">📍 ${e(t(B.pin ? 'Pin again' : 'Use where I am now'))}</button> <button type="button" class="btn-sm btn-sm-outline" onclick="mkbDrivers()">${e(t('Find drivers'))}</button></div>
-        ${B.loading ? `<p style="color:var(--slate);">${e(t('Finding drivers…'))}</p>` : B.drivers ? (B.drivers.length ? B.drivers.map(d => `<label style="display:flex;gap:10px;align-items:center;border:2px solid ${B.driverId === d.id ? 'var(--teal)' : 'var(--border)'};border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer;"><input type="radio" name="mkb-d" ${B.driverId === d.id ? 'checked' : ''} onchange="MARKET_BUY.driverId=${jsArg(d.id)};mkbDraw()"/><span style="flex:1;"><strong>${e(d.name)}</strong> <span style="font-size:12.5px;color:var(--slate);">${e(d.vehicle || '')}${d.rating ? ` · ★ ${d.rating}` : ''}</span></span><strong>${money(d.price)}</strong></label>`).join('') : `<p style="color:#B4472E;font-size:13.5px;">${e(t('No drivers available right now. You can collect it instead.'))}</p>`) : ''}` : ''}
+        ${B.loading ? `<p style="color:var(--slate);">${e(t('Finding drivers…'))}</p>` : B.drivers ? (B.drivers.length ? B.drivers.map(d => `<label style="display:flex;gap:10px;align-items:center;border:2px solid ${B.driverId === d.id ? 'var(--teal)' : 'var(--border)'};border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer;"><input type="radio" name="mkb-d" ${B.driverId === d.id ? 'checked' : ''} onchange="MARKET_BUY.driverId=${jsArg(d.id)};mkbDraw()"/><span style="flex:1;"><strong>${e(d.name)}</strong> <span style="font-size:12.5px;color:var(--slate);">${e(d.vehicle ? t(d.vehicle) : '')}${typeof rangeWords === 'function' && rangeWords(d) ? ` (${e(rangeWords(d))})` : ''}${d.rating ? ` · ★ ${d.rating}` : ''}</span></span><strong>${money(d.price)}</strong></label>`).join('') : `<p style="color:#B4472E;font-size:13.5px;">${e(t('No drivers available right now. You can collect it instead.'))}</p>`) : ''}` : ''}
       <div class="form-group" style="margin-top:8px;"><label class="form-label" for="mkb-note">${e(t('Note to the seller (optional)'))}</label><input class="form-input" id="mkb-note" maxlength="300" value="${e(B.note)}" oninput="MARKET_BUY.note=this.value"/></div>
       <div class="booking-summary" style="margin-top:10px;">
         <div class="summary-row"><span>${e(CUR.title)}</span><span>${money(CUR.price)}</span></div>
@@ -545,8 +545,15 @@
       document.getElementById('confirm-dialog-confirm-btn').addEventListener('click', () => { reason = (document.getElementById('adm-ml-why') || {}).value || ''; }, { once: true, capture: true });
       if (!(await p)) return;
     }
-    try { await apiFetch('POST', `/admin/market/listings/${encodeURIComponent(id)}/decide`, { decision, reason }); showToast(decision === 'remove' ? 'Taken down. The seller was told why.' : 'Back on sale.'); const b = document.getElementById('admin-market'); if (b) b.remove(); drawAdminMarket(); }
+    try { await apiFetch('POST', `/admin/market/listings/${encodeURIComponent(id)}/decide`, { decision, reason }); showToast(decision === 'remove' ? 'Taken down. The seller was told why.' : 'Back on sale.'); if (typeof window.reloadAdminMarketTab === 'function' && document.getElementById('am-body')) return window.reloadAdminMarketTab(); const b = document.getElementById('admin-market'); if (b) b.remove(); drawAdminMarket(); }
     catch (x) { showToast(x.message); }
+  };
+  window.drawMarketFees = async function (host) { // v164: for Admin → Market → Fees
+    let st = null; try { st = (await apiFetch('GET', '/admin/store/review')).settings; } catch (x) {}
+    if (!st) { host.innerHTML = '<div class="panel">Only a super admin can change Market fees.</div>'; return; }
+    const tmp = document.createElement('div'); tmp.id = 'admin-stores-body'; tmp.style.display = 'none'; document.body.appendChild(tmp);
+    try { await drawAdminMarket(); const box = document.getElementById('admin-market'); if (box) { box.querySelectorAll('.panel').forEach(p => { if (/Market listings to check/.test(p.textContent)) p.remove(); }); host.innerHTML = ''; host.appendChild(box); } } finally { tmp.remove(); }
+    if (!host.querySelector('#adm-gfp')) host.innerHTML = '<div class="panel">Only a super admin can change Market fees.</div>';
   };
   window.saveMarketFees = async function () {
     const n = (id) => Number(document.getElementById(id).value);
@@ -555,7 +562,12 @@
   };
   if (typeof loadAdminStores === 'function') {
     const base = loadAdminStores;
-    loadAdminStores = async function () { const r = await base.apply(this, arguments); try { await drawAdminMarket(); } catch (x) {} return r; };
+    loadAdminStores = async function () {
+      const r = await base.apply(this, arguments);
+      const host = document.getElementById('admin-stores-body');
+      if (host && !document.getElementById('admin-market-pointer')) host.insertAdjacentHTML('afterbegin', `<div class="panel" id="admin-market-pointer" style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;"><div><div class="panel-title" style="margin:0;">Market listings, sellers and orders</div><div style="font-size:13px;color:var(--slate);">Reported listings, stopping a seller, orders, stolen-item reports and Market fees are in Admin → Market.</div></div><button class="btn-sm btn-sm-primary" onclick="selectAdminSection('market')">Open Market</button></div>`);
+      return r;
+    };
   }
 
   // ── Materials for a job (v140) ──────────────────────────────────────

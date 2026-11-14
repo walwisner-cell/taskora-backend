@@ -55,6 +55,7 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
   const sellerLabel = (seller.store && seller.store.name) || seller.name;
   const settings = await store.storeSettings();
   const km = so.kmBetween(opt.pickupLocation, where.jobLocation);
+  if (!so.inRange(so.driverRates(driver), km)) { const rr = so.driverRates(driver); return { error: `${driver.name} delivers ${rr.minKm > 0 ? `from ${so.distWords(rr.minKm, seller.country)} ` : ''}up to ${so.distWords(rr.maxKm, seller.country)}, and this trip is about ${so.distWords(km, seller.country)}. Choose another driver.`, code: 'OUT_OF_RANGE' }; } // v164
   const price = fixedPrice !== undefined ? money(fixedPrice) : await so.deliveryPrice(driver, km); // v143; v148: the price already paid with the order
   // The customer approved one price. If the driver changed their rates in
   // between, they are shown the new price instead of being charged it.
@@ -106,7 +107,7 @@ async function askDriver(delivery) {
   const driver = await db.find('users', u => u.id === delivery.providerId);
   const km = delivery.delivery.distanceKm;
   const by = require('../booking-rules').whenFor(delivery.providerResponseDeadline, driver, { hour: 'numeric', minute: '2-digit' }); // v158: the driver's own time zone
-  await notify(delivery.providerId, '🚚', `Delivery request: collect order #${delivery.delivery.orderNumber} (${delivery.delivery.items.slice(0, 80)}) from ${delivery.delivery.storeName}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver && driver.country)}` : ''}. You are paid $${Number(delivery.amount).toFixed(2)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by} server time).`, 'bookingUpdates', { section: 'bookings' });
+  await notify(delivery.providerId, '🚚', `Delivery request: collect order #${delivery.delivery.orderNumber} (${delivery.delivery.items.slice(0, 80)}) from ${delivery.delivery.storeName}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver && driver.country)}` : ''}. You are paid $${Number(delivery.amount).toFixed(2)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by}).`, 'bookingUpdates', { section: 'bookings' });
 }
 
 // v148: a goods order, or a delivery, has just been paid (a code confirmed
@@ -200,18 +201,43 @@ async function orderView(order, viewerId) {
 router.get('/delivery/rates', requireAuth, requireRole('provider'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   const settings = await store.storeSettings();
-  res.json({ hasSkill: store.hasSkill(me, store.DRIVER_SKILL) || so.rideDeliverer(me), viaRides: so.rideDeliverer(me), offered: so.isDriver(me), rates: so.driverRates(me), vehicles: store.VEHICLES, skill: store.DRIVER_SKILL, feePercent: settings.deliveryFeePercent, hasLocation: typeof me.latitude === 'number' });
+  res.json({ hasSkill: store.hasSkill(me, store.DRIVER_SKILL) || so.rideDeliverer(me), viaRides: so.rideDeliverer(me), offered: so.isDriver(me), rates: so.driverRates(me), vehicles: store.VEHICLES, vehicleMaxKm: store.VEHICLE_MAX_KM, skill: store.DRIVER_SKILL, feePercent: settings.deliveryFeePercent, hasLocation: typeof me.latitude === 'number' });
 });
 router.put('/delivery/rates', requireAuth, requireRole('provider'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   if (!store.hasSkill(me, store.DRIVER_SKILL)) return res.status(403).json({ error: `Add "${store.DRIVER_SKILL}" to your skills first. Delivery prices are for pros who do pick-and-drop.` });
-  const { vehicle, baseFee, perKm } = req.body || {};
+  const { vehicle, baseFee, perKm, minKm, maxKm } = req.body || {};
   if (!store.VEHICLES.includes(vehicle)) return res.status(400).json({ error: 'Choose what you deliver with' });
   if (typeof baseFee !== 'number' || !(baseFee >= 1) || baseFee > 500) return res.status(400).json({ error: 'Your starting price must be between $1 and $500' });
   if (typeof perKm !== 'number' || perKm < 0 || perKm > 50) return res.status(400).json({ error: 'Your price per kilometre must be between $0 and $50' });
-  await db.update('users', me.id, { deliveryRates: { vehicle, baseFee: money(baseFee), perKm: Math.round(perKm * 10000) / 10000, updatedAt: new Date().toISOString() } });
+  const range = readRange(vehicle, minKm, maxKm, me.country); if (range.error) return res.status(400).json({ error: range.error });
+  await db.update('users', me.id, { deliveryRates: { vehicle, baseFee: money(baseFee), perKm: Math.round(perKm * 10000) / 10000, updatedAt: new Date().toISOString() }, ...(range.value ? { deliveryRange: range.value } : {}) });
   const after = await db.find('users', u => u.id === me.id);
   res.json({ rates: so.driverRates(after), offered: so.isDriver(after) });
+});
+
+// v164: the distances a driver goes, inside what their vehicle can do.
+// Not sent = keep what is saved (or the vehicle's own range).
+function readRange(vehicle, minKm, maxKm, country) {
+  if (minKm === undefined && maxKm === undefined) return {};
+  const cap = store.VEHICLE_MAX_KM[vehicle] || 50;
+  const min = minKm === null || minKm === '' || minKm === undefined ? 0 : Number(minKm);
+  const max = maxKm === null || maxKm === '' || maxKm === undefined ? cap : Number(maxKm);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max <= 0) return { error: 'Enter the distances as numbers.' };
+  if (max > cap + 0.05) return { error: `By ${vehicle}, deliveries go up to ${so.distWords(cap, country)}.` };
+  if (min >= max) return { error: 'The shortest trip must be less than the longest.' };
+  return { value: { minKm: Math.round(min * 10) / 10, maxKm: Math.round(Math.min(max, cap) * 10) / 10, updatedAt: new Date().toISOString() } };
+}
+// PUT /api/delivery/range { minKm, maxKm } — for any driver, including ride drivers who also deliver.
+router.put('/delivery/range', requireAuth, requireRole('provider'), async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!store.hasSkill(me, store.DRIVER_SKILL) && !so.rideDeliverer(me)) return res.status(403).json({ error: `Add "${store.DRIVER_SKILL}" to your skills first, or carry deliveries as a ride driver.` });
+  const vehicle = so.driverRates(me).vehicle || 'motorbike';
+  const range = readRange(vehicle, (req.body || {}).minKm, (req.body || {}).maxKm, me.country);
+  if (range.error || !range.value) return res.status(400).json({ error: range.error || 'Enter the distances you go.' });
+  await db.update('users', me.id, { deliveryRange: range.value });
+  const after = await db.find('users', u => u.id === me.id);
+  res.json({ rates: so.driverRates(after) });
 });
 
 // GET /api/store/drivers?providerId=&latitude=&longitude= — drivers for one store's orders.
@@ -276,7 +302,9 @@ router.post('/store/orders', requireAuth, requireBuyer, requireCurrentTerms, asy
       return res.status(400).json({ code: 'PICK_DRIVER', error: 'Choose a driver from the list. The one you picked isn\'t available any more.' });
     }
     // Checked before anything is charged, so a changed price never leaves a half-made order.
-    const price = await so.deliveryPrice(driver, so.kmBetween(opt.pickupLocation, where.jobLocation)); // v143
+    const tripKm = so.kmBetween(opt.pickupLocation, where.jobLocation);
+    if (!so.inRange(so.driverRates(driver), tripKm)) return res.status(400).json({ code: 'OUT_OF_RANGE', error: `${driver.name} doesn't go that far (about ${so.distWords(tripKm, seller.country)}). Choose another driver.` }); // v164
+    const price = await so.deliveryPrice(driver, tripKm); // v143
     if (b.driverPrice === undefined || Math.abs(Number(b.driverPrice) - price) > 0.009) {
       return res.status(409).json({ code: 'PRICE_CHANGED', price, error: `${driver.name}'s price for this trip is $${price.toFixed(2)}. Check it and approve again.` });
     }
@@ -610,7 +638,19 @@ router.get('/store/orders/:id/receipt', requireAuth, async (req, res) => {
   r.sectionHeader(c.delivery ? 'Delivered by' : 'Sold by');
   r.row(storeName, c.delivery ? [so.driverRates(seller || {}).vehicle, seller && seller.city].filter(Boolean).join('  ·  ') : [seller && seller.name, seller && [seller.city, seller.country].filter(Boolean).join(', ')].filter(Boolean).join('  ·  '));
   r.sectionHeader(c.delivery ? 'Delivered to' : 'Sold to');
-  r.row(customer ? customer.name : 'Customer', iAmCustomer || c.deliveryMethod === 'seller' || c.delivery ? (c.deliveryMethod === 'pickup' ? '' : String(c.address || '').slice(0, 90)) : '');
+  // v164: the place, in full: the address and landmark the customer gave or
+  // picked, and the pin as a Plus Code with a map link. Only the customer,
+  // and whoever carries the goods there, see where they are going.
+  const { placeLines } = require('../plus-code');
+  const seesDropoff = c.deliveryMethod !== 'pickup' && (iAmCustomer || c.deliveryMethod === 'seller' || !!c.delivery);
+  r.row(customer ? customer.name : 'Customer', seesDropoff && !c.jobLocation && !c.landmark ? String(c.address || '').slice(0, 90) : '');
+  if (seesDropoff && (c.jobLocation || c.landmark)) r.placeBlock(placeLines({ address: c.address, landmark: c.landmark, pin: c.jobLocation }));
+  if (!c.delivery && c.deliveryMethod === 'pickup') {
+    const opt = store.storeOptions(seller || {});
+    const from = c.marketListingId ? { place: c.pickupPlace, pin: c.pickupLocation } : { place: opt.pickupPlace, pin: opt.pickupLocation };
+    const lines = placeLines({ address: from.place, pin: from.pin });
+    if (lines.length) { r.sectionHeader('Collect from'); r.placeBlock(lines); }
+  }
   r.twoColumnRow('Receipt number', number, 'Date', String(c.createdAt || '').slice(0, 10));
   const moneyLine = escrow.status === 'held' ? 'Paid. Held by Trothen until the customer confirms they have the goods.'
     : escrow.status === 'released' ? `Paid${c.completedAt ? ' and received on ' + String(c.completedAt).slice(0, 10) : ''}. Released to the ${c.delivery ? 'driver' : 'seller'}.`
@@ -621,6 +661,7 @@ router.get('/store/orders/:id/receipt', requireAuth, async (req, res) => {
     r.sectionHeader('Delivery');
     r.row('For', `Store order #${c.delivery.orderNumber} from ${c.delivery.storeName}`);
     r.row('Collected from', String(c.delivery.pickupPlace || '').slice(0, 90));
+    if (c.delivery.pickupLocation) r.placeBlock(placeLines({ pin: c.delivery.pickupLocation }));
     if (c.delivery.distanceKm) r.row('Distance', `About ${so.distWords(c.delivery.distanceKm, seller && seller.country)}`);
     r.twoColumnRow('Delivery price', $(c.amount), iAmCustomer ? 'Trothen service fee' : ' ', iAmCustomer ? $(c.serviceFee) : ' ');
     if (iAmCustomer) r.twoColumnRow('Total paid', $(money(c.amount + (c.serviceFee || 0))), escrow.paidAmountLocal ? `Paid in ${escrow.paidCurrency}` : ' ', escrow.paidAmountLocal ? String(escrow.paidAmountLocal) : ' ');

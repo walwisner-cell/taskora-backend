@@ -35,6 +35,7 @@ const AREAS = [
   { key: 'people', label: 'Customers & Providers', help: 'Look up people, see contact details, pause or suspend accounts.', actions: [SEE('See the list of people'), A('contact', 'See phone numbers and email addresses', true), A('status', 'Pause, suspend or reactivate accounts'), A('hold', 'Put payouts on hold or release them'), A('commission', 'Propose a pro\'s commission rate')] },
   { key: 'verification', label: 'Verification Queue', help: 'ID documents and guarantors.', actions: [SEE('See the queue and history'), A('documents', 'Open ID documents and selfies', true), A('decide', 'Approve or reject ID documents'), A('guarantors', 'Approve or reject guarantors'), A('ask', 'Ask people for missing documents')] },
   { key: 'stores', label: 'Stores & Skills', help: 'Review pros\' stores, goods, extra skills and Market listings.', actions: [SEE('See stores, goods and skills waiting'), A('licence', 'Open licence documents', true), A('goods', 'Approve or reject goods'), A('stores', 'Approve, reject or close stores'), A('skills', 'Approve or reject extra skills'), A('listings', 'See Market listings and reports', true), A('listingsDecide', 'Take down or restore Market listings'), A('returns', 'See store returns', true), A('returnsDecide', 'Decide store returns sent to the team')] },
+  { key: 'market', label: 'Market', help: 'Look after the Market: listings, store goods, sellers, orders and stolen-item reports (v164).', actions: [SEE('See the Market: listings, goods, sellers, orders and reports'), A('sellers', 'Stop sellers from selling, or allow them again'), A('stolen', 'Close stolen-item reports')] },
   { key: 'rides', label: 'Rides', help: 'Driver applications and ride alerts.', actions: [SEE('See driver applications and alerts'), A('documents', 'Open driver documents', true), A('applications', 'Approve or reject drivers, and keep the list of places'), A('alerts', 'Resolve ride alerts')] },
   { key: 'providerscores', label: 'Provider Scores', help: 'Trust scores and the leaderboard.', actions: [SEE('See scores and the leaderboard')] },
   { key: 'disputes', label: 'Disputes', help: 'Read and resolve disputes.', actions: [SEE('See disputes and their history'), A('calls', 'See when the two sides called or sent voice messages (times only)', true), A('export', 'Download disputes as PDF', true), A('resolve', 'Resolve disputes')] },
@@ -128,6 +129,9 @@ const ROUTES = [
   ['POST', '/admin/skills/:providerId/decide', 'stores', 'skills'],
   ['GET', '/admin/skills/:providerId/licence', 'stores', 'licence'],
   ['GET', '/admin/market/listings', 'stores', 'listings'],
+  ['GET', '/admin/market/(overview|all-listings|goods|sellers|orders|stolen|activity)', 'market', 'view'], // v164
+  ['POST', '/admin/market/sellers/:id/(stop|lift)', 'market', 'sellers'],
+  ['POST', '/admin/market/stolen/:id/close', 'market', 'stolen'],
   ['POST', '/admin/market/listings/:id/decide', 'stores', 'listingsDecide'],
   ['GET', '/admin/store/returns', 'stores', 'returns'],
   ['POST', '/admin/store/returns/:id/decide', 'stores', 'returnsDecide'],

@@ -58,13 +58,26 @@ function driverRates(u) {
   const r = (u && u.deliveryRates) || {};
   const base = Number(r.baseFee), perKm = Number(r.perKm);
   const set = Number.isFinite(base) && base > 0;
+  const vehicle = store.VEHICLES.includes(r.vehicle) ? r.vehicle : (rideDeliverer(u) ? u.rideDriver.vehicle : null);
   return {
-    vehicle: store.VEHICLES.includes(r.vehicle) ? r.vehicle : (rideDeliverer(u) ? u.rideDriver.vehicle : null),
+    vehicle,
     baseFee: set ? money(base) : money(Number(u && u.price) > 0 ? u.price : 5),
     perKm: set && Number.isFinite(perKm) && perKm >= 0 ? Math.round(perKm * 10000) / 10000 : 0, // kept to 4 places so a price per mile converts cleanly
     isSet: set,
+    ...rangeOf(u, vehicle),
   };
 }
+// v164: the distances a driver goes (km, straight line). Their own choice,
+// kept inside what their kind of vehicle can do.
+function rangeOf(u, vehicle) {
+  const cap = store.VEHICLE_MAX_KM[vehicle] || 50;
+  const r = (u && u.deliveryRange) || {};
+  let min = Number(r.minKm), max = Number(r.maxKm);
+  if (!Number.isFinite(max) || max <= 0 || max > cap) max = cap;
+  if (!Number.isFinite(min) || min < 0 || min >= max) min = 0;
+  return { minKm: Math.round(min * 10) / 10, maxKm: Math.round(max * 10) / 10, vehicleMaxKm: cap };
+}
+const inRange = (rates, km) => km == null || (km >= rates.minKm - 0.05 && km <= rates.maxKm + 0.05);
 function quoteFor(u, km) {
   const r = driverRates(u);
   return Math.max(1, money(r.baseFee + (km ? r.perKm * km : 0)));
@@ -103,14 +116,16 @@ async function suggestDrivers({ seller, dropoff, customerId, pickup }) {
       id: u.id, name: u.name, initials: u.initials || null, color: u.color || null, profilePhotoUrl: u.profilePhotoUrl || null,
       city: u.city || '', rating: u.rating || null, jobs: u.jobs || 0,
       isNewPro: u.trustScoreProvisional === true || u.trustScore == null, trustScore: (u.trustScore != null && u.trustScoreProvisional !== true) ? u.trustScore : null,
-      vehicle: rates.vehicle, baseFee: rates.baseFee, perKm: rates.perKm,
-      price: await deliveryPrice(u, km), kmFromStore: toStore, sameCity: sameText(u.city, seller.city),
+      vehicle: rates.vehicle, baseFee: rates.baseFee, perKm: rates.perKm, minKm: rates.minKm, maxKm: rates.maxKm,
+      price: await deliveryPrice(u, km), kmFromStore: toStore, sameCity: sameText(u.city, seller.city), fits: inRange(rates, km),
     };
   }));
+  const outOfRange = rows.filter(x => !x.fits).length;
+  for (let i = rows.length - 1; i >= 0; i--) if (!rows[i].fits) rows.splice(i, 1); else delete rows[i].fits; // v164: only drivers who go that far (or that short)
   rows.sort((a, b) => (b.sameCity - a.sameCity)
     || ((a.kmFromStore === null ? 1e9 : a.kmFromStore) - (b.kmFromStore === null ? 1e9 : b.kmFromStore))
     || ((b.rating || 0) - (a.rating || 0)) || (a.price - b.price));
-  return { drivers: rows.slice(0, MAX_DRIVERS_SUGGESTED), distanceKm: km, totalFound: rows.length };
+  return { drivers: rows.slice(0, MAX_DRIVERS_SUGGESTED), distanceKm: km, totalFound: rows.length, outOfRange };
 }
 
 const isLive = (c) => !!c && ['pending_provider_confirmation', 'active'].includes(c.status);
@@ -231,5 +246,6 @@ module.exports = {
   DELIVERY_MAX_DRIVERS, nextDriver,
   DELIVERY_RESPONSE_MINUTES, MAX_DRIVERS_SUGGESTED, kmBetween, distWords, isDriver, driverRates, quoteFor, suggestDrivers,
   rideDeliverer, tableQuote, deliveryPrice, // v143
+  rangeOf, inRange, // v164
   isLive, deliveryOf, deliveryEvent, afterCancel, afterComplete,
 };

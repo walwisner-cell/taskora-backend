@@ -18,7 +18,9 @@
   if (typeof ES_TEXT === 'object') Object.assign(ES_TEXT, {
     'Cart': 'Carrito', 'Your cart': 'Tu carrito', 'Add to cart': 'Añadir al carrito', 'Added to your cart': 'Añadido a tu carrito', 'Choose options': 'Elegir opciones',
     'Your cart is empty': 'Tu carrito está vacío', 'Goods you add from any store stay here, on any device you sign in on.': 'Lo que añadas de cualquier tienda se queda aquí, en cualquier dispositivo donde inicies sesión.',
-    'Browse the Market': 'Explorar el Mercado', 'Check out with this store': 'Pagar en esta tienda', 'Subtotal': 'Subtotal', 'Remove': 'Quitar', 'Save for later': 'Guardar para después',
+    'Browse the Market': 'Explorar el Mercado', 'Browse pros and their stores': 'Ver profesionales y sus tiendas', 'Sign in to see your cart': 'Inicia sesión para ver tu carrito',
+    'Add goods from a pro\'s store and they wait here. Signed in, your cart follows you to any device.': 'Añade productos de la tienda de un profesional y te esperan aquí. Con tu sesión iniciada, el carrito te sigue en cualquier dispositivo.',
+    'Carts are for customer and pro accounts.': 'Los carritos son para cuentas de cliente y de profesional.', 'Check out with this store': 'Pagar en esta tienda', 'Subtotal': 'Subtotal', 'Remove': 'Quitar', 'Save for later': 'Guardar para después',
     'Saved for later': 'Guardado para después', 'Move to cart': 'Pasar al carrito', 'Sold out': 'Agotado', 'No longer available': 'Ya no está disponible', 'Only': 'Solo', 'left': 'quedan',
     'Delivery, any discount code and Trothen\'s fee are worked out at checkout.': 'La entrega, cualquier código de descuento y la tarifa de Trothen se calculan al pagar.',
     'Each store is paid for on its own, because each has its own delivery and its money is held until you have the goods.': 'Cada tienda se paga por separado, porque cada una tiene su propia entrega y su dinero se retiene hasta que tienes los productos.',
@@ -69,7 +71,10 @@
   window.cartPaintCount = paintCount;
 
   // ── loading and keeping in step ─────────────────────────────────────
-  async function load(showNotices) {
+  // v164: loads run one after another (at sign-in two could start together and both add the visitor's
+  // cart; the second now finds it already added, and a load asked for after signing in always runs)
+  function load() { const run = (C.loading || Promise.resolve()).then(() => loadNow(), () => loadNow()); C.loading = run.catch(() => {}); return run; }
+  async function loadNow() {
     if (!isBuyer()) { C.view = null; C.guest = readGuest(); basketFromLines(C.guest); paintCount(); return null; }
     try {
       const guest = readGuest();
@@ -225,7 +230,18 @@
     const guest = !!v.guest;
     const n = v.count || 0, ns = (v.stores || []).length;
     const reduced = []; for (const s of v.stores || []) for (const l of s.lines) if (l.reduced) reduced.push(`${l.name}: ${l.reduced.from} → ${l.reduced.to}`);
-    if (!ns && !(v.saved || []).length) return `<div class="cart-empty"><div style="font-size:42px;line-height:1;">🛒</div><div class="cart-empty-title">${e(t('Your cart is empty'))}</div><p>${e(t('Goods you add from any store stay here, on any device you sign in on.'))}</p>${isBuyer() ? `<button type="button" class="confirm-btn" style="max-width:280px;" onclick="v105Close('cart-overlay');cartBrowseMarket()">${e(t('Browse the Market'))}</button>` : ''}</div>`;
+    // v164: an empty cart always offers a way on (Baymard: an empty cart is a dead end without one). A visitor
+    // who isn't signed in is told the truth (their cart is on this device) and can sign in to see one kept elsewhere.
+    if (!ns && !(v.saved || []).length) {
+      const signedIn = isBuyer();
+      const staff = !!(me() && !['customer', 'provider'].includes(me().role));
+      return `<div class="cart-empty"><span class="cart-empty-icon" aria-hidden="true">${CART_ICON}</span><div class="cart-empty-title">${e(t('Your cart is empty'))}</div>
+        <p>${e(t(staff ? 'Carts are for customer and pro accounts.' : signedIn ? 'Goods you add from any store stay here, on any device you sign in on.' : 'Add goods from a pro\'s store and they wait here. Signed in, your cart follows you to any device.'))}</p>
+        ${staff ? '' : `<div class="cart-empty-actions">
+          <button type="button" class="confirm-btn" onclick="v105Close('cart-overlay');cartBrowseMarket()">${e(t(signedIn ? 'Browse the Market' : 'Browse pros and their stores'))}</button>
+          ${signedIn ? '' : `<button type="button" class="btn-link cart-empty-signin" onclick="v105Close('cart-overlay');showAuth('login')">${e(t('Sign in to see your cart'))}</button>`}
+        </div>`}</div>`;
+    }
     return `
       ${guest ? `<div class="ver-note" style="margin-bottom:12px;">${e(t('Sign in to check out. Your cart is kept on this device until you do.'))}</div>` : ''}
       ${reduced.length ? `<div class="ver-note" style="margin-bottom:12px;">${e(t('Only so many were left, so your cart now has fewer:'))} ${e(reduced.join(' · '))}</div>` : ''}
@@ -259,7 +275,8 @@
     const role = me() && me().role;
     if (role === 'customer' && typeof goToCustomerDashboard === 'function') return goToCustomerDashboard('market');
     if (role === 'provider' && typeof selectProviderSection === 'function') { const sc = document.getElementById('screen-provider'); if (sc && !sc.classList.contains('active')) showScreen('screen-provider'); return selectProviderSection('market'); }
-    if (typeof openMarket === 'function') openMarket('browse');
+    if (role === 'customer' || role === 'provider') { if (typeof openMarket === 'function') openMarket('browse'); return; }
+    if (typeof goDirectory === 'function') goDirectory(); // not signed in: the pros, whose stores sell the goods
   };
   window.openCart = async function () {
     v105Overlay('cart-overlay', `

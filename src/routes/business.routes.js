@@ -343,7 +343,7 @@ router.get('/quotes/:id/pdf', requireAuth, requireRole('customer'), async (req, 
   docPdf(res, me, doc);
 });
 
-function sendDocPdf(res, { me, business, typeLabel, number, date, extraDateLabel, extraDate, customerName, customerContact, title, items, totals, taxRatePct, notes, statusLine, closing }) {
+function sendDocPdf(res, { me, business, typeLabel, number, date, extraDateLabel, extraDate, customerName, customerContact, title, items, totals, taxRatePct, notes, statusLine, closing, place }) {
   const { createReportDoc } = require('../pdf-report-builder');
   const from = me.businessName || me.name;
   const r = createReportDoc({
@@ -358,6 +358,7 @@ function sendDocPdf(res, { me, business, typeLabel, number, date, extraDateLabel
   r.twoColumnRow('Date', date || '', extraDateLabel || 'Status', extraDateLabel ? (extraDate || 'Not set') : (statusLine || ''));
   if (extraDateLabel && statusLine) r.row('Status', statusLine);
   if (title) r.row('For the work', title);
+  if (place && place.length) { r.sectionHeader(place.some(([l]) => /^Pick-up/.test(l)) ? 'The trip' : 'Where the work was done'); r.placeBlock(place); } // v164
   r.sectionHeader('Lines');
   r.table(
     [{ label: 'Description', width: 250 }, { label: 'Qty', width: 60, align: 'right' }, { label: 'Each', width: 85, align: 'right' }, { label: 'Total', width: 85, align: 'right' }],
@@ -450,6 +451,7 @@ router.get('/business/booking-invoices/:contractId/pdf', requireAuth, async (req
     me, business, typeLabel: 'Invoice', number: inv.number, date: inv.date,
     customerName: inv.customerName, customerContact: customer && customer.city ? `${customer.city}${customer.country ? ', ' + customer.country : ''}` : '',
     title: `Trothen booking #${contract.bookingNumber || contract.id}`, items: inv.items,
+    place: contract.delivery || contract.storeOrder ? null : contract.ride ? require('../plus-code').tripLines(contract.ride.pickup, contract.ride.dropoff) : require('../plus-code').placeLines({ address: contract.address, landmark: contract.landmark, pin: contract.jobLocation }),
     totals: { subtotal: inv.subtotal, discount: 0, tax: inv.tax, total: inv.total, taxNote: inv.taxIncluded ? `$${inv.tax.toFixed(2)} (included in the prices)` : 'Not charged' },
     taxRatePct: inv.taxRatePct, notes: '',
     statusLine: 'Paid through Trothen',

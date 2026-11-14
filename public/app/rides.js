@@ -412,6 +412,7 @@
       ${d.status === 'rejected' ? `<div class="ver-note" style="border-left:3px solid #C0392B;">${e(tr('Not approved:'))} ${e(d.rejectReason || '')}. ${e(tr('Fix this and apply again.'))}</div>` : ''}
       ${d.status === 'suspended' ? `<div class="ver-note" style="border-left:3px solid #C0392B;">${e(tr('Your ride driving is paused:'))} ${e(d.rejectReason || '')}</div>` : ''}
       <div class="ver-note" style="margin-bottom:12px;">${e(tr('To keep riders safe, an admin checks your licence and your vehicle before you can take rides. Your documents are private.'))}</div>
+      <div class="ver-note" style="margin-bottom:12px;">🚲 ${e(tr('Delivering by bicycle or on foot? You don\'t need this form. Add "Pick & Drop" to your skills in Settings, then choose Bicycle and the distances you go under Deliveries.'))}</div>
       <div class="dates-row">
         <div class="form-group"><label class="form-label" for="rd-vehicle">${e(tr('Vehicle'))}</label><select class="form-input form-select" id="rd-vehicle" onchange="ridesVehicleChanged()" ${locked ? 'disabled' : ''}>${Object.keys(d.vehicles).map(v => `<option value="${v}" ${v === d.vehicle ? 'selected' : ''}>${e(tr(v))} (${d.vehicles[v]} ${e(tr('seats'))})</option>`).join('')}</select></div>
         <div class="form-group"><label class="form-label" for="rd-make">${e(tr('Make / colour'))}</label><input class="form-input" id="rd-make" maxlength="40" value="${e(d.make)}" placeholder="Honda, red" ${locked ? 'disabled' : ''}/></div>
@@ -463,10 +464,16 @@
       ${act ? `<div style="padding:10px 12px;border-radius:10px;background:#EEF8F3;font-size:14.5px;">🎟️ <strong>${e(act.label)}</strong> ${e(tr('is active until'))} ${e(when2(act.endsAt))}. ${e(tr('You keep the whole fare on every ride while it runs.'))}</div>`
         : `<div class="ver-note">${e(tr('No pass at the moment. App rides pay Trothen'))} ${e(d.commissionPercent)}% ${e(tr('when you are paid out. With a pass you pay one flat price and keep every fare.'))}</div>`}
       ${(p.queued || []).map(q => `<div class="ver-note" style="margin-top:6px;">${e(q.label)} ${e(tr('starts'))} ${e(when2(q.startsAt))}.</div>`).join('')}
+      ${d.freePass ? `<div class="rd-free" style="margin-top:12px;padding:12px 14px;border-radius:10px;border:1px solid #9BD3B8;background:#EEF8F3;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;"><span>🎁 <strong>${e(tr(d.freePass.days === 7 ? 'Your first week is free' : 'Your first days are free'))}</strong>${d.freePass.days === 7 ? '' : ` (${e(d.freePass.days)} ${e(tr('days'))})`}. ${e(tr('Start it when you are ready to drive: you keep the whole fare on every ride, and nothing is charged.'))}</span><button class="btn-sm btn-sm-primary" onclick="ridesFreePass()">${e(tr('Start my free week'))}</button></div>` : ''}
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">${(d.passPlans || []).map(pl => `<button class="btn-sm btn-sm-outline" onclick="ridesBuyPass(${jsArg(pl.id)},${pl.priceUsd},${jsArg(pl.label)})"><strong>${e(pl.label)}</strong> · ${money(pl.priceUsd)} · ${pl.days} ${e(tr(pl.days === 1 ? 'day' : 'days'))}</button>`).join('')}</div>
       ${d.cashEnabled ? `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px;"><input type="checkbox" id="rd-cash" ${d.acceptsCash ? 'checked' : ''} onchange="ridesCashToggle(this.checked)" style="margin-top:4px;"/> <span>${e(tr('I take cash rides.'))} <span style="color:var(--slate);">${e(tr('Riders can then pay you in cash. You collect the fare yourself. With an active Driver Pass Trothen takes nothing from it; without one, Trothen\'s ride commission comes from your tokens when you accept the ride.'))}</span></span></label>` : ''}
       <div class="ver-note" style="margin-top:10px;">${e(tr('Passes are paid like other payments in Trothen. Buying a second pass while one is running starts it when the first ends.'))}</div></div>`;
   }
+  window.ridesFreePass = async function () {
+    if (!(await confirmDialog(tr('Start your free pass now? It runs from now, and can only be used once.'), { confirmLabel: tr('Start it now') }))) return;
+    try { await apiFetch('POST', '/rides/driver/pass/free', {}); showToast(tr('Your free week has started')); loadDriverPage(); }
+    catch (x) { showToast(x.message || 'Could not start it'); loadDriverPage(); }
+  };
   window.ridesBuyPass = async function (id, price, label) {
     if (!(await confirmDialog(tr('Buy the') + ' ' + label + ' ' + tr('for') + ' ' + money(price) + '?', { confirmLabel: tr('Buy pass') }))) return;
     try { await apiFetch('POST', '/rides/driver/pass', { planId: id, expectedPrice: price }); showToast(tr('Pass bought')); loadDriverPage(); }
@@ -478,9 +485,23 @@
   };
   // v143: approved drivers also carry store and Market deliveries (Deliveries in the menu)
   const deliversToggle = (d) => `<label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:14px;"><input type="checkbox" id="rd-delivers" ${d.delivers !== false ? 'checked' : ''} onchange="ridesDelivers(this.checked)" style="margin-top:3px;"/> <span>${e(tr('I also carry store and Market deliveries'))} <span style="color:var(--slate);">${e(tr('Buyers can choose you to bring their goods. Delivery jobs show under Deliveries.'))}</span></span></label>`;
+  // v164: how far a ride driver goes on a delivery
+  const rangeEditor = (d) => {
+    const g = d.deliveryRange; if (!g || d.delivers === false) return '';
+    const mi = typeof usesMiles === 'function' && usesMiles(), f = mi ? 1 / KM_PER_MI : 1, r1 = (x) => Math.round(x * f * 10) / 10;
+    return `<div class="dates-row" style="margin-top:8px;align-items:flex-end;">
+      <div class="form-group"><label class="form-label" for="rd-min">${e(tr(mi ? 'Shortest delivery (miles)' : 'Shortest delivery (km)'))}</label><input class="form-input" id="rd-min" type="number" min="0" step="0.5" value="${e(r1(g.minKm))}"/></div>
+      <div class="form-group"><label class="form-label" for="rd-max">${e(tr(mi ? 'Longest delivery (miles)' : 'Longest delivery (km)'))}</label><input class="form-input" id="rd-max" type="number" min="0.5" step="0.5" max="${e(r1(g.vehicleMaxKm))}" value="${e(r1(g.maxKm))}"/></div>
+      <div class="form-group"><button class="btn-sm btn-sm-outline" onclick="ridesSaveRange()">${e(tr('Save'))}</button></div></div>`;
+  };
+  window.ridesSaveRange = async function () {
+    const f = typeof usesMiles === 'function' && usesMiles() ? KM_PER_MI : 1;
+    try { await apiFetch('PUT', '/delivery/range', { minKm: Number(document.getElementById('rd-min').value || 0) * f, maxKm: Number(document.getElementById('rd-max').value) * f }); showToast(tr('Saved')); }
+    catch (x) { showToast(x.message || 'Could not save'); }
+  };
   window.ridesDelivers = async function (on) { try { await apiFetch('PUT', '/rides/driver/delivers', { on }); showToast(tr(on ? 'You now carry deliveries too' : 'You no longer carry deliveries')); } catch (x) { showToast(x.message || 'Could not save'); } };
   function driverRates(d) {
-    return driverRatesInner(d).replace(/<\/div>$/, deliversToggle(d) + '</div>');
+    return driverRatesInner(d).replace(/<\/div>$/, deliversToggle(d) + rangeEditor(d) + '</div>');
   }
   function driverRatesInner(d) {
     if (d.fareTable) { // v142: Trothen sets the fares here; the driver chooses how far above or below
@@ -739,6 +760,9 @@
   }
   function stopBeacon() { clearInterval(BCN.scanTimer); clearInterval(BCN.sendTimer); BCN.started = false; BCN.jobs = []; stopWatch(); renderBar(); }
   window.ridesBeaconRescan = scanJobs;
+  // v164: the position the live tracking already has (under a minute old), so
+  // recording a pick-up or drop-off doesn't wait for a second fix.
+  window.ridesLatestFix = function () { const p = BCN.latest; return p && Date.now() - p.at <= 60000 ? { latitude: p.latitude, longitude: p.longitude, accuracyM: p.accuracyM } : null; };
   { const f = updateProviderSidebar; updateProviderSidebar = function () { const r = f.apply(this, arguments); startBeacon(); return r; }; }
   { const f = showAuth; showAuth = function () { stopBeacon(); return f.apply(this, arguments); }; }
 
@@ -845,6 +869,7 @@
         <div class="ver-note" style="margin-top:4px;">${e(tr('Papers you can name:'))} ${Object.keys(o.docKinds || {}).map(k => '<code>' + e(k) + '</code> = ' + e(tr(o.docKinds[k]))).join('; ')}. ${e(tr('Every rule must include licence, registration and vehicle. With no rule the standard list applies:'))} ${(o.standardDocs || []).map(k => e(k)).join(', ')}. ${e(tr('The most specific rule wins. Drivers already approved are not removed when you add a paper: you will see a warning on their line and can ask them for it or suspend them. Ask a Liberian lawyer or the Ministry of Transport which papers are legally required before you set these.'))}</div></div>
         <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-pass">${e(tr('Driver Pass'))}</label><select class="form-input form-select" id="rs-pass"><option value="1" ${s.passEnabled ? 'selected' : ''}>${e(tr('On: drivers can buy passes'))}</option><option value="0" ${!s.passEnabled ? 'selected' : ''}>${e(tr('Off'))}</option></select></div>
         <div class="form-group"><label class="form-label" for="rs-cash">${e(tr('Cash rides'))}</label><select class="form-input form-select" id="rs-cash"><option value="0" ${!s.cashEnabled ? 'selected' : ''}>${e(tr('Off (app payment only)'))}</option><option value="1" ${s.cashEnabled ? 'selected' : ''}>${e(tr('On: commission from the driver\'s tokens, none with a Driver Pass'))}</option></select></div></div>
+        <div class="form-group"><label class="form-label" for="rs-free">${e(tr('Free first pass for new drivers (days, 0 = off)'))}</label><input class="form-input" id="rs-free" type="number" min="0" max="30" value="${e(s.passFreeDays != null ? s.passFreeDays : 7)}"/></div>
         <div class="form-group"><label class="form-label" for="rs-plans">${e(tr('Pass prices, one per line: short-name, label, days, price in US$'))}</label><textarea class="form-input" id="rs-plans" rows="4" style="font-family:monospace;">${e((s.passPlans || []).map(p => [p.id, p.label, p.days, Number(p.priceUsd).toFixed(2)].join(', ')).join('\n'))}</textarea>
         <div class="ver-note" style="margin-top:4px;">${e(tr('These are placeholder prices. Set real ones for your market. Before allowing cash rides, have your lawyer add them to the Ride Rules.'))}</div></div>
         <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-auto">${e(tr('Release the fare automatically after the driver ends the trip (hours, 0 = never)'))}</label><input class="form-input" id="rs-auto" type="number" min="0" max="168" value="${e(s.autoReleaseHours)}"/></div>
@@ -1004,7 +1029,7 @@
   }
   window.ridesAdminSave = async function () {
     try {
-      await apiFetch('PUT', '/admin/rides/settings', { maxKm: Number(el('rs-max').value), searchKm: Number(el('rs-search').value), answerMinutes: Number(el('rs-ans').value), feePercent: Number(el('rs-fee').value), commissionPercent: Number(el('rs-comm').value), requireInsurance: el('rs-ins').value === '1', motorbikeNight: { enabled: el('rs-night').checked, startHour: Number(el('rs-n1').value), endHour: Number(el('rs-n2').value) }, rulesRider: el('rs-rr').value, rulesDriver: el('rs-rd').value, docRules: el('rs-docs').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const x = l.split('|').map(t => t.trim()); return { country: x[0], vehicle: (x[1] || '').toLowerCase(), docs: (x[2] || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean) }; }), passEnabled: el('rs-pass').value === '1', cashEnabled: el('rs-cash').value === '1', passPlans: el('rs-plans').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const x = l.split(',').map(t => t.trim()); return { id: x[0], label: x[1], days: Number(x[2]), priceUsd: Number(x[3]) }; }), autoReleaseHours: Number(el('rs-auto').value), noStartHours: Number(el('rs-nostart').value), stuckHours: Number(el('rs-stuck').value), waitMinutes: Number(el('rs-wait').value), trackKeepDays: Number(el('rs-keep').value) });
+      await apiFetch('PUT', '/admin/rides/settings', { maxKm: Number(el('rs-max').value), searchKm: Number(el('rs-search').value), answerMinutes: Number(el('rs-ans').value), feePercent: Number(el('rs-fee').value), commissionPercent: Number(el('rs-comm').value), requireInsurance: el('rs-ins').value === '1', motorbikeNight: { enabled: el('rs-night').checked, startHour: Number(el('rs-n1').value), endHour: Number(el('rs-n2').value) }, rulesRider: el('rs-rr').value, rulesDriver: el('rs-rd').value, docRules: el('rs-docs').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const x = l.split('|').map(t => t.trim()); return { country: x[0], vehicle: (x[1] || '').toLowerCase(), docs: (x[2] || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean) }; }), passEnabled: el('rs-pass').value === '1', cashEnabled: el('rs-cash').value === '1', passFreeDays: el('rs-free') ? Math.max(0, Math.min(30, Math.round(Number(el('rs-free').value) || 0))) : undefined, passPlans: el('rs-plans').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const x = l.split(',').map(t => t.trim()); return { id: x[0], label: x[1], days: Number(x[2]), priceUsd: Number(x[3]) }; }), autoReleaseHours: Number(el('rs-auto').value), noStartHours: Number(el('rs-nostart').value), stuckHours: Number(el('rs-stuck').value), waitMinutes: Number(el('rs-wait').value), trackKeepDays: Number(el('rs-keep').value) });
       showToast(tr('Saved')); loadAdminRides();
     } catch (x) { showToast(x.message || 'Could not save'); }
   };

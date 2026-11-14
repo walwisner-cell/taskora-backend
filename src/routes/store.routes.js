@@ -778,6 +778,7 @@ router.post('/admin/store/goods/:id/decide', adminGate, async (req, res) => {
     reviewedAt: new Date().toISOString(), reviewedBy: req.adminUser.id, reviewedByName: req.adminUser.name,
   });
   await store.refreshStoreLive(pro.id);
+  try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: req.adminUser.id, resourceType: 'market_good', resourceId: `${good.id} "${String(good.name).slice(0, 60)}": ${decision === 'approve' ? 'approved' : (good.status === 'approved' ? 'taken down' : 'turned down')}${note ? ' - ' + String(note).trim().slice(0, 150) : ''}`, ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the decision stands */ } // v164
   await notify(pro.id, decision === 'approve' ? '✅' : '❌', decision === 'approve'
     ? `"${good.name}" was approved and is now in your store.`
     : `"${good.name}" wasn't approved for your store: ${String(note).trim()} Change it and it will be checked again.`, null, { section: 'store' });
