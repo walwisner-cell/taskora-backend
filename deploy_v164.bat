@@ -26,13 +26,13 @@ call :check "public\app\categories.js" 8323
 call :check "public\app\chats.js" 22031
 call :check "public\app\checks.js" 19575
 call :check "public\app\commission.js" 31522
-call :check "public\app\es-v152.js" 46286
+call :check "public\app\es-v152.js" 47100
 call :check "public\app\instant.js" 10353
 call :check "public\app\listing.js" 2662
 call :check "public\app\live.js" 12129
 call :check "public\app\maps.js" 20729
-call :check "public\app\market-admin.js" 21113
-call :check "public\app\market.js" 73411
+call :check "public\app\market-admin.js" 21403
+call :check "public\app\market.js" 73610
 call :check "public\app\mobile.js" 11714
 call :check "public\app\paymethods.js" 9394
 call :check "public\app\payout-details.js" 19764
@@ -45,7 +45,7 @@ call :check "public\app\pricing.js" 35730
 call :check "public\app\review.js" 19893
 call :check "public\app\rides.js" 134620
 call :check "public\app\sounds.js" 4867
-call :check "public\app\store-plus.js" 49166
+call :check "public\app\store-plus.js" 50158
 call :check "public\app\teams.js" 6193
 call :check "public\app\tokens.js" 61193
 call :check "public\app\trothen.js" 1539120
@@ -84,7 +84,7 @@ call :check "src\listing.js" 1500
 call :check "src\live.js" 8232
 call :check "src\location-retention-scheduler.js" 5125
 call :check "src\loyalty.js" 2262
-call :check "src\market.js" 15052
+call :check "src\market.js" 19250
 call :check "src\membership.js" 3164
 call :check "src\mobile-money.js" 5472
 call :check "src\notify.js" 2797
@@ -110,14 +110,14 @@ call :check "src\routes\calls.routes.js" 37291
 call :check "src\routes\cart.routes.js" 3943
 call :check "src\routes\custpay.routes.js" 9743
 call :check "src\routes\market-admin.routes.js" 20466
-call :check "src\routes\market.routes.js" 53461
+call :check "src\routes\market.routes.js" 53636
 call :check "src\routes\marketplace.routes.js" 205981
 call :check "src\routes\misc.routes.js" 71542
 call :check "src\routes\orders.routes.js" 74551
 call :check "src\routes\payments.routes.js" 118782
 call :check "src\routes\portfolio.routes.js" 12133
 call :check "src\routes\rides.routes.js" 89795
-call :check "src\routes\store.routes.js" 83196
+call :check "src\routes\store.routes.js" 83755
 call :check "src\routes\tokens.routes.js" 25314
 call :check "src\search-synonyms.js" 6181
 call :check "src\seed.js" 32030
@@ -258,7 +258,7 @@ git add "src\validators.js"
 git add "src\zip-stream.js"
 git add CHANGES_v128.md CHANGES_v129.md CHANGES_v130.md CHANGES_v131.md CHANGES_v132.md CHANGES_v133.md CHANGES_v134.md CHANGES_v135.md CHANGES_v136.md CHANGES_v137.md CHANGES_v138.md CHANGES_v139.md CHANGES_v140.md CHANGES_v141.md CHANGES_v142.md CHANGES_v143.md CHANGES_v144.md CHANGES_v145.md CHANGES_v146.md CHANGES_v147.md CHANGES_v148.md CHANGES_v149.md CHANGES_v150.md CHANGES_v151.md CHANGES_v152.md CHANGES_v153.md CHANGES_v154.md CHANGES_v155.md CHANGES_v156.md CHANGES_v157.md CHANGES_v158.md CHANGES_v159.md CHANGES_v160.md CHANGES_v161.md CHANGES_v162.md CHANGES_v163.md CHANGES_v164.md DEPLOYMENT_STEPS_v164.md
 git status
-echo Check above: 155 files staged if v128 is already live, 157 if it is not, or 27 if v163 is already live.
+echo Check above: 155 files staged if v128 is already live, 157 if it is not, or 29 if v163 is already live.
 pause
 git commit -m "v164: everything re-checked, pins on receipts, Admin Market, bicycle and distance ranges, L$50 tokens, free Driver Pass week, deliveries end to end (includes v128 to v163)" || goto :end
 git push -u origin v164-verify || goto :end

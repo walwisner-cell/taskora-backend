@@ -86,8 +86,8 @@ Trothen v164: everything in one place (includes v128 to v163)
                             empty cart, and the earlier screens.
 
 Works whether or not v128 is already live. git status shows 155 files if v128 is live, 157 if not.
-If you already deployed v163, it is safe on top of it, and git status shows only the 27 files that changed
-since (25 code files, CHANGES_v164.md and DEPLOYMENT_STEPS_v164.md).
+If you already deployed v163, it is safe on top of it, and git status shows only the 29 files that changed
+since (27 code files, CHANGES_v164.md and DEPLOYMENT_STEPS_v164.md).
 
 Email: your SMTP settings on Render are already in and working (System Check shows emails
 being sent), so nothing to add before this deploy.

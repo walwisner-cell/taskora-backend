@@ -245,4 +245,50 @@ function startMarketScheduler() {
   setTimeout(() => sweep().catch(() => {}), 20000).unref();
 }
 
-module.exports = { SERVICE_TO_MARKET, marketAislesFor, sellerStats, reserveUntil, scamSignals, listingRisk, NEW_SELLER_SALES, NEW_SELLER_RESERVE_DAYS, MARKET_CATEGORIES, CONDITIONS, MAX_LIVE_LISTINGS, MAX_PHOTOS, LISTING_DAYS, REPORTS_TO_HIDE, DAY, money, sameText, autoCompleteAt, completeOrder, afterOrderEnds, refreshSellerRating, sweep, startMarketScheduler };
+// v164: each store good has its own Market aisle, as on Jumia, eBay and
+// Amazon (a store's aisles alone put a fashion store's dresses under
+// "Plumbing Supplies"). The seller can choose it on the good; until they do,
+// it is worked out from the good's name, description and shelf. Only a good
+// whose words say nothing falls back to the store's own aisles.
+const W = (words) => new RegExp('\\b(?:' + words.split('|').map(x => x.trim().replace(/[.*+?^${}()[\]\\]/g, '\\$&').replace(/ /g, '\\s+')).join('|') + ')(?:s|es)?\\b', 'g'); // whole words, or their plurals
+const CATEGORY_WORDS = [
+  ['Fashion & Clothing', W('cloth|clothes|clothing|dress|gown|shirt|t-shirt|tshirt|blouse|skirt|trouser|pant|jean|shorts|suit|jacket|coat|sweater|hoodie|lappa|lapa|fabric|ankara|kente|outfit|wear|uniform|shoe|sandal|slipper|sneaker|boot|heel|handbag|purse|belt|hat|scarf|sock|underwear|bra|jumpsuit|romper|kaftan|abaya|attire|top|legging')],
+  ['Health & Beauty', W('hair|wig|weave|braid|hair extension|cream|lotion|soap|perfume|cologne|makeup|lipstick|nail polish|cosmetic|shampoo|conditioner|deodorant|skincare|serum')],
+  ['Plumbing Supplies', W('pipe|tap|faucet|valve|elbow|pvc|ppr|toilet|sink|basin|plumbing|fitting|hose|drain|shower|cistern|water heater|water tank|tee joint|union')],
+  ['Electrical Supplies', W('wire|wiring|cable|socket|switch|bulb|lamp|breaker|fuse|plug|solar panel|battery|batteries|inverter|extension cord|meter|conduit')],
+  ['Building & Hardware', W('cement|block|brick|zinc|roofing|roofing sheet|rod|iron rod|timber|plank|plywood|sand|gravel|screw|bolt|nail|hinge|padlock|door|window|tile|nut')],
+  ['Tools & Equipment', W('drill|hammer|saw|spanner|wrench|screwdriver|plier|tool|toolbox|ladder|grinder|generator|welder|trowel|shovel|wheelbarrow|tape measure|glove|safety boot|goggle')],
+  ['Paint & Finishes', W('paint|primer|varnish|emulsion|putty|paint roller|sealant|thinner')],
+  ['Phones & Tablets', W('phone|iphone|android|smartphone|tablet|ipad|charger|power bank|sim card')],
+  ['Computers & Electronics', W('laptop|computer|desktop|monitor|printer|tv|television|speaker|radio|headphone|earphone|camera|router|keyboard|mouse')],
+  ['Appliances', W('fridge|refrigerator|freezer|fan|pressing iron|blender|stove|cooker|microwave|washing machine|air conditioner|kettle|toaster|rice cooker')],
+  ['Home & Furniture', W('chair|table|bed|mattress|sofa|couch|curtain|carpet|rug|furniture|pillow|bedsheet|wardrobe|cupboard|plate|cup|pot|pan|utensil')],
+  ['Food & Groceries', W('rice|cooking oil|palm oil|flour|sugar|bean|food|drink|drinking water|juice|cassava|pepper|onion|fish|chicken|meat|egg|bread|milk|spice|noodle|snack')],
+  ['Cleaning Supplies', W('detergent|bleach|mop|broom|cleaner|disinfectant|sponge|dustbin|bin bag')],
+  ['Baby & Kids', W('baby|diaper|nappy|toy|kid|child|children|stroller|pram')],
+  ['Agriculture & Farm', W('seed|fertilizer|fertiliser|hoe|cutlass|machete|farm|animal feed|livestock|poultry|pesticide')],
+  ['Garden & Outdoor', W('garden|plant|flower|lawn|lawn mower|flower pot')],
+  ['Vehicles & Parts', W('tyre|tire|motorbike|motorcycle|engine|brake|spark plug|car part|helmet|exhaust|clutch')],
+  ['Sports & Hobbies', W('ball|football|jersey|sport|gym|bicycle|bike|fitness')],
+  ['Books & Education', W('book|pen|pencil|notebook|exercise book|school|textbook|stationery')],
+];
+function guessCategory(text) {
+  const t = ' ' + String(text || '').toLowerCase() + ' ';
+  let best = null, bestHits = 0;
+  for (const [cat, re] of CATEGORY_WORDS) {
+    re.lastIndex = 0;
+    const hits = (t.match(re) || []).length;
+    if (hits > bestHits) { best = cat; bestHits = hits; }
+  }
+  return best;
+}
+// The aisle(s) a store good is in: its own (chosen or worked out), else the store's.
+function goodCategories(g, seller) {
+  if (g && MARKET_CATEGORIES.includes(g.marketCategory)) return [g.marketCategory];
+  const guessed = guessCategory(`${g && g.name} ${g && g.description} ${g && g.shelf}`);
+  if (guessed) return [guessed];
+  const cats = seller && seller.store && Array.isArray(seller.store.marketCategories) && seller.store.marketCategories.length ? seller.store.marketCategories : ['Other'];
+  return cats;
+}
+
+module.exports = { guessCategory, goodCategories, SERVICE_TO_MARKET, marketAislesFor, sellerStats, reserveUntil, scamSignals, listingRisk, NEW_SELLER_SALES, NEW_SELLER_RESERVE_DAYS, MARKET_CATEGORIES, CONDITIONS, MAX_LIVE_LISTINGS, MAX_PHOTOS, LISTING_DAYS, REPORTS_TO_HIDE, DAY, money, sameText, autoCompleteAt, completeOrder, afterOrderEnds, refreshSellerRating, sweep, startMarketScheduler };

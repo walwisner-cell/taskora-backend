@@ -77,6 +77,19 @@ How I read this (all of it can be changed in the admin pages):
 
 **Business step for you:** if the Liberia token packs were already edited in Admin → Tokens on the live site, your saved packs stay as they are. The L$50 and L$100 packs only appear on their own where the defaults are in use. Add them in Admin → Tokens → Liberia if needed (price L$50, 0.26 tokens; L$100, 0.52 tokens).
 
+### Your screenshot: clothes under "Plumbing Supplies"
+The Market put **every good in a store under the store's own aisles**. NAJ Fashion House has "Plumbing Supplies" among its aisles, so its dresses showed there. "Materials for this job" had the same fault: a plumbing job could have been offered clothes.
+
+International marketplaces (Jumia, eBay, Amazon) put each item in its own category. Trothen now does the same:
+- **Each good has its own Market category.** The seller chooses it on the good's form in My Store. The form suggests one from the good's name, for example "Choose for me from the name (Fashion & Clothing)".
+- **Goods already on sale are sorted from their name, description and section,** so nobody has to do anything. "clothes", "dress" or "lappa" go under Fashion & Clothing; "PVC elbow", "pipe" or "tap" under Plumbing Supplies; "drill" or "gloves" under Tools & Equipment; and so on for every aisle. Only whole words count, so "brass" is not read as "bra".
+- **A good whose name says nothing** (for example "Fitting 3") still shows in the store's own aisles, as before.
+- **"Materials for this job" only offers goods in that job's aisles.** The hired pro's own store still shows everything.
+
+Also on those cards:
+- **Seller names start with capitals:** "Joseph K.", not "Joseph j.".
+- **The star stays with its number** ("★ 2.0"), instead of the star ending one line and the number starting the next. Its colour is darker, so it is easier to read.
+
 ## 4. Your question about the empty cart
 For a visitor who isn't signed in, it wasn't best practice:
 - **It was a dead end.** Baymard Institute's checkout research says an empty cart must always offer a way on. For visitors there was no button at all.
@@ -106,13 +119,15 @@ What this found, and I fixed:
   - never shows during a task, or while a new notification is showing;
   - steps aside when someone moves on to a task.
 - **Vehicle names now start with a capital** ("Bicycle", not "bicycle").
+- **Admin → Market: pressing two tabs quickly could leave the first one on screen.** The final run on Postgres caught this: a slower answer for the first tab arrived last and painted over the second. The tabs now draw one after another, so the last tab pressed always stays. (Tested.)
 
 ## 6. What the tests check now
-- **`t164` (69 checks):**
+- **`t164` (78 checks):**
   - carts changed at the same moment;
   - the saved-for-later limit;
   - pins on receipts, and who sees them;
   - every Admin → Market action, and stopping and allowing a seller;
+  - each good in its own Market category, "Materials for this job", and capitalised seller names;
   - distance ranges, and refusing an out-of-range driver;
   - the L$50 and L$100 packs, and the free week;
   - the visitor's empty cart;
@@ -133,6 +148,7 @@ What this found, and I fixed:
   - `src/cart.js`
   - `src/store.js`
   - `src/store-orders.js`
+  - `src/market.js`
   - `src/tokens.js`
   - `src/ride-pass.js`
   - `src/platform-settings.js`
@@ -149,6 +165,7 @@ What this found, and I fixed:
   - `public/app/trothen.js`
   - `public/app/cart.js`
   - `public/app/market.js`
+  - `public/app/store-plus.js`
   - `public/app/rides.js`
   - `public/app/permissions.js`
   - `public/app/es-v152.js`

@@ -102,7 +102,7 @@ function publicSkill(s) {
 // v143: the product details, sizes or colours, and the sale, for both views.
 function goodDetails(g) {
   return {
-    brand: g.brand || '', condition: g.condition || 'new', shelf: g.shelf || '', size: g.size || null, expiryDate: g.expiryDate || null,
+    brand: g.brand || '', condition: g.condition || 'new', shelf: g.shelf || '', size: g.size || null, expiryDate: g.expiryDate || null, marketCategory: g.marketCategory || null, guessedCategory: g.marketCategory ? null : require('../market').guessCategory(`${g.name} ${g.description || ''} ${g.shelf || ''}`),
     variantName: g.variantName || '', salePercent: store.saleOn(g) || 0, saleEndsAt: g.saleEndsAt || null,
   };
 }
@@ -308,6 +308,11 @@ function readGoodBody(body, userId, existing, currencies) {
       out[k] = b[k] ? String(b[k]).trim() : '';
     }
   }
+  if (has('marketCategory')) { // v164: the good's own Market aisle ('' = work it out from the name)
+    const mc = b.marketCategory ? String(b.marketCategory) : '';
+    if (mc && !require('../market').MARKET_CATEGORIES.includes(mc)) return { error: 'Choose a Market category from the list' };
+    out.marketCategory = mc || null;
+  }
   if (has('condition')) { if (!['new', 'used', 'refurbished'].includes(b.condition)) return { error: 'Condition is new, used or refurbished' }; out.condition = b.condition; }
   if (has('size')) { if (b.size !== null && !['small', 'medium', 'large', 'bulky'].includes(b.size)) return { error: 'Size is small, medium, large or bulky' }; out.size = b.size || null; }
   if (has('expiryDate')) {
@@ -376,7 +381,7 @@ router.post('/store/goods', requireAuth, requireRole('provider'), async (req, re
     name: out.name, description: out.description || '', price: out.price, priceCurrency: out.priceCurrency || 'USD', priceLocal: out.priceLocal || null, unit: out.unit || '', photoUrls: out.photoUrls || [],
     stock: out.stock === undefined ? null : out.stock, lowStockAt: out.lowStockAt === undefined ? null : out.lowStockAt, costPrice: out.costPrice === undefined ? null : out.costPrice,
     forSale, hidden: false,
-    brand: out.brand || '', condition: out.condition || 'new', shelf: out.shelf || '', size: out.size || null, expiryDate: out.expiryDate || null, // v143
+    brand: out.brand || '', condition: out.condition || 'new', shelf: out.shelf || '', size: out.size || null, expiryDate: out.expiryDate || null, marketCategory: out.marketCategory || null, // v143; v164
     variantName: out.variantName || '', variants: out.variants || [], salePercent: out.salePercent || 0, saleEndsAt: out.saleEndsAt || null,
     status: forSale ? 'pending' : 'private',
     sold: 0, stockLog: [],

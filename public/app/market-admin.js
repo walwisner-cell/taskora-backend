@@ -37,7 +37,10 @@
   window.adminMarketSearch = function (tab, q) { A.q[tab] = String(q || '').trim(); draw(); };
   const qs = (tab, def) => `show=${encodeURIComponent(A.show[tab] || def)}&q=${encodeURIComponent(A.q[tab] || '')}`;
 
-  async function draw() {
+  // Draws run one after another, so a tab pressed while another is loading is
+  // always the one left on screen (a slow answer can't paint over it).
+  function draw() { const run = (A.drawing || Promise.resolve()).then(drawNow, drawNow); A.drawing = run.catch(() => {}); return run; }
+  async function drawNow() {
     const b = body(); if (!b) return;
     b.innerHTML = '<div class="panel" style="color:var(--slate);">Loading…</div>';
     try {

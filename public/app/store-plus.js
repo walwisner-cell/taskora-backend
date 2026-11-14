@@ -80,6 +80,8 @@
 
   // ── SELLER: the good form (sizes or colours, sale, details) ──────────
   const GV = { rows: [] };
+  // v164: the Market's categories, for the good form's "Market category"
+  if (!window.MARKET_CATS) { window.MARKET_CATS = []; try { apiFetch('GET', '/market/categories').then(r => { window.MARKET_CATS = r.categories || []; }).catch(() => {}); } catch (x) {} }
   if (typeof openGoodForm === 'function') {
     const base = openGoodForm;
     openGoodForm = function (id) {
@@ -88,7 +90,10 @@
       const anchor = el('gf-forsale'); if (!anchor) return;
       GV.rows = g && g.variants ? g.variants.map(v => ({ ...v })) : [];
       const v = (x) => (x === null || x === undefined ? '' : e(x));
+      const cats = (window.MARKET_CATS || []);
       const html = `<div id="gf-extras" style="border-top:1px solid var(--border);margin:6px 0 12px;padding-top:10px;">
+        <div class="form-group"><label class="form-label" for="gf-mcat">${e(t('Market category'))}</label><select class="form-input form-select" id="gf-mcat"><option value="">${e(t('Choose for me from the name'))}${g && g.guessedCategory ? ' (' + e(t(g.guessedCategory)) + ')' : ''}</option>${cats.map(c => `<option value="${e(c)}" ${g && g.marketCategory === c ? 'selected' : ''}>${e(t(c))}</option>`).join('')}</select>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:4px;">${e(t('Where shoppers find this good in the Market, for example Fashion & Clothing or Plumbing Supplies.'))}</div></div>
         <div class="dates-row"><div class="form-group"><label class="form-label" for="gf-brand">${e(t('Brand'))} <small style="font-weight:400;color:var(--slate);">${e(t('optional'))}</small></label><input class="form-input" id="gf-brand" maxlength="40" value="${v(g && g.brand)}"/></div>
         <div class="form-group"><label class="form-label" for="gf-cond">${e(t('Condition'))}</label><select class="form-input form-select" id="gf-cond">${['new', 'used', 'refurbished'].map(c => `<option value="${c}" ${(g ? g.condition : 'new') === c ? 'selected' : ''}>${e(t(c[0].toUpperCase() + c.slice(1)))}</option>`).join('')}</select></div></div>
         <div class="dates-row"><div class="form-group"><label class="form-label" for="gf-shelf">${e(t('Section of my store'))} <small style="font-weight:400;color:var(--slate);">${e(t('optional'))}</small></label><input class="form-input" id="gf-shelf" maxlength="40" value="${v(g && g.shelf)}" placeholder="${e(t('e.g. Pipes, Hair care'))}"/></div>
@@ -118,7 +123,7 @@
       if (!el('gf-extras')) return base.apply(this, arguments);
       const realFetch = apiFetch;
       const variants = readVariants().filter(v => v.label);
-      const extras = { brand: el('gf-brand').value.trim(), condition: el('gf-cond').value, shelf: el('gf-shelf').value.trim(), size: el('gf-size').value || null, salePercent: Number(el('gf-sale').value) || 0, saleEndsAt: el('gf-sale-end').value ? new Date(el('gf-sale-end').value + 'T23:59:00').toISOString() : null, expiryDate: el('gf-expiry').value || null, variantName: el('gf-vname').value.trim(), variants };
+      const extras = { marketCategory: el('gf-mcat') ? el('gf-mcat').value : undefined, brand: el('gf-brand').value.trim(), condition: el('gf-cond').value, shelf: el('gf-shelf').value.trim(), size: el('gf-size').value || null, salePercent: Number(el('gf-sale').value) || 0, saleEndsAt: el('gf-sale-end').value ? new Date(el('gf-sale-end').value + 'T23:59:00').toISOString() : null, expiryDate: el('gf-expiry').value || null, variantName: el('gf-vname').value.trim(), variants };
       apiFetch = function (m, p, body) { if ((m === 'POST' && p === '/store/goods') || (m === 'PATCH' && /^\/store\/goods\/[^/]+$/.test(p))) body = { ...body, ...extras }; return realFetch.apply(this, [m, p, body]); };
       try { return await base.apply(this, arguments); } finally { apiFetch = realFetch; }
     };

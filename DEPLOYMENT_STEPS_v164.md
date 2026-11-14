@@ -22,13 +22,13 @@ This one package holds everything since the version on your GitHub `main` before
 | `public\app\chats.js` | **new** | 22,031 |
 | `public\app\checks.js` | **new** | 19,575 |
 | `public\app\commission.js` | **new** | 31,522 |
-| `public\app\es-v152.js` | **new** | 46,286 |
+| `public\app\es-v152.js` | **new** | 47,100 |
 | `public\app\instant.js` | **new** | 10,353 |
 | `public\app\listing.js` | **new** | 2,662 |
 | `public\app\live.js` | changed | 12,129 |
 | `public\app\maps.js` | **new** | 20,729 |
-| `public\app\market-admin.js` | **new** | 21,113 |
-| `public\app\market.js` | **new** | 73,411 |
+| `public\app\market-admin.js` | **new** | 21,403 |
+| `public\app\market.js` | **new** | 73,610 |
 | `public\app\mobile.js` | **new** | 11,714 |
 | `public\app\paymethods.js` | **new** | 9,394 |
 | `public\app\payout-details.js` | **new** | 19,764 |
@@ -41,7 +41,7 @@ This one package holds everything since the version on your GitHub `main` before
 | `public\app\review.js` | changed | 19,893 |
 | `public\app\rides.js` | changed | 134,620 |
 | `public\app\sounds.js` | **new** | 4,867 |
-| `public\app\store-plus.js` | **new** | 49,166 |
+| `public\app\store-plus.js` | **new** | 50,158 |
 | `public\app\teams.js` | **new** | 6,193 |
 | `public\app\tokens.js` | changed | 61,193 |
 | `public\app\trothen.js` | changed | 1,539,120 |
@@ -80,7 +80,7 @@ This one package holds everything since the version on your GitHub `main` before
 | `src\live.js` | changed | 8,232 |
 | `src\location-retention-scheduler.js` | changed | 5,125 |
 | `src\loyalty.js` | changed | 2,262 |
-| `src\market.js` | **new** | 15,052 |
+| `src\market.js` | **new** | 19,250 |
 | `src\membership.js` | changed | 3,164 |
 | `src\mobile-money.js` | **new** | 5,472 |
 | `src\notify.js` | changed | 2,797 |
@@ -106,14 +106,14 @@ This one package holds everything since the version on your GitHub `main` before
 | `src\routes\cart.routes.js` | **new** | 3,943 |
 | `src\routes\custpay.routes.js` | changed | 9,743 |
 | `src\routes\market-admin.routes.js` | **new** | 20,466 |
-| `src\routes\market.routes.js` | **new** | 53,461 |
+| `src\routes\market.routes.js` | **new** | 53,636 |
 | `src\routes\marketplace.routes.js` | changed | 205,981 |
 | `src\routes\misc.routes.js` | changed | 71,542 |
 | `src\routes\orders.routes.js` | changed | 74,551 |
 | `src\routes\payments.routes.js` | changed | 118,782 |
 | `src\routes\portfolio.routes.js` | changed | 12,133 |
 | `src\routes\rides.routes.js` | changed | 89,795 |
-| `src\routes\store.routes.js` | changed | 83,196 |
+| `src\routes\store.routes.js` | changed | 83,755 |
 | `src\routes\tokens.routes.js` | changed | 25,314 |
 | `src\search-synonyms.js` | changed | 6,181 |
 | `src\seed.js` | changed | 32,030 |
@@ -389,7 +389,7 @@ git commit -m "v164: everything re-checked, pins on receipts, Admin Market, bicy
 git push -u origin v164-verify
 ```
 
-`git status` should list **155 files** if v128 is already live, **157 files** if it is not, or **27 files** if you already deployed v163 (25 code files, `CHANGES_v164.md` and this file). Any other number means something is off: stop and send me a screenshot.
+`git status` should list **155 files** if v128 is already live, **157 files** if it is not, or **29 files** if you already deployed v163 (27 code files, `CHANGES_v164.md` and this file). Any other number means something is off: stop and send me a screenshot.
 
 ## 4. Test on your computer
 

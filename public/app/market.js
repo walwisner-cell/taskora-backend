@@ -104,7 +104,7 @@
       ? `<div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${M.total} ${e(t(M.total === 1 ? 'item' : 'items'))}</div><div class="mk-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;">${M.items.map(cardHTML).join('')}</div>`
       : `<div class="panel" style="color:var(--slate);">${e(t('Nothing found. Try other words or another category.'))}</div>`;
   }
-  const stars = (r) => (r && r.rating ? `<span title="${e(r.ratingCount)} ratings" style="color:#B7791F;">★ ${Number(r.rating).toFixed(1)}</span>` : '');
+  const stars = (r) => (r && r.rating ? `<span title="${e(r.ratingCount)} ${e(t(r.ratingCount === 1 ? 'rating' : 'ratings'))}" style="color:#8A5A00;white-space:nowrap;">★ ${Number(r.rating).toFixed(1)}</span>` : ''); // v164: the star stays with its number
   function cardHTML(it) {
     const click = it.kind === 'store' ? `openProStore(${jsArg(it.providerId)})` : `openListing(${jsArg(it.id)})`;
     const badge = it.kind === 'store' ? `<span class="badge badge-neutral" style="font-size:11px;">${e(t('Store'))}: ${e(it.storeName)}</span>` : (it.conditionLabel ? `<span class="badge badge-neutral" style="font-size:11px;">${e(t(it.conditionLabel))}</span>` : '');
@@ -281,7 +281,7 @@
           <button class="btn-sm btn-sm-primary" style="margin-top:10px;" ${earn.net > 0 ? '' : 'disabled'} onclick="cashOutMarket()">${e(t('Cash out'))}</button></div>`}
       </div>` : ''}
       ${u.role === 'provider' ? `<div class="panel" id="mk-store-cats"><div class="panel-title">${e(t('Your store in the Market'))}</div>
-        <div style="font-size:13.5px;color:var(--slate);margin-bottom:8px;">${e(t('Your approved store goods show in the Market automatically. Choose up to three aisles they belong in.'))} <a href="#" onclick="event.preventDefault();selectProviderSection('store')">${e(t('My Store'))}</a></div>
+        <div style="font-size:13.5px;color:var(--slate);margin-bottom:8px;">${e(t('Your approved store goods show in the Market automatically, each in its own Market category (set on each good in My Store). These aisles are only used for a good whose name doesn\'t say what it is.'))} <a href="#" onclick="event.preventDefault();selectProviderSection('store')">${e(t('My Store'))}</a></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">${M.cats.map(c => `<label style="display:inline-flex;gap:4px;align-items:center;font-size:13px;border:1px solid var(--border);border-radius:8px;padding:4px 8px;"><input type="checkbox" class="mk-sc" value="${e(c)}" ${((u.store && u.store.marketCategories) || []).includes(c) ? 'checked' : ''}/>${e(c)}</label>`).join('')}</div>
         <button class="btn-sm btn-sm-outline" style="margin-top:8px;" onclick="saveStoreCats()">${e(t('Save'))}</button>
         <div style="border-top:1px solid var(--border);margin:14px 0 10px;"></div>

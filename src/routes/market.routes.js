@@ -32,7 +32,7 @@ const { money, sameText } = market;
 const router = express.Router();
 const listLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many searches at once. Please wait a moment.' } });
 const writeLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many changes in a short time. Please wait a few minutes.' } });
-const firstAndInitial = (n) => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[p.length - 1][0]}.` : (p[0] || 'Member'); };
+const firstAndInitial = (n) => { const p = String(n || '').trim().split(/\s+/); const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1); return p.length > 1 ? `${cap(p[0])} ${p[p.length - 1][0].toUpperCase()}.` : (p[0] ? cap(p[0]) : 'Member'); }; // v164: "Joseph K.", never "Joseph k."
 
 // Who is looking (optional on public pages).
 async function viewer(req) {
@@ -96,11 +96,11 @@ router.get('/market/items', listLimiter, async (req, res) => {
   if (type !== 'people' && settings.enabled) {
     const sellers = await db.filter('users', u => u.role === 'provider' && u.store && store.storeIsLive(u) && (!country || sameText(u.country, country)));
     for (const sel of sellers) {
-      const cats = Array.isArray(sel.store.marketCategories) && sel.store.marketCategories.length ? sel.store.marketCategories : ['Other'];
-      if (category && !cats.includes(category)) continue;
       const currencies = await store.currenciesFor(sel);
       for (const g of await db.filter('storeGoods', x => x.providerId === sel.id)) {
         if (!store.isOnShelf(g) || !store.anyInStock(g)) continue; // v162: goods with sizes or colours too
+        const cats = market.goodCategories(g, sel); // v164: each good in its own aisle
+        if (category && !cats.includes(category)) continue;
         if (!matches(`${g.name} ${g.description || ''} ${sel.store.name} ${cats.join(' ')}`)) continue;
         const pf = store.goodPriceFields(g, currencies);
         items.push({
@@ -532,12 +532,13 @@ router.get('/market/suggest', listLimiter, async (req, res) => {
   }
   const aisles = market.marketAislesFor(category);
   if (!aisles.length || !(await store.storeSettings()).enabled) return res.json({ aisles, items: [] });
-  const sellers = await db.filter('users', u => u.role === 'provider' && u.store && store.storeIsLive(u) && (!country || sameText(u.country, country)) && (u.id === preferId || (u.store.marketCategories || []).some(c => aisles.includes(c))));
+  const sellers = await db.filter('users', u => u.role === 'provider' && u.store && store.storeIsLive(u) && (!country || sameText(u.country, country)));
   const cache = new Map(), items = [];
   for (const sel of sellers) {
     const currencies = await store.currenciesFor(sel);
     for (const g of await db.filter('storeGoods', x => x.providerId === sel.id)) {
       if (!store.isOnShelf(g) || !store.anyInStock(g)) continue; // v162: goods with sizes or colours too
+      if (sel.id !== preferId && !market.goodCategories(g, sel).some(c => aisles.includes(c))) continue; // v164: only goods in the job's aisles (the hired pro's own store: everything)
       items.push({ kind: 'store', id: g.id, title: g.name, price: store.goodUsdPrice(g, currencies), unit: g.unit || '', photo: (g.photoUrls || [])[0] || null, providerId: sel.id, storeName: sel.store.name, city: sel.city || '', seller: await sellerInfo(sel, cache), yourPro: sel.id === preferId, hasOptions: Array.isArray(g.variants) && g.variants.length > 0, soldOut: false, ...(isTradeBuyer(me, sel.id) && Number(g.tradePrice) > 0 ? { tradePrice: money(g.tradePrice) } : {}) });
     }
   }
