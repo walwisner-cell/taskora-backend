@@ -8,7 +8,10 @@
   const e = (s) => escapeHtml(String(s == null ? '' : s));
   const el = (id) => document.getElementById(id);
   const body = () => el('rides-body');
-  const km = (x) => (x == null ? '' : x + ' km');
+  // v165: distances in the unit the person's country uses (miles in Liberia, the US and the UK), as everywhere else in Trothen
+  const km = (x) => (x == null ? '' : (typeof kmWords === 'function' ? kmWords(Number(x)) : x + ' km'));
+  const mi = () => typeof usesMiles === 'function' && usesMiles();
+  const PER = 1.609344; // km in a mile
   // v142: a ride fare in local money (L$) with the US$ amount, when Trothen set the fare in L$; cash is paid in L$
   const fareL = (r, usd) => (r && r.local && r.local.per > 0 ? `${r.local.symbol}${Math.round(usd / r.local.per).toLocaleString()} (${money(usd)})` : money(usd));
   const when = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -214,6 +217,13 @@
       <button class="confirm-btn" onclick="ridesFindDrivers()">${e(tr('Find drivers near me'))}</button>
       <div id="ride-drivers" style="margin-top:14px;"></div></div>`;
   }
+  // v166: take the rider to one pin to set it again: the search box first,
+  // as a laptop's "Use my location" is often far off.
+  window.ridesFixPin = function (prefix) {
+    delete JOB_PIN[prefix]; if (typeof renderJobPin === 'function') renderJobPin(prefix);
+    const q = el(prefix + '-q'); if (q) { q.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => q.focus(), 300); }
+    const out = el('ride-drivers'); if (out) out.innerHTML = '';
+  };
   window.ridesFindDrivers = async function () {
     if (!(await ensureRules())) return;
     const a = JOB_PIN.ridefrom, b = JOB_PIN.rideto, out = el('ride-drivers');
@@ -241,7 +251,21 @@
           ${r.appPay !== false || d.cashOk ? `<div style="flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13.5px;"><span>${e(tr('Or offer your own fare:'))}</span><input class="form-input" type="number" min="1" step="0.5" id="ride-offer-${e(d.id)}" placeholder="${e(d.fareLocal != null ? (d.symbol || '') : '$')}" style="width:100px;"/>${r.offerFloorPercent != null ? `<span style="font-size:12px;color:var(--slate);">${e(tr('at least'))} ${d.fareLocal != null ? `${e(d.symbol || '')}${e(Math.ceil(d.fareLocal * r.offerFloorPercent / 100 / 5) * 5)}` : money(Math.ceil(d.fare * r.offerFloorPercent) / 100)}</span>` : ''}
             ${r.appPay !== false ? `<button class="btn-sm btn-sm-outline" onclick="ridesOffer(${jsArg(d.id)},'app')">${e(tr('Offer'))}</button>` : ''}${d.cashOk ? `<button class="btn-sm btn-sm-outline" onclick="ridesOffer(${jsArg(d.id)},'cash')">💵 ${e(tr('Offer, pay cash'))}</button>` : ''}</div>` : ''}
         </div>`).join('') + (r.appPay === false ? `<div class="ver-note" style="margin-top:8px;">${e(tr('Paying for rides in the app isn\'t switched on in your country yet, so rides are paid to the driver in cash.'))}</div>` : '');
-    } catch (x) { out.innerHTML = `<div class="ver-note">${e(x.message || 'Could not find drivers')}</div>`; }
+    } catch (x) {
+      // v166: a trip too long is nearly always a pin in the wrong place (a
+      // laptop guessing its location, or a place found in another country).
+      // Say so where the rider is looking, with the way to fix each pin.
+      if (x.data && x.data.code === 'TRIP_TOO_FAR') {
+        const w = x.data.tooFar || {};
+        const fix = (p, label) => `<button type="button" class="btn-sm btn-sm-outline" onclick="ridesFixPin('${p}')">${e(tr(label))}</button>`;
+        out.innerHTML = `<div role="alert" style="padding:12px 14px;border-radius:10px;border:1px solid #E9D6A8;background:#FBF3E4;font-size:14px;line-height:1.5;">
+          <strong>${e(tr('This trip looks too long. A place may be in the wrong spot.'))}</strong>
+          <div style="margin-top:6px;">${e(x.message)}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">${w.wrong === 'dropoff' ? fix('rideto', 'Change where I am going') + fix('ridefrom', 'Change the pick-up') : fix('ridefrom', 'Change the pick-up') + fix('rideto', 'Change where I am going')}</div></div>`;
+        return;
+      }
+      out.innerHTML = `<div class="ver-note">${e(x.message || 'Could not find drivers')}</div>`;
+    }
   };
   // v125: a clear pay step: the fare, the fee and the total, and how it's paid.
   function rideFee(amount) { const pct = Number(R.quote && R.quote.fee != null ? R.quote.fee : (R.cfg && R.cfg.feePercent) || 9); return Math.round(Math.max(0.25, amount * pct / 100) * 100) / 100; }
@@ -488,7 +512,7 @@
   // v164: how far a ride driver goes on a delivery
   const rangeEditor = (d) => {
     const g = d.deliveryRange; if (!g || d.delivers === false) return '';
-    const mi = typeof usesMiles === 'function' && usesMiles(), f = mi ? 1 / KM_PER_MI : 1, r1 = (x) => Math.round(x * f * 10) / 10;
+    const mi = typeof usesMiles === 'function' && usesMiles(), f = mi ? 1 / KM_PER_MI : 1, r1 = (x) => { const v = x * f; return Math.abs(v - Math.round(v)) < 0.35 ? Math.round(v) : Math.round(v * 10) / 10; };
     return `<div class="dates-row" style="margin-top:8px;align-items:flex-end;">
       <div class="form-group"><label class="form-label" for="rd-min">${e(tr(mi ? 'Shortest delivery (miles)' : 'Shortest delivery (km)'))}</label><input class="form-input" id="rd-min" type="number" min="0" step="0.5" value="${e(r1(g.minKm))}"/></div>
       <div class="form-group"><label class="form-label" for="rd-max">${e(tr(mi ? 'Longest delivery (miles)' : 'Longest delivery (km)'))}</label><input class="form-input" id="rd-max" type="number" min="0.5" step="0.5" max="${e(r1(g.vehicleMaxKm))}" value="${e(r1(g.maxKm))}"/></div>
@@ -511,15 +535,15 @@
       opts.sort((x, y) => x - y);
       return `<div class="panel" id="rd-fares"><div class="panel-title">${e(tr('My fares'))}</div>
         <div style="font-size:14px;margin-bottom:8px;">${e(tr('Trothen works out every fare from the road distance and the time, the same way for every driver of your kind of vehicle:'))}</div>
-        <div style="font-size:14px;margin-bottom:8px;"><strong>${n(t.row.base)}</strong> ${e(tr('to start'))}, ${e(tr('plus'))} <strong>${n(t.row.perKm)}</strong> ${e(tr('per km'))}${t.row.perMin ? `, ${e(tr('plus'))} <strong>${n(t.row.perMin)}</strong> ${e(tr('per minute'))}` : ''}${t.row.min ? `. ${e(tr('Lowest fare'))} <strong>${n(t.row.min)}</strong>` : ''}.${t.fuelFactor !== 1 ? ` ${e(tr('Adjusted for the fuel price'))} (${t.fuelFactor > 1 ? '+' : ''}${Math.round((t.fuelFactor - 1) * 1000) / 10}%).` : ''}${t.nightPct ? ` ${e(tr('At night'))} +${e(t.nightPct)}%.` : ''}</div>
-        <table style="width:100%;max-width:460px;border-collapse:collapse;font-size:14px;margin-bottom:10px;"><thead><tr style="text-align:left;color:var(--slate);"><th style="padding:4px 0;">${e(tr('Trip'))}</th><th>${e(tr('Trothen fare'))}</th><th>${e(tr('Your fare'))}</th></tr></thead><tbody>${t.examples.map(x => `<tr style="border-top:1px solid var(--border);"><td style="padding:5px 0;">${x.km} km, ~${x.minutes} ${e(tr('min'))}</td><td>${n(x.trothenLocal)}</td><td><strong>${n(x.local)}</strong> <span style="color:var(--slate);">(${money(x.fare)})</span></td></tr>`).join('')}</tbody></table>
+        <div style="font-size:14px;margin-bottom:8px;"><strong>${n(t.row.base)}</strong> ${e(tr('to start'))}, ${e(tr('plus'))} <strong>${n(mi() ? (t.currency === 'USD' ? Math.round(t.row.perKm * PER * 100) / 100 : Math.round(t.row.perKm * PER)) : t.row.perKm)}</strong> ${e(tr(mi() ? 'per mile' : 'per km'))}${t.row.perMin ? `, ${e(tr('plus'))} <strong>${n(t.row.perMin)}</strong> ${e(tr('per minute'))}` : ''}${t.row.min ? `. ${e(tr('Lowest fare'))} <strong>${n(t.row.min)}</strong>` : ''}.${t.fuelFactor !== 1 ? ` ${e(tr('Adjusted for the fuel price'))} (${t.fuelFactor > 1 ? '+' : ''}${Math.round((t.fuelFactor - 1) * 1000) / 10}%).` : ''}${t.nightPct ? ` ${e(tr('At night'))} +${e(t.nightPct)}%.` : ''}</div>
+        <table style="width:100%;max-width:460px;border-collapse:collapse;font-size:14px;margin-bottom:10px;"><thead><tr style="text-align:left;color:var(--slate);"><th style="padding:4px 0;">${e(tr('Trip'))}</th><th>${e(tr('Trothen fare'))}</th><th>${e(tr('Your fare'))}</th></tr></thead><tbody>${t.examples.map(x => `<tr style="border-top:1px solid var(--border);"><td style="padding:5px 0;">${x.km == null ? '' : km(x.km)}, ~${x.minutes} ${e(tr('min'))}</td><td>${n(x.trothenLocal)}</td><td><strong>${n(x.local)}</strong> <span style="color:var(--slate);">(${money(x.fare)})</span></td></tr>`).join('')}</tbody></table>
         <div class="form-group"><label class="form-label" for="rr-adjust">${e(tr('My fares compared with the Trothen fare'))}</label><select class="form-input form-select" id="rr-adjust" style="max-width:280px;">${opts.map(a => `<option value="${a}" ${a === d.fareAdjust ? 'selected' : ''}>${a === 0 ? e(tr('The Trothen fare')) : `${Math.abs(a)}% ${e(tr(a > 0 ? 'above' : 'below'))}`}</option>`).join('')}</select></div>
         <button class="btn-sm btn-sm-primary" onclick="ridesSaveAdjust()">${e(tr('Save'))}</button>
         <div class="ver-note" style="margin-top:10px;">${e(tr('Riders see your fare and the Trothen fare before they choose. A lower fare gets more riders; a higher one suits a newer or more comfortable vehicle. Trothen adds a'))} ${e(d.feePercent)}% ${e(tr('fee on top for the rider. On ride earnings Trothen takes'))} ${e(d.commissionPercent)}% ${e(tr('when you are paid out.'))}</div></div>`;
     }
     return `<div class="panel"><div class="panel-title">${e(tr('My fares'))}</div>
       <div class="dates-row"><div class="form-group"><label class="form-label" for="rr-base">${e(tr('Starting fare (US$)'))}</label><input class="form-input" id="rr-base" type="number" min="0.5" max="100" step="0.01" value="${e(d.rates.baseFee)}"/></div>
-      <div class="form-group"><label class="form-label" for="rr-km">${e(tr('Plus, for each kilometre (US$)'))}</label><input class="form-input" id="rr-km" type="number" min="0" max="20" step="0.01" value="${e(d.rates.perKm)}"/></div></div>
+      <div class="form-group"><label class="form-label" for="rr-km">${e(tr(mi() ? 'Plus, for each mile (US$)' : 'Plus, for each kilometre (US$)'))}</label><input class="form-input" id="rr-km" type="number" min="0" max="${mi() ? 32 : 20}" step="0.01" value="${e(mi() ? Math.round(d.rates.perKm * PER * 100) / 100 : d.rates.perKm)}"/></div></div>
       <button class="btn-sm btn-sm-primary" onclick="ridesSaveRates()">${e(tr('Save my fares'))}</button>
       <div class="ver-note" style="margin-top:10px;">${e(tr('Riders see your fare before they choose you. Trothen adds a'))} ${e(d.feePercent)}% ${e(tr('fee on top for the rider. On ride earnings Trothen takes'))} ${e(d.commissionPercent)}% ${e(tr('when you are paid out (never more than your plan rate).'))}</div></div>`;
   }
@@ -527,7 +551,8 @@
     try { await apiFetch('PUT', '/rides/driver/rates', { fareAdjust: Number(el('rr-adjust').value) }); showToast(tr('Fares saved')); loadDriverPage(); } catch (x) { showToast(x.message || 'Could not save'); }
   };
   window.ridesSaveRates = async function () {
-    try { await apiFetch('PUT', '/rides/driver/rates', { baseFee: Number(el('rr-base').value), perKm: Number(el('rr-km').value) }); showToast(tr('Fares saved')); loadDriverPage(); } catch (x) { showToast(x.message || 'Could not save'); }
+    const per = Number(el('rr-km').value);
+    try { await apiFetch('PUT', '/rides/driver/rates', { baseFee: Number(el('rr-base').value), perKm: mi() ? Math.round(per / PER * 10000) / 10000 : per }); showToast(tr('Fares saved')); loadDriverPage(); } catch (x) { showToast(x.message || 'Could not save'); }
   };
   function driverOps(d, list) {
     const incoming = list.filter(r => r.status === 'pending_provider_confirmation'), active = list.filter(r => r.status === 'active');
@@ -679,7 +704,7 @@
     if (n.phase === 'to_customer' && n.viewer === 'seller') status = tr('On the way to the customer');
     el('trk-status').textContent = status;
     const bits = [];
-    if (n.live && n.remainingKm != null) bits.push(n.remainingKm + ' km ' + tr('to go'));
+    if (n.live && n.remainingKm != null) bits.push(km(n.remainingKm) + ' ' + tr('to go'));
     if (n.etaMinutes) bits.push(tr('about') + ' ' + n.etaMinutes + ' ' + tr('min'));
     if (n.live) bits.push(tr('updated') + ' ' + (n.live.secondsAgo < 60 ? n.live.secondsAgo + 's' : Math.round(n.live.secondsAgo / 60) + ' ' + tr('min')) + ' ' + tr('ago'));
     if (n.live && n.live.accuracyM && n.live.accuracyM > 150) bits.push(tr('rough position'));
@@ -902,7 +927,7 @@
         <div class="dates-row"><div class="form-group"><label class="form-label" for="rs-stuck">${e(tr('Flag a started trip nobody ended after (hours)'))}</label><input class="form-input" id="rs-stuck" type="number" min="1" max="48" value="${e(s.stuckHours)}"/></div>
         <div class="form-group"><label class="form-label" for="rs-wait">${e(tr('Driver waits for a rider (minutes)'))}</label><input class="form-input" id="rs-wait" type="number" min="3" max="30" value="${e(s.waitMinutes)}"/></div>
         <div class="form-group"><label class="form-label" for="rs-keep">${e(tr('Keep GPS routes of finished rides (days)'))}</label><input class="form-input" id="rs-keep" type="number" min="1" max="365" value="${e(s.trackKeepDays)}"/></div></div>
-        <div class="form-group"><label style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;row-gap:6px;"><input type="checkbox" id="rs-night" ${s.motorbikeNight && s.motorbikeNight.enabled ? 'checked' : ''}/> ${e(tr('No motorbike rides between'))} <input class="form-input" id="rs-n1" type="number" min="0" max="23" value="${e(s.motorbikeNight ? s.motorbikeNight.startHour : 20)}" style="width:70px;"/> ${e(tr('and'))} <input class="form-input" id="rs-n2" type="number" min="0" max="23" value="${e(s.motorbikeNight ? s.motorbikeNight.endHour : 6)}" style="width:70px;"/> ${e(tr('o\'clock (Liberia time)'))}</label></div>
+        <div class="form-group"><label style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;row-gap:6px;"><input type="checkbox" id="rs-night" ${s.motorbikeNight && s.motorbikeNight.enabled ? 'checked' : ''}/> ${e(tr('No motorbike rides between'))} <input class="form-input" id="rs-n1" type="number" min="0" max="23" value="${e(s.motorbikeNight ? s.motorbikeNight.startHour : 20)}" style="width:70px;"/> ${e(tr('and'))} <input class="form-input" id="rs-n2" type="number" min="0" max="23" value="${e(s.motorbikeNight ? s.motorbikeNight.endHour : 6)}" style="width:70px;"/> ${e(tr('o\'clock (each person\'s local time)'))}</label></div>
         <div class="form-group"><label class="form-label" for="rs-rr">${e(tr('Ride Rules shown to riders'))} <small>(v${e(s.rulesVersion)})</small></label><textarea class="form-input" id="rs-rr" rows="8">${e(s.rulesRider)}</textarea></div>
         <div class="form-group"><label class="form-label" for="rs-rd">${e(tr('Ride Rules shown to drivers'))}</label><textarea class="form-input" id="rs-rd" rows="8">${e(s.rulesDriver)}</textarea></div>
         <div class="ver-note" style="margin-bottom:10px;border-left:3px solid #8C6423;">${e(tr('These rules are a starting draft. Have a lawyer review them before real riders use them. Saving changed wording makes everyone accept again.'))}</div>

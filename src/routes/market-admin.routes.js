@@ -50,7 +50,9 @@ function banOf(u) {
 
 const isMarketOrder = (c) => c && (c.storeOrder === true || !!c.marketListingId || (Array.isArray(c.storeItems) && c.storeItems.length > 0));
 const words = (q) => String(q || '').trim().toLowerCase().slice(0, 80).split(/\s+/).filter(w => w.length > 1);
-const hits = (text, ws) => !ws.length || ws.every(w => String(text).toLowerCase().includes(w));
+// v165: an ID only matches when it is typed whole (IDs are random letters and
+// numbers, so "12" used to find anything whose ID happened to contain 12).
+const hits = (text, ws, ids) => !ws.length || (ids || []).some(id => id && ws.join(' ') === String(id).toLowerCase()) || ws.every(w => String(text).toLowerCase().includes(w));
 
 // ── at a glance ───────────────────────────────────────────────────────
 router.get('/admin/market/overview', team, async (req, res) => {
@@ -100,7 +102,7 @@ router.get('/admin/market/all-listings', team, async (req, res) => {
   for (const l of list.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))) {
     const seller = await db.find('users', u => u.id === l.sellerId);
     if (seller && !req.covers(seller)) continue;
-    if (!hits(`${l.title} ${l.description || ''} ${l.category} ${seller ? seller.name : ''} ${l.city} ${l.id}`, ws)) continue;
+    if (!hits(`${l.title} ${l.description || ''} ${l.category} ${seller ? seller.name : ''} ${l.city}`, ws, [l.id])) continue;
     out.push({ id: l.id, title: l.title, description: String(l.description || '').slice(0, 300), category: l.category, price: l.price, currency: l.currency, priceUsd: l.priceUsd, photoUrls: (l.photoUrls || []).slice(0, 3), status: l.status, condition: l.condition || null, reviewReasons: l.reviewReasons || [], reports: (l.reports || []).map(r => ({ reason: r.reason, at: r.at })), removedReason: l.removedReason || null, city: l.city, country: l.country, createdAt: l.createdAt, views: l.views || 0, seller: seller ? { id: seller.id, name: seller.name, verified: seller.verified === true, stopped: !!banOf(seller) } : null });
     if (out.length >= 100) break;
   }
@@ -123,7 +125,7 @@ router.get('/admin/market/goods', team, async (req, res) => {
     if (want === 'live' && !live) continue;
     if (want === 'pending' && g.status !== 'pending') continue;
     if (want === 'rejected' && g.status !== 'rejected') continue;
-    if (!hits(`${g.name} ${g.description || ''} ${p.name} ${(p.store && p.store.name) || ''} ${g.id}`, ws)) continue;
+    if (!hits(`${g.name} ${g.description || ''} ${p.name} ${(p.store && p.store.name) || ''}`, ws, [g.id])) continue;
     if (!cur.has(p.country || '')) cur.set(p.country || '', await store.currenciesFor(p));
     out.push({ id: g.id, name: g.name, description: String(g.description || '').slice(0, 300), price: store.goodUsdPrice(g, cur.get(p.country || '')), unit: g.unit || '', photoUrls: (g.photoUrls || []).slice(0, 3), status: g.status, live, inStock: store.anyInStock(g), reviewNote: g.reviewNote || null, reviewedByName: g.reviewedByName || null, storeName: (p.store && p.store.name) || p.name, seller: { id: p.id, name: p.name, city: p.city || '', country: p.country || '', stopped: !!banOf(p) } });
     if (out.length >= 100) break;
@@ -146,7 +148,7 @@ router.get('/admin/market/sellers', team, async (req, res) => {
     if (!u || !req.covers(u)) continue;
     const ban = banOf(u);
     if (onlyStopped && !ban) continue;
-    if (!hits(`${u.name} ${u.email} ${(u.store && u.store.name) || ''} ${u.city || ''} ${u.id}`, ws)) continue;
+    if (!hits(`${u.name} ${u.email} ${(u.store && u.store.name) || ''} ${u.city || ''}`, ws, [u.id])) continue;
     const mineL = listings.filter(l => l.sellerId === id), mineO = orders.filter(c => c.providerId === id);
     out.push({
       id, name: u.name, email: u.email, city: u.city || '', country: u.country || '', role: u.role, verified: u.verified === true,
@@ -214,7 +216,7 @@ router.get('/admin/market/orders', team, async (req, res) => {
     const seller = await db.find('users', u => u.id === c.providerId);
     if (!seller || !req.covers(seller)) continue;
     const buyer = await db.find('users', u => u.id === c.customerId);
-    if (!hits(`${c.bookingNumber || ''} ${c.id} ${seller.name} ${(seller.store && seller.store.name) || ''} ${buyer ? buyer.name : ''} ${(c.storeItems || []).map(i => i.name).join(' ')}`, ws)) continue;
+    if (!hits(`${c.bookingNumber || ''} ${seller.name} ${(seller.store && seller.store.name) || ''} ${buyer ? buyer.name : ''} ${(c.storeItems || []).map(i => i.name).join(' ')}`, ws, [c.id])) continue;
     out.push({
       id: c.id, number: c.bookingNumber || c.id, status: c.status, createdAt: c.createdAt, completedAt: c.completedAt || null,
       kind: c.marketListingId ? 'person' : c.storeOrder ? 'store' : 'with a job',

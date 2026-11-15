@@ -14,6 +14,7 @@ const db = require('./db');
 // never suppressible — same principle as why you can't opt out of a bank
 // fraud alert.
 async function notify(userId, icon, text, category = null, linkTo = null) {
+  try { require('./receipts').kick(); } catch (e) { /* receipts are also swept every half minute */ } // v166: most money events send a notification
   if (category) {
     const user = await db.find('users', u => u.id === userId);
     const prefs = user && user.notifPrefs;

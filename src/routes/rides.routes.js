@@ -170,6 +170,30 @@ function readPoint(raw, label) {
   return { point: { latitude: Math.round(Number(raw.latitude) * 1e6) / 1e6, longitude: Math.round(Number(raw.longitude) * 1e6) / 1e6, address: address || label, ...(note ? { note } : {}) } };
 }
 
+// v166: a trip longer than rides can go is nearly always a pin in the wrong
+// place: a laptop's "Use my location" guessed from the internet connection
+// (often another town or another country), or a place found by name in
+// another country. Say how far it is, where each pin really is, and which
+// one is outside the rider's country, so they can see what to fix.
+async function tooFarAnswer(me, pickup, drop, km, maxKm) {
+  const pn = require('../place-name'), dw = (k) => require('../store-orders').distWords(k, me.country);
+  const timeout = new Promise(r => setTimeout(() => r([null, null]), 6000));
+  const [a, b] = await Promise.race([Promise.all([pn.describe(pickup), pn.describe(drop)]), timeout]);
+  const words = (w) => (w && (w.address || w.near)) || '';
+  const cc = pn.countryCode(me.country);
+  const countryOf = (w) => String((w && w.address) || '').split(', ').pop() || w.cc; // the map's own name for it
+  const outA = !!(cc && a && a.cc && a.cc !== cc), outB = !!(cc && b && b.cc && b.cc !== cc);
+  const wrong = outA && !outB ? 'pickup' : outB && !outA ? 'dropoff' : null;
+  const parts = [`This trip is about ${dw(km)}. Rides can be up to about ${dw(maxKm)}.`];
+  if (words(a) || words(b)) parts.push(`The pick-up pin is at ${words(a) || 'a place we could not name'}, and the destination at ${words(b) || 'a place we could not name'}.`);
+  if (outA) parts.push(`The pick-up pin is in ${countryOf(a)}, not ${me.country}.`);
+  if (outB) parts.push(`The destination is in ${countryOf(b)}, not ${me.country}.`);
+  parts.push(wrong === 'pickup' || (!wrong && !outB)
+    ? 'If that is not where you are, your device guessed your location wrongly (laptops often do). Search the pick-up place by name, or choose it on the map.'
+    : 'Search the destination again by name, or choose it on the map.');
+  return { code: 'TRIP_TOO_FAR', error: parts.join(' '), tooFar: { km: Math.round(km * 10) / 10, maxKm, pickup: words(a), dropoff: words(b), wrong } };
+}
+
 // GET /api/rides/drivers?pLat=&pLng=&dLat=&dLng=&passengers=
 router.get('/rides/drivers', requireAuth, requireRole('customer'), lookupLimiter, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
@@ -183,7 +207,7 @@ router.get('/rides/drivers', requireAuth, requireRole('customer'), lookupLimiter
   // v142: the trip by road (distance and minutes), worked out once per kind of vehicle
   const trips = {}; const tripFor = async (v) => trips[v] || (trips[v] = await routeTrip(pickup, drop, v));
   const carTrip = await tripFor('car');
-  if (carTrip.km > maxKm) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km. This trip is further than that.` });
+  if (carTrip.km > maxKm) return res.status(400).json(await tooFarAnswer(me, pickup, drop, carTrip.km, maxKm));
   const fareTable = await rideFares.tableFor(me.country), rateRows = await db.all('exchangeRates');
   const noBikes = await motorbikeBlockedNow(me);
   const cashOn = (await getSetting('rideCashEnabled')) === true;
@@ -231,11 +255,11 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
     if (driver.rideDriver.vehicle === 'motorbike' && await motorbikeBlockedNow(me)) return res.status(400).json({ error: `${await nightWords()} Choose another vehicle.` });
     const km = kmBetween(pk.point, dp.point);
     const maxKm = await getSetting('rideMaxKm');
-    if (km === null) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km.` });
+    if (km === null) return res.status(400).json({ error: `Rides can be up to about ${require('../store-orders').distWords(maxKm, me.country)}.` });
     if (km < 0.1) return res.status(400).json({ error: 'The pickup and the destination are the same place.' });
     // v142: the fare from the road distance and time: Trothen's fare for this vehicle (within the driver's band), or the driver's own rates where no fare table is set
     const trip = await routeTrip(pk.point, dp.point, driver.rideDriver.vehicle);
-    if (trip.km > maxKm) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km.` });
+    if (trip.km > maxKm) return res.status(400).json(await tooFarAnswer(me, pk.point, dp.point, trip.km, maxKm));
     const priced = await rideFares.fareFor(driver, trip);
     const fare = priced.fare;
     const local = (usd, l) => (priced.local != null ? ` (${priced.symbol}${Math.round(l != null ? l : usd * priced.rate).toLocaleString('en-US')})` : '');
@@ -308,8 +332,8 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
       return res.status(402).json({ code: 'PAYMENT_FAILED', error: 'Your payment could not be started, so you were not charged and no ride was requested. Please try again.' });
     }
     await db.insert('contracts', contract);
-    if (contract.status === 'pending_provider_confirmation') await notify(driver.id, '🛵', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km, $${fare.toFixed(2)}${local(fare, priced.local)}${cash ? ', the rider pays you in CASH' : ''}). Answer within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
-    else if (isOffer) await notify(driver.id, '💬', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${contract.ride.km} km). The rider offers $${offerFare.toFixed(2)}${local(offerFare)} (your fare is $${fare.toFixed(2)}${local(fare, priced.local)})${cash ? ', paid in CASH' : ''}. Accept it, suggest a fare, or decline within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
+    if (contract.status === 'pending_provider_confirmation') await notify(driver.id, '🛵', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${require('../store-orders').distWords(contract.ride.km, driver.country)}, $${fare.toFixed(2)}${local(fare, priced.local)}${cash ? ', the rider pays you in CASH' : ''}). Answer within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
+    else if (isOffer) await notify(driver.id, '💬', `Ride request #${contract.bookingNumber} from ${firstName(me.name)}: ${pk.point.address} to ${dp.point.address} (about ${require('../store-orders').distWords(contract.ride.km, driver.country)}). The rider offers $${offerFare.toFixed(2)}${local(offerFare)} (your fare is $${fare.toFixed(2)}${local(fare, priced.local)})${cash ? ', paid in CASH' : ''}. Accept it, suggest a fare, or decline within ${minutes} minutes.`, 'bookingUpdates', { section: 'rides' });
     places.noteUse(me, pk.point); places.noteUse(me, dp.point); // v147: named places riders use become suggestions for the team
     res.status(201).json({ ride: await rideView(contract, me.id), payment: escrow ? custPay.publicPayment(escrow) : null });
   } finally {

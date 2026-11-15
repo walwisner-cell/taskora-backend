@@ -49,21 +49,58 @@ The Market was only inside the signed-in dashboards, so a visitor could not look
   - putting one of their listings back on sale is refused;
   - nobody can buy from them.
 - **The "Stop selling" and "Take it down" buttons are red,** as for other serious actions, and the seller row says "1 listing on sale", not "1 listings".
+- **Searching in Admin → Market only matches what you can see.** It used to look inside each item's hidden random ID too, so searching "Fitting 12" could also return "Fitting 8" whose ID happened to contain "12". Now an ID only counts when the whole ID is typed.
 - **Admins are now pointed to Admin → Market → To check** for held or reported listings, instead of Stores & Skills.
 
+### Rides in miles in Liberia, like the rest of Trothen
+Deliveries, the Market and pros' travel already show distances in miles in Liberia (as in the US and UK), but Rides showed kilometres. Your Rides screenshot had both units in one card: "Plus, for each kilometre" for the fare, and "(miles)" for deliveries just below. Now Rides uses the person's own unit everywhere:
+- the trip distance a rider sees ("About 2.1 mi");
+- how far away each driver is;
+- the distance left during a trip;
+- the driver's own fare ("Plus, for each mile"). It is saved per kilometre behind the scenes, so fares and fare tables are unchanged;
+- the Trothen fare table, for example "L$40 per mile" (L$25 per km);
+- "Rides can be up to about …" messages, and the distance in a driver's ride request.
+
+Countries that use kilometres see kilometres, as before. Delivery distances on the Rides card now round to whole miles when close ("124", not "124.3").
+
+### Token packs are always worth what you pay
+L$100 showed "≈ $0.53" but gave 0.52 tokens, so the buyer got slightly less than they paid. A pack with a fixed local price now always gives at least what the money is worth at the day's rate (L$100 gives 0.53 tokens), even if the exchange rate moves after the pack was set. The larger packs keep their bonus.
+
+### Receipts
+- **The buyer's name now has its own "Name" line.** On store and delivery receipts, the buyer's name was printed as a heading with an empty "—" under it. Now it reads "Name: …", followed by the address when there is no pin. A pro's invoice or quote does the same when the customer has no contact details on it.
+- **The vehicle starts with a capital** on the delivery receipt ("Bicycle", not "bicycle").
+- **The support email at the foot of every PDF was support@trothen.io,** a domain Trothen doesn't use. The default is now support@trothenpro.com.
+
+  **Business step for you:** make sure that mailbox exists (in Namecheap), or put your real support address in **Admin → Settings → Footer → Support Email**. Whatever is saved there is used on every PDF, the Terms and the Privacy Policy. Admin → Go-live checks already warns if the address is on a different domain from the site.
+
+### Spanish
+The **Go online** and **Go offline** buttons, all the new "can't go online" help, and the visitor's Market are now in Spanish.
+
+**Still in English:** the rest of the Rides pages (about 330 phrases). Rides is only open in Liberia, which uses English, so I left it rather than rush it. Tell me if you plan to open Rides in a Spanish-speaking country, and I'll translate it properly first.
+
+### A sweep of every page, as an account like yours
+I opened every section of the dashboard on a laptop and a phone as three accounts:
+- a Liberian pro who also drives, delivers and has a store (like your own account);
+- a customer;
+- an admin.
+
+It looked for page errors, failed or refused server calls, pages wider than the screen, and broken text like "undefined" or "NaN". It found none, and the server logged no errors. This sweep now runs with the other suites.
+
 ## 6. What the tests check now
-- **`tonline` (14 checks, new):**
+- **`tonline` (16 checks, new):**
   - location blocked, with the reason on the page;
   - going online, and the page showing it;
   - going offline;
   - the night pause in local time (Liberia paused, the same hours in Kenya not);
-  - the Google button showing the code step.
+  - the Google button showing the code step;
+  - a Liberian driver's own fare, entered per mile and saved per kilometre.
 - **`t165` (24 checks, new):**
   - a timed stop ending by itself, with the store open again;
   - the three refusals while a stop lasts;
   - an admin stopping and allowing a seller by tapping;
   - the visitor's Market on a phone: country, category, Add to cart, and buying asking to sign in;
   - a signed-in customer taken to their own Market.
+- **`tsweep` (new):** every section for a pro, a customer and an admin, on a laptop and a phone.
 - **Every earlier suite**, on the file store and on Postgres.
 
 ## Files
@@ -73,6 +110,11 @@ The Market was only inside the signed-in dashboards, so a visitor could not look
   - `src/routes/market-admin.routes.js`
   - `src/routes/market.routes.js`
   - `src/routes/store.routes.js`
+  - `src/tokens.js`
+  - `src/routes/orders.routes.js`
+  - `src/platform-settings.js`
+  - `src/routes/misc.routes.js`
+  - `src/routes/business.routes.js`
 - **Changed (page):**
   - `public/index.html`
   - `public/app/trothen.js`
@@ -81,6 +123,7 @@ The Market was only inside the signed-in dashboards, so a visitor could not look
   - `public/app/market.js`
   - `public/app/market-admin.js`
   - `public/app/cart.js`
+  - `public/app/es-v152.js`
 - **New:** `CHANGES_v165.md`
 
 No database changes, no new packages.

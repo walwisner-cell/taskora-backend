@@ -77,7 +77,7 @@ router.post('/contact', publicFormLimiter, async (req, res) => {
   for (const admin of recipients) {
     await notify(admin.id, '✉️', `New contact form message from ${submission.name}${submission.city ? ` (${submission.city})` : ''}: "${submission.subject}"`, null, { section: 'contact-submissions' });
   }
-  console.log(`[TEST MODE — no email provider connected] Would email support@trothen.io: new contact form submission from ${submission.email}`);
+  console.log(`[TEST MODE — no email provider connected] Would email the support address: new contact form submission from ${submission.email}`);
 
   res.status(201).json({ ok: true });
 });
@@ -162,7 +162,7 @@ router.post('/careers-inquiry', publicFormLimiter, (req, res, next) => {
   for (const admin of recipients) {
     await notify(admin.id, '💼', `New job application from ${submission.name}${submission.city ? ` (${submission.city})` : ''}: interested in: "${submission.role}"${resumeUrl ? ' (resume attached)' : ''}`, null, { section: 'careers' });
   }
-  console.log(`[TEST MODE — no email provider connected] Would email ${recipients.length ? recipients.map(a => a.email).join(', ') : 'support@trothen.io'}: new job application from ${submission.email}`);
+  console.log(`[TEST MODE — no email provider connected] Would email ${recipients.length ? recipients.map(a => a.email).join(', ') : 'the support address'}: new job application from ${submission.email}`);
 
   res.status(201).json({ ok: true });
 });

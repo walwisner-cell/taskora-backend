@@ -1,0 +1,8 @@
+node_modules/
+data/
+uploads/
+.env
+*.zip
+taskora-backend/
+taskora-backend-OLD/
+private-uploads/

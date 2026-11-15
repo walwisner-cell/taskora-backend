@@ -187,6 +187,7 @@ app.use('/api/auth', authRoutes);
 // These come first so their /api/admin/store addresses are reached before the main admin routes.
 app.use('/api', require('./src/routes/store.routes'));
 app.use('/api', require('./src/routes/orders.routes')); // v108: store orders, drivers, receipts
+app.use('/api', require('./src/routes/receipts.routes')); // v166: Account → Receipts
 app.use('/api', require('./src/routes/cart.routes')); // v162: the shopping cart
 app.use('/api', require('./src/routes/rides.routes')); // v111: passenger rides
 app.use('/api', require('./src/routes/tokens.routes')); // v115: Trothen Tokens
@@ -369,6 +370,9 @@ seedIfEmpty()
         if (fixed.length) console.log(`[countries] Switched back to live at startup: ${fixed.join(', ')}.`);
       } catch (e) { console.error('[countries] Could not check the core countries at startup:', e.message); }
     })();
+
+    // v166: a receipt for every payment, refund, token purchase and payout, emailed at once (src/receipts.js).
+    require('./src/receipts').start();
 
     // v95: load the one support email, so PDF footers have it from the first request.
     require('./src/platform-settings').publicSupportEmail().catch(() => {});

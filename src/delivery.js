@@ -129,9 +129,10 @@ function smtpTransport() {
   }
   return transport;
 }
-async function sendViaSmtp(to, subject, text) {
+// v166: `extra` = { html, attachments: [{ filename, content (Buffer), contentType }] }, for receipts.
+async function sendViaSmtp(to, subject, text, extra = {}) {
   try {
-    await smtpTransport().sendMail({ from: { name: 'Trothen', address: process.env.SMTP_FROM || process.env.SMTP_USER }, to, subject, text });
+    await smtpTransport().sendMail({ from: { name: 'Trothen', address: process.env.SMTP_FROM || process.env.SMTP_USER }, to, subject, text, ...(extra.html ? { html: extra.html } : {}), ...(extra.attachments && extra.attachments.length ? { attachments: extra.attachments } : {}) });
     return { sent: true, via: 'smtp' };
   } catch (e) {
     const code = Number(e.responseCode) || 0;
@@ -173,19 +174,19 @@ async function sendSms(to, body) {
   }
 }
 
-async function sendEmail(to, subject, text) {
+async function sendEmail(to, subject, text, extra = {}) {
   if (!isEmailConfigured()) return { sent: false, error: 'not_configured' };
   let r = null;
-  if (isSmtpConfigured()) r = await sendViaSmtp(to, subject, text);
+  if (isSmtpConfigured()) r = await sendViaSmtp(to, subject, text, extra);
   if ((!r || (!r.sent && !r.badAddress)) && isSendgridConfigured()) {
-    const g = await sendViaSendgrid(to, subject, text);
+    const g = await sendViaSendgrid(to, subject, text, extra);
     // keep the SMTP reason if SendGrid (the backup) failed too
     r = g.sent || !r ? g : { ...r, backup: g.words };
   }
   lastEmail = { at: new Date().toISOString(), sent: r.sent, via: r.via, error: r.sent ? null : r.error, words: r.sent ? null : r.words, backup: r.backup || null, badAddress: !!r.badAddress };
   return r;
 }
-async function sendViaSendgrid(to, subject, text) {
+async function sendViaSendgrid(to, subject, text, extra = {}) {
   try {
     const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
@@ -194,7 +195,8 @@ async function sendViaSendgrid(to, subject, text) {
         personalizations: [{ to: [{ email: to }] }],
         from: { email: process.env.SENDGRID_FROM_EMAIL, name: 'Trothen' },
         subject,
-        content: [{ type: 'text/plain', value: text }],
+        content: [{ type: 'text/plain', value: text }, ...(extra.html ? [{ type: 'text/html', value: extra.html }] : [])],
+        ...(extra.attachments && extra.attachments.length ? { attachments: extra.attachments.map(a => ({ filename: a.filename, type: a.contentType || 'application/pdf', disposition: 'attachment', content: Buffer.from(a.content).toString('base64') })) } : {}),
       }),
     });
     if (!res.ok) {

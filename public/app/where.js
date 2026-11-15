@@ -487,7 +487,7 @@
     const row = (k, v) => `<div class="trip-row"><div class="trip-row-k">${esc(k)}</div><div class="trip-row-v">${v}</div></div>`;
     if (d.arrivalAt) rows.push(row(tr('Scheduled arrival'), esc(whenOf(d.arrivalAt))));
     if (d.onMyWayAt) rows.push(row(tr('Departed'), esc(clockOf(d.onMyWayAt))));
-    if (d.jobLocation) rows.push(row(tr('Job location'), `${plusCodeFor(d.jobLocation.latitude, d.jobLocation.longitude)} · <a href="${mapsUrl(d.jobLocation)}" target="_blank" rel="noopener noreferrer">${esc(tr('Open in Maps'))}</a>`));
+    if (d.jobLocation) rows.push(row(tr('Job location'), `${plusCodeFor(d.jobLocation.latitude, d.jobLocation.longitude)} · <a href="${mapsUrl(d.jobLocation)}" target="_blank" rel="noopener noreferrer">${esc(tr('Open in Maps'))}</a>${typeof placeLineHTML === 'function' ? placeLineHTML(d.jobLocation) : ''}`)); // v166
     if (d.landmark) rows.push(row(tr('Landmark'), esc(d.landmark)));
     if (d.customerLocation) rows.push(row(pro ? `${d.customerName} (${tr('shared')})` : tr('Your shared location'), `${d.customerSecondsSinceUpdate != null ? esc(agoWords(d.customerSecondsSinceUpdate)) + ' · ' : ''}<a href="${mapsUrl(d.customerLocation)}" target="_blank" rel="noopener noreferrer">${esc(tr('Open in Maps'))}</a>`));
     if (d.proLocation && !pro) rows.push(row(d.proName, `<a href="${mapsUrl(d.proLocation)}" target="_blank" rel="noopener noreferrer">${esc(tr('Open Position in Maps'))}</a>`));

@@ -106,7 +106,11 @@ async function settingsFor(country) {
     const priceLocal = cur.code === 'USD' ? null : (fixed ? p.localPrice : niceLocal(p.priceUsd * rate, cur.code));
     // What the pro is really charged, in dollars, at today's rate.
     const chargedUsd = cur.code === 'USD' ? money(p.priceUsd) : money(priceLocal / rate);
-    return { id: p.id, label: String(p.label).trim(), tokens: money(p.tokens), bonus: money(Math.max(0, p.tokens - p.priceUsd)), priceUsd: chargedUsd, listUsd: money(p.priceUsd), priceLocal, fixedLocal: fixed };
+    // v165: a pack with a fixed local price never gives less than the money is
+    // worth at today's rate (L$100 at 190 = $0.53 gives 0.53 tokens, not 0.52):
+    // fair to the buyer even when the rate moves after the pack was set.
+    const tokensNow = fixed ? Math.max(money(p.tokens), Math.ceil(chargedUsd * 100 - 1e-9) / 100) : money(p.tokens);
+    return { id: p.id, label: String(p.label).trim(), tokens: tokensNow, bonus: money(Math.max(0, tokensNow - Math.max(p.priceUsd, chargedUsd))), priceUsd: chargedUsd, listUsd: money(p.priceUsd), priceLocal, fixedLocal: fixed };
   });
   return {
     enabled: s.enabled && countryOn && rule.enabled !== false,

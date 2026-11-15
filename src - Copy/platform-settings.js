@@ -1,0 +1,557 @@
+const db = require('./db');
+
+// Sensible defaults for every setting this app currently has — used
+// whenever no row exists yet in the database (nothing has been changed
+// from default). This is the same "DB row overrides code default"
+// convention used everywhere else in this app (plan pricing, exchange
+// rates, category active-toggles).
+const DEFAULTS = {
+  // The real WhatsApp number and display phone number shown to visitors
+  // (homepage, and the "talk to a real person" path in the support chat).
+  // Starts as an obviously-fake placeholder until a real super admin sets
+  // the actual number in Settings — isPlaceholder (computed where this is
+  // read, not stored here) tells the frontend whether what it's showing
+  // is still this placeholder, so it can be honest about it rather than
+  // silently presenting a fake number as real.
+  supportContact: {
+    whatsapp: '15551234567',
+    phoneDisplay: '+1 (555) 123-4567',
+    email: '',
+  },
+  // The site-wide footer line ("© 2026 [company] · [location] · [email]"),
+  // hardcoded in five places in public/index.html until now. This was
+  // flagged as wrong (a placeholder company name/city that was never the
+  // real one) with no way to fix it without a code change — this makes it
+  // a real, admin-editable setting instead, the same "DB overrides code
+  // default" pattern as everything else here. copyrightYear is a plain
+  // number, not auto-computed, so it doesn't silently drift wrong at a
+  // year boundary without a super admin actually choosing to update it.
+  footerInfo: {
+    companyName: 'Trothen Tech Group',
+    location: 'Atlanta, GA',
+    supportEmail: 'support@trothenpro.com', // v165: the site's own domain (was support@trothen.io, a domain Trothen doesn't use)
+    copyrightYear: 2026,
+  },
+  // How long a provider has to accept or decline a new booking (direct or
+  // a Mutual Agreement offer) before it auto-expires and the customer is
+  // refunded — tiered by how soon the job actually is, not a flat number.
+  // Real-world comparables: Uber/Lyft give a driver ~15 seconds (the ride
+  // starts now); Airbnb's Request-to-Book gives a host 24 hours (bookings
+  // are usually days/weeks out). Local home-services jobs span both
+  // extremes — someone booking an emergency plumber this afternoon needs a
+  // fast provider response; someone booking a mover for next month doesn't
+  // need the provider glued to their phone. A single flat window can't
+  // serve both well, so this scales with lead time instead.
+  bookingResponseTiers: {
+    within24h: 1,  // job starts within 24 hours — respond within 1 hour
+    within7d: 4,   // job starts within 2–7 days — respond within 4 hours
+    beyond7d: 24,  // job starts more than a week out — respond within 24 hours
+  },
+
+  // v110: how many jobs completed THROUGH TROTHEN a provider needs before
+  // their Trust Score stops being provisional ("New on Trothen") and
+  // starts showing as a real number. Used to be a fixed code constant
+  // (NEW_PRO_JOBS in src/provider-score.js) — moved here, the same
+  // "DB row overrides code default" pattern as every other number on
+  // this page, so a super admin can actually change it (Admin → Provider
+  // Scores) instead of needing a code deploy. Deliberately can never be
+  // set to 0: a score with zero completed Trothen bookings behind it
+  // isn't a track record, it's benefit of the doubt, and showing it as a
+  // real number would misrepresent what it actually is.
+  providerScoreNewProJobs: 5,
+  // v111: passenger rides. Countries where rides are switched on (a super admin
+  // can change this). Even when a country is on, no ride can happen until an
+  // admin has approved at least one ride driver there.
+  rideEnabledCountries: ['Liberia'],
+  rideMaxKm: 40,          // longest trip a rider can request
+  rideSearchKm: 15,       // how far from the pickup a driver can be and still be offered
+  rideAnswerMinutes: 5,   // how long a driver has to answer a ride request
+  rideCommissionPercent: 5, // taken from the driver at payout on ride earnings, instead of the plan rate (never higher than the plan rate)
+  rideDocRules: [], // v114: which papers a ride driver must upload, by country and vehicle: [{country:'Liberia'|'*', vehicle:'motorbike'|'*', docs:['licence',...]}]. Empty = the standard list.
+  rideRequireInsurance: true, // drivers must upload insurance or a road permit before approval
+  rideRulesVersion: 1, // rises by itself when the texts below are edited; everyone must then accept again
+  rideRulesRider: "Trothen Ride Rules for Riders\n\n1. What Trothen is. Trothen connects riders with independent drivers. Trothen does not employ the drivers, own the vehicles or provide the transport itself.\n2. Before you get in. Check that the plate number and the driver in the app match the vehicle and person in front of you. Only then give the driver your 4-digit trip PIN. If anything looks wrong, do not get in and cancel the ride.\n3. Your safety. The driver must carry no more people than the vehicle has seats. On a motorbike you must wear the helmet the driver provides. If you feel unsafe, press SOS: it sends an alert and your position to the Trothen team. In an emergency call your local emergency number first.\n4. Money. The fare is held by Trothen when you request the ride and is paid to the driver when you confirm you arrived. If the driver does not answer, or you cancel before the trip starts, you are refunded. After the trip starts, problems go to Report a Problem and a person decides.\n5. Location and phone numbers. While a ride is open, the driver sees where you are being picked up and where you are going, you see the driver's live position, and each of you can see the other's phone number so you can call or text. If you use Share my trip, anyone with that link can see the driver's first name, vehicle, plate and live position until about an hour after the trip ends. Numbers and live positions are not shown before the driver accepts or after the ride ends.\n6. Behaviour. No illegal goods, no threats, no harassment, no damage to the vehicle. Trothen can close accounts that break these rules.\n7. Insurance. Trothen is not an insurer. Drivers are asked to carry insurance, but Trothen does not promise that a trip is insured.\n8. Local law. You must follow the transport laws of the country you are in.",
+  rideRulesDriver: "Trothen Ride Rules for Drivers\n\n1. You are independent. You are not an employee of Trothen. You are responsible for your own licence, your vehicle's registration and roadworthiness, any transport permit your country or city requires, your insurance, and your taxes.\n2. Your documents must be real and in date. You must keep a valid driver's licence and a registered vehicle. An expired licence switches you off automatically. Do not use another person's documents or another vehicle than the one you registered.\n3. Carry only the PIN-checked rider. Start a trip only after the rider gives you the 4-digit PIN. Never carry more people than the vehicle has seats. On a motorbike, carry a helmet for the passenger and carry one passenger only.\n4. Drive safely and sober. No alcohol or drugs, no phone use while driving, follow traffic law. Report any accident or threat at once with SOS.\n5. Location and phone numbers. While you are online, riders near you can see how far away you are. While a ride is open, the rider sees your live position and your phone number, and you see theirs. Your Trothen page must stay open with location allowed for the trip to be tracked. Numbers and positions are not shared after the ride ends.\n6. Money. The rider's fare is held and paid to you when they confirm the trip. Trothen takes a commission from your ride earnings at payout (shown in Settings). Do not ask riders for extra money outside the app or cancel to ask for more.\n7. Conduct. Treat riders with respect. Trothen can pause or end your driving if rules are broken or safety reports come in.",
+  rideMotorbikeNight: { enabled: false, startHour: 20, endHour: 6 }, // optional: no motorbike rides in these hours (Liberia time = UTC). Older sources mention such a rule; check before using
+  // v113: Driver Pass. Like Ghana's newer ride apps, a driver can pay a flat pass (a day, a week, a month)
+  // instead of a commission on each ride. While a pass is active the driver keeps every fare and may also
+  // take cash rides. Without a pass, digital rides pay the commission above. The prices below are
+  // placeholders (US dollars): set the real ones in Admin > Rides after checking what drivers can pay.
+  ridePassEnabled: true,
+  ridePassFreeDays: 7, // v164: every approved driver can start one free pass of this many days (0 = off)
+  ridePassPlans: [
+    { id: 'day', label: 'Daily pass', days: 1, priceUsd: 2 },
+    { id: 'week', label: 'Weekly pass', days: 7, priceUsd: 10 },
+    { id: 'month', label: 'Monthly pass', days: 30, priceUsd: 35 },
+  ],
+  // v115/v118: Trothen Tokens for pros (see src/tokens.js). 1 token = US$1.00 when spent.
+  // A pack's "tokens" can be more than its price (bonus), never less. These
+  // packs are placeholders: set the real ones in Admin > Tokens.
+  tokensEnabled: true,
+  tokensFeeOnlyEnabled: true, // v115 customer setting; not used since tokens became pro-only in v118
+  tokenMaxBalance: 500,       // most tokens one customer can hold (keeps the stored balance small)
+  tokenPacks: [
+    { id: 'small', label: 'Small', priceUsd: 10, tokens: 10 },
+    { id: 'medium', label: 'Medium', priceUsd: 25, tokens: 26 },
+    { id: 'large', label: 'Large', priceUsd: 50, tokens: 53 },
+    { id: 'xl', label: 'Extra large', priceUsd: 100, tokens: 110 },
+  ],
+  // v116: best practice for the African markets. Smaller packs (people top
+  // up little and often, like airtime), lower limits per customer, and a
+  // daily buying limit so a stolen phone or mobile money account can't be
+  // emptied into tokens in one go. Local prices are worked out from the
+  // exchange rate and rounded (L$10, ₦50, GH₵0.50 steps) unless a fixed
+  // localPrice is set for a pack in Admin > Tokens > Countries.
+  tokenDailyLimitUsd: 200,  // most a customer can buy in 24 hours (US$), unless a country says otherwise
+  tokenCountries: [],
+  // v119: how customers pay for jobs while in-app payments aren't live.
+  // Cash jobs: the customer pays the pro directly after the work; Trothen's
+  // commission is taken from the pro's tokens. Per country, an admin can
+  // also turn on payment codes for protected (escrow) jobs.
+  cashJobsEnabled: true,
+  payoutsRequireRealPayment: false, // turn ON for the live site: payouts only include bookings whose money really arrived (payment code or mobile money)
+  realPaymentsOnly: false, // v126: off (now) = escrow is offered everywhere, with no real money until payments are connected. On = escrow only where card or Trothen's account is set up
+  tokenTestPurchases: false, // TEST SITES ONLY: lets "Pay in the app" add tokens without any real payment
+  customerPaymentCodeHours: 24, // how long a customer has to pay a booking by code
+  tokenPaymentCodeHours: 48, // v117: how long a mobile money payment code stays open if no payment is reported       // countries where tokens are on; empty = every country
+  tokenCountryRules: {
+    // v164: in Liberia packs start at L$50 and L$100 (fixed local prices), so a
+    // pro just starting can top up a little at a time, as with airtime.
+    Liberia: { maxBalance: 200, dailyLimitUsd: 100, momoAccounts: [], packs: [
+      { id: 'l50', label: 'L$50', priceUsd: 0.26, tokens: 0.26, localPrice: 50 },
+      { id: 'l100', label: 'L$100', priceUsd: 0.52, tokens: 0.52, localPrice: 100 },
+      { id: 'mini', label: 'Mini', priceUsd: 2, tokens: 2 },
+      { id: 'small', label: 'Small', priceUsd: 5, tokens: 5 },
+      { id: 'medium', label: 'Medium', priceUsd: 10, tokens: 10.5 },
+      { id: 'large', label: 'Large', priceUsd: 25, tokens: 26.5 },
+    ] },
+    Ghana: { maxBalance: 200, dailyLimitUsd: 100, momoAccounts: [], packs: [
+      { id: 'mini', label: 'Mini', priceUsd: 2, tokens: 2 },
+      { id: 'small', label: 'Small', priceUsd: 5, tokens: 5 },
+      { id: 'medium', label: 'Medium', priceUsd: 10, tokens: 10.5 },
+      { id: 'large', label: 'Large', priceUsd: 25, tokens: 26.5 },
+    ] },
+    Nigeria: { maxBalance: 200, dailyLimitUsd: 100, momoAccounts: [], packs: [
+      { id: 'mini', label: 'Mini', priceUsd: 2, tokens: 2 },
+      { id: 'small', label: 'Small', priceUsd: 5, tokens: 5 },
+      { id: 'medium', label: 'Medium', priceUsd: 10, tokens: 10.5 },
+      { id: 'large', label: 'Large', priceUsd: 25, tokens: 26.5 },
+    ] },
+  },
+  rideCashEnabled: false, // cash rides are off until a super admin switches them on (and only drivers with an active pass can take them)
+  rideAutoReleaseHours: 12, // after the driver ends a trip, the fare is released to the driver this many hours later if the rider has neither confirmed nor reported a problem (0 = never, the rider must always confirm)
+  rideNoStartHours: 3,    // an accepted ride that has not started this long after it was requested is cancelled and refunded
+  rideStuckHours: 6,      // a started trip that nobody has ended after this long is flagged to the Trothen team
+  rideWaitMinutes: 10,    // how long a driver waits at the pickup before they can report that the rider did not show
+  rideTrackKeepDays: 30,  // GPS routes and last-known positions of finished rides are deleted after this many days
+  rideFeePercent: 9,      // Trothen's share of a ride fare, added on top for the rider (0 to 30)
+  rideFareTables: {},     // v142: Trothen's fares per country and vehicle (Admin → Rides → Fares); a country with none uses each driver's own rates
+
+  // The homepage support chat's "Chat with us" / "Call" links. Ships with
+  // an obviously-fake placeholder number on purpose — flagged in every
+  // audit rather than silently invented — until a super admin sets the
+  // real one here. whatsapp is digits only (country code, no +/spaces/
+  // dashes, e.g. "15551234567"); phoneDisplay is whatever human-readable
+  // format should actually show on screen.
+  // Long-form editable pages — About Us and the Terms of Service. Support
+  // a small set of plain-text formatting markers (parsed client-side by
+  // renderFormattedContent in public/index.html): a line starting with
+  // "# " becomes a section heading, "- " becomes a bullet, "**text**"
+  // becomes bold, and a blank line starts a new paragraph. Deliberately
+  // not a full WYSIWYG/HTML editor — that would need real sanitization
+  // against a much larger attack surface for content only a trusted
+  // super admin ever edits; this gives genuine structure (headings,
+  // emphasis, lists) with a parser simple enough to reason about
+  // completely.
+  aboutUsContent: `# About Trothen
+
+Trothen is a marketplace for local services: plumbing, cleaning, tutoring, moving, repairs and more. It connects customers with independent professionals in the United States, Liberia, Ghana and Nigeria.
+
+Hiring someone to work in your home should not be a gamble. In every market we serve, the same problems come up: it is hard to know who will arrive, and there is little recourse if the work is not done.
+
+Trothen addresses this in three ways. Every professional's identity is verified before they can accept a job. Every booking has a written agreement covering the work and the price. Payment for protected bookings is held in escrow until the customer confirms the work is complete.
+
+We are a small, distributed team. If something is not working as it should, please contact us. We read every message.`,
+
+  termsOfServiceCustomerContent: `Trothen Terms of Service — Customers
+
+Last updated: [set this date when you actually publish these terms]
+
+# 1. Who These Terms Are Between
+
+These Terms of Service ("Terms") govern your use of Trothen (the "Platform") as a Customer, operated by Trothen Tech Group ("Trothen," "we," "us"). By creating a Customer account, you agree to these Terms. If you don't agree, don't use the Platform.
+
+# 2. What Trothen Is — and Isn't
+
+Trothen is a marketplace that connects you with independent Providers who perform local services. **Trothen does not perform the services listed on the Platform, and does not employ the Providers who do.** We verify Provider identity before they can accept work, hold your payment in escrow, generate a contract for every booking, and provide dispute support — we are not a party to the actual work performed.
+
+# 3. Account Eligibility
+
+You must be at least 18 years old and able to form a binding contract to use Trothen. You're responsible for keeping your login credentials secure and for everything that happens under your account. Provide accurate information when you register, and keep it up to date.
+
+# 4. What You Agree To As a Customer
+
+- **Keep what you promised** — be there for the window you booked, or say so early if plans change.
+- **Be honest** — describe the job accurately, including anything difficult about it, and rate honestly on what actually happened.
+- **Be safe** — disclose hazards before a job (pets, structural issues, chemicals) so your Provider can work safely.
+- **Treat people with respect** — Providers are independent professionals running their own businesses, not staff, and not yours to direct beyond what the job describes.
+- **Keep it on the platform** — arrange and pay for work through Trothen. Off the platform, there is no payment protection, for either side.
+
+# 5. Payment, Fees, and Escrow
+
+When you book a job, your payment is held in escrow until you confirm the work is complete, at which point funds release to the Provider. Any applicable Customer service fee is shown to you before you confirm a booking — the Platform will always display the actual, current fee, never a hidden charge added afterward.
+
+# 6. Cancellations
+
+You may cancel a booking before it's completed, subject to the cancellation terms shown on the Platform at the time of booking.
+
+# 7. Prohibited Activity
+
+The following can never be posted or booked on Trothen, regardless of category: transporting people, unsupervised care of minors, work involving weapons or controlled substances, medical or veterinary procedures, or handling of hazardous or biological waste. Trothen may remove any listing or booking that violates this, and may suspend the account responsible.
+
+# 8. Disputes
+
+If something goes wrong with a job, contact Trothen support. A real person reviews every dispute — no automated system makes a final call on a dispute. Response-time targets for different types of issues are published on the Platform.
+
+# 9. Account Suspension
+
+Trothen may suspend or terminate your account for violating these Terms or applicable law. Every such decision is made by a person, not an algorithm, and can be questioned — contact support if you believe a decision was made in error.
+
+# 10. Limitation of Liability
+
+Trothen provides the Platform "as is." To the maximum extent permitted by law, Trothen is not liable for the acts or omissions of Providers, or for indirect, incidental, or consequential damages arising from use of the Platform. Nothing in these Terms limits liability where the law does not allow it to be limited.
+
+# 11. Changes to These Terms
+
+Trothen may update these Terms from time to time. If a change is material, you'll be asked to review and accept the updated Terms before continuing to use the Platform.
+
+# 12. Identity Checks and Your ID Document
+
+Before your first booking, we ask for a photo of a government-issued ID and a photo of your face. A person on the Trothen team compares the two and checks the name against your account. If we use an automated identity service instead, it does the same comparison and reports the result to us.
+
+Your ID and face photo are stored privately. They are never shown to other users. Only Trothen staff who review identity checks can open them, and every time one is opened it is recorded. {{ID_RETENTION_SENTENCE}} We keep a record that the check happened: the type of document, the name on it, the decision, and who made it.
+
+# 13. Contact
+
+Questions about these Terms: {{SUPPORT_EMAIL}}`,
+
+  termsOfServiceProviderContent: `Trothen Terms of Service — Providers
+
+Last updated: [set this date when you actually publish these terms]
+
+# 1. Who These Terms Are Between
+
+These Terms of Service ("Terms") govern your use of Trothen (the "Platform") as a Provider, operated by Trothen Tech Group ("Trothen," "we," "us"). By creating a Provider account, you agree to these Terms. If you don't agree, don't use the Platform.
+
+# 2. What Trothen Is — and Isn't
+
+Trothen is a marketplace that connects you with Customers who need local services. **Trothen does not perform the services you list, and does not employ you.** We verify your identity before you can accept work, hold Customer payment in escrow until a job is confirmed complete, generate a contract for every booking, and provide dispute support — we are not a party to the actual work you perform.
+
+# 3. Your Relationship With Trothen
+
+You are an independent contractor, not an employee, agent, partner, or joint venturer of Trothen. **Nothing in these Terms creates an employment relationship.** You choose which jobs to accept, when to work, and how the work gets done — Trothen never directs your method, hours, route, or acceptance decisions. You are responsible for your own taxes, insurance, and business expenses.
+
+# 4. Account Eligibility
+
+You must be at least 18 years old and able to form a binding contract to use Trothen. You're responsible for keeping your login credentials secure — never lend your account to anyone else — and for everything that happens under it. Provide accurate information when you register, and keep it up to date, including any license or insurance information your category requires.
+
+# 5. What You Agree To As a Provider
+
+- **Keep what you promised** — show up for the window you accepted, or say so early if you can't.
+- **Be honest** — describe your work accurately. If a job needs a licensed trade or is bigger than described, stop and tell the Customer.
+- **Be safe** — never work impaired or endangered. Stop and report if a job becomes unsafe — no job is worth an injury.
+- **Treat people with respect** — no harassment, discrimination, or unwanted contact. Never enter a space you weren't invited into.
+- **Keep it on the platform** — arrange and get paid for work through Trothen. Off the platform, there is no payment protection, for either side.
+
+# 6. Commission and Payment
+
+Trothen deducts a commission from each completed job before paying you out; the current rate for your tier is always shown on your dashboard and on each payout. Rates may change from time to time, and the Platform will always reflect the actual, current rate — never a rate you weren't shown.
+
+# 7. Cancellations
+
+You may cancel a job before it's completed, subject to the cancellation terms shown on the Platform. **Cancelling because a job wasn't accurately described, became unsafe, needed a different trade, or required a license you don't hold will never count against your standing on the Platform** — that's a system rule, not a case-by-case judgment call.
+
+# 8. Prohibited Activity
+
+The following can never be posted, accepted, or performed through Trothen, regardless of category: transporting people, unsupervised care of minors, work involving weapons or controlled substances, medical or veterinary procedures, or handling of hazardous or biological waste. Trothen may remove any listing or booking that violates this, and may suspend the account responsible.
+
+# 9. Disputes
+
+If something goes wrong with a job, contact Trothen support. A real person reviews every dispute — no automated system suspends your account or makes a final call on a dispute. Response-time targets for different types of issues are published on the Platform.
+
+# 10. Account Suspension
+
+Trothen may suspend or terminate your account for violating these Terms, the Community Standards, or applicable law. Every such decision is made by a person, not an algorithm, and can be questioned — contact support if you believe a decision was made in error.
+
+# 11. Limitation of Liability
+
+Trothen provides the Platform "as is." To the maximum extent permitted by law, Trothen is not liable for indirect, incidental, or consequential damages arising from use of the Platform. Nothing in these Terms limits liability where the law does not allow it to be limited.
+
+# 12. Changes to These Terms
+
+Trothen may update these Terms from time to time. If a change is material, you'll be asked to review and accept the updated Terms before continuing to use the Platform.
+
+# 13. Identity Checks and Your ID Document
+
+Before you appear in search or accept work, we ask for a photo of a government-issued ID and a photo of your face. A person on the Trothen team compares the two and checks the name against your account. If we use an automated identity service instead, it does the same comparison and reports the result to us.
+
+Your ID and face photo are stored privately. They are never shown to other users. Only Trothen staff who review identity checks can open them, and every time one is opened it is recorded. {{ID_RETENTION_SENTENCE}} We keep a record that the check happened: the type of document, the name on it, the decision, and who made it.
+
+# 14. Contact
+
+Questions about these Terms: {{SUPPORT_EMAIL}}`,
+
+  // v94: the built-in Privacy Policy. It describes what the system really
+  // does, in plain words. It is editable in Admin → Settings, and an
+  // attorney should review it before launch. {{ID_RETENTION_SENTENCE}} and
+  // {{SUPPORT_EMAIL}} are filled in from live settings when it is shown.
+  privacyPolicyContent: `Trothen Privacy Policy
+
+Last updated: 7 October 2026
+
+# 1. What This Covers
+
+This policy explains what information Trothen collects when you use the site as a customer or as a pro, why we collect it, who can see it, how long we keep it, and the choices you have. We have tried to write it so you can read it once and understand it.
+
+# 2. What We Collect
+
+Account details. Your name, email address, phone number, country, state or region, city, address and postal code, and a password. Your password is stored in a scrambled form that nobody at Trothen can read. If you sign in with Google, we receive your name and email address from Google.
+
+Identity check. To confirm who you are, we ask for a photo or PDF of a government ID (front, and back if it has one), the name printed on it, and a photo of your face. A person on the Trothen team compares them.
+
+Guarantors (pros only, optional). If you name people who can vouch for you, we store their names and phone numbers and may call them. Please tell them first.
+
+Jobs and bookings. What you ask for or agree to do, the price, dates and times, photos or videos you attach, the written agreement for each booking, reviews, and any dispute and the evidence either side uploads.
+
+Stores and business tools (pros only, optional). If you open a store: its name, your goods, their photos and prices, and your stock. If you use the business tools: the quotes, estimates and invoices you write (including the customer name and contact you type in), your list of tools, and your expenses and receipt photos. Only you can see your business records, except a quote, estimate or invoice you choose to send to a customer on Trothen, which that customer can also see. Your store name is public, and your goods and prices are shown to anyone who opens your store once a Trothen manager has approved them. If you add a skill in a licensed trade, the licence photo you attach is kept privately and only the Trothen staff who check it can open it.
+
+Location. See section 3.
+
+Payments. Trothen is in early access and payments are in test mode, so no real money moves yet. We record the amounts for each booking. For a saved card we keep only the brand, the last four digits and the expiry date. We never store a full card number or security code.
+
+Messages and support. Messages you exchange with the other person on a booking, and what you write to our support team or type into the support chat.
+
+Technical information. The date and time of your sign-ins, the kind of device or browser, and your internet address, which we use to protect accounts and stop abuse. The site keeps a sign-in token and your language choice in your browser's storage. We do not use advertising trackers.
+
+# 3. Location
+
+We only use your location when you choose to share it.
+
+Job location. When you post a job or book a pro, you can pin where the job is (often your home) and add a landmark. Only the pro you hire, and Trothen staff who need it, can see the exact spot. Pros who are only matched to your job see a rounded distance, not the spot.
+
+Searching. If you press the location button when searching, your position is used to sort pros by distance. It is not saved to your account.
+
+A pro's base location. A pro can share where they are based so customers see a real distance. A pro can remove it at any time in Settings.
+
+Live trip. When a pro taps "On my way", their position is shared with that one customer until they tap "Arrived". It is not shared before or after, and the live position is deleted on arrival. We keep the point where the pro said they set off and the point where they said they arrived, to help settle disputes and detect fraud.
+
+Pick-up and drop-off. When goods or materials are carried as part of a booking, the customer or the pro can take photos at pick-up and at drop-off. Each record keeps who took it, when, and where the phone was, if the phone gives a position. From the pro's pick-up record until the pro's drop-off record, the pro's phone also records the route taken, while the Trothen page is open. Only the customer and the pro on that booking, and Trothen staff handling a dispute, can see these.
+
+Store orders and delivery. When you buy goods from a pro's store, the seller sees your first name, what you bought and any note you write. If you ask for the goods to be brought to you, the place you give (a pin, a landmark or an address) is shown to whoever brings them: the seller if the seller delivers, or the driver you chose. When a driver delivers, the seller is not shown your address. A store's collection place, and its pin if the seller set one, are shown to customers who order from it and to the driver. A driver's name, what they deliver with, their rating and their price are shown to customers choosing a driver; a driver's own position is never shown.
+
+Rides and live tracking. If you request or give a ride, or a driver delivers your store order, the position of the driver's phone is sent to Trothen every few seconds while the ride or delivery is open and is shown on a map to the people on it (the rider or customer, and the seller on a delivery). The route so far is kept with the booking for disputes and safety, and the live position is deleted when the trip ends. While a ride or delivery is open, the people on it can also see each other's phone number so they can call or text. Numbers are not shown before a driver accepts or after the order ends. If a rider uses Share my trip, anyone with that link can see the driver's first name, vehicle, plate and live position until about an hour after the trip ends. A safety alert (SOS) sends the sender's position and the booking details to Trothen staff. A driver's licence, vehicle registration, vehicle photo and insurance document are kept privately and only Trothen staff who approve drivers or handle a dispute can open them.
+
+Maps. When a map is shown, the map pictures come from OpenStreetMap, and links can open Google Maps. Those services receive your internet address and the area of the map you are viewing, as with any website.
+
+You can switch location off for this site in your browser or phone settings. You can then type a location, choose it on a map, or describe a landmark instead.
+
+# 4. Why We Use It
+
+To create and protect your account. To check identity, so people can trust who they are dealing with. To match customers with pros and let them agree, carry out and pay for a job. To help a pro find the job. To settle disputes fairly. To detect and prevent fraud and abuse. To send you messages about your bookings and your account. To meet legal obligations.
+
+We do not sell your personal information.
+
+# 5. Who Can See Your Information
+
+Other users. A pro's public profile shows their name, photo, city, skills, reviews and score. A customer and a pro on the same booking see each other's name and what is needed to do the job, including the job location. Your ID, your face photo and your contact details are never shown to other users by Trothen.
+
+Trothen staff. Only staff who need the information for their job can see it. ID documents and face photos can be opened only by the staff who review identity checks, and every time one is opened it is recorded.
+
+Companies that help us run the service, each only when that service is switched on and only for its purpose: our hosting provider, which stores the data in the United States; an email delivery service; a text message service; Google, if you choose to sign in with Google; an identity verification service, if we use automated checks; OpenStreetMap for map pictures; a mobile money partner, where mobile money payments are offered; and, if our AI support assistant is switched on, the questions you type into the support chat are sent to an AI provider to produce an answer.
+
+Authorities. We may disclose information when the law requires it, or to protect someone's safety.
+
+# 6. How Long We Keep It
+
+ID documents and face photos. {{ID_RETENTION_SENTENCE}} If a dispute or a fraud review involving your account is open at that time, the files are kept until it is closed. We keep a record that the check happened: the type of document, the name on it, the decision, and who made it.
+
+Live trip position. Deleted when the pro arrives.
+
+Job location. The exact pin, and the points where the pro said they set off and arrived, are removed 90 days after a booking ends, unless a dispute on it is still open. For a job post that never became a booking, the pin and landmark are removed after 30 days.
+
+Pick-up and drop-off. The positions on pick-up and drop-off records, and the recorded route, are removed on the same 90-day rule. The photos and times stay with the booking as the record of the hand-over.
+
+Sign-ups that are started and not finished. Deleted within about an hour.
+
+Your account and its records. Kept while your account is open. If you close your account, it stops working at once. Trothen then removes your name, contact details, photos and ID files. Records of bookings, payments, reviews and disputes are kept, without your personal details, because the other person involved has a right to their record and because the law requires financial records to be kept.
+
+# 7. Your Choices
+
+Download your data. In Settings, "Download a copy of my data" gives you one file with what Trothen holds about your account: a page you can read, spreadsheets, your photos and voice messages, and the complete data file for moving to another service.
+
+Close your account. In Settings, "Close my account". You cannot close it while a booking, a held payment or a dispute is still open.
+
+Correct your details. You can edit your profile in Settings.
+
+Location and notifications. You can switch these off in your browser or phone settings.
+
+Depending on where you live, you may have further rights under your local data protection law, such as the right to object or to complain to your data protection authority. Contact us and we will help.
+
+# 8. Security
+
+Passwords are scrambled. ID files are kept in a private area, are not served to the public, and can be encrypted on our disk. Every request is checked so that people can reach only their own bookings, messages and files. Sign-in is paused after repeated wrong passwords. No system is perfectly secure, and we cannot promise that information will never be accessed wrongly, but we work to prevent it and will tell you if a breach affects you.
+
+# 9. Age
+
+Trothen is for people aged 18 or over. We do not knowingly collect information from anyone under 18.
+
+# 10. Where Your Information Is Stored
+
+Our servers are in the United States. If you use Trothen from another country, your information is transferred to and stored in the United States.
+
+# 11. Changes to This Policy
+
+If we change this policy in a way that matters, we will tell you on the site before the change takes effect.
+
+# 12. Contact
+
+Questions about this policy, or a request about your own information: {{SUPPORT_EMAIL}}. We aim to reply within 30 days.`,
+
+  // v77: how many days an uploaded ID and selfie are kept after a decision
+  // (approved, rejected or replaced). 0 = keep until deleted by hand.
+  // v95: 30 days is the default. An ID photo is only needed long enough to
+  // answer a question about the decision; the usual practice is to keep
+  // such documents for the shortest time that does the job. Files are
+  // held longer automatically while a dispute or a fraud review involving
+  // the account is open (see src/id-retention-scheduler.js).
+  idDocumentRetentionDays: 30,
+
+  // v78: the provider monthly plan fee. Off until the super admin switches
+  // it on AND PLAN_BILLING_ENABLED=true is set on the server. See
+  // src/plan-billing.js.
+  planBilling: { on: false, startedAt: null, noticeDays: 30 },
+
+  // The homepage's actual on-screen copy — hero headline/subheadline, the
+  // rotating word in the hero, and the mission section. Editable in
+  // Settings → Platform Settings without needing a code deploy. Kept
+  // deliberately small (headline pieces + one paragraph) rather than a
+  // full page-builder — the rest of the homepage (stats, categories,
+  // trust badges) is generated from real data and isn't free-text anyway.
+  homepageContent: {
+    heroPrefix: "Local",
+    heroRotatingWords: ['pros', 'plumbers', 'cleaners', 'tutors', 'electricians', 'painters'],
+    heroSuffix: "you can check before you hire.",
+    heroSubheadline: "Every pro on Trothen has had their government ID checked. You agree the price and the work in writing, and your payment is held until you mark the job done.",
+    missionHeadline: "Hiring someone local shouldn't be a gamble.",
+    missionBody: "Most people find a plumber or a tutor through a friend of a friend and hope it works out. If it doesn't, there's usually nobody to call. Trothen checks every pro's government ID before they can take a job, puts the price and the work in writing for every booking, and holds the payment until you say the job is done. If something goes wrong, our dispute team steps in.",
+  },
+};
+
+// Front-page wording the super admin has changed from the built-in
+// English (Admin → Settings → Front page wording). Empty = everything as
+// shipped. Keys must be in EDITABLE_CONTENT_KEYS below.
+DEFAULTS.contentOverrides = {};
+const EDITABLE_CONTENT_KEYS = ["composer_what", "composer_where", "composer_go", "search_placeholder", "search_city_placeholder", "hero_often", "composer_hint", "chips_all", "chips_fewer", "ticket_title", "ticket_s1", "ticket_s2", "ticket_s3", "ticket_s4", "ticket_status_1", "ticket_status_2", "ticket_status_3", "ticket_status_4", "ticket_f_job", "ticket_f_pro", "ticket_f_terms", "ticket_f_pay", "ticket_f_status", "ticket_v_job", "ticket_v_pro", "ticket_v_terms", "ticket_v_pay", "ticket_v_status", "ticket_n1", "ticket_n2", "ticket_n3", "ticket_n4", "ticket_stamp", "ticket_next", "ticket_again", "ticket_post", "loc_live", "stat_pros", "stat_rating", "stat_jobs", "stat_fee", "checks_title", "checks_sub", "checks_tag", "checks_more", "checks_less", "check1_t", "check1_d", "check1_s1", "check1_s2", "check1_s3", "check2_t", "check2_d", "check2_s1", "check2_s2", "check2_s3", "check3_t", "check3_d", "check3_s1", "check3_s2", "check3_s3", "check3_note", "check4_t", "check4_d", "check4_s1", "check4_s2", "check4_s3", "checks_close", "popular_title", "popular_sub", "popular_from", "popular_pro_one", "popular_pro_many", "popular_see", "work_title", "work_sub", "cats_title", "cats_all", "cats_count_one", "cats_count_many", "cat_none", "cat_empty", "pro_one", "pro_many", "pros_title", "pros_sub", "pros_all", "reviews_title", "reviews_sub", "reviews_hired", "faq_title", "faq_sub", "faq_q1", "faq_a1", "faq_q2", "faq_a2", "faq_q3", "faq_a3", "faq_q4", "faq_a4", "faq_q5", "faq_a5", "faq_q6", "faq_a6", "cta_hire_t", "cta_hire_d", "cta_pro_t", "cta_pro_d", "nav_browse", "nav_become_pro", "nav_menu", "footer_line", "footer_about", "footer_careers", "footer_contact", "footer_terms", "trust_id", "trust_contract", "trust_payment", "trust_fraud", "trust_2fa", "qv_id_checked", "qv_new", "qv_jobs", "qv_from", "qv_per_hour", "qv_score", "qv_within", "qv_work", "qv_reviews", "qv_no_reviews", "qv_customer", "qv_not_taking", "qv_book", "qv_full", "qv_error", "plans_eyebrow", "plans_title", "plans_sub", "plans_country", "plan1_name", "plan1_desc", "plan1_f1", "plan1_f2", "plan1_f3", "plan1_f4", "plan1_f5", "plan2_name", "plan2_desc", "plan2_f1", "plan2_f2", "plan2_f3", "plan2_f4", "plan2_f5", "plan3_name", "plan3_desc", "plan3_f1", "plan3_f2", "plan3_f3", "plan3_f4", "plan3_f5", "plan4_name", "plan4_desc", "plan4_f1", "plan4_f2", "plan4_f3", "plan4_f4", "plan2_note", "plan3_note", "plan3_badge", "plan1_btn", "plan4_price", "plan4_btn", "plans_fee_off", "plans_fee_on", "careers_title", "careers_body", "careers_form_title", "careers_btn", "contact_title", "contact_intro", "contact_btn", "install_btn", "install_done", "install_ios_title", "install_ios_1", "install_ios_2", "install_ios_3", "install_ok"];
+
+async function getSetting(key) {
+  const row = await db.find('platformSettings', s => s.key === key);
+  if (row) return row.value;
+  return DEFAULTS[key];
+}
+
+async function setSetting(key, value) {
+  const existing = await db.find('platformSettings', s => s.key === key);
+  const patch = { key, value, updatedAt: new Date().toISOString() };
+  if (existing) return db.update('platformSettings', existing.id, patch);
+  return db.insert('platformSettings', { id: `ps_${key}`, ...patch });
+}
+
+// The actual per-booking calculation. Priority order, same fallback-chain
+// convention used everywhere else in this app:
+//   1. A category-level override (set in Categories & Countries) always
+//      wins — e.g. "Emergency Plumbing" might always need a 30-minute
+//      response regardless of how far out the job is.
+//   2. Otherwise, the tiered default based on how soon the job actually
+//      starts (see bookingResponseTiers above).
+//   3. Hard floor either way: the deadline can never exceed the job's own
+//      start time (confirming a job after it was supposed to start is
+//      meaningless) and never drops below 15 minutes (so a same-hour
+//      emergency booking still gets a real, if short, window instead of
+//      an instantly-expired one).
+function computeResponseWindowHours({ now, jobDateTime, tiers, categoryOverrideHours }) {
+  let hours;
+  if (categoryOverrideHours != null) {
+    hours = categoryOverrideHours;
+  } else if (jobDateTime && !isNaN(jobDateTime.getTime())) {
+    const hoursUntilJob = (jobDateTime - now) / (1000 * 60 * 60);
+    if (hoursUntilJob <= 24) hours = tiers.within24h;
+    else if (hoursUntilJob <= 24 * 7) hours = tiers.within7d;
+    else hours = tiers.beyond7d;
+  } else {
+    // Job date/time didn't parse (free-text edge case) — fall back to the
+    // middle tier rather than guessing wrong in either direction.
+    hours = tiers.within7d;
+  }
+
+  if (jobDateTime && !isNaN(jobDateTime.getTime())) {
+    const hoursUntilJob = (jobDateTime - now) / (1000 * 60 * 60);
+    const maxAllowed = Math.max(0.25, hoursUntilJob); // never past the job's own start time; floor of 15 minutes
+    hours = Math.min(hours, maxAllowed);
+  }
+  return Math.round(hours * 100) / 100;
+}
+
+// v95: ONE support email for everything a visitor reads: the footer, the
+// Terms of Service, the Privacy Policy, PDFs and the support chat. It is
+// the address in Admin → Settings → Footer. (Before this, the footer read
+// that setting, the Privacy Policy read a different one, and the Terms,
+// PDFs and chat each had an address typed into the code.)
+// If the footer address is blank, the support-contact email is used.
+let supportEmailCache = '';
+async function publicSupportEmail() {
+  const footer = (await getSetting('footerInfo')) || {};
+  const contact = (await getSetting('supportContact')) || {};
+  supportEmailCache = String(footer.supportEmail || '').trim() || String(contact.email || '').trim();
+  return supportEmailCache;
+}
+// For code that can't wait (PDF page footers). Kept fresh by the function above.
+function supportEmailCached() { return supportEmailCache; }
+// Advice shown to the super admin about the address, never to visitors.
+function supportEmailAdvice(email, siteHost) {
+  const notes = [];
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) { notes.push({ level: 'problem', text: 'No support email is set. The Privacy Policy and Terms tell people to use the Contact Us page instead.' }); return notes; }
+  const domain = e.split('@')[1] || '';
+  const host = String(siteHost || '').toLowerCase().replace(/^www\./, '').replace(/:\d+$/, '');
+  if (/^(gmail|yahoo|ymail|outlook|hotmail|live|icloud|aol|proton|protonmail)\./.test(domain)) {
+    notes.push({ level: 'advice', text: 'This is a personal-style mailbox. A business address on your own domain (for example support@' + (host && !/localhost|onrender/.test(host) ? host : 'yourdomain.com') + ') looks more trustworthy and is less likely to be treated as spam.' });
+  } else if (host && !/localhost|onrender\.com$|^\d+\.\d+\.\d+\.\d+$/.test(host) && domain !== host && !host.endsWith('.' + domain) && !domain.endsWith('.' + host)) {
+    notes.push({ level: 'problem', text: 'This address is on ' + domain + ', but the site is ' + host + '. Check that this mailbox really exists and that someone reads it. If it bounces, nobody can reach you about their data.' });
+  }
+  if (/^(no-?reply|donotreply|do-not-reply)@/.test(e)) notes.push({ level: 'problem', text: 'A no-reply address can\'t be used here. People must be able to write to it.' });
+  return notes;
+}
+
+// v110: "allow me to add more than one customer service number — Dispute,
+// Onboarding, Promotion, General." These are the optional extra lines a
+// platform-wide or regional support contact can set on top of its
+// always-present General number. Shared between the admin settings
+// routes (admin.routes.js) and the public lookup (marketplace.routes.js)
+// so both resolve a category the same way.
+const SUPPORT_CATEGORIES = ['dispute', 'onboarding', 'promotion'];
+
+// Resolves one contact "slot" (the platform-wide fallback, or one
+// region's own entry) into what should actually be shown for a given
+// category: that slot's own category override if it set one, otherwise
+// that slot's General number. Old data with no "categories" key at all
+// (every contact set before this feature existed) resolves exactly as
+// it always did — general-only, for every category.
+function resolveContactCategory(slot, category) {
+  if (category && SUPPORT_CATEGORIES.includes(category) && slot.categories && slot.categories[category]) {
+    const c = slot.categories[category];
+    return { whatsapp: c.whatsapp, phoneDisplay: c.phoneDisplay, email: c.email || '' };
+  }
+  return { whatsapp: slot.whatsapp, phoneDisplay: slot.phoneDisplay, email: slot.email || '' };
+}
+
+module.exports = { getSetting, setSetting, computeResponseWindowHours, DEFAULTS, EDITABLE_CONTENT_KEYS, publicSupportEmail, supportEmailCached, supportEmailAdvice, SUPPORT_CATEGORIES, resolveContactCategory };

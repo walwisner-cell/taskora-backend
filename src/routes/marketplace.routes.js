@@ -553,6 +553,19 @@ router.get('/geo/route', requireAuth, routeLimiter, async (req, res) => {
   const est = estimate(a, b, String(q.vehicle || 'car'));
   res.json({ source: 'straight', points: [[a.latitude, a.longitude], [b.latitude, b.longitude]], km: est.km, minutes: est.minutes });
 });
+// GET /api/geo/place-name?lat=6.3&lng=-10.8 — v166: a pin in words (its
+// street address, and the nearest well-known place), for the booking screen
+// and the courier's card. See src/place-name.js.
+const placeNameLimiter = require('express-rate-limit')({ windowMs: 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many lookups in a row. Please wait a moment.' } });
+router.get('/geo/place-name', requireAuth, placeNameLimiter, async (req, res) => {
+  const pin = { latitude: Number(req.query.lat), longitude: Number(req.query.lng) };
+  const pn = require('../place-name');
+  if (!pn.okPin(pin)) return res.status(400).json({ error: 'A valid point is needed.' });
+  const words = await pn.describe(pin);
+  if (!words) return res.status(502).json({ error: 'The address lookup isn\'t available right now.' });
+  res.set('Cache-Control', 'private, max-age=86400');
+  res.json({ address: words.address, near: words.near });
+});
 router.get('/geo/place-search', requireAuth, placeSearchLimiter, async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2 || q.length > 80) return res.status(400).json({ error: 'Type at least 2 letters of a place name' });
@@ -569,7 +582,10 @@ router.get('/geo/place-search', requireAuth, placeSearchLimiter, async (req, res
     const wait = 1100 - (Date.now() - lastPlaceCallAt);
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
     lastPlaceCallAt = Date.now();
-    const url = PLACE_SEARCH_URL + '?format=jsonv2&limit=5&q=' + encodeURIComponent(country ? q + ', ' + country : q);
+    // v166: only places in the person's own country. Searching a name like
+    // "Matadi" from Liberia could otherwise offer Matadi in DR Congo.
+    const cc = require('../place-name').countryCode(country);
+    const url = PLACE_SEARCH_URL + '?format=jsonv2&limit=5' + (cc ? '&countrycodes=' + cc.toLowerCase() : '') + '&q=' + encodeURIComponent(country ? q + ', ' + country : q);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 7000);
     try {

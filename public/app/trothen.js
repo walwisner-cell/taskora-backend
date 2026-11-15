@@ -836,7 +836,7 @@ async function refreshTripTracking() {
   set('trip-headline', headline); set('trip-fresh', fresh);
   const links = [];
   const mapsUrl = (p) => `https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}`;
-  if (d.jobLocation) links.push(`<div><strong>${escapeHtml(tr('Job location:'))}</strong> ${plusCodeFor(d.jobLocation.latitude, d.jobLocation.longitude)} · <a href="${iAmPro ? 'https://www.google.com/maps/dir/?api=1&destination=' + d.jobLocation.latitude + ',' + d.jobLocation.longitude : mapsUrl(d.jobLocation)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">${escapeHtml(tr(iAmPro ? 'Get directions in Google Maps' : 'Open in Maps'))}</a>${d.landmark ? '<div style="color:var(--slate);">' + escapeHtml(d.landmark) + '</div>' : ''}</div>`);
+  if (d.jobLocation) links.push(`<div><strong>${escapeHtml(tr('Job location:'))}</strong> ${plusCodeFor(d.jobLocation.latitude, d.jobLocation.longitude)} · <a href="${iAmPro ? 'https://www.google.com/maps/dir/?api=1&destination=' + d.jobLocation.latitude + ',' + d.jobLocation.longitude : mapsUrl(d.jobLocation)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">${escapeHtml(tr(iAmPro ? 'Get directions in Google Maps' : 'Open in Maps'))}</a>${placeLineHTML(d.jobLocation)}${d.landmark ? '<div style="color:var(--slate);">' + escapeHtml(d.landmark) + '</div>' : ''}</div>`);
   else if (d.landmark) links.push(`<div><strong>Job location:</strong> ${escapeHtml(d.landmark)}</div>`);
   if (d.proLocation && !iAmPro) links.push(`<div><strong>${escapeHtml(d.proName)}:</strong> <a href="${mapsUrl(d.proLocation)}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">${escapeHtml(tr('Open their position in Maps'))}</a></div>`);
   set('trip-links', links.join(''));
@@ -911,7 +911,9 @@ function renderJobPin(prefix) {
   el.innerHTML = `<div style="padding:9px 11px;border-radius:8px;border:1px solid ${rough ? '#E9D6A8' : '#BFE3D2'};background:${rough ? '#FBF3E4' : '#EEF8F3'};">
     <strong>${escapeHtml(tr(rough ? 'Rough location pinned' : 'Location pinned'))}</strong>${pin.accuracyM != null ? ' · ' + describeAccuracy(pin.accuracyM) : (pin.source === 'map' ? ' · ' + escapeHtml(tr('chosen on the map')) : '')}
     <div style="margin-top:3px;">Plus Code: <strong>${plusCodeFor(pin.latitude, pin.longitude)}</strong> · <a href="https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);text-decoration:underline;">${escapeHtml(tr('Check it on the map'))}</a></div>
-    ${rough ? '<div style="margin-top:4px;">' + escapeHtml(tr('That is not exact. Step outside and pin again, or add a clear landmark below so your pro can find you.')) + '</div>' : ''}
+    ${placeLineHTML(pin)}
+    ${pin.accuracyM != null && pin.accuracyM > 2000 ? '<div style="margin-top:4px;"><strong>' + escapeHtml(tr('This is only a guess, and may be far from where you are.')) + '</strong> ' + escapeHtml(tr('Computers without GPS guess their location from the internet connection. Choose the spot on the map instead, or use your phone.')) + '</div>'
+      : rough ? '<div style="margin-top:4px;">' + escapeHtml(tr('That is not exact. Step outside and pin again, or add a clear landmark below so your pro can find you.')) + '</div>' : ''}
     <button type="button" style="margin-top:4px;background:none;border:none;padding:0;color:var(--teal);font-size:13px;text-decoration:underline;cursor:pointer;" onclick="openMapPicker('${prefix}')">${escapeHtml(tr('Adjust on the map'))}</button> · <button type="button" style="margin-top:4px;background:none;border:none;padding:0;color:var(--teal);font-size:13px;text-decoration:underline;cursor:pointer;" onclick="JOB_PIN['${prefix}']=null;renderJobPin('${prefix}')">${escapeHtml(tr('Remove pin'))}</button>
   </div>`;
 }
@@ -1048,13 +1050,40 @@ function whereHTML(c) {
   const url = `https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}`;
   const rough = pin.accuracyM != null && pin.accuracyM > 150;
   const lm = c.landmark || (c.address && c.address !== 'Location pinned on the map' ? c.address : '');
-  return `<div style="font-size:13px;margin-top:4px;line-height:1.5;"><a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;white-space:nowrap;">${escapeHtml(tr('Open in Maps'))}</a> · <span title="Plus Code: works in Google Maps, even offline">${plusCodeFor(pin.latitude, pin.longitude)}</span>${rough ? ` <span style="color:#8C6423;">(${describeAccuracy(pin.accuracyM)})</span>` : ''}${lm ? `<div style="color:var(--slate);">${escapeHtml(lm)}</div>` : ''}</div>`;
+  return `<div style="font-size:13px;margin-top:4px;line-height:1.5;"><a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;white-space:nowrap;">${escapeHtml(tr('Open in Maps'))}</a> · <span title="Plus Code: works in Google Maps, even offline">${plusCodeFor(pin.latitude, pin.longitude)}</span>${rough ? ` <span style="color:#8C6423;">(${describeAccuracy(pin.accuracyM)})</span>` : ''}${placeLineHTML(pin)}${lm ? `<div style="color:var(--slate);">${escapeHtml(lm)}</div>` : ''}</div>`; // v166: and the pin in words
 }
 
 // v164: where the job is, as rows on the booking confirmation: the address
 // and landmark the customer typed or picked, and the pinned spot as its Plus
 // Code (readable over the phone, and Google Maps finds it), with a link.
 const PIN_PLACEHOLDER = 'Location pinned on the map';
+// v166: the pin in words: its street address and the nearest well-known
+// place (GET /geo/place-name, src/place-name.js). Saved on the pin once a
+// receipt has been made; otherwise filled in a moment after the page draws.
+// If the lookup can't answer, the empty line is taken away.
+function placeNameWords(pn) { return pn ? [pn.address, pn.address && pn.near ? `(${pn.near})` : pn.near].filter(Boolean).join(' ') : ''; }
+function placeNameHTML(pin) {
+  if (!pin || typeof pin.latitude !== 'number' || typeof pin.longitude !== 'number') return '';
+  const w = placeNameWords(pin.placeName);
+  if (w) return `<span class="place-name">${escapeHtml(w)}</span>`;
+  return `<span class="place-name" data-pn="${pin.latitude.toFixed(6)},${pin.longitude.toFixed(6)}" style="color:var(--slate);font-weight:400;">${escapeHtml(tr('Finding the address…'))}</span>`;
+}
+const PLACE_NAMES = new Map();
+function fillPlaceNames() {
+  if (!AUTH || !AUTH.token) return;
+  document.querySelectorAll('span[data-pn]:not([data-pn-busy])').forEach(el => {
+    el.setAttribute('data-pn-busy', '1');
+    const key = el.getAttribute('data-pn'); const [lat, lng] = key.split(',');
+    if (!PLACE_NAMES.has(key)) PLACE_NAMES.set(key, apiFetch('GET', `/geo/place-name?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`).catch(() => null));
+    PLACE_NAMES.get(key).then(r => {
+      const w = placeNameWords(r);
+      if (!el.isConnected) return;
+      if (!w) { PLACE_NAMES.delete(key); const holder = el.closest('[data-pn-holder]'); (holder || el).remove(); return; }
+      el.textContent = w; el.removeAttribute('data-pn'); el.style.color = ''; el.style.fontWeight = '';
+    });
+  });
+}
+{ let t = null; try { new MutationObserver(() => { if (t) return; t = setTimeout(() => { t = null; fillPlaceNames(); }, 250); }).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) { /* old browser: the Plus Code is still there */ } }
 function whereRowsHTML(c, typedAddr) {
   const row = (label, html) => `<div class="confirm-detail"><span>${escapeHtml(tr(label))}</span><strong>${html}</strong></div>`;
   const addr = String((c && c.address) || typedAddr || '').trim();
@@ -1065,7 +1094,8 @@ function whereRowsHTML(c, typedAddr) {
   if (lm) out.push(row('Landmark', escapeHtml(lm)));
   if (pin) {
     const code = plusCodeFor(pin.latitude, pin.longitude);
-    out.push(row('Pinned location', `<span class="pin-code" style="font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.03em;">${code}</span><br><span style="font-weight:400;font-size:12.5px;color:var(--slate);">${pin.latitude.toFixed(5)}, ${pin.longitude.toFixed(5)}</span> · <a href="https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;font-size:12.5px;">${escapeHtml(tr('Open in Maps'))}</a>`));
+    out.push(row('Exact location', placeNameHTML(pin)).replace('<div class="confirm-detail">', '<div class="confirm-detail" data-pn-holder>')); // v166
+    out.push(row('Plus Code', `<span class="pin-code" style="font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.03em;">${code}</span> · <a href="https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;font-size:12.5px;">${escapeHtml(tr('View on map'))}</a>`)); // v166: like the receipt: no raw coordinates
   }
   return out.length ? out.join('') : row('Where', escapeHtml(addr || '—'));
 }
@@ -16008,6 +16038,10 @@ function orderStatusHTML(o) {
 function pinCodeHTML(loc) {
   return loc && typeof loc.latitude === 'number' ? ` · <span class="pin-code" title="${escapeHtml(tr('Plus Code: works in Google Maps, even offline'))}">📍 ${plusCodeFor(loc.latitude, loc.longitude)}</span>` : '';
 }
+// v166: the pin's exact location in words, on its own line under a place.
+function placeLineHTML(loc) {
+  return loc && typeof loc.latitude === 'number' ? `<div data-pn-holder style="font-size:13px;margin-top:2px;">${placeNameHTML(loc)}</div>` : '';
+}
 function vehicleWord(v) { const w = tr(v || ''); return w ? w.charAt(0).toUpperCase() + w.slice(1) : ''; }
 function mapsLink(loc, label) {
   return loc && typeof loc.latitude === 'number' ? ` · <a href="https://www.google.com/maps/search/?api=1&query=${loc.latitude},${loc.longitude}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);font-weight:600;">${escapeHtml(tr(label || 'Open in Maps'))}</a>` : '';
@@ -16080,7 +16114,7 @@ function sellerOrderHTML(o) {
       <div>${orderStatusHTML(o)}</div>
     </div>
     <div style="margin:6px 0;">${orderItemsHTML(o)}</div>
-    <div style="font-size:13.5px;color:var(--slate);">${escapeHtml(how)}${o.deliveryMethod === 'seller' ? mapsLink(o.dropoff && o.dropoff.location) : ''}${o.sellerDeliveryFee > 0 ? ` · ${escapeHtml(tr('your delivery charge'))} ${usd2(o.sellerDeliveryFee)}` : ''}</div>
+    <div style="font-size:13.5px;color:var(--slate);">${escapeHtml(how)}${o.deliveryMethod === 'seller' ? mapsLink(o.dropoff && o.dropoff.location) + placeLineHTML(o.dropoff && o.dropoff.location) : ''}${o.sellerDeliveryFee > 0 ? ` · ${escapeHtml(tr('your delivery charge'))} ${usd2(o.sellerDeliveryFee)}` : ''}</div>
     ${o.note ? `<div style="font-size:13.5px;margin-top:4px;"><strong>${escapeHtml(tr('Note from the customer:'))}</strong> ${escapeHtml(o.note)}</div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
       ${active && !o.readyAt ? `<button class="btn-sm btn-sm-primary" onclick="markOrderReady(${jsArg(o.id)})">${escapeHtml(tr('Mark as packed and ready'))}</button>` : ''}
@@ -16611,8 +16645,8 @@ async function loadDeliveries() {
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;"><div style="font-weight:700;color:var(--navy);">${escapeHtml(d.storeName)} <span style="font-weight:400;color:var(--slate);">· ${escapeHtml(tr('order'))} #${escapeHtml(d.orderNumber)}</span></div><div style="font-weight:800;color:var(--navy);">${usd2(d.price)}</div></div>
       <div style="font-size:13.5px;margin-top:4px;line-height:1.6;">
         <div>📦 ${escapeHtml(d.items || '')}</div>
-        <div><strong>${escapeHtml(tr('Collect from:'))}</strong> ${escapeHtml(d.pickup.place || '')}${pinCodeHTML(d.pickup.location)}${mapsLink(d.pickup.location)}</div>
-        <div><strong>${escapeHtml(tr('Take to:'))}</strong> ${escapeHtml([d.dropoff.landmark, d.dropoff.address && d.dropoff.address !== d.dropoff.landmark && d.dropoff.address !== PIN_PLACEHOLDER ? d.dropoff.address : ''].filter(Boolean).join(', '))}${pinCodeHTML(d.dropoff.location)}${mapsLink(d.dropoff.location)}${d.distanceKm ? ' · ' + escapeHtml(kmWords(d.distanceKm)) : ''}</div>
+        <div><strong>${escapeHtml(tr('Collect from:'))}</strong> ${escapeHtml(d.pickup.place || '')}${pinCodeHTML(d.pickup.location)}${mapsLink(d.pickup.location)}${placeLineHTML(d.pickup.location)}</div>
+        <div><strong>${escapeHtml(tr('Take to:'))}</strong> ${escapeHtml([d.dropoff.landmark, d.dropoff.address && d.dropoff.address !== d.dropoff.landmark && d.dropoff.address !== PIN_PLACEHOLDER ? d.dropoff.address : ''].filter(Boolean).join(', '))}${pinCodeHTML(d.dropoff.location)}${mapsLink(d.dropoff.location)}${d.distanceKm ? ' · ' + escapeHtml(kmWords(d.distanceKm)) : ''}${placeLineHTML(d.dropoff.location)}</div>
         ${d.status === 'active' ? `<div style="color:var(--slate);">${escapeHtml(tr(d.droppedOffAt ? 'Dropped off. You are paid when the customer confirms.' : d.pickedUpAt ? 'Collected. Take it to the customer and record the drop-off.' : d.orderReadyAt ? 'The seller says it is packed and ready.' : 'The seller is packing it.'))}</div>` : ''}
         ${d.status === 'pending_provider_confirmation' && d.answerBy ? `<div style="color:#8C6423;">${escapeHtml(tr('Answer by'))} ${escapeHtml(new Date(d.answerBy).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</div>` : ''}
         ${!['pending_provider_confirmation', 'active'].includes(d.status) ? `<div>${statusBadge(d.status)}</div>` : ''}

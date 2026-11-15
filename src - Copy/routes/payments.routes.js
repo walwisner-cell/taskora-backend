@@ -1,0 +1,1706 @@
+const express = require('express');
+const { nanoid } = require('nanoid');
+const db = require('../db');
+const { requireAuth, requireRole } = require('../auth');
+const { isNonEmptyString, isValidCardExpiry, isValidPostalCode, validate, postalCodeErrorMessage } = require('../validators');
+const { notify } = require('../notify');
+const { currencyForCountry, convertFromUSD } = require('../currency-data');
+const { resolveRate } = require('../plan-pricing');
+
+const router = express.Router();
+
+// Prevents two payout requests for the SAME provider from ever running at
+// the same time. Without this, the payout endpoint has a real
+// time-of-check-to-time-of-use gap: it reads which escrow is unpaid, does
+// real work (customer/review lookups, currency conversion) that takes
+// measurable time, and only stamps those escrow records as paid at the
+// very end. A double-click, or a browser retrying a slow request, could
+// let a second request read the exact same "still unpaid" records before
+// the first had finished stamping them — producing two separate payouts
+// for the same underlying money. This app runs as a single server
+// instance (not horizontally scaled), so a simple in-memory lock keyed by
+// provider ID is a complete fix, not a partial one — this is the same
+// pattern any single-instance Node service uses for this exact problem.
+const payoutLocks = new Set();
+
+// Complete and cancel are two different ways a contract reaches a
+// terminal state, and both follow the same read-status-then-write pattern
+// as everything else fixed this session. Racing them against each other
+// on the SAME contract (a customer double-clicking, or two open tabs)
+// can't double-move money the way the payout race could — escrow status
+// is a single field, not an incrementing balance — but it can leave the
+// contract and its escrow disagreeing with each other: a contract marked
+// "completed" whose escrow actually says "refunded" (so the provider can
+// never actually get paid despite the customer thinking they confirmed
+// the job), or the reverse (a customer who cancelled but whose money
+// never actually came back because the job got marked complete a moment
+// later). A shared lock keyed by contract id means only one of these two
+// endpoints can ever be mid-flight for a given contract at once.
+const { contractStatusLocks } = require('../contract-locks');
+
+// ── TEST-MODE PAYMENT METHODS ────────────────────────────────────────────────
+// This is a sandbox stand-in, not a real payment integration. It exists so
+// the booking/escrow flow can be exercised end-to-end during testing without
+// blocking on a real processor being chosen yet.
+//
+// Even in test mode, this never stores a full card number — only the last 4
+// digits and a guessed brand, discarding everything else immediately. That's
+// deliberate: it's the same handling pattern a real Stripe/processor
+// integration would need (tokenize, never persist the PAN), so swapping in
+// a real processor later means replacing this file's internals, not
+// redesigning how the rest of the app calls it.
+function detectCardBrand(digits) {
+  if (/^4/.test(digits)) return 'Visa';
+  if (/^5[1-5]/.test(digits)) return 'Mastercard';
+  if (/^3[47]/.test(digits)) return 'Amex';
+  if (/^6(?:011|5)/.test(digits)) return 'Discover';
+  return 'Card';
+}
+
+// GET /api/payment-methods/mine
+// v147: a Mobile Money number shows as its network and last 4 digits only.
+function publicMethod(m) {
+  if (m.type !== 'mobile_money') return m;
+  const { momoNumber, mobileMoneyNumber, ...rest } = m;
+  const last4 = m.momoLast4 || String(mobileMoneyNumber || '').replace(/\D/g, '').slice(-4);
+  return { ...rest, mobileMoneyNumber: `•••• ${last4}`, brand: `${m.network || m.brand}${m.ownerIsMe === false ? ` · ${m.ownerLabel || m.accountName}` : ''}` };
+}
+router.get('/payment-methods/mine', requireAuth, async (req, res) => {
+  const methods = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+  res.json({ methods: methods.map(publicMethod) });
+});
+
+// GET /api/payment-methods/options — v147: what can be added in my country.
+// In Africa: Mobile Money first, then a card; no PayPal or Apple Pay (not
+// used there). Which wallets go through a connected Mobile Money system.
+router.get('/payment-methods/options', requireAuth, async (req, res) => {
+  const u = await db.find('users', x => x.id === req.user.sub);
+  const pmx = require('../payout-methods'), mm = require('../mobile-money');
+  const country = pmx.canonCountry((u && u.country) || '');
+  const africa = pmx.isAfrica(country);
+  const networks = pmx.networksFor(country).map(n => { const api = n === 'Other' ? null : mm.apiFor(country, n); return { name: n, api: api ? api.name : null, apiOn: !!(api && api.collections) }; });
+  const c = mm.COUNTRY[country];
+  res.json({ country, africa, types: africa ? ['mobile_money', 'card'] : ['card', 'paypal', 'apple_pay', 'mobile_money'], networks, prefixes: mm.prefixesFor(country), callingCode: c ? c[0] : null, example: country === 'Liberia' ? '0777 123 456 (Orange) or 0886 123 456 (MTN)' : c ? `+${c[0]} …` : '+231 77 123 4567' });
+});
+
+// POST /api/payment-methods — add a test payment method. Three types:
+// - 'card' (default, unchanged): any input accepted, only last 4 + brand kept.
+// - 'apple_pay': Apple Pay is authenticated on-device via the browser's
+//   Payment Request API and a real Apple merchant account — neither
+//   exists yet, so this simulates the same end state Stripe would give
+//   back (a device-linked token), clearly labeled test mode, same
+//   honesty convention used for signup codes and 2FA elsewhere in this
+//   app. Wiring in the real Payment Request API later means replacing
+//   what creates this record, not the record shape itself.
+// - 'paypal': simulates a linked PayPal account by email — a real
+//   integration exchanges this for a PayPal-issued billing agreement ID
+//   instead of storing the email directly, but the method record shape
+//   (type + a display label) doesn't change.
+router.post('/payment-methods', requireAuth, async (req, res) => {
+  const { type, cardNumber, expiry, nameOnCard, billingAddress, billingZip, paypalEmail, mobileMoneyProvider, mobileMoneyNumber } = req.body || {};
+  const accountHolder = await db.find('users', u => u.id === req.user.sub);
+  const methodType = ['card', 'apple_pay', 'paypal', 'mobile_money'].includes(type) ? type : 'card';
+  // v147: PayPal and Apple Pay aren't used in Liberia or the rest of Africa.
+  if ((methodType === 'paypal' || methodType === 'apple_pay') && require('../payout-methods').isAfrica(accountHolder && accountHolder.country)) {
+    return res.status(400).json({ code: 'NOT_IN_COUNTRY', error: `${methodType === 'paypal' ? 'PayPal' : 'Apple Pay'} isn't used in ${accountHolder.country}. Add your Mobile Money number, or a card.` });
+  }
+
+  if (methodType === 'card') {
+    const errors = validate([
+      ['cardNumber', isNonEmptyString(cardNumber, { min: 4 }), 'Enter a card number (any digits. This is test mode)'],
+      ['expiry', isValidCardExpiry(expiry), 'Enter a valid, non-expired expiry date in MM/YY format'],
+      ['nameOnCard', isNonEmptyString(nameOnCard, { min: 2 }), 'Enter the name on the card'],
+      ['billingAddress', isNonEmptyString(billingAddress, { min: 3, max: 200 }), 'Enter the billing address'],
+      ['billingZip', isValidPostalCode(billingZip, accountHolder && accountHolder.country), postalCodeErrorMessage(accountHolder && accountHolder.country)],
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+    const digitsOnly = String(cardNumber).replace(/\D/g, '');
+    if (digitsOnly.length < 4) return res.status(400).json({ error: 'Card number must contain at least 4 digits' });
+    const last4 = digitsOnly.slice(-4);
+    const brand = detectCardBrand(digitsOnly);
+
+    const existing = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+    const method = {
+      id: `pm_${nanoid(10)}`,
+      userId: req.user.sub,
+      type: 'card',
+      brand, last4, nameOnCard: nameOnCard.trim(), expiry: expiry.trim(),
+      billingAddress: billingAddress.trim(), billingZip: billingZip.trim(),
+      isDefault: existing.length === 0, // first one added becomes default automatically
+      mode: 'test',
+      createdAt: new Date().toISOString(),
+    };
+    await db.insert('paymentMethods', method);
+    return res.status(201).json({ method });
+  }
+
+  if (methodType === 'paypal') {
+    const errors = validate([
+      ['paypalEmail', isNonEmptyString(paypalEmail, { min: 5, max: 254 }) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(paypalEmail), 'Enter the email address linked to your PayPal account'],
+    ]);
+    if (errors.length) return res.status(400).json({ error: errors[0], errors });
+    const existing = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+    const method = {
+      id: `pm_${nanoid(10)}`,
+      userId: req.user.sub,
+      type: 'paypal',
+      brand: 'PayPal',
+      paypalEmail: paypalEmail.trim(),
+      isDefault: existing.length === 0,
+      mode: 'test',
+      createdAt: new Date().toISOString(),
+    };
+    await db.insert('paymentMethods', method);
+    return res.status(201).json({ method });
+  }
+
+  if (methodType === 'mobile_money') {
+    // v147: the network from the country's list, the number checked and kept
+    // in international form (encrypted, like payout numbers), the name the
+    // wallet is registered in. A number whose first digits belong to another
+    // network is caught (in Liberia 077 is Orange, 088 and 055 are MTN).
+    const pmx = require('../payout-methods'), mm = require('../mobile-money');
+    const country = (accountHolder && accountHolder.country) || '';
+    const network = String(req.body.network || mobileMoneyProvider || '').trim().slice(0, 40);
+    if (network.length < 2) return res.status(400).json({ error: 'Choose your Mobile Money network' });
+    const num = mm.readNumber(mobileMoneyNumber, country);
+    if (num.error) return res.status(400).json({ error: num.error });
+    if (num.network && network !== 'Other' && pmx.networksFor(country).includes(network) && num.network !== network) {
+      return res.status(400).json({ code: 'WRONG_NETWORK', error: `${num.display} is a ${num.network} number, not ${network}. Choose ${num.network}, or check the number.` });
+    }
+    const accountName = String(req.body.accountName || '').trim().slice(0, 80);
+    if (accountName.length < 2) return res.status(400).json({ error: 'Enter the name the Mobile Money account is registered in' });
+    const existing = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+    const dup = existing.find(m => m.type === 'mobile_money' && mm.numberOf(m) === num.msisdn);
+    if (dup) return res.status(409).json({ error: 'This Mobile Money number is already saved.' });
+    const api = mm.apiFor(country, network);
+    const method = {
+      id: `pm_${nanoid(10)}`,
+      userId: req.user.sub,
+      type: 'mobile_money',
+      brand: network, network, country,
+      momoNumber: pmx.seal(num.msisdn), momoLast4: num.msisdn.slice(-4),
+      accountName,
+      // v148: a wallet can be someone else's (family, a friend, the company): the prompt or payment goes from their phone, and refunds go back to it
+      ownerIsMe: req.body.ownerIsMe !== false, ownerLabel: req.body.ownerIsMe === false ? String(req.body.ownerLabel || '').trim().slice(0, 40) || null : null,
+      api: api ? api.name : null, // the Mobile Money system that can charge it, once switched on
+      isDefault: existing.length === 0 || !existing.some(m => m.isDefault),
+      mode: api && api.collections ? 'live' : 'code',
+      createdAt: new Date().toISOString(),
+    };
+    await db.insert('paymentMethods', method);
+    return res.status(201).json({ method: publicMethod(method) });
+  }
+
+  // apple_pay — no form fields at all in a real integration (the device
+  // handles authentication); nothing to validate beyond that the account
+  // exists, which requireAuth already confirmed.
+  const existing = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+  const method = {
+    id: `pm_${nanoid(10)}`,
+    userId: req.user.sub,
+    type: 'apple_pay',
+    brand: 'Apple Pay',
+    isDefault: existing.length === 0,
+    mode: 'test',
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('paymentMethods', method);
+  res.status(201).json({ method });
+});
+
+// PATCH /api/payment-methods/:id/default
+router.patch('/payment-methods/:id/default', requireAuth, async (req, res) => {
+  const method = await db.find('paymentMethods', m => m.id === req.params.id && m.userId === req.user.sub);
+  if (!method) return res.status(404).json({ error: 'Payment method not found' });
+  const others = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+  for (const m of others) {
+    if (m.id !== method.id && m.isDefault) await db.update('paymentMethods', m.id, { isDefault: false });
+  }
+  const updated = await db.update('paymentMethods', method.id, { isDefault: true });
+  res.json({ method: updated });
+});
+
+// DELETE /api/payment-methods/:id
+router.delete('/payment-methods/:id', requireAuth, async (req, res) => {
+  const method = await db.find('paymentMethods', m => m.id === req.params.id && m.userId === req.user.sub);
+  if (!method) return res.status(404).json({ error: 'Payment method not found' });
+  await db.remove('paymentMethods', method.id);
+  // If we just removed the default, promote whichever method is left, if any.
+  if (method.isDefault) {
+    const remaining = await db.filter('paymentMethods', m => m.userId === req.user.sub);
+    if (remaining.length) await db.update('paymentMethods', remaining[0].id, { isDefault: true });
+  }
+  res.json({ ok: true });
+});
+
+// GET /api/payouts/mine — provider payout history
+// v141: a payout's full wallet or account number never goes back to the page.
+const payoutView = (p) => (p && p.sendTo ? { ...p, sendTo: { ...p.sendTo, number: undefined, accountNumber: undefined } } : p);
+
+router.get('/payouts/mine', requireAuth, requireRole('provider'), async (req, res) => {
+  let payouts = (await db.filter('payouts', p => p.providerId === req.user.sub)).map(payoutView);
+  const { from, to } = req.query;
+  if (from) payouts = payouts.filter(p => p.date >= from);
+  if (to) payouts = payouts.filter(p => p.date <= to);
+  payouts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ payouts });
+});
+
+// GET /api/payouts/commission — v132: how this pro's commission is worked
+// out and paid: their rate, what the next payout would take, and a
+// job-by-job statement (due, pending, paid from payouts, paid with tokens on
+// cash jobs). Read-only: nothing is charged by opening it.
+router.get('/payouts/commission', requireAuth, requireRole('provider'), async (req, res) => {
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  if (!provider) return res.status(404).json({ error: 'Account not found.' });
+  res.json(await require('../commission-statement').providerCommissionSummary(provider));
+});
+
+// GET /api/payouts/commission-quote?contractId=…[&amount=…] or ?matchId=…&amount=…
+// v134: before a pro accepts a job, what Trothen's commission on it will be,
+// how it will be paid and what they will receive. Only for the pro's own
+// booking or job match. Nothing is charged by asking.
+router.get('/payouts/commission-quote', requireAuth, requireRole('provider'), async (req, res) => {
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  const { contractId, matchId } = req.query;
+  const amount = req.query.amount !== undefined ? Math.round(Number(req.query.amount) * 100) / 100 : null;
+  if (amount !== null && !(amount > 0 && amount < 1e7)) return res.status(400).json({ error: 'Enter a valid amount.' });
+  let contract = null, payMethod = null, price = amount;
+  if (contractId) {
+    contract = await db.find('contracts', c => c.id === contractId && c.providerId === provider.id);
+    if (!contract) return res.status(404).json({ error: 'Booking not found.' });
+    if (price === null) price = Number(contract.laborAmount != null ? contract.laborAmount : Math.max(0, (contract.amount || 0) - (contract.storeGoodsTotal || 0))) || 0;
+  } else if (matchId) {
+    const match = await db.find('matches', m => m.id === matchId && m.providerId === provider.id);
+    if (!match) return res.status(404).json({ error: 'Job not found.' });
+    const job = await db.find('jobs', j => j.id === match.jobId);
+    payMethod = (job && job.payMethod) || 'protected';
+    if (price === null) return res.status(400).json({ error: 'Enter an amount.' });
+  } else if (price === null) {
+    return res.status(400).json({ error: 'Enter an amount.' });
+  }
+  res.json({ quote: await require('../commission-statement').quoteForPro(provider, { contract, price, payMethod }) });
+});
+
+// GET /api/payouts/pdf — a real, downloadable payout history report for a
+// provider, honoring the same from/to date range as the on-screen history.
+// Built so "who paid me, and when" is answerable from a document alone,
+// not just by scrolling the dashboard.
+router.get('/payouts/pdf', requireAuth, requireRole('provider'), async (req, res) => {
+  const { from, to } = req.query;
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  let payouts = await db.filter('payouts', p => p.providerId === req.user.sub);
+  if (from) payouts = payouts.filter(p => p.date >= from);
+  if (to) payouts = payouts.filter(p => p.date <= to);
+  payouts.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  const { createReportDoc } = require('../pdf-report-builder');
+  const rangeLabel = from || to ? `${from || 'earliest'} to ${to || 'today'}` : 'All time';
+  const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
+    res,
+    filename: `Trothen-Payout-History-${provider.name.replace(/\s+/g, '-')}.pdf`,
+    title: 'Payout History Report',
+    subtitle: 'AI-Matched · Identity-Verified · Escrow-Protected',
+    docId: rangeLabel,
+    verificationSeed: `payouts|${provider.id}|${from || ''}|${to || ''}|${payouts.length}`,
+  });
+
+  sectionHeader('Report Summary');
+  twoColumnRow('Provider', `${provider.name} (${provider.email})`, 'Date Range', rangeLabel);
+  const totalGross = payouts.reduce((s, p) => s + (p.grossAmount ?? p.amount), 0);
+  const totalCommission = payouts.reduce((s, p) => s + (p.commissionAmount || 0), 0);
+  const totalNet = payouts.reduce((s, p) => s + p.amount, 0);
+  twoColumnRow('Total Earned (Gross)', `$${totalGross.toFixed(2)}`, 'Total Commission', `$${totalCommission.toFixed(2)}`);
+  row('Total Paid Out (Net)', `$${totalNet.toFixed(2)}`);
+
+  if (payouts.length === 0) {
+    sectionHeader('Payouts');
+    row('No payouts', 'No payouts were found in this date range.');
+  } else {
+    for (const payout of payouts) {
+      sectionHeader(`Payout ${payout.id} — ${payout.date}`);
+      twoColumnRow('Gross Earned', `$${(payout.grossAmount ?? payout.amount).toFixed(2)}`, 'Commission', payout.commissionAmount ? `$${payout.commissionAmount.toFixed(2)} (${Math.round((payout.commissionRate || 0) * 100)}%)` : '—');
+      twoColumnRow('Net Paid Out', `$${payout.amount.toFixed(2)}`, 'Method / Status', `${payout.method} · ${payout.status}`);
+      if (payout.lineItems && payout.lineItems.length) {
+        table(
+          [{ label: 'Customer', width: 110 }, { label: 'Job', width: 140 }, { label: 'Date', width: 60 }, { label: 'Booking #', width: 80 }, { label: 'Amount', width: 60, align: 'right' }],
+          payout.lineItems.map(li => [li.customerName, li.service, li.jobDate || '—', li.bookingNumber, `$${li.amount}`])
+        );
+      }
+    }
+  }
+
+  finish({
+    closingNote: 'This report reflects Trothen\'s payout records for this provider account as of the moment it was generated. Commission is deducted according to the provider\'s plan at the time of each payout. Provided for the provider\'s own recordkeeping.',
+  });
+});
+// POST /api/payouts/request — provider requests payout of released escrow
+const { effectiveCommissionRate } = require('../commission');
+
+// v139: customers who sold something in the Market cash out the same way.
+const canCashOut = (req, res, next) => (['provider', 'customer'].includes(req.user && req.user.role) ? next() : res.status(403).json({ error: 'Payouts are for pros and Market sellers' }));
+router.post('/payouts/request', requireAuth, canCashOut, require('../terms').requireCurrentTerms, async (req, res) => {
+  const requestingProvider = await db.find('users', u => u.id === req.user.sub);
+  if (requestingProvider && requestingProvider.onHold) {
+    return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review: payouts will resume once this clears, usually within a couple hours. Contact support if you need this resolved sooner.' });
+  }
+  const { payoutCurrency, useIntlMethod } = req.body || {}; // 'usd' or 'local' — defaults to local if the provider has a non-US country
+
+  // Reject immediately if this provider already has a payout request in
+  // flight — this is what actually closes the race, not just a courtesy
+  // message. A genuinely concurrent second request never even reaches the
+  // vulnerable read-then-write section below.
+  if (payoutLocks.has(req.user.sub)) {
+    return res.status(409).json({ error: 'A payout request is already being processed. Please wait a moment before trying again.' });
+  }
+  payoutLocks.add(req.user.sub);
+
+  try {
+    return await handlePayoutRequest(req, res, payoutCurrency, useIntlMethod);
+  } finally {
+    payoutLocks.delete(req.user.sub);
+  }
+});
+
+async function handlePayoutRequest(req, res, payoutCurrency, useIntlMethod) {
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  // v140: 24 hours after the payout details change, nothing is paid out.
+  if (provider && provider.payoutMethodChangedAt && Date.now() - Date.parse(provider.payoutMethodChangedAt) < 24 * 3600 * 1000) {
+    const at = new Date(Date.parse(provider.payoutMethodChangedAt) + 24 * 3600 * 1000);
+    return res.status(403).json({ code: 'PAYOUT_COOLDOWN', error: `For your safety, payouts wait 24 hours after your payout details change. You can cash out from ${at.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })} (UTC).` });
+  }
+
+  // v141: there has to be somewhere real to send the money: a Mobile Money
+  // wallet or a bank account (PayPal only outside Africa).
+  const pm = require('../payout-methods');
+  const payMethod = pm.normalMethod((useIntlMethod && provider && provider.payoutMethodIntl) ? provider.payoutMethodIntl : ((provider && provider.payoutMethod) || (pm.isAfrica(provider && provider.country) ? 'Mobile Money' : 'Bank Transfer')));
+  if (provider && payMethod !== 'Debit Card') {
+    const notReady = pm.readyToPay(provider, payMethod);
+    if (notReady) return res.status(400).json({ code: 'PAYOUT_DETAILS_NEEDED', error: notReady });
+  }
+
+  // v132: the whole calculation lives in src/commission-statement.js, so the
+  // Earnings page preview and the real payout always use the same numbers.
+  // What is payable is escrow the customer has RELEASED (job confirmed) and
+  // that has not gone out in an earlier payout, plus agreed materials
+  // advances and unpaid tips. Commission is based on the pro's rate now:
+  // an approved custom rate, else their organization's rate, else their
+  // plan (Starter 13%, Pro 12%, Super Pro 10%). Store goods and tips carry
+  // no commission; rides carry the ride rate, or none with a Driver Pass;
+  // a top-scorer free-commission credit makes this payout commission-free.
+  const calc = await require('../commission-statement').calcPayout(provider);
+  const { payableEscrow, payableAdvances, unpaidTipContracts, grossAmount, totalTips, storeGoodsAmount, rideGross, ridePassFree, rideRate, commissionRate, usedFreeCommissionCredit, commissionAmount, storeFeeAmount, lineItems } = calc;
+
+  if (grossAmount <= 0 && totalTips <= 0) {
+    return res.status(400).json({ error: 'Nothing to pay out yet. A payout includes jobs the customer has marked complete, tips and agreed materials advances that have not been paid out yet.' });
+  }
+
+  // v118: a pro who chose "pay my commission with tokens" has it taken from
+  // their tokens (as much as their balance covers) and keeps that much more
+  // of the payout. The customer's money and escrow are not affected.
+  const payoutId = `po_${nanoid(10)}`;
+  const tokens = require('../tokens');
+  const commissionFromTokens = await tokens.payCommission(provider, payoutId, commissionAmount);
+  let netAmount = Math.round((grossAmount - commissionAmount + commissionFromTokens - storeFeeAmount + totalTips) * 100) / 100;
+  // v78: open monthly plan fees come out here, oldest first, and never
+  // more than half of this payout. Returns 0 while plan billing is off.
+  const planBilling = require('../plan-billing');
+  const planFee = await planBilling.planDeduction(provider.id, netAmount);
+  netAmount = Math.round((netAmount - planFee.amount) * 100) / 100;
+
+  // The contract/escrow ledger is always denominated in USD — that stays
+  // the canonical accounting currency regardless of payout choice, so
+  // reports and reconciliation are never ambiguous. What the provider
+  // actually RECEIVES can be converted to their local currency at their
+  // choice — the same way an international payout provider (Wise, Payoneer,
+  // etc.) would let you choose your payout currency for a USD-denominated
+  // balance.
+  const currency = currencyForCountry(provider ? provider.country : 'United States');
+  const wantsLocal = payoutCurrency === 'local' && currency.code !== 'USD';
+  const rate = wantsLocal ? resolveRate(currency.code, await db.all('exchangeRates')) : null;
+  const payoutAmountLocal = wantsLocal ? convertFromUSD(netAmount, currency.code, rate) : null;
+
+  const payout = {
+    id: payoutId,
+    providerId: req.user.sub,
+    date: new Date().toISOString().slice(0, 10),
+    grossAmount,
+    commissionRate,
+    commissionAmount,
+    commissionPaidWithTokens: commissionFromTokens, // v118: the part of the commission paid from tokens, not from this payout
+    commissionFromPayout: Math.round((commissionAmount - commissionFromTokens) * 100) / 100, // v132: the part taken from this payout
+    commissionRateSource: usedFreeCommissionCredit ? 'credit' : calc.rates.rateSource, // v132: override, organization, plan or credit
+    freeCommissionCreditUsed: usedFreeCommissionCredit, // v132
+    tipsAmount: totalTips, // v132
+    rideGrossAmount: rideGross, ridePassFreeAmount: ridePassFree, rideCommissionRate: rideGross > 0 ? rideRate : null, // v111, v113
+    storeGoodsAmount, // v105: the part of this payout that is store goods (no commission)
+    storeFeeAmount, // v106: flat store purchase fees paid by the pro
+    amount: netAmount, // canonical USD amount actually paid out, after commission (and any plan fee)
+    planFeeAmount: planFee.amount,
+    planFeeItems: planFee.items,
+    payoutCurrency: wantsLocal ? currency.code : 'USD',
+    payoutAmountLocal,
+    exchangeRateNote: wantsLocal ? 'Approximate test-mode exchange rate, not a live market rate' : null,
+    method: payMethod,
+    destination: provider ? pm.destinationText(provider, payMethod) : null, // v141: e.g. "Orange Money •••• 4567 (James Doe)"
+    sendTo: provider ? pm.sendTo(provider, payMethod) : null, // v141: what the team needs to send it (numbers kept encrypted)
+    status: 'processing',
+    lineItems,
+    createdAt: new Date().toISOString(),
+  };
+  try { await db.insert('payouts', payout); }
+  catch (e) { if (commissionFromTokens > 0) await tokens.refundRef(`commission:${payoutId}`, 'the payout could not be saved'); throw e; }
+  if (planFee.amount > 0) await planBilling.applyDeduction(planFee.items, payout.id);
+
+  const { checkPayoutVelocity } = require('../fraud-detection');
+  await checkPayoutVelocity(req.user.sub);
+
+  // Stamp every included escrow record so it can never be paid out again.
+  for (const e of payableEscrow) {
+    await db.update('escrowTransactions', e.id, { payoutId: payout.id });
+  }
+  for (const e of payableAdvances) {
+    await db.update('escrowTransactions', e.id, { materialsAdvancePayoutId: payout.id });
+  }
+  for (const c of unpaidTipContracts) {
+    await db.update('contracts', c.id, { tipPaid: true });
+  }
+  if (usedFreeCommissionCredit) {
+    await db.update('users', provider.id, { freeCommissionCredits: (provider.freeCommissionCredits || 0) - 1 });
+  }
+
+  const displayAmount = wantsLocal ? `${currency.symbol}${payoutAmountLocal} (${currency.code}, ≈ $${payout.amount} USD)` : `$${payout.amount}`;
+  const tipNote = totalTips > 0 ? ` It includes $${totalTips} in tips, which carry no commission.` : '';
+  const planFeeNote = planFee.amount > 0 ? ` $${planFee.amount} in plan fees was taken from this payout.` : '';
+  const goodsNote = storeGoodsAmount > 0 ? ` $${storeGoodsAmount} is goods from your store, which carry no commission${storeFeeAmount > 0 ? `; $${storeFeeAmount} in store purchase fees was taken instead` : ''}.` : '';
+  const how = commissionFromTokens > 0
+    ? (commissionFromTokens >= commissionAmount ? ` The commission was paid with ${commissionFromTokens} tokens, so nothing was taken from the payout.` : ` ${commissionFromTokens} tokens paid part of the commission; the remaining $${payout.commissionFromPayout} was taken from the payout.`)
+    : (commissionAmount > 0 ? ' The commission was taken from the payout.' : '');
+  const commissionText = usedFreeCommissionCredit ? 'Your free-commission credit was used, so no commission was charged.' : `Commission: $${commissionAmount} (${Math.round(commissionRate * 1000) / 10}%) on $${grossAmount} earned.${how}`;
+  await notify(req.user.sub, '💸', `Payout of ${displayAmount} requested and processing. ${commissionText}${tipNote}${goodsNote}${planFeeNote}`, 'payoutAlerts', { section: 'earnings' });
+  res.status(201).json({ payout: payoutView(payout) });
+}
+
+// GET /api/plan-billing/mine — v78: a provider's own plan fee: whether it
+// is being charged yet, what it is, what's owed, and past invoices.
+router.get('/plan-billing/mine', requireAuth, requireRole('provider'), async (req, res) => {
+  const planBilling = require('../plan-billing');
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const state = await planBilling.getState();
+  const price = planBilling.priceFor(me, await planBilling.pricingRows());
+  const invoices = (await db.filter('planInvoices', i => i.providerId === me.id))
+    .sort((a, b) => String(b.period).localeCompare(String(a.period))).slice(0, 24)
+    .map(i => ({ id: i.id, period: i.period, plan: i.plan, amountUsd: i.amountUsd, localPrice: i.localPrice, currencyCode: i.currencyCode, currencySymbol: i.currencySymbol, paidUsd: i.paidUsd || 0, status: i.status }));
+  res.json({
+    active: state.active, beginsAt: state.active ? state.beginsAt : null,
+    billable: planBilling.isBillable(me), inOrganization: !!me.organizationId,
+    price, outstandingUsd: await planBilling.outstandingUsd(me.id), invoices,
+    maxShareOfPayoutPercent: planBilling.MAX_SHARE_OF_PAYOUT * 100,
+  });
+});
+
+// POST /api/contracts/:id/complete — customer confirms job done -> release escrow
+// POST /api/contracts/:id/on-my-way — a provider marks that they've left
+// for an active job, optionally with a real GPS coordinate captured once
+// at that moment (not continuous tracking — see the audit note on why:
+// this app matches tasks like cleaning/repairs/deliveries, not a live
+// rideshare map, and one-time stamps at meaningful moments cost far less
+// battery/privacy than streaming location the whole time). The customer
+// gets a real, timestamped notification either way, with or without a
+// coordinate.
+const EARLIEST_LEAVE_MS = 12 * 3600 * 1000; // v160
+router.post('/contracts/:id/on-my-way', requireAuth, requireRole('provider'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status}. It can't be marked on the way` });
+  if (contract.onMyWayAt) return res.status(400).json({ error: 'Already marked on the way for this booking' });
+  // v160: a trip starts on the day, not days ahead (a tap by mistake told the
+  // customer the pro was on the way, and opened a live trip, days early).
+  {
+    const br = require('../booking-rules');
+    const due = contract.arrival && contract.arrival.agreed && Date.parse(contract.arrival.agreed.at);
+    const start = Number.isFinite(due) ? due : (contract.date ? (br.jobStart(contract.date, br.clockHM(contract.time), contract.tz || null) || { getTime: () => NaN }).getTime() : NaN);
+    if (Number.isFinite(start) && start - Date.now() > EARLIEST_LEAVE_MS) {
+      const me = await db.find('users', u => u.id === req.user.sub);
+      return res.status(400).json({ code: 'TOO_EARLY', error: `This job is on ${br.whenFor(new Date(start).toISOString(), me)}. You can tap Leave Now from 12 hours before it.` });
+    }
+  }
+
+  const { latitude, longitude } = req.body || {};
+  const hasValidCoords = typeof latitude === 'number' && typeof longitude === 'number' && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
+
+  const updated = await db.update('contracts', contract.id, {
+    onMyWayAt: new Date().toISOString(),
+    onMyWayLocation: hasValidCoords ? { latitude, longitude } : null,
+    // v93: the first point of the live trip (see /live-location below)
+    liveLocation: hasValidCoords ? { latitude, longitude, accuracyM: Number.isFinite(Number(req.body.accuracyM)) ? Math.round(Number(req.body.accuracyM)) : null, at: new Date().toISOString() } : null,
+  });
+
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  // v128: a booking with no location pin leaves the pro with nowhere to go,
+  // so the customer is asked to share where they are, straight away.
+  const hasPin = contract.jobLocation && typeof contract.jobLocation.latitude === 'number';
+  await notify(contract.customerId, '🚗', `${require('../arrival-time').personName(provider, 'Your pro')} is on the way for "${contract.service}". Open My Bookings and tap "Track Arrival" to follow their arrival.${hasPin ? '' : ' Your booking has no job location, so they cannot navigate to you yet: tap "Share My Location" or "Set Job Location".'}`, 'bookingUpdates', { section: 'bookings' });
+  res.json({ contract: updated });
+});
+
+// POST /api/contracts/:id/arrived — same pattern as on-my-way, for the
+// moment the provider actually shows up. Together these two timestamps
+// (plus an optional coordinate each) give both sides a real, honest
+// pickup/drop-off record without building a full live-tracking system
+// this kind of marketplace doesn't really need.
+// ── v93: LIVE TRIP TRACKING ────────────────────────────────────────────
+// Between a pro tapping "On my way" and tapping "Arrived", their phone
+// sends its position every few seconds and the customer can watch them
+// come, with the distance left. This is the same idea as a ride app, with
+// three honest differences because Trothen is a web page, not an
+// installed app:
+//   - The pro's phone only sends while the Trothen page is open and the
+//     screen is on. The page asks the phone to stay awake, but if the pro
+//     switches apps or locks the phone, updates stop until they come back.
+//     The customer is shown how old the last position is.
+//   - Distance is a straight line, not a road route.
+//   - Nothing is sent before "On my way" or after "Arrived".
+// Who can see it: only the customer and the pro on that one booking.
+// The live position is wiped on arrival, and ignored after 6 hours.
+const LIVE_TRIP_MAX_MS = 6 * 60 * 60 * 1000;
+const liveLocationLimiter = require('express-rate-limit')({
+  windowMs: 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Location updates are arriving too quickly.' },
+});
+
+// POST /api/contracts/:id/live-location  { latitude, longitude, accuracyM }
+router.post('/contracts/:id/live-location', requireAuth, requireRole('provider'), liveLocationLimiter, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const tripOpen = contract.status === 'active' && contract.onMyWayAt && !contract.arrivedAt
+    && (Date.now() - new Date(contract.onMyWayAt).getTime()) < LIVE_TRIP_MAX_MS;
+  if (!tripOpen) return res.status(409).json({ code: 'TRIP_CLOSED', error: 'This trip isn\'t in progress, so your location isn\'t being shared.' });
+  const { latitude, longitude, accuracyM } = req.body || {};
+  const { isValidCoordinate } = require('../geo-distance');
+  if (!isValidCoordinate(latitude, longitude) || (latitude === 0 && longitude === 0)) return res.status(400).json({ error: 'That isn\'t a valid position' });
+  const acc = Number(accuracyM);
+  const point = {
+    latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6,
+    accuracyM: Number.isFinite(acc) && acc > 0 && acc < 100000 ? Math.round(acc) : null,
+    at: new Date().toISOString(),
+  };
+  // v128: a phone sometimes drops from GPS to a rough Wi-Fi or mast guess
+  // for a moment (in a building, under a roof). A rough guess (worse than
+  // 1 km) doesn't replace a good position from the last 2 minutes, so the
+  // dot doesn't jump kilometres away and back.
+  const cur = contract.liveLocation;
+  const curAge = cur && cur.at ? Date.now() - new Date(cur.at).getTime() : Infinity;
+  if (cur && cur.accuracyM != null && cur.accuracyM <= 200 && curAge < 2 * 60 * 1000 && (point.accuracyM == null || point.accuracyM > 1000)) {
+    return res.json({ ok: true, kept: false, reason: 'rough' });
+  }
+  // Quiet save: the trip map asks for the position by itself (see src/live.js).
+  await db.update('contracts', contract.id, require('../live').quiet({ liveLocation: point }));
+  // v129: the pro's last known position, used to work out when to remind them to leave for their next job.
+  try { await db.update('users', req.user.sub, { lastKnownLocation: { latitude: point.latitude, longitude: point.longitude, at: point.at } }); } catch (e) { /* not essential */ }
+  res.json({ ok: true, kept: true });
+});
+
+// v129: AGREEING AN ARRIVAL TIME (see src/arrival-time.js).
+// POST /api/contracts/:id/arrival-time { at, tz, note } — propose a time (either side)
+router.post('/contracts/:id/arrival-time', requireAuth, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  const b = req.body || {};
+  const r = await require('../arrival-time').propose(contract, req.user.sub, b.at, b.tz, b.note);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  res.json({ contract: r.contract });
+});
+// POST /api/contracts/:id/arrival-time/accept { tz } — the other side accepts
+router.post('/contracts/:id/arrival-time/accept', requireAuth, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  const r = await require('../arrival-time').accept(contract, req.user.sub, (req.body || {}).tz);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  res.json({ contract: r.contract });
+});
+// POST /api/contracts/:id/arrival-time/adopt { at, tz } — the customer's page turns a direct booking's date and time into the agreed time
+router.post('/contracts/:id/arrival-time/adopt', requireAuth, requireRole('customer'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  const b = req.body || {};
+  const r = await require('../arrival-time').adoptBookedTime(contract, req.user.sub, b.at, b.tz);
+  if (r.error) return res.status(r.status).json({ error: r.error });
+  res.json({ contract: r.contract, unchanged: !!r.unchanged });
+});
+
+// v128: THE CUSTOMER SHARES WHERE THEY ARE. While the pro is on the way the
+// customer can let that one pro see their live position, like a rider
+// waiting for a pick-up. It is the customer's choice, only for this trip,
+// and it is wiped when the pro arrives or the customer stops it.
+// POST /api/contracts/:id/customer-live-location  { latitude, longitude, accuracyM }
+router.post('/contracts/:id/customer-live-location', requireAuth, requireRole('customer'), liveLocationLimiter, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  const tripOpen = contract.status === 'active' && contract.onMyWayAt && !contract.arrivedAt
+    && (Date.now() - new Date(contract.onMyWayAt).getTime()) < LIVE_TRIP_MAX_MS;
+  if (!tripOpen) return res.status(409).json({ code: 'TRIP_CLOSED', error: 'Your pro isn\'t on the way right now, so your location isn\'t being shared.' });
+  const { latitude, longitude, accuracyM } = req.body || {};
+  const { isValidCoordinate } = require('../geo-distance');
+  if (!isValidCoordinate(latitude, longitude) || (latitude === 0 && longitude === 0)) return res.status(400).json({ error: 'That isn\'t a valid position' });
+  const acc = Number(accuracyM);
+  const point = {
+    latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6,
+    accuracyM: Number.isFinite(acc) && acc > 0 && acc < 100000 ? Math.round(acc) : null,
+    at: new Date().toISOString(),
+  };
+  const cur = contract.customerLiveLocation;
+  const curAge = cur && cur.at ? Date.now() - new Date(cur.at).getTime() : Infinity;
+  if (cur && cur.accuracyM != null && cur.accuracyM <= 200 && curAge < 2 * 60 * 1000 && (point.accuracyM == null || point.accuracyM > 1000)) {
+    return res.json({ ok: true, kept: false, reason: 'rough' });
+  }
+  const first = !cur;
+  await db.update('contracts', contract.id, require('../live').quiet({ customerLiveLocation: point }));
+  if (first) {
+    const customer = await db.find('users', u => u.id === req.user.sub);
+    await notify(contract.providerId, '📍', `${require('../arrival-time').personName(customer, 'Your customer')} is sharing their live location for "${contract.service}". Open the trip to see where they are.`, 'bookingUpdates', { section: 'contracts' });
+  }
+  res.json({ ok: true, kept: true });
+});
+// DELETE /api/contracts/:id/customer-live-location — the customer stops sharing.
+router.delete('/contracts/:id/customer-live-location', requireAuth, requireRole('customer'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  if (contract.customerLiveLocation) await db.update('contracts', contract.id, require('../live').quiet({ customerLiveLocation: null }));
+  res.json({ ok: true });
+});
+
+// GET /api/contracts/:id/tracking — for the customer and the pro on this booking.
+router.get('/contracts/:id/tracking', requireAuth, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  if (!contract) return res.status(404).json({ error: 'Booking not found' });
+  const { distanceInMiles, isValidCoordinate } = require('../geo-distance');
+  const pro = await db.find('users', u => u.id === contract.providerId);
+  const customer = await db.find('users', u => u.id === contract.customerId);
+  const tripOpen = contract.status === 'active' && !!contract.onMyWayAt && !contract.arrivedAt
+    && (Date.now() - new Date(contract.onMyWayAt).getTime()) < LIVE_TRIP_MAX_MS;
+  const phase = contract.arrivedAt ? 'arrived' : tripOpen ? 'on_the_way' : (contract.onMyWayAt ? 'ended' : 'not_started');
+  const live = tripOpen && contract.liveLocation && isValidCoordinate(contract.liveLocation.latitude, contract.liveLocation.longitude) ? contract.liveLocation : null;
+  const job = contract.jobLocation && isValidCoordinate(contract.jobLocation.latitude, contract.jobLocation.longitude) ? contract.jobLocation : null;
+  // v128: the customer's own live position, if they chose to share it on
+  // this trip. Ignored once it's 15 minutes old.
+  const cl = contract.customerLiveLocation;
+  const custLive = tripOpen && cl && isValidCoordinate(cl.latitude, cl.longitude) && (Date.now() - new Date(cl.at).getTime()) < 15 * 60 * 1000 ? cl : null;
+  // The distance is to the job pin. With no pin, it is to the customer's
+  // shared position instead, so the pro still has somewhere to go.
+  const target = job || custLive;
+  const miles = live && target ? distanceInMiles(live.latitude, live.longitude, target.latitude, target.longitude) : null;
+  const toCustomerMiles = live && custLive ? distanceInMiles(live.latitude, live.longitude, custLive.latitude, custLive.longitude) : null;
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    phase,
+    proName: pro ? require('../arrival-time').personName(pro) : 'Your pro', // v129: "JAMES DOE" reads "James Doe"
+    customerName: customer ? require('../arrival-time').personName(customer) : 'Customer',
+    arrivalAt: contract.arrival && contract.arrival.agreed ? contract.arrival.agreed.at : null, // v129
+    status: contract.status,
+    service: contract.service,
+    onMyWayAt: contract.onMyWayAt || null,
+    arrivedAt: contract.arrivedAt || null,
+    proLocation: live ? { latitude: live.latitude, longitude: live.longitude, accuracyM: live.accuracyM } : null,
+    secondsSinceUpdate: live ? Math.max(0, Math.round((Date.now() - new Date(live.at).getTime()) / 1000)) : null,
+    jobLocation: job ? { latitude: job.latitude, longitude: job.longitude, accuracyM: job.accuracyM } : null,
+    landmark: contract.landmark || null,
+    distanceMiles: miles != null ? Math.round(miles * 100) / 100 : null,
+    distanceKm: miles != null ? Math.round(miles * 1.609344 * 100) / 100 : null,
+    distanceTo: miles == null ? null : job ? 'pin' : 'customer', // v128
+    customerLocation: custLive ? { latitude: custLive.latitude, longitude: custLive.longitude, accuracyM: custLive.accuracyM } : null,
+    customerSecondsSinceUpdate: custLive ? Math.max(0, Math.round((Date.now() - new Date(custLive.at).getTime()) / 1000)) : null,
+    toCustomerMiles: toCustomerMiles != null ? Math.round(toCustomerMiles * 100) / 100 : null,
+    toCustomerKm: toCustomerMiles != null ? Math.round(toCustomerMiles * 1.609344 * 100) / 100 : null,
+    canEditLocation: contract.customerId === req.user.sub && !contract.arrivedAt && ['pending_agreement', 'pending_provider_confirmation', 'awaiting_payment', 'active'].includes(contract.status),
+  });
+});
+
+router.post('/contracts/:id/arrived', requireAuth, requireRole('provider'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status}. It can't be marked arrived` });
+  if (contract.arrivedAt) return res.status(400).json({ error: 'Already marked arrived for this booking' });
+
+  const { latitude, longitude } = req.body || {};
+  const hasValidCoords = typeof latitude === 'number' && typeof longitude === 'number' && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
+
+  const updated = await db.update('contracts', contract.id, {
+    arrivedAt: new Date().toISOString(),
+    arrivedLocation: hasValidCoords ? { latitude, longitude } : null,
+    liveLocation: null, // v93: the trip is over, so the live position is wiped
+    customerLiveLocation: null, // v128: and so is the customer's, if they shared it
+  });
+
+  if (hasValidCoords) {
+    const { checkImplausibleTravelSpeed } = require('../fraud-detection');
+    await checkImplausibleTravelSpeed(updated);
+  }
+
+  const provider = await db.find('users', u => u.id === req.user.sub);
+  await notify(contract.customerId, '📍', `${require('../arrival-time').personName(provider, 'Your pro')} has arrived for "${contract.service}".`, 'bookingUpdates', { section: 'bookings' });
+  res.json({ contract: updated });
+});
+
+// POST /api/contracts/:id/scope-change-request — a provider's way to
+// handle a job that turns out bigger than what was actually posted or
+// booked: request a specific additional amount through the platform,
+// with a real reason, rather than negotiating extra money off-platform
+// (which the app explicitly warns against everywhere else — see the
+// Trust & Safety section of the handbook). This only ever proposes —
+// nothing about the contract or the held escrow changes until the
+// customer explicitly approves it below. Restricted to active contracts
+// only: a scope discovery makes sense mid-job, not after it's already
+// been marked complete and paid out.
+router.post('/contracts/:id/scope-change-request', requireAuth, requireRole('provider'), async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.providerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.status !== 'active') return res.status(400).json({ error: `This booking is ${contract.status}: additional requests only apply to active jobs` });
+
+  const { amount, reason } = req.body || {};
+  if (typeof amount !== 'number' || amount <= 0 || amount > contract.amount * 5) {
+    return res.status(400).json({ error: 'Enter a positive additional amount (and a realistic one: under 5x the original job price)' });
+  }
+  if (!isNonEmptyString(reason, { min: 10, max: 500 })) {
+    return res.status(400).json({ error: 'Explain what changed about the job (at least 10 characters). The customer needs a real reason to approve this' });
+  }
+
+  // v157: where the customer really paid (card, code or wallet), the extra is paid the same way once approved (src/top-ups.js)
+  if (await require('../top-ups').pendingExtra(contract.id)) return res.status(400).json({ error: 'Extra work on this job is waiting for the customer\'s payment. Wait for that first.' });
+  if (contract.storeOrder || contract.goodsOnly || contract.ride || contract.delivery) return res.status(400).json({ error: 'Extra work can only be added to a job.' });
+  const existing = await db.find('scopeChangeRequests', r => r.contractId === contract.id && r.status === 'pending');
+  if (existing) return res.status(400).json({ error: 'There\'s already a pending additional request for this job: wait for the customer to respond to it first' });
+
+  const requestingProvider = await db.find('users', u => u.id === req.user.sub);
+  const request = {
+    id: `scr_${nanoid(10)}`,
+    contractId: contract.id,
+    providerId: contract.providerId,
+    customerId: contract.customerId,
+    amount: Math.round(amount * 100) / 100,
+    reason: reason.trim(),
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert('scopeChangeRequests', request);
+  await notify(contract.customerId, '📋', `${requestingProvider ? requestingProvider.name : 'Your provider'} is requesting an additional $${request.amount} for "${contract.service}": "${request.reason.slice(0, 80)}${request.reason.length > 80 ? '…' : ''}". Review it in My Bookings.`, null, { section: 'bookings' });
+  res.status(201).json({ request });
+});
+
+// GET /api/contracts/:id/scope-change-requests — either party to the
+// contract can see the real history of requests on it, not just
+// whatever's currently pending.
+router.get('/contracts/:id/scope-change-requests', requireAuth, async (req, res) => {
+  const contract = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const requests = (await db.filter('scopeChangeRequests', r => r.contractId === contract.id)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ requests });
+});
+
+// POST /api/scope-change-requests/:id/decide — the customer's real
+// approve/decline. Approving is what actually adjusts the contract: the
+// agreed amount goes up by the requested addition, and — critically —
+// the SAME escrow record gets its held amount increased too (this app's
+// escrow model is one record per contract everywhere else, so a second
+// escrow record for the addition would silently break payout,
+// completion, and PDF logic that all look up escrow by contract with a
+// single find(), not a list). Declining changes nothing.
+router.post('/scope-change-requests/:id/decide', requireAuth, requireRole('customer'), async (req, res) => {
+  const request = await db.find('scopeChangeRequests', r => r.id === req.params.id && r.customerId === req.user.sub);
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  // Locked on the real contract id (not the scope-change request id from
+  // the URL) — this is the same shared lock /complete and /cancel use,
+  // so an approval here can never interleave with the customer
+  // completing or cancelling the very contract it's about to modify.
+  if (contractStatusLocks.has(request.contractId)) {
+    return res.status(409).json({ error: 'This booking is already being updated. Please try again in a moment.' });
+  }
+  contractStatusLocks.add(request.contractId);
+  try {
+    return await handleScopeChangeDecide(req, res, request);
+  } finally {
+    contractStatusLocks.delete(request.contractId);
+  }
+});
+
+// v109: the customer's service fee on work (same rule as booking: 9%,
+// at least $2.99, at most $25).
+function serviceFeeFor(amount) {
+  const raw = Math.max(amount * 0.09, 2.99);
+  return Math.round(Math.min(raw, 25) * 100) / 100;
+}
+
+async function handleScopeChangeDecide(req, res, request) {
+  // Re-read fresh under the lock — the request looked up before
+  // acquiring it could theoretically be stale if another request for
+  // the same contract was mid-flight.
+  request = await db.find('scopeChangeRequests', r => r.id === request.id);
+  if (!request || request.status !== 'pending') return res.status(400).json({ error: 'This request has already been decided' });
+
+  const { decision } = req.body || {};
+  if (!['approve', 'decline'].includes(decision)) return res.status(400).json({ error: 'decision must be approve or decline' });
+
+  const contract = await db.find('contracts', c => c.id === request.contractId);
+  if (!contract) return res.status(404).json({ error: 'The original contract no longer exists' });
+
+  if (decision === 'decline') {
+    await db.update('scopeChangeRequests', request.id, { status: 'declined', decidedAt: new Date().toISOString() });
+    await notify(request.providerId, '❌', `Your additional request for $${request.amount} on "${contract.service}" was declined.`, null, { section: 'contracts' });
+    return res.json({ request: { ...request, status: 'declined' } });
+  }
+
+  if (contract.status !== 'active') {
+    return res.status(400).json({ error: `This booking is now ${contract.status}. It can no longer be adjusted` });
+  }
+  // v109: a store order has no work in it to add to.
+  if (contract.storeOrder || contract.goodsOnly) {
+    return res.status(400).json({ error: 'A store order can\'t have extra work added. Book the pro for a job instead.' });
+  }
+
+  // v109: the extra is work, so the work part and the service fee go up too.
+  // Before, only the total moved: the fee stayed at the old figure and the
+  // amount paid in local money wasn't updated.
+  const money2 = (n) => Math.round(n * 100) / 100;
+  const newLabor = money2((contract.laborAmount !== undefined && contract.laborAmount !== null ? contract.laborAmount : contract.amount - (contract.storeGoodsTotal || 0)) + request.amount);
+  const customerForFee = await db.find('users', u => u.id === contract.customerId);
+  const { feeDiscountForTier } = require('../membership');
+  const feeWaived = (contract.loyaltyPointsRedeemed || 0) > 0;
+  const laborFee = feeWaived ? 0 : money2(serviceFeeFor(newLabor) * (1 - feeDiscountForTier(customerForFee && customerForFee.membershipTier)));
+  const storeFeeFromCustomer = contract.storeFeePaidBy === 'customer' ? (contract.storeFee || 0) : 0;
+  const newServiceFee = contract.payMethod === 'cash' ? 0 : money2(laborFee + storeFeeFromCustomer); // v119: no Trothen fee for the customer on a cash job
+
+  // v110: money-safety fix, same reasoning as fundEscrowForContract. Every
+  // other place that adds to what's held — the original booking — goes
+  // through fundEscrowForContract, which genuinely attempts to collect a
+  // Liberian mobile-money customer's charge before any record changes.
+  // This approval path bumped the held escrow amount directly, with no
+  // equivalent attempt to actually collect the ADDITIONAL money from a
+  // Liberian mobile-money customer — meaning once that integration goes
+  // live, a provider could be shown (and eventually paid) more than was
+  // ever actually charged to the customer for the added work. Harmless
+  // today (MoMo is still gated, so this call is a no-op for everyone),
+  // but this closes the same gap before it can matter.
+  // v157: a booking paid for real (card, payment code or wallet): the extra is
+  // a payment of its own, made the same way. The job's total only goes up once
+  // it is paid (src/top-ups.js). Before v156 the total went up with nothing
+  // collected; v156 refused it.
+  const parentEscrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+  if (contract.payMethod !== 'cash' && require('../booking-rules').paidForReal(parentEscrow)) {
+    if (await require('../top-ups').pendingExtra(contract.id)) return res.status(409).json({ error: 'Another extra payment on this job is still waiting. Pay or cancel that one first.' });
+    let t;
+    try { t = await require('../top-ups').create(contract, 'extra', request.amount, { serviceFee: money2(Math.max(0, newServiceFee - (contract.serviceFee || 0))), scopeRequestId: request.id }); }
+    catch (e) { return res.status(e.status || 402).json({ code: e.code || 'PAYMENT_FAILED', error: e.message || 'The payment for the extra work could not be started. Nothing was changed.' }); }
+    if (t.paidAtOnce) return res.json({ request: { ...request, status: 'approved' }, contract: await db.find('contracts', c => c.id === contract.id) });
+    await db.update('scopeChangeRequests', request.id, { status: 'awaiting_payment', approvedAt: new Date().toISOString(), topUpContractId: t.child.id });
+    const custPay = require('../customer-payments');
+    await notify(contract.customerId, '💳', `To add the extra work on "${contract.service}", ${custPay.howToPayWords(t.escrow).replace(/Nothing is booked until you pay\./, 'Nothing changes until you pay.')}`, 'bookingUpdates', { section: 'bookings' });
+    await notify(request.providerId, '👍', `The customer approved your extra $${request.amount} for "${contract.service}". It's added once they pay it; you'll be told.`, null, { section: 'contracts' });
+    return res.json({ request: { ...request, status: 'awaiting_payment' }, topUp: { id: t.child.id, bookingNumber: t.child.bookingNumber, total: money2(t.child.amount + t.child.serviceFee) }, payment: t.payment });
+  }
+  const scopeChangeCustomer = customerForFee;
+  if (contract.payMethod !== 'cash' && scopeChangeCustomer) { // v147: any connected wallet, not only Liberia's
+    const result = await require('../mobile-money').chargeDefaultWallet(scopeChangeCustomer, request.amount, contract.id, null);
+    if (result && !result.success) {
+      return res.status(409).json({ error: `The additional $${request.amount} could not be collected from the customer's mobile money account: ${result.message}. Nothing on this booking was changed. Ask the customer to try approving again.` });
+    }
+  }
+
+  const updatedContract = await db.update('contracts', contract.id, { amount: money2(contract.amount + request.amount), laborAmount: newLabor, serviceFee: newServiceFee });
+  const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+  if (escrow) {
+    const patch = { amount: money2(escrow.amount + request.amount), serviceFee: newServiceFee };
+    if (escrow.paidCurrency && escrow.paidCurrency !== 'USD') {
+      const { convertFromUSD } = require('../currency-data');
+      const { resolveRate } = require('../plan-pricing');
+      patch.paidAmountLocal = convertFromUSD(money2(updatedContract.amount + newServiceFee), escrow.paidCurrency, resolveRate(escrow.paidCurrency, await db.all('exchangeRates')));
+    }
+    await db.update('escrowTransactions', escrow.id, patch);
+  }
+  await db.update('scopeChangeRequests', request.id, { status: 'approved', decidedAt: new Date().toISOString() });
+
+  await notify(request.providerId, '✅', `Your additional request for $${request.amount} on "${contract.service}" was approved. New total: $${updatedContract.amount}.`, null, { section: 'contracts' });
+  res.json({ request: { ...request, status: 'approved' }, contract: updatedContract });
+}
+
+// v147: the pro says the job is finished. The customer then has 3 days to
+// press Complete or report a problem; if they do neither, the job completes
+// by itself and the pro is paid (Airtasker, TaskRabbit and Upwork work the
+// same way). Before, a customer who never pressed Complete left the pro's
+// money held for ever.
+const CONFIRM_DAYS = 3;
+router.post('/contracts/:id/work-done', requireAuth, requireRole('provider'), async (req, res) => {
+  const c = await db.find('contracts', x => x.id === req.params.id && x.providerId === req.user.sub);
+  if (!c) return res.status(404).json({ error: 'Booking not found' });
+  if (c.status !== 'active') return res.status(400).json({ error: 'Only a booking that is on can be marked finished.' });
+  if (c.ride || c.delivery || c.storeOrder) return res.status(400).json({ error: 'Rides, deliveries and store orders finish their own way.' });
+  if (c.workDoneAt) return res.json({ ok: true, autoCompleteAt: c.autoCompleteAt });
+  // v147: the job can only be finished once it has started: the pro has
+  // arrived, or the booking day has come. Stops the money clock being
+  // started on a job nobody has done yet.
+  const today = new Date().toISOString().slice(0, 10);
+  const dayCome = c.date && /^\d{4}-\d{2}-\d{2}$/.test(String(c.date)) && String(c.date) <= today;
+  if (!c.arrivedAt && !dayCome) return res.status(400).json({ code: 'NOT_STARTED', error: 'Press Arrived when you reach the customer first. You can mark the job finished once you have arrived, or from the booking day.' });
+  const note = String((req.body || {}).note || '').trim().slice(0, 300);
+  const at = new Date(Date.now() + CONFIRM_DAYS * 24 * 3600 * 1000).toISOString();
+  await db.update('contracts', c.id, { workDoneAt: new Date().toISOString(), autoCompleteAt: at, workDoneNote: note || null });
+  const pro = await db.find('users', u => u.id === c.providerId);
+  const when = new Date(at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
+  await notify(c.customerId, '✅', `${pro ? pro.name : 'Your pro'} says "${c.service}" is finished${note ? `: "${note}"` : ''}. Check the work, then press Complete${c.payMethod === 'cash' ? ' and say what you paid' : ''}, or Report a Problem. If you do neither by ${when} (UTC), it completes by itself${c.payMethod === 'cash' ? '' : ' and the pro is paid'}.`, 'bookingUpdates', { section: 'bookings' });
+  res.json({ ok: true, autoCompleteAt: at });
+});
+// The hourly check: finished jobs the customer didn't answer complete by themselves.
+async function sweepWorkDone() {
+  const now = Date.now();
+  // v147: a reminder about a day before it completes by itself, as escrow platforms do
+  const soon = await db.filter('contracts', c => c.status === 'active' && c.workDoneAt && c.autoCompleteAt && !c.autoCompleteRemindedAt && Date.parse(c.autoCompleteAt) > now && Date.parse(c.autoCompleteAt) - now <= 24 * 3600 * 1000);
+  for (const c of soon) {
+    try {
+      await db.update('contracts', c.id, { autoCompleteRemindedAt: new Date().toISOString() });
+      await notify(c.customerId, '⏰', `Reminder: "${c.service}" completes by itself within 24 hours${c.payMethod === 'cash' ? '' : ' and the pro is paid'}. If something is wrong with the work, press Report a Problem in My Bookings before then.`, 'bookingUpdates', { section: 'bookings' });
+    } catch (e) { console.error('[work-done] reminder failed:', c.id, e.message); }
+  }
+  const due = await db.filter('contracts', c => c.status === 'active' && c.workDoneAt && c.autoCompleteAt && Date.parse(c.autoCompleteAt) <= now);
+  let n = 0;
+  for (const c0 of due) {
+    try {
+      // v153: not while the customer or pro is changing it, and only if it is still due now
+      const r = await require('../contract-locks').whenFree(c0.id, async () => {
+        const c = await db.find('contracts', x => x.id === c0.id);
+        if (!c || c.status !== 'active' || !c.workDoneAt || !c.autoCompleteAt || Date.parse(c.autoCompleteAt) > Date.now()) return { skipped: true };
+        if (await db.find('disputes', d => d.contractId === c.id && !['resolved', 'closed', 'dismissed'].includes(d.status))) return { skipped: true }; // a problem was reported: the team decides
+        if (c.payMethod === 'cash') {
+          await db.update('contracts', c.id, { cashPaidAmount: c.amount, autoCompleted: true });
+          await completeContractCore({ ...c, cashPaidAmount: c.amount }, 0, c.customerId);
+        } else {
+          await db.update('contracts', c.id, { autoCompleted: true });
+          await completeContractCore(c, 0, c.customerId);
+        }
+        return { done: true, c };
+      });
+      if (!r || !r.done) continue;
+      const c = r.c;
+      await notify(c.customerId, '✅', `"${c.service}" was completed automatically: the pro said it was finished ${CONFIRM_DAYS} days ago and no problem was reported. If something is wrong, contact support.`, 'bookingUpdates', { section: 'bookings' });
+      await notify(c.providerId, '💰', `"${c.service}" is complete${c.payMethod === 'cash' ? '' : ': the money is now in your Earnings, ready to pay out'}. The customer didn't answer within ${CONFIRM_DAYS} days.`, 'bookingUpdates', { section: 'earnings' });
+      n++;
+    } catch (e) { console.error('[work-done] auto-complete failed:', c0.id, e.message); }
+  }
+  try { await sweepUnstartedBookings(); } catch (e) { console.error('[bookings] unstarted sweep failed:', e.message); } // v156
+  return n;
+}
+
+// v156: a confirmed job whose day came and went with nothing happening: the
+// pro never set off, never arrived and never said it was finished. Before,
+// the customer's money stayed held for good unless they thought to cancel.
+// Two days after the booking day both are asked; a week after it, the
+// booking is cancelled and the customer refunded. Anyone pressing a button
+// in between (Mark Complete, I've finished, Report a Problem) stops this.
+const UNSTARTED_ASK_DAYS = 2, UNSTARTED_CANCEL_DAYS = 7;
+async function sweepUnstartedBookings() {
+  const today = Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+  // the booking day, or a later agreed arrival day; a new time being agreed right now waits
+  const dayOf = (c) => {
+    if (c.arrival && c.arrival.proposal) return null;
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(String(c.date || '')) ? Date.parse(c.date + 'T00:00:00Z') : null;
+    const a = c.arrival && c.arrival.agreed ? Date.parse(String(c.arrival.agreed.at).slice(0, 10) + 'T00:00:00Z') : null;
+    return d == null ? a : a == null ? d : Math.max(d, a);
+  };
+  const list = await db.filter('contracts', c => c.status === 'active' && !c.ride && !c.delivery && !c.storeOrder && !c.goodsOnly
+    && !c.onMyWayAt && !c.arrivedAt && !c.workDoneAt && dayOf(c) != null && today - dayOf(c) >= UNSTARTED_ASK_DAYS * 86400e3);
+  let asked = 0, cancelled = 0;
+  for (const c0 of list) {
+    try {
+      await require('../contract-locks').whenFree(c0.id, async () => {
+        const c = await db.find('contracts', x => x.id === c0.id);
+        if (!c || c.status !== 'active' || c.onMyWayAt || c.arrivedAt || c.workDoneAt) return;
+        if (await db.find('disputes', d => d.contractId === c.id && !['resolved', 'closed', 'dismissed', 'rejected'].includes(d.status))) return;
+        const late = (today - dayOf(c)) / 86400e3;
+        const by = new Date(dayOf(c) + UNSTARTED_CANCEL_DAYS * 86400e3).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+        const cash = c.payMethod === 'cash';
+        if (late < UNSTARTED_CANCEL_DAYS) {
+          if (c.unstartedAskedAt) return;
+          await db.update('contracts', c.id, { unstartedAskedAt: new Date().toISOString() });
+          await notify(c.customerId, '❓', `Was "${c.service}" done on ${c.date}? If it was, press Mark Complete in My Bookings. If the pro didn't come, press Cancel${cash ? '' : ' and you are refunded'}. If nothing happens by ${by}, the booking is cancelled${cash ? '' : ' and refunded'} by itself.`, 'bookingUpdates', { section: 'bookings' });
+          await notify(c.providerId, '❓', `"${c.service}" was booked for ${c.date}, and nothing has been recorded since. If you did the job, press "I've finished the job" in My Contracts. If nothing happens by ${by}, the booking is cancelled${cash ? '' : ' and the customer refunded'}.`, 'bookingUpdates', { section: 'contracts' });
+          asked++;
+          return;
+        }
+        const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
+        if (escrow && escrow.materialsAdvancePayoutId) return; // money already went to the pro: the team decides
+        if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+        try { await require('../top-ups').follow(c.id, 'refunded'); } catch (e) { /* the extra stays for the team */ }
+        await db.update('contracts', c.id, { status: 'cancelled', cancelledByRole: 'system', cancelReasonCategory: 'not_started', cancelledAt: new Date().toISOString() });
+        try { await require('../store').giveBackStock(c); } catch (e) { /* nothing held */ }
+        try { await require('../loyalty').givePointsBack(c); } catch (e) { /* none spent */ }
+        if (cash) { try { await require('../tokens').sweep(c.providerId); } catch (e) { /* the 5-minute sweep gives it back */ } }
+        await notify(c.customerId, '🚫', `"${c.service}" (booked for ${c.date}) was cancelled because nothing happened within ${UNSTARTED_CANCEL_DAYS} days.${cash ? '' : ' Your payment is refunded.'} Book again if you still need it.`, 'bookingUpdates', { section: 'bookings' });
+        await notify(c.providerId, '🚫', `"${c.service}" (booked for ${c.date}) was cancelled because nothing was recorded within ${UNSTARTED_CANCEL_DAYS} days.${cash ? '' : ' The customer was refunded.'}`, 'bookingUpdates', { section: 'contracts' });
+        cancelled++;
+      });
+    } catch (e) { console.error('[bookings] unstarted:', c0.id, e.message); }
+  }
+  return { asked, cancelled };
+}
+
+router.post('/contracts/:id/complete', requireAuth, requireRole('customer'), async (req, res) => {
+  await require('../contract-locks').freeOfPayment(req.params.id); // v160
+  if (contractStatusLocks.has(req.params.id)) {
+    return res.status(409).json({ error: 'This booking is already being updated. Please try again in a moment.' });
+  }
+  contractStatusLocks.add(req.params.id);
+  try {
+    return await handleContractComplete(req, res);
+  } finally {
+    contractStatusLocks.delete(req.params.id);
+  }
+});
+
+async function handleContractComplete(req, res) {
+  const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.status !== 'active') {
+    return res.status(400).json({ error: `This booking is already ${contract.status} and can't be marked complete` });
+  }
+  if (contract.ride && !contract.ride.startedAt) return res.status(400).json({ error: 'The trip has not started yet. If you no longer need the ride, cancel it instead.' }); // v111
+
+  // Tipping — genuinely optional (default $0, never required to complete
+  // a job), and deliberately kept separate from the escrow/commission
+  // flow entirely: a tip is 100% the provider's, taken out of the
+  // commission calculation at payout time below rather than folded into
+  // the same gross-earnings number the commission rate applies to.
+  const { tipAmount } = req.body || {};
+  let tip = 0;
+  if (tipAmount !== undefined && tipAmount !== null && tipAmount !== '') {
+    if (typeof tipAmount !== 'number' || tipAmount < 0 || tipAmount > contract.amount * 3) {
+      return res.status(400).json({ error: 'Tip must be a positive number (and a realistic one: under 3x the job price)' });
+    }
+    tip = Math.round(tipAmount * 100) / 100;
+  }
+  // v157: where the customer really paid (card, code or wallet), the tip is a
+  // payment of its own, made the same way after the job is completed.
+  let tipToCollect = 0;
+  if (tip > 0 && contract.payMethod !== 'cash') {
+    const esc0 = await db.find('escrowTransactions', e => e.contractId === contract.id);
+    if (require('../booking-rules').paidForReal(esc0)) { tipToCollect = tip; tip = 0; }
+  }
+  // v119: a cash job. The customer pays the pro directly, so there is no
+  // escrow to release and no tip through Trothen. The customer confirms the
+  // cash they paid; Trothen's commission (already taken from the pro's
+  // tokens) is corrected to that amount, and a big gap is flagged.
+  if (contract.payMethod === 'cash') {
+    const paid = Number((req.body || {}).cashPaidAmount);
+    if (!Number.isFinite(paid) || paid <= 0 || paid > (contract.amount || 0) * 5 + 1) {
+      return res.status(400).json({ code: 'CASH_AMOUNT', error: `Tell us how much you paid the pro in cash (the booking price was $${Number(contract.amount).toFixed(2)}).` });
+    }
+    const cashPaid = Math.round(paid * 100) / 100;
+    await db.update('contracts', contract.id, { cashPaidAmount: cashPaid });
+    const done = await completeContractCore({ ...contract, cashPaidAmount: cashPaid }, 0, req.user.sub);
+    try { await require('../tokens').settleCashCommission(contract, cashPaid); } catch (e) { console.error('[tokens] cash settle failed:', e.message); }
+    const gap = contract.amount > 0 ? Math.abs(cashPaid - contract.amount) / contract.amount : 0;
+    if (gap > 0.15) {
+      try { await require('../fraud-detection').createFlag({ type: 'cash_amount_mismatch', severity: 'medium', userId: contract.providerId, relatedUserId: contract.customerId, contractId: contract.id, details: `Cash job #${contract.bookingNumber}: booked at $${contract.amount}, the customer says they paid $${cashPaid}. Check with both if this looks wrong (extra work agreed on the spot is normal).` }); } catch (e) { /* never block completion */ }
+    }
+    return res.json(done);
+  }
+
+  const done = await completeContractCore(contract, tip, req.user.sub);
+  // v108: a store order's driver is paid when the customer has the goods.
+  try { await require('../store-orders').afterComplete(contract, req.user.sub); } catch (e) { console.error('[store-orders] after complete:', e.message); }
+  if (tipToCollect > 0) { // v157
+    try {
+      const t = await require('../top-ups').create({ ...contract, status: 'completed' }, 'tip', tipToCollect);
+      if (!t.paidAtOnce) await notify(contract.customerId, '💳', `To send your $${tipToCollect.toFixed(2)} tip for "${contract.service}", ${require('../customer-payments').howToPayWords(t.escrow).replace(/Nothing is booked until you pay\./, '')}`.trim(), 'bookingUpdates', { section: 'bookings' });
+      return res.json({ ...done, tip: { id: t.child.id, bookingNumber: t.child.bookingNumber, amount: tipToCollect, paid: !!t.paidAtOnce }, tipPayment: t.payment });
+    } catch (e) {
+      return res.json({ ...done, tipError: 'The job is complete, but the tip payment could not be started. You can give the tip to your pro directly.' });
+    }
+  }
+  res.json(done);
+}
+
+// v108: the part of "mark complete" that releases the money, on its own, so
+// a store order can complete its delivery with the same steps. The caller
+// has already checked who is asking and that the booking is active.
+async function completeContractCore(contract, tip, customerId) {
+  const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+  // v109: only money that is still held can be released. A refunded or
+  // already-released record is never changed back.
+  if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'released' });
+  try { await require('../top-ups').follow(contract.id, 'released'); } catch (e) { console.error('[top-ups] release:', e.message); } // v157: paid extra work goes with it
+  await require('../loyalty').awardLoyaltyPoint(customerId, 'booking'); // v109: the booking point is earned when the job is done
+  const updated = await db.update('contracts', contract.id, { status: 'completed', tipAmount: tip, tipPaid: false, completedAt: new Date().toISOString() }); // v105: the day it was completed, for invoices and the tax report
+
+  // Real completed-jobs tracking — this used to be a static number set once
+  // at signup and never touched again (every provider profile showed the
+  // same seed value forever, regardless of real activity). Now it's
+  // incremented for real, exactly once, the moment a job is genuinely
+  // confirmed complete — the same event that releases their escrow.
+  const provider = await db.find('users', u => u.id === contract.providerId);
+  if (provider) await db.update('users', provider.id, { jobs: (provider.jobs || 0) + 1 });
+
+  // Real tier-advancement check — the actual fix for providers previously
+  // being able to just click a button and set their own tier regardless
+  // of whether they'd earned it. This runs on the exact same event that
+  // updates their completed-jobs count, so it always checks against
+  // genuinely current data.
+  const { checkAndAdvanceProviderTier } = require('../commission');
+  await checkAndAdvanceProviderTier(contract.providerId).catch(e => console.error('[tier-advancement] Unexpected error:', e));
+
+  // The alert tells the provider their real, current total available
+  // balance — not just this one job's amount — so it's an accurate,
+  // actionable number the moment they see it, matching exactly what
+  // they'd see if they opened Earnings & Payouts right now.
+  const providerContracts = await db.filter('contracts', c => c.providerId === contract.providerId);
+  const providerContractIds = new Set(providerContracts.map(c => c.id));
+  const releasedUnpaid = (await db.filter('escrowTransactions', e => e.status === 'released' && !e.payoutId))
+    .filter(e => providerContractIds.has(e.contractId));
+  // v109: an advance already paid out is not available again.
+  const totalAvailable = Math.round(releasedUnpaid.reduce((s, e) => s + e.amount - (e.materialsAdvancePayoutId ? (e.materialsAdvanceAmount || 0) : 0), 0) * 100) / 100;
+
+  if (contract.payMethod === 'cash') { // v119
+    await notify(contract.providerId, '💵', `"${contract.service}" is marked done. The customer says they paid you $${Number(contract.cashPaidAmount || contract.amount).toFixed(2)} in cash, so nothing is added to your Trothen balance.`, 'bookingUpdates', { section: 'contracts' });
+    return { contract: updated, escrow: null };
+  }
+  if (contract.ride && contract.ride.cash) {
+    await notify(contract.providerId, '💵', `Ride #${contract.bookingNumber} is complete. The rider paid you $${Number(contract.amount).toFixed(2)} in cash, so nothing is added to your Trothen balance.`, 'bookingUpdates', { section: 'rides' });
+    return { contract: updated, escrow: null };
+  }
+  await notify(contract.providerId, '💰', `Escrow released: $${contract.amount} for ${contract.service}. You now have $${totalAvailable} available to request as a payout.`, 'payoutAlerts', { section: 'earnings' });
+  if (tip > 0) {
+    await notify(contract.providerId, '🌟', `${(await db.find('users', u => u.id === customerId))?.name || 'The customer'} left you a $${tip} tip on "${contract.service}". Tips have no commission and are added to your next payout.`, 'payoutAlerts', { section: 'earnings' });
+  }
+  return { contract: updated, escrow: escrow ? { ...escrow, status: 'released' } : null };
+}
+
+// POST /api/contracts/:id/cancel — either the customer or the provider can
+// cancel a booking before it's marked complete, or withdraw a Mutual
+// Agreement offer that hasn't been responded to yet. Escrow is refunded
+// (not released to the provider) since no work was confirmed done — and for
+// a still-pending offer, there's no escrow yet to begin with, since funds
+// were never held until the provider actually agreed to a number. The other
+// party is notified either way.
+router.post('/contracts/:id/cancel', requireAuth, async (req, res) => {
+  await require('../contract-locks').freeOfPayment(req.params.id); // v160
+  if (contractStatusLocks.has(req.params.id)) {
+    return res.status(409).json({ error: 'This booking is already being updated. Please try again in a moment.' });
+  }
+  contractStatusLocks.add(req.params.id);
+  try {
+    return await handleContractCancel(req, res);
+  } finally {
+    contractStatusLocks.delete(req.params.id);
+  }
+});
+
+// These specific reasons are explicitly protected by policy — a provider
+// stopping a job for one of these must never count against them anywhere
+// a cancellation rate is calculated (this file, or the tier-progress
+// dashboard). This is enforced as a real system rule here, not left to
+// support discretion downstream.
+const PROTECTED_CANCEL_REASONS = new Set(['not_as_described', 'unsafe', 'out_of_category', 'unlicensed_required']);
+const CANCEL_REASON_LABELS = {
+  not_as_described: 'Job not as described',
+  unsafe: 'Became unsafe to continue',
+  out_of_category: 'Turned out to need a different trade/category',
+  unlicensed_required: 'Requires a license I don\'t hold',
+  customer_request: 'Customer asked to cancel',
+  schedule_conflict: 'Scheduling conflict',
+  other: 'Other',
+};
+
+async function handleContractCancel(req, res) {
+  const { reason } = req.body || {};
+  const reasonCategory = (reason && CANCEL_REASON_LABELS[reason]) ? reason : 'other';
+  const contract = await db.find('contracts', c =>
+    c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub)
+  );
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (!['active', 'pending_agreement', 'pending_provider_confirmation', 'awaiting_payment'].includes(contract.status)) {
+    return res.status(400).json({ error: `This booking is already ${contract.status} and can't be cancelled` });
+  }
+  const escrow = await db.find('escrowTransactions', e => e.contractId === contract.id);
+  // v119: a booking still waiting for the customer's mobile money payment.
+  if (contract.status === 'awaiting_payment') {
+    if (contract.customerId !== req.user.sub) return res.status(403).json({ error: 'Only the customer can cancel a booking that isn\'t paid yet.' });
+    if (escrow && escrow.customerSaysPaidAt) return res.status(409).json({ code: 'USE_SUPPORT', error: 'You told us you have sent the payment, so this can\'t be cancelled here. Contact support: if the money arrived, it will be refunded.' });
+    if (escrow && escrow.status === 'awaiting_payment') {
+      await db.update('escrowTransactions', escrow.id, { status: 'payment_cancelled' });
+      // v125: close the card page so it can't be paid any more.
+      if (escrow.paidBy === 'card' && escrow.cardSessionId) { try { await require('../stripe-pay').expireSession(escrow.cardSessionId); } catch (x) { /* already closed or paid: a late payment is refunded automatically */ } }
+    }
+    if (contract.topUpFor) { // v157: dropping an extra or a tip leaves the booking as it was (v158: and isn't counted as a cancellation)
+      const gone = await db.update('contracts', contract.id, { status: 'topup_lapsed', cancelReason: 'Dropped by the customer' });
+      await require('../top-ups').lapsed(contract); return res.json({ contract: gone, escrow: null });
+    }
+    const gone = await db.update('contracts', contract.id, { status: 'cancelled', cancelledByRole: 'customer', cancelReasonCategory: 'not_paid', cancelledAt: new Date().toISOString() });
+    await require('../store').giveBackStock(contract);
+    await require('../loyalty').givePointsBack(contract);
+    if (contract.marketListingId) { const l = await db.find('marketListings', x => x.id === contract.marketListingId); if (l && l.status === 'reserved' && l.reservedForOrderId === contract.id) await db.update('marketListings', l.id, { status: 'live', reservedForOrderId: null }); } // v148: back on sale
+    if (contract.jobId) { const job = await db.find('jobs', j => j.id === contract.jobId); if (job && job.status === 'matched') await db.update('jobs', job.id, { status: 'open' }); }
+    return res.json({ contract: gone, escrow: null });
+  }
+  // v109: two ways money could go out twice. (1) The pro had already been
+  // paid the materials advance, and cancelling refunded the customer in
+  // full as well. (2) Goods had already been handed over (pick-up or
+  // drop-off recorded), and cancelling refunded them while the customer
+  // kept the goods. Both now go to "Report a Problem", where a person decides.
+  if (contract.ride && contract.ride.startedAt && contract.status === 'active') { // v111: once the trip has started, a problem goes to a person
+    return res.status(409).json({ code: 'USE_DISPUTE', error: 'The trip has already started, so it can\'t be cancelled for a refund. If something went wrong, use "Report a Problem" on the booking.' });
+  }
+  if (escrow && escrow.materialsAdvancePayoutId) {
+    return res.status(409).json({ code: 'USE_DISPUTE', error: 'The pro has already been paid the materials advance for this booking, so it can\'t simply be cancelled. Use "Report a Problem" and our team will sort out what is owed.' });
+  }
+  const handedOver = (c) => !!(c && c.handover && (((c.handover.pickup || []).length) || ((c.handover.dropoff || []).length)));
+  let linked = null;
+  if (contract.deliveryContractId) linked = await db.find('contracts', c => c.id === contract.deliveryContractId);
+  else if (contract.delivery && contract.delivery.forContractId) linked = await db.find('contracts', c => c.id === contract.delivery.forContractId);
+  // v156: once the pro has arrived or said the work is finished, the customer
+  // can't cancel for a full refund: work may have been done, so a person looks
+  // at it (Report a Problem). The pro can still cancel; the customer is refunded.
+  if (contract.status === 'active' && contract.customerId === req.user.sub && !contract.ride && !contract.delivery && !contract.storeOrder && (contract.arrivedAt || contract.workDoneAt)) {
+    return res.status(409).json({ code: 'USE_DISPUTE', error: contract.workDoneAt ? 'The pro has said the work is finished, so this booking can\'t be cancelled for a refund. Press Complete if the work is done, or Report a Problem if it isn\'t, and our team will look at it.' : 'The pro has already arrived, so this booking can\'t be cancelled for a refund. If something is wrong, use Report a Problem and our team will sort out what is owed.' });
+  }
+  if (contract.status === 'active' && (handedOver(contract) || handedOver(linked))) {
+    return res.status(409).json({ code: 'USE_DISPUTE', error: 'The goods have already been handed over, so this can\'t be cancelled for a refund. If something is wrong, use "Report a Problem" on the booking.' });
+  }
+  if (escrow && escrow.status === 'held') await db.update('escrowTransactions', escrow.id, { status: 'refunded' });
+  try { await require('../top-ups').follow(contract.id, 'refunded'); } catch (e) { console.error('[top-ups] refund:', e.message); } // v157
+  await require('../loyalty').givePointsBack(contract); // v109
+  const iAmProvider = contract.providerId === req.user.sub;
+  const isProtected = iAmProvider && PROTECTED_CANCEL_REASONS.has(reasonCategory);
+  const updated = await db.update('contracts', contract.id, {
+    status: 'cancelled',
+    cancelReasonCategory: reasonCategory,
+    cancelledByRole: iAmProvider ? 'provider' : 'customer',
+    protectedCancellation: isProtected,
+  });
+  await require('../store').giveBackStock(contract); // v105: goods not yet handed over go back on the shelf
+  if (contract.payMethod === 'cash') { try { await require('../tokens').sweep(contract.providerId); } catch (e) { /* the 5-minute sweep gives it back */ } } // v119: commission back now, when it is due
+  // v108: a store order and its delivery go together. Cancelling the order
+  // cancels a delivery that hasn't collected the goods yet; a driver
+  // cancelling tells the customer and the seller so another can be chosen.
+  try { await require('../store-orders').afterCancel(updated, req.user.sub); } catch (e) { console.error('[store-orders] after cancel:', e.message); }
+
+  // v156: a booking made from a posted job: the job opens again, so the
+  // customer can choose another pro who replied (or cancel the job). Before,
+  // it stayed "matched" to a booking that no longer existed.
+  if (contract.jobId) {
+    try {
+      const job = await db.find('jobs', j => j.id === contract.jobId);
+      if (job && job.status === 'matched') {
+        await db.update('jobs', job.id, { status: 'open' });
+        const m = await db.find('matches', x => x.jobId === job.id && x.providerId === contract.providerId);
+        if (m) await db.update('matches', m.id, { status: 'cancelled' });
+        for (const o of await db.filter('matches', x => x.jobId === job.id && x.status === 'not_selected')) await db.update('matches', o.id, { status: o.price || o.coverLetter ? 'interested' : 'pending' }); // the others who replied can be chosen again
+        if (iAmProvider) await notify(contract.customerId, '🔁', `Your job "${String(job.description || contract.service).slice(0, 60)}" is open again, so you can choose another pro who replied, or wait for new replies.`, 'bookingUpdates', { section: 'bookings' });
+      }
+    } catch (e) { console.error('[cancel] could not reopen the job:', e.message); }
+  }
+  if (isProtected) {
+    const { checkProtectedCancellationAbuse } = require('../fraud-detection');
+    await checkProtectedCancellationAbuse(contract.providerId);
+  }
+
+  const iAmCustomer = contract.customerId === req.user.sub;
+  const otherPartyId = iAmCustomer ? contract.providerId : contract.customerId;
+  const canceller = await db.find('users', u => u.id === req.user.sub);
+  const reasonNote = isProtected ? ` Reason: ${CANCEL_REASON_LABELS[reasonCategory]}. This does not count against them.` : '';
+  const message = escrow
+    ? `${canceller ? canceller.name : 'The other party'} cancelled the booking for "${contract.service}". Any held escrow has been refunded.${reasonNote}`
+    : `${canceller ? canceller.name : 'The other party'} withdrew the offer for "${contract.service}".${reasonNote}`;
+  await notify(otherPartyId, '🚫', message, 'bookingUpdates', { section: 'bookings' });
+
+  res.json({ contract: updated, escrow: escrow ? { ...escrow, status: 'refunded' } : null });
+}
+
+// GET /api/payments/mine — a customer's real payment history: every
+// contract they've funded, who the provider was, and what currency they
+// actually paid in. The same "who paid / who got paid" concept as the
+// provider's payout history, just from the other side of the transaction.
+router.get('/payments/mine', requireAuth, requireRole('customer'), async (req, res) => {
+  const { from, to } = req.query;
+  let contracts = await db.filter('contracts', c => c.customerId === req.user.sub && c.topUpKind !== 'extra'); // v157: paid extra work is in its booking's total
+  if (from) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) >= from);
+  if (to) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) <= to);
+  contracts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const payments = await Promise.all(contracts.map(async c => {
+    const provider = await db.find('users', u => u.id === c.providerId);
+    const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
+    const dispute = await db.find('disputes', d => d.contractId === c.id);
+    return {
+      contractId: c.id,
+      bookingNumber: c.bookingNumber || c.id,
+      date: (c.createdAt || '').slice(0, 10),
+      providerName: provider ? provider.name : 'Unknown provider',
+      // v147: the pro's phone and email only once the booking is confirmed
+      // (and for 7 days after it's done); before that, the chat.
+      providerEmail: provider && require('../booking-contact').contractConfirmed(c) ? provider.email : null,
+      providerPhone: provider && require('../booking-contact').contractConfirmed(c) ? provider.phone : null,
+      service: c.service,
+      jobDate: c.date || null,
+      jobTime: c.time || null,
+      address: c.address || null,
+      amount: c.amount,
+      status: c.status,
+      escrowStatus: escrow ? escrow.status : 'none',
+      paidCurrency: escrow ? escrow.paidCurrency : 'USD',
+      paidAmountLocal: escrow ? escrow.paidAmountLocal : null,
+      disputeStatus: dispute ? dispute.status : null,
+      ...paidFigures(c, escrow), // v156: what was really paid and refunded
+    };
+  }));
+  const m2 = (n) => Math.round(n * 100) / 100;
+  res.json({ payments, totalPaid: m2(payments.reduce((t, x) => t + x.amountPaid, 0)), totalRefunded: m2(payments.reduce((t, x) => t + x.amountRefunded, 0)) });
+});
+
+// v156: what the customer really paid through Trothen for a booking, and what
+// came back. Before, the history and its PDF added up the price of every
+// booking, including ones declined, expired or cancelled before any payment.
+function paidFigures(c, escrow) {
+  const m2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  if (c.payMethod === 'cash' || (c.ride && c.ride.cash)) return { amountPaid: 0, amountRefunded: 0, paidHow: 'cash', cashPaid: c.cashPaidAmount != null ? m2(c.cashPaidAmount) : null };
+  const paid = !!(escrow && ['held', 'released', 'refunded', 'collected'].includes(escrow.status)); // v157: a paid tip is "collected"
+  if (!paid) return { amountPaid: 0, amountRefunded: 0, paidHow: escrow && escrow.status === 'awaiting_payment' ? 'not_paid_yet' : 'not_paid' };
+  const amountPaid = m2((c.amount || 0) + (c.serviceFee || 0));
+  const amountRefunded = escrow.status === 'refunded' ? amountPaid : m2(escrow.refundedAmount || 0);
+  return { amountPaid, amountRefunded, paidHow: 'trothen' };
+}
+
+// GET /api/payments/pdf — a real, downloadable payment history report for a
+// customer, same date-range concept as the provider's payout report.
+router.get('/payments/pdf', requireAuth, requireRole('customer'), async (req, res) => {
+  const { from, to } = req.query;
+  const customer = await db.find('users', u => u.id === req.user.sub);
+  let contracts = await db.filter('contracts', c => c.customerId === req.user.sub && c.topUpKind !== 'extra'); // v157
+  if (from) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) >= from);
+  if (to) contracts = contracts.filter(c => (c.createdAt || '').slice(0, 10) <= to);
+  contracts.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  const rows = await Promise.all(contracts.map(async c => {
+    const provider = await db.find('users', u => u.id === c.providerId);
+    const escrow = await db.find('escrowTransactions', e => e.contractId === c.id);
+    return { c, provider, escrow };
+  }));
+
+  const { createReportDoc } = require('../pdf-report-builder');
+  const rangeLabel = from || to ? `${from || 'earliest'} to ${to || 'today'}` : 'All time';
+  const { sectionHeader, row, twoColumnRow, table, finish } = createReportDoc({
+    res,
+    filename: `Trothen-Payment-History-${customer.name.replace(/\s+/g, '-')}.pdf`,
+    title: 'Payment History Report',
+    subtitle: 'AI-Matched · Identity-Verified · Escrow-Protected',
+    docId: rangeLabel,
+    verificationSeed: `payments|${customer.id}|${from || ''}|${to || ''}|${contracts.length}`,
+  });
+
+  sectionHeader('Report Summary');
+  twoColumnRow('Customer', `${customer.name} (${customer.email})`, 'Date Range', rangeLabel);
+  // v156: only what was really paid (price plus service fee), and what came back
+  const figs = rows.map(({ c, escrow }) => paidFigures(c, escrow));
+  const totalPaid = figs.reduce((t, f) => t + f.amountPaid, 0);
+  const totalRefunded = figs.reduce((t, f) => t + f.amountRefunded, 0);
+  const nPaid = figs.filter(f => f.amountPaid > 0).length;
+  row('Total Paid (USD)', `$${totalPaid.toFixed(2)} across ${nPaid} paid booking${nPaid === 1 ? '' : 's'} (${contracts.length} in this range)`);
+  if (totalRefunded > 0) row('Refunded (USD)', `$${totalRefunded.toFixed(2)}`);
+
+  sectionHeader('Bookings & Payments');
+  if (rows.length === 0) {
+    row('No payments', 'No payments were found in this date range.');
+  } else {
+    table(
+      [{ label: 'Date', width: 65 }, { label: 'Provider', width: 95 }, { label: 'Service', width: 140 }, { label: 'Booking #', width: 60 }, { label: 'Paid', width: 100, align: 'right' }],
+      rows.map(({ c, provider }, i) => { const f = figs[i]; return [(c.createdAt || '').slice(0, 10), provider ? provider.name : 'Unknown', c.service, c.bookingNumber || c.id, f.paidHow === 'cash' ? 'Cash to the pro' : f.amountPaid > 0 ? `$${f.amountPaid.toFixed(2)}${f.amountRefunded > 0 ? (f.amountRefunded >= f.amountPaid ? ' (refunded)' : ` ($${f.amountRefunded.toFixed(2)} back)`) : ''}` : 'Not paid']; })
+    );
+  }
+
+  finish({
+    closingNote: 'This report reflects Trothen\'s payment records for this customer account as of the moment it was generated. All amounts shown are in USD, the platform\'s canonical accounting currency, regardless of what currency was actually charged at checkout. Provided for the customer\'s own recordkeeping.',
+  });
+});
+
+// the Financial team when an admin account has been set up that way — a
+// super admin or an unscoped regional admin still sees this unchanged.
+router.get('/escrow/summary', requireAuth, requireRole('admin'), async (req, res) => {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me.isSuperAdmin && me.adminDepartment && !['financial', 'legal'].includes(me.adminDepartment) && !require('../admin-permissions').gatePassed(req, me)) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${me.adminDepartment} team and doesn't have access to this.` });
+  }
+  // A regional admin (no department, just assigned a city) should only ever
+  // see their own city's numbers here — every other financial view already
+  // works this way; this was the one that didn't, which meant a regional
+  // admin could see platform-wide totals well beyond their own city.
+  const region = (!me.isSuperAdmin && (!me.adminDepartment || (require('../admin-permissions').gatePassed(req, me) && me.regionScoped))) ? (me.region || me.city) : null; // v135: a custom admin limited to an area sees only that area
+  // v90: a regional admin may cover a whole country instead of one city.
+  const sameTxt = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
+  const mine = (person) => (me.adminScope === 'country' && me.country) ? sameTxt(person.country, me.country) : sameTxt(person.city, region);
+
+  let all = await db.all('escrowTransactions');
+  let payouts = await db.all('payouts');
+  if (region) {
+    const contracts = await db.all('contracts');
+    const allCustomers = await db.filter('users', u => u.role === 'customer');
+    const customerById = new Map(allCustomers.map(c => [c.id, c]));
+    const regionalContractIds = new Set();
+    for (const c of contracts) {
+      const customer = customerById.get(c.customerId);
+      if (customer && mine(customer)) regionalContractIds.add(c.id);
+    }
+    all = all.filter(e => regionalContractIds.has(e.contractId));
+    const regionalProviderIds = new Set((await db.filter('users', u => u.role === 'provider' && mine(u))).map(u => u.id));
+    payouts = payouts.filter(p => regionalProviderIds.has(p.providerId));
+  }
+
+  const held = all.filter(e => e.status === 'held').reduce((s, e) => s + e.amount, 0);
+  const released = all.filter(e => e.status === 'released').reduce((s, e) => s + e.amount, 0);
+  // Real commission revenue — the sum of what's actually been deducted
+  // across every payout ever made, not a placeholder figure.
+  const commissionRevenue = payouts.reduce((s, p) => s + (p.commissionAmount || 0) + (p.storeFeeAmount || 0), 0); // v106: store fees paid by pros count as Trothen's share too
+  // Real service fee revenue — the customer-side fee, genuinely separate
+  // from commission (which comes from the provider's side). Summed across
+  // every contract that actually reached a real transaction, matching the
+  // same escrow records already being counted above, not a separate,
+  // possibly-inconsistent query.
+  const serviceFeeRevenue = Math.round(all.filter(e => ['held', 'released'].includes(e.status)).reduce((s, e) => s + (e.serviceFee || 0), 0) * 100) / 100; // v109: a refunded booking's fee is not revenue; v119: nor one never paid
+  // v119: commission pros paid from tokens on cash jobs (net of any given back)
+  const cashLines = await db.filter('tokenLedger', l => l.refKind === 'cashjob');
+  const cashJobCommission = Math.round(-cashLines.reduce((s, l) => s + (Number(l.tokens) || 0), 0) * 100) / 100;
+  res.json({ held, released, count: all.length, commissionRevenue, serviceFeeRevenue, cashJobCommission });
+});
+
+// GET /api/admin/financial-by-region — a real, per-city breakdown of escrow
+// held/released and commission revenue, plus a grand total row, so the
+// super admin (or the financial team) can actually see how each region is
+// performing rather than only ever seeing one flattened global number.
+router.get('/admin/financial-by-region', requireAuth, requireRole('admin'), async (req, res) => {
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'financial_by_region');
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me.isSuperAdmin && me.adminDepartment && !['financial', 'legal'].includes(me.adminDepartment) && !require('../admin-permissions').gatePassed(req, me)) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${me.adminDepartment} team and doesn't have access to this.` });
+  }
+  // Same fix as /escrow/summary above: a plain regional admin (no
+  // department, just assigned a city) must only ever see their own
+  // region's row here — this endpoint was the one place in the file that
+  // still returned every region's real financial data to whoever asked,
+  // regardless of which city they actually administer. A super admin or
+  // an unscoped financial/legal admin still sees every region unchanged.
+  const region = (!me.isSuperAdmin && (!me.adminDepartment || (require('../admin-permissions').gatePassed(req, me) && me.regionScoped))) ? (me.region || me.city) : null; // v135: a custom admin limited to an area sees only that area
+  // v90: a regional admin may cover a whole country instead of one city.
+  const sameTxt = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
+  const mine = (person) => (me.adminScope === 'country' && me.country) ? sameTxt(person.country, me.country) : sameTxt(person.city, region);
+
+  // Optional date range, applied the same way the Platform Transactions
+  // panel applies it (against the contract's createdAt for escrow, and the
+  // payout's own date for commission) — so the two panels stay in sync
+  // when an admin filters by date.
+  const { from, to } = req.query;
+
+  const contracts = await db.all('contracts');
+  let escrow = await db.all('escrowTransactions');
+  let payouts = await db.all('payouts');
+  const customers = await db.filter('users', u => u.role === 'customer');
+  const providers = await db.filter('users', u => u.role === 'provider');
+  const customerById = new Map(customers.map(c => [c.id, c]));
+  const providerById = new Map(providers.map(p => [p.id, p]));
+  const contractById = new Map(contracts.map(c => [c.id, c]));
+
+  if (from || to) {
+    escrow = escrow.filter(e => {
+      const contract = contractById.get(e.contractId);
+      const date = (contract && contract.createdAt || '').slice(0, 10);
+      if (from && date < from) return false;
+      if (to && date > to) return false;
+      return true;
+    });
+    payouts = payouts.filter(p => {
+      const date = (p.date || '').slice(0, 10);
+      if (from && date < from) return false;
+      if (to && date > to) return false;
+      return true;
+    });
+  }
+
+  // Group everything by the CUSTOMER's city — same convention used
+  // everywhere else a "region" is derived (disputes, transactions).
+  const byRegion = new Map(); // region -> { region, country, held, released, commissionRevenue, serviceFeeRevenue, transactionCount }
+  function bucket(region, country) {
+    if (!byRegion.has(region)) byRegion.set(region, { region, country, held: 0, released: 0, commissionRevenue: 0, serviceFeeRevenue: 0, transactionCount: 0 });
+    return byRegion.get(region);
+  }
+
+  for (const e of escrow) {
+    const contract = contractById.get(e.contractId);
+    const customer = contract && customerById.get(contract.customerId);
+    if (!customer) continue;
+    const b = bucket(customer.city || 'Unknown', customer.country || 'Unknown');
+    if (e.status === 'held') b.held += e.amount;
+    if (e.status === 'released') b.released += e.amount;
+    if (['held', 'released'].includes(e.status)) b.serviceFeeRevenue += (e.serviceFee || 0); // v109; v119: not unpaid ones
+    b.transactionCount += 1;
+  }
+  for (const p of payouts) {
+    const provider = providerById.get(p.providerId);
+    if (!provider) continue;
+    const b = bucket(provider.city || 'Unknown', provider.country || 'Unknown');
+    b.commissionRevenue += (p.commissionAmount || 0) + (p.storeFeeAmount || 0);
+  }
+
+  // Average transaction value per region — total volume moved (held +
+  // released) divided by however many escrow transactions built that
+  // volume. Guards against divide-by-zero for a region with commission
+  // activity but no escrow transactions in range.
+  for (const b of byRegion.values()) {
+    b.avgTransaction = b.transactionCount > 0 ? Math.round(((b.held + b.released) / b.transactionCount) * 100) / 100 : 0;
+  }
+
+  let regions = Array.from(byRegion.values()).sort((a, b) => (b.held + b.released) - (a.held + a.released));
+  if (region) {
+    regions = regions.filter(r => (me.adminScope === 'country' && me.country) ? sameTxt(r.country, me.country) : sameTxt(r.region, region));
+  }
+  const total = regions.reduce((acc, r) => ({
+    held: acc.held + r.held,
+    released: acc.released + r.released,
+    commissionRevenue: acc.commissionRevenue + r.commissionRevenue,
+    serviceFeeRevenue: acc.serviceFeeRevenue + r.serviceFeeRevenue,
+    transactionCount: acc.transactionCount + r.transactionCount,
+  }), { held: 0, released: 0, commissionRevenue: 0, serviceFeeRevenue: 0, transactionCount: 0 });
+  total.avgTransaction = total.transactionCount > 0 ? Math.round(((total.held + total.released) / total.transactionCount) * 100) / 100 : 0;
+
+  res.json({ regions, total });
+});
+
+// GET /api/admin/report-builder — a real, flexible query over actual
+// contracts: any combination of date range, category, city, country,
+// status, and provider tier. Returns both the filtered rows themselves
+// (for a real table or CSV export) and honest aggregate stats computed
+// from exactly those same rows — never a separately-computed, possibly
+// inconsistent summary number.
+router.get('/admin/report-builder', requireAuth, requireRole('admin'), async (req, res) => {
+  const { dateFrom, dateTo, category, city, country, status, providerTier } = req.query;
+  const requestingAdmin = await db.find('users', u => u.id === req.user.sub);
+  // v109: the same rule as the other money reports. A team admin outside
+  // finance or legal (customer service, HR, sales...) used to get the whole
+  // platform's bookings here.
+  if (requestingAdmin && !requestingAdmin.isSuperAdmin && requestingAdmin.adminDepartment && !['financial', 'legal'].includes(requestingAdmin.adminDepartment) && !require('../admin-permissions').gatePassed(req, requestingAdmin)) {
+    return res.status(403).json({ error: `Your admin account is scoped to the ${requestingAdmin.adminDepartment} team and doesn't have access to this.` });
+  }
+  const region = requestingAdmin && !requestingAdmin.isSuperAdmin && (!requestingAdmin.adminDepartment || requestingAdmin.regionScoped) ? (requestingAdmin.region || requestingAdmin.city || requestingAdmin.country || null) : null;
+  const allContracts = await db.all('contracts');
+  const allUsers = await db.all('users');
+  const userById = new Map(allUsers.map(u => [u.id, u]));
+
+  const rows = [];
+  for (const c of allContracts) {
+    const provider = userById.get(c.providerId);
+    const customer = userById.get(c.customerId);
+    if (!provider || !customer) continue;
+    if (region) { // regional admins only ever see their own area's real activity (v90: a city, or their whole country)
+      const same = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
+      const covered = (requestingAdmin.adminScope === 'country' && requestingAdmin.country) ? same(provider.country, requestingAdmin.country) : same(provider.city, region);
+      if (!covered) continue;
+    }
+    if (city && provider.city !== city) continue;
+    if (country && provider.country !== country) continue;
+    if (category && provider.category !== category) continue;
+    if (status && c.status !== status) continue;
+    if (c.topUpKind === 'extra' || c.status === 'topup_lapsed') continue; // v158: paid extra work is already in its booking's amount; an unpaid extra or tip never happened
+    if (providerTier && (provider.plan || 'starter') !== providerTier) continue;
+    const created = c.createdAt ? c.createdAt.slice(0, 10) : null;
+    if (dateFrom && created && created < dateFrom) continue;
+    if (dateTo && created && created > dateTo) continue;
+
+    rows.push({
+      bookingNumber: c.bookingNumber, service: c.service, status: c.status,
+      amount: c.amount, serviceFee: c.serviceFee || 0, payMethod: c.payMethod || 'protected', // v119
+      customerName: customer.name, providerName: provider.name,
+      providerCategory: provider.category, providerTier: provider.plan || 'starter',
+      city: provider.city, country: provider.country,
+      createdAt: c.createdAt,
+    });
+  }
+
+  const total = {
+    count: rows.length,
+    // v158: only bookings that went ahead count (GMV used to add up cancelled, declined and never-paid bookings too)
+    gmv: Math.round(rows.filter(r => !['cancelled', 'declined', 'expired', 'refunded', 'awaiting_payment', 'pending_agreement', 'topup_refunded'].includes(r.status)).reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100,
+    serviceFeeRevenue: Math.round(rows.filter(r => !['cancelled', 'declined', 'expired', 'refunded', 'awaiting_payment', 'pending_agreement', 'topup_refunded'].includes(r.status) && r.payMethod !== 'cash').reduce((s, r) => s + (r.serviceFee || 0), 0) * 100) / 100, // v109: refunded bookings' fees are not revenue
+    completed: rows.filter(r => r.status === 'completed').length,
+    cancelled: rows.filter(r => r.status === 'cancelled').length,
+  };
+
+  res.json({ rows, total });
+});
+
+// v141: Admin → Payments → "Payouts being sent". Each payout waiting to
+// go out, with where it goes (Mobile Money network and the last 4 digits,
+// or the bank). The full number is shown only on "Show full number",
+// and every look is written to the access log.
+async function payoutAdminScope(req) {
+  const me = await db.find('users', u => u.id === req.user.sub);
+  if (!me) return { error: 403 };
+  const gate = require('../admin-permissions').gatePassed(req, me);
+  if (!me.isSuperAdmin && me.adminDepartment !== 'financial' && !gate) return { error: 403, me };
+  const sameTxt = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
+  const limited = !me.isSuperAdmin && gate && me.regionScoped;
+  const inScope = (person) => !limited || (me.adminScope === 'country' ? sameTxt(person.country, me.country) : sameTxt(person.city, me.region || me.city));
+  return { me, inScope };
+}
+router.get('/admin/payouts-to-send', requireAuth, requireRole('admin'), async (req, res) => {
+  const sc = await payoutAdminScope(req);
+  if (sc.error) return res.status(403).json({ error: 'Only the finance team and super admins see payouts being sent.' });
+  const users = new Map((await db.filter('users', u => u.role !== 'admin')).map(u => [u.id, u]));
+  const rows = (await db.filter('payouts', p => p.status === 'processing'))
+    .filter(p => { const u = users.get(p.providerId); return u && sc.inScope(u); })
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+    .map(p => { const u = users.get(p.providerId); return { id: p.id, createdAt: p.createdAt, amount: p.amount, payoutCurrency: p.payoutCurrency, payoutAmountLocal: p.payoutAmountLocal, method: p.method, destination: p.destination || null, status: p.status, problem: p.problem || null, person: { id: u.id, name: u.name, country: u.country, city: u.city } }; });
+  // v147: which can go through a Mobile Money system, and whether that is on
+  const sending = require('../payout-sending');
+  for (const r of rows) { const p = await db.find('payouts', x => x.id === r.id); const route = await sending.momoRoute(p); r.momo = route ? { name: route.name, on: route.disbursement } : null;
+    // v148: is the account in the pro's own name (or business name)? If not, finance checks before sending.
+    const st = p.sendTo || {}; const holder = st.name || st.accountName; const u = users.get(p.providerId);
+    r.nameCheck = holder ? { holder, pro: u ? (u.businessName ? `${u.name} / ${u.businessName}` : u.name) : '', ok: require('../payout-methods').nameMatches(u, holder) } : null; }
+  const sendingNow = (await db.filter('payouts', p => p.status === 'sending')).filter(p => { const u = users.get(p.providerId); return u && sc.inScope(u); }).map(p => ({ id: p.id, amount: p.amount, destination: p.destination, sentAt: p.momoSentAt, person: { name: (users.get(p.providerId) || {}).name } }));
+  res.json({ payouts: rows, sending: sendingNow, autoSettle: !(await sending.realPaymentsOn()) });
+});
+// POST /api/admin/payouts/:id/sent { reference } · /problem { reason } · /send-momo — v147
+for (const [path, fn] of [['sent', 'markSent'], ['problem', 'markProblem'], ['send-momo', 'sendByMomo']]) {
+  router.post(`/admin/payouts/:id/${path}`, requireAuth, requireRole('admin'), async (req, res) => {
+    const sc = await payoutAdminScope(req);
+    if (sc.error) return res.status(403).json({ error: 'Only the finance team and super admins send payouts.' });
+    const p = await db.find('payouts', x => x.id === req.params.id);
+    const u = p && await db.find('users', x => x.id === p.providerId);
+    if (!p || !u || !sc.inScope(u)) return res.status(404).json({ error: 'Payout not found' });
+    const sending = require('../payout-sending');
+    const arg = path === 'sent' ? (req.body || {}).reference : path === 'problem' ? (req.body || {}).reason : undefined;
+    // v153: two finance staff pressing at the same moment: one goes ahead, the other is told it's in hand
+    const lockKey = 'payout:' + p.id;
+    if (contractStatusLocks.has(lockKey)) return res.status(409).json({ error: 'Someone else is updating this payout right now. Refresh in a moment.' });
+    contractStatusLocks.add(lockKey);
+    let r;
+    try { r = await sending[fn]((await db.find('payouts', x => x.id === p.id)) || p, sc.me, arg); } finally { contractStatusLocks.delete(lockKey); }
+    if (r.error) return res.status(400).json({ error: r.error });
+    try { const { logAccess } = require('../access-log'); await logAccess(req, `payout_${path.replace('-', '_')}`, p.id); } catch (e) { /* the action stands */ }
+    res.json(r);
+  });
+}
+router.post('/admin/payouts/:id/reveal', requireAuth, requireRole('admin'), async (req, res) => {
+  const sc = await payoutAdminScope(req);
+  if (sc.error) return res.status(403).json({ error: 'Only the finance team and super admins see payouts being sent.' });
+  const p = await db.find('payouts', x => x.id === req.params.id);
+  const u = p && await db.find('users', x => x.id === p.providerId);
+  if (!p || !u || !sc.inScope(u)) return res.status(404).json({ error: 'Payout not found' });
+  const pm = require('../payout-methods');
+  const s = p.sendTo || {};
+  const full = s.number ? pm.open(s.number) : s.accountNumber ? pm.open(s.accountNumber) : null;
+  const { logAccess } = require('../access-log');
+  await logAccess(req, 'payout_destination_revealed', p.id);
+  res.json({ method: p.method, network: s.network || null, bankName: s.bankName || null, branch: s.branch || null, swift: s.swift || null, name: s.name || s.accountName || null, email: s.email || null, number: full, note: (s.number || s.accountNumber) && !full ? 'This number was saved with an encryption key the server no longer has. Ask the person to enter it again.' : null });
+});
+
+module.exports = router;
+module.exports.completeContractCore = completeContractCore; // v108
+module.exports.sweepWorkDone = sweepWorkDone; // v147
+module.exports.sweepUnstartedBookings = sweepUnstartedBookings; // v156
+module.exports.CONFIRM_DAYS = CONFIRM_DAYS;

@@ -343,7 +343,7 @@ router.get('/quotes/:id/pdf', requireAuth, requireRole('customer'), async (req, 
   docPdf(res, me, doc);
 });
 
-function sendDocPdf(res, { me, business, typeLabel, number, date, extraDateLabel, extraDate, customerName, customerContact, title, items, totals, taxRatePct, notes, statusLine, closing, place }) {
+function sendDocPdf(res, { me, business, typeLabel, number, date, extraDateLabel, extraDate, customerName, customerContact, title, items, totals, taxRatePct, notes, statusLine, closing, place, placePic }) {
   const { createReportDoc } = require('../pdf-report-builder');
   const from = me.businessName || me.name;
   const r = createReportDoc({
@@ -354,11 +354,12 @@ function sendDocPdf(res, { me, business, typeLabel, number, date, extraDateLabel
   r.sectionHeader('From');
   r.row(from, [me.city && `${me.city}${me.country ? ', ' + me.country : ''}`, business.contactLine || me.phone || me.email, business.taxId && `${business.taxLabel} number: ${business.taxId}`].filter(Boolean).join('  ·  '));
   r.sectionHeader('For');
-  r.row(customerName, customerContact || '');
+  // v165: name as the value, so an empty contact doesn't print a bare "—".
+  if (customerContact) r.row(customerName, customerContact); else r.row('Name', customerName);
   r.twoColumnRow('Date', date || '', extraDateLabel || 'Status', extraDateLabel ? (extraDate || 'Not set') : (statusLine || ''));
   if (extraDateLabel && statusLine) r.row('Status', statusLine);
   if (title) r.row('For the work', title);
-  if (place && place.length) { r.sectionHeader(place.some(([l]) => /^Pick-up/.test(l)) ? 'The trip' : 'Where the work was done'); r.placeBlock(place); } // v164
+  if (place && place.length) { r.sectionHeader(place.some(([l]) => /^Pick-up/.test(l)) ? 'The trip' : 'Where the work was done'); r.placeBlock(place, placePic); } // v164, v166: with a map
   r.sectionHeader('Lines');
   r.table(
     [{ label: 'Description', width: 250 }, { label: 'Qty', width: 60, align: 'right' }, { label: 'Each', width: 85, align: 'right' }, { label: 'Total', width: 85, align: 'right' }],
@@ -446,8 +447,11 @@ router.get('/business/booking-invoices/:contractId/pdf', requireAuth, async (req
   const me = await db.find('users', u => u.id === contract.providerId);
   const customer = await db.find('users', u => u.id === contract.customerId);
   const business = businessOf(me);
+  // v166: the place in words (street address of the pin) and a small map of it.
+  await require('../place-name').fillRecord('contracts', contract, ['jobLocation', 'ride.pickup', 'ride.dropoff']);
+  const placePic = !contract.delivery && !contract.storeOrder && !contract.ride && contract.jobLocation ? await require('../map-picture').forPin(contract.jobLocation, 180, 120) : null;
   const inv = bookingInvoice(contract, escrow, customer, business);
-  sendDocPdf(res, {
+  sendDocPdf(res, { placePic,
     me, business, typeLabel: 'Invoice', number: inv.number, date: inv.date,
     customerName: inv.customerName, customerContact: customer && customer.city ? `${customer.city}${customer.country ? ', ' + customer.country : ''}` : '',
     title: `Trothen booking #${contract.bookingNumber || contract.id}`, items: inv.items,

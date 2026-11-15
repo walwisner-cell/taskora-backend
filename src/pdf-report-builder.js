@@ -59,7 +59,7 @@ function createReportDoc({ res, filename, title, subtitle, docId, verificationSe
   }
 
   function sectionHeader(text) {
-    ensureSpace(50);
+    ensureSpace(100); // v166: keep a heading with what follows it (an address card is about 150 high)
     doc.rect(MARGIN, y, CONTENT_WIDTH, 20).fill(CREAM);
     doc.fillColor(NAVY).fontSize(10).font('Helvetica-Bold').text(text.toUpperCase(), MARGIN + 10, y + 5, { characterSpacing: 0.8 });
     y += 30;
@@ -82,23 +82,85 @@ function createReportDoc({ res, filename, title, subtitle, docId, verificationSe
     y += 38;
   }
 
-  // v164: where a place is (see plus-code.js placeLines): short label/value
-  // lines that wrap, with the map line as a link that opens Google Maps.
-  function placeBlock(lines) {
-    for (const [label, value] of lines || []) {
-      const isLink = /(^|\s)map$/i.test(label);
-      const shown = isLink ? 'Open in Google Maps' : String(value);
-      doc.fontSize(10.5).font('Helvetica');
-      const vh = doc.heightOfString(shown, { width: CONTENT_WIDTH - 120 });
-      doc.fontSize(8.5).font('Helvetica-Bold');
-      const h = Math.max(vh, doc.heightOfString(label.toUpperCase(), { width: 112, characterSpacing: 0.4 }));
-      ensureSpace(h + 8);
-      doc.fillColor(SLATE).fontSize(8.5).font('Helvetica-Bold').text(label.toUpperCase(), MARGIN, y + 1.5, { width: 112, characterSpacing: 0.4 });
-      if (isLink) doc.fillColor('#1B6F6A').fontSize(10.5).font('Helvetica').text(shown, MARGIN + 120, y, { width: CONTENT_WIDTH - 120, link: String(value), underline: true });
-      else doc.fillColor(NAVY).fontSize(10.5).font('Helvetica').text(shown, MARGIN + 120, y, { width: CONTENT_WIDTH - 120 });
-      y += h + 7;
+  // v164: where a place is (see plus-code.js placeLines).
+  // v166: laid out the way Uber, Amazon and Jumia print an address: a card
+  // with the person's name, the address as postal lines (street, then area,
+  // town and country), the landmark as directions, one small grey line with
+  // the Plus Code and "View on map", and a small map with the pin beside it.
+  // No raw coordinates: the Plus Code and the map link carry the exact spot.
+  // `lines` are [label, value] from placeLines / tripLines; a ride's lines
+  // ("Pick-up: landmark", "Drop-off map") become one card for each place.
+  function placeBlock(lines, picture, opts = {}) {
+    if (!lines || !lines.length) return;
+    const groups = [];
+    for (const [label, value] of lines) {
+      const m = /^(Pick-up|Drop-off)(?::\s*(.*)|\s+map)?$/i.exec(label);
+      const head = m ? m[1] : '';
+      const key = m ? (/map$/i.test(label) ? 'map' : (m[2] || 'address').toLowerCase()) : label.toLowerCase();
+      let g = groups.find(x => x.head === head);
+      if (!g) { g = { head, f: {} }; groups.push(g); }
+      g.f[key] = value;
     }
-    if (lines && lines.length) y += 6;
+    groups.forEach((g, n) => { if (n === 0 && opts.head && !g.head) g.head = opts.head; card(g, n === 0 ? picture : null, n === 0 ? opts.name : ''); });
+  }
+  function card(g, picture, name) {
+    const f = g.f;
+    const hasPic = !!(picture && picture.tiles && picture.tiles.length);
+    const picW = hasPic ? 180 : 0, picH = hasPic ? 120 : 0;
+    const textW = CONTENT_WIDTH - 24 - (hasPic ? picW + 16 : 0);
+    const exact = String(f['exact location'] || '');
+    const typed = String(f.address || '');
+    const main = exact || typed || '';
+    const cut = main.indexOf(', ');
+    const rows = []; // [text, style]
+    if (g.head) rows.push([g.head.toUpperCase(), 'head']);
+    // What the person called the place ("Home", "Red Light Market") comes
+    // first, then the street address of the pin.
+    const typedFirst = !!(exact && typed && typed.toLowerCase() !== exact.toLowerCase());
+    if (name) rows.push([name, 'name']);
+    if (typedFirst) rows.push([typed, name ? 'line1' : 'name']);
+    if (main) { if (cut > 0) { rows.push([main.slice(0, cut), typedFirst ? 'line' : 'line1']); rows.push([main.slice(cut + 2), 'line']); } else rows.push([main, typedFirst ? 'line' : 'line1']); }
+    if (f.near) rows.push([f.near, 'line']);
+    if (f.landmark) rows.push(['Directions: ' + f.landmark, main ? 'note' : 'line1']);
+    const code = String(f['plus code'] || f['pinned location'] || '').split('  (')[0];
+    const small = [code ? 'Plus Code ' + code : '', f.map ? 'View on map' : ''].filter(Boolean);
+    const font = (st) => st === 'head' ? ['Helvetica-Bold', 8, SLATE] : st === 'name' ? ['Helvetica-Bold', 11.5, NAVY] : st === 'line1' ? [name ? 'Helvetica' : 'Helvetica-Bold', 10.5, NAVY] : st === 'note' ? ['Helvetica-Oblique', 9.5, SLATE] : ['Helvetica', 10.5, NAVY];
+    let th = 0;
+    for (const [t, st] of rows) { const [fn, fs] = font(st); doc.font(fn).fontSize(fs); th += doc.heightOfString(t, { width: textW }) + 2.5; }
+    if (small.length) th += 16;
+    const h = Math.max(th, picH) + 24;
+    ensureSpace(h + 10);
+    const top = y;
+    doc.save().lineWidth(0.75).strokeColor('#DADDE3').fillColor('#FBFBFC').roundedRect(MARGIN, top, CONTENT_WIDTH, h, 6).fillAndStroke().restore();
+    let ty = top + 12;
+    for (const [t, st] of rows) {
+      const [fn, fs, col] = font(st);
+      doc.fillColor(col).font(fn).fontSize(fs).text(t, MARGIN + 12, ty, { width: textW, characterSpacing: st === 'head' ? 0.6 : 0 });
+      ty += doc.heightOfString(t, { width: textW }) + 2.5;
+    }
+    if (small.length) {
+      ty += 5;
+      doc.font('Helvetica').fontSize(8.5).fillColor(SLATE);
+      if (code) { doc.text('Plus Code ' + code + (f.map ? '  ·  ' : ''), MARGIN + 12, ty, { continued: !!f.map }); }
+      if (f.map) doc.fillColor('#1B6F6A').text('View on map', code ? undefined : MARGIN + 12, code ? undefined : ty, { link: String(f.map), underline: true, continued: false });
+    }
+    if (hasPic) {
+      const X = MARGIN + CONTENT_WIDTH - 12 - picW, Y = top + 12;
+      try {
+        doc.save(); doc.roundedRect(X, Y, picW, picH, 4).clip();
+        // The tiles were fetched for a wider box: centre them on this one.
+        const ox = (picW - picture.widthPt) / 2, oy = (picH - picture.heightPt) / 2;
+        for (const t of picture.tiles) doc.image(t.buf, X + ox + t.dx, Y + oy + t.dy, { width: picture.size, height: picture.size });
+        doc.restore();
+        doc.save().lineWidth(0.75).strokeColor('#C9CED6').roundedRect(X, Y, picW, picH, 4).stroke().restore();
+        const cx = X + picW / 2, cy = Y + picH / 2;
+        doc.save().fillColor('#000000').fillOpacity(0.18).ellipse(cx, cy + 1.5, 5, 1.8).fill().restore();
+        doc.save().fillColor('#D93025').moveTo(cx, cy).bezierCurveTo(cx - 2.6, cy - 6, cx - 7, cy - 9.5, cx - 7, cy - 14).bezierCurveTo(cx - 7, cy - 18.5, cx - 4, cy - 21.5, cx, cy - 21.5).bezierCurveTo(cx + 4, cy - 21.5, cx + 7, cy - 18.5, cx + 7, cy - 14).bezierCurveTo(cx + 7, cy - 9.5, cx + 2.6, cy - 6, cx, cy).fill().restore();
+        doc.save().fillColor('#FFFFFF').circle(cx, cy - 14, 2.8).fill().restore();
+        doc.fillColor('#8A8F99').font('Helvetica').fontSize(6).text(picture.credit, X, Y + picH + 2, { width: picW, align: 'right' });
+      } catch (e) { try { doc.restore(); } catch (_) {} }
+    }
+    y = top + h + 12;
   }
 
   function paragraph(text, opts = {}) {
@@ -162,7 +224,7 @@ function createReportDoc({ res, filename, title, subtitle, docId, verificationSe
     doc.end();
   }
 
-  return { doc, sectionHeader, row, twoColumnRow, paragraph, table, finish, placeBlock, get y() { return y; }, set y(v) { y = v; } };
+  return { doc, sectionHeader, row, twoColumnRow, paragraph, table, finish, placeBlock, MAP_WIDTH: CONTENT_WIDTH - 120, get y() { return y; }, set y(v) { y = v; } };
 }
 
 module.exports = { createReportDoc, CONTENT_WIDTH, MARGIN };

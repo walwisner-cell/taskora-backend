@@ -1,0 +1,26 @@
+[
+  {
+    "id": "po_330",
+    "providerId": "u_marcus",
+    "date": "2026-07-10",
+    "amount": 530,
+    "method": "Bank Transfer",
+    "status": "completed"
+  },
+  {
+    "id": "po_321",
+    "providerId": "u_marcus",
+    "date": "2026-07-03",
+    "amount": 410,
+    "method": "Bank Transfer",
+    "status": "completed"
+  },
+  {
+    "id": "po_312",
+    "providerId": "u_marcus",
+    "date": "2026-06-26",
+    "amount": 295,
+    "method": "Wallet",
+    "status": "completed"
+  }
+]

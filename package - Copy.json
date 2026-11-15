@@ -1,0 +1,37 @@
+{
+  "name": "trothen-backend",
+  "version": "1.0.0",
+  "description": "Trothen API — auth, marketplace, matching, contracts, escrow, disputes, admin",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "seed": "node src/seed.js",
+    "sync-reference-data": "node src/sync-reference-data.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "compression": "1.8.2",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "express-async-errors": "^3.1.1",
+    "express-rate-limit": "^8.6.0",
+    "google-auth-library": "^9.14.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^2.5.0",
+    "nanoid": "^3.3.7",
+    "nodemailer": "10.1.7",
+    "pdfkit": "^0.19.1",
+    "pg": "^8.22.0",
+    "web-push": "^3.6.7"
+  },
+  "overrides": {
+    "uuid": "^11.1.1",
+    "ip-address": "10.7.4",
+    "body-parser": "1.20.9",
+    "qs": "6.16.1"
+  }
+}

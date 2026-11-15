@@ -68,6 +68,7 @@ async function buildExport(userId) {
     quotesAndInvoices: mine(await safeAll('proDocs'), 'providerId', 'customerId'),
     tokens: mine(await safeAll('tokenLedger'), 'userId'), // v115
     tokenPurchases: mine(await safeAll('tokenPurchases'), 'userId'),
+    receipts: mine(await safeAll('receipts'), 'userId'), // v166
     ridePasses: mine(await safeAll('ridePasses'), 'userId'),
     rideSafetyReports: mine(await safeAll('rideSafetyEvents'), 'raisedBy'),
     marketListings: mine(await safeAll('marketListings'), 'sellerId').map(l => strip(l, ['reports'])), // v139

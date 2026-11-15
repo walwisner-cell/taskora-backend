@@ -29,7 +29,7 @@ const DEFAULTS = {
   footerInfo: {
     companyName: 'Trothen Tech Group',
     location: 'Atlanta, GA',
-    supportEmail: 'support@trothen.io',
+    supportEmail: 'support@trothenpro.com', // v165: the site's own domain (was support@trothen.io, a domain Trothen doesn't use)
     copyrightYear: 2026,
   },
   // How long a provider has to accept or decline a new booking (direct or

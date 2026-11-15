@@ -16,14 +16,20 @@ function plusCodeFor(lat, lng) {
 const isPin = (p) => !!p && typeof p.latitude === 'number' && typeof p.longitude === 'number' && Number.isFinite(p.latitude) && Number.isFinite(p.longitude);
 
 // The lines that say where a place is: the address and landmark people typed
-// or picked, then the pin as a Plus Code with its coordinates and a map link.
+// or picked, the pin's exact location in words (v166), then the pin as a Plus
+// Code with its GPS coordinates and a map link.
 function placeLines({ address, landmark, pin }) {
   const out = [];
   const addr = String(address || '').trim(), lm = String(landmark || '').trim();
   if (addr && addr !== PLACEHOLDER && addr !== lm) out.push(['Address', addr.slice(0, 200)]);
   if (lm) out.push(['Landmark', lm.slice(0, 200)]);
   if (isPin(pin)) {
-    out.push(['Pinned location', `${plusCodeFor(pin.latitude, pin.longitude)}  (${pin.latitude.toFixed(5)}, ${pin.longitude.toFixed(5)})`]);
+    // v166: the pin in words (src/place-name.js), saved on the pin: its street
+    // address, and how far it is from a well-known place on Trothen's list.
+    const pn = pin.placeName && typeof pin.placeName === 'object' ? pin.placeName : null;
+    if (pn && pn.address) out.push(['Exact location', String(pn.address).slice(0, 200)]);
+    if (pn && pn.near) out.push([pn.address ? 'Near' : 'Exact location', String(pn.near).slice(0, 200)]);
+    out.push(['Plus Code', `${plusCodeFor(pin.latitude, pin.longitude)}  (GPS ${pin.latitude.toFixed(6)}, ${pin.longitude.toFixed(6)})`]);
     out.push(['Map', `https://www.google.com/maps/search/?api=1&query=${pin.latitude.toFixed(6)},${pin.longitude.toFixed(6)}`]);
   }
   return out;

@@ -631,25 +631,37 @@ router.get('/store/orders/:id/receipt', requireAuth, async (req, res) => {
   const customer = await db.find('users', u => u.id === c.customerId);
   const iAmCustomer = c.customerId === req.user.sub;
   const { createReportDoc } = require('../pdf-report-builder');
+  // v166: each pin in words (its street address, saved on the pin once) and
+  // a small map of it, so the receipt shows the exact place.
+  const pn = require('../place-name'), mapPic = require('../map-picture');
+  await pn.fillRecord('contracts', c, ['jobLocation', 'pickupLocation', 'delivery.pickupLocation']);
+  const picOf = (pin) => mapPic.forPin(pin, 180, 120);
   const number = `R-${c.bookingNumber || c.id}`;
   const $ = (n) => `$${Number(n || 0).toFixed(2)}`;
   const storeName = c.delivery ? (seller ? seller.name : 'Driver') : ((seller && seller.store && seller.store.name) || (seller && seller.name) || 'Store');
   const r = createReportDoc({ res, filename: `Receipt-${number}.pdf`, title: c.delivery ? 'Delivery Receipt' : 'Store Receipt', subtitle: `From ${storeName}`.slice(0, 90), docId: number, verificationSeed: `receipt|${c.id}|${c.amount}|${escrow.status}` });
   r.sectionHeader(c.delivery ? 'Delivered by' : 'Sold by');
-  r.row(storeName, c.delivery ? [so.driverRates(seller || {}).vehicle, seller && seller.city].filter(Boolean).join('  ·  ') : [seller && seller.name, seller && [seller.city, seller.country].filter(Boolean).join(', ')].filter(Boolean).join('  ·  '));
+  r.row(storeName, c.delivery ? [(v => v ? v.charAt(0).toUpperCase() + v.slice(1) : '')(so.driverRates(seller || {}).vehicle) /* v165: "Bicycle" */, seller && seller.city].filter(Boolean).join('  ·  ') : [seller && seller.name, seller && [seller.city, seller.country].filter(Boolean).join(', ')].filter(Boolean).join('  ·  '));
   r.sectionHeader(c.delivery ? 'Delivered to' : 'Sold to');
   // v164: the place, in full: the address and landmark the customer gave or
   // picked, and the pin as a Plus Code with a map link. Only the customer,
   // and whoever carries the goods there, see where they are going.
   const { placeLines } = require('../plus-code');
   const seesDropoff = c.deliveryMethod !== 'pickup' && (iAmCustomer || c.deliveryMethod === 'seller' || !!c.delivery);
-  r.row(customer ? customer.name : 'Customer', seesDropoff && !c.jobLocation && !c.landmark ? String(c.address || '').slice(0, 90) : '');
-  if (seesDropoff && (c.jobLocation || c.landmark)) r.placeBlock(placeLines({ address: c.address, landmark: c.landmark, pin: c.jobLocation }));
+  // v165: the buyer's name is the value under a "Name" label (it used to be
+  // the label, with an empty "—" under it).
+  // v166: one address card: the name, the address, directions, the Plus Code
+  // and a small map (pdf-report-builder.js placeBlock).
+  const buyerName = customer ? customer.name : 'Customer';
+  const dropLines = seesDropoff ? placeLines({ address: c.address, landmark: c.landmark, pin: c.jobLocation }) : [];
+  if (dropLines.length) r.placeBlock(dropLines, c.jobLocation ? await picOf(c.jobLocation) : null, { name: buyerName });
+  else r.row('Name', buyerName);
   if (!c.delivery && c.deliveryMethod === 'pickup') {
     const opt = store.storeOptions(seller || {});
     const from = c.marketListingId ? { place: c.pickupPlace, pin: c.pickupLocation } : { place: opt.pickupPlace, pin: opt.pickupLocation };
+    if (pn.okPin(from.pin) && !from.pin.placeName) { const w = await pn.describe(from.pin); if (w) from.pin = { ...from.pin, placeName: w }; } // v166
     const lines = placeLines({ address: from.place, pin: from.pin });
-    if (lines.length) { r.sectionHeader('Collect from'); r.placeBlock(lines); }
+    if (lines.length) r.placeBlock(lines, pn.okPin(from.pin) ? await picOf(from.pin) : null, { name: storeName, head: 'Collect from' });
   }
   r.twoColumnRow('Receipt number', number, 'Date', String(c.createdAt || '').slice(0, 10));
   const moneyLine = escrow.status === 'held' ? 'Paid. Held by Trothen until the customer confirms they have the goods.'
@@ -660,9 +672,9 @@ router.get('/store/orders/:id/receipt', requireAuth, async (req, res) => {
   if (c.delivery) {
     r.sectionHeader('Delivery');
     r.row('For', `Store order #${c.delivery.orderNumber} from ${c.delivery.storeName}`);
-    r.row('Collected from', String(c.delivery.pickupPlace || '').slice(0, 90));
-    if (c.delivery.pickupLocation) r.placeBlock(placeLines({ pin: c.delivery.pickupLocation }));
     if (c.delivery.distanceKm) r.row('Distance', `About ${so.distWords(c.delivery.distanceKm, seller && seller.country)}`);
+    const fromLines = placeLines({ address: c.delivery.pickupPlace, pin: c.delivery.pickupLocation });
+    if (fromLines.length) r.placeBlock(fromLines, c.delivery.pickupLocation ? await picOf(c.delivery.pickupLocation) : null, { name: c.delivery.storeName, head: 'Collected from' });
     r.twoColumnRow('Delivery price', $(c.amount), iAmCustomer ? 'Trothen service fee' : ' ', iAmCustomer ? $(c.serviceFee) : ' ');
     if (iAmCustomer) r.twoColumnRow('Total paid', $(money(c.amount + (c.serviceFee || 0))), escrow.paidAmountLocal ? `Paid in ${escrow.paidCurrency}` : ' ', escrow.paidAmountLocal ? String(escrow.paidAmountLocal) : ' ');
   } else {
