@@ -32,7 +32,14 @@ function reconnectNote(on) {
 async function apiFetch(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (AUTH.token) headers['Authorization'] = 'Bearer ' + AUTH.token;
-  const send = () => fetch(API_BASE + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+  // v166: a request that gets no answer used to wait for ever, leaving a page on
+  // "Loading…". Now it gives up after 25 seconds (a read is then tried again).
+  const send = () => {
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 25000) : null;
+    return fetch(API_BASE + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, ...(ctrl ? { signal: ctrl.signal } : {}) })
+      .finally(() => { if (timer) clearTimeout(timer); });
+  };
   let res;
   const canRetry = method === 'GET';
   let waiting = false;
@@ -40,9 +47,12 @@ async function apiFetch(method, path, body) {
     for (let attempt = 0; ; attempt++) {
       try {
         res = await send();
-        if (!(canRetry && [502, 503, 504].includes(res.status)) || attempt >= 4) break;
+        // Only when the server itself is unreachable (Render's own error page, not JSON): a 502/503
+        // that Trothen sent on purpose ("the address lookup isn't available") is an answer, not an outage.
+        const fromProxy = [502, 503, 504].includes(res.status) && !/json/i.test(res.headers.get('content-type') || '');
+        if (!(canRetry && fromProxy) || attempt >= 4) break;
       } catch (netErr) {
-        if (!canRetry || attempt >= 4) throw Object.assign(new Error(tr('Could not reach Trothen. Check your internet connection and try again.')), { status: 0, network: true });
+        if (!canRetry || attempt >= 4) throw Object.assign(new Error(tr(netErr && netErr.name === 'AbortError' && !canRetry ? 'Trothen took too long to answer. Check whether it went through before you try again.' : 'Could not reach Trothen. Check your internet connection and try again.')), { status: 0, network: true });
       }
       if (!waiting) { waiting = true; reconnectNote(true); }
       await new Promise(r => setTimeout(r, 1000 * 2 ** attempt));
@@ -975,7 +985,7 @@ function renderJobPin(prefix) {
   if (!pin) { el.innerHTML = ''; return; }
   const rough = pin.accuracyM != null && pin.accuracyM > 150;
   el.innerHTML = `<div style="padding:9px 11px;border-radius:8px;border:1px solid ${rough ? '#E9D6A8' : '#BFE3D2'};background:${rough ? '#FBF3E4' : '#EEF8F3'};">
-    <strong>${escapeHtml(tr(rough ? 'Rough location pinned' : 'Location pinned'))}</strong>${pin.accuracyM != null ? ' · ' + describeAccuracy(pin.accuracyM) : (pin.source === 'map' ? ' · ' + escapeHtml(tr('chosen on the map')) : '')}
+    <strong>${escapeHtml(tr(rough ? 'Rough location pinned' : 'Location pinned'))}</strong>${(typeof PIN_REFINING !== 'undefined' && PIN_REFINING[prefix]) ? ` <span style="color:var(--slate);font-size:12.5px;">· ${escapeHtml(tr('getting more exact…'))}</span>` : ''}${pin.accuracyM != null ? ' · ' + describeAccuracy(pin.accuracyM) : (pin.source === 'map' ? ' · ' + escapeHtml(tr('chosen on the map')) : '')}
     <div style="margin-top:3px;">Plus Code: <strong>${plusCodeFor(pin.latitude, pin.longitude)}</strong> · <a href="https://www.google.com/maps/search/?api=1&query=${pin.latitude},${pin.longitude}" target="_blank" rel="noopener noreferrer" style="color:var(--teal);text-decoration:underline;">${escapeHtml(tr('Check it on the map'))}</a></div>
     ${placeLineHTML(pin)}
     ${pin.accuracyM != null && pin.accuracyM > 2000 ? '<div style="margin-top:4px;"><strong>' + escapeHtml(tr('This is only a guess, and may be far from where you are.')) + '</strong> ' + escapeHtml(tr('Computers without GPS guess their location from the internet connection. Choose the spot on the map instead, or use your phone.')) + '</div>'
@@ -983,17 +993,42 @@ function renderJobPin(prefix) {
     <button type="button" style="margin-top:4px;background:none;border:none;padding:0;color:var(--teal);font-size:13px;text-decoration:underline;cursor:pointer;" onclick="openMapPicker('${prefix}')">${escapeHtml(tr('Adjust on the map'))}</button> · <button type="button" style="margin-top:4px;background:none;border:none;padding:0;color:var(--teal);font-size:13px;text-decoration:underline;cursor:pointer;" onclick="JOB_PIN['${prefix}']=null;renderJobPin('${prefix}')">${escapeHtml(tr('Remove pin'))}</button>
   </div>`;
 }
+// v166: Walter: "when pinning location it takes very long". It waited for a
+// very exact fix (30 m) for up to 25 seconds before showing anything. Now it
+// works the way Uber and Google Maps do: the pin shows at the first position
+// the phone gives (often at once, from its last known position), and keeps
+// getting more exact by itself for a few seconds while the person carries on.
+// They can always move it on the map.
 async function pinJobLocation(prefix) {
   const btn = document.getElementById(prefix + '-pin-btn');
   const el = document.getElementById(prefix + '-pin-status');
+  const label = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = tr('Finding your location…'); }
-  if (el) el.textContent = tr('This can take up to half a minute. Stay where the job is, outside if you can.');
-  const r = await getBestLocation({ goodEnoughM: 30, maxWaitMs: 25000, onProgress: (b) => { if (el) el.textContent = 'Getting closer: ' + describeAccuracy(b.accuracyM) + '…'; } });
-  if (btn) { btn.disabled = false; btn.textContent = tr('Pin my current location'); }
-  if (r.error) { if (el) el.textContent = locationErrorMessage(r.error) + ' ' + tr('You can also type the location or describe a landmark below.'); return; }
-  JOB_PIN[prefix] = { latitude: r.latitude, longitude: r.longitude, accuracyM: r.accuracyM, source: 'gps' };
-  renderJobPin(prefix);
+  if (el) el.textContent = tr('Finding your location…');
+  const token = (PIN_RUN[prefix] = (PIN_RUN[prefix] || 0) + 1);
+  const show = (fix, refining) => {
+    if (PIN_RUN[prefix] !== token) return;
+    const cur = JOB_PIN[prefix];
+    if (cur && cur.source !== 'gps') return; // they chose another way meanwhile
+    if (cur && cur.accuracyM != null && fix.accuracyM >= cur.accuracyM) return;
+    JOB_PIN[prefix] = { latitude: fix.latitude, longitude: fix.longitude, accuracyM: fix.accuracyM, source: 'gps' }; PIN_REFINING[prefix] = !!refining;
+    renderJobPin(prefix);
+    if (btn) { btn.disabled = false; btn.textContent = label || tr('Pin my current location'); }
+  };
+  // 1. at once: the position the device already knows (if it is recent)
+  try { navigator.geolocation.getCurrentPosition((p) => show({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: Math.max(1, Math.round(p.coords.accuracy || 0)) }, true), () => {}, { enableHighAccuracy: false, maximumAge: 120000, timeout: 4000 }); } catch (e) {}
+  // 2. then more exact, for up to 15 seconds, updating the pin as it improves
+  const r = await getBestLocation({ goodEnoughM: 30, maxWaitMs: 15000, onProgress: (b) => show(b, true) });
+  if (PIN_RUN[prefix] !== token) return;
+  if (btn) { btn.disabled = false; btn.textContent = label || tr('Pin my current location'); }
+  if (r.error) {
+    if (JOB_PIN[prefix] && JOB_PIN[prefix].source === 'gps') { PIN_REFINING[prefix] = false; renderJobPin(prefix); return; }
+    if (el) el.textContent = locationErrorMessage(r.error) + ' ' + tr('You can also type the location or describe a landmark below.'); return;
+  }
+  show(r, false);
+  PIN_REFINING[prefix] = false; if (JOB_PIN[prefix]) renderJobPin(prefix);
 }
+const PIN_RUN = {}, PIN_REFINING = {};
 function useTypedJobLocation(prefix) {
   const input = document.getElementById(prefix + '-typed-loc');
   const loc = parseTypedLocation(input && input.value);
@@ -1102,6 +1137,7 @@ function confirmMapPick() {
   JOB_PIN[prefix] = { latitude: Math.round(c.lat * 1e6) / 1e6, longitude: Math.round(c.lng * 1e6) / 1e6, accuracyM: null, source: 'map' };
   closeMapPicker();
   renderJobPin(prefix);
+  try { if (typeof window.onMapPicked === 'function') window.onMapPicked(prefix, JOB_PIN[prefix]); } catch (e) { /* the pin is set anyway */ } // v166
 }
 
 function readJobWhere(prefix) {

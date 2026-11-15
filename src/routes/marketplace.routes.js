@@ -14,6 +14,8 @@ const { effectivePlanPricing, resolveRate } = require('../plan-pricing');
 const { contractStatusLocks } = require('../contract-locks');
 const proStore = require('../store'); // v105: pro stores and extra skills
 
+// v166: the one paying for a booking: a customer, or a pro booking for themselves (a ride, say). Each route still checks that this person is the booking's customer.
+const requirePayer = (req, res, next) => (['customer', 'provider'].includes(req.user && req.user.role) ? next() : res.status(403).json({ error: 'Only the customer on this booking can do this.' }));
 const router = express.Router();
 const { isListedPro } = require('../listing'); // v133
 
@@ -527,7 +529,24 @@ router.get('/me/readiness', requireAuth, async (req, res) => {
 //    app; the free tier covers a young app).
 //  - or MAP_TILE_URL (+ MAP_TILE_ATTRIBUTION) for any other provider;
 //  - otherwise OpenStreetMap's own tiles, with a satellite view from Esri.
-router.get('/geo/map-config', (req, res) => {
+// GET /api/geo/map-credit?zoom=&n=&s=&e=&w= — v166: Google's copyright line for the part of the map shown.
+router.get('/geo/map-credit', async (req, res) => {
+  const q = req.query, nums = ['zoom', 'n', 's', 'e', 'w'].map(k => Number(q[k]));
+  if (nums.some(n => !Number.isFinite(n))) return res.status(400).json({ error: 'Bad map view' });
+  const text = await require('../google-maps').viewportCredit(Math.round(nums[0]), ...nums.slice(1));
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.json({ credit: text || '' });
+});
+router.get('/geo/map-config', async (req, res) => {
+  // v166: Google's map pictures when Google Maps Platform is set up (GOOGLE_MAPS_API_KEY).
+  try {
+    const g = await require('../google-maps').mapLayers();
+    if (g) {
+      const osmFallback = { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' };
+      res.set('Cache-Control', 'private, max-age=3600');
+      return res.json({ provider: 'google', street: g.street, satellite: g.satellite || g.street, fallback: osmFallback, routing: true });
+    }
+  } catch (e) { /* the maps below */ }
   const mb = (process.env.MAPBOX_TOKEN || '').trim();
   const mbLayer = (style) => ({ url: `https://api.mapbox.com/styles/v1/mapbox/${style}/tiles/{z}/{x}/{y}?access_token=${encodeURIComponent(mb)}`, tileSize: 512, zoomOffset: -1, maxZoom: 20, attribution: '&copy; <a href="https://www.mapbox.com/about/maps/" target="_blank" rel="noopener">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' });
   const osm = { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' };
@@ -538,7 +557,7 @@ router.get('/geo/map-config', (req, res) => {
     labels: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, maxNativeZoom: 18 },
   };
   res.set('Cache-Control', 'public, max-age=3600');
-  res.json({ provider: mb ? 'mapbox' : process.env.MAP_TILE_URL ? 'custom' : 'openstreetmap', street, satellite, fallback: osm, routing: !!(process.env.ROUTING_URL || '').trim() });
+  res.json({ provider: mb ? 'mapbox' : process.env.MAP_TILE_URL ? 'custom' : 'openstreetmap', street, satellite, fallback: osm, routing: require('../road-route').routingOn() });
 });
 // v148: the road between two points, to draw on the map.
 const routeLimiter = require('express-rate-limit')({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many route requests. Please wait a moment.' } });
@@ -578,6 +597,16 @@ router.get('/geo/place-search', requireAuth, placeSearchLimiter, async (req, res
   const withOwn = (list) => [...own, ...list.filter(x => !own.some(o => Math.abs(o.latitude - x.latitude) < 0.0005 && Math.abs(o.longitude - x.longitude) < 0.0005))].slice(0, 8);
   const hit = placeCache.get(key);
   if (hit && Date.now() - hit.at < 24 * 60 * 60 * 1000) return res.json({ places: withOwn(hit.places), cached: true });
+  // v166: Google's places first, when Google Maps Platform is set up (it knows far more Liberian places).
+  try {
+    const g = require('../google-maps');
+    if (g.on()) {
+      const cc = require('../place-name').countryCode(country);
+      const near = me && Number.isFinite(me.latitude) && Number.isFinite(me.longitude) ? { latitude: me.latitude, longitude: me.longitude } : null;
+      const found = await g.searchPlaces(country ? q + ', ' + country : q, cc, near);
+      if (found && found.length) { placeCache.set(key, { at: Date.now(), places: found }); return res.json({ places: withOwn(found), source: 'google' }); }
+    }
+  } catch (e) { /* the free map search below */ }
   const run = async () => {
     const wait = 1100 - (Date.now() - lastPlaceCallAt);
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
@@ -2171,8 +2200,11 @@ async function priceLock(id, fn) {
 // POST /api/contracts/:id/propose { amount, note } — either side suggests a price.
 router.post('/contracts/:id/propose', requireAuth, requireCurrentTerms, async (req, res) => {
   const out = await priceLock(req.params.id, async () => {
-    const role = req.user.role;
-    const contract = await db.find('contracts', c => c.id === req.params.id && (role === 'customer' ? c.customerId === req.user.sub : role === 'provider' ? c.providerId === req.user.sub : false));
+    // v166: the side is the person's place in the booking, not their account type
+    // (a pro can be the customer: a ride, or goods from another pro's store).
+    const found = await db.find('contracts', c => c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub));
+    const role = found ? (found.customerId === req.user.sub ? 'customer' : 'provider') : null;
+    const contract = found;
     if (!contract) return { status: 404, body: { error: 'Booking not found' } };
     if (contract.status !== 'pending_agreement') return { status: 400, body: { error: 'The price on this booking is already agreed or it has ended, so it can\'t be changed.' } };
     const waitingOn = contract.waitingOn || 'provider';
@@ -2226,7 +2258,7 @@ router.post('/contracts/:id/propose', requireAuth, requireCurrentTerms, async (r
 // POST /api/contracts/:id/pay (v125) — the customer pays a price the pro
 // accepted. In a test-mode country this is the test payment; real card or
 // mobile money payments plug in here when they're switched on.
-router.post('/contracts/:id/pay', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
+router.post('/contracts/:id/pay', requireAuth, requirePayer, requireCurrentTerms, async (req, res) => {
   const out = await priceLock(req.params.id, async () => {
     const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
     if (!contract) return { status: 404, body: { error: 'Booking not found' } };
@@ -2256,7 +2288,7 @@ router.post('/contracts/:id/pay', requireAuth, requireRole('customer'), requireC
 });
 
 // POST /api/contracts/:id/agree — the customer accepts the pro's suggested price.
-router.post('/contracts/:id/agree', requireAuth, requireRole('customer'), requireCurrentTerms, async (req, res) => {
+router.post('/contracts/:id/agree', requireAuth, requirePayer, requireCurrentTerms, async (req, res) => {
   const out = await priceLock(req.params.id, async () => {
     const contract = await db.find('contracts', c => c.id === req.params.id && c.customerId === req.user.sub);
     if (!contract) return { status: 404, body: { error: 'Booking not found' } };

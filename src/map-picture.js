@@ -44,7 +44,9 @@ async function forPin(pin, widthPt, heightPt, scale = 0.7) {
   const halfW = widthPt / scale / 2, halfH = heightPt / scale / 2;
   const x0 = Math.floor((px - halfW) / 256), x1 = Math.floor((px + halfW) / 256);
   const y0 = Math.floor((py - halfH) / 256), y1 = Math.floor((py + halfH) / 256);
-  const src = source();
+  let src = source();
+  // v166: Google's map pictures when Google Maps Platform is set up (its addresses go on a Google map).
+  try { const g = await require('./google-maps').mapLayers(); if (g && g.street) src = { url: g.street.url, credit: `Map data ©${new Date().getFullYear()} Google` }; } catch (e) { /* the source above */ }
   const jobs = [];
   for (let tx = x0; tx <= x1; tx++) for (let ty = y0; ty <= y1; ty++) {
     const url = src.url.replace('{z}', ZOOM).replace('{x}', ((tx % 2 ** ZOOM) + 2 ** ZOOM) % 2 ** ZOOM).replace('{y}', ty);

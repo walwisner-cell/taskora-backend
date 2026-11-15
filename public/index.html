@@ -2427,6 +2427,13 @@
   .we-reset:hover { border-color:var(--slate); color:var(--text); }
   .we-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; }
   @media (max-width:760px) { .we-fields { grid-template-columns:1fr; } }
+/* v166: labels on the "Choose a ride" map, like Uber's */
+.leaflet-tooltip.ride-map-label{background:#12161F;color:#fff;border:0;border-radius:8px;padding:5px 9px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.3);white-space:nowrap}
+.leaflet-tooltip.ride-map-label strong{font-weight:800}
+.leaflet-tooltip-top.ride-map-label:before{border-top-color:#12161F}
+.leaflet-tooltip-bottom.ride-map-label:before{border-bottom-color:#12161F}
+.ride-opt:not([disabled]):hover{border-color:var(--navy)!important}
+.ride-opt:focus-visible{outline:3px solid #1A73E8;outline-offset:2px}
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="/app/theme.js?v=5c6b140a47"></script>
@@ -3714,13 +3721,13 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=5acb68cf70" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
-<script src="/app/rides.js?v=01d3bbe010"></script>
+<script src="/app/trothen.js?v=4bda264bb5" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/rides.js?v=f41614c263"></script>
 <script src="/app/tokens.js?v=5697c68ad9"></script>
 <script src="/app/payways.js?v=06dccae9e7"></script>
 <script src="/app/review.js?v=86c2ff86bf"></script>
 <script src="/app/pricing.js?v=4fdcba4521"></script>
-<script src="/app/chats.js?v=56f10dfd90"></script>
+<script src="/app/chats.js?v=4c77951670"></script>
 <script src="/app/where.js?v=7ac044a389"></script>
 <script src="/app/arrival.js?v=aa3e97aea4"></script>
 <script src="/app/live.js?v=d049a42ced"></script>
@@ -3744,11 +3751,11 @@
 <script src="/app/price-units.js?v=1d2df9e851"></script>
 <script src="/app/payout-details.js?v=f2e785bbae"></script>
 <script src="/app/paymethods.js?v=497f245785"></script>
-<script src="/app/maps.js?v=aaa2141068"></script>
-<script src="/app/checks.js?v=ee65d6987e"></script>
-<script src="/app/polish.js?v=0ae5f38a4e"></script>
+<script src="/app/maps.js?v=31baa08235"></script>
+<script src="/app/checks.js?v=83eacc00ae"></script>
+<script src="/app/polish.js?v=7ed5bc4aca"></script>
 <script src="/app/a11y.js?v=7a13a5f443"></script>
-<script src="/app/es-v152.js?v=fe337cf20e"></script>
+<script src="/app/es-v152.js?v=085633f811"></script>
 <script src="/app/mobile.js?v=d4850238eb"></script>
 </body>
 </html>

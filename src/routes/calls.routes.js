@@ -189,7 +189,10 @@ async function reachCheck(me, them, kind) {
   if (kind !== 'voice' && me.role !== 'admin' && them.role !== 'admin' && !(await require('../booking-contact').confirmedBetween(me.id, them.id))) {
     return { status: 403, code: 'NOT_BOOKED', error: `You can call ${firstName(them)} once your booking is confirmed: the pro has accepted it${me.role === 'provider' ? '' : ' and, if you pay through Trothen, you have paid'}. Until then, send a message in the chat.` };
   }
-  if (!(await inCallWindow(me, them))) return { status: 403, code: 'OUTSIDE_WINDOW', error: `Calls and voice messages are open while you have a booking or job together, and for ${WINDOW_DAYS} days after. Send ${firstName(them)} a text message instead.` };
+  // v166: the same rules as the chat (src/contact-rules.js): calls while a booking, order or ride is
+  // open and for 24 hours after it is completed; voice messages while the chat is open.
+  const st = await require('../contact-rules').between(me, them);
+  if (kind === 'voice' ? !st.message : !st.call) return { status: 403, code: 'OUTSIDE_WINDOW', error: kind === 'voice' ? require('../contact-rules').closedWords(st, firstName(them)) : `Calls are open while you have a booking, order or ride together, and for 24 hours after it is completed.${st.message ? ` Send ${firstName(them)} a text message instead.` : ''}` };
   const s = settingsOf(them);
   if (kind === 'voice') {
     if (!s.voice) return { status: 409, code: 'NO_VOICE', error: `${firstName(them)} doesn't take voice messages. Send a text message instead.` };

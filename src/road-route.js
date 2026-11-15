@@ -16,6 +16,20 @@ const ROAD_FACTOR = 1.3;
 const CITY_KMH = { motorbike: 24, keke: 18, car: 20, van: 18 };
 const cache = new Map();
 
+// v166: where to ask for the road route. ROUTING_URL (an OSRM server) first;
+// otherwise, when the app already uses Mapbox for its maps (MAPBOX_TOKEN),
+// Mapbox's own directions (the same service many ride and delivery apps use;
+// its free tier covers a young app). Both answer in the same shape.
+function routeUrl(a, b, full) {
+  const base = (process.env.ROUTING_URL || '').trim().replace(/\/+$/, '');
+  const pts = `${a.longitude},${a.latitude};${b.longitude},${b.latitude}`;
+  if (base) return `${base}/route/v1/driving/${pts}?overview=${full ? 'full&geometries=geojson' : 'false'}`;
+  const mb = (process.env.MAPBOX_TOKEN || '').trim();
+  if (mb) return `https://api.mapbox.com/directions/v5/mapbox/driving/${pts}?overview=${full ? 'full&geometries=geojson' : 'false'}&access_token=${encodeURIComponent(mb)}`;
+  return null;
+}
+const routingOn = () => !!((process.env.ROUTING_URL || '').trim() || (process.env.MAPBOX_TOKEN || '').trim() || (process.env.GOOGLE_MAPS_API_KEY || '').trim());
+
 function straightKm(a, b) {
   return distanceInMiles(a.latitude, a.longitude, b.latitude, b.longitude) * KM_PER_MILE;
 }
@@ -26,15 +40,17 @@ function estimate(a, b, vehicle) {
 }
 
 async function routeTrip(a, b, vehicle) {
-  const base = (process.env.ROUTING_URL || '').trim().replace(/\/+$/, '');
-  if (!base) return estimate(a, b, vehicle);
+  const g = require('./google-maps');
+  const url = routeUrl(a, b, false);
+  if (!url && !g.on()) return estimate(a, b, vehicle);
   const key = [a.latitude, a.longitude, b.latitude, b.longitude].map(n => Number(n).toFixed(4)).join(',');
   let road = cache.get(key);
   if (!road || road.until < Date.now()) {
     road = null;
-    try {
+    if (g.on()) { const gr = await g.route(a, b, false); if (gr) road = { km: gr.km, carMinutes: gr.carMinutes, until: Date.now() + 10 * 60 * 1000 }; } // v166: Google first, when it is set up
+    if (!road && url) try {
       const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 3000);
-      const r = await fetch(`${base}/route/v1/driving/${a.longitude},${a.latitude};${b.longitude},${b.latitude}?overview=false`, { signal: ctl.signal });
+      const r = await fetch(url, { signal: ctl.signal });
       clearTimeout(timer);
       const j = await r.json();
       const best = j && j.code === 'Ok' && j.routes && j.routes[0];
@@ -55,15 +71,17 @@ async function routeTrip(a, b, vehicle) {
 // dashed line). Remembered for 10 minutes.
 const shapes = new Map();
 async function routeShape(a, b) {
-  const base = (process.env.ROUTING_URL || '').trim().replace(/\/+$/, '');
-  if (!base) return null;
+  const g = require('./google-maps');
+  const url = routeUrl(a, b, true);
+  if (!url && !g.on()) return null;
   const key = [a.latitude, a.longitude, b.latitude, b.longitude].map(n => Number(n).toFixed(4)).join(',');
   const hit = shapes.get(key);
   if (hit && hit.until > Date.now()) return hit.shape;
   let shape = null;
-  try {
+  if (g.on()) { const gr = await g.route(a, b, true); if (gr && gr.points) { const step = Math.max(1, Math.ceil(gr.points.length / 400)); shape = { points: gr.points.filter((p, i) => i % step === 0 || i === gr.points.length - 1), km: Math.round(gr.km * 10) / 10, carMinutes: Math.round(gr.carMinutes) }; } }
+  if (!shape && url) try {
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 4000);
-    const r = await fetch(`${base}/route/v1/driving/${a.longitude},${a.latitude};${b.longitude},${b.latitude}?overview=full&geometries=geojson`, { signal: ctl.signal });
+    const r = await fetch(url, { signal: ctl.signal });
     clearTimeout(timer);
     const j = await r.json();
     const best = j && j.code === 'Ok' && j.routes && j.routes[0];
@@ -78,4 +96,4 @@ async function routeShape(a, b) {
   return shape;
 }
 
-module.exports = { routeTrip, routeShape, estimate, ROAD_FACTOR, CITY_KMH };
+module.exports = { routeTrip, routeShape, estimate, ROAD_FACTOR, CITY_KMH, routingOn };

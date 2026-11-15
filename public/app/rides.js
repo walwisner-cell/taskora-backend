@@ -84,12 +84,23 @@
     renderDashNav(id, items, it.key, fn);
   }
   CUSTOMER_SECTIONS.rides = () => section('Rides', 'Get a safe ride from a verified driver');
-  PROVIDER_SECTIONS.rides = () => section('Rides', 'Give rides to passengers');
+  PROVIDER_SECTIONS.rides = () => section('Rides', 'Give rides to passengers, or book a ride for yourself');
   { const f = PROVIDER_SECTIONS.overview; PROVIDER_SECTIONS.overview = function () { const h = f.apply(this, arguments); if (!R.invite) return h; const at = h.indexOf('<div id="provider-promotions-banner">'); return at > 0 ? h.slice(0, at) + inviteCard(R.invite) + h.slice(at) : inviteCard(R.invite) + h; }; }
   if (typeof ADMIN_SECTIONS !== 'undefined') ADMIN_SECTIONS.rides = () => section('Rides', 'Drivers, safety alerts and where rides are on');
 
   { const f = selectCustomerSection; selectCustomerSection = function (key) { stopTimers(); const r = f.apply(this, arguments); if (key === 'rides') loadRiderPage(); return r; }; }
-  { const f = selectProviderSection; selectProviderSection = function (key) { stopTimers(); const r = f.apply(this, arguments); if (key === 'rides') loadDriverPage(); return r; }; }
+  { const f = selectProviderSection; selectProviderSection = function (key) { stopTimers(); const r = f.apply(this, arguments); if (key === 'rides') (R.mode === 'ride' ? loadRiderPage : loadDriverPage)(); return r; }; }
+  // v166: Walter: "how do I book a driver, because he is a pro also". A pro can book
+  // rides too, from the same account (as Uber drivers ride with theirs): two tabs.
+  R.mode = 'drive';
+  const isPro = () => !!(AUTH.user && AUTH.user.role === 'provider');
+  function modeTabs() {
+    if (!isPro()) return '';
+    const b = (m, label) => `<button type="button" class="btn-sm ${R.mode === m ? 'btn-sm-primary' : 'btn-sm-outline'}" aria-pressed="${R.mode === m}" onclick="ridesMode('${m}')">${e(tr(label))}</button>`;
+    return `<div role="group" aria-label="${e(tr('Rides'))}" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">${b('drive', 'Give rides')}${b('ride', 'Book a ride')}</div>`;
+  }
+  window.ridesMode = function (m) { R.mode = m === 'ride' ? 'ride' : 'drive'; stopTimers(); (R.mode === 'ride' ? loadRiderPage : loadDriverPage)(); };
+  window.ridesReload = function () { (isPro() && R.mode !== 'ride' ? loadDriverPage : loadRiderPage)(); };
   { const f = selectAdminSection; selectAdminSection = function (key) { stopTimers(); const r = f.apply(this, arguments); if (key === 'rides') loadAdminRides(); return r; }; }
   { const f = getAdminNavItems; getAdminNavItems = function () { const items = f.apply(this, arguments).slice(); const u = AUTH.user || {}; if (!u.adminDepartment || ['verification', 'customer_service'].includes(u.adminDepartment)) addNav(items, 'stores', { key: 'rides', label: 'Rides', icon: '🛵' }); return items; }; }
   // The dashboards are started through a saved reference, so hook the sidebar update every start-up calls by name.
@@ -102,8 +113,8 @@
     const role = AUTH.user && AUTH.user.role;
     const a = document.activeElement;
     if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim() && body().contains(a)) return; // typing a PIN or a fare: wait
-    if (role === 'provider') { stopTimers(); loadDriverPage(); }
-    else if (role === 'customer') {
+    if (role === 'provider' && R.mode !== 'ride') { stopTimers(); loadDriverPage(); }
+    else if (role === 'customer' || role === 'provider') {
       const hasOpen = (R.list || []).some(r => ['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status));
       if (hasOpen) { stopTimers(); loadRiderPage(); } // a rider filling in "Where to?" is never redrawn under them
     }
@@ -113,8 +124,9 @@
 
 
   // ── RIDE RULES: must be accepted before a first ride or application ───
-  async function ensureRules() {
-    let st; try { st = await apiFetch('GET', '/rides/rules'); } catch (x) { showToast(x.message || 'Could not load the rules'); return false; }
+  async function ensureRules(as) {
+    R.rulesAs = as || '';
+    let st; try { st = await apiFetch('GET', '/rides/rules' + (as ? '?as=' + as : '')); } catch (x) { showToast(x.message || 'Could not load the rules'); return false; }
     if (st.accepted) return true;
     return new Promise(resolve => {
       window._rulesDone = (yes) => { v105Close('rules-overlay'); resolve(yes); };
@@ -126,7 +138,7 @@
   }
   window.ridesAcceptRules = async function (version) {
     if (!el('rules-ok') || !el('rules-ok').checked) return showToast(tr('Tick the box to accept'));
-    try { await apiFetch('POST', '/rides/rules/accept', { version }); window._rulesDone(true); } catch (x) { showToast(x.message || 'Could not save'); }
+    try { await apiFetch('POST', '/rides/rules/accept', { version, as: R.rulesAs || undefined }); window._rulesDone(true); } catch (x) { showToast(x.message || 'Could not save'); }
   };
 
   // ── RIDER ────────────────────────────────────────────────────────────
@@ -134,10 +146,11 @@
     if (!body()) return;
     let list = [];
     try { list = (await apiFetch('GET', '/rides/mine')).rides; } catch (x) { body().innerHTML = `<div class="panel">${e(x.message || 'Could not load')}</div>`; return; }
+    if (isPro()) list = list.filter(r => r.role === 'rider'); // v166: a pro's own rides as a rider
     R.list = list;
     const open = list.find(r => ['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status)); // v125
     const past = list.filter(r => r !== open);
-    body().innerHTML = (open ? riderTrip(open) : riderForm()) + (past.length ? `<div class="panel"><div class="panel-title">${e(tr('Past rides'))}</div>${past.slice(0, 15).map(pastRow).join('')}</div>` : '');
+    body().innerHTML = modeTabs() + (open ? riderTrip(open) : riderForm()) + (past.length ? `<div class="panel"><div class="panel-title">${e(tr('Past rides'))}</div>${past.slice(0, 15).map(pastRow).join('')}</div>` : '');
     if (open) { R.poll = setInterval(() => { if (!body()) return stopTimers(); loadRiderPage(); }, 8000); } else { renderPins(); loadMyPlaces(); }
   }
   function pastRow(r) {
@@ -225,7 +238,7 @@
     const out = el('ride-drivers'); if (out) out.innerHTML = '';
   };
   window.ridesFindDrivers = async function () {
-    if (!(await ensureRules())) return;
+    if (!(await ensureRules('rider'))) return;
     const a = JOB_PIN.ridefrom, b = JOB_PIN.rideto, out = el('ride-drivers');
     if (!a || !b) return showToast(tr('Pin where you are and where you are going first'));
     out.textContent = tr('Looking for drivers…');
@@ -240,7 +253,7 @@
       const head = tfKeys.length
         ? `<div style="font-size:13.5px;margin-bottom:6px;"><span style="color:var(--slate);">${e(tr('About'))} ${e(km(r.tripKm))}${r.tripMinutes ? `, ${e(r.tripMinutes)} ${e(tr('min'))}` : ''}${r.routeSource === 'road' ? ` ${e(tr('by road'))}` : ''}.</span> <strong>${e(tr('Trothen fare'))}:</strong> ${tfKeys.map(v => `${e(tr(v))} ${e(tf[v].symbol || '')}${e(Number(tf[v].local).toLocaleString())} (${money(tf[v].fare)})`).join(' · ')}<div style="color:var(--slate);font-size:12.5px;">${e(tr('Worked out from the distance and time, the same for every rider. Drivers can be a little above or below it, never more.'))}</div></div>`
         : `<div style="color:var(--slate);font-size:13.5px;margin-bottom:6px;">${e(tr('About'))} ${e(km(r.tripKm))}. ${e(tr('Fares are estimates from the distance; the driver sets their own price.'))}</div>`;
-      out.innerHTML = head + r.drivers.map(d => `
+      const listHTML = head + r.drivers.map(d => `
         <div style="display:flex;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--border);flex-wrap:wrap;">
           <div style="flex:1;min-width:180px;"><div style="font-weight:700;color:var(--navy);">${e(d.name)} <span style="font-weight:400;color:var(--slate);">· ${d.rating ? '★ ' + e(d.rating) : e(tr('New'))}</span></div>
           <div style="font-size:13.5px;color:var(--slate);">${e(tr(d.vehicle))}${d.make ? ' · ' + e(d.make) : ''} · ${e(km(d.awayKm))} ${e(tr('away'))}${d.helmet ? ' · ' + e(tr('helmet provided')) : ''}</div></div>
@@ -251,6 +264,15 @@
           ${r.appPay !== false || d.cashOk ? `<div style="flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13.5px;"><span>${e(tr('Or offer your own fare:'))}</span><input class="form-input" type="number" min="1" step="0.5" id="ride-offer-${e(d.id)}" placeholder="${e(d.fareLocal != null ? (d.symbol || '') : '$')}" style="width:100px;"/>${r.offerFloorPercent != null ? `<span style="font-size:12px;color:var(--slate);">${e(tr('at least'))} ${d.fareLocal != null ? `${e(d.symbol || '')}${e(Math.ceil(d.fareLocal * r.offerFloorPercent / 100 / 5) * 5)}` : money(Math.ceil(d.fare * r.offerFloorPercent) / 100)}</span>` : ''}
             ${r.appPay !== false ? `<button class="btn-sm btn-sm-outline" onclick="ridesOffer(${jsArg(d.id)},'app')">${e(tr('Offer'))}</button>` : ''}${d.cashOk ? `<button class="btn-sm btn-sm-outline" onclick="ridesOffer(${jsArg(d.id)},'cash')">💵 ${e(tr('Offer, pay cash'))}</button>` : ''}</div>` : ''}
         </div>`).join('') + (r.appPay === false ? `<div class="ver-note" style="margin-top:8px;">${e(tr('Paying for rides in the app isn\'t switched on in your country yet, so rides are paid to the driver in cash.'))}</div>` : '');
+      // v166: Walter, with Uber's screens: "can we have something like this". A map
+      // with the route and the drivers nearby, one choice per kind of vehicle with
+      // its price and how soon it can be there, how to pay, and one big button. The
+      // full list of drivers (to pick one yourself, or offer your own fare) is still
+      // there underneath.
+      R.choose = { r, vehicle: null, pay: r.appPay === false ? 'cash' : 'app' };
+      out.innerHTML = chooserHTML(r) + `<details class="ride-more" style="margin-top:14px;"><summary style="cursor:pointer;font-weight:600;color:var(--teal);font-size:14px;">${e(tr('Choose a driver yourself, or offer your own fare'))}</summary><div style="margin-top:8px;">${listHTML}</div></details>`;
+      drawChooserMap(r);
+      try { out.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (x) {}
     } catch (x) {
       // v166: a trip too long is nearly always a pin in the wrong place (a
       // laptop guessing its location, or a place found in another country).
@@ -267,6 +289,119 @@
       out.innerHTML = `<div class="ver-note">${e(x.message || 'Could not find drivers')}</div>`;
     }
   };
+  // ── v166: CHOOSE A RIDE (like Uber's "Choose UberX") ────────────────
+  // Drawn icons (emoji differ between phones, and the app swaps some of them out).
+  const SVG = (inner, size) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size || 40}" height="${size || 40}" viewBox="0 0 48 32" fill="none" stroke="#12161F" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+  const VEH_SVG = {
+    motorbike: '<circle cx="10" cy="23" r="6"/><circle cx="38" cy="23" r="6"/><path d="M10 23l9-10h9l5 10M19 13l-3-4h-4M28 13l3-5h5M24 23h9"/><path d="M22 13h8" stroke-width="3"/>',
+    keke: '<path d="M6 22V12a6 6 0 0 1 6-6h16l8 8v8"/><path d="M6 22h30M28 6v8h8"/><circle cx="13" cy="24" r="4"/><circle cx="33" cy="24" r="4"/><path d="M36 22h6l-2-6"/><circle cx="42" cy="24" r="3"/>',
+    car: '<path d="M4 21v-5l5-7h22l8 7h4a2 2 0 0 1 2 2v3"/><path d="M4 21h41"/><circle cx="13" cy="22" r="4"/><circle cx="35" cy="22" r="4"/><path d="M12 9l-2 7h28"/>',
+    van: '<path d="M3 22V7h30l9 8v7"/><path d="M3 22h41M33 7v8h9M10 7v8h18V7"/><circle cx="12" cy="23" r="4"/><circle cx="35" cy="23" r="4"/>',
+  };
+  const VEH_ICON = { motorbike: VEH_SVG.motorbike, keke: VEH_SVG.keke, car: VEH_SVG.car, van: VEH_SVG.van };
+  const PERSON = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="vertical-align:-1px;"><circle cx="12" cy="7" r="4.5"/><path d="M3 22a9 9 0 0 1 18 0z"/></svg>';
+  const VEH_NAME = { motorbike: 'Motorbike', keke: 'Keke', car: 'Car', van: 'Van' };
+  const VEH_SEATS = { motorbike: 1, keke: 3, car: 4, van: 8 };
+  const priceOf = (d) => d.fareLocal != null ? `${d.symbol || ''}${Number(d.fareLocal).toLocaleString()}` : money(d.fare);
+  const clock = (min) => { try { return new Date(Date.now() + min * 60000).toLocaleTimeString(CURRENT_LANG === 'es' ? 'es' : 'en-US', { hour: 'numeric', minute: '2-digit' }); } catch (x) { return ''; } };
+  // For each kind of vehicle: the nearest driver (soonest there), and the cheapest.
+  function rideOptions(r) {
+    const by = {};
+    for (const d of r.drivers || []) { (by[d.vehicle] = by[d.vehicle] || []).push(d); }
+    const opts = Object.keys(VEH_NAME).filter(v => by[v] || (r.trothenFares || {})[v]).map(v => {
+      const list = (by[v] || []).slice().sort((a, b) => (a.etaMin - b.etaMin) || (a.fare - b.fare));
+      const pick = list[0] || null;
+      return { v, pick, count: list.length, cashOk: list.some(d => d.cashOk), trothen: (r.trothenFares || {})[v] || null };
+    });
+    const live = opts.filter(o => o.pick);
+    const cheap = live.slice().sort((a, b) => a.pick.fare - b.pick.fare)[0], fast = live.slice().sort((a, b) => a.pick.etaMin - b.pick.etaMin)[0];
+    for (const o of live) { o.cheapest = o === cheap && live.length > 1; o.fastest = o === fast && live.length > 1; }
+    return opts;
+  }
+  function chooserHTML(r) {
+    const q = R.quote || {};
+    const opts = rideOptions(r);
+    const first = opts.find(o => o.pick);
+    if (first && !R.choose.vehicle) R.choose.vehicle = first.v;
+    const card = (o) => {
+      const on = R.choose.vehicle === o.v, can = !!o.pick;
+      const badge = (t, c) => `<span style="display:inline-block;font-size:11.5px;font-weight:700;padding:1px 7px;border-radius:999px;background:${c};color:#fff;margin-left:6px;">${e(tr(t))}</span>`;
+      return `<button type="button" class="ride-opt${on ? ' on' : ''}" ${can ? '' : 'disabled'} aria-pressed="${on}" onclick="ridesPick('${o.v}')" style="display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:12px 14px;margin-bottom:8px;border-radius:14px;border:${on ? '2px solid var(--navy)' : '1px solid var(--border)'};background:var(--white);cursor:${can ? 'pointer' : 'default'};opacity:${can ? 1 : 0.55};">
+        <span style="width:52px;flex:0 0 52px;display:flex;justify-content:center;">${SVG(VEH_SVG[o.v], 48)}</span>
+        <span style="flex:1;min-width:0;"><span style="display:block;font-weight:700;font-size:16px;color:var(--navy);">${e(tr(VEH_NAME[o.v]))} <span style="font-weight:400;font-size:13px;color:var(--slate);" title="${e(tr('seats'))}">${PERSON} ${VEH_SEATS[o.v]}</span>${o.fastest ? badge('Fastest', '#1A73E8') : ''}${o.cheapest ? badge('Cheapest', '#1E7A55') : ''}</span>
+          <span style="display:block;font-size:13.5px;color:var(--slate);">${can ? `${e(o.pick.etaMin)} ${e(tr('min away'))} · ${e(tr('there by'))} ${e(clock(o.pick.etaMin + (r.tripMinutes || 0)))}${o.count > 1 ? ` · ${e(o.count)} ${e(tr('drivers'))}` : ''}` : e(tr('No driver nearby right now'))}</span></span>
+        <span style="text-align:right;white-space:nowrap;">${can ? `<span style="display:block;font-weight:800;font-size:18px;color:var(--navy);">${e(priceOf(o.pick))}</span>${o.pick.fareLocal != null ? `<span style="font-size:12px;color:var(--slate);">${money(o.pick.fare)}</span>` : ''}` : o.trothen ? `<span style="font-size:13px;color:var(--slate);">${e(o.trothen.symbol || '')}${e(Number(o.trothen.local).toLocaleString())}</span>` : ''}</span>
+      </button>`;
+    };
+    const o = opts.find(x => x.v === R.choose.vehicle);
+    const payBtn = (k, label, ok) => `<button type="button" class="btn-sm ${R.choose.pay === k ? 'btn-sm-primary' : 'btn-sm-outline'}" ${ok ? '' : 'disabled'} aria-pressed="${R.choose.pay === k}" onclick="ridesPay('${k}')">${label}</button>`;
+    if (o && o.pick && R.choose.pay === 'cash' && !o.cashOk && r.appPay !== false) R.choose.pay = 'app';
+    return `<div class="ride-choose">
+      <div id="ride-choose-map" style="height:clamp(260px,42vh,440px);border-radius:14px;overflow:hidden;border:1px solid var(--border);margin-bottom:6px;background:#E8ECEF;"></div>
+      <div id="ride-choose-mapnote" style="font-size:12px;color:var(--slate);margin-bottom:8px;min-height:14px;"></div>
+      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;font-size:14px;">
+        <div style="flex:1;min-width:0;"><div><span style="color:#1A73E8;">●</span> ${e(q.an || tr('Pick-up'))}</div><div><span style="color:var(--navy);">■</span> <strong>${e(q.bn || tr('Destination'))}</strong></div></div>
+        <div style="text-align:right;color:var(--slate);white-space:nowrap;">${e(km(r.tripKm))}${r.tripMinutes ? `<br>${e(r.tripMinutes)} ${e(tr('min trip'))}` : ''}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;"><span class="btn-sm btn-sm-primary" style="cursor:default;">${e(tr('Pick-up now'))}</span></div>
+      <div role="radiogroup" aria-label="${e(tr('Choose a ride'))}">${opts.map(card).join('')}</div>
+      ${o && o.pick ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 12px;font-size:14px;"><span style="color:var(--slate);">${e(tr('Pay'))}:</span>${payBtn('app', e(tr(r.payMode === 'card' ? 'By card' : 'In the app')), r.appPay !== false)}${payBtn('cash', e(tr('Cash to the driver')), o.cashOk)}</div>
+      <button type="button" class="confirm-btn" style="width:100%;font-size:17px;padding:14px;" onclick="ridesChoose()">${e(tr('Choose'))} ${e(tr(VEH_NAME[o.v]))} · ${e(priceOf(o.pick))}</button>
+      <div style="font-size:12.5px;color:var(--slate);margin-top:6px;text-align:center;">${e(tr(R.choose.pay === 'cash' ? 'You pay the driver this fare in cash at the end. No Trothen fee.' : 'Your money is held by Trothen and only paid to the driver when you arrive. Trothen adds a small fee, shown before you pay.'))}</div>`
+      : `<div class="ver-note">${e(tr('No drivers are online near you right now. Try again in a few minutes.'))}</div>`}
+    </div>`;
+  }
+  function redrawChooser() { const out = el('ride-drivers'); const box = out && out.querySelector('.ride-choose'); if (!box || !R.choose) return; const keepMap = el('ride-choose-map'); const tmp = document.createElement('div'); tmp.innerHTML = chooserHTML(R.choose.r); const fresh = tmp.firstElementChild; const slot = fresh.querySelector('#ride-choose-map'); if (keepMap && slot) slot.replaceWith(keepMap); box.replaceWith(fresh); }
+  window.ridesPick = function (v) { if (!R.choose) return; R.choose.vehicle = v; redrawChooser(); chooserLabels(); };
+  // The labels on the map, as Uber shows them: when a driver can be at the
+  // pick-up, and what time you get there, for the vehicle chosen.
+  function chooserLabels() {
+    const L2 = R.chooseLabels; if (!L2 || !R.choose) return;
+    const o = rideOptions(R.choose.r).find(x => x.v === R.choose.vehicle);
+    const r = R.choose.r;
+    try {
+      L2.a.setContent(o && o.pick ? `<strong>${e(o.pick.etaMin)} ${e(tr('min'))}</strong> ${e(tr('to pick-up'))}` : e(tr('Pick-up')));
+      L2.b.setContent(o && o.pick ? `${e(tr('there by'))} <strong>${e(clock(o.pick.etaMin + (r.tripMinutes || 0)))}</strong>` : e(tr('Destination')));
+    } catch (x) {}
+  }
+  window.ridesPay = function (k) { if (!R.choose) return; R.choose.pay = k; redrawChooser(); };
+  window.ridesChoose = function () {
+    const c = R.choose; if (!c) return;
+    const o = rideOptions(c.r).find(x => x.v === c.vehicle); if (!o || !o.pick) return showToast(tr('Choose a ride first'));
+    const d = c.pay === 'cash' ? ((c.r.drivers || []).filter(x => x.vehicle === c.vehicle && x.cashOk).sort((a, b) => a.etaMin - b.etaMin)[0] || o.pick) : o.pick;
+    window.ridesRequest(d.id, d.fare, c.pay);
+  };
+  async function drawChooserMap(r) {
+    const box = el('ride-choose-map'); const q = R.quote; if (!box || !q) return;
+    if (!window.L && typeof loadLeaflet === 'function') { try { await loadLeaflet(); } catch (x) {} }
+    if (!window.L || !box.isConnected) { box.style.display = 'none'; return; }
+    try {
+      const map = L.map(box, { zoomControl: false, attributionControl: true });
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+      const a = [q.a.latitude, q.a.longitude], b = [q.b.latitude, q.b.longitude];
+      const tip = (dir) => ({ permanent: true, direction: dir, offset: dir === 'top' ? [0, -10] : [0, 10], className: 'ride-map-label', opacity: 1 });
+      const ta = L.circleMarker(a, { radius: 8, color: '#fff', weight: 3, fillColor: '#1A73E8', fillOpacity: 1 }).addTo(map).bindTooltip('', tip(q.a.latitude >= q.b.latitude ? 'top' : 'bottom')).getTooltip();
+      const tb = L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;background:#12161F;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(map).bindTooltip('', tip(q.a.latitude >= q.b.latitude ? 'bottom' : 'top')).getTooltip();
+      R.chooseLabels = { a: ta, b: tb };
+      const pts = [a, b];
+      for (const d of (r.drivers || []).filter(d => d.near)) {
+        const p = [d.near.latitude, d.near.longitude]; pts.push(p);
+        L.marker(p, { icon: L.divIcon({ className: '', html: `<div style="width:34px;height:24px;background:#fff;border-radius:7px;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;">${SVG(VEH_SVG[d.vehicle] || VEH_SVG.car, 26)}</div>`, iconSize: [34, 24], iconAnchor: [17, 12] }), interactive: false }).addTo(map);
+      }
+      R.chooseBounds = L.latLngBounds(pts);
+      const refit = () => { try { map.fitBounds(R.chooseBounds, { padding: [48, 48], maxZoom: 16 }); } catch (x) {} };
+      refit(); map.on('resize', refit); // a phone turned sideways, or the window resized: keep the whole trip in view
+      R.chooseMap = map;
+      chooserLabels();
+      if (window.TrothenMap && TrothenMap.drawRoute) {
+        const route = await TrothenMap.drawRoute(map, q.a, q.b, { slot: 'choose', color: '#12161F' });
+        const note = el('ride-choose-mapnote');
+        if (route && route.source === 'road') { try { const ll = route.layer.getLayers().pop().getLatLngs(); R.chooseBounds = L.latLngBounds([...ll, ...pts]); refit(); } catch (x) {} if (note) note.textContent = ''; }
+        else if (note) note.textContent = tr('The dotted line shows the direction; the price allows for the roads.');
+      }
+    } catch (x) { box.style.display = 'none'; }
+  }
+
   // v125: a clear pay step: the fare, the fee and the total, and how it's paid.
   function rideFee(amount) { const pct = Number(R.quote && R.quote.fee != null ? R.quote.fee : (R.cfg && R.cfg.feePercent) || 9); return Math.round(Math.max(0.25, amount * pct / 100) * 100) / 100; }
   async function rideCheckout({ title, sub, price, cash, onConfirm }) {
@@ -337,7 +472,7 @@
     const r = (R.list || []).find(x => x.id === id); const typed = Number((el('rs-amount') || {}).value);
     const amount = r && r.local ? Math.round(typed * r.local.per * 100) / 100 : typed; // v142: typed in L$, sent in US$
     if (!(amount >= 0.25)) return showToast(tr('Type the fare'));
-    try { await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/propose`, { amount }); v105Close('ride-suggest'); showToast(tr('Sent')); (R.drv ? loadDriverPage : loadRiderPage)(); }
+    try { await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/propose`, { amount }); v105Close('ride-suggest'); showToast(tr('Sent')); ridesReload(); }
     catch (x) { showToast(x.message || 'Could not send'); }
   };
   function fareTalkHTML(r, viewer) {
@@ -396,7 +531,7 @@
   };
   window.ridesCancel = async function (id) {
     if (!(await confirmDialog(tr('Cancel this ride? Your money comes back.'), { confirmLabel: tr('Cancel ride'), danger: true }))) return;
-    try { await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/cancel`, { reason: 'customer_request' }); showToast(tr('Cancelled and refunded')); (R.drv ? loadDriverPage : loadRiderPage)(); } catch (x) { showToast(x.message || 'Could not cancel'); }
+    try { await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/cancel`, { reason: 'customer_request' }); showToast(tr('Cancelled and refunded')); ridesReload(); } catch (x) { showToast(x.message || 'Could not cancel'); }
   };
   window.ridesShare = async function (path) {
     const url = location.origin + path;
@@ -410,10 +545,11 @@
   };
 
   // ── DRIVER ───────────────────────────────────────────────────────────
-  async function loadDriverPage() {
+  async function loadDriverPage(opts) {
     if (!body()) return;
     let d, list = [];
     try { d = await apiFetch('GET', '/rides/driver/me'); list = (await apiFetch('GET', '/rides/mine')).rides; } catch (x) { body().innerHTML = `<div class="panel">${e(x.message || 'Could not load')}</div>`; return; }
+    list = list.filter(r => r.role !== 'rider'); // v166: rides this pro booked as a rider are on the Book a ride tab
     R.drv = d; R.list = list;
     if (!d.availableHere) { body().innerHTML = `<div class="panel"><div class="ver-note">${e(tr('Rides are not open in your country yet.'))}</div></div>`; return; }
     let html = '';
@@ -421,9 +557,22 @@
     else html += driverApply(d);
     const past = list.filter(r => !['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status)); // v125
     if (past.length) html += `<div class="panel"><div class="panel-title">${e(tr('Past rides'))}</div>${past.slice(0, 15).map(pastRow).join('')}</div>`;
-    body().innerHTML = html;
+    // v166: the page checks for ride requests every 10 seconds. It used to redraw
+    // everything each time, which wiped the "can't go online" help, reset the Go
+    // online button while it was still finding the location, and could clear what
+    // a driver was typing. Now it only redraws when something changed, never while
+    // the driver is typing or going online, and keeps the help that is showing.
+    const full = modeTabs() + html;
+    const a = document.activeElement;
+    const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && body().contains(a);
+    if (opts && opts.quiet && (R.busy || typing || full === R.lastHtml)) return;
+    const help = document.getElementById('rd-online-help');
+    const keep = help && help.innerHTML.trim() ? help.outerHTML : '';
+    body().innerHTML = full; R.lastHtml = full;
+    if (keep) { const btn = document.querySelector('[data-rides-online]'); if (btn) btn.closest('div').insertAdjacentHTML('afterend', keep); }
+    stopTimers();
     if (d.status === 'approved') {
-      R.poll = setInterval(() => { if (!body()) return stopTimers(); loadDriverPage(); }, 10000);
+      R.poll = setInterval(() => { if (!body()) return stopTimers(); if (R.busy) return; loadDriverPage({ quiet: true }); }, 10000);
       if (d.online) R.hb = setInterval(async () => { const f = await here(); if (f) apiFetch('POST', '/rides/driver/online', { online: true, latitude: f.latitude, longitude: f.longitude }).catch(() => {}); }, 120000);
     }
   }
@@ -588,21 +737,30 @@
   // v165: going online says what it is doing, and when it can't, the reason
   // stays on the page with what to do (a toast was easy to miss, and finding
   // a laptop's location can take several seconds with nothing on screen).
-  window.ridesToggleOnline = async function (on) {
+  // v166: when the device can't find where it is (common on laptops), the driver
+  // can put the pin where they are on the map instead, and go online from there.
+  window.ridesOnlineFromMap = function () { if (typeof openMapPicker === 'function') openMapPicker('rdonline'); };
+  { const prev = window.onMapPicked; window.onMapPicked = function (prefix, pin) { if (prefix === 'rdonline' && pin) return window.ridesToggleOnline(true, pin); if (typeof prev === 'function') return prev.apply(this, arguments); }; }
+  window.ridesToggleOnline = async function (on, chosen) {
     const btn = document.querySelector('[data-rides-online]');
     const say = (html) => { let n = document.getElementById('rd-online-help'); if (!n && btn) { btn.closest('div').insertAdjacentHTML('afterend', '<div id="rd-online-help" role="alert" class="rd-online-help"></div>'); n = document.getElementById('rd-online-help'); } if (n) n.innerHTML = html; };
     const label = btn ? btn.textContent : '';
+    R.busy = true;
     if (btn) { btn.disabled = true; btn.textContent = tr(on ? 'Finding your location…' : 'Going offline…'); }
     say('');
     try {
       let f = null;
       if (on) {
-        const r = await getBestLocation({ goodEnoughM: 80, maxWaitMs: 10000 }).catch(() => ({ error: 'unavailable' }));
+        // v166: at once if the device already knows where it is (the last 2 minutes); the
+        // position then keeps updating by itself while online.
+        const quick = () => new Promise(res => { try { navigator.geolocation.getCurrentPosition(p => res({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: Math.round(p.coords.accuracy || 0) }), () => res(null), { enableHighAccuracy: false, maximumAge: 120000, timeout: 3000 }); } catch (x) { res(null); } });
+        const q0 = chosen ? null : await quick();
+        const r = chosen && typeof chosen.latitude === 'number' ? { latitude: chosen.latitude, longitude: chosen.longitude, accuracyM: null } : (q0 && q0.accuracyM <= 300 ? q0 : await getBestLocation({ goodEnoughM: 100, maxWaitMs: 8000 }).catch(() => ({ error: 'unavailable' })));
         if (!r || r.error) {
           const denied = r && r.error === 'denied';
           say(`<strong>${e(tr(denied ? 'Location is blocked for Trothen in this browser.' : 'Your device could not find where you are.'))}</strong> ${e(tr('Riders are matched with drivers nearby, so Trothen needs your location to put you online.'))}<ul>${denied
             ? `<li>${e(tr('Click the lock or settings icon next to trothenpro.com in the address bar, set Location to Allow, then press Go online again.'))}</li><li>${e(tr('On a phone: Settings → your browser (or the Trothen app) → Location → Allow.'))}</li>`
-            : `<li>${e(tr('On a Windows laptop: Settings → Privacy & security → Location → turn Location services on, and allow your browser.'))}</li><li>${e(tr('On a Mac: System Settings → Privacy & Security → Location Services → allow your browser.'))}</li><li>${e(tr('Best of all, drive with Trothen on your phone, which has GPS.'))}</li>`}</ul>`);
+            : `<li>${e(tr('On a Windows laptop: Settings → Privacy & security → Location → turn Location services on, and allow your browser.'))}</li><li>${e(tr('On a Mac: System Settings → Privacy & Security → Location Services → allow your browser.'))}</li><li>${e(tr('Best of all, drive with Trothen on your phone, which has GPS.'))}</li>`}</ul><button type="button" class="btn-sm btn-sm-primary" style="margin-top:6px;" onclick="ridesOnlineFromMap()">📍 ${e(tr('Choose where I am on the map, and go online'))}</button>`);
           return;
         }
         f = r;
@@ -614,6 +772,7 @@
     } catch (x) {
       say(`<strong>${e(tr(on ? 'You could not go online.' : 'Could not go offline.'))}</strong> ${e(x.message || '')}`);
     } finally {
+      R.busy = false;
       if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = label; }
     }
   };

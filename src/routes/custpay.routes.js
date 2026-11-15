@@ -7,10 +7,12 @@ const { requireAuth, requireRole } = require('../auth');
 const cp = require('../customer-payments');
 
 const router = express.Router();
+// v166: whoever pays: a customer, or a pro booking for themselves (a ride, or goods from another pro).
+const requirePayer = (req, res, next) => (['customer', 'provider'].includes(req.user && req.user.role) ? next() : res.status(403).json({ error: 'Payments are made from a customer or pro account.' }));
 const limiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many tries. Please wait a minute.' } });
 
 // GET /api/customer-payments/options — what this customer can choose when booking.
-router.get('/customer-payments/options', requireAuth, requireRole('customer'), async (req, res) => {
+router.get('/customer-payments/options', requireAuth, requirePayer, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   const o = await cp.optionsFor(me && me.country);
   res.json({ protectedMode: o.protectedMode, cardAvailable: o.cardAvailable, cashJobs: o.cashJobs, payTo: o.payTo, currency: { code: o.currency.code, symbol: o.currency.symbol } });
@@ -19,7 +21,7 @@ router.get('/customer-payments/options', requireAuth, requireRole('customer'), a
 // GET /api/customer-payments/cash-check?providerId=&amount= (v121)
 // Yes or no: can this pro take a cash job of this price right now? Only
 // the answer is returned, never the pro's token balance.
-router.get('/customer-payments/cash-check', requireAuth, requireRole('customer'), async (req, res) => {
+router.get('/customer-payments/cash-check', requireAuth, requirePayer, async (req, res) => {
   const providerId = String(req.query.providerId || '');
   const amount = Number(req.query.amount);
   if (!providerId || !(amount > 0) || amount > 1000000) return res.status(400).json({ error: 'Choose a pro and a price.' });

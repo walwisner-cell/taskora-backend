@@ -52,7 +52,15 @@ async function tables() {
   const t = await getSetting('rideFareTables');
   const saved = t && typeof t === 'object' && !Array.isArray(t) ? t : {};
   const out = { ...saved };
-  for (const [c, table] of Object.entries(STARTER_TABLES)) if (!Object.keys(saved).some(k => sameText(k, c))) out[c] = JSON.parse(JSON.stringify(table));
+  for (const [c, table] of Object.entries(STARTER_TABLES)) {
+    const key = Object.keys(saved).find(k => sameText(k, c));
+    if (!key) { out[c] = JSON.parse(JSON.stringify(table)); continue; }
+    // A saved table that leaves out a vehicle (say, only motorbike and keke) uses the
+    // starter fares for the others, so no driver is left typing a fare in US$.
+    const v = { ...(saved[key].vehicles || {}) };
+    for (const [veh, row] of Object.entries(table.vehicles)) if (!v[veh]) v[veh] = { ...row, starter: true };
+    out[key] = { ...saved[key], vehicles: v };
+  }
   return out;
 }
 async function savedTables() {

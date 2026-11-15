@@ -162,7 +162,7 @@
     let geo = 'unknown';
     try { if (navigator.permissions) geo = (await navigator.permissions.query({ name: 'geolocation' })).state; } catch (x) {}
     if (!navigator.geolocation) out.push({ key: 'dev_geo', level: 'block', label: 'Location works on this device', todo: 'Use a browser that shares location', why: 'This browser can\'t share your location. Use Chrome or Safari on your phone.' });
-    else if (geo === 'denied') out.push({ key: 'dev_geo', level: 'block', label: 'Location is allowed for Trothen', todo: 'Allow location for Trothen', why: window.TrothenMap ? TrothenMap.locationHelp('denied') : 'Location is blocked for this site. Allow it in your browser settings.' });
+    else if (geo === 'denied') out.push({ key: 'dev_geo', level: 'warn', /* v166: the driver can still choose where they are on the map */ label: 'Location is allowed for Trothen', todo: 'Allow location for Trothen', why: window.TrothenMap ? TrothenMap.locationHelp('denied') : 'Location is blocked for this site. Allow it in your browser settings.' });
     let notif = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
     if (notif === 'denied') out.push({ key: 'dev_notif', level: 'warn', label: 'Notifications are allowed', todo: 'Allow notifications for Trothen', why: 'Blocked on this device, so you may miss ride requests. Allow them in your browser\'s site settings.' });
     else if (notif === 'default') out.push({ key: 'dev_notif', level: 'warn', label: 'Notifications are allowed', todo: 'Turn on notifications', why: 'Get alerts for ride requests when Trothen is in the background.', fix: { label: 'Turn On', action: 'notify' } });
@@ -172,6 +172,10 @@
   // Things that only slow you down are shown on the Overview; before an action only what stops it
   // (or, before going online, what would make you miss ride requests) interrupts.
   async function preflight(action, label, warnToo) {
+    // v166: going online should be one tap. The things to improve (notifications,
+    // phone number…) are shown once per visit, not every time; only what really
+    // stops it (no ID check, no approved vehicle, location blocked) asks each time.
+    if (warnToo && action === 'goOnline') { try { if (sessionStorage.getItem('trothen_online_warned') === '1') warnToo = false; else sessionStorage.setItem('trothen_online_warned', '1'); } catch (x) {} }
     const r = await load(action);
     if (!r) return true; // the check couldn't run: let the server decide
     const dev = await deviceChecks(action);

@@ -50,6 +50,8 @@ async function lookUp(lat, lng) {
   const key = lat.toFixed(5) + ',' + lng.toFixed(5);
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
+  // v166: Google's address of the pin first, when Google Maps Platform is set up.
+  try { const g = require('./google-maps'); if (g.on()) { const gw = await g.reverseGeocode(lat, lng); if (gw) { if (cache.size > 5000) cache.clear(); cache.set(key, gw); return gw; } } } catch (e) { /* the free lookup below */ }
   const run = async () => {
     const wait = 1100 - (Date.now() - lastCallAt);
     if (wait > 0) await new Promise(r => setTimeout(r, wait));

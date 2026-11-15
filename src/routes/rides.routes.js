@@ -99,8 +99,10 @@ function publicDriver(u, extra = {}) {
 
 // ── RIDE RULES (the agreement riders and drivers accept before their first ride) ──
 const roleKey = (u) => (u && u.role === 'provider' ? 'driver' : 'rider');
-async function rulesState(u) {
-  const key = roleKey(u);
+// v166: a pro can also book rides, as a rider ("as": "rider"), like an Uber
+// driver who rides with the same account.
+async function rulesState(u, as) {
+  const key = as === 'rider' ? 'rider' : roleKey(u);
   const version = await getSetting('rideRulesVersion');
   const text = await getSetting(key === 'driver' ? 'rideRulesDriver' : 'rideRulesRider');
   const acc = u && u.rideRules && u.rideRules[key];
@@ -108,17 +110,17 @@ async function rulesState(u) {
 }
 router.get('/rides/rules', requireAuth, async (req, res) => {
   const u = await db.find('users', x => x.id === req.user.sub);
-  res.json(await rulesState(u));
+  res.json(await rulesState(u, req.query.as));
 });
 router.post('/rides/rules/accept', requireAuth, async (req, res) => {
   const u = await db.find('users', x => x.id === req.user.sub);
-  const st = await rulesState(u);
+  const st = await rulesState(u, (req.body || {}).as);
   if (Number((req.body || {}).version) !== st.version) return res.status(409).json({ error: 'The rules changed. Please read them again.', ...st });
   await db.update('users', u.id, { rideRules: { ...(u.rideRules || {}), [st.role]: { version: st.version, at: new Date().toISOString() } } });
   res.json({ ...st, accepted: true });
 });
-async function needRules(u, res) {
-  const st = await rulesState(u);
+async function needRules(u, res, as) {
+  const st = await rulesState(u, as);
   if (st.accepted) return false;
   res.status(403).json({ code: 'ACCEPT_RIDE_RULES', error: 'Please read and accept the Ride Rules first.', ...st });
   return true;
@@ -140,6 +142,8 @@ async function nightWords() {
 }
 
 // ── RIDER SIDE ─────────────────────────────────────────────────────────
+// v166: riders are customers, and pros too (a pro can book a ride for themselves).
+const requireRider = (req, res, next) => (['customer', 'provider'].includes(req.user && req.user.role) ? next() : res.status(403).json({ error: 'Rides are booked from a customer or pro account.' }));
 router.get('/rides/config', requireAuth, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   res.json({
@@ -195,7 +199,7 @@ async function tooFarAnswer(me, pickup, drop, km, maxKm) {
 }
 
 // GET /api/rides/drivers?pLat=&pLng=&dLat=&dLng=&passengers=
-router.get('/rides/drivers', requireAuth, requireRole('customer'), lookupLimiter, async (req, res) => {
+router.get('/rides/drivers', requireAuth, requireRider, lookupLimiter, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   if (!(await ridesOnFor(me && me.country))) return res.json({ available: false, drivers: [], error: 'Rides are not available in your country yet.' });
   const q = req.query;
@@ -219,7 +223,11 @@ router.get('/rides/drivers', requireAuth, requireRole('customer'), lookupLimiter
     const away = loc ? kmBetween(loc, pickup) : null;
     if (away === null || away > searchKm) continue;
     const f = await rideFares.fareFor(u, await tripFor(u.rideDriver.vehicle), { table: fareTable, rateRows });
-    rows.push({ ...publicDriver(u), awayKm: away, fare: f.fare, fareLocal: f.local, currency: f.currency, symbol: f.symbol, trothenFare: f.proposed, trothenFareLocal: f.proposedLocal, fareAdjust: f.adjust, fareSource: f.source, seats: RIDE_VEHICLES[u.rideDriver.vehicle], cashOk: cashOn && u.rideDriver.acceptsCash === true && (await require('../tokens').cashReady(u, f.fare, { ride: true })).ok });
+    // v166: roughly where each driver is (to about 300 m), for the cars on the rider's map,
+    // and how many minutes away, as ride apps show. Never the exact spot.
+    const near = { latitude: Math.round(loc.latitude / 0.003) * 0.003, longitude: Math.round(loc.longitude / 0.003) * 0.003 };
+    const etaMin = Math.max(2, Math.round(away * 1.3 / (require('../road-route').CITY_KMH[u.rideDriver.vehicle] || 20) * 60));
+    rows.push({ ...publicDriver(u), near, etaMin, awayKm: away, fare: f.fare, fareLocal: f.local, currency: f.currency, symbol: f.symbol, trothenFare: f.proposed, trothenFareLocal: f.proposedLocal, fareAdjust: f.adjust, fareSource: f.source, seats: RIDE_VEHICLES[u.rideDriver.vehicle], cashOk: cashOn && u.rideDriver.acceptsCash === true && (await require('../tokens').cashReady(u, f.fare, { ride: true })).ok });
   }
   rows.sort((a, b) => a.awayKm - b.awayKm || (b.rating || 0) - (a.rating || 0));
   const po = await require('../customer-payments').optionsFor(me.country);
@@ -232,14 +240,14 @@ router.get('/rides/drivers', requireAuth, requireRole('customer'), lookupLimiter
 const bookInFlight = new Set();
 // A rider can ask for a few rides an hour, not dozens (stops spamming drivers).
 const requestLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 8, skipFailedRequests: true, keyGenerator: (req) => (req.user && req.user.sub) || 'anon', validate: false, standardHeaders: true, legacyHeaders: false, message: { error: 'You have asked for several rides in the last hour. Please wait a little before trying again.' } });
-router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms, requestLimiter, async (req, res) => {
+router.post('/rides', requireAuth, requireRider, requireCurrentTerms, requestLimiter, async (req, res) => {
   const b = req.body || {};
   const me = await db.find('users', u => u.id === req.user.sub);
   if (!me || me.verified !== true) return res.status(403).json({ code: 'VERIFY_IDENTITY', error: 'Please verify your identity first. For everyone\'s safety, rides are for ID-verified riders.' });
   if (me.onHold) return res.status(403).json({ error: 'Your account is temporarily paused pending a quick review.' });
   if (me.rideBlockedUntil && new Date(me.rideBlockedUntil) > new Date()) return res.status(403).json({ code: 'RIDES_PAUSED', error: `Ride requests are paused on your account until ${String(me.rideBlockedUntil).slice(0, 10)} because several drivers waited for you and you did not show up.` });
   if (!(await ridesOnFor(me.country))) return res.status(400).json({ error: 'Rides are not available in your country yet.' });
-  if (await needRules(me, res)) return;
+  if (await needRules(me, res, 'rider')) return;
   if (bookInFlight.has(me.id)) return res.status(409).json({ error: 'Your ride request is already being processed. Please wait a moment.' });
   bookInFlight.add(me.id);
   try {
@@ -666,7 +674,7 @@ router.post('/rides/:id/no-show', requireAuth, requireRole('provider'), (req, re
   }
   res.json({ ride: await rideView(u, req.user.sub) });
 }));
-router.post('/rides/:id/confirm', requireAuth, requireRole('customer'), (req, res) => withRide(req, res, 'rider', async (c) => {
+router.post('/rides/:id/confirm', requireAuth, requireRider, (req, res) => withRide(req, res, 'rider', async (c) => {
   if (c.status !== 'active' || !c.ride.startedAt) return res.status(400).json({ error: 'This trip has not started yet.' });
   const { completeContractCore } = require('./payments.routes');
   await completeContractCore(c, 0, req.user.sub);
@@ -954,7 +962,7 @@ router.get('/admin/rides/fares', gate, async (req, res) => {
     if (c.ride.fare && c.ride.fare.local != null) { s.local += (c.amount === c.driverFare ? c.ride.fare.local : (c.amount || 0) * (c.ride.fare.local / (c.driverFare || c.amount || 1))); s.localRides += 1; }
   }
   const list = Object.values(stats).map(s => ({ country: s.country, vehicle: s.vehicle, rides: s.rides, avgKm: Math.round(s.km / s.rides * 10) / 10, usdPerKm: Math.round(s.usd / s.km * 100) / 100, localPerKm: s.localRides === s.rides && s.currency ? Math.round(s.local / s.km) : null, currency: s.currency }));
-  res.json({ tables, vehicles: rideFares.VEHICLES, enabledCountries: await getSetting('rideEnabledCountries'), routing: !!(process.env.ROUTING_URL || '').trim(), stats: list });
+  res.json({ tables, vehicles: rideFares.VEHICLES, enabledCountries: await getSetting('rideEnabledCountries'), routing: require('../road-route').routingOn(), stats: list });
 });
 router.put('/admin/rides/fares', gate, async (req, res) => {
   if (!req.adminUser.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });

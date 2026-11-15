@@ -206,6 +206,20 @@
     await loadThread();
   };
 
+  // v166: a chat with nobody open between the two (no booking, order or ride,
+  // or one that ended a while ago) is read-only, and calls only show while
+  // they are allowed (src/contact-rules.js).
+  function chatContact(c) {
+    const row = $('chat-input-row'); if (!row) return;
+    let note = $('chat-closed-note');
+    const closed = !!(c && c.message === false);
+    if (closed) {
+      if (!note) { note = document.createElement('div'); note.id = 'chat-closed-note'; note.setAttribute('role', 'note'); note.style.cssText = 'padding:12px 16px;font-size:13.5px;color:var(--slate);background:var(--offwhite,#F6F7F9);border-top:1px solid var(--border);'; row.parentNode.insertBefore(note, row); }
+      note.textContent = tr(c.closed || 'This conversation is closed.');
+      row.style.display = 'none';
+    } else { if (note) note.remove(); row.style.display = ''; }
+    document.querySelectorAll('#chat-head .call-btn').forEach(b => { b.style.display = c && c.call === false ? 'none' : ''; });
+  }
   async function loadThread() {
     const body = $('msg-thread-body');
     if (!body) return;
@@ -213,9 +227,10 @@
     if (!id) { body.innerHTML = `<div class="chat-empty">${escapeHtml(tr(CHATS.list.length ? 'Pick a conversation on the left.' : 'Your conversations will show here.'))}</div>`; return; }
     const seq = ++CHATS.seq;
     try {
-      const { messages } = await apiFetch('GET', `/messages/${encodeURIComponent(id)}?markRead=1`);
+      const { messages, contact } = await apiFetch('GET', `/messages/${encodeURIComponent(id)}?markRead=1`);
       if (seq !== CHATS.seq || CHATS.activeId !== id) return;
       CHATS.thread = messages || [];
+      chatContact(contact);
       const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
       const firstLoad = body.dataset.for !== id;
       body.innerHTML = threadHTML(CHATS.thread, convo(id));

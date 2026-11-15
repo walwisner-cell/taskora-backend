@@ -50,7 +50,10 @@ function readCollection(collection) {
   let st;
   try { st = fs.statSync(fp); } catch (e) { cache.delete(collection); return []; }
   const hit = cache.get(collection);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.records;
+  // A file changed in the last second is read again anyway: two writes by another
+  // program close together can leave the same time and size (some disks keep
+  // times only to a few milliseconds).
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size && Date.now() - st.mtimeMs > 1000) return hit.records;
   const raw = fs.readFileSync(fp, 'utf-8').trim();
   const records = raw ? JSON.parse(raw) : [];
   // A very large file is not kept in memory (the Starter server has 512 MB);

@@ -85,9 +85,28 @@
     map.__decorated = true;
     map.getContainer().classList.add('tmap');
     watchTiles(map, street);
+    if (CFG.data && CFG.data.provider === 'google') googleCredit(map);
     if (map.options.noTrothenControls) return;
     satelliteToggle(map, street);
     locateButton(map);
+  }
+
+  // v166: with Google's map pictures, Google's logo and its copyright line for
+  // the part of the world shown, as Google's Map Tiles policies require.
+  function googleCredit(map) {
+    try {
+      const Logo = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() { const d = L.DomUtil.create('div', 'tmap-google'); d.setAttribute('aria-label', 'Google'); d.innerHTML = '<span style="font:600 14px/1 Arial,Helvetica,sans-serif;letter-spacing:-.2px;"><span style="color:#4285F4">G</span><span style="color:#EA4335">o</span><span style="color:#FBBC05">o</span><span style="color:#4285F4">g</span><span style="color:#34A853">l</span><span style="color:#EA4335">e</span></span>'; d.style.cssText = 'background:rgba(255,255,255,.85);padding:2px 5px;border-radius:4px;margin:0 0 4px 6px;pointer-events:none;'; return d; } });
+      new Logo().addTo(map);
+      let t = null, last = '';
+      const update = () => { clearTimeout(t); t = setTimeout(async () => {
+        try {
+          const b = map.getBounds(); const z = map.getZoom();
+          const r = await fetch(`/api/geo/map-credit?zoom=${z}&n=${b.getNorth().toFixed(3)}&s=${b.getSouth().toFixed(3)}&e=${b.getEast().toFixed(3)}&w=${b.getWest().toFixed(3)}`).then(x => x.json());
+          if (r && r.credit && map.attributionControl && r.credit !== last) { if (last) map.attributionControl.removeAttribution(last); map.attributionControl.addAttribution(r.credit); last = r.credit; }
+        } catch (e) { /* the default line stays */ }
+      }, 400); };
+      map.on('moveend', update); update();
+    } catch (e) { /* the map still works */ }
   }
 
   // If the map pictures fail to load (blocked, or the provider is down), switch to the backup.

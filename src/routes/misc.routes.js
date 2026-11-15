@@ -869,7 +869,14 @@ router.get('/messages/:withUserId', requireAuth, async (req, res) => {
       if (m.toId === req.user.sub && !m.readAt) { try { await db.update('messages', m.id, { readAt: now }); m.readAt = now; } catch (e) { /* stays unread */ } }
     }
   }
-  res.json({ messages: all });
+  // v166: whether the chat is open, and until when (src/contact-rules.js)
+  let contact = null;
+  try {
+    const cr = require('../contact-rules');
+    const [me, them] = await Promise.all([db.find('users', u => u.id === req.user.sub), db.find('users', u => u.id === req.params.withUserId)]);
+    if (me && them) { const st = await cr.between(me, them); contact = { message: st.message, call: st.call, until: st.until, why: st.why, closed: cr.closedWords(st, String(them.name || '').split(/\s+/)[0]) }; }
+  } catch (e) { /* the thread still shows */ }
+  res.json({ messages: all, contact });
 });
 
 // POST /api/messages — send a message
@@ -921,6 +928,16 @@ router.post('/messages', requireAuth, messageLimiter, async (req, res) => {
     const isJobCustomer = job.customerId === req.user.sub && recipient.id !== job.customerId;
     const isJobProvider = recipient.id === job.customerId && req.user.role === 'provider';
     if (!isJobCustomer && !isJobProvider) return res.status(403).json({ error: 'This job doesn\'t belong to either you or the person you\'re messaging' });
+  }
+  // v166: people talk while they have something together, and for a short
+  // time after (src/contact-rules.js). A message about an open posted job
+  // (asking a pro for a price, answering it) is always allowed.
+  const jobOpen = job && !['closed', 'cancelled', 'expired', 'completed', 'deleted'].includes(job.status);
+  if (!jobOpen) {
+    const me = await db.find('users', u => u.id === req.user.sub);
+    const cr = require('../contact-rules');
+    const st = await cr.between(me, recipient);
+    if (!st.message) return res.status(403).json({ code: 'CHAT_CLOSED', error: cr.closedWords(st, String(recipient.name || '').split(/\s+/)[0]) });
   }
 
   const message = { id: `msg_${nanoid(10)}`, fromId: req.user.sub, toId, text: text.trim(), jobId: jobId || null, createdAt: new Date().toISOString() };
