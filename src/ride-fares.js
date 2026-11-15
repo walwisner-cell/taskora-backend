@@ -25,7 +25,37 @@ const money = (n) => Math.round(Number(n) * 100) / 100;
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 const sameText = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 
+// v166: Walter's screenshot of "My fares": with no fare table saved for
+// Liberia, every driver set their own fare in US dollars, and nothing stopped
+// "US$1 to start, plus US$0 a mile", so every trip cost US$1 whatever the
+// distance. Ride apps (Uber, Bolt, Yango, and in Africa Gozem and SafeBoda)
+// all work the same way: the platform sets the fare per city and vehicle, in
+// local money (a starting fare, a price per km, a price per minute, and a
+// minimum fare), and the driver can't set a fare that loses money. So a
+// country where Rides is open now always has a fare table: Liberia starts
+// from these starter fares in L$ until the team saves its own in
+// Admin → Rides → Fares (where they show as "starter fares: check them").
+const STARTER_TABLES = {
+  Liberia: {
+    currency: 'LRD',
+    vehicles: {
+      motorbike: { base: 50, perKm: 25, perMin: 2, min: 75 },
+      keke: { base: 60, perKm: 25, perMin: 2, min: 100 },
+      car: { base: 150, perKm: 50, perMin: 4, min: 250 },
+      van: { base: 250, perKm: 70, perMin: 5, min: 400 },
+    },
+    fuel: { refPrice: null, currentPrice: null, threshold: 10, share: 40, unit: 'gallon' },
+    night: { pct: 0, startHour: 22, endHour: 5 }, band: 20, offerFloor: 70, roundTo: 5, tzOffset: 0, starter: true,
+  },
+};
 async function tables() {
+  const t = await getSetting('rideFareTables');
+  const saved = t && typeof t === 'object' && !Array.isArray(t) ? t : {};
+  const out = { ...saved };
+  for (const [c, table] of Object.entries(STARTER_TABLES)) if (!Object.keys(saved).some(k => sameText(k, c))) out[c] = JSON.parse(JSON.stringify(table));
+  return out;
+}
+async function savedTables() {
   const t = await getSetting('rideFareTables');
   return t && typeof t === 'object' && !Array.isArray(t) ? t : {};
 }
@@ -135,4 +165,4 @@ function cleanTable(country, b) {
   return { table: { currency: code, vehicles, fuel, night, band, offerFloor, roundTo: roundStep, tzOffset, updatedAt: new Date().toISOString() } };
 }
 
-module.exports = { VEHICLES, tables, tableFor, fuelFactor, nightPct, proposeLocal, fareFor, offerFloor, cleanTable };
+module.exports = { VEHICLES, STARTER_TABLES, savedTables, tables, tableFor, fuelFactor, nightPct, proposeLocal, fareFor, offerFloor, cleanTable };

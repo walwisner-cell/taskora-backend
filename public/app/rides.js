@@ -516,7 +516,7 @@
     return `<div class="dates-row" style="margin-top:8px;align-items:flex-end;">
       <div class="form-group"><label class="form-label" for="rd-min">${e(tr(mi ? 'Shortest delivery (miles)' : 'Shortest delivery (km)'))}</label><input class="form-input" id="rd-min" type="number" min="0" step="0.5" value="${e(r1(g.minKm))}"/></div>
       <div class="form-group"><label class="form-label" for="rd-max">${e(tr(mi ? 'Longest delivery (miles)' : 'Longest delivery (km)'))}</label><input class="form-input" id="rd-max" type="number" min="0.5" step="0.5" max="${e(r1(g.vehicleMaxKm))}" value="${e(r1(g.maxKm))}"/></div>
-      <div class="form-group"><button class="btn-sm btn-sm-outline" onclick="ridesSaveRange()">${e(tr('Save'))}</button></div></div>`;
+      <div class="form-group"><button class="btn-sm btn-sm-outline" onclick="ridesSaveRange()">${e(tr('Save delivery distances'))}</button></div></div>`;
   };
   window.ridesSaveRange = async function () {
     const f = typeof usesMiles === 'function' && usesMiles() ? KM_PER_MI : 1;
@@ -1043,7 +1043,7 @@
     const o = F.data, t = o.tables[F.country] || null, edit = R.over && R.over.canEditSettings;
     const curDefault = F.country && /liberia/i.test(F.country) ? 'LRD' : '';
     const inp = (id, label, val, extra) => `<div class="form-group" style="flex:1 1 150px;"><label class="form-label" for="${id}">${e(tr(label))}</label><input class="form-input" id="${id}" type="number" step="any" value="${val == null ? '' : e(val)}" ${edit ? '' : 'disabled'} oninput="ridesFarePreview()" ${extra || ''}/></div>`;
-    host.innerHTML = `<div class="dates-row"><div class="form-group" style="flex:0 1 140px;"><label class="form-label" for="rf-cur">${e(tr('Currency'))}</label><input class="form-input" id="rf-cur" value="${e(t ? t.currency : curDefault)}" maxlength="3" ${edit ? '' : 'disabled'} oninput="ridesFarePreview()"/></div></div>
+    host.innerHTML = `${t && t.starter ? `<div role="note" style="padding:10px 12px;border-radius:10px;border:1px solid #E9D6A8;background:#FBF3E4;font-size:13.5px;margin-bottom:10px;"><strong>${e(tr('Starter fares: check them.'))}</strong> ${e(tr('Riders are charged these until you save your own. They are a starting point for Monrovia, not official fares: compare them with what riders pay today, change them if needed, and press Save.'))}</div>` : ''}<div class="dates-row"><div class="form-group" style="flex:0 1 140px;"><label class="form-label" for="rf-cur">${e(tr('Currency'))}</label><input class="form-input" id="rf-cur" value="${e(t ? t.currency : curDefault)}" maxlength="3" ${edit ? '' : 'disabled'} oninput="ridesFarePreview()"/></div></div>
       ${fareRowsHTML(t, edit)}
       <div style="font-weight:700;color:var(--navy);margin:14px 0 4px;">⛽ ${e(tr('Fuel price link'))}</div>
       <div style="font-size:13px;color:var(--slate);margin-bottom:6px;">${e(tr('Enter the pump price the fares above were set at, and today\'s price. Fares only move once the price has changed by more than the threshold, like the Ministry of Transport\'s fares, and then by the share of a fare that is fuel. Drivers are told when fares move.'))}</div>

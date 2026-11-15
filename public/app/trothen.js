@@ -8,10 +8,46 @@ const API_BASE = '/api';
 let AUTH = { token: null, user: null };
 let BACKEND_AVAILABLE = false;
 
+// v166: "the system is sometimes not stable". When the server restarts (a
+// deploy, or Render restarting it) it is unreachable for up to a minute, and
+// every request in that time failed with a bare "Failed to fetch". Now a
+// read (GET) that can't reach the server, or gets Render's "service
+// unavailable" answer, is tried again a few times (after 1, 2, 4 and 8
+// seconds) while a small "Reconnecting…" note shows. A change (a booking,
+// a payment) is never sent twice by itself: if it can't reach the server,
+// the person is told plainly and can try again.
+let RECONNECT_NOTE = null, RECONNECT_WAITING = 0;
+function reconnectNote(on) {
+  RECONNECT_WAITING = Math.max(0, RECONNECT_WAITING + (on ? 1 : -1));
+  try {
+    if (RECONNECT_WAITING > 0 && !RECONNECT_NOTE) {
+      RECONNECT_NOTE = document.createElement('div');
+      RECONNECT_NOTE.setAttribute('role', 'status');
+      RECONNECT_NOTE.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:100000;background:#12161F;color:#fff;padding:8px 14px;border-radius:999px;font-size:13.5px;box-shadow:0 4px 14px rgba(0,0,0,.25);';
+      RECONNECT_NOTE.textContent = tr('Reconnecting to Trothen…');
+      document.body.appendChild(RECONNECT_NOTE);
+    } else if (RECONNECT_WAITING === 0 && RECONNECT_NOTE) { RECONNECT_NOTE.remove(); RECONNECT_NOTE = null; }
+  } catch (e) { /* no page yet */ }
+}
 async function apiFetch(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (AUTH.token) headers['Authorization'] = 'Bearer ' + AUTH.token;
-  const res = await fetch(API_BASE + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+  const send = () => fetch(API_BASE + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+  let res;
+  const canRetry = method === 'GET';
+  let waiting = false;
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await send();
+        if (!(canRetry && [502, 503, 504].includes(res.status)) || attempt >= 4) break;
+      } catch (netErr) {
+        if (!canRetry || attempt >= 4) throw Object.assign(new Error(tr('Could not reach Trothen. Check your internet connection and try again.')), { status: 0, network: true });
+      }
+      if (!waiting) { waiting = true; reconnectNote(true); }
+      await new Promise(r => setTimeout(r, 1000 * 2 ** attempt));
+    }
+  } finally { if (waiting) reconnectNote(false); }
   let data = null;
   try { data = await res.json(); } catch (e) { /* no body */ }
   if (!res.ok) {
@@ -113,15 +149,45 @@ async function checkBackend() {
 // working just because an old token sits in the browser.
 const AUTH_STORAGE_KEY = 'trothen_session_token';
 
-function saveAuthSession(token) {
-  try { localStorage.setItem(AUTH_STORAGE_KEY, token); } catch (e) { /* storage disabled — session just won't survive a refresh */ }
+// v166: Walter: "it signs in automatically, is that the best?" Staying
+// signed in is right on your own phone (Uber, Bolt, Jumia and banks' apps all
+// do it), but not on a shared or public computer (an office, a cyber café).
+// So, as Google and Microsoft do, signing in asks: "Keep me signed in". It is
+// ticked by itself on a phone or the installed app, and not on a computer.
+//  - Ticked: the sign-in is kept on this device (until you sign out, or for
+//    7 days at most; then you sign in again).
+//  - Not ticked: it lasts only until the browser is closed, and after 20
+//    minutes without use you are signed out.
+// Admin accounts are always signed out after 20 minutes without use.
+function deviceIsPersonal() {
+  try { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent); } catch (e) { return false; }
+}
+function keepChoice() {
+  const box = document.getElementById('auth-keep');
+  return box ? !!box.checked : deviceIsPersonal();
+}
+function saveAuthSession(token, opts) {
+  // A new token for the same sign-in (after a password change) stays where the old one was.
+  let keep;
+  if (opts && opts.renew) { try { keep = !!localStorage.getItem(AUTH_STORAGE_KEY) || !sessionStorage.getItem(AUTH_STORAGE_KEY); } catch (e) { keep = true; } }
+  else keep = keepChoice();
+  try {
+    if (keep) { localStorage.setItem(AUTH_STORAGE_KEY, token); sessionStorage.removeItem(AUTH_STORAGE_KEY); }
+    else { sessionStorage.setItem(AUTH_STORAGE_KEY, token); localStorage.removeItem(AUTH_STORAGE_KEY); }
+  } catch (e) { /* storage disabled — session just won't survive a refresh */ }
 }
 function clearAuthSession() {
   try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch (e) {}
+  try { sessionStorage.removeItem(AUTH_STORAGE_KEY); } catch (e) {}
 }
 function getSavedAuthToken() {
-  try { return localStorage.getItem(AUTH_STORAGE_KEY); } catch (e) { return null; }
+  try { return localStorage.getItem(AUTH_STORAGE_KEY) || sessionStorage.getItem(AUTH_STORAGE_KEY); } catch (e) { return null; }
 }
+function sessionIsKept() {
+  try { return !!localStorage.getItem(AUTH_STORAGE_KEY); } catch (e) { return false; }
+}
+// The box starts ticked on a phone or the installed app, unticked on a computer.
+document.addEventListener('DOMContentLoaded', () => { const box = document.getElementById('auth-keep'); if (box) box.checked = deviceIsPersonal(); });
 
 // v105: restoring a saved sign-in when the page loads. The request is
 // tried up to three times if the connection drops, and only an answer
@@ -3176,6 +3242,7 @@ function showAuth(mode) {
   showScreen('screen-auth');
   renderNavbar('navbar-auth', 'auth');
   setAuthMode(mode);
+  try { const l = document.getElementById('auth-keep-label'), h = document.getElementById('auth-keep-hint'); if (l) l.textContent = tr('Keep me signed in'); if (h) h.textContent = tr('Untick this on a shared or public computer.'); } catch (e) {} // v166
   loadGeoData();
   loadAuthBrandStats();
 }
@@ -5881,7 +5948,7 @@ async function changePassword(prefix) {
   try {
     const data = await apiFetch('POST', '/auth/change-password', { currentPassword, newPassword });
     AUTH.token = data.token;
-    saveAuthSession(data.token);
+    saveAuthSession(data.token, { renew: true });
     showToast('Password updated successfully');
     document.getElementById(`${prefix}-pw-current`).value = '';
     document.getElementById(`${prefix}-pw-new`).value = '';
@@ -11926,7 +11993,7 @@ async function submitForcePasswordChange() {
   try {
     const data = await apiFetch('POST', '/auth/change-password', { currentPassword, newPassword });
     AUTH.token = data.token;
-    saveAuthSession(data.token);
+    saveAuthSession(data.token, { renew: true });
     AUTH.user = { ...AUTH.user, mustChangePassword: false };
     showToast('Password set. Welcome to Trothen.');
     await completeAuthAndResumeIntent(AUTH.user.role);
@@ -12357,8 +12424,24 @@ function idleRecordActivity() {
   idleLastActivityAt = Date.now();
 }
 
+// v166: what counts as "in use" without touching the screen: a driver who is
+// online, a pro on the way with live tracking, a courier carrying goods, a
+// customer sharing their location. All of these follow the phone's position,
+// so any running position watch keeps the person signed in. (Before, a driver
+// who waited online for 20 minutes without touching the page was signed out.)
+const ACTIVE_WATCHES = new Set();
+(function () {
+  try {
+    const g = navigator.geolocation; if (!g) return;
+    const w = g.watchPosition.bind(g), c = g.clearWatch.bind(g);
+    g.watchPosition = function () { const id = w.apply(null, arguments); ACTIVE_WATCHES.add(id); return id; };
+    g.clearWatch = function (id) { ACTIVE_WATCHES.delete(id); return c(id); };
+  } catch (e) { /* no location in this browser */ }
+})();
 function idleCheckTick() {
   if (!AUTH.token) return; // nothing to protect if nobody's signed in
+  if (ACTIVE_WATCHES.size > 0) { idleRecordActivity(); return; } // v166: working (online, on a trip, sharing location)
+  if (sessionIsKept() && !(AUTH.user && AUTH.user.role === 'admin')) { idleRecordActivity(); return; } // v166: "Keep me signed in" on a personal device
   const idleFor = Date.now() - idleLastActivityAt;
   if (idleFor >= IDLE_TIMEOUT_MS) {
     stopIdleTimer();

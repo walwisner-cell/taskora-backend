@@ -23,14 +23,14 @@
 //
 // How: a sweep looks at payments, refunds, token purchases and payouts, and
 // issues each receipt once (its key, e.g. "pay:esc_123", is unique). It runs
-// every half minute, and a few seconds after any notification (most money
+// every minute, and a few seconds after any notification (most money
 // events send one). The first time it runs it only notes the time: nothing
 // that happened before this version is emailed out of the blue.
 const db = require('./db');
 const { nanoid, customAlphabet } = require('nanoid');
 
 const numberId = customAlphabet('23456789ABCDEFGHJKLMNPQRSTUVWXYZ', 8);
-const SWEEP_MS = Number(process.env.RECEIPTS_SWEEP_MS) || 30 * 1000;
+const SWEEP_MS = Number(process.env.RECEIPTS_SWEEP_MS) || 60 * 1000;
 const money = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const usd = (n) => `$${money(n).toFixed(2)}`;
 
@@ -94,6 +94,14 @@ async function dueEvents() {
   for (const p of await db.filter('tokenPurchases', p => p.status === 'paid' && after(p.creditedAt || p.updatedAt || p.createdAt))) {
     out.push({ key: `tokens:${p.id}`, userId: p.userId, kind: 'tokens', purchaseId: p.id, at: p.creditedAt || p.updatedAt || p.createdAt });
   }
+  // an ad a pro paid for with tokens
+  for (const a of await db.filter('advertisingInquiries', a => a.providerId && a.paidWith === 'tokens' && a.price > 0 && after(a.createdAt))) {
+    out.push({ key: `ad:${a.id}`, userId: a.providerId, kind: 'ad', adId: a.id, at: a.createdAt });
+  }
+  // a Driver Pass bought (with tokens, or paid)
+  for (const p of await db.filter('ridePasses', p => p.priceUsd > 0 && ['tokens', 'paid', 'simulated'].includes(p.paymentStatus) && after(p.createdAt))) {
+    out.push({ key: `pass:${p.id}`, userId: p.userId, kind: 'pass', passId: p.id, at: p.createdAt });
+  }
   for (const p of await db.filter('payouts', p => p.status === 'paid' && after(p.paidAt))) {
     out.push({ key: `payout:${p.id}`, userId: p.providerId, kind: 'payout', payoutId: p.id, at: p.paidAt });
   }
@@ -116,6 +124,15 @@ async function snapshot(ev) {
     const amount = money(c.cashPaidAmount || c.amount);
     return { ...base, amountUsd: amount, lines: [[w.kind === 'ride' ? 'Fare' : 'Price', usd(amount)]], total: ['Paid in cash', usd(amount)], local: c.ride && c.ride.fareLocal ? String(c.ride.fareLocal) : '', method: `Cash, to ${pro ? pro.name : 'the driver'}`, status: 'Completed and paid in cash. Nothing was charged through Trothen.' };
   }
+  if (ev.kind === 'ad') {
+    const a = await db.find('advertisingInquiries', x => x.id === ev.adId);
+    return { for: 'ad', title: `Ad: ${String(a.displayHeadline || '').slice(0, 60)}`, amountUsd: money(a.price), lines: [[`Ad${a.targetCity ? ' in ' + a.targetCity : ''}`, usd(a.price)]], total: ['Total paid', usd(a.price)], local: '', method: 'Your Trothen tokens', status: 'Paid. The ad goes live once the team has checked its wording.' };
+  }
+  if (ev.kind === 'pass') {
+    const p = await db.find('ridePasses', x => x.id === ev.passId);
+    const until = require('./booking-rules').whenFor(p.endsAt, await db.find('users', u => u.id === p.userId), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return { for: 'pass', title: `Driver Pass: ${p.label}`, amountUsd: money(p.priceUsd), lines: [[`${p.label} (${p.days} day${p.days === 1 ? '' : 's'}, until ${until})`, usd(p.priceUsd)]], total: ['Total paid', usd(p.priceUsd)], local: '', method: p.paymentStatus === 'tokens' ? 'Your Trothen tokens' : methodWords({}), status: 'Paid. You keep the whole fare on every ride while the pass runs.' };
+  }
   if (ev.kind === 'tokens') {
     const p = await db.find('tokenPurchases', x => x.id === ev.purchaseId);
     return { for: 'tokens', title: `Tokens: ${p.packLabel || 'top-up'}`, amountUsd: money(p.priceUsd), lines: [['Tokens added', String(p.tokens + (p.bonus || 0))]], total: ['Price', usd(p.priceUsd)], local: p.priceLocal != null && p.currency && p.currency !== 'USD' ? `${p.currency} ${Number(p.priceLocal).toLocaleString('en-US')}` : '', method: p.method ? String(p.method).replace(/_/g, ' ') : 'Mobile money', status: 'Paid. The tokens are in your account.' };
@@ -130,7 +147,7 @@ async function snapshot(ev) {
   return { for: 'payout', title: `Payout of ${usd(p.amount)}`, amountUsd: money(p.amount), lines, total: ['You received', usd(p.amount)], local: p.payoutAmountLocal ? `${p.payoutCurrency} ${Number(p.payoutAmountLocal).toLocaleString('en-US')}` : '', method: [p.destination || p.method, p.paidReference ? `reference ${p.paidReference}` : ''].filter(Boolean).join(', '), status: 'Sent to you.' };
 }
 
-const TITLES = { payment: 'Payment Receipt', cash: 'Receipt', refund: 'Refund Receipt', tokens: 'Receipt', payout: 'Payout Statement' };
+const TITLES = { payment: 'Payment Receipt', cash: 'Receipt', refund: 'Refund Receipt', tokens: 'Receipt', pass: 'Receipt', ad: 'Receipt', payout: 'Payout Statement' };
 
 // The PDF, as a Buffer.
 async function pdfFor(rec) {
@@ -169,8 +186,8 @@ async function pdfFor(rec) {
 function emailParts(rec, user) {
   const appUrl = String(process.env.APP_URL || 'https://trothenpro.com').replace(/\/+$/, '');
   const amount = rec.local ? `${rec.local} (${usd(rec.amountUsd)})` : usd(rec.amountUsd);
-  const lead = { payment: `Thank you. Your payment of ${amount} for ${rec.title} was received.`, cash: `Your ${rec.title} is complete: ${amount}, paid in cash.`, refund: `${usd(rec.amountUsd)} is being refunded to you for ${rec.title}.`, tokens: `Your token purchase of ${amount} went through.`, payout: `${amount} was sent to you.` }[rec.kind] || '';
-  const subject = { payment: `Your Trothen receipt ${rec.number}: ${amount}`, cash: `Your Trothen receipt ${rec.number}: ${amount}`, refund: `Trothen refund ${rec.number}: ${usd(rec.amountUsd)}`, tokens: `Your Trothen receipt ${rec.number}: tokens`, payout: `Trothen payout statement ${rec.number}: ${amount}` }[rec.kind];
+  const lead = { payment: `Thank you. Your payment of ${amount} for ${rec.title} was received.`, cash: `Your ${rec.title} is complete: ${amount}, paid in cash.`, refund: `${usd(rec.amountUsd)} is being refunded to you for ${rec.title}.`, tokens: `Your token purchase of ${amount} went through.`, pass: `Your ${rec.title} (${amount}) is paid.`, ad: `Your ad (${amount}) is paid.`, payout: `${amount} was sent to you.` }[rec.kind] || '';
+  const subject = { payment: `Your Trothen receipt ${rec.number}: ${amount}`, cash: `Your Trothen receipt ${rec.number}: ${amount}`, refund: `Trothen refund ${rec.number}: ${usd(rec.amountUsd)}`, tokens: `Your Trothen receipt ${rec.number}: tokens`, pass: `Your Trothen receipt ${rec.number}: Driver Pass`, ad: `Your Trothen receipt ${rec.number}: ad`, payout: `Trothen payout statement ${rec.number}: ${amount}` }[rec.kind];
   const first = String((user && user.name) || '').split(/\s+/)[0] || 'there';
   const rows = [...(rec.lines || []), rec.total].filter(Boolean);
   const text = [`Hello ${first},`, '', lead, '', ...rows.map(([a, b]) => `${a}: ${b}`), rec.method ? `${rec.kind === 'payout' ? 'Sent to' : 'Paid with'}: ${rec.method}` : '', `Receipt number: ${rec.number}`, '', 'The receipt is attached as a PDF. You can also find it in Trothen under Account → Receipts:', `${appUrl}/?go=receipts`, '', 'Trothen'].filter(x => x !== null).join('\n');
@@ -226,7 +243,7 @@ async function sweep() {
       if (have.has(ev.key)) continue;
       let snap;
       try { snap = await snapshot(ev); } catch (e) { console.error('[receipts] could not read', ev.key, e.message); continue; }
-      const rec = { id: `rcp_${nanoid(10)}`, key: ev.key, number: `TR-${numberId()}`, userId: ev.userId, kind: ev.kind, contractId: ev.contractId || null, escrowId: ev.escrowId || null, purchaseId: ev.purchaseId || null, payoutId: ev.payoutId || null, eventAt: ev.at, createdAt: new Date().toISOString(), ...snap };
+      const rec = { id: `rcp_${nanoid(10)}`, key: ev.key, number: `TR-${numberId()}`, userId: ev.userId, kind: ev.kind, contractId: ev.contractId || null, escrowId: ev.escrowId || null, purchaseId: ev.purchaseId || null, payoutId: ev.payoutId || null, passId: ev.passId || null, adId: ev.adId || null, eventAt: ev.at, createdAt: new Date().toISOString(), ...snap };
       // The key is checked again just before saving, in case another server instance is sweeping too.
       if (await db.find('receipts', x => x.key === ev.key)) continue;
       await db.insert('receipts', rec);

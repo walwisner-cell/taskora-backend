@@ -533,7 +533,9 @@ router.put('/rides/driver/rates', requireAuth, requireRole('provider'), async (r
   }
   const { baseFee, perKm } = req.body || {};
   if (typeof baseFee !== 'number' || !(baseFee >= 0.5) || baseFee > 100) return res.status(400).json({ error: 'Your starting fare must be between $0.50 and $100' });
-  if (typeof perKm !== 'number' || perKm < 0 || perKm > 20) return res.status(400).json({ error: 'Your price per kilometre must be between $0 and $20' });
+  const miles = /miles/.test(require('../store-orders').distWords(1, u.country)) || / mi$/.test(require('../store-orders').distWords(1, u.country));
+  // v166: a price per distance of 0 made every trip the same price, however far.
+  if (typeof perKm !== 'number' || !(perKm >= 0.05) || perKm > 20) return res.status(400).json({ error: miles ? 'Your price for each mile must be between $0.08 and $32, so a longer trip costs more than a short one' : 'Your price for each kilometre must be between $0.05 and $20, so a longer trip costs more than a short one' });
   const rideDriver = { ...u.rideDriver, rates: { baseFee: money(baseFee), perKm: Math.round(perKm * 10000) / 10000 } };
   await db.update('users', u.id, { rideDriver });
   res.json(driverState({ ...u, rideDriver }));
@@ -957,7 +959,7 @@ router.get('/admin/rides/fares', gate, async (req, res) => {
 router.put('/admin/rides/fares', gate, async (req, res) => {
   if (!req.adminUser.isSuperAdmin) return res.status(403).json({ error: 'This action requires a super admin account' });
   const { country, table, remove } = req.body || {};
-  const all = { ...(await rideFares.tables()) };
+  const all = { ...(await rideFares.savedTables()) }; // v166: starter fares are not saved until the team saves them
   const key = Object.keys(all).find(k => sameText(k, country)) || String(country || '').trim();
   if (remove === true) { delete all[key]; }
   else {

@@ -5,10 +5,10 @@
 // (src/receipts.js) the moment the money moves.
 (function () {
   const e = (s) => escapeHtml(String(s == null ? '' : s));
-  const ICON = { payment: '🧾', cash: '💵', refund: '↩️', tokens: '🪙', payout: '💸' };
-  const KIND = { payment: 'Payment', cash: 'Paid in cash', refund: 'Refund', tokens: 'Tokens', payout: 'Payout statement' };
+  const ICON = { payment: '🧾', cash: '💵', refund: '↩️', tokens: '🪙', pass: '🎟️', ad: '📣', payout: '💸' };
+  const KIND = { payment: 'Payment', cash: 'Paid in cash', refund: 'Refund', tokens: 'Tokens', pass: 'Driver Pass', ad: 'Ad', payout: 'Payout statement' };
   const FOR = { ride: 'Ride', delivery: 'Delivery', store: 'Store order', booking: 'Booking', extra: 'Extra work', tip: 'Tip', tokens: 'Tokens', payout: 'Payout' };
-  const FILTERS = [['all', 'All'], ['ride', 'Rides'], ['delivery', 'Deliveries'], ['store', 'Store orders'], ['booking', 'Bookings'], ['refund', 'Refunds'], ['tokens', 'Tokens'], ['payout', 'Payouts']];
+  const FILTERS = [['all', 'All'], ['ride', 'Rides'], ['delivery', 'Deliveries'], ['store', 'Store orders'], ['booking', 'Bookings'], ['refund', 'Refunds'], ['tokens', 'Tokens'], ['pass', 'Driver Pass'], ['payout', 'Payouts']];
   let LIST = null, FILTER = 'all';
 
   function shellHTML() {

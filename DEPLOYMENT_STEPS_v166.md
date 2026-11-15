@@ -2,7 +2,7 @@
 
 This one package holds everything since the version on your GitHub `main` before v128: v128 (past chats, job locations), v129 (arrival times, Leave Now, the trip screen, phone, tablet and laptop layouts), v130 (professional wording), v131 (icon colours), v132 (how commission is paid), v133 (pros customers can find), v134 (commission before accepting, categories by country), v135 (custom admin permissions), v136 (voice and video calls, instant updates, permissions by action) v137 (voice messages, calls that reconnect, call hours, blocking, call history for disputes) v138 (one "Download a copy of my data" file with everything) v139 (the Market, pros as store owners, and the pro sign-up fix) v140 (safety and anti-fraud, materials for a job, trade prices, calls that don't hang, ringtones) v141 (paying per job, per day or per trip, asking a pro for a price, drivers' ride fares, and Mobile Money payouts instead of PayPal), v142 (Trothen proposes ride fares by distance and time in L$, linked to fuel, and drivers listed like any pro) v143 (the store complete: returns, sizes and colours, sales, discount codes, product reviews, saved goods, delivery by distance) v144 (Post a Job redesigned: 5 short steps, "pros send me their prices" or a real price in L$ or US$, when it's needed, who brings materials, and jobs that close by themselves) v145 (drivers can accept rides whatever their main trade, and a licence is checked for the work being done) v146 (calls no longer get stuck after a dropped call, Admin → Call health, and a Rides switch for each country), v147 (sign-in emails through your own mailbox, Mobile Money done properly and ready for MTN, payouts only when really sent, calls only once a booking is confirmed, Liberia ride places, team managers, "I've finished the job", and a full booking and ride walkthrough), v148 (Market goods paid before the seller is told, cash rides with commission from tokens, maps, GPS and navigation like other apps, Admin → System Check with alerts, and "Get ready" checks for every user), v149 (a full recheck: every screen opened on a phone and a computer, two gaps fixed, and a new check that money and bookings agree) v150 (a deeper recheck, the app starting about three times faster on a slow connection, a clearer "Finish setting up your account" that goes straight to each issue, and the Mobile Money network picked from the number) v151 (a third recheck: a pro's exact location no longer public, the app usable with a screen reader or keyboard to the WCAG 2.1 AA standard, other websites can't read the API, codes can't be guessed, and sign-in limits that suit shared mobile connections) v152 (professional wording across the app: short help lines, the same names everywhere, a compact "Complete your profile" card, and figures that agree between pages) v153 (a fourth recheck: a double-tap or two staff pressing at once can no longer do anything twice, the timed jobs never clash with a person, the All pros search by skill works, and the pro's dashboard is in Spanish for Spanish users), v154 (the phone view: a tab bar at the bottom like other phone apps, every button big enough to tap, the right keyboard for numbers and emails, and fewer things popping up), v155 (the phone view lined up: one edge for everything, an even top bar, one-colour tab icons, and tidy cards, filters and buttons), v156 (bookings checked from start to finish: real dates only, no booking of suspended pros, no cancelling for a refund once the pro has arrived, no tips or extra work that nobody collects, a payment history that counts only real payments, posted-job bookings with their date and time, and jobs nobody started refunded after a week), v157 (extra work and tips on a booking paid by card, payment code or mobile money are paid the same way as the booking, with their own receipt, before the pro gets them), v158 (booking updates by email when you are away from Trothen, reminders the day before and before a payment code runs out, times shown in each person's own time zone, GMV that counts only bookings that went ahead, and cancelled jobs leaving the pros' lists) v159 (messages show in front of pop-ups, and a job posted with no pro nearby stays open, is sent to new pros as they join, and offers the customer next steps, while the team sees where customers are waiting), v160 (a deeper recheck: background checks that never run twice at once, a job sent to at most 15 pros, job matches emailed to pros, a clear "Booking request sent" screen with View my booking, Leave Now only from 12 hours before the job, the install banner never over a pop-up, the phone screens lined up (a posted job's card, Live now in, the welcome card, the chat bubble, the store's status, the tab labels), and extra-work payments that can't clash with completing the job), v161 (checked in Spanish, dark mode, on 4 screen sizes and for admin: the four checks' icons drawn whole, dashboard headings visible in dark mode, admin tables as cards on phones, about 150 Spanish phrases added, clearer dark-mode links), v162 (a shopping cart: one cart across every store, kept on the account and for visitors, a cart icon and count in the top bar, a cart page with save for later, Add to cart in the Market, and checkout one store at a time; goods with sizes or colours now show in the Market) v163 (gaps found by walking store orders, sign-up and password reset with real taps: messages kept off pop-up buttons, sign-up errors shown under each field and the street address optional, nothing of an account left after signing out, no install banner over forms) v164 (everything re-checked: carts changed at the same moment, the pinned location as a Plus Code on every receipt and the booking screen, Admin → Market to regulate the Market, bicycle deliveries and each driver's distance range, tokens from L$50 in Liberia, a free first week of the Driver Pass, a clearer empty cart, and a delivery walked through on three phones) v165 (drivers can see themselves online again, Go online says what it is doing and why it can't, the motorbike night pause in local time, Google sign-in with a sign-in code, the Market open to visitors, and timed seller stops that end by themselves) and v166 (the exact location of a pin, in words and on a small map, on every receipt, invoice and booking screen). Deploy only this one. It works whether or not v128 is already live: a file that is already up to date is simply unchanged.
 
-124 files, plus `CHANGES_v128.md` to `CHANGES_v166.md` and this file. Two new packages (nodemailer, and compression in v150), which Render installs by itself from `package.json`. No database changes. For sign-in emails, add the four `SMTP_` settings in section 6 **before** you deploy.
+125 files, plus `CHANGES_v128.md` to `CHANGES_v166.md` and this file. Two new packages (nodemailer, and compression in v150), which Render installs by itself from `package.json`. No database changes. For sign-in emails, add the four `SMTP_` settings in section 6 **before** you deploy.
 
 ## 1. Files and byte counts
 
@@ -22,7 +22,7 @@ This one package holds everything since the version on your GitHub `main` before
 | `public\app\chats.js` | **new** | 22,031 |
 | `public\app\checks.js` | **new** | 19,888 |
 | `public\app\commission.js` | **new** | 31,522 |
-| `public\app\es-v152.js` | **new** | 51,823 |
+| `public\app\es-v152.js` | **new** | 52,728 |
 | `public\app\instant.js` | **new** | 10,353 |
 | `public\app\listing.js` | **new** | 2,662 |
 | `public\app\live.js` | changed | 12,129 |
@@ -38,17 +38,17 @@ This one package holds everything since the version on your GitHub `main` before
 | `public\app\postjob.js` | **new** | 25,576 |
 | `public\app\price-units.js` | **new** | 26,023 |
 | `public\app\pricing.js` | changed | 35,730 |
-| `public\app\receipts-ui.js` | **new** | 7,013 |
+| `public\app\receipts-ui.js` | **new** | 7,098 |
 | `public\app\review.js` | changed | 19,893 |
-| `public\app\rides.js` | changed | 139,044 |
+| `public\app\rides.js` | changed | 139,496 |
 | `public\app\sounds.js` | **new** | 4,867 |
 | `public\app\store-plus.js` | **new** | 50,158 |
 | `public\app\teams.js` | **new** | 6,193 |
 | `public\app\tokens.js` | changed | 61,193 |
-| `public\app\trothen.js` | changed | 1,542,779 |
+| `public\app\trothen.js` | changed | 1,548,174 |
 | `public\app\voice.js` | **new** | 28,883 |
 | `public\app\where.js` | **new** | 40,143 |
-| `public\index.html` | changed | 288,719 |
+| `public\index.html` | changed | 289,182 |
 | `public\manifest.json` | changed | 780 |
 | `public\sw.js` | changed | 3,368 |
 | `server.js` | changed | 36,753 |
@@ -68,6 +68,7 @@ This one package holds everything since the version on your GitHub `main` before
 | `src\contract-locks.js` | changed | 2,424 |
 | `src\currency-data.js` | changed | 6,973 |
 | `src\customer-payments.js` | changed | 38,666 |
+| `src\db-json.js` | changed | 5,030 |
 | `src\delivery.js` | changed | 12,912 |
 | `src\document-expiry-scheduler.js` | changed | 3,642 |
 | `src\document-upload-reminder-scheduler.js` | changed | 2,431 |
@@ -85,7 +86,7 @@ This one package holds everything since the version on your GitHub `main` before
 | `src\market.js` | **new** | 21,276 |
 | `src\membership.js` | changed | 3,164 |
 | `src\mobile-money.js` | **new** | 5,472 |
-| `src\notify.js` | changed | 2,946 |
+| `src\notify.js` | changed | 2,941 |
 | `src\payout-methods.js` | **new** | 10,675 |
 | `src\payout-sending.js` | **new** | 6,943 |
 | `src\payout-settlement-scheduler.js` | changed | 2,489 |
@@ -98,9 +99,9 @@ This one package holds everything since the version on your GitHub `main` before
 | `src\provider-score-scheduler.js` | changed | 6,587 |
 | `src\provider-score.js` | changed | 17,973 |
 | `src\readiness.js` | **new** | 11,600 |
-| `src\receipts.js` | **new** | 21,059 |
+| `src\receipts.js` | **new** | 23,050 |
 | `src\request-queue.js` | **new** | 4,741 |
-| `src\ride-fares.js` | **new** | 8,889 |
+| `src\ride-fares.js` | **new** | 10,553 |
 | `src\ride-pass.js` | changed | 8,812 |
 | `src\road-route.js` | **new** | 4,415 |
 | `src\routes\admin.routes.js` | changed | 254,669 |
@@ -117,7 +118,7 @@ This one package holds everything since the version on your GitHub `main` before
 | `src\routes\payments.routes.js` | changed | 118,782 |
 | `src\routes\portfolio.routes.js` | changed | 12,133 |
 | `src\routes\receipts.routes.js` | **new** | 2,683 |
-| `src\routes\rides.routes.js` | changed | 92,485 |
+| `src\routes\rides.routes.js` | changed | 92,958 |
 | `src\routes\store.routes.js` | changed | 83,980 |
 | `src\routes\tokens.routes.js` | changed | 25,314 |
 | `src\search-synonyms.js` | changed | 6,181 |
@@ -198,6 +199,7 @@ dir src\contact-scrub.js
 dir src\contract-locks.js
 dir src\currency-data.js
 dir src\customer-payments.js
+dir src\db-json.js
 dir src\delivery.js
 dir src\document-expiry-scheduler.js
 dir src\document-upload-reminder-scheduler.js
@@ -332,6 +334,7 @@ git add src\contact-scrub.js
 git add src\contract-locks.js
 git add src\currency-data.js
 git add src\customer-payments.js
+git add src\db-json.js
 git add src\delivery.js
 git add src\document-expiry-scheduler.js
 git add src\document-upload-reminder-scheduler.js
@@ -404,7 +407,7 @@ git commit -m "v166: the exact location of a pin in words and on a small map, on
 git push -u origin v166-location
 ```
 
-`git status` should list **162 files** if v128 is already live, **164 files** if it is not, **22 files** if you already deployed v165 (20 code files, `CHANGES_v166.md` and this file), or **34 files** if your last deploy was v164 (31 code files, `CHANGES_v165.md`, `CHANGES_v166.md` and this file). Any other number means something is off: stop and send me a screenshot.
+`git status` should list **163 files** if v128 is already live, **165 files** if it is not, **24 files** if you already deployed v165 (22 code files, `CHANGES_v166.md` and this file), or **36 files** if your last deploy was v164 (33 code files, `CHANGES_v165.md`, `CHANGES_v166.md` and this file). Any other number means something is off: stop and send me a screenshot.
 
 ## 4. Test on your computer
 
