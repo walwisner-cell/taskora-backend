@@ -534,7 +534,7 @@
     const offers = list.filter(r => r.status === 'pending_agreement' || r.status === 'awaiting_payment'); // v125
     return `<div class="panel"><div class="panel-title">${e(tr('Rides'))}</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span style="font-weight:700;color:${d.online ? '#1F7A55' : 'var(--slate)'};">● ${e(tr(d.online ? 'You are online. Riders near you can see you.' : 'You are offline'))}</span>
-      <button class="btn-sm ${d.online ? 'btn-sm-outline' : 'btn-sm-primary'}" onclick="ridesToggleOnline(${d.online ? 'false' : 'true'})">${e(tr(d.online ? 'Go offline' : 'Go online'))}</button></div>
+      <button class="btn-sm ${d.online ? 'btn-sm-outline' : 'btn-sm-primary'}" data-rides-online="1" onclick="ridesToggleOnline(${d.online ? 'false' : 'true'})">${e(tr(d.online ? 'Go offline' : 'Go online'))}</button></div>
       <div class="ver-note" style="margin-top:8px;">${e(tr('Keep this page open while you are online so riders can find you. You go offline by yourself after 12 hours.'))}</div></div>
       ${offers.map(r => { const myTurn = r.status === 'pending_agreement' && r.waitingOn === 'provider'; return `<div class="panel" style="border:2px solid #E0A526;"><div class="panel-title">${e(tr(r.status === 'awaiting_payment' ? 'Fare agreed: waiting for the rider to pay' : myTurn ? 'A rider offers a fare' : 'Waiting for the rider'))} <small>#${e(r.number)}</small></div>
         <div><strong>${e(r.pickup.address)}</strong>${r.pickup.note ? ` <span style="font-size:13px;color:var(--slate);">(📝 ${e(r.pickup.note)})</span>` : ''} → <strong>${e(r.dropoff.address)}</strong> · ${e(km(r.km))} · ${e(r.passengers)} ${e(tr('passenger(s)'))}${r.cash ? ' · 💵 ' + e(tr('cash')) : ''}</div>
@@ -560,12 +560,37 @@
         : `<div style="display:flex;gap:8px;margin-top:8px;"><button class="confirm-btn" onclick="ridesEnd(${jsArg(r.id)})">🏁 ${e(tr(r.endedAt ? 'Waiting for the rider to confirm' : 'End trip'))}</button></div>`}
         <div style="display:flex;gap:8px;margin-top:8px;"><button class="btn-sm" style="background:#C0392B;color:#fff;" onclick="ridesSOS(${jsArg(r.id)})">🚨 ${e(tr('Emergency / SOS'))}</button>${r.canCancel ? `<button class="btn-sm btn-sm-outline" onclick="ridesCancel(${jsArg(r.id)})">${e(tr('Cancel'))}</button>` : ''}</div></div>`).join('')}`;
   }
+  // v165: going online says what it is doing, and when it can't, the reason
+  // stays on the page with what to do (a toast was easy to miss, and finding
+  // a laptop's location can take several seconds with nothing on screen).
   window.ridesToggleOnline = async function (on) {
+    const btn = document.querySelector('[data-rides-online]');
+    const say = (html) => { let n = document.getElementById('rd-online-help'); if (!n && btn) { btn.closest('div').insertAdjacentHTML('afterend', '<div id="rd-online-help" role="alert" class="rd-online-help"></div>'); n = document.getElementById('rd-online-help'); } if (n) n.innerHTML = html; };
+    const label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = tr(on ? 'Finding your location…' : 'Going offline…'); }
+    say('');
     try {
-      let f = null; if (on) { f = await here(); if (!f) return showToast(tr('We need your location to show you to riders nearby. Allow location and try again.')); }
+      let f = null;
+      if (on) {
+        const r = await getBestLocation({ goodEnoughM: 80, maxWaitMs: 10000 }).catch(() => ({ error: 'unavailable' }));
+        if (!r || r.error) {
+          const denied = r && r.error === 'denied';
+          say(`<strong>${e(tr(denied ? 'Location is blocked for Trothen in this browser.' : 'Your device could not find where you are.'))}</strong> ${e(tr('Riders are matched with drivers nearby, so Trothen needs your location to put you online.'))}<ul>${denied
+            ? `<li>${e(tr('Click the lock or settings icon next to trothenpro.com in the address bar, set Location to Allow, then press Go online again.'))}</li><li>${e(tr('On a phone: Settings → your browser (or the Trothen app) → Location → Allow.'))}</li>`
+            : `<li>${e(tr('On a Windows laptop: Settings → Privacy & security → Location → turn Location services on, and allow your browser.'))}</li><li>${e(tr('On a Mac: System Settings → Privacy & Security → Location Services → allow your browser.'))}</li><li>${e(tr('Best of all, drive with Trothen on your phone, which has GPS.'))}</li>`}</ul>`);
+          return;
+        }
+        f = r;
+        if (btn) btn.textContent = tr('Going online…');
+      }
       await apiFetch('POST', '/rides/driver/online', { online: on, latitude: f ? f.latitude : undefined, longitude: f ? f.longitude : undefined });
+      showToast(tr(on ? 'You are online. Riders nearby can find you.' : 'You are offline'));
       loadDriverPage();
-    } catch (x) { showToast(x.message || 'Could not change'); }
+    } catch (x) {
+      say(`<strong>${e(tr(on ? 'You could not go online.' : 'Could not go offline.'))}</strong> ${e(x.message || '')}`);
+    } finally {
+      if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = label; }
+    }
   };
   window.ridesAnswer = async function (id, decision) {
     try { const res = await apiFetch('POST', `/contracts/${encodeURIComponent(id)}/respond-offer`, { decision }); const st = res && res.contract && res.contract.status; showToast(tr(decision !== 'accept' ? 'Declined' : st === 'awaiting_payment' ? 'Accepted. The rider is asked to pay; you\'ll be told when they do.' : 'Accepted. Go to your rider.')); loadDriverPage(); } catch (x) { showToast(x.message || 'Could not answer'); loadDriverPage(); }

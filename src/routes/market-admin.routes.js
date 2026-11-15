@@ -178,7 +178,7 @@ router.post('/admin/market/sellers/:id/stop', team, async (req, res) => {
   const now = new Date();
   const ban = { reason: String(reason).trim(), at: now.toISOString(), until: d ? new Date(now.getTime() + d * DAY).toISOString() : null, by: req.adminUser.id, byName: req.adminUser.name };
   const patch = { marketBan: ban };
-  if (u.store && u.store.name) patch.store = { ...u.store, open: false, closedByAdmin: true, closedReason: ban.reason, closedAt: now.toISOString(), closedBy: req.adminUser.id, closedByMarketStop: true };
+  if (u.store && u.store.name) patch.store = { ...u.store, open: false, closedByAdmin: true, closedReason: ban.reason, closedAt: now.toISOString(), closedBy: req.adminUser.id, closedByMarketStop: true, openBeforeStop: u.store.open === true };
   await db.update('users', u.id, patch);
   let hidden = 0;
   for (const l of await db.filter('marketListings', x => x.sellerId === u.id && x.status === 'live')) { await db.update('marketListings', l.id, { status: 'hidden', hiddenByStop: true }); hidden += 1; }
@@ -191,17 +191,9 @@ router.post('/admin/market/sellers/:id/lift', team, async (req, res) => {
   const u = await db.find('users', x => x.id === req.params.id);
   if (!u || !req.covers(u)) return res.status(404).json({ error: 'Seller not found' });
   if (!u.marketBan) return res.status(400).json({ error: 'This seller isn\'t stopped.' });
-  const patch = { marketBan: null };
-  if (u.store && u.store.closedByMarketStop) patch.store = { ...u.store, closedByAdmin: false, closedReason: null, closedByMarketStop: false };
-  await db.update('users', u.id, patch);
-  let back = 0;
-  for (const l of await db.filter('marketListings', x => x.sellerId === u.id && x.status === 'hidden' && x.hiddenByStop)) {
-    const expired = l.expiresAt && Date.parse(l.expiresAt) < Date.now();
-    await db.update('marketListings', l.id, { status: expired ? 'hidden' : 'live', hiddenByStop: false }); if (!expired) back += 1;
-  }
-  await notify(u.id, '✅', `You can sell in the Market again.${back ? ` ${back} of your listings ${back === 1 ? 'is' : 'are'} back on sale.` : ''}${patch.store ? ' Switch your store back on in My Store.' : ''}`, 'bookingUpdates', { section: 'market' });
+  const r = await market.liftMarketStop(u, 'team');
   await log(req, 'market_seller_lift', u.id);
-  res.json({ ok: true, back });
+  res.json({ ok: true, back: r.back });
 });
 
 // ── orders: every store and Market order ──────────────────────────────

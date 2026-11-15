@@ -2563,6 +2563,14 @@
   .cart-empty-actions { display:flex; flex-direction:column; align-items:center; gap:6px; width:100%; margin-top:6px; }
   .cart-empty-actions .confirm-btn { width:auto; min-width:220px; max-width:100%; padding-left:22px; padding-right:22px; }
   .cart-empty-signin { min-height:44px; font-weight:600; }
+  /* v165: why a driver could not go online, and what to do */
+  .rd-online-help:not(:empty) { margin-top:10px; padding:10px 14px; border-radius:10px; background:#FFF8E8; border:1px solid #E0B25B; color:#5C3D00; font-size:14px; line-height:1.5; }
+  .rd-online-help ul { margin:6px 0 0 18px; padding:0; }
+  html.dark .rd-online-help:not(:empty) { background:#3A2E14; color:#F3D9A4; border-color:#7A5A20; }
+  /* v164: the Market for visitors */
+  .public-market .browse-title { margin:0; }
+  .public-market-sub { margin-bottom:12px; }
+  .public-market-sub .btn-link { font-size:inherit; padding:0; min-height:0; }
   /* v164: Admin → Market */
   .am-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 14px; }
   .am-filter { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
@@ -3629,6 +3637,11 @@
 </div>
 
 <!-- ════════════════════════════ SCREEN: PROVIDER DIRECTORY ════════════════════════════ -->
+<!-- v164: the Market, open to everyone (signing in is only needed to buy or sell) -->
+<div class="screen" id="screen-market">
+  <nav class="navbar" id="navbar-market"></nav>
+  <main class="browse-wrap public-market" id="public-market"></main>
+</div>
 <div class="screen" id="screen-directory">
   <nav class="navbar" id="navbar-directory"></nav>
   <div class="browse-wrap">
@@ -3701,8 +3714,8 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=395f0ad470" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
-<script src="/app/rides.js?v=f7f8ac55a5"></script>
+<script src="/app/trothen.js?v=2803e9d817" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/rides.js?v=1d8a3a40ba"></script>
 <script src="/app/tokens.js?v=5697c68ad9"></script>
 <script src="/app/payways.js?v=06dccae9e7"></script>
 <script src="/app/review.js?v=86c2ff86bf"></script>
@@ -3717,8 +3730,8 @@
 <script src="/app/callhealth.js?v=04d5713002"></script>
 <script src="/app/teams.js?v=0a22b63b77"></script>
 <script src="/app/voice.js?v=7554f61733"></script>
-<script src="/app/market.js?v=72c78301c2"></script>
-<script src="/app/market-admin.js?v=7f95f82323"></script>
+<script src="/app/market.js?v=6c13e937a2"></script>
+<script src="/app/market-admin.js?v=6e5672fbad"></script>
 <script src="/app/commission.js?v=2fd7aaa6b7"></script>
 <script src="/app/categories.js?v=9ac65b7765"></script>
 <script src="/app/acceptquote.js?v=3d4d251ecf"></script>
@@ -3726,12 +3739,12 @@
 <script src="/app/permissions.js?v=790e421988"></script>
 <script src="/app/postjob.js?v=f70359e917"></script>
 <script src="/app/store-plus.js?v=501b2f5eae"></script>
-<script src="/app/cart.js?v=079e200af7"></script>
+<script src="/app/cart.js?v=0a00e3cac4"></script>
 <script src="/app/price-units.js?v=1d2df9e851"></script>
 <script src="/app/payout-details.js?v=f2e785bbae"></script>
 <script src="/app/paymethods.js?v=497f245785"></script>
 <script src="/app/maps.js?v=aaa2141068"></script>
-<script src="/app/checks.js?v=071de1a6a3"></script>
+<script src="/app/checks.js?v=ee65d6987e"></script>
 <script src="/app/polish.js?v=0ae5f38a4e"></script>
 <script src="/app/a11y.js?v=7a13a5f443"></script>
 <script src="/app/es-v152.js?v=fd75ba6def"></script>

@@ -135,7 +135,15 @@ router.get('/market/items', listLimiter, async (req, res) => {
   items.sort(by);
   const page = Math.max(1, Number(req.query.page) || 1), per = 40;
   res.set('Cache-Control', 'no-store');
-  res.json({ items: items.slice((page - 1) * per, page * per), total: items.length, page, perPage: per, country: country || null });
+  // v164: the countries with something for sale, for a visitor's country choice
+  let countries;
+  if (req.query.countries === '1') {
+    const set = new Set();
+    if (settings.enabled) for (const u of await db.filter('users', u => u.role === 'provider' && u.store && store.storeIsLive(u) && u.country)) set.add(u.country);
+    for (const l of await db.filter('marketListings', l => l.status === 'live' && l.country)) set.add(l.country);
+    countries = [...set].sort();
+  }
+  res.json({ items: items.slice((page - 1) * per, page * per), total: items.length, page, perPage: per, country: country || null, ...(countries ? { countries } : {}) });
 });
 
 router.get('/market/listings/mine', requireAuth, async (req, res) => {
@@ -249,7 +257,7 @@ async function sendForReview(listing, seller, reasons) {
   try { await require('../fraud-detection').createFlag({ type: 'market_listing_risk', severity: 'medium', userId: seller.id, details: `Market listing "${listing.title}" by ${seller.name} held for review: ${reasons.join('; ')}` }); } catch (e) { /* the hold still stands */ }
   await notify(seller.id, '🔎', `"${listing.title}" is being checked by the Trothen team before it goes on sale, usually within a day. This is a routine safety check.`, 'bookingUpdates', { section: 'market' });
   const managers = await require('../admin-scope').regionalAdminsFor({ city: listing.city, country: listing.country });
-  for (const a of managers) await notify(a.id, '🔎', `A Market listing needs checking before it goes on sale: "${listing.title}". Stores & Skills → Market listings.`, null, { section: 'stores' });
+  for (const a of managers) await notify(a.id, '🔎', `A Market listing needs checking before it goes on sale: "${listing.title}". Admin → Market → To check.`, null, { section: 'market' });
 }
 
 router.post('/market/listings', requireAuth, writeLimiter, async (req, res) => {
@@ -333,7 +341,7 @@ router.post('/market/listings/:id/report', requireAuth, writeLimiter, async (req
     const supers = await db.filter('users', u => u.role === 'admin' && u.isSuperAdmin && u.active !== false);
     const managers = await require('../admin-scope').regionalAdminsFor({ city: l.city, country: l.country });
     const seen = new Set();
-    for (const a of [...managers, ...supers]) { if (seen.has(a.id)) continue; seen.add(a.id); await notify(a.id, '🚩', `A Market listing was reported ${reports.length} times and hidden: "${l.title}". Review it in Stores & Skills → Market listings.`, null, { section: 'stores' }); }
+    for (const a of [...managers, ...supers]) { if (seen.has(a.id)) continue; seen.add(a.id); await notify(a.id, '🚩', `A Market listing was reported ${reports.length} times and hidden: "${l.title}". Review it in Admin → Market → To check.`, null, { section: 'market' }); }
   }
   res.json({ ok: true, hidden: hide });
 });
@@ -365,7 +373,7 @@ router.post('/market/listings/:id/buy', requireAuth, require('../terms').require
     if (l.sellerId === buyer.id) return res.status(400).json({ error: 'This is your own item.' });
     if (l.protected === false) return res.status(400).json({ error: 'This seller only sells in person. Message them to arrange it.' });
     const seller = await db.find('users', u => u.id === l.sellerId);
-    if (!seller || seller.active === false || seller.onHold || seller.closedAt) return res.status(409).json({ error: 'This seller can\'t sell right now.' });
+    if (!seller || seller.active === false || seller.onHold || seller.closedAt || require('./market-admin.routes').banOf(seller)) return res.status(409).json({ error: 'This seller can\'t sell right now.' }); // v164: a stopped seller too
     // v140: buying from a second account of your own (same phone) is how fake
     // sales and fake ratings are made.
     const digits = (p) => String(p || '').replace(/\D/g, '').slice(-9);
@@ -630,6 +638,7 @@ router.post('/admin/market/listings/:id/decide', adminOnly, async (req, res) => 
     await db.update('marketListings', l.id, { status: 'removed', removedReason: reason.trim(), removedBy: req.adminUser.id, removedAt: new Date().toISOString() });
     await notify(l.sellerId, '🚫', `The Trothen team took down your Market listing "${l.title}": ${reason.trim()}`, 'bookingUpdates', { section: 'market' });
   } else if (decision === 'restore') {
+    if (seller && require('./market-admin.routes').banOf(seller)) return res.status(409).json({ error: 'This seller is stopped from selling. Lift that first in Admin → Market → Sellers.' }); // v164
     await db.update('marketListings', l.id, { status: 'live', reports: [], hiddenByReports: false, removedReason: null, reviewReasons: [], reviewedBy: req.adminUser.id, expiresAt: new Date(Date.now() + market.LISTING_DAYS * market.DAY).toISOString() });
     await notify(l.sellerId, '✅', `Your Market listing "${l.title}" is ${l.status === 'review' ? 'checked and now on sale' : 'back on sale after the Trothen team looked at it'}.`, 'bookingUpdates', { section: 'market' });
   } else return res.status(400).json({ error: 'Choose remove or restore' });

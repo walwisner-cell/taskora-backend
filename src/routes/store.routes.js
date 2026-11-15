@@ -815,6 +815,7 @@ router.post('/admin/store/stores/:providerId/close', adminGate, async (req, res)
   if (!pro || !pro.store || !req.covers(pro)) return res.status(404).json({ error: 'Store not found' });
   const { reason, reopen } = req.body || {};
   if (reopen === true) {
+    if (require('./market-admin.routes').banOf(pro)) return res.status(409).json({ error: 'This seller is stopped from selling in the Market. Lift that in Admin → Market → Sellers (it reopens the store too).' }); // v164
     await db.update('users', pro.id, { store: { ...pro.store, closedByAdmin: false, closedReason: null } });
     await notify(pro.id, '🛍️', 'Your store can be opened again. Switch it on in My Store.', null, { section: 'store' });
     return res.json({ ok: true, closedByAdmin: false });

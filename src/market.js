@@ -232,9 +232,35 @@ async function sweep() {
     const o = await db.find('contracts', c => c.id === l.reservedForOrderId);
     if (!o || ['cancelled', 'refunded', 'declined', 'expired', 'completed'].includes(o.status)) await afterOrderEnds(o || { marketListingId: l.id, id: l.reservedForOrderId, status: 'cancelled' });
   }
+  await sweepEndedStops(); // v164
   for (const l of await db.filter('marketListings', x => x.status === 'live' && x.expiresAt && Date.parse(x.expiresAt) < now)) {
     await db.update('marketListings', l.id, { status: 'expired' });
     await notify(l.sellerId, '🏷️', `Your Market listing "${l.title}" has ended after ${LISTING_DAYS} days. Renew it from Market → Sell if it's still for sale.`, 'bookingUpdates', { section: 'market' });
+  }
+}
+// v164: let a stopped seller sell again: their listings that the stop took
+// off sale go back on (unless they have ended), and a store the stop closed
+// can be opened again. Used by "Allow selling again", and by the sweep when a
+// stop for a set time runs out.
+async function liftMarketStop(u, why) {
+  const fresh = await db.find('users', x => x.id === u.id);
+  if (!fresh || !fresh.marketBan) return { back: 0 };
+  const patch = { marketBan: null };
+  if (fresh.store && fresh.store.closedByMarketStop) patch.store = { ...fresh.store, closedByAdmin: false, closedReason: null, closedByMarketStop: false, open: fresh.store.openBeforeStop === true, openBeforeStop: undefined }; // the store goes back as it was
+  await db.update('users', fresh.id, patch);
+  if (patch.store) { try { await require('./store').refreshStoreLive(fresh.id); } catch (e) { /* shown on the next look */ } }
+  let back = 0;
+  for (const l of await db.filter('marketListings', x => x.sellerId === fresh.id && x.status === 'hidden' && x.hiddenByStop)) {
+    const ended = l.expiresAt && Date.parse(l.expiresAt) < Date.now();
+    await db.update('marketListings', l.id, { status: ended ? 'expired' : 'live', hiddenByStop: false }); if (!ended) back += 1;
+  }
+  await notify(fresh.id, '✅', `${why === 'ended' ? 'Your time away from the Market is over: you' : 'You'} can sell in the Market again.${back ? ` ${back} of your listings ${back === 1 ? 'is' : 'are'} back on sale.` : ''}${patch.store ? (patch.store.open ? ' Your store is open again.' : ' Switch your store on in My Store when you are ready.') : ''}`, 'bookingUpdates', { section: 'market' });
+  return { back };
+}
+async function sweepEndedStops() {
+  const now = Date.now();
+  for (const u of await db.filter('users', x => x.marketBan && x.marketBan.until && Date.parse(x.marketBan.until) <= now)) {
+    try { await liftMarketStop(u, 'ended'); } catch (e) { console.error('[market] lift stop', u.id, e.message); }
   }
 }
 let timer = null;
@@ -291,4 +317,4 @@ function goodCategories(g, seller) {
   return cats;
 }
 
-module.exports = { guessCategory, goodCategories, SERVICE_TO_MARKET, marketAislesFor, sellerStats, reserveUntil, scamSignals, listingRisk, NEW_SELLER_SALES, NEW_SELLER_RESERVE_DAYS, MARKET_CATEGORIES, CONDITIONS, MAX_LIVE_LISTINGS, MAX_PHOTOS, LISTING_DAYS, REPORTS_TO_HIDE, DAY, money, sameText, autoCompleteAt, completeOrder, afterOrderEnds, refreshSellerRating, sweep, startMarketScheduler };
+module.exports = { guessCategory, goodCategories, SERVICE_TO_MARKET, marketAislesFor, sellerStats, reserveUntil, scamSignals, listingRisk, NEW_SELLER_SALES, NEW_SELLER_RESERVE_DAYS, MARKET_CATEGORIES, CONDITIONS, MAX_LIVE_LISTINGS, MAX_PHOTOS, LISTING_DAYS, REPORTS_TO_HIDE, DAY, money, sameText, autoCompleteAt, completeOrder, afterOrderEnds, refreshSellerRating, sweep, startMarketScheduler, liftMarketStop, sweepEndedStops };

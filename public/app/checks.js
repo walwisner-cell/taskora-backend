@@ -190,7 +190,9 @@
       if (el('rd-go')) el('rd-go').onclick = () => done(true);
       el('rd-modal').querySelectorAll('button[onclick^="readyFix"]').forEach(b => {
         const key = (b.getAttribute('onclick').match(/readyFix\("([^"]+)"\)/) || [])[1];
-        if (key === 'dev_notif') { b.onclick = async () => { try { if (typeof notifyAskNow === 'function') await notifyAskNow(); else await Notification.requestPermission(); } catch (x) {} b.textContent = t('Done'); b.disabled = true; }; }
+        // v165: once notifications are on, carry straight on if nothing else stands in the way
+        // (the window used to stay open with "Done", and going online looked broken).
+        if (key === 'dev_notif') { b.onclick = async () => { try { if (typeof notifyAskNow === 'function') await notifyAskNow(); else await Notification.requestPermission(); } catch (x) {} b.textContent = t('Done'); b.disabled = true; const others = [...blocking, ...warnings].filter(x => x.key !== 'dev_notif'); if (!blocking.length && !others.length) done(true); }; }
         else b.addEventListener('click', () => resolve(false));
       });
     });

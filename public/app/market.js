@@ -27,6 +27,7 @@
       'Price: low to high': 'Precio: menor a mayor', 'Price: high to low': 'Precio: mayor a menor', 'Best rated sellers': 'Vendedores mejor calificados',
       'Store': 'Tienda', 'Verified': 'Verificado', 'Buy with Trothen protection': 'Comprar con protección de Trothen', 'Message the seller': 'Escribir al vendedor',
       'Report': 'Reportar', 'Sell an item': 'Vender un artículo', 'Nothing found. Try other words or another category.': 'No se encontró nada. Prueba otras palabras u otra categoría.',
+      'Pay through Trothen: your money is held until you have your order.': 'Paga a través de Trothen: tu dinero se retiene hasta que tengas tu pedido.', 'Sign in to buy or sell': 'Inicia sesión para comprar o vender', 'All countries': 'Todos los países',
       'Offer my services': 'Ofrecer mis servicios', 'Sell goods (a store)': 'Vender productos (una tienda)', 'Both: services and a store': 'Ambos: servicios y una tienda',
     });
   } catch (x) {}
@@ -56,6 +57,28 @@
     window[fn] = function (key) { const r = base.apply(this, arguments); if (key === 'market') setTimeout(drawTab, 0); return r; };
   }
   window.marketTab = function (k) { M.tab = k; document.querySelectorAll('[data-mtab]').forEach(b => { b.className = 'btn-sm ' + (b.dataset.mtab === k ? 'btn-sm-primary' : 'btn-sm-outline'); }); drawTab(); };
+  // v164: the Market for visitors. Anyone can look; buying or selling asks
+  // them to sign in (as on Jiji, Jumia and Facebook Marketplace). A signed-in
+  // customer or pro is taken to the Market in their own dashboard instead.
+  function paintCountryChoice() {
+    const slot = document.getElementById('mk-pub-country'); if (!slot || !M.pubCountries) return;
+    slot.innerHTML = `<label class="sr-only" for="mk-country">${e(t('Country'))}</label><select class="form-input form-select" id="mk-country" style="width:100%;" onchange="MARKET.pubCountry=this.value;marketSearch()"><option value="">${e(t('All countries'))}</option>${M.pubCountries.map(c => `<option value="${e(c)}" ${M.pubCountry === c ? 'selected' : ''}>${e(t(c))}</option>`).join('')}</select>`;
+  }
+  window.openPublicMarket = function () {
+    const r = role();
+    if (r === 'customer' && typeof goToCustomerDashboard === 'function') { M.tab = 'browse'; return goToCustomerDashboard('market'); }
+    if (r === 'provider') { M.tab = 'browse'; const sc = document.getElementById('screen-provider'); if (sc && !sc.classList.contains('active') && typeof showScreen === 'function') showScreen('screen-provider'); return selectProviderSection('market'); }
+    if (typeof showScreen === 'function') showScreen('screen-market');
+    if (typeof renderNavbar === 'function') renderNavbar('navbar-market', typeof navRoleNow === 'function' ? navRoleNow() : 'home');
+    const host = document.getElementById('public-market'); if (!host) return;
+    M.tab = 'browse';
+    host.innerHTML = `<div class="browse-back" role="link" tabindex="0" onclick="goHome()" onkeydown="if(event.key==='Enter')goHome()">← ${e(t('Back to Explore'))}</div>
+      <h1 class="browse-title">${e(t('Market'))}</h1>
+      <div class="browse-sub public-market-sub">${e(t('Pay through Trothen: your money is held until you have your order.'))} <button type="button" class="btn-link" onclick="showAuth('login')">${e(t('Sign in to buy or sell'))}</button></div>
+      <div id="market-body"></div>`;
+    window.scrollTo(0, 0);
+    M.pubCountries = null; drawBrowse();
+  };
   window.openMarket = function (tab) {
     M.tab = tab || 'browse';
     if (role() === 'provider') selectProviderSection('market'); else if (role() === 'customer') selectCustomerSection('market');
@@ -78,6 +101,7 @@
     body.innerHTML = `<div class="panel" style="padding:12px;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <input type="search" class="form-input" id="mk-q" value="${e(M.q)}" placeholder="${e(t('Search the Market'))}" style="flex:1 1 220px;" onkeydown="if(event.key==='Enter')marketSearch()"/>
+          ${document.getElementById('public-market') && document.getElementById('screen-market') && document.getElementById('screen-market').classList.contains('active') ? '<span id="mk-pub-country" style="flex:1 1 150px;min-width:0;display:flex;"></span>' : ''}
           <select class="form-input form-select" id="mk-cat" style="flex:1 1 150px;width:auto;min-width:0;" onchange="marketSearch()"><option value="">${e(t('All categories'))}</option>${M.cats.map(c => `<option ${M.category === c ? 'selected' : ''}>${e(c)}</option>`).join('')}</select>
           <select class="form-input form-select" id="mk-type" style="flex:1 1 120px;width:auto;min-width:0;" onchange="marketSearch()">${[['all', 'Everything'], ['stores', 'Stores'], ['people', 'From people']].map(([v, l]) => `<option value="${v}" ${M.type === v ? 'selected' : ''}>${e(t(l))}</option>`).join('')}</select>
           <select class="form-input form-select" id="mk-sort" style="flex:1 1 150px;width:auto;min-width:0;" onchange="marketSearch()">${[['newest', 'Newest'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['rating', 'Best rated sellers']].map(([v, l]) => `<option value="${v}" ${M.sort === v ? 'selected' : ''}>${e(t(l))}</option>`).join('')}</select>
@@ -98,7 +122,9 @@
     const box = document.getElementById('mk-results'); if (!box) return;
     const seq = ++M.seq;
     const qs = new URLSearchParams({ q: M.q, category: M.category, type: M.type, sort: M.sort });
-    try { const r = await apiFetch('GET', '/market/items?' + qs.toString()); if (seq !== M.seq) return; M.items = r.items; M.total = r.total; }
+    const pub = !!document.getElementById('public-market') && document.getElementById('screen-market') && document.getElementById('screen-market').classList.contains('active');
+    if (pub) { qs.set('country', M.pubCountry || ''); if (!M.pubCountries) qs.set('countries', '1'); } // v164: a visitor chooses the country
+    try { const r = await apiFetch('GET', '/market/items?' + qs.toString()); if (seq !== M.seq) return; M.items = r.items; M.total = r.total; if (r.countries) { M.pubCountries = r.countries; paintCountryChoice(); } }
     catch (x) { box.innerHTML = `<div class="panel">${e(x.message || 'Could not load the Market')}</div>`; return; }
     box.innerHTML = M.items.length
       ? `<div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${M.total} ${e(t(M.total === 1 ? 'item' : 'items'))}</div><div class="mk-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;">${M.items.map(cardHTML).join('')}</div>`
@@ -539,7 +565,7 @@
   window.adminListing = async function (id, decision) {
     let reason = '';
     if (decision === 'remove') {
-      const p = confirmDialog('', { confirmLabel: 'Take it down' });
+      const p = confirmDialog('', { confirmLabel: 'Take it down', danger: true });
       const m = document.getElementById('confirm-dialog-message');
       if (m) m.innerHTML = `<div style="text-align:left;"><div style="font-weight:700;color:var(--navy);margin-bottom:6px;">Why? The seller sees this.</div><textarea class="form-input" id="adm-ml-why" rows="3" maxlength="300"></textarea></div>`;
       document.getElementById('confirm-dialog-confirm-btn').addEventListener('click', () => { reason = (document.getElementById('adm-ml-why') || {}).value || ''; }, { once: true, capture: true });

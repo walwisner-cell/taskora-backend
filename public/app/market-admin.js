@@ -9,6 +9,7 @@
     ['overview', 'At a glance'], ['check', 'To check'], ['listings', 'Listings'], ['goods', 'Store goods'],
     ['sellers', 'Sellers'], ['orders', 'Orders'], ['stolen', 'Stolen items'], ['activity', 'Team activity'], ['fees', 'Fees'],
   ];
+  const plural = (n, one, many) => `${e(n)} ${e(n === 1 ? one : many)}`;
   const when = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (x) { return ''; } };
   const STATUS_WORDS = { live: 'On sale', review: 'Held for a check', hidden: 'Hidden', removed: 'Taken down', sold: 'Sold', reserved: 'Being bought', approved: 'Approved', pending: 'Waiting', rejected: 'Turned down' };
   const badge = (st) => `<span class="badge ${['live', 'approved', 'completed'].includes(st) ? 'badge-success' : ['removed', 'rejected', 'cancelled'].includes(st) ? 'badge-danger' : 'badge-pending'}">${e(STATUS_WORDS[st] || String(st).replace(/_/g, ' '))}</span>`;
@@ -133,7 +134,7 @@
     const rows = d.sellers.map(s => `<div class="am-row">
         <div class="am-main"><div class="am-title">${e(s.storeName ? `${s.storeName} · ${s.name}` : s.name)} ${s.verified ? '<span class="badge badge-success">ID checked</span>' : ''} ${s.stopped ? '<span class="badge badge-danger">Stopped</span>' : ''}</div>
           <div class="am-meta">${e(s.role === 'provider' ? 'Pro' : 'Customer')} · ${e([s.city, s.country].filter(Boolean).join(', '))}${s.sellerRating ? ` · ★ ${e(s.sellerRating)}` : ''}</div>
-          <div class="am-meta">${e(s.listingsLive)} listings on sale · ${e(s.goodsLive)} store goods · ${e(s.orders)} orders · ${s.reports ? `<strong style="color:#8a5a00;">${e(s.reports)} reports</strong>` : '0 reports'} · ${s.problems ? `<strong style="color:#8a5a00;">${e(s.problems)} problems or returns</strong>` : '0 problems'} · ${e(s.listingsRemoved)} taken down</div>
+          <div class="am-meta">${plural(s.listingsLive, 'listing on sale', 'listings on sale')} · ${plural(s.goodsLive, 'store good', 'store goods')} · ${plural(s.orders, 'order', 'orders')} · ${s.reports ? `<strong style="color:#8a5a00;">${plural(s.reports, 'report', 'reports')}</strong>` : '0 reports'} · ${s.problems ? `<strong style="color:#8a5a00;">${plural(s.problems, 'problem or return', 'problems or returns')}</strong>` : '0 problems'} · ${e(s.listingsRemoved)} taken down</div>
           ${s.stopped ? `<div class="am-warn">Stopped${s.stopped.until ? ' until ' + e(when(s.stopped.until)) : ' until lifted'} by ${e(s.stopped.byName || 'the team')}: ${e(s.stopped.reason)}</div>` : ''}
           ${s.storeClosedByTeam && !s.stopped ? '<div class="am-meta">Store closed by the team.</div>' : ''}
         </div>
@@ -144,7 +145,7 @@
       ${rows || '<p class="am-empty">No sellers match.</p>'}</div>`;
   }
   window.adminMarketStop = async function (id, name) {
-    const p = confirmDialog('', { confirmLabel: 'Stop selling' });
+    const p = confirmDialog('', { confirmLabel: 'Stop selling', danger: true });
     const m = document.getElementById('confirm-dialog-message');
     if (m) m.innerHTML = `<div style="text-align:left;"><div style="font-weight:700;color:var(--navy);margin-bottom:6px;">Stop ${e(name)} selling in the Market?</div>
       <label class="form-label" for="am-stop-why">Why? The seller sees this.</label><textarea class="form-input" id="am-stop-why" rows="3" maxlength="300"></textarea>

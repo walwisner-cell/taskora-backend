@@ -124,11 +124,19 @@ async function needRules(u, res) {
   return true;
 }
 // Optional night rule for motorbikes (off unless a super admin switches it on). Liberia is on UTC.
-async function motorbikeBlockedNow() {
+// v165: the night hours are the person's own local hours (their country's
+// time zone), not UTC: 20:00 in Lagos or Nairobi is not 20:00 UTC.
+async function motorbikeBlockedNow(who) {
   const n = await getSetting('rideMotorbikeNight');
   if (!n || n.enabled !== true) return false;
-  const h = new Date().getUTCHours();
+  let h = new Date().getUTCHours();
+  if (who) { try { h = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: require('../booking-rules').zoneOf(who) }).format(new Date())); } catch (e) { /* UTC */ } }
   return n.startHour < n.endHour ? (h >= n.startHour && h < n.endHour) : (h >= n.startHour || h < n.endHour);
+}
+async function nightWords() {
+  const n = await getSetting('rideMotorbikeNight') || {};
+  const hh = (x) => String(x).padStart(2, '0') + ':00';
+  return `Motorbike rides are paused from ${hh(n.startHour)} to ${hh(n.endHour)} (your local time).`;
 }
 
 // ── RIDER SIDE ─────────────────────────────────────────────────────────
@@ -146,7 +154,7 @@ router.get('/rides/config', requireAuth, async (req, res) => {
     feePercent: await getSetting('rideFeePercent'),
     docKinds: DOC_KINDS,
     requiredDocs: await requiredDocs(me && me.country),
-    motorbikeBlockedNow: await motorbikeBlockedNow(),
+    motorbikeBlockedNow: await motorbikeBlockedNow(me),
     // set MAP_TILE_URL (and MAP_TILE_ATTRIBUTION) on the server to switch map provider without changing code
     tileUrl: process.env.MAP_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     tileAttribution: process.env.MAP_TILE_ATTRIBUTION || '&copy; OpenStreetMap contributors',
@@ -177,7 +185,7 @@ router.get('/rides/drivers', requireAuth, requireRole('customer'), lookupLimiter
   const carTrip = await tripFor('car');
   if (carTrip.km > maxKm) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km. This trip is further than that.` });
   const fareTable = await rideFares.tableFor(me.country), rateRows = await db.all('exchangeRates');
-  const noBikes = await motorbikeBlockedNow();
+  const noBikes = await motorbikeBlockedNow(me);
   const cashOn = (await getSetting('rideCashEnabled')) === true;
   const busyIds = new Set((await db.filter('contracts', c => c.ride && OPEN_STATUSES.includes(c.status))).map(c => c.providerId)); // a driver with a ride open is not offered another
   const all = (await db.filter('users', u => isOnline(u) && !busyIds.has(u.id) && u.id !== me.id && sameText(u.country, me.country) && RIDE_VEHICLES[u.rideDriver.vehicle] >= passengers && !(noBikes && u.rideDriver.vehicle === 'motorbike')));
@@ -220,7 +228,7 @@ router.post('/rides', requireAuth, requireRole('customer'), requireCurrentTerms,
       return res.status(400).json({ code: 'PICK_DRIVER', error: 'That driver isn\'t available any more. Choose another from the list.' });
     }
     if (await db.find('contracts', c => c.providerId === driver.id && c.ride && OPEN_STATUSES.includes(c.status))) return res.status(400).json({ code: 'PICK_DRIVER', error: 'That driver has just taken another ride. Choose another from the list.' });
-    if (driver.rideDriver.vehicle === 'motorbike' && await motorbikeBlockedNow()) return res.status(400).json({ error: 'Motorbike rides are paused at this hour. Choose another vehicle.' });
+    if (driver.rideDriver.vehicle === 'motorbike' && await motorbikeBlockedNow(me)) return res.status(400).json({ error: `${await nightWords()} Choose another vehicle.` });
     const km = kmBetween(pk.point, dp.point);
     const maxKm = await getSetting('rideMaxKm');
     if (km === null) return res.status(400).json({ error: `Rides can be up to about ${maxKm} km.` });
@@ -373,7 +381,7 @@ function driverState(u) {
   return {
     status: r.status || 'none', vehicle: r.vehicle || null, make: r.make || '', plate: r.plate || '', licenceNumber: r.licenceNumber || '', licenceExpiry: r.licenceExpiry || '', insuranceExpiry: r.insuranceExpiry || '', roadworthyExpiry: r.roadworthyExpiry || '',
     acceptsCash: r.acceptsCash === true, helmet: r.helmet === true, docs: Object.fromEntries(Object.keys(DOC_KINDS).map(k => [k, !!(r.docs && r.docs[k])])),
-    rates: rates(u), fareAdjust: Number(r.fareAdjust) || 0, delivers: r.delivers !== false, deliveryRange: (() => { const x = require('../store-orders').rangeOf(u, r.vehicle); return x; })(), // v164 online: isOnline(u), onlineUntil: isOnline(u) ? r.onlineUntil : null, rejectReason: r.rejectReason || null,
+    rates: rates(u), fareAdjust: Number(r.fareAdjust) || 0, delivers: r.delivers !== false, deliveryRange: require('../store-orders').rangeOf(u, r.vehicle), /* v164 */ online: isOnline(u), onlineUntil: isOnline(u) ? r.onlineUntil : null, rejectReason: r.rejectReason || null,
   };
 }
 router.get('/rides/driver/me', requireAuth, requireRole('provider'), async (req, res) => {
@@ -520,7 +528,7 @@ router.post('/rides/driver/online', requireAuth, requireRole('provider'), async 
   if (!(await ridesOnFor(u.country))) return res.status(403).json({ error: 'Rides are not open in your country right now.' });
   const { online, latitude, longitude } = req.body || {};
   if (online === true) {
-    if (u.rideDriver.vehicle === 'motorbike' && await motorbikeBlockedNow()) return res.status(403).json({ error: 'Motorbike rides are paused at this hour.' });
+    if (u.rideDriver.vehicle === 'motorbike' && await motorbikeBlockedNow(u)) return res.status(403).json({ code: 'NIGHT_PAUSE', error: `${await nightWords()} You can go online again after that.` });
     if (!isValidCoordinate(latitude, longitude)) return res.status(400).json({ error: 'We need your location to show you to riders nearby. Allow location and try again.' });
     const busy = await db.find('contracts', c => c.providerId === u.id && c.ride && OPEN_STATUSES.includes(c.status));
     // v142: drivers approved before Driver for Hire existed get it the first time they go online

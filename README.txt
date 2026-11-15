@@ -1,6 +1,9 @@
-Trothen v164: everything in one place (includes v128 to v163)
+Trothen v165: everything in one place (includes v128 to v164)
 
   src\ public\ server.js    The 119 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v165.md           Drivers can see themselves online again (v164 hid it), Go online says what it is
+                            doing and why it can't, the night pause in local time, Google sign-in with a
+                            sign-in code, the Market open to visitors, timed seller stops that end by themselves.
   CHANGES_v164.md           Everything re-checked, Joseph's notes, and deliveries end to end: the pinned location
                             as a Plus Code on every receipt and on "Booking request sent"; Admin -> Market to
                             regulate the Market (check, take down, stop sellers, orders, stolen items, activity);
@@ -78,25 +81,25 @@ Trothen v164: everything in one place (includes v128 to v163)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v164.md  Byte counts and the cmd.exe steps.
-  deploy_v164.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v164-files.zip    The code files packed; the .bat reads this from Downloads.
+  DEPLOYMENT_STEPS_v165.md  Byte counts and the cmd.exe steps.
+  deploy_v165.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v165-files.zip    The code files packed; the .bat reads this from Downloads.
   screenshots\              The courier's delivery card with both Plus Codes, the checkout with a bicycle
                             courier and her range, Admin -> Market on a laptop and a phone, the visitor's
                             empty cart, and the earlier screens.
 
-Works whether or not v128 is already live. git status shows 155 files if v128 is live, 157 if not.
-If you already deployed v163, it is safe on top of it, and git status shows only the 29 files that changed
-since (27 code files, CHANGES_v164.md and DEPLOYMENT_STEPS_v164.md).
+Works whether or not v128 is already live. git status shows 156 files if v128 is live, 158 if not.
+If you already deployed v164 (you have), it is safe on top of it, and git status shows only the 14 files that
+changed since (12 code files, CHANGES_v165.md and DEPLOYMENT_STEPS_v165.md).
 
 Email: your SMTP settings on Render are already in and working (System Check shows emails
 being sent), so nothing to add before this deploy.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v164.
-  2. copy "%USERPROFILE%\Downloads\trothen-v164\trothen-v164-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v165.
+  2. copy "%USERPROFILE%\Downloads\trothen-v165\trothen-v165-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v164\deploy_v164.bat"
+     "%USERPROFILE%\Downloads\trothen-v165\deploy_v165.bat"
   Nothing goes live until you type YES.
 
 After it is live:

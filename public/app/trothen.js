@@ -220,29 +220,37 @@ async function onGoogleCredentialResponse(response) {
   const idToken = response.credential;
   try {
     const data = await apiFetch('POST', '/auth/google', { idToken });
+    // v165: an account with two-step sign-in (every admin) gets "a code is
+    // needed" as a normal answer, not an error: show the code step, as the
+    // email-and-password sign-in does.
+    if (data && data.requires2FA) { showGoogleLoginCodeStep(data); return; }
+    if (!data || !data.token || !data.user) throw new Error('Google sign-in did not finish. Please try again.');
     AUTH.token = data.token; AUTH.user = data.user;
     saveAuthSession(data.token);
     showToast(`Welcome back, ${data.user.name.split(' ')[0]}!`);
     rememberLastLoginEmail(data.user.email, data.user.role);
     await completeAuthAndResumeIntent(data.user.role);
   } catch (e) {
-    if (e.data && e.data.requires2FA) {
-      pendingLoginId = e.data.pendingLoginId;
-      document.getElementById('auth-main-form').style.display = 'none';
-      document.getElementById('login-2fa-view').style.display = 'block';
-      describeLoginCodeDestination(e.data);
-      if (e.data.testMode) {
-        document.getElementById('login-2fa-test-banner').style.display = 'block';
-        document.getElementById('login-2fa-code-display').textContent = e.data.code;
-      }
-      return;
-    }
+    if (e.data && e.data.requires2FA) { showGoogleLoginCodeStep(e.data); return; }
     if (e.data && e.data.needsSignup) {
       enterGoogleSignupMode(e.data.googleName, e.data.googleEmail, idToken);
       return;
     }
     showToast(e.message || 'Google sign-in failed. Please try again.');
   }
+}
+
+function showGoogleLoginCodeStep(d) {
+  pendingLoginId = d.pendingLoginId;
+  if (typeof showScreen === 'function' && !document.getElementById('screen-auth').classList.contains('active')) showAuth('login'); // one-tap can answer from any page
+  document.getElementById('auth-main-form').style.display = 'none';
+  document.getElementById('login-2fa-view').style.display = 'block';
+  describeLoginCodeDestination(d);
+  if (d.testMode) {
+    document.getElementById('login-2fa-test-banner').style.display = 'block';
+    document.getElementById('login-2fa-code-display').textContent = d.code;
+  }
+  const box = document.getElementById('login-2fa-code'); if (box) { box.value = ''; try { box.focus(); } catch (x) {} }
 }
 
 // Switches the existing signup form into "Google mode": name and email
@@ -1886,6 +1894,7 @@ const I18N = {
     auth_signin_tab: 'Sign In', auth_signup_tab: 'Sign Up', auth_email: 'Email', auth_password: 'Password',
     auth_submit_signin: 'Sign In', auth_forgot: 'Forgot password?',
     nav_browse: "Browse pros",
+    nav_market: "Market",
     composer_what: "I need help with",
     composer_where: "in",
     composer_go: "Find pros",
@@ -2094,6 +2103,7 @@ const I18N = {
     auth_signin_tab: 'Iniciar Sesión', auth_signup_tab: 'Registrarse', auth_email: 'Correo Electrónico', auth_password: 'Contraseña',
     auth_submit_signin: 'Iniciar Sesión', auth_forgot: '¿Olvidaste tu contraseña?',
     nav_browse: "Ver profesionales",
+    nav_market: "Mercado",
     composer_what: "Necesito ayuda con",
     composer_where: "en",
     composer_go: "Buscar",
@@ -2463,7 +2473,7 @@ function navbarHTML(active) {
   // real site's language control.
   const rightSide = isDash
     ? `${languageSwitcherHTML()}${bell}${accountMenu}`
-    : `${languageSwitcherHTML()}<span class="nav-more"><button class="nav-btn" onclick="closeNavMenus();goDirectory()">${t('nav_browse')}</button><button class="nav-btn" onclick="closeNavMenus();showPricing()">${t('nav_become_pro')}</button><button class="nav-btn nav-install" onclick="closeNavMenus();installTrothen()">${t('install_btn')}</button></span><button class="nav-btn nav-cta" onclick="closeNavMenus();showAuth('login')">${t('nav_sign_in')}</button><button type="button" class="nav-menu-btn" aria-expanded="false" aria-label="Menu" onclick="toggleNavMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>${t('nav_menu')}</span></button>`;
+    : `${languageSwitcherHTML()}<span class="nav-more"><button class="nav-btn" onclick="closeNavMenus();openPublicMarket()">${t('nav_market')}</button><button class="nav-btn" onclick="closeNavMenus();goDirectory()">${t('nav_browse')}</button><button class="nav-btn" onclick="closeNavMenus();showPricing()">${t('nav_become_pro')}</button><button class="nav-btn nav-install" onclick="closeNavMenus();installTrothen()">${t('install_btn')}</button></span><button class="nav-btn nav-cta" onclick="closeNavMenus();showAuth('login')">${t('nav_sign_in')}</button><button type="button" class="nav-menu-btn" aria-expanded="false" aria-label="Menu" onclick="toggleNavMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>${t('nav_menu')}</span></button>`;
   return `
     <div class="navbar-logo" onclick="goHome()" role="link" tabindex="0" aria-label="Trothen home" onkeydown="if(event.key==='Enter')goHome()">${brandMarkHTML('navbar')}</div>
     <div class="navbar-nav">
