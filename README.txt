@@ -1,9 +1,25 @@
-Trothen v165: everything in one place (includes v128 to v164)
+Trothen v168: everything in one place (includes v128 to v167)
 
-  src\ public\ server.js    The 119 files changed since your GitHub main (before v128), in their real folders.
+  src\ public\ server.js    The 131 files changed since your GitHub main (before v128), in their real folders.
+  CHANGES_v168.md           Maps no longer grey: the browser helper (service worker) was blocking every map
+                            picture. The map window says what it is for (pick-up, destination).
+  CHANGES_v167.md           Sign-up in each country's own address format (Liberia: no postal code, County,
+                            its towns); an email and notice with the next steps when an ID is sent and when it
+                            is decided; Guarantors to Call organized by pro, with +231 numbers, Call and
+                            WhatsApp, and notes from each call; membership cards with real L$ and US$ figures
+                            and what they really give; place search that finds "Redlight" and "Neezo".
+  CHANGES_v166.md           The exact location on receipts as a tidy address card (street address, directions,
+                            Plus Code, View on map, a small map); a receipt emailed with its PDF for every
+                            payment, refund, token purchase, Driver Pass, ad and payout, and Account -> Receipts;
+                            Rides says which pin is wrong (Joseph's screenshot); a steadier site (about 3x
+                            faster, reconnects by itself, never stuck on Loading); "Keep me signed in";
+                            Liberia ride fares in L$ that work; chats that close when nothing is open; pros can
+                            book rides; going online made easy; choosing a ride like Uber; quick pinning;
+                            Google Maps Platform ready to switch on with one key.
   CHANGES_v165.md           Drivers can see themselves online again (v164 hid it), Go online says what it is
                             doing and why it can't, the night pause in local time, Google sign-in with a
-                            sign-in code, the Market open to visitors, timed seller stops that end by themselves.
+                            sign-in code, the Market open to visitors, timed seller stops that end by themselves, Rides in miles in
+                            Liberia, receipts with the buyer's name, support@trothenpro.com on every PDF.
   CHANGES_v164.md           Everything re-checked, Joseph's notes, and deliveries end to end: the pinned location
                             as a Plus Code on every receipt and on "Booking request sent"; Admin -> Market to
                             regulate the Market (check, take down, stop sellers, orders, stolen items, activity);
@@ -81,34 +97,51 @@ Trothen v165: everything in one place (includes v128 to v164)
   CHANGES_v130.md           The professional wording pass.
   CHANGES_v129.md           Arrival times, Leave Now, trip screen, phone/tablet/laptop layouts.
   CHANGES_v128.md           Past chats in Messages, job locations, customer live location.
-  DEPLOYMENT_STEPS_v165.md  Byte counts and the cmd.exe steps.
-  deploy_v165.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
-  trothen-v165-files.zip    The code files packed; the .bat reads this from Downloads.
-  screenshots\              The courier's delivery card with both Plus Codes, the checkout with a bicycle
-                            courier and her range, Admin -> Market on a laptop and a phone, the visitor's
-                            empty cart, and the earlier screens.
+  DEPLOYMENT_STEPS_v168.md  Byte counts and the cmd.exe steps.
+  deploy_v168.bat           Runs the whole deploy (checks byte counts, own branch, asks before going live).
+  trothen-v168-files.zip    The code files packed; the .bat reads this from Downloads.
+  screenshots\              v167-*: the Liberia sign-up, the next steps after an ID, the guarantor cards and
+                            the membership cards. Also a whole ride on the rider's and the driver's phones (ride-*), and a store delivery
+                            on the buyer's, seller's and courier's phones (delivery-*), in order.
 
-Works whether or not v128 is already live. git status shows 156 files if v128 is live, 158 if not.
-If you already deployed v164 (you have), it is safe on top of it, and git status shows only the 14 files that
-changed since (12 code files, CHANGES_v165.md and DEPLOYMENT_STEPS_v165.md).
+git status shows 6 files if v167 is live, 19 if the final v166 zip is, 36 if the first v166 zip is,
+45 if v165 is, 171 if only v128 is, or 173 if not even v128 is.
+
+This zip replaces every earlier zip and includes all of v166 and v167. Deploy it with the .bat as below; don't copy files out of
+the zip by hand: copying straight out of a zip Windows has not unpacked
+gives errors like 0x80004005.
 
 Email: your SMTP settings on Render are already in and working (System Check shows emails
 being sent), so nothing to add before this deploy.
 
 Quick deploy (Command Prompt, not PowerShell):
-  1. Unzip this in Downloads. You get a folder trothen-v165.
-  2. copy "%USERPROFILE%\Downloads\trothen-v165\trothen-v165-files.zip" "%USERPROFILE%\Downloads\"
+  1. Unzip this in Downloads. You get a folder trothen-v168.
+  2. copy "%USERPROFILE%\Downloads\trothen-v168\trothen-v168-files.zip" "%USERPROFILE%\Downloads\"
   3. cd path\to\trothen-backend
-     "%USERPROFILE%\Downloads\trothen-v165\deploy_v165.bat"
+     "%USERPROFILE%\Downloads\trothen-v168\deploy_v168.bat"
   Nothing goes live until you type YES.
 
 After it is live:
+  - v168: press Ctrl+F5 once on each computer; on a phone close the tab and open it again. Maps then show.
+  - v167, Admin -> Verification -> Guarantors to Call: the entries like "hhgshhs" now show checks in amber.
+    Use "Put back to call" or "Not accepted" (with the reason), so those pros name real people.
+  - v167, membership prices: Plus at L20 is poor value next to Pro at L00 (see CHANGES_v167.md
+    section 4). Decide the prices, or hide memberships until real payments are on.
+  - v167, Admin -> Rides -> Places: pin Red Light, ELWA Junction, Duala, Broad Street and Rehab first.
+  - Admin -> Rides -> Places: pin the well-known places, so receipts can say "110 m from ELWA Junction".
+  - Deploy at quiet times (about a minute offline), then press Ctrl+F5 once on a computer.
+    A free UptimeRobot check of /api/health emails you if it is down.
   - Liberia tokens from L$50: if you ever saved the Liberia packs in Admin -> Tokens, add "L$50"
     (US$0.26, 0.26 tokens, local price 50) and "L$100" (US$0.52, 0.52, 100) there. See CHANGES_v164.md.
   - Tell drivers about "Start my free week" (Rides) and "How far I go on one delivery" (Deliveries).
   - Set APP_URL on Render to https://trothenpro.com (if it isn't already), so links in emails are right.
   - Admin, System Check: fix anything red. Alerts come to your notifications from then on.
-  - Add MAPBOX_TOKEN on Render before many people use the maps (free tier, business use allowed).
+  - Maps: either set up Google Maps Platform (best for Liberia; see CHANGES_v166.md section 12):
+      Google Cloud -> a project with billing -> turn on Map Tiles API, Places API (New), Geocoding API
+      and Routes API -> create an API key, restrict it to those four APIs -> set a budget alert ->
+      on Render add GOOGLE_MAPS_API_KEY. Or add MAPBOX_TOKEN instead (Mapbox, free up to its monthly limit).
+  - Admin -> Rides -> Fares: the Liberia starter fares in L$ are filled in; check them with Joseph, add the fuel pump
+    price, and press Save.
   - "Real payments only" now refuses to switch on until customers have a way to pay and email works.
   - Everything from v147 still applies: pin the 57 starter places, the MTN keys when MTN gives them,
     TURN_API_URL and the VAPID keys for calls, and the L$ exchange rate kept current.

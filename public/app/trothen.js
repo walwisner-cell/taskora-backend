@@ -1065,7 +1065,7 @@ async function openMapPicker(prefix) {
   document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="map-pick-overlay" style="z-index:5350;">
     <div class="modal" style="max-width:min(760px,96vw);width:96vw;max-height:96vh;display:flex;flex-direction:column;" role="dialog" aria-modal="true" aria-label="Choose the job location on a map">
       <div class="modal-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-shrink:0;">
-        <div><h3 style="margin:0;">${escapeHtml(tr('Where is the job?'))}</h3><p style="margin:4px 0 0;">${escapeHtml(tr('Slide the map until the pin sits on the right spot, then press "Use this spot".'))}</p></div>
+        <div><h3 style="margin:0;">${escapeHtml(tr(({ ridefrom: 'Where should the driver pick you up?', rideto: 'Where are you going?', rdonline: 'Where are you now?', plcpin: 'Where is this place?' })[prefix] || 'Where is the job?'))}</h3><p style="margin:4px 0 0;">${escapeHtml(tr('Slide the map until the pin sits on the right spot, then press "Use this spot".'))}</p></div>
         <button class="modal-close" onclick="closeMapPicker()" aria-label="Close">✕</button>
       </div>
       <div class="modal-body" style="overflow:auto;flex:1 1 auto;min-height:0;">

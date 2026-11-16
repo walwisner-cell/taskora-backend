@@ -13,8 +13,22 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+// v168: only Trothen's own requests go through here. Walter: "why is this
+// like this", a grey "Where is the job?" map. This worker used to re-fetch
+// EVERY request, the map pictures included. A worker's own fetches obey the
+// site's security policy for connections (connect-src), which only allows
+// Trothen and Google sign-in, so the browser refused every map picture
+// (OpenStreetMap, Mapbox or Google) and every Google font: grey maps on
+// the live site. Tests ran with the worker switched off, so they never saw
+// it. Now anything from another site, and anything that isn't a plain GET,
+// goes straight from the page, exactly as if there were no worker.
 self.addEventListener('fetch', (event) => {
-  event.respondWith(fetch(event.request));
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  let sameSite = false;
+  try { sameSite = new URL(req.url).origin === self.location.origin; } catch (e) { /* not a web address */ }
+  if (!sameSite) return;
+  event.respondWith(fetch(req));
 });
 
 // Item 2's real background notifications — this is the part that only
