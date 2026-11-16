@@ -268,7 +268,14 @@ const NO_POSTAL_CODE_COUNTRIES = new Set([
   'Sierra Leone', 'Solomon Islands', 'South Sudan', 'Suriname', 'Syria', 'Tanzania',
   'Timor-Leste', 'Togo', 'Tonga', 'Trinidad and Tobago', 'Tuvalu', 'Uganda',
   'United Arab Emirates', 'Vanuatu', 'Yemen', 'Zimbabwe',
+  // v167: Liberia has 4-digit codes on paper, but they aren't used in daily
+  // life (post goes to P.O. boxes), so Trothen doesn't ask for one.
+  'Liberia',
 ]);
+
+// v167: countries where the post office has codes but most people don't use
+// them: the box is shown, may be left empty, and is checked when filled in.
+const POSTAL_CODE_OPTIONAL_COUNTRIES = new Set(['Nigeria', 'Kenya', 'Ireland', 'Hong Kong', 'Panama', 'Sri Lanka', 'Lebanon', 'Iraq', 'Jordan', 'Bahrain', 'Oman', 'Kuwait', 'Saudi Arabia', 'Philippines', 'Egypt', 'Ethiopia', 'Senegal', 'Zambia', 'Madagascar', 'Morocco', 'Tunisia', 'Algeria', 'Sudan', 'Somalia', 'Haiti', 'Dominican Republic', 'Guatemala', 'Honduras', 'El Salvador', 'Nicaragua', 'Costa Rica', 'Colombia', 'Peru', 'Ecuador', 'Paraguay', 'Uruguay', 'Chile', 'Venezuela']);
 
 // A country genuinely having no formal postal system is different from a
 // country whose format we simply haven't verified — for the former,
@@ -286,6 +293,8 @@ function isValidPostalCode(code, country) {
     return trimmed.length <= 20 && /^[a-zA-Z0-9\s-]*$/.test(trimmed);
   }
 
+  if (country && POSTAL_CODE_OPTIONAL_COUNTRIES.has(country) && !trimmed) return true; // v167
+
   if (typeof code !== 'string') return false;
 
   if (country && POSTAL_CODE_PATTERNS[country]) {
@@ -302,7 +311,7 @@ function isValidPostalCode(code, country) {
 }
 
 function postalCodeIsOptionalFor(country) {
-  return !!(country && NO_POSTAL_CODE_COUNTRIES.has(country));
+  return !!(country && (NO_POSTAL_CODE_COUNTRIES.has(country) || POSTAL_CODE_OPTIONAL_COUNTRIES.has(country)));
 }
 
 // Human-readable format hints for the countries with a strict pattern above
@@ -313,7 +322,6 @@ const POSTAL_CODE_HINTS = {
   'Canada': 'the format A1A 1A1 (letter-digit-letter, space, digit-letter-digit)',
   'United Kingdom': 'a valid UK postcode (e.g. SW1A 1AA)',
   'Nigeria': '6 digits',
-  'Liberia': '4 digits',
   'India': '6 digits (PIN code)',
   'Germany': '5 digits',
   'France': '5 digits',
@@ -418,5 +426,5 @@ module.exports = {
   looksLikeName,
   isValidEmail, isNonEmptyString, isValidPassword, isValidPhone, isValidPostalCode,
   isValidName, isValidCardExpiry, isValidLabel, validate, EMAIL_RE, postalCodeErrorMessage,
-  postalCodeIsOptionalFor, looksLikeRealText, namesLikelyMatch,
+  postalCodeIsOptionalFor, looksLikeRealText, namesLikelyMatch, NO_POSTAL_CODE_COUNTRIES, POSTAL_CODE_OPTIONAL_COUNTRIES,
 };

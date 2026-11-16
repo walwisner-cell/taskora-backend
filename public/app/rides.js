@@ -198,7 +198,9 @@
       if (!r.places.length && !r.saved.length) { try { osm = ((await apiFetch('GET', `/geo/place-search?q=${encodeURIComponent(q)}`)).places || []).map(p => ({ name: p.name.split(',').slice(0, 2).join(','), latitude: p.latitude, longitude: p.longitude, kind: 'map' })); } catch (x) {} }
       const all = [...r.saved.map(p => ({ ...p, name: p.name, sub: p.label, icon: '⭐' })), ...r.places.map(p => ({ ...p, sub: p.area, icon: '📌' })), ...osm.map(p => ({ ...p, sub: tr('from the map'), icon: '🗺️' }))].slice(0, 8);
       box.innerHTML = all.length ? `<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">${all.map(p => `<button type="button" style="display:flex;gap:8px;width:100%;text-align:left;background:var(--white);border:0;border-bottom:1px solid var(--border);padding:9px 12px;cursor:pointer;" onclick='ridesUsePlace(${JSON.stringify(prefix)}, ${JSON.stringify({ name: p.name, latitude: p.latitude, longitude: p.longitude, note: p.note || '' }).replace(/'/g, '&#39;')})'><span>${p.icon}</span><span><strong style="color:var(--navy);">${e(p.name)}</strong>${p.sub ? `<span style="display:block;font-size:12.5px;color:var(--slate);">${e(p.sub)}</span>` : ''}</span></button>`).join('')}</div>`
-        : `<div style="font-size:13px;color:var(--slate);">${e(tr('Not found. Use your location or choose it on the map, then type its name.'))}</div>`;
+        : (r.unpinned && r.unpinned.length
+          ? `<div style="font-size:13px;color:var(--slate);">${e(tr('Trothen knows this place, but it is not on the map yet:'))} <strong>${e(r.unpinned.map(u => [u.name, u.area].filter(Boolean).join(', ')).join('; '))}</strong>. ${e(tr('Choose it on the map once, or use your location if you are there.'))}</div>`
+          : `<div style="font-size:13px;color:var(--slate);">${e(tr('Not found. Use your location or choose it on the map, then type its name.'))}</div>`);
     }, 250);
   };
   window.ridesSavePlace = async function (prefix) {

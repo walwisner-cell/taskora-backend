@@ -691,6 +691,9 @@ router.post('/verification/submit', requireAuth, (req, res, next) => {
     }
   }
 
+  // v167: the person is told at once what happens next (email, in the app, and a text when SMS is set up).
+  require('../verification-messages').submitted(user, record).catch(e => console.error('[verification] next-steps message failed:', e.message));
+
   // v77: file names stay on the server; the person only needs the status.
   const { documentFilename, selfieFilename, backFilename, ...safeRecord } = record;
   res.status(201).json({ verification: safeRecord });
@@ -1043,15 +1046,22 @@ router.get('/membership/tiers', requireAuth, async (req, res) => {
   for (const key of Object.keys(MEMBERSHIP_TIERS)) {
     const cfg = MEMBERSHIP_TIERS[key];
     const price = resolveMembershipPrice(key, baseRows);
+    // v167: what the tier gives in figures, in the person's own money, and
+    // the USD amount worked out from the same price (the card used to show a
+    // fixed "about $9.99" whatever the real price was).
+    const be = require('../membership').breakEvenUsd(key, price);
     tiers[key] = {
       ...cfg,
       price,
       priceLocal: price != null && currency.code !== 'USD' ? convertFromUSD(price, currency.code, rate) : price,
       currencyCode: currency.code,
       currencySymbol: currency.symbol,
+      feeDiscountPct: Math.round((cfg.feeDiscount || 0) * 100),
+      breakEvenUsd: be,
+      breakEvenLocal: be != null && currency.code !== 'USD' ? convertFromUSD(be, currency.code, rate) : be,
     };
   }
-  res.json({ tiers, currency });
+  res.json({ tiers, currency, serviceFee: require('../membership').SERVICE_FEE });
 });
 
 // POST /api/membership/subscribe — starts (or changes) a customer's paid
@@ -1074,7 +1084,11 @@ router.post('/membership/subscribe', requireAuth, requireRole('customer'), async
     membershipStartedAt: new Date().toISOString(),
     membershipPrice: realPrice,
   });
-  await notify(me.id, '⭐', `Welcome to Trothen ${config.label}! $${realPrice}/month, cancel or change anytime.`, null, { section: 'settings' });
+  // v167: the price in the customer's own money, and what the tier gives.
+  const { currencyForCountry, convertFromUSD } = require('../currency-data');
+  const cur = currencyForCountry(me.country || 'United States');
+  const local = cur.code !== 'USD' ? `${cur.symbol}${Math.round(convertFromUSD(realPrice, cur.code, require('../plan-pricing').resolveRate(cur.code, await db.all('exchangeRates')))).toLocaleString('en-US')} (about $${realPrice})` : `$${realPrice}`;
+  await notify(me.id, '⭐', `Welcome to Trothen ${config.label}: ${Math.round(config.feeDiscount * 100)}% off Trothen's service fee on your bookings with pros. ${local} a month; cancel or change any time in Settings.`, null, { section: 'settings' });
   res.json({ user: updated });
 });
 
@@ -1119,6 +1133,19 @@ router.post('/provider/guarantors', requireAuth, requireRole('provider'), async 
       return res.status(400).json({ error: 'Each guarantor needs at least a real name and phone number' });
     }
   }
+  // v167: a guarantor the team can really call: a full name, a complete
+  // number for the pro's country (or with its own +country code), and how
+  // they know the pro.
+  {
+    const gc = require('../guarantor-check');
+    const me0 = await db.find('users', u => u.id === req.user.sub);
+    for (const g of guarantors) {
+      const who = String(g.name).trim();
+      if (!gc.looksLikeFullName(who)) return res.status(400).json({ error: `"${who}": enter the guarantor's full name, first and last name, as our team will ask for them on the phone.` });
+      if (!gc.phoneLooksRight(g.phone, me0 && me0.country)) return res.status(400).json({ error: `${who}'s phone number doesn't look complete for ${(me0 && me0.country) || 'your country'}. Check it, or write it with its country code (for example +231 77 123 4567).` });
+      if (!gc.relationshipLooksRight(g.relationship)) return res.status(400).json({ error: `Say how ${who} knows you (for example: past employer, client, pastor or community leader).` });
+    }
+  }
   // v106: a guarantor is someone ELSE who vouches for the pro. One with the
   // pro's own phone number or name, or the same person listed twice, is
   // refused, because calling them proves nothing.
@@ -1139,13 +1166,16 @@ router.post('/provider/guarantors', requireAuth, requireRole('provider'), async 
   // since that's the one field the verification team actually uses to
   // reach them and the most stable identifier across an edit.
   const merged = guarantors.map(g => {
-    const prior = existing.find(e => e.phone === g.phone);
+    // v167: the same person only if both the number and the name are unchanged; a new name is a new person to call.
+    const prior = existing.find(e => e.phone === g.phone && String(e.name || '').trim().toLowerCase() === String(g.name || '').trim().toLowerCase());
     return {
       name: g.name.trim(),
       phone: g.phone.trim(),
       relationship: g.relationship ? g.relationship.trim() : null,
+      phoneIntl: require('../guarantor-check').phoneIntl(g.phone, meForCheck.country), // v167: the number as dialled from anywhere
       status: prior ? prior.status : 'submitted',
       contactedAt: prior ? prior.contactedAt : null,
+      ...(prior && prior.reviewedBy ? { reviewedBy: prior.reviewedBy } : {}), ...(prior && prior.note ? { note: prior.note } : {}), ...(prior && prior.history ? { history: prior.history } : {}),
     };
   });
   const updated = await db.update('users', req.user.sub, { guarantors: merged });

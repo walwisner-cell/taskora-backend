@@ -786,7 +786,13 @@ router.get('/geo', async (req, res) => {
     dialCodeByCountry[c] = dialCodeForCountry(c);
   }
   const noPostalCodeCountries = countries.filter(c => postalCodeIsOptionalFor(c));
-  res.json({ countries, statesByCountry, noPostalCodeCountries, dialCodeByCountry });
+  // v167: each country's address format (what its regions are called, whether
+  // a postal code is used) and its main cities, so the form fits the country.
+  const { formatFor } = require('../address-format');
+  const { CITIES_BY_STATE } = require('../geo-data');
+  const addressFormats = {}, citiesByState = {};
+  for (const c of countries) { addressFormats[c] = formatFor(c); if (CITIES_BY_STATE[c]) citiesByState[c] = CITIES_BY_STATE[c]; }
+  res.json({ countries, statesByCountry, noPostalCodeCountries, dialCodeByCountry, addressFormats, citiesByState });
 });
 
 // GET /api/currency/mine — the signed-in user's real local currency, plus a

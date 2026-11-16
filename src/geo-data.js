@@ -236,11 +236,12 @@ const CITIES_BY_STATE = {
     'Upper East': ['Bolgatanga'], 'Upper West': ['Wa'], 'Volta': ['Ho'], 'Western': ['Sekondi-Takoradi'],
     'Western North': ['Sefwi Wiawso'],
   },
-  'Liberia': {
-    'Bomi': ['Tubmanburg'], 'Bong': ['Gbarnga'], 'Gbarpolu': ['Bopolu'], 'Grand Bassa': ['Buchanan'],
-    'Grand Cape Mount': ['Robertsport'], 'Grand Gedeh': ['Zwedru'], 'Grand Kru': ['Barclayville'],
-    'Lofa': ['Voinjama'], 'Margibi': ['Kakata'], 'Maryland': ['Harper'], 'Montserrado': ['Monrovia', 'Paynesville'],
-    'Nimba': ['Sanniquellie', 'Ganta'], 'River Cess': ['Cestos City'], 'River Gee': ['Fish Town'], 'Sinoe': ['Greenville'],
+  'Liberia': { // v167: the main cities and towns of each county, offered as suggestions on the form
+    'Bomi': ['Tubmanburg', 'Klay'], 'Bong': ['Gbarnga', 'Totota', 'Salala', 'Suakoko', 'Palala'], 'Gbarpolu': ['Bopolu', 'Belle Yella'],
+    'Grand Bassa': ['Buchanan'], 'Grand Cape Mount': ['Robertsport', 'Sinje', 'Bo Waterside'], 'Grand Gedeh': ['Zwedru'],
+    'Grand Kru': ['Barclayville'], 'Lofa': ['Voinjama', 'Foya', 'Zorzor', 'Kolahun'], 'Margibi': ['Kakata', 'Harbel', 'Marshall', 'Dolo Town'],
+    'Maryland': ['Harper', 'Pleebo'], 'Montserrado': ['Monrovia', 'Paynesville', 'Brewerville', 'Bensonville', 'Careysburg', 'Gardnersville', 'Johnsonville'],
+    'Nimba': ['Ganta', 'Sanniquellie', 'Saclepea', 'Tappita', 'Yekepa', 'Karnplay'], 'River Cess': ['Cestos City'], 'River Gee': ['Fish Town'], 'Sinoe': ['Greenville'],
   },
 };
 
@@ -258,12 +259,14 @@ const CITIES_BY_STATE = {
 let reverseCityIndexCache = null;
 function reverseCityIndex() {
   if (reverseCityIndexCache) return reverseCityIndexCache;
-  const index = new Map(); // normalized city name -> country it's curated under
+  const index = new Map(); // normalized city name -> the countries it's curated under
+  // (v167: a set, as some names are in two countries: Greenville is in South Carolina and in Liberia)
   for (const [country, states] of Object.entries(CITIES_BY_STATE)) {
     for (const cities of Object.values(states)) {
       for (const city of cities) {
         const key = city.trim().toLowerCase().replace(/[.\-]/g, '');
-        index.set(key, country);
+        if (!index.has(key)) index.set(key, new Set());
+        index.get(key).add(country);
       }
     }
   }
@@ -274,9 +277,9 @@ function reverseCityIndex() {
 function isPlausibleCityForCountry(country, city) {
   if (!country || !city) return true;
   const key = city.trim().toLowerCase().replace(/[.\-]/g, '');
-  const knownCountry = reverseCityIndex().get(key);
-  if (!knownCountry) return true; // not a city curated anywhere — can't tell, don't block
-  return knownCountry === country;
+  const knownCountries = reverseCityIndex().get(key);
+  if (!knownCountries) return true; // not a city curated anywhere — can't tell, don't block
+  return knownCountries.has(country);
 }
 
-module.exports = { COUNTRIES, STATES_BY_COUNTRY, statesForCountry, DIAL_CODE_BY_COUNTRY, dialCodeForCountry, isValidStateForCountry, ID_DOC_TYPES_BY_COUNTRY, DEFAULT_ID_DOC_TYPES, idDocTypesForCountry, isPlausibleCityForCountry };
+module.exports = { CITIES_BY_STATE, COUNTRIES, STATES_BY_COUNTRY, statesForCountry, DIAL_CODE_BY_COUNTRY, dialCodeForCountry, isValidStateForCountry, ID_DOC_TYPES_BY_COUNTRY, DEFAULT_ID_DOC_TYPES, idDocTypesForCountry, isPlausibleCityForCountry };

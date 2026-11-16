@@ -36,7 +36,7 @@ const LIBERIA_STARTER = [
   ['University of Liberia (Capitol Hill campus)', 'Central Monrovia', 'school'], ['University of Liberia (Fendall campus)', 'Louisiana', 'school'], ['Spriggs Payne Airport', 'Sinkor', 'airport'], ['Roberts International Airport (RIA)', 'Harbel', 'airport'],
   ['SKD Boulevard', 'Paynesville', 'landmark'], ['Samuel K. Doe Sports Complex', 'Paynesville', 'landmark'], ['Paynesville Town Hall', 'Paynesville', 'government'], ['Rehab Junction', 'Paynesville', 'junction'],
   ['Duport Road', 'Paynesville', 'community'], ['Joe Bar', 'Paynesville', 'community'], ['Police Academy', 'Paynesville', 'landmark'], ['Soul Clinic', 'Paynesville', 'community'],
-  ['72nd', 'Paynesville', 'community'], ['Pipeline', 'Paynesville', 'community'], ['GSA Road', 'Paynesville', 'landmark'], ['Gardnersville', 'Monrovia', 'community'],
+  ['72nd', 'Paynesville', 'community'], ['Pipeline', 'Paynesville', 'community'], ['Neezoe', 'Paynesville', 'community'], ['GSA Road', 'Paynesville', 'landmark'], ['Gardnersville', 'Monrovia', 'community'],
   ['Barnersville', 'Monrovia', 'community'], ['New Georgia', 'Monrovia', 'community'], ['Caldwell', 'Monrovia', 'community'], ['Logan Town', 'Bushrod Island', 'community'],
   ['Clara Town', 'Bushrod Island', 'community'], ['New Kru Town', 'Bushrod Island', 'community'], ['Freeport of Monrovia', 'Bushrod Island', 'landmark'], ['West Point', 'Central Monrovia', 'community'],
   ['Vai Town', 'Bushrod Island', 'community'], ['Jamaica Road', 'Bushrod Island', 'landmark'], ['Johnsonville', 'Monrovia', 'community'], ['Brewerville', 'Montserrado', 'town'],
@@ -48,18 +48,49 @@ const LIBERIA_STARTER = [
 
 async function seedStarter() {
   const have = await db.filter('places', p => p.country === 'Liberia');
-  if (have.length) return 0;
   const now = new Date().toISOString();
-  for (const [name, area, kind] of LIBERIA_STARTER) {
+  // v167: names added to the starter list later (Neezoe) are added too, once.
+  const todo = have.length ? LIBERIA_STARTER.filter(([name]) => !have.some(p => sameText(p.name, name))) : LIBERIA_STARTER;
+  if (!todo.length) return 0;
+  for (const [name, area, kind] of todo) {
     await db.insert('places', { id: `pl_${nanoid(10)}`, country: 'Liberia', name, area, kind, aliases: [], latitude: null, longitude: null, status: 'needs_pin', uses: 0, source: 'starter', createdAt: now });
   }
-  return LIBERIA_STARTER.length;
+  return todo.length;
 }
 
 const pinned = (p) => typeof p.latitude === 'number' && typeof p.longitude === 'number';
 function publicPlace(p) { return { id: p.id, name: p.name, area: p.area || '', kind: p.kind || 'other', latitude: p.latitude, longitude: p.longitude }; }
 
 // Search: whole words and starts of words, in the name, the area or another name it goes by.
+// v167: Walter typed "Redlight neezo" and got "Not found". People write
+// place names as they say them: run together ("Redlight"), short ("Neezo"
+// for Neezoe), or with a slip of the finger ("ELWA Junktion"). Now each
+// word typed also matches a name with the spaces taken out, the start of a
+// word, or a word one or two letters off; a place matches when its main
+// word does, so "Redlight neezo" finds Red Light (and Neezoe).
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]; let best = i;
+    for (let j = 1; j <= b.length; j++) { cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); best = Math.min(best, cur[j]); }
+    if (best > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+const STOP = new Set(['the', 'of', 'and', 'at', 'in', 'road', 'street', 'st', 'rd', 'junction', 'market', 'town', 'community', 'near', 'by', 'to']);
+function wordHits(qw, p) {
+  const names = [p.name, ...(p.aliases || [])].map(norm);
+  const words = names.flatMap(n => n.split(' ')).concat(norm(p.area).split(' ')).filter(Boolean);
+  const squashed = names.map(n => n.replace(/ /g, ''));
+  const tol = qw.length >= 7 ? 2 : qw.length >= 4 ? 1 : 0;
+  if (squashed.some(n => n === qw || (qw.length >= 4 && n.startsWith(qw)))) return 3;           // "redlight" = "Red Light"
+  if (words.some(w => w === qw)) return 3;
+  if (qw.length >= 3 && words.some(w => w.startsWith(qw))) return 2;                            // "neezo" → "Neezoe"
+  if (tol && words.concat(squashed).some(w => editDistance(qw, w, tol) <= tol)) return 1;      // "junktion" → "junction"
+  return 0;
+}
 function score(p, q) {
   const n = norm(p.name), a = norm(p.area), al = (p.aliases || []).map(norm).join(' ');
   if (n === q) return 100;
@@ -67,13 +98,29 @@ function score(p, q) {
   if (n.split(' ').some(w => w.startsWith(q))) return 60;
   if (al.split(' ').some(w => w.startsWith(q))) return 50;
   if (q.split(' ').every(w => (n + ' ' + al + ' ' + a).includes(w))) return 40;
-  return 0;
+  // v167: forgiving match, word by word.
+  const qws = q.split(' ').filter(w => w.length >= 2 && !STOP.has(w));
+  if (!qws.length) return 0;
+  const hits = qws.map(w => wordHits(w, p));
+  const nameWords = n.split(' ').filter(w => !STOP.has(w));
+  const mainHit = nameWords.length && qws.some(w => nameWords.some(nw => nw === w || nw.startsWith(w) || n.replace(/ /g, '') === w || (w.length >= 4 && editDistance(w, nw, w.length >= 7 ? 2 : 1) <= (w.length >= 7 ? 2 : 1)) || (w.length >= 4 && n.replace(/ /g, '').startsWith(w))));
+  if (!mainHit) return 0;
+  return Math.min(39, 10 + hits.reduce((t, h) => t + h * 5, 0));
 }
+
 async function search(country, q, limit = 8) {
   const query = norm(q);
   if (query.length < 2) return [];
   const list = await db.filter('places', p => sameText(p.country, country) && p.status === 'live' && pinned(p));
   return list.map(p => ({ p, s: score(p, query) })).filter(x => x.s > 0).sort((x, y) => (y.s - x.s) || ((y.p.uses || 0) - (x.p.uses || 0))).slice(0, limit).map(x => publicPlace(x.p));
+}
+// v167: known places that match but have no pin yet (the starter list), so
+// the page can say "Red Light is known, but not on the map yet" instead of "Not found".
+async function searchUnpinned(country, q, limit = 3) {
+  const query = norm(q);
+  if (query.length < 2) return [];
+  const list = await db.filter('places', p => sameText(p.country, country) && p.status === 'needs_pin');
+  return list.map(p => ({ p, s: score(p, query) })).filter(x => x.s > 0).sort((x, y) => y.s - x.s).slice(0, limit).map(x => ({ name: x.p.name, area: x.p.area || '' }));
 }
 
 // A rider used a named place with a pin: count it, and suggest it to the
@@ -127,4 +174,4 @@ function readSaved(b) {
   return { place: { id: `sp_${nanoid(8)}`, label, name: name || label, latitude: Math.round(lat * 1e6) / 1e6, longitude: Math.round(lng * 1e6) / 1e6, note } };
 }
 
-module.exports = { KINDS, MAX_SAVED, SUGGEST_AFTER, LIBERIA_STARTER, seedStarter, search, noteUse, middle, publicPlace, pinned, savedOf, readSaved, norm, sameText };
+module.exports = { KINDS, MAX_SAVED, SUGGEST_AFTER, LIBERIA_STARTER, seedStarter, search, searchUnpinned, score, noteUse, middle, publicPlace, pinned, savedOf, readSaved, norm, sameText };

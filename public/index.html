@@ -313,6 +313,7 @@
     outline: 2.5px solid var(--teal); outline-offset: 2px; border-radius: 4px;
   }
   .form-select { appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748B' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 14px center; }
+  #guarantors-review-panel a.btn-sm { text-decoration: none; } @media (max-width: 640px) { .g-row { grid-template-columns: 1fr !important; } .g-row > div:nth-child(3) { text-align: left !important; } .g-row .row-actions { justify-content: flex-start !important; } } /* v167: guarantor cards on a phone */
   .dates-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .modal-footer { padding:0 24px 24px; }
   .confirm-btn {
@@ -3302,8 +3303,8 @@
           </select>
         </div>
         <div class="form-group" id="auth-state-group" style="display:none">
-          <label class="form-label">State / Region</label>
-          <select class="form-input form-select" id="auth-state" autocomplete="address-level1">
+          <label class="form-label" id="auth-state-label" for="auth-state">State / Region</label>
+          <select class="form-input form-select" id="auth-state" autocomplete="address-level1" onchange="if (typeof authStateChanged === 'function') authStateChanged()">
             <option value="">Select a country first</option>
           </select>
         </div>
@@ -3319,13 +3320,14 @@
         <label class="form-label">Street Address <small style="font-weight:400;color:var(--slate);">optional</small></label>
         <input class="form-input" type="text" id="auth-address" autocomplete="street-address"/>
       </div>
-      <div class="dates-row">
+      <div class="dates-row" id="auth-city-row">
         <div class="form-group" id="auth-city-group" style="display:none">
-          <label class="form-label">City</label>
-          <input class="form-input" type="text" id="auth-city" placeholder="e.g. Philadelphia" autocomplete="address-level2"/>
+          <label class="form-label" id="auth-city-label" for="auth-city">City</label>
+          <input class="form-input" type="text" id="auth-city" placeholder="e.g. Philadelphia" autocomplete="address-level2" list="auth-city-list"/>
+          <datalist id="auth-city-list"></datalist>
         </div>
         <div class="form-group" id="auth-zip-group" style="display:none">
-          <label class="form-label" id="auth-zip-label">Zip / Postal Code</label>
+          <label class="form-label" id="auth-zip-label" for="auth-zip">Zip / Postal Code</label>
           <input class="form-input" type="text" id="auth-zip" autocomplete="postal-code"/>
           <div id="auth-zip-hint" style="display:none;font-size:12.5px;color:var(--muted);margin-top:3px;">Optional (no formal postal system in this area)</div>
         </div>
@@ -3721,8 +3723,8 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=4bda264bb5" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
-<script src="/app/rides.js?v=f41614c263"></script>
+<script src="/app/trothen.js?v=e1de8f320c" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/rides.js?v=b7ca3d0c1a"></script>
 <script src="/app/tokens.js?v=5697c68ad9"></script>
 <script src="/app/payways.js?v=06dccae9e7"></script>
 <script src="/app/review.js?v=86c2ff86bf"></script>
@@ -3755,7 +3757,7 @@
 <script src="/app/checks.js?v=83eacc00ae"></script>
 <script src="/app/polish.js?v=7ed5bc4aca"></script>
 <script src="/app/a11y.js?v=7a13a5f443"></script>
-<script src="/app/es-v152.js?v=085633f811"></script>
+<script src="/app/es-v152.js?v=67093c55ac"></script>
 <script src="/app/mobile.js?v=d4850238eb"></script>
 </body>
 </html>

@@ -785,7 +785,9 @@ router.get('/places/search', requireAuth, placeLimiter, async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 80);
   const qn = places.norm(q);
   const saved = places.savedOf(me).filter(p => qn.length >= 1 && (places.norm(p.label).includes(qn) || places.norm(p.name).includes(qn))).map(p => ({ ...p, kind: 'saved' }));
-  res.json({ saved, places: await places.search(me && me.country, q) });
+  const found = await places.search(me && me.country, q);
+  // v167: known places with no pin yet, so the page can say so instead of "Not found".
+  res.json({ saved, places: found, unpinned: found.length ? [] : await places.searchUnpinned(me && me.country, q) });
 });
 // GET /api/places/mine — saved places and the last places I rode from or to.
 router.get('/places/mine', requireAuth, async (req, res) => {

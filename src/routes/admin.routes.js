@@ -476,7 +476,7 @@ router.post('/customers/:id/vip', requireSuperAdmin, async (req, res) => {
     ? { membershipTier: 'vip', membershipStartedAt: new Date().toISOString(), membershipPrice: null }
     : { membershipTier: 'free', membershipCancelledAt: new Date().toISOString(), membershipPrice: null });
   await notify(target.id, grant ? '💎' : '👋', grant
-    ? 'You have been invited to Trothen VIP, our highest membership tier, which includes concierge support.'
+    ? 'You have been invited to Trothen VIP, our highest membership tier: 80% off Trothen\'s service fee on your bookings with pros, at no cost to you.'
     : 'Your Trothen VIP membership has ended. You\'re now on the Free tier.', null, { section: 'settings' });
   res.json({ user: publicAdmin(updated) });
 });
@@ -813,7 +813,15 @@ router.get('/providers-with-guarantors', requireDepartment(['verification']), as
   for (const p of await db.filter('users', u => u.role === 'provider' && u.guarantors && u.guarantors.length > 0)) {
     for (const g of p.guarantors) { const k = phoneKey(g.phone); if (!usedBy.has(k)) usedBy.set(k, new Set()); usedBy.get(k).add(p.id); }
   }
-  res.json({ providers: providers.map(p => ({ id: p.id, name: p.name, city: p.city, category: p.category, guarantors: p.guarantors.map(g => ({ ...g, problem: guarantorProblem(p, g), sharedWithOtherPros: Math.max(0, (usedBy.get(phoneKey(g.phone)) || new Set()).size - 1) })) })) });
+  // v167: each number in international form (+231…) so a tap dials it from
+  // anywhere, things to check before calling, and who reviewed it.
+  const gc = require('../guarantor-check');
+  const reviewerIds = new Set(); for (const p of providers) for (const g of p.guarantors) if (g.reviewedBy) reviewerIds.add(g.reviewedBy);
+  const reviewers = new Map((await db.filter('users', u => reviewerIds.has(u.id))).map(u => [u.id, u.name]));
+  res.json({ providers: providers.map(p => ({ id: p.id, name: p.name, city: p.city, state: p.state, country: p.country, category: p.category, phone: p.phone, verified: p.verified === true, guarantors: p.guarantors.map((g, index) => {
+    const intl = gc.phoneIntl(g.phone, p.country);
+    return { ...g, index, phoneIntl: intl, phoneDisplay: gc.phoneDisplay(intl, p.country) || g.phone, checks: gc.checks(p, g), family: gc.isFamily(g.relationship), reviewedByName: g.reviewedBy ? reviewers.get(g.reviewedBy) || 'a team member' : null, problem: guarantorProblem(p, g), sharedWithOtherPros: Math.max(0, (usedBy.get(phoneKey(g.phone)) || new Set()).size - 1) };
+  }) })) });
 });
 
 // PATCH /api/admin/providers/:id/guarantors/:index — mark one specific
@@ -831,13 +839,16 @@ router.patch('/providers/:id/guarantors/:index', requireDepartment(['verificatio
     return res.status(404).json({ error: 'That guarantor was not found on this provider\'s account' });
   }
   const { status } = req.body || {};
-  if (!['contacted', 'verified', 'rejected'].includes(status)) return res.status(400).json({ error: 'status must be contacted, verified or rejected' });
+  // v167: 'submitted' puts a guarantor back on the list to call (a mistake undone).
+  if (!['contacted', 'verified', 'rejected', 'submitted'].includes(status)) return res.status(400).json({ error: 'status must be contacted, verified, rejected or submitted' });
+  const note = typeof (req.body || {}).note === 'string' ? req.body.note.trim().slice(0, 500) : '';
   // v106: a guarantor with the pro's own number or name can't be marked verified.
   const problem = require('../guarantor-check').guarantorProblem(provider, guarantors[idx]);
   if (status === 'verified' && problem) {
     return res.status(400).json({ error: problem === 'phone' ? 'This guarantor has the pro\'s own phone number, so it can\'t be verified. Mark it not accepted and ask the pro for a different person.' : 'This guarantor has the pro\'s own name, so it can\'t be verified. Mark it not accepted and ask the pro for a different person.' });
   }
-  guarantors[idx] = { ...guarantors[idx], status, contactedAt: new Date().toISOString() };
+  // v167: who reviewed it and what was said on the call, kept with the guarantor.
+  guarantors[idx] = { ...guarantors[idx], status, contactedAt: status === 'submitted' ? null : new Date().toISOString(), reviewedBy: status === 'submitted' ? null : req.user.sub, ...(note ? { note } : {}), history: [...(guarantors[idx].history || []), { status, by: req.user.sub, at: new Date().toISOString(), ...(note ? { note } : {}) }].slice(-10) };
   const updated = await db.update('users', provider.id, { guarantors });
   if (status === 'rejected') {
     await notify(provider.id, '❌', `Your guarantor "${guarantors[idx].name}" wasn't accepted. A guarantor must be another person with their own phone number. Please replace them in Verification.`, null, { section: 'verification' });
@@ -1202,10 +1213,8 @@ router.post('/verification/:id/decide', requireDepartment(['verification']), asy
   // Who decided and when, kept with the record.
   await db.update('verifications', record.id, { status, rejectionReason: finalRejectionReason, reviewedBy: req.user.sub, reviewedAt: new Date().toISOString() });
   if (decision === 'approve') await db.update('users', record.userId, { verified: true });
-  const approveMessage = user && user.role === 'provider' && !user.profilePhotoUrl
-    ? 'Your identity verification was approved. One more step before you appear in search and job matches: add a profile picture in Settings.'
-    : 'Your identity verification was approved.';
-  await notify(record.userId, decision === 'approve' ? '✅' : '❌', decision === 'approve' ? approveMessage : `Your identity verification was rejected: ${rejectionReason.trim()}. Please resubmit your documents.`, null, { section: 'verification' });
+  // v167: the in-app notice plus an email with the next steps (and a text when SMS is set up).
+  await require('../verification-messages').decided(user || { id: record.userId }, decision, rejectionReason);
   res.json({ verification: { ...record, status, rejectionReason: finalRejectionReason } });
 });
 
@@ -3795,14 +3804,20 @@ router.get('/settings/membership-pricing', requireSuperAdmin, async (req, res) =
     label: MEMBERSHIP_TIERS[tier].label,
     defaultPrice: MEMBERSHIP_TIERS[tier].price,
     usdPrice: resolveMembershipPrice(tier, baseRows),
+    feeDiscountPct: Math.round(MEMBERSHIP_TIERS[tier].feeDiscount * 100), // v167
   }));
-  res.json({ tiers });
+  const prices = Object.fromEntries(tiers.map(t => [t.tier, t.usdPrice]));
+  res.json({ tiers, problem: require('../membership').orderProblem(prices) });
 });
 
 router.patch('/settings/membership-pricing', requireSuperAdmin, async (req, res) => {
   const { tier, usdPrice } = req.body || {};
   if (!['plus', 'pro', 'elite'].includes(tier)) return res.status(400).json({ error: 'tier must be plus, pro, or elite' });
   if (typeof usdPrice !== 'number' || usdPrice < 0) return res.status(400).json({ error: 'Enter a valid non-negative USD price' });
+  // v167: Plus < Pro < Elite, as each gives a bigger discount.
+  { const { resolveMembershipPrice, orderProblem } = require('../membership'); const rows = await db.all('membershipPricingBase');
+    const prices = { plus: resolveMembershipPrice('plus', rows), pro: resolveMembershipPrice('pro', rows), elite: resolveMembershipPrice('elite', rows), [tier]: usdPrice };
+    const why = orderProblem(prices); if (why) return res.status(400).json({ error: `${why} Plus gives 20% off the service fee, Pro 40% and Elite 60%.` }); }
   const existing = await db.find('membershipPricingBase', r => r.tier === tier);
   if (existing) await db.update('membershipPricingBase', existing.id, { usdPrice, updatedAt: new Date().toISOString() });
   else await db.insert('membershipPricingBase', { id: `mpb_${tier}`, tier, usdPrice, updatedAt: new Date().toISOString() });

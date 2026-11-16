@@ -1543,14 +1543,10 @@ function populateAuthStates() {
   if (stateSelect) {
     stateSelect.innerHTML = `<option value="" disabled selected>Select a state / region</option>` + states.map(s => `<option value="${escapeHtml(s)}">${s}</option>`).join('');
   }
-  // Some countries genuinely have no formal postal code system — for
-  // those, the field becomes optional rather than pretending a format
-  // exists that doesn't.
-  const noPostalCode = (GEO_DATA.noPostalCodeCountries || []).includes(country);
-  const zipLabel = document.getElementById('auth-zip-label');
-  const zipHint = document.getElementById('auth-zip-hint');
-  if (zipLabel) zipLabel.textContent = noPostalCode ? 'Zip / Postal Code (optional)' : 'Zip / Postal Code';
-  if (zipHint) zipHint.style.display = noPostalCode ? 'block' : 'none';
+  // v167: the address part of the form follows the country's own format
+  // (Google's address data, the international standard): what its regions are
+  // called, whether a postal code is used at all, and its own cities.
+  applyAuthAddressFormat(country);
 
   // Real country calling code, shown as a fixed prefix so nobody has to
   // remember or type their own country's dial code — they just type the
@@ -1558,6 +1554,55 @@ function populateAuthStates() {
   const dialCodeBadge = document.getElementById('auth-phone-dialcode');
   if (dialCodeBadge) {
     dialCodeBadge.textContent = (GEO_DATA.dialCodeByCountry && GEO_DATA.dialCodeByCountry[country]) || '+1';
+  }
+}
+
+// v167: a country's address format, from /api/geo (or a safe default).
+function addressFormatFor(country) {
+  const f = (GEO_DATA.addressFormats && GEO_DATA.addressFormats[country]) || null;
+  if (f) return f;
+  const optional = (GEO_DATA.noPostalCodeCountries || []).includes(country);
+  return { region: 'State / Region', city: 'City', postal: optional ? 'optional' : 'required', postalLabel: 'Zip / Postal code', cityExample: '' };
+}
+function authZipHidden() {
+  const c = document.getElementById('auth-country');
+  return !!c && addressFormatFor(c.value).postal === 'none';
+}
+function applyAuthAddressFormat(country) {
+  const f = addressFormatFor(country);
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  set('auth-state-label', f.region);
+  set('auth-city-label', f.city);
+  const stateSelect = document.getElementById('auth-state');
+  if (stateSelect && stateSelect.options[0] && !stateSelect.options[0].value) stateSelect.options[0].textContent = `Select your ${f.region.toLowerCase()}`;
+  const zipGroup = document.getElementById('auth-zip-group'), zip = document.getElementById('auth-zip');
+  const signup = authState && authState.mode === 'signup';
+  if (f.postal === 'none') {
+    // Not used in this country: no box at all, and the city takes the whole row.
+    if (zip) zip.value = '';
+    if (zipGroup) zipGroup.style.display = 'none';
+  } else if (zipGroup && signup) zipGroup.style.display = 'block';
+  const row = document.getElementById('auth-city-row');
+  if (row) row.style.gridTemplateColumns = f.postal === 'none' ? '1fr' : '';
+  const zipLabel = document.getElementById('auth-zip-label');
+  if (zipLabel) zipLabel.innerHTML = escapeHtml(f.postalLabel) + (f.postal === 'optional' ? ' <small style="font-weight:400;color:var(--slate);">optional</small>' : '');
+  const zipHint = document.getElementById('auth-zip-hint');
+  if (zipHint) zipHint.style.display = 'none';
+  authStateChanged();
+}
+// The city box suggests the cities and towns of the chosen county, state or
+// region (or of the whole country before one is chosen). Any town can still be typed.
+function authStateChanged() {
+  const country = (document.getElementById('auth-country') || {}).value || '';
+  const state = (document.getElementById('auth-state') || {}).value || '';
+  const byState = (GEO_DATA.citiesByState && GEO_DATA.citiesByState[country]) || {};
+  const cities = state && byState[state] ? byState[state] : [].concat(...Object.values(byState));
+  const list = document.getElementById('auth-city-list');
+  if (list) list.innerHTML = cities.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+  const city = document.getElementById('auth-city');
+  if (city) {
+    const example = (state && cities[0]) || addressFormatFor(country).cityExample || cities[0];
+    city.placeholder = example ? `e.g. ${example}` : '';
   }
 }
 
@@ -3474,7 +3519,7 @@ function setAuthMode(mode) {
   document.getElementById('auth-state-group').style.display = mode === 'signup' ? 'block' : 'none';
   document.getElementById('auth-city-group').style.display = mode === 'signup' ? 'block' : 'none';
   document.getElementById('auth-address-group').style.display = mode === 'signup' ? 'block' : 'none';
-  document.getElementById('auth-zip-group').style.display = mode === 'signup' ? 'block' : 'none';
+  document.getElementById('auth-zip-group').style.display = mode === 'signup' && !authZipHidden() ? 'block' : 'none'; // v167: not shown where postal codes aren't used
   document.getElementById('auth-provider-fields-group').style.display = (mode === 'signup' && authState.role === 'provider') ? 'block' : 'none';
   document.getElementById('auth-forgot-link').style.display = mode === 'signup' ? 'none' : 'block';
   document.getElementById('auth-submit-btn').textContent = mode === 'login' ? 'Sign In' : 'Create Account';
@@ -4046,7 +4091,18 @@ function verificationHTML(role, status) {
           ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;white-space:normal;text-align:left;">${escapeHtml(tr("Account approved. ID not yet verified."))}</div>`
           : `<div class="badge badge-success" style="font-size:14px;padding:8px 16px;">✓ Identity verified: government ID confirmed</div>`)
       : inReview
-        ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;">⏳ Submitted, awaiting review</div>`
+        ? `<div class="badge badge-warn" style="font-size:14px;padding:8px 16px;">⏳ Submitted, awaiting review</div>
+          <div class="ver-next" style="margin-top:18px;max-width:640px;">
+            <div style="font-weight:600;color:var(--navy);margin-bottom:6px;">${escapeHtml(tr("What happens next"))}</div>
+            <ol style="margin:0 0 12px;padding-left:20px;line-height:1.6;color:var(--ink, #1f2a44);">
+              <li>${escapeHtml(tr("We check your ID and compare it with your photo. This usually takes up to 48 hours."))}</li>
+              <li>${escapeHtml(tr("We tell you as soon as it is done, by email and here in Trothen."))}</li>
+              <li>${escapeHtml(role === 'provider' ? tr("Once approved, customers see \"ID checked\" on your profile and you appear in search and job matches.") : tr("Once approved, you can book pros and post jobs."))}</li>
+              <li>${escapeHtml(tr("If something needs fixing, we tell you exactly what, and you can send it again from this page."))}</li>
+            </ol>
+            <div style="font-size:13.5px;color:var(--slate);margin-bottom:6px;">${escapeHtml(role === 'provider' ? tr("While you wait: add a profile picture, your skills and your prices in Settings, so your profile is ready the moment you are approved.") : tr("While you wait: you can look around, browse pros and the Market, and save the pros you like."))}</div>
+            <div style="font-size:13.5px;color:var(--slate);">${escapeHtml(tr("We sent these steps to your email too. Trothen will never ask you to send your ID again by phone, WhatsApp or email."))}</div>
+          </div>`
         : `<div id="verification-action-area">
             <div class="form-group"><label class="form-label">${escapeHtml(tr("Document Type"))}</label>
               <select class="form-input" id="verification-doc-type-select"><option>Loading…</option></select>
@@ -4133,12 +4189,15 @@ function guarantorFormHTML() {
     return `
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;">
       <div style="font-weight:600;color:var(--navy);margin-bottom:8px;">Guarantor ${i + 1}${statusNote}</div>
-      <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="guarantor-${i}-name" value="${escapeHtml(g.name || '')}" placeholder="Full name"/></div>
-      <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" id="guarantor-${i}-phone" type="tel" autocomplete="off" value="${escapeHtml(g.phone || '')}" placeholder="A number our team can call"/></div>
-      <div class="form-group"><label class="form-label">Relationship</label><input class="form-input" id="guarantor-${i}-relationship" value="${escapeHtml(g.relationship || '')}" placeholder="e.g. Property owner, long-time client"/></div>
+      <div class="form-group"><label class="form-label" for="guarantor-${i}-name">Full name</label><input class="form-input" id="guarantor-${i}-name" value="${escapeHtml(g.name || '')}" placeholder="First and last name" autocomplete="off"/></div>
+      <div class="form-group"><label class="form-label" for="guarantor-${i}-phone">Phone number</label><input class="form-input" id="guarantor-${i}-phone" type="tel" inputmode="tel" autocomplete="off" value="${escapeHtml(g.phone || '')}" placeholder="${escapeHtml(((GEO_DATA.dialCodeByCountry || {})[AUTH.user && AUTH.user.country] || '+231') + ' …  a number our team can call')}"/></div>
+      <div class="form-group"><label class="form-label" for="guarantor-${i}-relationship">How they know you</label><input class="form-input" id="guarantor-${i}-relationship" list="guarantor-relationships" value="${escapeHtml(g.relationship || '')}" placeholder="Choose or type, e.g. Past employer"/></div>
     </div>`;
   }).join('');
-  return `${rows}<button class="btn-sm btn-sm-primary" onclick="saveGuarantors()">Save Guarantors</button>`;
+  // v167: the usual kinds of reference, to choose from (any other can be typed).
+  const rels = ['Past employer or boss', 'Client I worked for', 'Landlord or property owner', 'Pastor, imam or religious leader', 'Town chief or community leader', 'Teacher or trainer', 'Co-worker', 'Neighbour', 'Friend', 'Family member'];
+  return `<div class="ver-note" style="margin-bottom:10px;">Name people who know you and your work and will answer our call. At least one should not be family: a past employer, a client, your landlord, a pastor or imam, or a community leader. Use their full name and a number with all its digits.</div>
+    ${rows}<datalist id="guarantor-relationships">${rels.map(r => `<option value="${escapeHtml(r)}"></option>`).join('')}</datalist><button class="btn-sm btn-sm-primary" onclick="saveGuarantors()">Save Guarantors</button>`;
 }
 
 async function saveGuarantors() {
@@ -4574,10 +4633,50 @@ function categoriesForSearchTerm(query) {
   return Array.from(matches);
 }
 
+// v167: Walter: "fix this with explanation". The cards showed the price in
+// L$ with "about $9.99" underneath, but the $ figure was typed into the page
+// and never followed the real price (L$720 is about $3.80, not $9.99). The
+// benefits ("priority features", "premium support") were things that don't
+// exist. Now every figure comes from the server: the price in the person's
+// money, the same price in US$, the real discount, and how much a month of
+// bookings makes it pay for itself, so a customer can tell whether it's worth it.
+function membershipMoney(t, usd, local) {
+  const showLocal = !!(t && t.currencyCode && t.currencyCode !== 'USD' && local != null);
+  const us = `$${Number(usd).toFixed(Number(usd) % 1 ? 2 : 0)}`;
+  return showLocal ? { main: `${t.currencySymbol || ''}${Math.round(Number(local)).toLocaleString()}`, sub: `about US${us}` } : { main: us, sub: '' };
+}
+function membershipCardsHTML() {
+  const tiers = customerData.membershipTiersLocal || {};
+  const cur = AUTH.user && AUTH.user.membershipTier && AUTH.user.membershipTier !== 'free' ? AUTH.user.membershipTier : null;
+  const curT = cur && tiers[cur];
+  const curMoney = curT ? membershipMoney(curT, curT.price, curT.priceLocal) : null;
+  const head = cur
+    ? `You're on ${escapeHtml((curT && curT.label) || cur)}: ${curT ? `${curT.feeDiscountPct}% off the service fee, ${escapeHtml(curMoney.main)} a month${curMoney.sub ? ` (${escapeHtml(curMoney.sub)})` : ''}` : ''}. Cancel any time; there's no charge after you cancel.`
+    : 'You are on Free: you pay Trothen\'s normal service fee on bookings with pros (9% of the job, at least US$2.99 and at most US$25). A membership takes a share off that fee. The pro is paid the same either way.';
+  const cards = ['plus', 'pro', 'elite'].map(tier => {
+    const t = tiers[tier] || MEMBERSHIP_TIER_INFO[tier];
+    if (!t || t.price == null) return '';
+    const m = membershipMoney(t, t.price, t.priceLocal);
+    const be = t.breakEvenUsd != null ? membershipMoney(t, t.breakEvenUsd, t.breakEvenLocal) : null;
+    const isCurrent = cur === tier;
+    return `<div style="border:1px solid ${isCurrent ? 'var(--navy)' : 'var(--border)'};border-radius:10px;padding:14px 12px;text-align:center;display:flex;flex-direction:column;gap:4px;">
+      <div style="font-weight:700;color:var(--navy);">${escapeHtml(t.label)}</div>
+      <div style="font-size:20px;font-weight:800;">${escapeHtml(m.main)}<span style="font-size:12.5px;font-weight:400;color:var(--slate);">/month</span></div>
+      ${m.sub ? `<div style="font-size:12.5px;color:var(--slate);">${escapeHtml(m.sub)}</div>` : ''}
+      <div style="font-size:13.5px;color:var(--navy);font-weight:600;margin-top:4px;">${t.feeDiscountPct != null ? t.feeDiscountPct : ''}% off the service fee</div>
+      ${be ? `<div style="font-size:12.5px;color:var(--slate);">Pays for itself if you spend about ${escapeHtml(be.main)} a month on bookings with pros</div>` : ''}
+      <button class="btn-sm ${isCurrent ? 'btn-sm-outline' : 'btn-sm-primary'}" style="width:100%;margin-top:auto;" ${isCurrent ? 'disabled' : ''} onclick="subscribeMembership('${tier}')">${isCurrent ? 'Your plan' : `Choose ${escapeHtml(t.label)}`}</button>
+    </div>`;
+  }).join('');
+  return `<div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;max-width:70ch;">${head}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">${cards}</div>
+    <div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;max-width:70ch;">Billed monthly. The discount is on Trothen's service fee for bookings with pros (not on rides, deliveries or Market goods, and not on what the pro is paid). Cash bookings have no service fee, so a membership saves nothing on them.</div>`;
+}
+
 const MEMBERSHIP_TIER_INFO = {
-  plus: { label: 'Plus', price: 9.99, description: 'Lower fees + priority features' },
-  pro: { label: 'Pro', price: 19.99, description: 'More savings + premium support' },
-  elite: { label: 'Elite', price: 39.99, description: 'Maximum customer benefits' },
+  plus: { label: 'Plus', price: 9.99, feeDiscountPct: 20 },
+  pro: { label: 'Pro', price: 19.99, feeDiscountPct: 40 },
+  elite: { label: 'Elite', price: 39.99, feeDiscountPct: 60 },
 };
 
 const CUSTOMER_NAV_ITEMS = [
@@ -5536,7 +5635,7 @@ const CUSTOMER_SECTIONS = {
       <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="set-cust-email" type="email" autocomplete="email" value="${escapeHtml((AUTH.user && AUTH.user.email) || '')}"/></div>
       <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="set-cust-phone" type="tel" autocomplete="tel" value="${escapeHtml((AUTH.user && AUTH.user.phone) || '')}" placeholder="Your phone number"/></div>
       <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="set-cust-address" value="${escapeHtml((AUTH.user && AUTH.user.address) || '')}"/></div>
-      <div class="form-group"><label class="form-label">Zip / Postal Code</label><input class="form-input" id="set-cust-zip" value="${escapeHtml((AUTH.user && AUTH.user.zipCode) || '')}"/></div>
+      ${addressFormatFor((AUTH.user && AUTH.user.country) || '').postal === 'none' && !(AUTH.user && AUTH.user.zipCode) ? '' : `<div class="form-group"><label class="form-label">${escapeHtml(addressFormatFor((AUTH.user && AUTH.user.country) || '').postalLabel)}</label><input class="form-input" id="set-cust-zip" autocomplete="postal-code" value="${escapeHtml((AUTH.user && AUTH.user.zipCode) || '')}"/></div>`}
       <button class="btn-sm btn-sm-primary" onclick="saveCustomerSettings()">Save Changes</button>
     </div>
     <div class="panel"><div class="panel-title">Location</div>
@@ -5544,10 +5643,10 @@ const CUSTOMER_SECTIONS = {
       <div class="form-group"><label class="form-label">Country</label>
         <select class="form-input form-select" id="set-cust-country" onchange="populateSettingsStates('cust')"></select>
       </div>
-      <div class="form-group"><label class="form-label">State / Region</label>
+      <div class="form-group"><label class="form-label">${escapeHtml(addressFormatFor((AUTH.user && AUTH.user.country) || '').region)}</label>
         <select class="form-input form-select" id="set-cust-state"></select>
       </div>
-      <div class="form-group"><label class="form-label">City</label>
+      <div class="form-group"><label class="form-label">${escapeHtml(addressFormatFor((AUTH.user && AUTH.user.country) || '').city)}</label>
         <input class="form-input" type="text" id="set-cust-city" value="${escapeHtml((AUTH.user && AUTH.user.city) || '')}"/>
       </div>
       <button class="btn-sm btn-sm-primary" onclick="saveCustomerLocation()">Save Location</button>
@@ -5559,27 +5658,8 @@ const CUSTOMER_SECTIONS = {
     <div class="panel">
       <div class="panel-title">Trothen Membership</div>
       ${AUTH.user && AUTH.user.membershipTier === 'vip'
-        ? `<div style="font-size:13.5px;color:var(--gold);font-weight:600;margin-bottom:10px;">💎 You are a Trothen VIP member. VIP membership is by invitation and includes concierge support.</div>`
-        : `<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">${AUTH.user && AUTH.user.membershipTier && AUTH.user.membershipTier !== 'free' ? `You're on ${AUTH.user.membershipTier[0].toUpperCase() + AUTH.user.membershipTier.slice(1)} — $${AUTH.user.membershipPrice}/month.` : 'Currently on the Free tier.'}</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
-          ${['plus', 'pro', 'elite'].map(tier => {
-            const cfg = MEMBERSHIP_TIER_INFO[tier];
-            const local = customerData.membershipTiersLocal && customerData.membershipTiersLocal[tier];
-            // v89: outside the US the price is shown in the customer's own currency first, with the dollar amount underneath.
-            const showLocal = !!(local && local.currencyCode && local.currencyCode !== 'USD' && local.priceLocal != null);
-            const mainPrice = showLocal ? `${escapeHtml(local.currencySymbol || '')}${Math.round(Number(local.priceLocal)).toLocaleString()}` : `$${cfg.price}`;
-            const localLine = showLocal ? `<div style="font-size:12.5px;color:var(--slate);">${escapeHtml(local.currencyCode)} · about $${cfg.price}</div>` : '';
-            const isCurrent = AUTH.user && AUTH.user.membershipTier === tier;
-            return `<div style="border:1px solid ${isCurrent ? 'var(--navy)' : 'var(--border)'};border-radius:10px;padding:12px;text-align:center;">
-              <div style="font-weight:700;color:var(--navy);">${cfg.label}</div>
-              <div style="font-size:18px;font-weight:800;margin:4px 0;">${mainPrice}<span style="font-size:12.5px;font-weight:400;color:var(--slate);">/mo</span></div>
-              ${localLine}
-              <div style="font-size:12.5px;color:var(--slate);margin:4px 0 8px;">${escapeHtml(cfg.description)}</div>
-              <button class="btn-sm ${isCurrent ? 'btn-sm-outline' : 'btn-sm-primary'}" style="width:100%;" ${isCurrent ? 'disabled' : ''} onclick="subscribeMembership('${tier}')">${isCurrent ? 'Current Plan' : 'Subscribe'}</button>
-            </div>`;
-          }).join('')}
-        </div>
-        ${AUTH.user && AUTH.user.membershipTier && AUTH.user.membershipTier !== 'free' ? `<button class="btn-sm btn-sm-ghost" onclick="cancelMembership()">Cancel and return to Free</button>` : ''}`}
+        ? `<div style="font-size:13.5px;color:var(--gold);font-weight:600;margin-bottom:10px;">💎 You are a Trothen VIP member (by invitation): 80% off Trothen's service fee on your bookings with pros.</div>`
+        : membershipCardsHTML() + (AUTH.user && AUTH.user.membershipTier && AUTH.user.membershipTier !== 'free' ? `<button class="btn-sm btn-sm-ghost" onclick="cancelMembership()">Cancel and return to Free</button>` : '')}
     </div>
     <div class="panel" id="loyalty-points-panel"><div class="panel-title">Loyalty Points</div><div id="loyalty-points-body" style="color:var(--slate);font-size:13.5px;">Loading…</div></div>
     <div class="panel" id="handbook-panel" style="display:none;"><div class="panel-title">Getting Started Guide</div><div style="font-size:13.5px;color:var(--slate);margin-bottom:10px;">A quick walkthrough of how Trothen works.</div><a class="btn-sm btn-sm-outline" id="handbook-download-link" href="#" target="_blank" rel="noopener noreferrer">📄 Download Guide</a></div>
@@ -5997,7 +6077,7 @@ async function saveCustomerSettings() {
   const email = document.getElementById('set-cust-email').value.trim();
   const phone = document.getElementById('set-cust-phone').value.trim();
   const address = document.getElementById('set-cust-address').value.trim();
-  const zipCode = document.getElementById('set-cust-zip').value.trim();
+  const zipCode = document.getElementById('set-cust-zip') ? document.getElementById('set-cust-zip').value.trim() : undefined; // v167: no box where postal codes aren't used
   if (name.length < 2) return showToast('Full name must be at least 2 characters');
   if (!isValidEmailClient(email)) return showToast('Enter a valid email address');
   if (phone && phone.length < 7) return showToast('Enter a valid phone number');
@@ -9395,11 +9475,12 @@ function superAdminPricingSectionHTML() {
       <div style="font-size:13px;color:var(--slate);margin-top:10px;">Every country without its own override automatically follows this price, converted to local currency at the current exchange rate.</div>
     </div>
     <div class="panel"><div class="panel-title">Customer Membership Pricing (USD)</div>
-      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Free is always $0 and VIP is by invitation, so only Plus, Pro and Elite can be edited. These prices are shown and charged everywhere in the app.</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;">Free is always $0 and VIP is by invitation, so only Plus, Pro and Elite can be edited. These prices are shown and charged everywhere in the app, converted to each customer's own money at the exchange rate set here. A membership only takes a share off Trothen's 9% service fee, so it pays for itself for a customer who spends about the price ÷ (discount × 9%) a month on bookings: at $9.99, Plus needs about $560 of bookings a month.</div>
       ${adminData.membershipPricing
-        ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Tier</th><th>Current USD Price</th><th>New Price</th><th>Action</th></tr></thead><tbody>
+        ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Tier</th><th>What it gives</th><th>Current USD Price</th><th>New Price</th><th>Action</th></tr></thead><tbody>
         ${['plus', 'pro', 'elite'].map(tier => { const t = (adminData.membershipPricing || []).find(x => x.tier === tier); return t ? `<tr>
           <td style="font-weight:600;">${t.label}</td>
+          <td>${t.feeDiscountPct != null ? `${t.feeDiscountPct}% off the service fee` : ''}</td>
           <td>$${t.usdPrice}</td>
           <td><input class="form-input" type="number" min="0" step="0.01" id="membership-price-${tier}" placeholder="${escapeHtml(t.usdPrice)}" style="width:120px;padding:6px 8px;"/></td>
           <td><button class="btn-sm btn-sm-primary" onclick="saveMembershipPricing('${tier}')">Save</button></td>
@@ -9745,35 +9826,23 @@ async function openProviderScoreBreakdown(providerId, providerName) {
 // or mark anyone contacted/verified — so every guarantor sat at
 // "submitted" forever and the background-check score never moved.
 const GUARANTOR_STATUS_BADGE = { submitted: 'badge-warn', contacted: 'badge-neutral', verified: 'badge-success', rejected: 'badge-danger' };
+// v167: Walter: "organize this". The list was one long table: the pro's name
+// only on their first row, numbers with no country code (a tap dialled the
+// wrong country from abroad), no way to see who checked a guarantor or what
+// they said, and names like "hhgshhs" passed as verified with nothing said.
+// Now: one card per pro, the people still to call first, each number in
+// international form with Call and WhatsApp, what to check before calling,
+// and who verified it, when, and the note from the call.
+let GUARANTOR_DATA = [];
+let GUARANTOR_FILTER = 'tocall';
 async function loadGuarantorsReviewPanel() {
   if (!BACKEND_AVAILABLE) return;
   const target = document.getElementById('guarantors-review-panel');
   if (!target) return;
   try {
     const { providers } = await apiFetch('GET', '/admin/providers-with-guarantors');
-    const el = document.getElementById('guarantors-review-panel');
-    if (!el) return;
-    if (!providers.length) {
-      el.innerHTML = `<div style="color:var(--slate);font-size:13.5px;padding:12px 0;">No provider has submitted guarantors yet.</div>`;
-      return;
-    }
-    // Providers with someone still waiting for a call go first.
-    const waiting = p => (p.guarantors || []).filter(g => g.status !== 'verified').length;
-    providers.sort((a, b) => waiting(b) - waiting(a));
-    el.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Guarantor</th><th>Phone</th><th>Relationship</th><th>Status</th><th>Action</th></tr></thead><tbody>
-      ${providers.map(p => (p.guarantors || []).map((g, i) => `<tr>
-        <td>${i === 0 ? `<strong>${escapeHtml(p.name)}</strong><div style="font-size:13px;color:var(--slate);">${escapeHtml(p.category || '')}${p.city ? ' · ' + escapeHtml(p.city) : ''}</div>` : ''}</td>
-        <td>${escapeHtml(g.name)}${g.problem ? `<div style="font-size:12.5px;color:#A5352B;font-weight:600;margin-top:3px;">⚠ ${g.problem === 'phone' ? "Same phone number as the pro. This is not a separate person." : "Same name as the pro. This is not a separate person."}</div>` : ''}${g.sharedWithOtherPros ? `<div style="font-size:12.5px;color:#8C6423;margin-top:3px;">Also listed as a guarantor by ${g.sharedWithOtherPros} other pro${g.sharedWithOtherPros === 1 ? '' : 's'}.</div>` : ''}</td>
-        <td><a href="tel:${escapeHtml(String(g.phone).replace(/[^+0-9]/g, ''))}">${escapeHtml(g.phone)}</a></td>
-        <td>${escapeHtml(g.relationship || '—')}</td>
-        <td><span class="badge ${GUARANTOR_STATUS_BADGE[g.status] || 'badge-neutral'}">${escapeHtml(g.status === 'rejected' ? 'not accepted' : (g.status || 'submitted'))}</span>${g.contactedAt ? `<div style="font-size:12.5px;color:var(--slate);">${new Date(g.contactedAt).toLocaleDateString()}</div>` : ''}</td>
-        <td class="row-actions">
-          ${g.status === 'submitted' ? `<button class="btn-sm btn-sm-outline" data-pid="${escapeHtml(p.id)}" data-idx="${i}" onclick="markGuarantor(this.dataset.pid, this.dataset.idx, 'contacted')">Mark Contacted</button>` : ''}
-          ${g.status !== 'verified' && !g.problem ? `<button class="btn-sm btn-sm-primary" data-pid="${escapeHtml(p.id)}" data-idx="${i}" data-gname="${escapeHtml(g.name)}" onclick="markGuarantor(this.dataset.pid, this.dataset.idx, 'verified', this.dataset.gname)">Mark Verified</button>` : ''}
-          ${g.status !== 'rejected' && (g.problem || g.status !== 'verified') ? `<button class="btn-sm btn-sm-outline" data-pid="${escapeHtml(p.id)}" data-idx="${i}" data-gname="${escapeHtml(g.name)}" onclick="markGuarantor(this.dataset.pid, this.dataset.idx, 'rejected', this.dataset.gname)">Not accepted</button>` : ''}
-        </td>
-      </tr>`).join('')).join('')}
-      </tbody></table></div>`;
+    GUARANTOR_DATA = providers || [];
+    renderGuarantorsReview();
   } catch (e) {
     const el = document.getElementById('guarantors-review-panel');
     if (el) el.textContent = (e && e.status === 403)
@@ -9781,18 +9850,97 @@ async function loadGuarantorsReviewPanel() {
       : 'Could not load guarantors right now.';
   }
 }
+const guarantorOpen = (g) => g.status === 'submitted' || g.status === 'contacted' || !g.status;
+function guarantorFilterSet(f) { GUARANTOR_FILTER = f; renderGuarantorsReview(); }
+function renderGuarantorsReview() {
+  const el = document.getElementById('guarantors-review-panel');
+  if (!el) return;
+  const providers = GUARANTOR_DATA;
+  if (!providers.length) { el.innerHTML = `<div style="color:var(--slate);font-size:13.5px;padding:12px 0;">No provider has submitted guarantors yet.</div>`; return; }
+  const all = providers.flatMap(p => p.guarantors);
+  const counts = { tocall: all.filter(guarantorOpen).length, verified: all.filter(g => g.status === 'verified').length, rejected: all.filter(g => g.status === 'rejected').length, all: all.length };
+  const q = ((document.getElementById('guarantor-search') || {}).value || '').trim().toLowerCase();
+  const keep = (g) => GUARANTOR_FILTER === 'all' || (GUARANTOR_FILTER === 'tocall' ? guarantorOpen(g) : g.status === GUARANTOR_FILTER);
+  const shown = providers
+    .map(p => ({ ...p, rows: p.guarantors.filter(keep) }))
+    .filter(p => p.rows.length && (!q || [p.name, p.city, p.category, ...p.guarantors.map(g => g.name + ' ' + g.phone)].join(' ').toLowerCase().includes(q)))
+    .sort((a, b) => b.guarantors.filter(guarantorOpen).length - a.guarantors.filter(guarantorOpen).length || String(a.name).localeCompare(String(b.name)));
+  const tab = (key, label) => `<button type="button" class="btn-sm ${GUARANTOR_FILTER === key ? 'btn-sm-primary' : 'btn-sm-outline'}" aria-pressed="${GUARANTOR_FILTER === key}" onclick="guarantorFilterSet('${key}')">${escapeHtml(label)} <span style="opacity:.8;">${counts[key]}</span></button>`;
+  const bar = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;">
+      ${tab('tocall', 'To call')}${tab('verified', 'Verified')}${tab('rejected', 'Not accepted')}${tab('all', 'All')}
+      <input type="search" class="form-input" id="guarantor-search" placeholder="Search a pro, guarantor or number" value="${escapeHtml(q)}" oninput="renderGuarantorsReview()" style="flex:1;min-width:180px;max-width:300px;padding:6px 10px;font-size:13.5px;margin-left:auto;"/>
+    </div>
+    <div class="ver-note" style="margin-bottom:12px;">Call each guarantor, ask how they know the pro and for how long, and whether they would trust them in their home. Write what they said when you mark them. At least one should not be family.</div>`;
+  const when = (d) => d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const card = (p) => {
+    const done = p.guarantors.filter(g => g.status === 'verified').length;
+    const allFamily = p.guarantors.length > 0 && p.guarantors.every(g => g.family);
+    return `<div class="g-card" style="border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;background:var(--white, #fff);">
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:6px;">
+        <div><strong style="color:var(--navy);font-size:15.5px;">${escapeHtml(p.name)}</strong>
+          <span style="font-size:13px;color:var(--slate);"> · ${escapeHtml([p.category, [p.city, p.country].filter(Boolean).join(', ')].filter(Boolean).join(' · '))}</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <span class="badge ${done ? 'badge-success' : 'badge-warn'}">${done} of ${p.guarantors.length} verified</span>
+          <span class="badge ${p.verified ? 'badge-success' : 'badge-neutral'}">${p.verified ? 'ID verified' : 'ID not verified yet'}</span>
+        </div>
+      </div>
+      ${allFamily ? `<div style="font-size:12.5px;color:#8C6423;margin-bottom:6px;">All of this pro's guarantors are family. Ask for one who is not (a past employer, client, landlord, pastor or community leader).</div>` : ''}
+      ${p.rows.map(g => guarantorRowHTML(p, g, when)).join('')}
+    </div>`;
+  };
+  el.innerHTML = bar + (shown.length ? shown.map(card).join('') : `<div style="color:var(--slate);font-size:13.5px;padding:12px 0;">${GUARANTOR_FILTER === 'tocall' ? 'Nobody is waiting for a call.' : 'Nothing here.'}</div>`);
+  const s = document.getElementById('guarantor-search'); if (s && q) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+}
+function guarantorRowHTML(p, g, when) {
+  const tel = g.phoneIntl || String(g.phone).replace(/[^+0-9]/g, '');
+  const wa = String(tel).replace(/\D/g, '');
+  const statusWord = { submitted: 'To call', contacted: 'Called, not finished', verified: 'Verified', rejected: 'Not accepted' }[g.status || 'submitted'] || g.status;
+  const who = g.reviewedByName ? ` by ${escapeHtml(g.reviewedByName)}` : '';
+  const btn = (cls, status, label) => `<button class="btn-sm ${cls}" data-pid="${escapeHtml(p.id)}" data-idx="${g.index}" data-gname="${escapeHtml(g.name)}" onclick="markGuarantor(this.dataset.pid, this.dataset.idx, '${status}', this.dataset.gname)">${label}</button>`;
+  return `<div class="g-row" style="border-top:1px solid var(--border);padding:12px 0 4px;display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:10px 16px;align-items:start;">
+    <div style="min-width:0;">
+      <div style="font-weight:600;color:var(--navy);">${escapeHtml(g.name)}</div>
+      <div style="font-size:13px;color:var(--slate);">${escapeHtml(g.relationship || 'No relationship given')}${g.family ? ' · family' : ''}</div>
+      ${g.problem ? `<div style="font-size:12.5px;color:#A5352B;font-weight:600;margin-top:4px;">⚠ ${g.problem === 'phone' ? 'Same phone number as the pro. This is not a separate person.' : 'Same name as the pro. This is not a separate person.'}</div>` : ''}
+      ${g.sharedWithOtherPros ? `<div style="font-size:12.5px;color:#8C6423;margin-top:4px;">Also a guarantor for ${g.sharedWithOtherPros} other pro${g.sharedWithOtherPros === 1 ? '' : 's'}.</div>` : ''}
+      ${(g.checks || []).map(c => `<div style="font-size:12.5px;color:#8C6423;margin-top:4px;">Check: ${escapeHtml(c)}</div>`).join('')}
+    </div>
+    <div style="min-width:0;">
+      <a href="tel:${escapeHtml(tel)}" style="font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums;">${escapeHtml(g.phoneDisplay || g.phone)}</a>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+        <a class="btn-sm btn-sm-outline" href="tel:${escapeHtml(tel)}">Call</a>
+        ${wa.length >= 8 ? `<a class="btn-sm btn-sm-outline" href="https://wa.me/${escapeHtml(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
+      </div>
+    </div>
+    <div style="text-align:right;min-width:150px;">
+      <span class="badge ${GUARANTOR_STATUS_BADGE[g.status] || 'badge-warn'}">${escapeHtml(statusWord)}</span>
+      ${g.contactedAt && g.status !== 'submitted' ? `<div style="font-size:12.5px;color:var(--slate);margin-top:3px;">${escapeHtml(when(g.contactedAt))}${who}</div>` : ''}
+    </div>
+    ${g.note ? `<div style="grid-column:1/-1;font-size:13px;color:var(--text);background:var(--offwhite);border-radius:8px;padding:6px 10px;">From the call: ${escapeHtml(g.note)}</div>` : ''}
+    <div class="row-actions" style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+      ${(g.status || 'submitted') === 'submitted' ? btn('btn-sm-outline', 'contacted', "Called, no answer yet") : ''}
+      ${g.status !== 'verified' && !g.problem ? btn('btn-sm-primary', 'verified', 'Verified') : ''}
+      ${g.status !== 'rejected' ? btn('btn-sm-outline', 'rejected', 'Not accepted') : ''}
+      ${g.status === 'verified' || g.status === 'rejected' ? btn('btn-sm-outline', 'submitted', 'Put back to call') : ''}
+    </div>
+  </div>`;
+}
 async function markGuarantor(providerId, index, status, guarantorName) {
-  if (status === 'rejected') {
-    const sure = await confirmDialog(`Mark ${guarantorName || 'this guarantor'} as not accepted? The pro is told to name a different person, and this one no longer counts toward their score.`, { danger: true, confirmLabel: 'Not accepted' });
+  const who = guarantorName || 'this guarantor';
+  let note = '';
+  if (status === 'verified') {
+    note = await confirmDialog(`Mark ${who} as verified? Only after you have spoken with them. Write what they said (how they know the pro, for how long). The pro is told.`, { requireTextInput: true, confirmLabel: 'Verified', placeholder: 'e.g. Former boss, 4 years, would trust him in her home' });
+    if (!note) return;
+  } else if (status === 'rejected') {
+    note = await confirmDialog(`Mark ${who} as not accepted? The pro is asked to name someone else. Write why, for the record.`, { requireTextInput: true, danger: true, confirmLabel: 'Not accepted', placeholder: 'e.g. Number not in service, or does not know the pro' });
+    if (!note) return;
+  } else if (status === 'submitted') {
+    const sure = await confirmDialog(`Put ${who} back on the list to call? Their verified or not-accepted mark is removed.`, { confirmLabel: 'Put back' });
     if (!sure) return;
   }
-  if (status === 'verified') {
-    const ok = await confirmDialog(`Mark ${guarantorName || 'this guarantor'} as verified? Only do this after you have spoken with them. The provider is notified.`);
-    if (!ok) return;
-  }
   try {
-    await apiFetch('PATCH', `/admin/providers/${encodeURIComponent(providerId)}/guarantors/${encodeURIComponent(index)}`, { status });
-    showToast(status === 'verified' ? 'Guarantor marked verified' : status === 'rejected' ? 'Marked not accepted. The pro has been asked for someone else.' : 'Marked as contacted');
+    await apiFetch('PATCH', `/admin/providers/${encodeURIComponent(providerId)}/guarantors/${encodeURIComponent(index)}`, { status, ...(note ? { note } : {}) });
+    showToast(status === 'verified' ? 'Guarantor marked verified' : status === 'rejected' ? 'Marked not accepted. The pro has been asked for someone else.' : status === 'submitted' ? 'Back on the list to call' : 'Marked as called');
     loadGuarantorsReviewPanel();
   } catch (e) {
     showToast((e && e.message) || 'Could not update this guarantor');
@@ -12542,6 +12690,7 @@ function confirmDialog(message, options = {}) {
     confirmBtn.className = options.danger ? 'btn-sm' : 'btn-sm btn-sm-primary';
     textInput.style.display = options.requireTextInput ? 'block' : 'none';
     textInput.value = '';
+    textInput.placeholder = options.placeholder || ''; // v167
     textError.style.display = 'none';
     if (options.requireTextInput) setTimeout(() => textInput.focus(), 50);
 
