@@ -56,9 +56,13 @@ async function routeTrip(a, b, vehicle) {
       const best = j && j.code === 'Ok' && j.routes && j.routes[0];
       if (best && best.distance > 0) road = { km: best.distance / 1000, carMinutes: best.duration / 60, until: Date.now() + 10 * 60 * 1000 };
     } catch (e) { road = null; }
-    if (road) { cache.set(key, road); if (cache.size > 2000) cache.delete(cache.keys().next().value); }
+    // v168: a failed lookup is remembered for a minute too. Before, when the
+    // route service didn't answer, "Find drivers near me" asked again for each
+    // kind of vehicle, waiting up to 7 seconds each time (up to ~28 seconds).
+    cache.set(key, road || { failed: true, until: Date.now() + 60 * 1000 });
+    if (cache.size > 2000) cache.delete(cache.keys().next().value);
   }
-  if (!road) return estimate(a, b, vehicle);
+  if (!road || road.failed) return estimate(a, b, vehicle);
   // Car times on open roads are faster than a city really is; use the slower of the two.
   const kmh = CITY_KMH[vehicle] || CITY_KMH.car;
   const cityMinutes = road.km / kmh * 60;
@@ -91,7 +95,7 @@ async function routeShape(a, b) {
       shape = { points: pts.filter((p, i) => i % step === 0 || i === pts.length - 1), km: Math.round(best.distance / 100) / 10, carMinutes: Math.round(best.duration / 60) };
     }
   } catch (e) { shape = null; }
-  shapes.set(key, { shape, until: Date.now() + 10 * 60 * 1000 });
+  shapes.set(key, { shape, until: Date.now() + (shape ? 10 * 60 : 60) * 1000 }); // v168: a failed lookup is tried again after a minute, not ten
   if (shapes.size > 1000) shapes.delete(shapes.keys().next().value);
   return shape;
 }

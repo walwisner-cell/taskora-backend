@@ -238,6 +238,10 @@ router.get('/rides/drivers', requireAuth, requireRider, lookupLimiter, async (re
 });
 
 const bookInFlight = new Set();
+// v168: two riders choosing the same driver at the same moment could both get
+// him (each checked he was free before the other's request was saved). Only
+// one booking per driver is now processed at a time; the second rider is asked to choose another.
+const driverInFlight = new Set();
 // A rider can ask for a few rides an hour, not dozens (stops spamming drivers).
 const requestLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 8, skipFailedRequests: true, keyGenerator: (req) => (req.user && req.user.sub) || 'anon', validate: false, standardHeaders: true, legacyHeaders: false, message: { error: 'You have asked for several rides in the last hour. Please wait a little before trying again.' } });
 router.post('/rides', requireAuth, requireRider, requireCurrentTerms, requestLimiter, async (req, res) => {
@@ -250,6 +254,7 @@ router.post('/rides', requireAuth, requireRider, requireCurrentTerms, requestLim
   if (await needRules(me, res, 'rider')) return;
   if (bookInFlight.has(me.id)) return res.status(409).json({ error: 'Your ride request is already being processed. Please wait a moment.' });
   bookInFlight.add(me.id);
+  let lockedDriver = null;
   try {
     const pk = readPoint(b.pickup, 'Pickup'), dp = readPoint(b.dropoff, 'Destination');
     if (pk.error || dp.error) return res.status(400).json({ error: pk.error || dp.error });
@@ -259,6 +264,8 @@ router.post('/rides', requireAuth, requireRider, requireCurrentTerms, requestLim
     if (!driver || !isOnline(driver) || driver.id === me.id || !sameText(driver.country, me.country) || RIDE_VEHICLES[driver.rideDriver.vehicle] < passengers) {
       return res.status(400).json({ code: 'PICK_DRIVER', error: 'That driver isn\'t available any more. Choose another from the list.' });
     }
+    if (driverInFlight.has(driver.id)) return res.status(400).json({ code: 'PICK_DRIVER', error: 'That driver has just taken another ride. Choose another from the list.' });
+    driverInFlight.add(driver.id); lockedDriver = driver.id;
     if (await db.find('contracts', c => c.providerId === driver.id && c.ride && OPEN_STATUSES.includes(c.status))) return res.status(400).json({ code: 'PICK_DRIVER', error: 'That driver has just taken another ride. Choose another from the list.' });
     if (driver.rideDriver.vehicle === 'motorbike' && await motorbikeBlockedNow(me)) return res.status(400).json({ error: `${await nightWords()} Choose another vehicle.` });
     const km = kmBetween(pk.point, dp.point);
@@ -346,6 +353,7 @@ router.post('/rides', requireAuth, requireRider, requireCurrentTerms, requestLim
     res.status(201).json({ ride: await rideView(contract, me.id), payment: escrow ? custPay.publicPayment(escrow) : null });
   } finally {
     bookInFlight.delete(me.id);
+    if (lockedDriver) driverInFlight.delete(lockedDriver);
   }
 });
 

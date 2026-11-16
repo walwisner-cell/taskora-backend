@@ -113,13 +113,16 @@
     const role = AUTH.user && AUTH.user.role;
     const a = document.activeElement;
     if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim() && body().contains(a)) return; // typing a PIN or a fare: wait
-    if (role === 'provider' && R.mode !== 'ride') { stopTimers(); loadDriverPage(); }
+    // v168: a quiet check, redrawn only if something changed. On a weak phone
+    // connection the live updates fall back to a check every 10 seconds, and
+    // each one used to redraw the whole page and jump it back to the top.
+    if (role === 'provider' && R.mode !== 'ride') { if (!R.busy) loadDriverPage({ quiet: true }); }
     else if (role === 'customer' || role === 'provider') {
       const hasOpen = (R.list || []).some(r => ['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status));
-      if (hasOpen) { stopTimers(); loadRiderPage(); } // a rider filling in "Where to?" is never redrawn under them
+      if (hasOpen) loadRiderPage({ quiet: true }); // a rider filling in "Where to?" is never redrawn under them
     }
   };
-  function stopTimers() { clearInterval(R.poll); clearInterval(R.hb); clearInterval(R.track); R.poll = R.hb = R.track = null; }
+  function stopTimers() { clearInterval(R.poll); clearInterval(R.hb); clearInterval(R.track); R.poll = R.hb = R.track = null; R.pollKind = null; }
   function here() { return new Promise(res => { getBestLocation({ goodEnoughM: 80, maxWaitMs: 8000 }).then(r => res(r && !r.error ? r : null)).catch(() => res(null)); }); }
 
 
@@ -142,16 +145,55 @@
   };
 
   // ── RIDER ────────────────────────────────────────────────────────────
-  async function loadRiderPage() {
+  // v168: Walter: "it seems to be unstable if you book a ride". While a ride
+  // was open, the rider's page checked for news every 8 seconds, and each
+  // check started ANOTHER 8-second timer without stopping the one before.
+  // The timers doubled every 8 seconds: in one test ride the phone reloaded
+  // the ride 3,512 times instead of about 20, redrawing the screen
+  // constantly, so taps (like "I arrived safely") were lost and phones
+  // slowed down. Now there is only ever one timer; a check doesn't start
+  // while another is running; and the screen is only redrawn when something
+  // changed, never while she is typing or a window (paying, confirming) is
+  // open, and without moving where she has scrolled to.
+  async function loadRiderPage(opts) {
     if (!body()) return;
-    let list = [];
-    try { list = (await apiFetch('GET', '/rides/mine')).rides; } catch (x) { body().innerHTML = `<div class="panel">${e(x.message || 'Could not load')}</div>`; return; }
-    if (isPro()) list = list.filter(r => r.role === 'rider'); // v166: a pro's own rides as a rider
-    R.list = list;
-    const open = list.find(r => ['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status)); // v125
-    const past = list.filter(r => r !== open);
-    body().innerHTML = modeTabs() + (open ? riderTrip(open) : riderForm()) + (past.length ? `<div class="panel"><div class="panel-title">${e(tr('Past rides'))}</div>${past.slice(0, 15).map(pastRow).join('')}</div>` : '');
-    if (open) { R.poll = setInterval(() => { if (!body()) return stopTimers(); loadRiderPage(); }, 8000); } else { renderPins(); loadMyPlaces(); }
+    const quiet = !!(opts && opts.quiet);
+    if (R.riderLoading) { if (!quiet) R.riderAgain = true; return; }
+    R.riderLoading = true;
+    try {
+      let list = [];
+      try { list = (await apiFetch('GET', '/rides/mine')).rides; }
+      catch (x) { if (!quiet && body()) body().innerHTML = `<div class="panel">${e(x.message || 'Could not load')}</div>`; return; } // a passing network hiccup leaves the page as it is
+      if (!body()) return;
+      if (isPro()) list = list.filter(r => r.role === 'rider'); // v166: a pro's own rides as a rider
+      R.list = list;
+      const open = list.find(r => ['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status)); // v125
+      const past = list.filter(r => r !== open);
+      const full = modeTabs() + (open ? riderTrip(open) : riderForm()) + (past.length ? `<div class="panel"><div class="panel-title">${e(tr('Past rides'))}</div>${past.slice(0, 15).map(pastRow).join('')}</div>` : '');
+      if (quiet) {
+        const a = document.activeElement;
+        const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && body().contains(a);
+        const windowOpen = !!document.querySelector('#checkout, #confirm-dialog-modal.open'); // paying or confirming: wait until it's closed
+        if (full === R.riderHtml || typing || windowOpen || R.busy) { if (open) startRiderPoll(); else stopTimers(); return; }
+        if (!open) { // the ride just ended: show the form again, from the top
+          body().innerHTML = full; R.riderHtml = full; stopTimers(); renderPins(); loadMyPlaces(); return;
+        }
+      }
+      const y = window.scrollY;
+      body().innerHTML = full; R.riderHtml = full;
+      if (quiet) window.scrollTo(0, y);
+      if (open) startRiderPoll(); else { stopTimers(); renderPins(); loadMyPlaces(); }
+    } finally {
+      R.riderLoading = false;
+      if (R.riderAgain) { R.riderAgain = false; loadRiderPage(); }
+    }
+  }
+  // One timer only, however often the page is drawn.
+  function startRiderPoll() {
+    if (R.poll && R.pollKind === 'rider') return;
+    stopTimers();
+    R.pollKind = 'rider';
+    R.poll = setInterval(() => { if (!body()) return stopTimers(); loadRiderPage({ quiet: true }); }, 8000);
   }
   function pastRow(r) {
     return `<div style="padding:10px 0;border-top:1px solid var(--border);font-size:14px;"><strong>${e(r.pickup.address)}</strong>${r.pickup.note ? ` <span style="font-size:13px;color:var(--slate);">(📝 ${e(r.pickup.note)})</span>` : ''} → <strong>${e(r.dropoff.address)}</strong><div style="color:var(--slate);">${e(new Date(r.createdAt).toLocaleDateString())} · ${money(r.totalPaid)} · ${e(tr(STATUS_WORDS[r.status] || r.status))}</div></div>`;
@@ -549,8 +591,17 @@
   // ── DRIVER ───────────────────────────────────────────────────────────
   async function loadDriverPage(opts) {
     if (!body()) return;
+    // v168: one check at a time; a passing network hiccup during a quiet check
+    // leaves the page as it is instead of replacing it with "Could not load".
+    const quiet0 = !!(opts && opts.quiet);
+    if (R.driverLoading && quiet0) return;
+    R.driverLoading = true;
+    try { return await loadDriverPage0(opts); } finally { R.driverLoading = false; }
+  }
+  async function loadDriverPage0(opts) {
+    if (!body()) return;
     let d, list = [];
-    try { d = await apiFetch('GET', '/rides/driver/me'); list = (await apiFetch('GET', '/rides/mine')).rides; } catch (x) { body().innerHTML = `<div class="panel">${e(x.message || 'Could not load')}</div>`; return; }
+    try { d = await apiFetch('GET', '/rides/driver/me'); list = (await apiFetch('GET', '/rides/mine')).rides; } catch (x) { if (opts && opts.quiet) return; body().innerHTML = `<div class="panel">${e(x.message || 'Could not load')}</div>`; return; }
     list = list.filter(r => r.role !== 'rider'); // v166: rides this pro booked as a rider are on the Book a ride tab
     R.drv = d; R.list = list;
     if (!d.availableHere) { body().innerHTML = `<div class="panel"><div class="ver-note">${e(tr('Rides are not open in your country yet.'))}</div></div>`; return; }
@@ -567,10 +618,13 @@
     const full = modeTabs() + html;
     const a = document.activeElement;
     const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && body().contains(a);
-    if (opts && opts.quiet && (R.busy || typing || full === R.lastHtml)) return;
+    const windowOpen = !!document.querySelector('#confirm-dialog-modal.open'); // confirming: wait until it's closed
+    if (opts && opts.quiet && (R.busy || typing || windowOpen || full === R.lastHtml)) return;
     const help = document.getElementById('rd-online-help');
     const keep = help && help.innerHTML.trim() ? help.outerHTML : '';
+    const y = window.scrollY;
     body().innerHTML = full; R.lastHtml = full;
+    if (opts && opts.quiet) window.scrollTo(0, y); // v168: a quiet redraw keeps the driver where they were
     if (keep) { const btn = document.querySelector('[data-rides-online]'); if (btn) btn.closest('div').insertAdjacentHTML('afterend', keep); }
     stopTimers();
     if (d.status === 'approved') {

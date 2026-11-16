@@ -93,7 +93,7 @@ function looksLikeFullName(name) {
 // What a reference usually is (international reference-check practice):
 // someone who knows the person's work or character and can be reached.
 const RELATIONSHIPS = ['Past employer or boss', 'Client I worked for', 'Landlord or property owner', 'Pastor, imam or religious leader', 'Town chief or community leader', 'Teacher or trainer', 'Co-worker', 'Neighbour', 'Friend', 'Family member'];
-const FAMILY = /^(family|brother|sister|bro|sis|cousin|uncle|aunt|auntie|mother|mom|mum|ma|father|dad|pa|son|daughter|wife|husband|niece|nephew|grand\w*|in-?law|relative|broter|siter)\b/i;
+const FAMILY = /^(family|brother|sister|bro|sis|cousin|uncle|aunt|auntie|mother|mom|mum|ma|father|dad|pa|son|daughter|wife|husband|niece|nephew|grand\w*|in-?law|relative|broter|siter|familiar|hermano|hermana|primo|prima|t[ií]o|t[ií]a|madre|padre|mam[aá]|pap[aá]|hijo|hija|esposo|esposa|sobrino|sobrina|abuel\w*|cu[ñn]ad\w*|suegr\w*|pariente)\b/i;
 const isFamily = (rel) => FAMILY.test(String(rel || '').trim());
 function relationshipLooksRight(rel) {
   const r = String(rel || '').trim();

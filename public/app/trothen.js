@@ -106,6 +106,8 @@ function tr(text) {
   try { return (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'es' && Object.prototype.hasOwnProperty.call(ES_TEXT, text)) ? ES_TEXT[text] : text; } catch (e) { return text; }
 }
 const EARLY_ACCESS_SUFFIX = ' Trothen is in early access: payments are in test mode right now and no real money moves yet.';
+// v170: a translated sentence with {name} slots filled in.
+function trf(text, vals) { return tr(text).replace(/\{(\w+)\}/g, (m, k) => (vals && vals[k] != null ? String(vals[k]) : m)); }
 function trDetail(detail) {
   const d = String(detail || '');
   return d.endsWith(EARLY_ACCESS_SUFFIX) ? tr(d.slice(0, -EARLY_ACCESS_SUFFIX.length)) + ' ' + tr(EARLY_ACCESS_SUFFIX.trim()) : tr(d);
@@ -4189,15 +4191,15 @@ function guarantorFormHTML() {
     return `
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;">
       <div style="font-weight:600;color:var(--navy);margin-bottom:8px;">Guarantor ${i + 1}${statusNote}</div>
-      <div class="form-group"><label class="form-label" for="guarantor-${i}-name">Full name</label><input class="form-input" id="guarantor-${i}-name" value="${escapeHtml(g.name || '')}" placeholder="First and last name" autocomplete="off"/></div>
-      <div class="form-group"><label class="form-label" for="guarantor-${i}-phone">Phone number</label><input class="form-input" id="guarantor-${i}-phone" type="tel" inputmode="tel" autocomplete="off" value="${escapeHtml(g.phone || '')}" placeholder="${escapeHtml(((GEO_DATA.dialCodeByCountry || {})[AUTH.user && AUTH.user.country] || '+231') + ' …  a number our team can call')}"/></div>
-      <div class="form-group"><label class="form-label" for="guarantor-${i}-relationship">How they know you</label><input class="form-input" id="guarantor-${i}-relationship" list="guarantor-relationships" value="${escapeHtml(g.relationship || '')}" placeholder="Choose or type, e.g. Past employer"/></div>
+      <div class="form-group"><label class="form-label" for="guarantor-${i}-name">${escapeHtml(tr('Full name'))}</label><input class="form-input" id="guarantor-${i}-name" value="${escapeHtml(g.name || '')}" placeholder="${escapeHtml(tr('First and last name'))}" autocomplete="off"/></div>
+      <div class="form-group"><label class="form-label" for="guarantor-${i}-phone">${escapeHtml(tr('Phone number'))}</label><input class="form-input" id="guarantor-${i}-phone" type="tel" inputmode="tel" autocomplete="off" value="${escapeHtml(g.phone || '')}" placeholder="${escapeHtml(((GEO_DATA.dialCodeByCountry || {})[AUTH.user && AUTH.user.country] || '+231') + ' …  ' + tr('a number our team can call'))}"/></div>
+      <div class="form-group"><label class="form-label" for="guarantor-${i}-relationship">${escapeHtml(tr('How they know you'))}</label><input class="form-input" id="guarantor-${i}-relationship" list="guarantor-relationships" value="${escapeHtml(g.relationship || '')}" placeholder="${escapeHtml(tr('Choose or type, e.g. Past employer'))}"/></div>
     </div>`;
   }).join('');
   // v167: the usual kinds of reference, to choose from (any other can be typed).
   const rels = ['Past employer or boss', 'Client I worked for', 'Landlord or property owner', 'Pastor, imam or religious leader', 'Town chief or community leader', 'Teacher or trainer', 'Co-worker', 'Neighbour', 'Friend', 'Family member'];
-  return `<div class="ver-note" style="margin-bottom:10px;">Name people who know you and your work and will answer our call. At least one should not be family: a past employer, a client, your landlord, a pastor or imam, or a community leader. Use their full name and a number with all its digits.</div>
-    ${rows}<datalist id="guarantor-relationships">${rels.map(r => `<option value="${escapeHtml(r)}"></option>`).join('')}</datalist><button class="btn-sm btn-sm-primary" onclick="saveGuarantors()">Save Guarantors</button>`;
+  return `<div class="ver-note" style="margin-bottom:10px;">${escapeHtml(tr('Name people who know you and your work and will answer our call. At least one should not be family: a past employer, a client, your landlord, a pastor or imam, or a community leader. Use their full name and a number with all its digits.'))}</div>
+    ${rows}<datalist id="guarantor-relationships">${rels.map(r => `<option value="${escapeHtml(tr(r))}"></option>`).join('')}</datalist><button class="btn-sm btn-sm-primary" onclick="saveGuarantors()">Save Guarantors</button>`;
 }
 
 async function saveGuarantors() {
@@ -4643,7 +4645,7 @@ function categoriesForSearchTerm(query) {
 function membershipMoney(t, usd, local) {
   const showLocal = !!(t && t.currencyCode && t.currencyCode !== 'USD' && local != null);
   const us = `$${Number(usd).toFixed(Number(usd) % 1 ? 2 : 0)}`;
-  return showLocal ? { main: `${t.currencySymbol || ''}${Math.round(Number(local)).toLocaleString()}`, sub: `about US${us}` } : { main: us, sub: '' };
+  return showLocal ? { main: `${t.currencySymbol || ''}${Math.round(Number(local)).toLocaleString()}`, sub: `${tr('about')} US${us}` } : { main: us, sub: '' };
 }
 function membershipCardsHTML() {
   const tiers = customerData.membershipTiersLocal || {};
@@ -4651,8 +4653,8 @@ function membershipCardsHTML() {
   const curT = cur && tiers[cur];
   const curMoney = curT ? membershipMoney(curT, curT.price, curT.priceLocal) : null;
   const head = cur
-    ? `You're on ${escapeHtml((curT && curT.label) || cur)}: ${curT ? `${curT.feeDiscountPct}% off the service fee, ${escapeHtml(curMoney.main)} a month${curMoney.sub ? ` (${escapeHtml(curMoney.sub)})` : ''}` : ''}. Cancel any time; there's no charge after you cancel.`
-    : 'You are on Free: you pay Trothen\'s normal service fee on bookings with pros (9% of the job, at least US$2.99 and at most US$25). A membership takes a share off that fee. The pro is paid the same either way.';
+    ? `${escapeHtml(tr('You are on'))} ${escapeHtml((curT && curT.label) || cur)}: ${curT ? `${escapeHtml(trf('{pct}% off the service fee', { pct: curT.feeDiscountPct }))}, ${escapeHtml(curMoney.main)} ${escapeHtml(tr('a month'))}${curMoney.sub ? ` (${escapeHtml(curMoney.sub)})` : ''}` : ''}. ${escapeHtml(tr('Cancel any time; there is no charge after you cancel.'))}`
+    : escapeHtml(tr('You are on Free: you pay Trothen\'s normal service fee on bookings with pros (9% of the job, at least US$2.99 and at most US$25). A membership takes a share off that fee. The pro is paid the same either way.'));
   const cards = ['plus', 'pro', 'elite'].map(tier => {
     const t = tiers[tier] || MEMBERSHIP_TIER_INFO[tier];
     if (!t || t.price == null) return '';
@@ -4661,16 +4663,16 @@ function membershipCardsHTML() {
     const isCurrent = cur === tier;
     return `<div style="border:1px solid ${isCurrent ? 'var(--navy)' : 'var(--border)'};border-radius:10px;padding:14px 12px;text-align:center;display:flex;flex-direction:column;gap:4px;">
       <div style="font-weight:700;color:var(--navy);">${escapeHtml(t.label)}</div>
-      <div style="font-size:20px;font-weight:800;">${escapeHtml(m.main)}<span style="font-size:12.5px;font-weight:400;color:var(--slate);">/month</span></div>
+      <div style="font-size:20px;font-weight:800;">${escapeHtml(m.main)}<span style="font-size:12.5px;font-weight:400;color:var(--slate);">/${escapeHtml(tr('month'))}</span></div>
       ${m.sub ? `<div style="font-size:12.5px;color:var(--slate);">${escapeHtml(m.sub)}</div>` : ''}
-      <div style="font-size:13.5px;color:var(--navy);font-weight:600;margin-top:4px;">${t.feeDiscountPct != null ? t.feeDiscountPct : ''}% off the service fee</div>
-      ${be ? `<div style="font-size:12.5px;color:var(--slate);">Pays for itself if you spend about ${escapeHtml(be.main)} a month on bookings with pros</div>` : ''}
-      <button class="btn-sm ${isCurrent ? 'btn-sm-outline' : 'btn-sm-primary'}" style="width:100%;margin-top:auto;" ${isCurrent ? 'disabled' : ''} onclick="subscribeMembership('${tier}')">${isCurrent ? 'Your plan' : `Choose ${escapeHtml(t.label)}`}</button>
+      <div style="font-size:13.5px;color:var(--navy);font-weight:600;margin-top:4px;">${escapeHtml(trf('{pct}% off the service fee', { pct: t.feeDiscountPct != null ? t.feeDiscountPct : '' }))}</div>
+      ${be ? `<div style="font-size:12.5px;color:var(--slate);">${escapeHtml(trf('Pays for itself if you spend about {amount} a month on bookings with pros', { amount: be.main }))}</div>` : ''}
+      <button class="btn-sm ${isCurrent ? 'btn-sm-outline' : 'btn-sm-primary'}" style="width:100%;margin-top:auto;" ${isCurrent ? 'disabled' : ''} onclick="subscribeMembership('${tier}')">${isCurrent ? escapeHtml(tr('Your plan')) : `${escapeHtml(tr('Choose'))} ${escapeHtml(t.label)}`}</button>
     </div>`;
   }).join('');
   return `<div style="font-size:13.5px;color:var(--slate);margin-bottom:12px;max-width:70ch;">${head}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px;">${cards}</div>
-    <div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;max-width:70ch;">Billed monthly. The discount is on Trothen's service fee for bookings with pros (not on rides, deliveries or Market goods, and not on what the pro is paid). Cash bookings have no service fee, so a membership saves nothing on them.</div>`;
+    <div style="font-size:12.5px;color:var(--slate);margin-bottom:10px;max-width:70ch;">${escapeHtml(tr('Billed monthly. The discount is on Trothen\'s service fee for bookings with pros (not on rides, deliveries or Market goods, and not on what the pro is paid). Cash bookings have no service fee, so a membership saves nothing on them.'))}</div>`;
 }
 
 const MEMBERSHIP_TIER_INFO = {

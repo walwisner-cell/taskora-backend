@@ -2334,6 +2334,10 @@ async function handleRespondOffer(req, res) {
   if (!['pending_agreement', 'pending_provider_confirmation'].includes(contract.status)) {
     return res.status(400).json({ error: `This booking is already ${contract.status} and can't be responded to again` });
   }
+  // v168: a driver can't take a second ride while one is under way.
+  if (decision === 'accept' && contract.ride && await db.find('contracts', c => c.id !== contract.id && c.providerId === contract.providerId && c.ride && c.status === 'active')) {
+    return res.status(409).json({ code: 'RIDE_BUSY', error: 'Finish the ride you are on before accepting another.' });
+  }
 
   // Lazy safety net: the scheduled sweep (src/booking-scheduler.js) should
   // have already caught this, but if it somehow hasn't run yet, don't let
