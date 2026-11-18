@@ -119,7 +119,11 @@
     if (role === 'provider' && R.mode !== 'ride') { if (!R.busy) loadDriverPage({ quiet: true }); }
     else if (role === 'customer' || role === 'provider') {
       const hasOpen = (R.list || []).some(r => ['active', 'pending_provider_confirmation', 'pending_agreement', 'awaiting_payment'].includes(r.status));
-      if (hasOpen) loadRiderPage({ quiet: true }); // a rider filling in "Where to?" is never redrawn under them
+      if (hasOpen) { // a rider filling in "Where to?" is never redrawn under them
+        loadRiderPage({ quiet: true });
+        // v172: the page was just checked, so the 8-second check starts again from now (no two checks back to back)
+        if (R.pollKind === 'rider') { clearInterval(R.poll); R.poll = null; R.pollKind = null; startRiderPoll(); }
+      }
     }
   };
   function stopTimers() { clearInterval(R.poll); clearInterval(R.hb); clearInterval(R.track); R.poll = R.hb = R.track = null; R.pollKind = null; }
@@ -176,13 +180,17 @@
         const windowOpen = !!document.querySelector('#checkout, #confirm-dialog-modal.open'); // paying or confirming: wait until it's closed
         if (full === R.riderHtml || typing || windowOpen || R.busy) { if (open) startRiderPoll(); else stopTimers(); return; }
         if (!open) { // the ride just ended: show the form again, from the top
+          stopRiderLive();
           body().innerHTML = full; R.riderHtml = full; stopTimers(); renderPins(); loadMyPlaces(); return;
         }
       }
       const y = window.scrollY;
+      stopRiderLive(); // v171
       body().innerHTML = full; R.riderHtml = full;
       if (quiet) window.scrollTo(0, y);
       if (open) startRiderPoll(); else { stopTimers(); renderPins(); loadMyPlaces(); }
+      if (el('rlv-map')) startRiderLive(); // v171: the live map on the rider's screen
+      loadRidePhotos(); // v172
     } finally {
       R.riderLoading = false;
       if (R.riderAgain) { R.riderAgain = false; loadRiderPage(); }
@@ -285,6 +293,13 @@
     if (!(await ensureRules('rider'))) return;
     const a = JOB_PIN.ridefrom, b = JOB_PIN.rideto, out = el('ride-drivers');
     if (!a || !b) return showToast(tr('Pin where you are and where you are going first'));
+    // v172: a rough GPS pin sends the driver to the wrong place. Say so before booking.
+    if (a.source === 'gps' && a.accuracyM > ROUGH_PIN_M && !R.roughOk) {
+      const go = await confirmDialog(trf('Your pick-up pin may be up to {n} m from where you really are, so the driver could go to the wrong place. Step outside and pin again, or check the pin on the map.', { n: Math.round(a.accuracyM) }), { confirmLabel: tr('Find drivers anyway'), cancelLabel: tr('Check the pin on the map') });
+      if (go === 'alt' && typeof openMapPicker === 'function') openMapPicker('ridefrom');
+      if (go !== true) return;
+      R.roughOk = true;
+    }
     out.textContent = tr('Looking for drivers…');
     try {
       const pax = Number(el('ride-pax').value) || 1;
@@ -457,7 +472,7 @@
     const cash = payment === 'cash';
     rideCheckout({ title: tr('Request this ride'), sub: `${q.an} → ${q.bn}`, price: fare, cash, onConfirm: async () => {
       try {
-        const res = await apiFetch('POST', '/rides', { driverId, passengers: q.pax, expectedFare: fare, payment: cash ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an, note: q.note || '' }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
+        const res = await apiFetch('POST', '/rides', { driverId, passengers: q.pax, expectedFare: fare, payment: cash ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an, note: q.note || '', accuracyM: q.a.source === 'gps' && q.a.accuracyM ? Math.round(q.a.accuracyM) : undefined }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
         const c = el('checkout'); if (c) c.remove();
         if (typeof handlePaymentStep === 'function' && handlePaymentStep(res && res.payment)) return;
         if (typeof showResult === 'function') showResult({ icon: '🛵', title: tr('Ride requested'), lines: [cash ? tr('Pay the driver in cash at the end of the trip, exactly the fare shown.') : tr('Your fare is held by Trothen and only paid to the driver when you confirm you arrived.'), tr('Waiting for the driver to answer. You\'ll see it here the moment they do.')] });
@@ -473,7 +488,7 @@
     const amount = lc ? Math.round(typed * lc.per * 100) / 100 : typed;
     if (!(typed > 0) || !(amount >= 0.25)) return showToast(tr('Type the fare you want to offer'));
     try {
-      await apiFetch('POST', '/rides', { driverId, passengers: q.pax, offerFare: amount, payment: payment === 'cash' ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an, note: q.note || '' }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
+      await apiFetch('POST', '/rides', { driverId, passengers: q.pax, offerFare: amount, payment: payment === 'cash' ? 'cash' : 'app', pickup: { latitude: q.a.latitude, longitude: q.a.longitude, address: q.an, note: q.note || '', accuracyM: q.a.source === 'gps' && q.a.accuracyM ? Math.round(q.a.accuracyM) : undefined }, dropoff: { latitude: q.b.latitude, longitude: q.b.longitude, address: q.bn } });
       if (typeof showResult === 'function') showResult({ icon: '📨', title: tr('Fare offered'), lines: [`${tr('You offered')} ${lc ? lc.symbol + typed.toLocaleString() + ' (' + money(amount) + ')' : money(amount)}.`, tr('The driver can accept it, suggest a different fare, or decline, within a few minutes. You\'ll see the answer here straight away.'), tr('Nothing is paid until you both agree the fare.')] });
       loadRiderPage();
     } catch (x) { showToast(x.message || 'Could not send your offer'); }
@@ -524,6 +539,101 @@
     return `<div style="margin:8px 0;padding:8px 10px;background:var(--offwhite, #F6F4EF);border-radius:8px;">${r.driverFare && viewer === 'customer' ? `<div style="font-size:12.5px;color:var(--slate);">${e(tr('Driver\'s usual fare'))}: ${money(r.driverFare)}</div>` : ''}${lines}</div>`;
   }
 
+  // v171: Walter: "the customer was not seeing the map to see the driver
+  // coming, and the location was not showing on how you meet the person".
+  // The rider's screen had a line of text and a "Watch on the map" button.
+  // Now, as in ride apps, it shows straight away:
+  //   - a live map: the driver's vehicle moving towards the pick-up (then
+  //     towards the destination), the road, and the time to arrive;
+  //   - "Where to meet": the pick-up in words (the name, the street address,
+  //     the note for the driver), and when the driver has arrived, saying so.
+  // The map keeps itself up to date (every 6 seconds) without redrawing the page.
+  function meetHTML(r) {
+    if (r.startedAt) return '';
+    const own = String((r.pickup && r.pickup.address) || '').trim();
+    const name = !own || /^(pickup|pick-up)$/i.test(own) ? tr('Your pick-up pin') : own;
+    const arrived = !!r.driverArrivedAt;
+    return `<div style="margin:10px 0;padding:12px 14px;border-radius:12px;background:${arrived ? '#EEF8F3' : 'var(--offwhite, #F5F7FA)'};border:1px solid ${arrived ? '#2E8C6F' : 'var(--border)'};">
+      <div style="font-size:12px;color:var(--slate);text-transform:uppercase;letter-spacing:.04em;">${e(tr('Where to meet your driver'))}</div>
+      ${arrived ? `<div style="font-weight:700;color:#2E8C6F;margin:2px 0 4px;">✅ ${e(tr('Your driver has arrived and is waiting for you here.'))}</div>` : ''}
+      <div style="display:flex;gap:10px;align-items:flex-start;margin-top:4px;"><span style="width:12px;height:12px;border-radius:50%;background:#1A73E8;border:2px solid #fff;box-shadow:0 0 0 1px #1A73E8;margin-top:5px;flex:none;"></span>
+        <div style="min-width:0;"><strong>${e(name)}</strong>${typeof placeLineHTML === 'function' ? placeLineHTML(r.pickup) : ''}${r.pickup.note ? `<div style="font-size:13.5px;margin-top:2px;">📝 ${e(r.pickup.note)}</div>` : ''}</div></div>
+      <div class="ver-note" style="margin-top:6px;">${e(tr(arrived ? 'Check the plate before you get in, then give the driver your PIN.' : 'Wait at this spot. If you move, tell your driver with a message.'))}</div>
+      ${r.pickup.accuracyM > ROUGH_PIN_M && !r.pickupMoved ? `<div style="margin-top:6px;font-size:13.5px;color:#8C6423;">⚠️ ${e(trf('Your pin may be up to {n} m off. Step outside and press "Meet me where I am now", or add a photo.', { n: r.pickup.accuracyM }))}</div>` : ''}
+      ${meetToolsHTML(r)}
+    </div>`;
+  }
+  const ROUGH_PIN_M = 100;
+  // v172: what helps the driver find the rider where map apps are not exact:
+  // a photo of the spot, and moving the meeting point to where the rider is.
+  function meetToolsHTML(r) {
+    if (r.startedAt) return '';
+    const ph = r.pickupPhoto;
+    return `<div class="rd-meet-tools" style="margin-top:8px;">
+      ${ph ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><img class="rd-photo" data-ride="${e(r.id)}" hidden onload="this.hidden=false" onerror="this.hidden=true" alt="${e(tr('Photo of where you are waiting'))}" style="width:96px;height:72px;object-fit:cover;border-radius:8px;background:#E8ECEF;cursor:pointer;" onclick="ridesPhotoBig(this)"/><span style="font-size:13.5px;">${e(tr('Your driver can see this photo.'))} <button type="button" class="btn-sm btn-sm-ghost" onclick="ridesPhotoRemove(${jsArg(r.id)})">${e(tr('Remove'))}</button></span></div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+        <label class="btn-sm btn-sm-outline" style="cursor:pointer;">📷 ${e(tr(ph ? 'Take another photo' : 'Add a photo of where you are'))}<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="ridesPhotoAdd(${jsArg(r.id)}, this)"/></label>
+        ${r.canMovePickup && r.status === 'active' ? `<button type="button" class="btn-sm btn-sm-outline" onclick="ridesMovePickup(${jsArg(r.id)}, this)">📍 ${e(tr('Meet me where I am now'))}</button>` : ''}
+      </div>
+      <div class="ver-note" style="margin-top:4px;">${e(tr('A photo of the gate, shop or sign helps your driver where the map has no street names. Only your driver sees it, and it is deleted when the ride ends.'))}</div>
+      ${r.pickupMoved ? `<div class="ver-note" style="margin-top:4px;">✅ ${e(trf('You moved the meeting point {n} m. Your driver was told.', { n: r.pickupMoved.meters }))}</div>` : ''}
+    </div>`;
+  }
+  function riderLiveHTML(r) {
+    return `${meetHTML(r)}
+      <div id="rlv-status" style="font-weight:700;color:var(--navy);margin:6px 0 2px;">${e(tr(r.startedAt ? 'On the way to your destination' : 'Your driver is coming'))}</div>
+      <div id="rlv-sub" style="font-size:13.5px;color:var(--slate);margin-bottom:6px;"></div>
+      <div id="rlv-map" data-ride="${e(r.id)}" style="height:clamp(220px,40vh,420px);border-radius:12px;overflow:hidden;background:#E8ECEF;"></div>
+      <div style="margin-top:6px;"><button class="btn-sm btn-sm-ghost" onclick="openTrack('ride',${jsArg(r.id)})">⤢ ${e(tr('Full screen map'))}</button></div>`;
+  }
+  const RL = { map: null, id: null, timer: null, m: {}, fitted: false };
+  function stopRiderLive() { clearInterval(RL.timer); RL.timer = null; if (RL.map) { try { RL.map.remove(); } catch (x) {} } RL.map = null; RL.m = {}; RL.fitted = false; RL.id = null; }
+  async function startRiderLive() {
+    const box = el('rlv-map'); if (!box) { stopRiderLive(); return; }
+    const id = box.dataset.ride;
+    stopRiderLive(); RL.id = id;
+    if (!window.L && typeof loadLeaflet === 'function') { try { await loadLeaflet(); } catch (x) {} }
+    if (!window.L || !box.isConnected) { box.style.display = 'none'; return; }
+    RL.map = L.map(box, { zoomControl: true });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(RL.map);
+    RL.map.setView([6.3156, -10.8074], 14);
+    await refreshRiderLive();
+    RL.timer = setInterval(() => { if (!el('rlv-map')) return stopRiderLive(); refreshRiderLive(); }, 6000);
+  }
+  async function refreshRiderLive() {
+    if (!RL.map || !RL.id) return;
+    let r; try { r = (await apiFetch('GET', `/rides/${encodeURIComponent(RL.id)}`)).ride; } catch (x) { return; }
+    if (!RL.map) return;
+    const M = RL.m, map = RL.map;
+    const put = (key, p, make) => { if (!p || p.latitude == null) return null; const ll = [p.latitude, p.longitude]; if (!M[key]) M[key] = make(ll).addTo(map); else if (window.TrothenMap && TrothenMap.glide) TrothenMap.glide(M[key], ll); else M[key].setLatLng(ll); return ll; };
+    const pk = put('pk', r.pickup, (ll) => L.circleMarker(ll, { radius: 9, color: '#fff', weight: 3, fillColor: '#1A73E8', fillOpacity: 1 }).bindTooltip(tr('Meet here'), { permanent: !r.startedAt, direction: 'top', offset: [0, -8], className: 'ride-map-label' }));
+    const dp = put('dp', r.dropoff, (ll) => L.marker(ll, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;background:#12161F;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).bindTooltip(tr('Destination'), { permanent: !!r.startedAt, direction: 'top', offset: [0, -10], className: 'ride-map-label' }));
+    const veh = (r.driver && r.driver.vehicle) || 'car';
+    const dv = put('dv', r.live, (ll) => L.marker(ll, { zIndexOffset: 1000, icon: L.divIcon({ className: '', html: `<div style="width:34px;height:24px;background:#fff;border-radius:7px;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;">${SVG(VEH_SVG[veh] || VEH_SVG.car, 26)}</div>`, iconSize: [34, 24], iconAnchor: [17, 12] }) }).bindTooltip(r.driver ? r.driver.name : tr('Driver'), { direction: 'top', offset: [0, -12] }));
+    const next = r.startedAt ? r.dropoff : r.pickup;
+    if (window.TrothenMap && TrothenMap.drawRoute) {
+      if (r.live) TrothenMap.drawRoute(map, r.live, next, { slot: 'approach', color: '#1A73E8', vehicle: veh }).catch(() => {});
+      else TrothenMap.drawRoute(map, r.pickup, r.dropoff, { slot: 'trip', color: '#12161F' }).catch(() => {});
+    }
+    if (!RL.fitted || (RL.lastPhase && RL.lastPhase !== r.phase)) {
+      const pts = [dv, r.startedAt ? dp : pk].filter(Boolean); if (pts.length < 2) { if (pk) pts.push(pk); if (dp) pts.push(dp); }
+      try { map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 16 }); RL.fitted = true; } catch (x) {}
+    }
+    RL.lastPhase = r.phase;
+    const st = el('rlv-status'), sub = el('rlv-sub');
+    if (st) st.textContent = tr(r.startedAt ? 'On the way to your destination' : r.driverArrivedAt ? 'Your driver has arrived' : 'Your driver is coming');
+    if (sub) {
+      const bits = [];
+      if (r.live && !r.live.approx && r.etaMinutes != null && !r.driverArrivedAt) bits.push(trf(r.startedAt ? 'About {n} min to your destination' : 'About {n} min away', { n: Math.max(1, r.etaMinutes) }));
+      if (r.live && !r.live.approx && r.remainingKm != null && !r.driverArrivedAt) bits.push(km(r.remainingKm));
+      let t = bits.join(' · ');
+      if (r.live && r.live.approx) t = r.live.secondsAgo < 120 ? tr('Showing where your driver was a moment ago. Their live position appears as soon as their phone sends it.') : trf('The driver\'s phone is not sending its position. This is where they were {n} min ago.', { n: Math.max(1, Math.round(r.live.secondsAgo / 60)) });
+      else if (!r.live) t = tr('Waiting for the driver\'s location. Their position shows here as soon as their phone sends it.');
+      else if (r.stale) t += (t ? ' · ' : '') + tr('no update for a while');
+      sub.textContent = t;
+    }
+  }
+
   function riderTrip(r) {
     const d = r.driver || {};
     if (r.status === 'pending_agreement' || r.status === 'awaiting_payment') { // v125
@@ -548,7 +658,7 @@
         ${d.plate ? `<div style="margin-top:4px;display:inline-block;border:2px solid #222;border-radius:6px;padding:2px 10px;font-weight:800;letter-spacing:1px;background:#FFE680;">${e(d.plate)}</div>` : ''}</div></div>
       ${waiting ? `<div class="ver-note">${e(tr('Answer due by'))} ${e(when(r.answerBy))}. ${e(tr('If there is no answer you are refunded automatically.'))}</div>` : ''}
       ${r.pin ? `<div style="text-align:center;margin:12px 0;padding:14px;border-radius:12px;background:#EEF8F3;"><div style="font-size:13px;color:var(--slate);">${e(tr('Your trip PIN. Check the plate, then give the driver this PIN.'))}</div><div style="font-size:44px;font-weight:800;letter-spacing:10px;color:var(--navy);">${e(r.pin)}</div></div>` : ''}
-      ${r.status === 'active' ? `<div style="font-size:14px;margin:6px 0;">${r.live ? `📍 ${e(tr(r.phase === 'to_destination' ? 'On the way to your destination' : 'Driver is coming'))}${r.etaMinutes ? ' · ' + e(tr('about')) + ' ' + r.etaMinutes + ' ' + e(tr('min')) : ''}${r.stale ? ` · <span style="color:#B4472E;">${e(tr('no update for a while'))}</span>` : ''}` : e(tr('Waiting for the driver\'s location…'))}</div><button class="btn-sm btn-sm-primary" onclick="openTrack('ride',${jsArg(r.id)})">🗺️ ${e(tr('Watch on the map'))}</button>${contactRow(r.contact)}` : ''}
+      ${r.status === 'active' ? riderLiveHTML(r) + contactRow(r.contact, '', r.id) : ''}
       ${r.cash ? `<div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#FFF6DD;border:1px solid #E0A526;font-size:14px;">💵 <strong>${e(tr('Cash ride.'))}</strong> ${e(tr('Pay the driver exactly'))} <strong>${fareL(r, r.payInCash)}</strong> ${e(tr('at the end. Nothing is held by Trothen. If the driver asks for more, do not pay it. Report it here.'))}</div>` : ''}
       ${r.autoReleaseAt ? `<div class="ver-note" style="margin-top:8px;">${e(tr(r.cash ? 'Your driver says you have arrived. If you do nothing, this ride is closed as complete on' : 'Your driver says you have arrived. If you do nothing, the fare is released to the driver on'))} ${e(new Date(r.autoReleaseAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}. ${e(tr('If something was wrong, use Report a Problem on the booking before then.'))}</div>` : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
@@ -589,6 +699,189 @@
   };
 
   // ── DRIVER ───────────────────────────────────────────────────────────
+  // v171: Walter, on the driver's "Trip in progress": "I am not seeing the
+  // map". The driver's card had only the words "Pickup → Destination" and two
+  // small compass links. Ride apps (Uber, Bolt) show the driver a map: where
+  // they are, where the rider is waiting, where the trip ends, and the road
+  // between, with one big button to start turn-by-turn navigation.
+  //   Before the pick-up: the driver's position, the pick-up, and the road there.
+  //   During the trip:    the driver's position, the drop-off, and the road there.
+  // The driver's dot follows their phone while the page is open. If location
+  // is blocked, the map shows their last known position and says so.
+  function tripMapHTML(r) {
+    return `<div class="rd-guide" id="rd-guide-${e(r.id)}" aria-live="polite" style="display:none;align-items:center;gap:12px;padding:10px 12px;margin:2px 0 8px;border-radius:12px;background:#F2F7FF;border:1px solid #C9DBF7;"></div>
+      <div class="rd-trip-map" id="rd-map-${e(r.id)}" data-ride="${e(r.id)}" style="height:clamp(220px,40vh,420px);border-radius:12px;overflow:hidden;margin:4px 0 10px;background:#E8ECEF;"></div>
+      <div class="ver-note" id="rd-map-note-${e(r.id)}" style="margin:-4px 0 8px;display:none;"></div>`;
+  }
+  function stopWords(pin, fallback) {
+    const own = String((pin && pin.address) || '').trim();
+    const generic = !own || /^(pickup|pick-up|destination|drop-?off)$/i.test(own);
+    return { title: generic ? tr(fallback) : own, line: typeof placeLineHTML === 'function' ? placeLineHTML(pin) : '' };
+  }
+  // v172: for the driver: a moved meeting point, a pin that may be off, the rider's photo of the spot.
+  function pinHelpHTML(r) {
+    const bits = [];
+    if (r.pickupMoved) bits.push(`<div style="margin-top:4px;font-size:13.5px;color:#1F5FBF;font-weight:600;">📍 ${e(trf('The rider moved the meeting point {n} m. The map shows the new spot.', { n: r.pickupMoved.meters }))}</div>`);
+    else if (r.pickup.accuracyM > ROUGH_PIN_M) bits.push(`<div style="margin-top:4px;font-size:13.5px;color:#8C6423;">⚠️ ${e(trf('The rider\'s pin may be up to {n} m off. Look around the spot, or send a message.', { n: r.pickup.accuracyM }))}</div>`);
+    if (r.pickupPhoto) bits.push(`<div style="display:flex;gap:10px;align-items:center;margin-top:6px;"><img class="rd-photo" data-ride="${e(r.id)}" hidden onload="this.hidden=false" onerror="this.hidden=true" alt="${e(tr('Photo of where the rider is waiting'))}" style="width:120px;height:90px;object-fit:cover;border-radius:8px;background:#E8ECEF;cursor:pointer;" onclick="ridesPhotoBig(this)"/><span style="font-size:13px;color:var(--slate);">${e(tr('The rider\'s photo of where they are waiting. Tap to see it bigger.'))}</span></div>`);
+    return bits.join('');
+  }
+  function tripStopsHTML(r) {
+    const next = r.startedAt ? r.dropoff : r.pickup;
+    const a = stopWords(r.pickup, 'Pick-up'), b = stopWords(r.dropoff, 'Destination');
+    const navTo = (pin) => `${pin.latitude},${pin.longitude}`;
+    return `<div style="display:grid;gap:8px;margin-bottom:6px;">
+        <div style="display:flex;gap:10px;align-items:flex-start;${r.startedAt ? 'opacity:.6;' : ''}"><span style="width:12px;height:12px;border-radius:50%;background:#1A73E8;border:2px solid #fff;box-shadow:0 0 0 1px #1A73E8;margin-top:5px;flex:none;"></span>
+          <div style="min-width:0;"><div style="font-size:12px;color:var(--slate);text-transform:uppercase;letter-spacing:.04em;">${e(tr('Pick-up'))}</div><strong>${e(a.title)}</strong>${r.pickup.note ? ` <span style="font-size:13px;color:var(--slate);">(📝 ${e(r.pickup.note)})</span>` : ''}${a.line}${r.startedAt ? '' : pinHelpHTML(r)}</div></div>
+        <div style="display:flex;gap:10px;align-items:flex-start;"><span style="width:12px;height:12px;background:#12161F;border:2px solid #fff;box-shadow:0 0 0 1px #12161F;margin-top:5px;flex:none;"></span>
+          <div style="min-width:0;"><div style="font-size:12px;color:var(--slate);text-transform:uppercase;letter-spacing:.04em;">${e(tr('Destination'))}</div><strong>${e(b.title)}</strong>${b.line}</div></div>
+      </div>
+      <a class="btn-sm btn-sm-primary" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;margin:4px 0 6px;" href="https://www.google.com/maps/dir/?api=1&destination=${navTo(next)}&travelmode=driving" target="_blank" rel="noopener" onclick="if (window.TrothenMap && TrothenMap.openNav) { event.preventDefault(); TrothenMap.openNav(${e(JSON.stringify({ latitude: next.latitude, longitude: next.longitude }))}, ${e(JSON.stringify(r.startedAt ? tr('To the destination') : tr('To the pick-up')))}); }">🧭 ${e(tr(r.startedAt ? 'Navigate to the destination' : 'Navigate to the pick-up'))}</a>`;
+  }
+  async function drawDriverMaps() {
+    const boxes = Array.from(document.querySelectorAll('.rd-trip-map'));
+    if (!boxes.length) return;
+    if (!window.L && typeof loadLeaflet === 'function') { try { await loadLeaflet(); } catch (x) {} }
+    for (const box of boxes) {
+      if (!window.L || !box.isConnected) { box.style.display = 'none'; continue; }
+      const r = (R.list || []).find(x => x.id === box.dataset.ride); if (!r) continue;
+      try {
+        const map = L.map(box, { zoomControl: true, attributionControl: true });
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+        const a = [r.pickup.latitude, r.pickup.longitude], b = [r.dropoff.latitude, r.dropoff.longitude];
+        if (!r.startedAt && r.pickup.accuracyM > 30 && r.pickup.accuracyM < 2000) L.circle(a, { radius: r.pickup.accuracyM, color: '#1A73E8', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(map); // v172: where the rider may really be
+        L.circleMarker(a, { radius: 9, color: '#fff', weight: 3, fillColor: '#1A73E8', fillOpacity: 1 }).addTo(map).bindTooltip(tr('Pick-up'), { permanent: !r.startedAt, direction: 'top', offset: [0, -8], className: 'ride-map-label' });
+        L.marker(b, { icon: L.divIcon({ className: '', html: '<div style="width:16px;height:16px;background:#12161F;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }) }).addTo(map).bindTooltip(tr('Destination'), { permanent: !!r.startedAt, direction: 'top', offset: [0, -10], className: 'ride-map-label' });
+        const target = r.startedAt ? r.dropoff : r.pickup;
+        const st = { map, me: null, from: null };
+        const fit = () => { try { const pts = [a, b]; if (st.me) pts.push(st.me.getLatLng()); map.fitBounds(L.latLngBounds(pts), { padding: [36, 36], maxZoom: 16 }); } catch (x) {} };
+        const putMe = async (fix, stale) => {
+          const ll = [fix.latitude, fix.longitude];
+          if (!st.me) st.me = L.marker(ll, { icon: L.divIcon({ className: '', html: `<div style="width:34px;height:24px;background:#fff;border-radius:7px;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;">${SVG(VEH_SVG[(R.drv && R.drv.vehicle) || 'car'] || VEH_SVG.car, 26)}</div>`, iconSize: [34, 24], iconAnchor: [17, 12] }), zIndexOffset: 1000 }).addTo(map).bindTooltip(tr('You'), { direction: 'top', offset: [0, -12] });
+          else st.me.setLatLng(ll);
+          const note = el('rd-map-note-' + r.id);
+          if (note) { note.style.display = stale ? '' : 'none'; note.textContent = stale ? tr('Your location is blocked, so the map shows where you last were. Allow location for this site to follow your position.') : ''; }
+          // The road to where they go next, from where they are (redrawn after moving ~300 m).
+          if (window.TrothenMap && TrothenMap.drawRoute && (!st.from || Math.abs(st.from[0] - ll[0]) + Math.abs(st.from[1] - ll[1]) > 0.003)) {
+            st.from = ll; await TrothenMap.drawRoute(map, { latitude: ll[0], longitude: ll[1] }, target, { slot: 'drive', color: '#1A73E8' });
+          }
+          if (!st.fitted) { st.fitted = true; fit(); }
+          if (!stale && fix.fresh) guideDriver(r, fix, target);
+        };
+        fit();
+        // The trip itself, pick-up to drop-off, in dark grey.
+        if (window.TrothenMap && TrothenMap.drawRoute) TrothenMap.drawRoute(map, r.pickup, r.dropoff, { slot: 'trip', color: '#12161F' }).catch(() => {});
+        const last = R.drv && R.drv.lastLocation; if (last) putMe(last, false);
+        if (navigator.geolocation) {
+          const id = navigator.geolocation.watchPosition(p => { putMe({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: p.coords.accuracy, heading: p.coords.heading, speed: p.coords.speed, fresh: true }, false); },
+            err => { if (err && err.code === 1 && last) putMe(last, true); else if (err && err.code === 1) { const n = el('rd-map-note-' + r.id); if (n) { n.style.display = ''; n.textContent = tr('Your location is blocked. Allow location for this site so the map can show where you are.'); } } },
+            { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+          R.mapWatches = (R.mapWatches || []).concat(id);
+        }
+        R.driverMaps = (R.driverMaps || []).concat(map);
+      } catch (x) { box.style.display = 'none'; }
+    }
+  }
+  // v172: Walter: "Google Maps are not working to give accuracy". Trothen's
+  // own guide, from the driver's GPS to the exact pin, works where map apps
+  // don't know the roads: how far, which way (an arrow), and "you are here".
+  // The arrow turns with the way the driver is moving when the phone knows
+  // it (moving faster than walking); standing still it points on the compass.
+  const RAD = Math.PI / 180;
+  function metersTo(a, b) { const dLat = (b.latitude - a.latitude) * RAD, dLng = (b.longitude - a.longitude) * RAD; const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.latitude * RAD) * Math.cos(b.latitude * RAD) * Math.sin(dLng / 2) ** 2; return 6371000 * 2 * Math.asin(Math.min(1, Math.sqrt(h))); }
+  function bearingTo(a, b) { const y = Math.sin((b.longitude - a.longitude) * RAD) * Math.cos(b.latitude * RAD); const x = Math.cos(a.latitude * RAD) * Math.sin(b.latitude * RAD) - Math.sin(a.latitude * RAD) * Math.cos(b.latitude * RAD) * Math.cos((b.longitude - a.longitude) * RAD); return (Math.atan2(y, x) / RAD + 360) % 360; }
+  const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+  const SIDES = [[22.5, 'straight ahead'], [67.5, 'ahead on your right'], [112.5, 'on your right'], [157.5, 'behind you, on the right'], [202.5, 'behind you'], [247.5, 'behind you, on the left'], [292.5, 'on your left'], [337.5, 'ahead on your left'], [360, 'straight ahead']];
+  function shortDist(m) { const usesMiles = /mi\b/.test(km(1)); if (!usesMiles && m < 1000) return (m < 100 ? Math.max(5, Math.round(m / 5) * 5) : Math.round(m / 10) * 10) + ' m'; if (usesMiles && m < 300) return Math.round(m * 3.281 / 10) * 10 + ' ft'; return km(m / 1000); }
+  function guideDriver(r, fix, target) {
+    const box = el('rd-guide-' + r.id); if (!box || !target) return;
+    const m = metersTo(fix, target), brg = bearingTo(fix, target);
+    const moving = fix.heading != null && !isNaN(fix.heading) && fix.speed > 2;
+    const turn = moving ? (brg - fix.heading + 360) % 360 : brg;
+    const where = moving ? SIDES.find(x => turn < x[0])[1] : COMPASS[Math.round(brg / 45) % 8];
+    const near = m <= Math.max(40, Math.min(80, (fix.accuracyM || 20) + (r.pickup.accuracyM && !r.startedAt ? Math.min(r.pickup.accuracyM, 60) : 0)));
+    const toWhat = r.startedAt ? tr('to the destination') : tr('to the pick-up');
+    box.style.display = 'flex';
+    box.setAttribute('aria-live', near ? 'polite' : 'off'); // a screen reader hears "you are at the pick-up", not every metre
+    if (near) {
+      box.style.background = '#EEF8F3'; box.style.borderColor = '#2E8C6F';
+      box.innerHTML = `<span style="font-size:30px;line-height:1;">${r.startedAt ? '🏁' : '📍'}</span><div style="min-width:0;"><div style="font-weight:700;color:#1F7A55;">${e(tr(r.startedAt ? 'You are at the destination.' : 'You are at the pick-up.'))}</div><div style="font-size:13.5px;color:var(--slate);">${e(r.startedAt ? tr('End the trip when the rider is out safely.') : (r.driverArrivedAt ? tr('Look for the rider. If you can\'t see them, send a message or call.') : tr('Press "I have arrived" so the rider knows, then look for them.')))}${!r.startedAt && r.pickup.note ? ' 📝 ' + e(r.pickup.note) : ''}</div></div>`;
+    } else {
+      box.style.background = '#F2F7FF'; box.style.borderColor = '#C9DBF7';
+      box.innerHTML = `<span aria-hidden="true" style="flex:none;width:44px;height:44px;border-radius:50%;background:#1A73E8;display:flex;align-items:center;justify-content:center;"><svg width="26" height="26" viewBox="0 0 24 24" style="transform:rotate(${Math.round(turn)}deg);transition:transform .4s;"><path d="M12 2 L19 20 L12 16 L5 20 Z" fill="#fff"/></svg></span>
+        <div style="min-width:0;"><div style="font-weight:700;color:var(--navy);font-size:16px;">${e(shortDist(m))} ${e(toWhat)}</div><div style="font-size:13.5px;color:var(--slate);">${e(trf(moving ? 'The pin is {w}, in a straight line.' : 'The pin is to the {w}, in a straight line. The arrow points north-up.', { w: tr(where) }))}${fix.accuracyM > 60 ? ' ' + e(trf('Your GPS is rough (about {n} m).', { n: Math.round(fix.accuracyM) })) : ''}</div></div>`;
+    }
+  }
+  // ── v172: the photo of the pick-up spot, and moving the meeting point ──
+  // The photo is drawn again on the phone (at most 1280 px) before it is
+  // sent: smaller on a weak connection, and the location and camera details
+  // hidden in the original file (EXIF) are not sent at all.
+  function shrinkPhoto(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        c.toBlob(b => (b ? res(b) : rej(new Error('no blob'))), 'image/jpeg', 0.8);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('not an image')); };
+      img.src = url;
+    });
+  }
+  window.ridesPhotoAdd = async function (id, input) {
+    const f = input.files && input.files[0]; input.value = ''; if (!f) return;
+    showToast(tr('Sending the photo…'));
+    try {
+      const blob = await shrinkPhoto(f);
+      const fd = new FormData(); fd.append('photo', blob, 'pickup.jpg');
+      const res = await fetch(API_BASE + `/rides/${encodeURIComponent(id)}/pickup-photo`, { method: 'POST', headers: { Authorization: 'Bearer ' + AUTH.token }, body: fd });
+      const j = await res.json().catch(() => ({})); if (!res.ok) throw new Error(j.error || tr('Could not send the photo'));
+      PHOTO_CACHE.delete(id); showToast(tr('Photo sent. Your driver can see it.')); loadRiderPage();
+    } catch (x) { showToast(x.message && x.message !== 'not an image' && x.message !== 'no blob' ? x.message : tr('That photo could not be read. Take it again.')); }
+  };
+  window.ridesPhotoRemove = async function (id) {
+    try { await apiFetch('DELETE', `/rides/${encodeURIComponent(id)}/pickup-photo`); PHOTO_CACHE.delete(id); loadRiderPage(); } catch (x) { showToast(x.message || tr('Could not remove the photo')); }
+  };
+  const PHOTO_CACHE = new Map(); // ride id → { at, url }
+  async function loadRidePhotos() {
+    for (const img of document.querySelectorAll('img.rd-photo[data-ride]')) {
+      const id = img.dataset.ride, r = (R.list || []).find(x => x.id === id), at = r && r.pickupPhoto && r.pickupPhoto.at;
+      const have = PHOTO_CACHE.get(id);
+      if (have && have.at === at) { img.src = have.url; continue; }
+      try {
+        const res = await fetch(API_BASE + `/rides/${encodeURIComponent(id)}/pickup-photo`, { headers: { Authorization: 'Bearer ' + AUTH.token } });
+        if (!res.ok) { img.style.display = 'none'; continue; }
+        if (have) URL.revokeObjectURL(have.url);
+        const url = URL.createObjectURL(await res.blob()); PHOTO_CACHE.set(id, { at, url });
+        if (img.isConnected) img.src = url; else document.querySelectorAll(`img.rd-photo[data-ride="${CSS.escape(id)}"]`).forEach(x => { x.src = url; });
+      } catch (x) { img.style.display = 'none'; }
+    }
+  }
+  window.ridesPhotoBig = function (img) {
+    if (!img || !img.src) return;
+    const old = el('rd-photo-big'); if (old) old.remove();
+    document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="rd-photo-big" role="dialog" aria-modal="true" aria-label="${e(tr('Photo of the pick-up'))}" onclick="this.remove()"><div class="modal" style="max-width:720px;padding:8px;"><img src="${e(img.src)}" alt="${e(img.alt || '')}" style="width:100%;height:auto;border-radius:10px;display:block;"/><button class="btn-sm btn-sm-outline" style="margin:8px auto 2px;display:block;" onclick="document.getElementById('rd-photo-big').remove()">${e(tr('Close'))}</button></div></div>`);
+  };
+  window.ridesMovePickup = async function (id, btn) {
+    const ok = await confirmDialog(tr('Move the meeting point to where you are now? Your driver is told and their map shows the new spot. You can move it up to 500 m from where you booked.'), { confirmLabel: tr('Meet me here') });
+    if (!ok) return;
+    if (btn) { btn.disabled = true; btn.textContent = tr('Finding your location…'); }
+    try {
+      const fix = await getBestLocation({ goodEnoughM: 25, maxWaitMs: 12000 }).catch(() => ({ error: 'unavailable' }));
+      if (!fix || fix.error) throw new Error(typeof locationErrorMessage === 'function' ? locationErrorMessage(fix && fix.error) : tr('Your location could not be found.'));
+      const r = await apiFetch('POST', `/rides/${encodeURIComponent(id)}/pickup-move`, { latitude: fix.latitude, longitude: fix.longitude, accuracyM: Math.round(fix.accuracyM || 0) || undefined });
+      showToast(trf('Meeting point moved {n} m. Your driver was told.', { n: r.meters }));
+      loadRiderPage();
+    } catch (x) { showToast(x.message || tr('Could not move the meeting point')); if (btn) { btn.disabled = false; btn.textContent = '📍 ' + tr('Meet me where I am now'); } }
+  };
+  // Old maps and their location watches go when the page is redrawn.
+  function clearDriverMaps() {
+    for (const id of R.mapWatches || []) { try { navigator.geolocation.clearWatch(id); } catch (x) {} }
+    for (const m of R.driverMaps || []) { try { m.remove(); } catch (x) {} }
+    R.mapWatches = []; R.driverMaps = [];
+  }
+
   async function loadDriverPage(opts) {
     if (!body()) return;
     // v168: one check at a time; a passing network hiccup during a quiet check
@@ -623,12 +916,17 @@
     const help = document.getElementById('rd-online-help');
     const keep = help && help.innerHTML.trim() ? help.outerHTML : '';
     const y = window.scrollY;
+    clearDriverMaps(); // v171
     body().innerHTML = full; R.lastHtml = full;
     if (opts && opts.quiet) window.scrollTo(0, y); // v168: a quiet redraw keeps the driver where they were
+    drawDriverMaps(); // v171: the trip map
+    loadRidePhotos(); // v172: the rider's photo of the spot
+    // v171: a ride just accepted starts sharing the driver's position now, not at the next 30-second check.
+    if (list.some(x => x.status === 'active' && x.role === 'driver' && !BCN.jobs.some(j => j.id === x.id))) { scanJobs().then(() => { if (BCN.latest) sendBeacon(); }); }
     if (keep) { const btn = document.querySelector('[data-rides-online]'); if (btn) btn.closest('div').insertAdjacentHTML('afterend', keep); }
     stopTimers();
     if (d.status === 'approved') {
-      R.poll = setInterval(() => { if (!body()) return stopTimers(); if (R.busy) return; loadDriverPage({ quiet: true }); }, 10000);
+      R.poll = setInterval(() => { if (!body()) { clearDriverMaps(); return stopTimers(); } if (R.busy) return; loadDriverPage({ quiet: true }); }, 10000);
       if (d.online) R.hb = setInterval(async () => { const f = await here(); if (f) apiFetch('POST', '/rides/driver/online', { online: true, latitude: f.latitude, longitude: f.longitude }).catch(() => {}); }, 120000);
     }
   }
@@ -775,10 +1073,11 @@
         <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(tr('Fare'))}: <strong>${fareL(r, r.fare)}</strong>${r.cash ? ' · 💵 <strong>' + e(tr('paid in CASH by the rider')) + '</strong>' : ''} · ${e(tr('Answer by'))} ${e(when(r.answerBy))}</div>
         <div style="display:flex;gap:8px;"><button class="btn-sm btn-sm-primary" onclick="ridesAnswer(${jsArg(r.id)},'accept')">${e(tr('Accept'))}</button><button class="btn-sm btn-sm-outline" onclick="ridesAnswer(${jsArg(r.id)},'decline')">${e(tr('Decline'))}</button></div></div>`).join('')}
       ${active.map(r => `<div class="panel" style="border:2px solid var(--teal);"><div class="panel-title">${e(tr(r.startedAt ? 'Trip in progress' : 'Go to your rider'))} <small>#${e(r.number)}</small></div>
-        <div><strong>${e(r.pickup.address)}</strong>${r.pickup.note ? ` <span style="font-size:13px;color:var(--slate);">(📝 ${e(r.pickup.note)})</span>` : ''} <a href="https://www.google.com/maps/dir/?api=1&destination=${r.pickup.latitude},${r.pickup.longitude}" target="_blank" rel="noopener">🧭</a> → <strong>${e(r.dropoff.address)}</strong> <a href="https://www.google.com/maps/dir/?api=1&destination=${r.dropoff.latitude},${r.dropoff.longitude}" target="_blank" rel="noopener">🧭</a></div>
+        ${tripMapHTML(r)}
+        ${tripStopsHTML(r)}
         <div style="font-size:14px;color:var(--slate);margin:4px 0;">${e(r.rider ? r.rider.name : '')} · ${e(r.passengers)} ${e(tr('passenger(s)'))} · ${fareL(r, r.fare)}</div>
         ${r.cash ? `<div style="margin:6px 0;padding:8px 12px;border-radius:10px;background:#FFF6DD;border:1px solid #E0A526;font-size:14px;">💵 <strong>${e(tr('CASH ride.'))}</strong> ${e(tr('Collect'))} <strong>${fareL(r, r.payInCash)}</strong> ${e(tr('from the rider at the end. Do not ask for more than this.'))} <a onclick="ridesReport(${jsArg(r.id)})" style="cursor:pointer;text-decoration:underline;">${e(tr('Report a problem'))}</a></div>` : ''}
-        ${contactRow(r.contact)}
+        ${contactRow(r.contact, '', r.id)}
         ${!r.startedAt ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
           <button class="btn-sm btn-sm-outline" onclick="ridesArrived(${jsArg(r.id)})">📍 ${e(tr('I have arrived'))}</button>
           <input class="form-input" id="rd-pin-${e(r.id)}" inputmode="numeric" maxlength="4" placeholder="${e(tr('Rider PIN'))}" style="width:130px;"/>
@@ -866,13 +1165,64 @@
     if (cc && !d.startsWith(cc) && d.length <= 10) return cc + d;
     return d;
   }
-  function contactRow(c, label) {
+  // v171: Walter: "fix how the call to the driver is done in the app, and the
+  // text messages, with best practice and international standards". The ride
+  // card showed Call / Text / WhatsApp links to the other person's own phone
+  // number, so each could keep the other's number after the ride. Ride apps
+  // (Uber, Bolt, Lyft) keep numbers private:
+  //   - Call: Trothen's in-app call. Free over data, no number shared.
+  //   - Message: the in-app chat with that person, plus one-tap quick messages
+  //     ("I'm outside", "Where are you?"). Someone not on Trothen right then
+  //     also gets it by text from Trothen's number (when SMS is set up).
+  //   - Phone call through Trothen (when set up): rings your own phone and
+  //     connects you; both see only Trothen's number. For weak data.
+  //   - Other ways (your own phone call, SMS, WhatsApp) are still there for
+  //     when nothing else works, saying plainly that they share your number.
+  const QUICK = {
+    rider: ['I\'m at the pick-up point.', 'I\'m coming out now.', 'Please wait 2 minutes.', 'Where are you now?'],
+    driver: ['I\'m on my way.', 'I have arrived.', 'I can\'t find you. Where exactly are you?', 'I\'m running a few minutes late.'],
+  };
+  function contactRow(c, label, rideId) {
     if (!c) return '';
     const who = label ? `<span style="font-weight:600;">${e(label)}${c.name ? ': ' + e(c.name) : ''}</span> ` : '';
-    if (!c.phone) return `<div style="font-size:13.5px;margin-top:8px;color:var(--slate);">${who}${e(tr('No phone number on file. Use Messages.'))} <a onclick="ridesOpenMessages()" style="cursor:pointer;color:var(--teal);text-decoration:underline;">${e(tr('Open Messages'))}</a></div>`;
-    const ph = c.phone.replace(/[^\d+]/g, ''), d = digits(c.phone);
-    return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;">${who}<a class="btn-sm btn-sm-outline" href="tel:${e(ph)}">📞 ${e(tr('Call'))}</a><a class="btn-sm btn-sm-outline" href="sms:${e(ph)}">💬 ${e(tr('Text'))}</a>${d.length >= 8 ? `<a class="btn-sm btn-sm-outline" href="https://wa.me/${e(waDigits(c.phone, c.country))}" target="_blank" rel="noopener">WhatsApp</a>` : ''}<a class="btn-sm btn-sm-ghost" onclick="ridesOpenMessages()" style="cursor:pointer;">✉️ ${e(tr('In-app message'))}</a></div>`;
+    const ph = c.phone ? c.phone.replace(/[^\d+]/g, '') : '', d = digits(c.phone);
+    const other = ph ? `<details class="rd-other-ways" style="margin-top:6px;font-size:13.5px;"><summary style="cursor:pointer;color:var(--slate);">${e(tr('Other ways (shares your phone number)'))}</summary>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"><a class="btn-sm btn-sm-outline" href="tel:${e(ph)}">📞 ${e(tr('Phone call'))}</a><a class="btn-sm btn-sm-outline" href="sms:${e(ph)}">✉️ SMS</a>${d.length >= 8 ? `<a class="btn-sm btn-sm-outline" href="https://wa.me/${e(waDigits(c.phone, c.country))}" target="_blank" rel="noopener">WhatsApp</a>` : ''}</div>
+        <div class="ver-note" style="margin-top:6px;">${e(tr('These use your own phone and show them your number. Use them only if the in-app call does not work.'))}</div></details>` : '';
+    if (!c.id) { // deliveries and older screens: the person's id isn't known here
+      if (!c.phone) return `<div style="font-size:13.5px;margin-top:8px;color:var(--slate);">${who}${e(tr('No phone number on file. Use Messages.'))} <a onclick="ridesOpenMessages()" style="cursor:pointer;color:var(--teal);text-decoration:underline;">${e(tr('Open Messages'))}</a></div>`;
+      return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;">${who}<a class="btn-sm btn-sm-outline" href="tel:${e(ph)}">📞 ${e(tr('Call'))}</a><a class="btn-sm btn-sm-outline" href="sms:${e(ph)}">💬 ${e(tr('Text'))}</a>${d.length >= 8 ? `<a class="btn-sm btn-sm-outline" href="https://wa.me/${e(waDigits(c.phone, c.country))}" target="_blank" rel="noopener">WhatsApp</a>` : ''}<a class="btn-sm btn-sm-ghost" onclick="ridesOpenMessages()" style="cursor:pointer;">✉️ ${e(tr('In-app message'))}</a></div>`;
+    }
+    const quick = (QUICK[c.role === 'driver' ? 'rider' : 'driver'] || []);
+    return `<div class="rd-contact" style="margin-top:10px;">
+      ${who ? `<div style="margin-bottom:6px;">${who}</div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn-sm btn-sm-primary" onclick="startCall(${jsArg(c.id)}, false, ${jsArg(c.name || '')})">📞 ${e(tr('Call'))}</button>
+        <button type="button" class="btn-sm btn-sm-outline" onclick="ridesChat(${jsArg(c.id)})">💬 ${e(tr('Message'))}</button>
+        ${c.bridge && rideId ? `<button type="button" class="btn-sm btn-sm-outline" onclick="ridesPhoneCall(${jsArg(rideId)})">☎️ ${e(tr('Phone call via Trothen'))}</button>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${quick.map(q => `<button type="button" class="btn-sm btn-sm-ghost rd-quick" style="border:1px solid var(--border);border-radius:16px;font-size:13px;" onclick="ridesQuick(${jsArg(c.id)}, ${jsArg(tr(q))}, this)">${e(tr(q))}</button>`).join('')}</div>
+      <div class="ver-note" style="margin-top:6px;">${e(tr(c.bridge ? 'Calls and messages go through Trothen, so neither of you sees the other\'s phone number.' : 'Calls and messages in the app are free over data, and neither of you sees the other\'s phone number.'))}</div>
+      ${other}
+    </div>`;
   }
+  window.ridesChat = function (id) {
+    closeTrack();
+    if (AUTH.user && AUTH.user.role === 'provider') selectProviderSection('messages'); else goToCustomerDashboard('messages');
+    setTimeout(() => { if (typeof selectMessageContact === 'function') selectMessageContact(id); }, 400);
+  };
+  window.ridesQuick = async function (toId, text, btn) {
+    if (btn) btn.disabled = true;
+    try { await apiFetch('POST', '/messages', { toId, text }); showToast(tr('Sent') + ': "' + text + '"'); }
+    catch (x) { showToast(x.message || tr('Could not send')); }
+    finally { if (btn) setTimeout(() => { btn.disabled = false; }, 4000); }
+  };
+  window.ridesPhoneCall = async function (rideId) {
+    const ok = await confirmDialog(tr('Trothen will ring your phone now. Answer it, and you are connected to them. Neither of you sees the other\'s number. Normal call charges may apply.'), { confirmLabel: tr('Ring my phone') });
+    if (!ok) return;
+    try { await apiFetch('POST', `/rides/${encodeURIComponent(rideId)}/phone-call`); showToast(tr('Your phone will ring in a few seconds. Answer it to be connected.')); }
+    catch (x) { showToast(x.message || tr('The call could not be placed. Try Call in the app.')); }
+  };
   window.ridesOpenMessages = function () {
     closeTrack();
     if (AUTH.user && AUTH.user.role === 'provider') selectProviderSection('messages'); else goToCustomerDashboard('messages');
@@ -928,7 +1278,7 @@
     if (n.stale) sub += ' ⚠️ ' + tr('No update for over 2 minutes. The driver may be in a weak signal area or the page may be closed.');
     el('trk-sub').innerHTML = e(sub);
     const cs = n.contacts || {};
-    el('trk-contacts').innerHTML = [['driver', 'Driver'], ['rider', 'Rider'], ['customer', 'Customer'], ['seller', 'Seller']].filter(([k]) => cs[k]).map(([k, l]) => contactRow(cs[k], tr(l))).join('');
+    el('trk-contacts').innerHTML = [['driver', 'Driver'], ['rider', 'Rider'], ['customer', 'Customer'], ['seller', 'Seller']].filter(([k]) => cs[k]).map(([k, l]) => contactRow(cs[k], tr(l), T.kind === 'ride' ? T.id : null)).join('');
     if (!T.map || !T.layer) return;
     // v148: the markers stay and move (they used to be redrawn every few seconds), the
     // road route is drawn, and the map follows the trip until you move it yourself.
@@ -988,7 +1338,7 @@
   function startWatch() {
     if (BCN.watch != null || !navigator.geolocation) return;
     BCN.denied = false;
-    BCN.watch = navigator.geolocation.watchPosition(p => { BCN.denied = false; if (p.timestamp && Date.now() - p.timestamp > 60000) return; /* v148: an old cached position */ if (BCN.latest && p.coords.accuracy > 1000 && BCN.latest.accuracyM <= 200 && Date.now() - BCN.latest.at < 120000) return; /* a rough network fix right after a good GPS one */ BCN.latest = { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: p.coords.accuracy, speedMps: p.coords.speed, at: Date.now() }; renderBar(); },
+    BCN.watch = navigator.geolocation.watchPosition(p => { BCN.denied = false; if (p.timestamp && Date.now() - p.timestamp > 60000) return; /* v148: an old cached position */ if (BCN.latest && p.coords.accuracy > 1000 && BCN.latest.accuracyM <= 200 && Date.now() - BCN.latest.at < 120000) return; /* a rough network fix right after a good GPS one */ const first = !BCN.latest; BCN.latest = { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: p.coords.accuracy, speedMps: p.coords.speed, at: Date.now() }; renderBar(); if (first && BCN.jobs.length) sendBeacon(); /* v171: the rider sees the driver at once */ },
       err => { if (err && err.code === 1) { BCN.denied = true; renderBar(); } }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
     try { if (navigator.wakeLock) navigator.wakeLock.request('screen').then(l => { BCN.lock = l; }).catch(() => {}); } catch (x) {}
   }

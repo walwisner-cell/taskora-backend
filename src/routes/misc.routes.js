@@ -982,6 +982,27 @@ router.post('/messages', requireAuth, messageLimiter, async (req, res) => {
     }
   }
 
+  // v171: during an open ride, a message to someone who isn't on Trothen
+  // right now also goes to their phone as a text (from Trothen's number, so
+  // the sender's number stays private), at most once every 3 minutes. A
+  // driver on the road, or a rider waiting at the roadside, may not have the
+  // page open; this is how ride apps make sure "I'm at the gate" is seen.
+  try {
+    const live = require('../live');
+    const ride = await db.find('contracts', c => c.ride && c.status === 'active' && ((c.customerId === req.user.sub && c.providerId === toId) || (c.providerId === req.user.sub && c.customerId === toId)));
+    const { isSmsConfigured, sendSms } = require('../delivery');
+    if (ride && isSmsConfigured() && !live.isOnline(toId)) {
+      const last = (ride.ride.smsRelay || {})[toId];
+      const to = await db.find('users', u => u.id === toId);
+      if (to && to.phone && (!last || Date.now() - Date.parse(last) > 3 * 60 * 1000)) {
+        const role = ride.customerId === req.user.sub ? 'rider' : 'driver';
+        const first = String((sender && sender.name) || '').split(/\s+/)[0] || 'Your ' + role;
+        await sendSms(String(to.phone).replace(/[^\d+]/g, ''), `Trothen ride #${ride.bookingNumber}: your ${role} ${first} says "${text.trim().slice(0, 100)}${text.trim().length > 100 ? '…' : ''}". Reply in the Trothen app, not by text.`);
+        await db.update('contracts', ride.id, { ride: { ...ride.ride, smsRelay: { ...(ride.ride.smsRelay || {}), [toId]: new Date().toISOString() } } });
+      }
+    }
+  } catch (e) { console.error('[messages] ride text relay failed:', e.message); }
+
   res.status(201).json({ message });
 });
 

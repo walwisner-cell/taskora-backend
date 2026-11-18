@@ -155,7 +155,13 @@
   async function redraw() {
     const y = window.scrollY;
     const r = role();
-    if (r === 'customer' && visible('screen-customer')) {
+    // v171: the Rides page keeps itself up to date (its maps move by themselves),
+    // so it is never redrawn from scratch here; ridesRefresh below redraws it
+    // only if something on it changed. Redrawing it wiped the live map.
+    const onRides = !!document.getElementById('rides-body') && ((r === 'customer' && LV.cust === 'rides') || (r === 'provider' && LV.prov === 'rides'));
+    if (onRides) {
+      try { if (r === 'customer') await loadCustomerData(); else await loadProviderData(); } catch (x) {}
+    } else if (r === 'customer' && visible('screen-customer')) {
       await loadCustomerData();
       if (!typingInPage()) selectCustomerSection(LV.cust || 'overview');
     } else if (r === 'provider' && visible('screen-provider')) {

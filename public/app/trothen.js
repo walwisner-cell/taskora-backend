@@ -12687,6 +12687,7 @@ function confirmDialog(message, options = {}) {
     const textError = document.getElementById('confirm-dialog-textinput-error');
     document.getElementById('confirm-dialog-message').textContent = message;
     confirmBtn.textContent = options.confirmLabel || 'Confirm';
+    cancelBtn.textContent = options.cancelLabel || tr('Cancel'); // v172: a named second choice
     confirmBtn.style.background = options.danger ? '#C1554D' : '';
     confirmBtn.style.color = options.danger ? '#fff' : '';
     confirmBtn.className = options.danger ? 'btn-sm' : 'btn-sm btn-sm-primary';
@@ -12716,7 +12717,7 @@ function confirmDialog(message, options = {}) {
         cleanup(true);
       }
     };
-    const onCancel = () => cleanup(options.requireTextInput ? null : false);
+    const onCancel = () => cleanup(options.requireTextInput ? null : options.cancelLabel ? 'alt' : false);
     const onOverlayClick = (e) => { if (e.target === overlay) cleanup(options.requireTextInput ? null : false); };
     const onKeydown = (e) => { if (e.key === 'Escape') cleanup(options.requireTextInput ? null : false); };
 

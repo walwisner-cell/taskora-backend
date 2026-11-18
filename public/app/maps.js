@@ -296,6 +296,18 @@
     const out = [{ key: 'google', name: 'Google Maps', icon: '🗺️', href: `https://www.google.com/maps/dir/?api=1&destination=${q}&travelmode=driving` },
       { key: 'waze', name: 'Waze', icon: '🚙', href: ll ? `https://waze.com/ul?ll=${q}&navigate=yes` : `https://waze.com/ul?q=${q}&navigate=yes` }];
     if (APPLE) out.push({ key: 'apple', name: 'Apple Maps', icon: '🧭', href: `https://maps.apple.com/?daddr=${q}&dirflg=d` });
+    // v172: Walter: "Google Maps are not working to give accuracy". In
+    // Monrovia, OpenStreetMap (volunteer-mapped) often has roads and places
+    // Google lacks. Apps built on it: OsmAnd and Organic Maps (free, and
+    // they work offline). On Android, the standard geo: link (RFC 5870)
+    // opens whichever map app the driver has, these included. On iPhone,
+    // Organic Maps has its own link. Both open the spot; the driver taps
+    // the route button there.
+    if (ll) {
+      if (/Android/i.test(navigator.userAgent || '')) out.push({ key: 'geo', name: t('Other map app (OsmAnd, Organic Maps…)'), icon: '📍', href: `geo:${q}?q=${q}(${encodeURIComponent(dest.name || t('Trothen pick-up'))})` });
+      else if (APPLE) out.push({ key: 'organic', name: 'Organic Maps', icon: '🌿', href: `om://map?ll=${q}&n=${encodeURIComponent(dest.name || t('Trothen pick-up'))}&backurl=${encodeURIComponent(location.origin)}` });
+      out.push({ key: 'osm', name: t('OpenStreetMap (in the browser)'), icon: '🗺️', href: `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=%3B${q}#map=17/${q.replace(',', '/')}` });
+    }
     return out;
   }
   function openNav(dest, label) {
@@ -309,6 +321,7 @@
       <div class="modal-body" style="display:grid;gap:10px;">
         ${links.map(l => `<a class="btn-sm btn-sm-outline tmap-nav-app" data-key="${l.key}" href="${esc(l.href)}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:10px;justify-content:flex-start;padding:12px 14px;font-size:15px;">${l.icon} ${esc(l.name)}</a>`).join('')}
         <label style="display:flex;gap:8px;align-items:center;font-size:13.5px;color:var(--slate);"><input type="checkbox" id="tmap-nav-keep"/> ${esc(t('Always use this app'))}</label>
+        <div style="font-size:12.5px;color:var(--slate);">${esc(t('Where Google Maps is not exact, try OsmAnd or Organic Maps: they often know the roads better here. Trothen\'s own map always shows the exact pin.'))}</div>
       </div></div></div>`);
     document.querySelectorAll('#tmap-nav .tmap-nav-app').forEach(a => a.addEventListener('click', () => {
       const keep = document.getElementById('tmap-nav-keep'); if (keep && keep.checked) store.set('tmap_nav', a.dataset.key);

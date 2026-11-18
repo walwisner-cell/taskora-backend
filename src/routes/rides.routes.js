@@ -171,7 +171,10 @@ function readPoint(raw, label) {
   const address = typeof raw.address === 'string' ? raw.address.trim().slice(0, 160) : '';
   // v147: a short note for the driver ("blue gate, I'm in a red shirt"). Phone numbers and emails are taken out: those are shared through the app once the ride is on.
   const note = typeof raw.note === 'string' ? require('../contact-scrub').scrub(raw.note.trim().slice(0, 140)) : '';
-  return { point: { latitude: Math.round(Number(raw.latitude) * 1e6) / 1e6, longitude: Math.round(Number(raw.longitude) * 1e6) / 1e6, address: address || label, ...(note ? { note } : {}) } };
+  // v172: how exact the rider's GPS was when the pin was set, so the driver is told when a pin may be off.
+  const acc = Math.round(Number(raw.accuracyM));
+  const accuracyM = Number.isFinite(acc) && acc >= 1 && acc <= 50000 ? acc : null;
+  return { point: { latitude: Math.round(Number(raw.latitude) * 1e6) / 1e6, longitude: Math.round(Number(raw.longitude) * 1e6) / 1e6, address: address || label, ...(note ? { note } : {}), ...(accuracyM ? { accuracyM } : {}) } };
 }
 
 // v166: a trip longer than rides can go is nearly always a pin in the wrong
@@ -365,7 +368,15 @@ async function rideView(c, viewerId) {
   const rider = await db.find('users', u => u.id === c.customerId);
   const accepted = c.status === 'active' || c.status === 'completed';
   const waitMin = Number(await getSetting('rideWaitMinutes')) || 10, autoHrs = Number(await getSetting('rideAutoReleaseHours')) || 0;
-  const live = c.status === 'active' && r.live && (Date.now() - new Date(r.live.at).getTime()) < 10 * 60 * 1000 ? r.live : null;
+  let live = c.status === 'active' && r.live && (Date.now() - new Date(r.live.at).getTime()) < 10 * 60 * 1000 ? r.live : null;
+  // v171: Walter: "the customer was not seeing the map to see the driver
+  // coming". When the driver's phone isn't sending its position during the
+  // ride (location blocked, page closed), the rider still sees where the
+  // driver last was (from going online), marked as approximate with its age,
+  // rather than nothing.
+  let approx = false;
+  const dl = driver && driver.rideDriver && driver.rideDriver.lastLocation;
+  if (!live && c.status === 'active' && !r.startedAt && dl && Number.isFinite(dl.latitude) && dl.at && Date.now() - new Date(dl.at).getTime() < 30 * 60 * 1000) { live = { latitude: dl.latitude, longitude: dl.longitude, at: dl.at, accuracyM: dl.accuracyM || null }; approx = true; }
   return {
     id: c.id, number: c.bookingNumber, status: c.status, createdAt: c.createdAt, role: isRider ? 'rider' : 'driver',
     answerBy: ['pending_provider_confirmation', 'pending_agreement'].includes(c.status) ? c.providerResponseDeadline : null,
@@ -383,14 +394,22 @@ async function rideView(c, viewerId) {
     driver: driver ? { ...publicDriver(driver), plate: accepted ? r.plate : null } : null,
     rider: rider ? { name: isRider ? rider.name : firstName(rider.name) } : null,
     driverArrivedAt: r.driverArrivedAt || null, startedAt: r.startedAt || null, endedAt: r.endedAt || null,
-    live: live ? { latitude: live.latitude, longitude: live.longitude, accuracyM: live.accuracyM || null, speedKmh: live.speedKmh || null, secondsAgo: Math.round((Date.now() - new Date(live.at).getTime()) / 1000) } : null,
-    stale: !!(live && Date.now() - new Date(live.at).getTime() > 120000),
+    // v172: a photo of where the rider waits, and a pick-up moved by the rider (both only while the ride is open)
+    pickupPhoto: OPEN_STATUSES.includes(c.status) && r.pickupPhoto && r.pickupPhoto.file ? { at: r.pickupPhoto.at } : null,
+    pickupMoved: c.status === 'active' && r.pickupMoves && r.pickupMoves.length ? { at: r.pickupMoves[r.pickupMoves.length - 1].at, meters: r.pickupMoves[r.pickupMoves.length - 1].meters, left: Math.max(0, PICKUP_MOVES_MAX - r.pickupMoves.length) } : null,
+    canMovePickup: isRider && c.status === 'active' && !r.startedAt && (r.pickupMoves || []).length < PICKUP_MOVES_MAX,
+    live: live ? { latitude: live.latitude, longitude: live.longitude, accuracyM: live.accuracyM || null, speedKmh: live.speedKmh || null, secondsAgo: Math.round((Date.now() - new Date(live.at).getTime()) / 1000), approx } : null,
+    stale: !!(live && (approx || Date.now() - new Date(live.at).getTime() > 120000)),
     phase: c.status === 'completed' ? 'delivered' : c.status !== 'active' ? c.status : r.startedAt ? 'to_destination' : 'to_pickup',
     remainingKm: live && c.status === 'active' ? kmBetween(live, r.startedAt ? r.dropoff : r.pickup) : null,
     etaMinutes: live && c.status === 'active' ? (() => { const k = kmBetween(live, r.startedAt ? r.dropoff : r.pickup); if (k == null) return null; const sp = Math.max(8, Math.min(60, live.speedKmh > 3 ? live.speedKmh : ({ motorbike: 25, keke: 20, car: 30, van: 25 }[r.vehicle] || 25))); return Math.max(1, Math.round(k * ROAD_FACTOR / sp * 60)); })() : null,
     trail: c.status === 'active' && Array.isArray(r.track) ? r.track.slice(-120).map(p => [p[0], p[1]]) : [],
     // each person can call, text or WhatsApp the other, only while the ride is open
-    contact: c.status === 'active' ? (isRider ? (driver && driver.phone ? { name: driver.name, phone: String(driver.phone).trim() } : null) : (rider && rider.phone ? { name: firstName(rider.name), phone: String(rider.phone).trim() } : null)) : null,
+    // v171: also who they are (for in-app calls and messages, which share no
+    // phone numbers), and whether a phone call can go through Trothen's number.
+    contact: c.status === 'active' ? (isRider
+      ? (driver ? { id: driver.id, name: driver.name, phone: driver.phone ? String(driver.phone).trim() : null, bridge: phoneBridgeOn(), role: 'driver' } : null)
+      : (rider ? { id: rider.id, name: firstName(rider.name), phone: rider.phone ? String(rider.phone).trim() : null, bridge: phoneBridgeOn(), role: 'rider' } : null)) : null,
     shareUrl: isRider && c.status === 'active' ? `/ride-share/${r.shareToken}` : null,
     sosCount: (r.sos || []).length,
     canConfirm: isRider && c.status === 'active' && !!r.startedAt,
@@ -403,6 +422,133 @@ async function rideView(c, viewerId) {
     autoReleased: r.autoReleased === true,
   };
 }
+
+// ── v171: a phone call through Trothen's number (numbers stay private) ──
+// Walter: "fix how the call to the driver is done in the app, and the text
+// messages, with best practice and international standards". Ride apps don't
+// show the rider's and the driver's personal numbers to each other: calls go
+// through the app, or through the company's number ("number masking"), so a
+// number can't be kept and misused after the ride. Trothen now offers:
+//   1. Call in the app: free over data, no number shared (the in-app calls).
+//   2. A phone call through Trothen (when Twilio is set up): Trothen calls the
+//      person's own phone, then connects them to the other person. Each sees
+//      only Trothen's number. Works on any phone and weak data.
+//   3. A normal phone call, WhatsApp or SMS from their own phone, under "Other
+//      ways", saying plainly that it shares their number.
+// Only while the ride is open, and at most 6 calls per person per ride.
+const phoneBridgeOn = () => !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER);
+const e164 = (p) => { const d = String(p || '').replace(/[^\d+]/g, ''); return /^\+\d{8,15}$/.test(d) ? d : null; };
+const xmlEsc = (t) => String(t).replace(/[<>&"']/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[ch]));
+router.post('/rides/:id/phone-call', requireAuth, async (req, res) => {
+  const c = await db.find('contracts', x => x.id === req.params.id && x.ride);
+  if (!c || (c.customerId !== req.user.sub && c.providerId !== req.user.sub)) return res.status(404).json({ error: 'Ride not found' });
+  if (c.status !== 'active') return res.status(400).json({ code: 'RIDE_CLOSED', error: 'Calls through Trothen are only for an open ride.' });
+  if (!phoneBridgeOn()) return res.status(503).json({ code: 'BRIDGE_OFF', error: 'Phone calls through Trothen are not set up yet. Use Call in the app.' });
+  const me = await db.find('users', u => u.id === req.user.sub);
+  const other = await db.find('users', u => u.id === (c.customerId === req.user.sub ? c.providerId : c.customerId));
+  const from = e164(me && me.phone), to = e164(other && other.phone);
+  if (!from) return res.status(400).json({ code: 'NO_PHONE', error: 'Add your phone number, with its country code, in Settings first.' });
+  if (!to) return res.status(400).json({ code: 'THEIR_PHONE', error: 'They have no phone number Trothen can call. Use Call in the app or a message.' });
+  const calls = ((c.ride && c.ride.phoneCalls) || []).filter(x => x.by === req.user.sub);
+  if (calls.length >= 6) return res.status(429).json({ code: 'TOO_MANY', error: 'You have used the calls for this ride. Use Call in the app or a message.' });
+  const who = c.customerId === req.user.sub ? 'your Trothen driver' : 'your Trothen rider';
+  const twiml = `<Response><Say voice="alice">Connecting you to ${xmlEsc(who)}.</Say><Dial callerId="${xmlEsc(process.env.TWILIO_FROM_NUMBER)}" timeLimit="1200" timeout="30"><Number>${xmlEsc(to)}</Number></Dial></Response>`;
+  try {
+    const sid = process.env.TWILIO_ACCOUNT_SID;
+    const auth = Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
+    const base = (process.env.TWILIO_API_URL || 'https://api.twilio.com').replace(/\/+$/, '');
+    const r = await fetch(`${base}/2010-04-01/Accounts/${encodeURIComponent(sid)}/Calls.json`, { method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ To: from, From: process.env.TWILIO_FROM_NUMBER, Twiml: twiml, TimeLimit: '1260' }).toString() });
+    if (!r.ok) { console.error('[rides] phone call failed', r.status, (await r.text().catch(() => '')).slice(0, 200)); return res.status(502).json({ code: 'CALL_FAILED', error: 'The call could not be placed. Try Call in the app.' }); }
+  } catch (e) { return res.status(502).json({ code: 'CALL_FAILED', error: 'The call could not be placed. Try Call in the app.' }); }
+  await db.update('contracts', c.id, { ride: { ...c.ride, phoneCalls: [...((c.ride && c.ride.phoneCalls) || []), { by: req.user.sub, at: new Date().toISOString() }] } });
+  res.json({ ok: true, ringingYou: true });
+});
+
+// ── v172: helping the driver find the rider ─────────────────────────────
+// Walter: "Google Maps are not working to give accuracy" (in Monrovia, map
+// apps have few street names and some roads are missing or misplaced). So
+// Trothen relies less on the map app:
+//   - the rider can add a photo of where they wait (a gate, a shop, a sign);
+//   - the rider can move the meeting point to where they really are, a short
+//     way only, so the fare stays fair, and the driver is told at once.
+// The photo is private: only the rider and the driver can open it, only
+// while the ride is open, and it is deleted when the ride ends. Photos are
+// re-drawn on the rider's phone before upload, which also removes the
+// location and camera details hidden in the file (EXIF).
+const PICKUP_MOVES_MAX = 3, PICKUP_MOVE_MAX_M = 500;
+const metersBetween = (a, b) => Math.round(distanceInMiles(a.latitude, a.longitude, b.latitude, b.longitude) * 1609.344);
+const PHOTO_DIR = path.join(require('../uploads').PRIVATE_UPLOADS_DIR, 'ride-photos');
+try { fs.mkdirSync(PHOTO_DIR, { recursive: true }); } catch (e) { /* reported on first use */ }
+const photoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 1 } });
+const photoLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many photos. Please wait a few minutes.' } });
+const imageKind = (b) => (!b || b.length < 12 ? null : b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff ? 'jpg' : b[0] === 0x89 && b.toString('ascii', 1, 4) === 'PNG' ? 'png' : b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP' ? 'webp' : null);
+const IMAGE_TYPE = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+function dropRidePhoto(r) { if (r && r.pickupPhoto && r.pickupPhoto.file) { try { fs.unlinkSync(path.join(PHOTO_DIR, path.basename(r.pickupPhoto.file))); } catch (e) { /* already gone */ } } }
+// Photos of rides that have ended are deleted (checked when anyone opens one, and every 30 minutes).
+async function sweepRidePhotos() {
+  try {
+    const done = await db.filter('contracts', c => c.ride && c.ride.pickupPhoto && c.ride.pickupPhoto.file && !OPEN_STATUSES.includes(c.status));
+    for (const c of done) { dropRidePhoto(c.ride); await db.update('contracts', c.id, { ride: { ...c.ride, pickupPhoto: null } }); }
+  } catch (e) { console.error('[rides] photo sweep', e.message); }
+}
+if (process.env.NODE_ENV !== 'test') { const t = setInterval(sweepRidePhotos, 30 * 60 * 1000); if (t.unref) t.unref(); setTimeout(sweepRidePhotos, 60 * 1000).unref?.(); }
+
+router.post('/rides/:id/pickup-photo', requireAuth, requireRider, photoLimiter, (req, res, next) => photoUpload.single('photo')(req, res, (err) => {
+  if (err) return res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'That photo is too large.' : 'Could not read that photo.' });
+  next();
+}), (req, res) => withRide(req, res, 'rider', async (c) => {
+  if (!OPEN_STATUSES.includes(c.status) || (c.ride && c.ride.startedAt)) return res.status(400).json({ code: 'RIDE_CLOSED', error: 'A photo of the pick-up can be added only before the trip starts.' });
+  const f = req.file, kind = f && imageKind(f.buffer);
+  if (!kind) return res.status(400).json({ error: 'That isn\'t a photo Trothen can show. Take the photo again.' });
+  const file = `${c.id}_${nanoid(8)}.${kind}`;
+  try {
+    fs.mkdirSync(PHOTO_DIR, { recursive: true });
+    fs.writeFileSync(path.join(PHOTO_DIR, file), f.buffer);
+    try { require('../file-crypto').encryptFileInPlace(path.join(PHOTO_DIR, file)); } catch (e) { /* stays private, unencrypted */ }
+  } catch (e) { return res.status(500).json({ error: 'Could not save the photo. Please try again.' }); }
+  dropRidePhoto(c.ride);
+  const at = new Date().toISOString();
+  await db.update('contracts', c.id, { ride: { ...c.ride, pickupPhoto: { file, kind, at } } });
+  if (c.status === 'active') await notify(c.providerId, '📷', `Your rider added a photo of where they are waiting (ride #${c.bookingNumber}).`, 'bookingUpdates', { section: 'rides' });
+  res.status(201).json({ ok: true, pickupPhoto: { at } });
+}));
+router.delete('/rides/:id/pickup-photo', requireAuth, requireRider, (req, res) => withRide(req, res, 'rider', async (c) => {
+  dropRidePhoto(c.ride);
+  await db.update('contracts', c.id, { ride: { ...c.ride, pickupPhoto: null } });
+  res.json({ ok: true });
+}));
+router.get('/rides/:id/pickup-photo', requireAuth, async (req, res) => {
+  const c = await db.find('contracts', x => x.id === req.params.id && x.ride && (x.customerId === req.user.sub || x.providerId === req.user.sub));
+  if (!c || !c.ride.pickupPhoto || !c.ride.pickupPhoto.file) return res.status(404).json({ error: 'No photo for this ride.' });
+  if (!OPEN_STATUSES.includes(c.status)) { dropRidePhoto(c.ride); await db.update('contracts', c.id, { ride: { ...c.ride, pickupPhoto: null } }); return res.status(410).json({ error: 'The ride has ended, so its photo was deleted.' }); }
+  let buf;
+  try { buf = require('../file-crypto').readPossiblyEncrypted(path.join(PHOTO_DIR, path.basename(c.ride.pickupPhoto.file))); }
+  catch (e) { return res.status(404).json({ error: 'This photo is no longer available.' }); }
+  res.set({ 'Content-Type': IMAGE_TYPE[c.ride.pickupPhoto.kind] || 'image/jpeg', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+  res.send(buf);
+});
+
+// The rider moves the meeting point to where they are now (a short way only).
+router.post('/rides/:id/pickup-move', requireAuth, requireRider, (req, res) => withRide(req, res, 'rider', async (c) => {
+  const r = c.ride || {};
+  if (c.status !== 'active' || r.startedAt) return res.status(400).json({ code: 'RIDE_CLOSED', error: 'The meeting point can be moved only while the driver is on the way.' });
+  const moves = r.pickupMoves || [];
+  if (moves.length >= PICKUP_MOVES_MAX) return res.status(429).json({ code: 'TOO_MANY', error: 'You have moved the meeting point 3 times. Send your driver a message to say where you are.' });
+  const b = req.body || {}, lat = Number(b.latitude), lng = Number(b.longitude);
+  if (!isValidCoordinate(lat, lng) || (lat === 0 && lng === 0)) return res.status(400).json({ error: 'That isn\'t a valid position. Try again.' });
+  const acc = Math.round(Number(b.accuracyM));
+  const accuracyM = Number.isFinite(acc) && acc >= 1 && acc <= 50000 ? acc : null;
+  if (accuracyM && accuracyM > 150) return res.status(400).json({ code: 'ROUGH', accuracyM, error: `Your phone's location is not exact enough (about ${accuracyM} m). Step outside and try again, or send your driver a message.` });
+  const booked = r.pickupBooked || r.pickup;
+  const fromBooked = metersBetween(booked, { latitude: lat, longitude: lng });
+  if (fromBooked > PICKUP_MOVE_MAX_M) return res.status(400).json({ code: 'TOO_FAR', meters: fromBooked, error: `That is ${fromBooked} m from where you booked. The meeting point can move up to ${PICKUP_MOVE_MAX_M} m, so the fare stays right. Send your driver a message, or cancel and book again from here.` });
+  const meters = metersBetween(r.pickup, { latitude: lat, longitude: lng });
+  const at = new Date().toISOString();
+  const pickup = { ...r.pickup, latitude: Math.round(lat * 1e6) / 1e6, longitude: Math.round(lng * 1e6) / 1e6, ...(accuracyM ? { accuracyM } : {}), movedAt: at };
+  await db.update('contracts', c.id, { ride: { ...r, pickupBooked: booked, pickup, pickupMoves: [...moves, { at, meters, latitude: pickup.latitude, longitude: pickup.longitude }] } });
+  await notify(c.providerId, '📍', `Your rider moved the meeting point ${meters} m (ride #${c.bookingNumber}). Your map shows the new spot.`, 'bookingUpdates', { section: 'rides' });
+  res.json({ ok: true, meters, left: PICKUP_MOVES_MAX - moves.length - 1 });
+}));
 
 router.get('/rides/mine', requireAuth, async (req, res) => {
   const mine = (await db.filter('contracts', c => c.ride && (c.customerId === req.user.sub || c.providerId === req.user.sub))).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50);
@@ -421,7 +567,7 @@ function driverState(u) {
   return {
     status: r.status || 'none', vehicle: r.vehicle || null, make: r.make || '', plate: r.plate || '', licenceNumber: r.licenceNumber || '', licenceExpiry: r.licenceExpiry || '', insuranceExpiry: r.insuranceExpiry || '', roadworthyExpiry: r.roadworthyExpiry || '',
     acceptsCash: r.acceptsCash === true, helmet: r.helmet === true, docs: Object.fromEntries(Object.keys(DOC_KINDS).map(k => [k, !!(r.docs && r.docs[k])])),
-    rates: rates(u), fareAdjust: Number(r.fareAdjust) || 0, delivers: r.delivers !== false, deliveryRange: require('../store-orders').rangeOf(u, r.vehicle), /* v164 */ online: isOnline(u), onlineUntil: isOnline(u) ? r.onlineUntil : null, rejectReason: r.rejectReason || null,
+    rates: rates(u), fareAdjust: Number(r.fareAdjust) || 0, delivers: r.delivers !== false, deliveryRange: require('../store-orders').rangeOf(u, r.vehicle), /* v164 */ online: isOnline(u), onlineUntil: isOnline(u) ? r.onlineUntil : null, lastLocation: r.lastLocation && Number.isFinite(r.lastLocation.latitude) ? { latitude: r.lastLocation.latitude, longitude: r.lastLocation.longitude } : null, /* v171: the driver's own last position, for their trip map */ rejectReason: r.rejectReason || null,
   };
 }
 router.get('/rides/driver/me', requireAuth, requireRole('provider'), async (req, res) => {
@@ -608,6 +754,8 @@ router.post('/rides/:id/arrived', requireAuth, requireRole('provider'), (req, re
   res.json({ ride: await rideView(u, req.user.sub) });
 }));
 router.post('/rides/:id/location', requireAuth, requireRole('provider'), liveLimiter, (req, res) => withRide(req, res, 'driver', async (c) => {
+  // v172: a ride that has ended (or not started) says so with a code, so the driver's phone stops sending at once (as deliveries do).
+  if (c.status !== 'active') return res.status(409).json({ code: 'TRACK_CLOSED', error: 'This ride is not open, so your position is not being shared.' });
   if (Array.isArray((req.body || {}).points) && c.status === 'active') { // v111: positions kept while the phone had no signal
     const tm = require('../track-merge');
     const batch = tm.cleanBatch(req.body.points);

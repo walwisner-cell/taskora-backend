@@ -157,7 +157,7 @@ async function sendSms(to, body) {
     const sid = process.env.TWILIO_ACCOUNT_SID;
     const auth = Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
     const params = new URLSearchParams({ To: to, From: process.env.TWILIO_FROM_NUMBER, Body: body });
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    const res = await fetch(`${(process.env.TWILIO_API_URL || 'https://api.twilio.com').replace(/\/+$/, '')}/2010-04-01/Accounts/${sid}/Messages.json`, { // v171: TWILIO_API_URL is for tests
       method: 'POST',
       headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
