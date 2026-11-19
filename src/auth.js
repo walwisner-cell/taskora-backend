@@ -47,6 +47,8 @@ function resolveJwtSecret() {
 }
 const JWT_SECRET = resolveJwtSecret();
 const TOKEN_TTL = '7d';
+const ADMIN_MAX_SESSION_MS = 12 * 3600 * 1000; // v173
+const IDLE_GRACE_MS = 2 * 60 * 1000; // v173: the page reports activity at most once a minute
 
 function hashPassword(plain) {
   return bcrypt.hashSync(plain, 10);
@@ -76,6 +78,7 @@ async function signToken(user, deviceLabel) {
     userId: user.id,
     deviceLabel: deviceLabel ? deviceLabel.slice(0, 200) : null,
     createdAt: new Date().toISOString(),
+    lastActiveAt: new Date().toISOString(), // v173: signing out when idle, checked by the server too
   });
   return jwt.sign(
     { sub: user.id, role: user.role, email: user.email, tokenVersion: user.tokenVersion || 0, sessionId },
@@ -147,6 +150,27 @@ async function requireAuth(req, res, next) {
       if (!session) {
         return res.status(401).json({ error: 'Your session is no longer valid. Please sign in again.' });
       }
+      // v173: signing out when idle is enforced here, on the server, not only
+      // by the page's timer (OWASP: session time-outs must be enforced
+      // server-side). A tab closed on a shared computer, or a computer left
+      // asleep, can't come back to an open account. Background updates don't
+      // count as activity: only the page's own "the person is here" signal
+      // (POST /auth/activity) does. "Keep me signed in" on a personal device
+      // is respected, never for an admin. Admins also sign in again after 12
+      // hours whatever happens (NIST SP 800-63B, AAL2).
+      const isAdmin = current.role === 'admin';
+      if (isAdmin && session.createdAt && Date.now() - Date.parse(session.createdAt) > ADMIN_MAX_SESSION_MS) {
+        await db.remove('sessions', session.id);
+        return res.status(401).json({ code: 'SESSION_EXPIRED', error: 'For safety, admins sign in again every 12 hours. Please sign in again.' });
+      }
+      if (session.lastActiveAt && (isAdmin || !session.kept)) {
+        const mins = (await require('./platform-settings').sessionIdleMinutes())[isAdmin ? 'admin' : 'user'];
+        if (Date.now() - Date.parse(session.lastActiveAt) > mins * 60000 + IDLE_GRACE_MS) {
+          await db.remove('sessions', session.id);
+          return res.status(401).json({ code: 'SESSION_IDLE', idleMinutes: mins, error: `You were signed out after ${mins} minutes without activity. Please sign in again.` });
+        }
+      }
+      req.session = session;
     }
     // An account created with a starting temp password (see POST
     // /admin/sub-admins) can't do anything else on the platform until a

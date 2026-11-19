@@ -355,6 +355,7 @@
   }
   window.endCallWithChoices = endWithChoices;
   window.hangUpCall = hangUp;
+  window.callInProgress = () => !!C.id; // v173: a call counts as activity (no sign-out while talking)
 
   // ── placing a call ───────────────────────────────────────────────────
   window.startCall = async function (userId, video, name) {

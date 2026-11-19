@@ -61,6 +61,7 @@ async function apiFetch(method, path, body) {
   let data = null;
   try { data = await res.json(); } catch (e) { /* no body */ }
   if (!res.ok) {
+    if (data && (data.code === 'SESSION_IDLE' || data.code === 'SESSION_EXPIRED') && typeof sessionEndedByServer === 'function') sessionEndedByServer(data); // v173
     if (data && data.code === 'MUST_CHANGE_PASSWORD' && path !== '/auth/change-password' && path !== '/auth/me') {
       showForcePasswordChangeScreen();
     }
@@ -168,9 +169,9 @@ const AUTH_STORAGE_KEY = 'trothen_session_token';
 // ticked by itself on a phone or the installed app, and not on a computer.
 //  - Ticked: the sign-in is kept on this device (until you sign out, or for
 //    7 days at most; then you sign in again).
-//  - Not ticked: it lasts only until the browser is closed, and after 20
-//    minutes without use you are signed out.
-// Admin accounts are always signed out after 20 minutes without use.
+//  - Not ticked: it lasts only until the browser is closed, and after 15
+//    minutes without use you are signed out (v173; the server checks too).
+// Admin accounts are always signed out after 5 minutes without use (v173).
 function deviceIsPersonal() {
   try { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent); } catch (e) { return false; }
 }
@@ -9181,6 +9182,15 @@ Liberia</textarea></div>
       <div style="font-size:13px;color:var(--slate);margin-bottom:10px;">Preview: © ${(adminData.footerInfo && adminData.footerInfo.copyrightYear) || ''} ${escapeHtml((adminData.footerInfo && adminData.footerInfo.companyName) || '')} · ${escapeHtml((adminData.footerInfo && adminData.footerInfo.location) || '')} · ${escapeHtml((adminData.footerInfo && adminData.footerInfo.supportEmail) || '')}</div>
       <button class="btn-sm btn-sm-primary" onclick="saveFooterInfo()">Save Footer</button>
     </div>
+    <div class="panel" id="session-timeout-panel"><div class="panel-title">Signing out when idle</div>
+      <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">How long a session stays open without activity. One minute before, a "Still there?" warning gives the person a chance to stay. The server checks the same limit, so a tab closed on a shared computer can't be reopened later. Not counted as idle: a call, a ride or job with location on, and "Keep me signed in" on a personal phone (never for admins). Best practice: admins 5 minutes, customers and pros 15.</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div class="form-group"><label class="form-label" for="idle-min-admin">Admins (minutes, 2 to 30)</label><input class="form-input" type="number" inputmode="numeric" min="2" max="30" id="idle-min-admin" style="max-width:120px;"/></div>
+        <div class="form-group"><label class="form-label" for="idle-min-user">Customers and pros (minutes, 5 to 120)</label><input class="form-input" type="number" inputmode="numeric" min="5" max="120" id="idle-min-user" style="max-width:120px;"/></div>
+      </div>
+      <div class="ver-note" id="idle-min-note" style="margin-bottom:10px;"></div>
+      <button class="btn-sm btn-sm-primary" onclick="saveSessionTimeout()">Save</button>
+    </div>
     <div class="panel"><div class="panel-title">Maintenance Tools</div>
       <div style="font-weight:600;color:var(--navy);margin-bottom:4px;">Fix Old Notification Links</div>
       <div style="font-size:13.5px;color:var(--slate);margin-bottom:14px;">Adds the missing admin link to older category, sales and advertising notifications. Safe to run at any time; existing links are never changed.</div>
@@ -10963,6 +10973,27 @@ async function saveAboutUsContent() {
   } catch (e) { showToast(e.message || 'Could not save this'); }
 }
 
+// v173: Admin → Settings → Signing out when idle.
+async function loadSessionTimeoutPanel() {
+  if (!document.getElementById('session-timeout-panel') || !BACKEND_AVAILABLE) return;
+  try {
+    const r = await apiFetch('GET', '/admin/settings/session-timeout');
+    document.getElementById('idle-min-admin').value = r.idleMinutes.admin;
+    document.getElementById('idle-min-user').value = r.idleMinutes.user;
+    const d = r.defaults || {};
+    document.getElementById('idle-min-note').textContent = (r.idleMinutes.admin !== d.admin || r.idleMinutes.user !== d.user) ? `Recommended: admins ${d.admin}, customers and pros ${d.user}.` : 'These are the recommended settings.';
+  } catch (e) { const p = document.getElementById('idle-min-note'); if (p) p.textContent = e.message || 'Could not load this'; }
+}
+async function saveSessionTimeout() {
+  const admin = document.getElementById('idle-min-admin').value, user = document.getElementById('idle-min-user').value;
+  try {
+    await apiFetch('PATCH', '/admin/settings/session-timeout', { admin: Number(admin), user: Number(user) });
+    showToast('Saved. It applies from each person\'s next minute of use.');
+    if (AUTH.user && AUTH.user.role === 'admin') IDLE_TIMEOUT_MS = Number(admin) * 60000;
+    loadSessionTimeoutPanel();
+  } catch (e) { showToast(e.message || 'Could not save this'); }
+}
+
 async function saveFooterInfo() {
   const companyName = document.getElementById('footer-company-name').value.trim();
   const location = document.getElementById('footer-location').value.trim();
@@ -11875,7 +11906,7 @@ function selectAdminSection(key) {
   if (key === 'verification') { loadGuarantorsReviewPanel(); loadVerificationGaps(); loadVerificationHistory(); loadVerificationWaiting(); }
   if (key === 'people') loadAccountClosuresPanel();
   if (key === 'pricing') loadPlanBillingPanel();
-  if (key === 'settings') { loadWordingEditor(); loadBackupsPanel(); loadPrivacyEditor(); }
+  if (key === 'settings') { loadWordingEditor(); loadBackupsPanel(); loadPrivacyEditor(); loadSessionTimeoutPanel(); }
   if (key === 'promotions') loadAdminPromotionsPanel();
   if (key === 'announcements') loadAnnouncementsPanel();
   if (key === 'datacleanup') loadDataCleanupLogPanel();
@@ -12599,15 +12630,48 @@ function showToast(msg) {
 // the actual trigger point; chosen because this app holds real escrow
 // payments and identity documents, not a low-stakes browsing site where
 // a much longer timeout would be reasonable.
-const IDLE_TIMEOUT_MS = 20 * 60 * 1000;
+// v173: Walter asked for sign-out after about 5 minutes without activity, or
+// best practice. Following OWASP's session guidance (2–5 minutes for
+// high-value work, 15–30 for lower risk) and PCI DSS (15 at most): admins,
+// who see ID documents, money and everyone's data, 5 minutes; customers and
+// pros 15. The super admin can change both in Admin → Settings → Signing out
+// when idle. The server enforces the same limit (a closed tab or a sleeping
+// computer can't come back to an open account), and the page tells it the
+// person is still here at most once a minute. Not counted as idle: a call,
+// a ride or job with location on, and "Keep me signed in" on a personal
+// device (never for an admin).
+let IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const IDLE_WARNING_MS = 60 * 1000;
 let idleLastActivityAt = Date.now();
+let idleLastPingAt = 0, idleLastPingKept = null;
+function idleMinutesFor(user) { return user && user.role === 'admin' ? 5 : 15; }
+function idlePing(force) {
+  if (!AUTH.token || typeof BACKEND_AVAILABLE !== 'undefined' && !BACKEND_AVAILABLE) return;
+  const kept = sessionIsKept() && !(AUTH.user && AUTH.user.role === 'admin');
+  if (!force && Date.now() - idleLastPingAt < 60000 && kept === idleLastPingKept) return;
+  idleLastPingAt = Date.now(); idleLastPingKept = kept;
+  apiFetch('POST', '/auth/activity', { kept }).then(r => {
+    if (r && r.idleMinutes) IDLE_TIMEOUT_MS = r.idleMinutes * 60000;
+  }).catch(() => { idleLastPingAt = 0; });
+}
+// The server signed this session out for being idle (a closed tab, a computer
+// left asleep): sign out here too, once, and say why.
+let idleServerSignout = false;
+function sessionEndedByServer(data) {
+  if (idleServerSignout || !AUTH.token) return;
+  idleServerSignout = true;
+  stopIdleTimer();
+  try { document.getElementById('idle-warning-modal').classList.remove('open'); } catch (e) {}
+  AUTH.token = null; // the server already ended it: no need to tell it again
+  Promise.resolve(logout()).finally(() => { idleServerSignout = false; showToast(data && data.code === 'SESSION_IDLE' && data.idleMinutes ? trf('You were signed out after {n} minutes without activity. Please sign in again.', { n: data.idleMinutes }) : tr((data && data.error) || 'You were signed out. Please sign in again.')); });
+}
 let idleCheckInterval = null;
 let idleWarningShowing = false;
 const idleActivityListenerOptions = { passive: true };
 
 function idleRecordActivity() {
   idleLastActivityAt = Date.now();
+  idlePing(false); // at most once a minute
 }
 
 // v166: what counts as "in use" without touching the screen: a driver who is
@@ -12627,20 +12691,22 @@ const ACTIVE_WATCHES = new Set();
 function idleCheckTick() {
   if (!AUTH.token) return; // nothing to protect if nobody's signed in
   if (ACTIVE_WATCHES.size > 0) { idleRecordActivity(); return; } // v166: working (online, on a trip, sharing location)
-  if (sessionIsKept() && !(AUTH.user && AUTH.user.role === 'admin')) { idleRecordActivity(); return; } // v166: "Keep me signed in" on a personal device
+  if (typeof window.callInProgress === 'function' && window.callInProgress()) { idleRecordActivity(); return; } // v173: on a call
+  if (sessionIsKept() && !(AUTH.user && AUTH.user.role === 'admin')) { idleLastActivityAt = Date.now(); idlePing(false); return; } // v166: "Keep me signed in" on a personal device
   const idleFor = Date.now() - idleLastActivityAt;
   if (idleFor >= IDLE_TIMEOUT_MS) {
     stopIdleTimer();
     document.getElementById('idle-warning-modal').classList.remove('open');
     idleWarningShowing = false;
-    showToast('Signed out after 20 minutes of inactivity');
-    logout();
+    const n = Math.round(IDLE_TIMEOUT_MS / 60000);
+    Promise.resolve(logout()).finally(() => showToast(trf('Signed out after {n} minutes without activity', { n }))); // after logout's own "Signed out", so this one shows
     return;
   }
   const remainingMs = IDLE_TIMEOUT_MS - idleFor;
   if (remainingMs <= IDLE_WARNING_MS) {
     if (!idleWarningShowing) {
       idleWarningShowing = true;
+      [['idle-warning-title', 'Still there?'], ['idle-warning-a', "For your security, you'll be signed out in"], ['idle-warning-b', 'seconds because there has been no activity.'], ['idle-warning-stay-btn', 'Stay signed in']].forEach(([id, txt]) => { const x = document.getElementById(id); if (x) x.textContent = tr(txt); }); // v173: in the person's language
       document.getElementById('idle-warning-modal').classList.add('open');
     }
     document.getElementById('idle-warning-countdown').textContent = Math.max(1, Math.ceil(remainingMs / 1000));
@@ -12658,7 +12724,9 @@ function idleCheckTick() {
 // since there's no session to protect yet.
 function startIdleTimer() {
   stopIdleTimer(); // never stack a second set of listeners on repeated logins
-  idleRecordActivity();
+  IDLE_TIMEOUT_MS = idleMinutesFor(AUTH.user) * 60000;
+  idleLastActivityAt = Date.now();
+  idlePing(true); // tells the server at once (and whether "Keep me signed in" was ticked); the answer gives the real limit
   ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(evt => {
     document.addEventListener(evt, idleRecordActivity, idleActivityListenerOptions);
   });

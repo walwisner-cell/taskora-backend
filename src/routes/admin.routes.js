@@ -2446,6 +2446,23 @@ router.patch('/settings/footer', requireSuperAdmin, async (req, res) => {
   res.json({ ok: true, footer });
 });
 
+// v173: Admin → Settings → Signing out when idle.
+router.get('/settings/session-timeout', requireSuperAdmin, async (req, res) => {
+  const ps = require('../platform-settings');
+  res.json({ idleMinutes: await ps.sessionIdleMinutes(), limits: ps.IDLE_LIMITS, defaults: ps.DEFAULTS.sessionIdleMinutes });
+});
+router.patch('/settings/session-timeout', requireSuperAdmin, async (req, res) => {
+  const ps = require('../platform-settings');
+  const b = req.body || {}, user = Math.round(Number(b.user)), admin = Math.round(Number(b.admin));
+  const [ulo, uhi] = ps.IDLE_LIMITS.user, [alo, ahi] = ps.IDLE_LIMITS.admin;
+  if (!Number.isFinite(user) || user < ulo || user > uhi) return res.status(400).json({ error: `Customers and pros: choose between ${ulo} and ${uhi} minutes.` });
+  if (!Number.isFinite(admin) || admin < alo || admin > ahi) return res.status(400).json({ error: `Admins: choose between ${alo} and ${ahi} minutes.` });
+  await ps.setSetting('sessionIdleMinutes', { user, admin });
+  ps.forgetSessionIdleCache();
+  try { await db.insert('accessLogs', { id: `al_${nanoid(10)}`, adminId: req.user.sub, resourceType: 'session_timeout', resourceId: `idle sign-out: customers and pros ${user} min, admins ${admin} min`, ipAddress: req.ip, createdAt: new Date().toISOString() }); } catch (e) { /* the change still stands */ }
+  res.json({ ok: true, idleMinutes: { user, admin } });
+});
+
 // GET /api/admin/settings/contact-check — v95: the one support email that
 // visitors see, where it is used, and advice about it.
 router.get('/settings/contact-check', requireSuperAdminOrCustomerService, async (req, res) => {

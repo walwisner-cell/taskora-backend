@@ -629,6 +629,18 @@ router.post('/login', loginLimiter, async (req, res) => {
 // a real, immediate sign-out for THIS device, without touching any other
 // device the same account is currently signed into. For "sign out of
 // everywhere at once instead," see POST /auth/logout-all below.
+// v173: the page says "the person is here" (they touched, typed or scrolled,
+// are on a call, or are sharing their location for a ride or a job), at most
+// once a minute. This keeps the session open; background updates do not.
+// kept: "Keep me signed in" was ticked on this device (ignored for admins).
+router.post('/activity', requireAuth, async (req, res) => {
+  const mins = await require('../platform-settings').sessionIdleMinutes();
+  const isAdmin = req.user.role === 'admin';
+  const kept = !isAdmin && !!(req.body && req.body.kept === true);
+  if (req.session) await db.update('sessions', req.session.id, { lastActiveAt: new Date().toISOString(), kept });
+  res.json({ ok: true, idleMinutes: isAdmin ? mins.admin : mins.user, kept });
+});
+
 router.post('/logout', requireAuth, async (req, res) => {
   if (req.user.sessionId) await db.remove('sessions', req.user.sessionId);
   res.json({ ok: true });
