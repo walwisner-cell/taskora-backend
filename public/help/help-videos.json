@@ -3,24 +3,52 @@
   "key": "accounts",
   "file": "help-accounts",
   "title": "Create your account",
-  "tagline": "Sign up in a minute, as a customer or as a pro",
+  "tagline": "Sign up in a few minutes, as a customer or as a pro",
   "audience": "all",
-  "seconds": 54,
+  "seconds": 141,
   "transcript": [
-   "How to create your Trothen account.",
-   "Tap Sign In at the top.",
-   "Tap Sign Up.",
-   "Choose Customer to book pros. Choose Provider to offer your own work.",
-   "Type your full name.",
-   "Choose your country.",
+   "In this video, you will create your Trothen account, step by step. It takes about three minutes, and it is free.",
+   "You need your phone number and an email address that you can open, because we send you a code to finish.",
+   "Tap Sign In, at the top of the screen.",
+   "You do not have an account yet, so tap Sign Up.",
+   "First, choose how you will use Trothen. Choose Provider if you will offer your own work, like cleaning, repairs, or driving.",
+   "Choose Customer if you want to hire pros, book rides, or buy in the Market. In this video, we choose Customer.",
+   "Type your full name, the way it is written on your ID. Later, when you verify your identity, the names must match.",
+   "Choose your country. Prices, phone numbers and counties then follow your country.",
    "Choose your county.",
-   "Type your phone number.",
-   "Type your city or town.",
-   "Type your email.",
-   "Choose a password of at least 8 characters.",
-   "Tap Create Account. We email you a code: type it in to finish.",
-   "Already have an account? Tap Sign In instead."
-  ]
+   "Type your phone number. Pros and drivers never see it: calls and messages go through the app.",
+   "Type your city or town, so we show you pros near you.",
+   "Type your email address. Make sure it is one you can open now.",
+   "Choose a password of at least eight characters. Use letters, numbers and a sign, and do not use it anywhere else.",
+   "Tap Create Account.",
+   "We then email you a six-digit code. Type the code in, and your account is ready.",
+   "Did not get the code? Check your spam folder, wait a minute, then ask for a new code.",
+   "Already have an account? Tap Sign In instead, and type your email and password. That is all."
+  ],
+  "topic": "Getting started",
+  "computer": {
+   "file": "help-accounts-computer",
+   "seconds": 117,
+   "transcript": [
+    "In this video, you will create your Trothen account, step by step. It takes about three minutes, and it is free.",
+    "You need your phone number and an email address that you can open, because we send you a code to finish.",
+    "Click Sign In, at the top of the screen.",
+    "You do not have an account yet, so click Sign Up.",
+    "First, choose how you will use Trothen. Choose Provider if you will offer your own work, like cleaning, repairs, or driving.",
+    "Choose Customer if you want to hire pros, book rides, or buy in the Market. In this video, we choose Customer.",
+    "Type your full name, the way it is written on your ID. Later, when you verify your identity, the names must match.",
+    "Choose your country. Prices, phone numbers and counties then follow your country.",
+    "Choose your county.",
+    "Type your phone number. Pros and drivers never see it: calls and messages go through the app.",
+    "Type your city or town, so we show you pros near you.",
+    "Type your email address. Make sure it is one you can open now.",
+    "Choose a password of at least eight characters. Use letters, numbers and a sign, and do not use it anywhere else.",
+    "Click Create Account.",
+    "We then email you a six-digit code. Type the code in, and your account is ready.",
+    "Did not get the code? Check your spam folder, wait a minute, then ask for a new code.",
+    "Already have an account? Click Sign In instead, and type your email and password. That is all."
+   ]
+  }
  },
  {
   "key": "verification",
@@ -28,17 +56,40 @@
   "title": "Verify your identity",
   "tagline": "Send your ID once, so people know you are who you say",
   "audience": "all",
-  "seconds": 44,
+  "seconds": 114,
   "transcript": [
-   "How to verify your identity. You need it before you book or sell.",
-   "Tap Verify Now.",
-   "Choose your document: a national ID, a passport or a driver's licence.",
-   "Type your name exactly as it is printed on the document.",
-   "Take a clear photo of the front of your ID.",
-   "Then the back, if it has one.",
-   "Then a photo of your face, in good light.",
-   "Tap Submit for Review. We usually check it within 48 hours and tell you by email."
-  ]
+   "In this video, you will verify your identity. Everyone on Trothen does this once, so customers, pros and drivers know who they are dealing with.",
+   "You need your ID card, passport or driver's licence, and a phone camera. Find a place with good light.",
+   "On your home screen, tap Verify Now.",
+   "Choose the kind of document you have: a national ID card, a passport, or a driver's licence.",
+   "Type your name exactly as it is printed on the document, with the same spelling.",
+   "Take a photo of the front of your document. Lay it flat, fill the photo with it, and make sure every word can be read.",
+   "Then take a photo of the back. A passport has no back, so you can leave this one out.",
+   "Then take a photo of your face. Look straight at the camera, with no hat and no sunglasses.",
+   "Before you send them, check the photos. A blurred photo, or one with light shining on it, is the most common reason we ask again.",
+   "When everything is clear, tap Submit for Review.",
+   "A person on our team checks it, usually within 48 hours. We tell you by email, and on your home screen.",
+   "Your photos are kept private. Only the team that checks them can see them, and they are never shown to other people."
+  ],
+  "topic": "Getting started",
+  "computer": {
+   "file": "help-verification-computer",
+   "seconds": 94,
+   "transcript": [
+    "In this video, you will verify your identity. Everyone on Trothen does this once, so customers, pros and drivers know who they are dealing with.",
+    "You need your ID card, passport or driver's licence, and a phone camera. Find a place with good light.",
+    "On your home screen, click Verify Now.",
+    "Choose the kind of document you have: a national ID card, a passport, or a driver's licence.",
+    "Type your name exactly as it is printed on the document, with the same spelling.",
+    "Take a photo of the front of your document. Lay it flat, fill the photo with it, and make sure every word can be read.",
+    "Then take a photo of the back. A passport has no back, so you can leave this one out.",
+    "Then take a photo of your face. Look straight at the camera, with no hat and no sunglasses.",
+    "Before you send them, check the photos. A blurred photo, or one with light shining on it, is the most common reason we ask again.",
+    "When everything is clear, click Submit for Review.",
+    "A person on our team checks it, usually within 48 hours. We tell you by email, and on your home screen.",
+    "Your photos are kept private. Only the team that checks them can see them, and they are never shown to other people."
+   ]
+  }
  },
  {
   "key": "services",
@@ -46,18 +97,64 @@
   "title": "Post a job",
   "tagline": "Tell pros what you need, and get a clear price",
   "audience": "all",
-  "seconds": 52,
+  "seconds": 197,
   "transcript": [
-   "How to post a job, so pros near you can offer to do it.",
-   "Tap Post a New Job.",
-   "Type what you need, for example \"cleaning\".",
-   "Tap the kind of work.",
-   "Describe the job: what needs doing and where.",
-   "Say who brings the materials.",
+   "In this video, you will post a job, so that pros near you can offer to do it. There are four short steps.",
+   "On your home screen, tap Post a New Job.",
+   "Step one: what you need.",
+   "Type the kind of work, for example cleaning, plumbing, or braids. The list below gets shorter as you type.",
+   "Tap the kind of work that fits best. If nothing fits, choose Something else at the bottom of the list.",
+   "Describe the job: what needs doing, where in the house, and how big it is. The more you say, the better the prices you get.",
+   "You can also add photos or a short video. Pros understand the job much faster when they can see it.",
+   "Say who brings the materials: you, the pro, or choose Not sure, and the pro can advise you.",
    "Tap Next.",
-   "Then choose when, where and your price, in L$ or US$, in the next steps.",
-   "Pros near you see it and reply. Your payment is held by Trothen until the job is done."
-  ]
+   "Step two: when and where.",
+   "Choose when you need it: as soon as possible, on a date, or flexible, to agree a time with the pro.",
+   "Tap Pin my current location if you are at the job now. If not, tap Choose on a map, and put the pin on the place.",
+   "Add a landmark or directions, so the pro finds the place easily.",
+   "Step three: the price.",
+   "Choose how to price it. We recommend this one: pros who can do it send you their price, and you choose.",
+   "Or set your own price, in Liberian dollars or US dollars. The first pro to accept at your price gets the job.",
+   "In this video, we let the pros send their prices.",
+   "Then choose how you will pay. With Protected by Trothen, your money is held safely, and the pro is paid only when you say the job is done.",
+   "We choose Protected by Trothen.",
+   "Step four: check everything.",
+   "Read your job once more. To change anything, tap Change next to it.",
+   "When it is right, tap Post my job.",
+   "Pros near you are told about it, and they answer with their prices. You can read each pro's reviews, then choose one.",
+   "Never pay a pro outside Trothen. If you do, we cannot protect your money."
+  ],
+  "topic": "Customers",
+  "computer": {
+   "file": "help-services-computer",
+   "seconds": 167,
+   "transcript": [
+    "In this video, you will post a job, so that pros near you can offer to do it. There are four short steps.",
+    "On your home screen, click Post a New Job.",
+    "Step one: what you need.",
+    "Type the kind of work, for example cleaning, plumbing, or braids. The list below gets shorter as you type.",
+    "Click the kind of work that fits best. If nothing fits, choose Something else at the bottom of the list.",
+    "Describe the job: what needs doing, where in the house, and how big it is. The more you say, the better the prices you get.",
+    "You can also add photos or a short video. Pros understand the job much faster when they can see it.",
+    "Say who brings the materials: you, the pro, or choose Not sure, and the pro can advise you.",
+    "Click Next.",
+    "Step two: when and where.",
+    "Choose when you need it: as soon as possible, on a date, or flexible, to agree a time with the pro.",
+    "Click Pin my current location if you are at the job now. If not, click Choose on a map, and put the pin on the place.",
+    "Add a landmark or directions, so the pro finds the place easily.",
+    "Step three: the price.",
+    "Choose how to price it. We recommend this one: pros who can do it send you their price, and you choose.",
+    "Or set your own price, in Liberian dollars or US dollars. The first pro to accept at your price gets the job.",
+    "In this video, we let the pros send their prices.",
+    "Then choose how you will pay. With Protected by Trothen, your money is held safely, and the pro is paid only when you say the job is done.",
+    "We choose Protected by Trothen.",
+    "Step four: check everything.",
+    "Read your job once more. To change anything, click Change next to it.",
+    "When it is right, click Post my job.",
+    "Pros near you are told about it, and they answer with their prices. You can read each pro's reviews, then choose one.",
+    "Never pay a pro outside Trothen. If you do, we cannot protect your money."
+   ]
+  }
  },
  {
   "key": "payments",
@@ -65,17 +162,42 @@
   "title": "Add Mobile Money",
   "tagline": "How you pay, and why your money is safe",
   "audience": "all",
-  "seconds": 37,
+  "seconds": 109,
   "transcript": [
-   "How to add Mobile Money to pay on Trothen.",
-   "Tap Payments at the bottom.",
+   "In this video, you will add Mobile Money, so you can pay for jobs, rides and goods on Trothen.",
+   "Tap Payments at the bottom of the screen.",
+   "This is your Payments page. Your ways to pay are at the top, and everything you have paid is listed below.",
    "Tap Add Payment Method.",
-   "Choose Mobile Money (or Card).",
-   "Type your Mobile Money number.",
-   "Choose your network: Orange Money or MTN.",
+   "Choose Mobile Money. If you would rather pay with a bank card, choose Card instead.",
+   "Type your Mobile Money number: the phone number your wallet is on.",
+   "Choose your network: Orange Money or MTN Mobile Money.",
+   "Say whose number it is. You can pay from a family member's or your company's wallet, if they agree.",
+   "Check the name the wallet is registered in. It helps if a payment ever needs to be traced.",
    "Tap Save Payment Method.",
-   "When you pay, Trothen holds the money. The pro is paid only when you confirm the job is done."
-  ]
+   "When you pay, you get a message on your phone to approve the payment with your Mobile Money PIN. Trothen never asks for your PIN.",
+   "Your money is then held by Trothen. The pro is paid only when you confirm the job is done. If there is a problem, tap Report a Problem, and we step in.",
+   "At any time, you can download all your payments as a PDF, for your records."
+  ],
+  "topic": "Customers",
+  "computer": {
+   "file": "help-payments-computer",
+   "seconds": 103,
+   "transcript": [
+    "In this video, you will add Mobile Money, so you can pay for jobs, rides and goods on Trothen.",
+    "Click Payments in the menu on the left.",
+    "This is your Payments page. Your ways to pay are at the top, and everything you have paid is listed below.",
+    "Click Add Payment Method.",
+    "Choose Mobile Money. If you would rather pay with a bank card, choose Card instead.",
+    "Type your Mobile Money number: the phone number your wallet is on.",
+    "Choose your network: Orange Money or MTN Mobile Money.",
+    "Say whose number it is. You can pay from a family member's or your company's wallet, if they agree.",
+    "Check the name the wallet is registered in. It helps if a payment ever needs to be traced.",
+    "Click Save Payment Method.",
+    "When you pay, you get a message on your phone to approve the payment with your Mobile Money PIN. Trothen never asks for your PIN.",
+    "Your money is then held by Trothen. The pro is paid only when you confirm the job is done. If there is a problem, click Report a Problem, and we step in.",
+    "At any time, you can download all your payments as a PDF, for your records."
+   ]
+  }
  },
  {
   "key": "rides",
@@ -83,18 +205,49 @@
   "title": "Book a ride",
   "tagline": "A motorbike, keke, car or van, with the fare in L$ before you book",
   "audience": "all",
-  "seconds": 45,
+  "seconds": 134,
   "transcript": [
-   "How to book a ride on Trothen.",
-   "Tap More at the bottom.",
+   "In this video, you will book a ride: a motorbike, a keke, a car or a van. You see the fare before you book.",
+   "Tap More at the bottom of the screen. It lists every part of your account.",
    "Tap Rides.",
-   "Tap \"Use my location\" so the driver knows where you are.",
-   "Add a landmark, so the driver finds you easily.",
-   "Type where you are going.",
-   "Tap \"Find drivers near me\".",
-   "Choose a ride. Each shows the fare in L$ and how far away the driver is.",
-   "After you book, you see the driver coming on the map. Give your 4-digit PIN only when the plate matches."
-  ]
+   "First, say where the driver should pick you up.",
+   "Tap Use my location. Your phone asks if Trothen may see where you are: tap Allow.",
+   "Give the place a name or a landmark that drivers know.",
+   "You can add a note for the driver, like the colour of the gate, or what you are wearing.",
+   "Tap Save this place if you often leave from here. Next time, it is one tap.",
+   "Then, say where you are going.",
+   "Search for the place, or tap Choose on a map and put the pin where you are going.",
+   "Choose how many people are riding. A motorbike carries one passenger.",
+   "Tap Find drivers near me.",
+   "Each ride shows its fare in Liberian dollars, and how far away the driver is. The fare is fixed before you book.",
+   "Choose one and confirm. The driver is told at once, and you see them coming on the map.",
+   "You can call or text the driver in the app. Neither of you sees the other's phone number.",
+   "When the driver arrives, check the plate number. Give your four-digit PIN only if the plate matches. The trip starts then.",
+   "At the end, the fare is paid, and you can rate your driver. If anything went wrong, tap Report a Problem on the trip."
+  ],
+  "topic": "Rides",
+  "computer": {
+   "file": "help-rides-computer",
+   "seconds": 126,
+   "transcript": [
+    "In this video, you will book a ride: a motorbike, a keke, a car or a van. You see the fare before you book.",
+    "Click Rides in the menu on the left.",
+    "First, say where the driver should pick you up.",
+    "Click Use my location. Your phone asks if Trothen may see where you are: click Allow.",
+    "Give the place a name or a landmark that drivers know.",
+    "You can add a note for the driver, like the colour of the gate, or what you are wearing.",
+    "Click Save this place if you often leave from here. Next time, it is one click.",
+    "Then, say where you are going.",
+    "Search for the place, or click Choose on a map and put the pin where you are going.",
+    "Choose how many people are riding. A motorbike carries one passenger.",
+    "Click Find drivers near me.",
+    "Each ride shows its fare in Liberian dollars, and how far away the driver is. The fare is fixed before you book.",
+    "Choose one and confirm. The driver is told at once, and you see them coming on the map.",
+    "You can call or text the driver in the app. Neither of you sees the other's phone number.",
+    "When the driver arrives, check the plate number. Give your four-digit PIN only if the plate matches. The trip starts then.",
+    "At the end, the fare is paid, and you can rate your driver. If anything went wrong, click Report a Problem on the trip."
+   ]
+  }
  },
  {
   "key": "market",
@@ -102,18 +255,43 @@
   "title": "Find and buy in the Market",
   "tagline": "Search, check the details and buy with protection",
   "audience": "all",
-  "seconds": 42,
+  "seconds": 109,
   "transcript": [
-   "How to find and buy something in the Market.",
-   "Tap More at the bottom.",
+   "In this video, you will find something in the Market, check it carefully, and buy it safely.",
+   "Tap More at the bottom of the screen. It lists every part of your account.",
    "Tap Market.",
-   "Search for what you want, for example \"128gb\".",
+   "The Market has goods from stores on Trothen, and things people sell themselves.",
+   "Type what you are looking for. You can search for details too, for example 128 gigabytes, or a brand.",
    "Tap Search.",
-   "Tap a good to see it.",
-   "Check the details: storage, network, warranty and more.",
-   "Tap Add to cart.",
-   "Your payment is held until you have the goods."
-  ]
+   "Each card shows the price, the condition, and the main details. Compare a few before you choose.",
+   "Tap a good to see everything about it.",
+   "Look at all the photos. They should show the real item, not a picture from the internet.",
+   "Read the details: storage, memory, network, warranty, and more. Make sure it is what you need.",
+   "Not sure about something? Message the seller before you buy. Never send money outside Trothen.",
+   "When you are happy, tap Add to cart.",
+   "Then pay from your cart. Your payment is held by Trothen until you have the goods in your hands.",
+   "If the goods do not arrive, or are not as described, tap Report a Problem on the order, and we help you get your money back."
+  ],
+  "topic": "Market",
+  "computer": {
+   "file": "help-market-computer",
+   "seconds": 102,
+   "transcript": [
+    "In this video, you will find something in the Market, check it carefully, and buy it safely.",
+    "Click Market in the menu on the left.",
+    "The Market has goods from stores on Trothen, and things people sell themselves.",
+    "Type what you are looking for. You can search for details too, for example 128 gigabytes, or a brand.",
+    "Click Search.",
+    "Each card shows the price, the condition, and the main details. Compare a few before you choose.",
+    "Click a good to see everything about it.",
+    "Look at all the photos. They should show the real item, not a picture from the internet.",
+    "Read the details: storage, memory, network, warranty, and more. Make sure it is what you need.",
+    "Not sure about something? Message the seller before you buy. Never send money outside Trothen.",
+    "When you are happy, click Add to cart.",
+    "Then pay from your cart. Your payment is held by Trothen until you have the goods in your hands.",
+    "If the goods do not arrive, or are not as described, click Report a Problem on the order, and we help you get your money back."
+   ]
+  }
  },
  {
   "key": "cart",
@@ -121,16 +299,37 @@
   "title": "Your cart and checkout",
   "tagline": "One cart for every store, with the total before you pay",
   "audience": "all",
-  "seconds": 40,
+  "seconds": 94,
   "transcript": [
-   "How to use your cart.",
-   "Tap More at the bottom.",
+   "In this video, you will use your cart: add goods, check them, and pay for them, with the delivery.",
+   "Tap More at the bottom of the screen. It lists every part of your account.",
    "Tap Market.",
-   "Tap Add to cart on a good.",
-   "Open your cart: tap More, then Cart (or the cart at the top).",
-   "Check the goods and the quantities. You can save one for later.",
-   "At checkout, choose to collect it or a driver who can carry it. You see the total before you pay."
-  ]
+   "Tap Add to cart on any good. You can add goods from different stores to the same cart.",
+   "Tap Cart.",
+   "Here is everything in your cart, grouped by store, with the price of each good.",
+   "Change the quantity if you need more than one. Or tap Save for later, to keep a good without buying it now.",
+   "At checkout, choose how to get your goods: collect them from the store, or have a driver bring them.",
+   "If a driver brings them, you see the delivery price before you pay. For heavy goods, like cement, only a vehicle that can carry them is offered.",
+   "You see the full total, with every fee, before you pay. Nothing is added afterwards.",
+   "When the driver arrives, check the goods, then give them your code. Only then is the store paid."
+  ],
+  "topic": "Market",
+  "computer": {
+   "file": "help-cart-computer",
+   "seconds": 81,
+   "transcript": [
+    "In this video, you will use your cart: add goods, check them, and pay for them, with the delivery.",
+    "Click Market in the menu on the left.",
+    "Click Add to cart on any good. You can add goods from different stores to the same cart.",
+    "Click Cart in the menu on the left.",
+    "Here is everything in your cart, grouped by store, with the price of each good.",
+    "Change the quantity if you need more than one. Or click Save for later, to keep a good without buying it now.",
+    "At checkout, choose how to get your goods: collect them from the store, or have a driver bring them.",
+    "If a driver brings them, you see the delivery price before you pay. For heavy goods, like cement, only a vehicle that can carry them is offered.",
+    "You see the full total, with every fee, before you pay. Nothing is added afterwards.",
+    "When the driver arrives, check the goods, then give them your code. Only then is the store paid."
+   ]
+  }
  },
  {
   "key": "sell",
@@ -138,20 +337,43 @@
   "title": "Sell an item",
   "tagline": "Put something on sale in the Market, safely",
   "audience": "all",
-  "seconds": 47,
+  "seconds": 107,
   "transcript": [
-   "How to sell something in the Market.",
-   "Tap More at the bottom.",
+   "In this video, you will sell something of your own in the Market, safely.",
+   "Tap More at the bottom of the screen. It lists every part of your account.",
    "Tap Market.",
-   "Tap Sell.",
+   "Tap Sell, at the top of the Market.",
    "Tap Sell an item.",
-   "Give it a clear title.",
-   "Choose the category. The details buyers look for appear.",
-   "Choose the condition.",
-   "Type your price.",
-   "Confirm that it is yours to sell.",
-   "Add photos, then tap Put it on sale. Buyers pay through Trothen, so you are always paid."
-  ]
+   "Give it a clear title: what it is, the brand, and the most important detail.",
+   "Choose the category. The details buyers look for in that category then appear below.",
+   "Choose the condition honestly: new, like new, good, or used. Buyers can return goods that are not as described.",
+   "Type your price. Look at similar items in the Market first, to choose a fair price.",
+   "Fill in the details below, like the brand and the power. Listings with details sell faster.",
+   "Confirm that the item is yours to sell. Selling stolen goods is against the law, and the account is closed.",
+   "Add clear photos of the real item, from a few sides. Then tap Put it on sale.",
+   "Some listings are checked by our team before they appear. That keeps the Market safe for everyone.",
+   "Buyers pay through Trothen, so you are always paid. Never accept money outside the app."
+  ],
+  "topic": "Market",
+  "computer": {
+   "file": "help-sell-computer",
+   "seconds": 91,
+   "transcript": [
+    "In this video, you will sell something of your own in the Market, safely.",
+    "Click Market in the menu on the left.",
+    "Click Sell, at the top of the Market.",
+    "Click Sell an item.",
+    "Give it a clear title: what it is, the brand, and the most important detail.",
+    "Choose the category. The details buyers look for in that category then appear below.",
+    "Choose the condition honestly: new, like new, good, or used. Buyers can return goods that are not as described.",
+    "Type your price. Look at similar items in the Market first, to choose a fair price.",
+    "Fill in the details below, like the brand and the power. Listings with details sell faster.",
+    "Confirm that the item is yours to sell. Selling stolen goods is against the law, and the account is closed.",
+    "Add clear photos of the real item, from a few sides. Then click Put it on sale.",
+    "Some listings are checked by our team before they appear. That keeps the Market safe for everyone.",
+    "Buyers pay through Trothen, so you are always paid. Never accept money outside the app."
+   ]
+  }
  },
  {
   "key": "messages",
@@ -159,32 +381,74 @@
   "title": "Messages and calls",
   "tagline": "Talk to a pro, a seller or a driver without sharing your number",
   "audience": "all",
-  "seconds": 31,
+  "seconds": 74,
   "transcript": [
-   "How to message or call someone on Trothen.",
-   "Tap Messages at the bottom.",
-   "Tap a conversation.",
-   "Type your message.",
+   "In this video, you will send a message, a voice message, and make a call, all inside Trothen.",
+   "Tap Messages at the bottom of the screen.",
+   "Each conversation is with one pro, seller or driver. The newest are at the top.",
+   "Tap a conversation to open it.",
+   "Type your message in the box at the bottom.",
    "Tap Send.",
-   "Or tap the microphone to send a voice message.",
-   "Call or video call in the app. Nobody sees your phone number."
-  ]
+   "Rather talk? Hold the microphone to record a voice message, then let go to send it.",
+   "You can also call, or make a video call, from the top of the conversation.",
+   "Nobody sees your phone number. Keep your talks in Trothen: if there is a disagreement later, we can help, because we can see what was agreed.",
+   "If someone is rude, or asks you to pay outside Trothen, report them from the conversation."
+  ],
+  "topic": "Customers",
+  "computer": {
+   "file": "help-messages-computer",
+   "seconds": 66,
+   "transcript": [
+    "In this video, you will send a message, a voice message, and make a call, all inside Trothen.",
+    "Click Messages in the menu on the left.",
+    "Each conversation is with one pro, seller or driver. The newest are at the top.",
+    "Click a conversation to open it.",
+    "Type your message in the box at the bottom.",
+    "Click Send.",
+    "Rather talk? Hold the microphone to record a voice message, then let go to send it.",
+    "You can also call, or make a video call, from the top of the conversation.",
+    "Nobody sees your phone number. Keep your talks in Trothen: if there is a disagreement later, we can help, because we can see what was agreed.",
+    "If someone is rude, or asks you to pay outside Trothen, report them from the conversation."
+   ]
+  }
  },
  {
   "key": "privacy",
   "file": "help-privacy",
-  "title": "Your data and your account",
-  "tagline": "Download your data, sign out everywhere, or close your account",
+  "title": "Your account, settings and data",
+  "tagline": "Your details, password, sounds, your data, or closing your account",
   "audience": "all",
-  "seconds": 29,
+  "seconds": 79,
   "transcript": [
-   "How to look after your account and your data.",
-   "Tap More at the bottom.",
+   "In this video, you will look after your account: your details, your password, and your data.",
+   "Tap More at the bottom of the screen. It lists every part of your account.",
    "Tap Settings.",
-   "Lost your phone? Tap \"Sign out of all devices\".",
-   "Download a copy of everything Trothen holds about you, in one file.",
-   "You can also close your account here. Your data is then removed."
-  ]
+   "At the top are your details: your name, email, phone and address. Change any of them, then tap Save Changes.",
+   "Moving? Change your country, county and city here, so we show you pros near you.",
+   "To change your password, type your current password, then your new password twice.",
+   "Lost your phone, or think someone knows your password? Tap Sign out of all devices. Then sign in again on your own phone.",
+   "Choose whether people can call you in the app, and at what times.",
+   "Choose your ringtone and your message sound. Tap Play to hear them.",
+   "Tap Download a copy of my data to get everything Trothen holds about you, in one file.",
+   "And if you ever want to leave, you can close your account here. Your personal data is then removed."
+  ],
+  "topic": "Getting started",
+  "computer": {
+   "file": "help-privacy-computer",
+   "seconds": 110,
+   "transcript": [
+    "In this video, you will look after your account: your details, your password, and your data.",
+    "Click Settings in the menu on the left.",
+    "At the top are your details: your name, email, phone and address. Change any of them, then click Save Changes.",
+    "Moving? Change your country, county and city here, so we show you pros near you.",
+    "To change your password, type your current password, then your new password twice.",
+    "Lost your phone, or think someone knows your password? Click Sign out of all devices. Then sign in again on your own phone.",
+    "Choose whether people can call you in the app, and at what times.",
+    "Choose your ringtone and your message sound. Click Play to hear them.",
+    "Click Download a copy of my data to get everything Trothen holds about you, in one file.",
+    "And if you ever want to leave, you can close your account here. Your personal data is then removed."
+   ]
+  }
  },
  {
   "key": "stores",
@@ -192,22 +456,49 @@
   "title": "Add a good to your store",
   "tagline": "Photos, price, details and sizes, the way buyers want them",
   "audience": "provider",
-  "seconds": 52,
+  "seconds": 112,
   "transcript": [
-   "How to add a good to your store.",
-   "Tap More at the bottom.",
+   "In this video, you will add a good to your store, with everything buyers want to know.",
+   "Tap More at the bottom of the screen. It lists every part of your account.",
    "Tap My Store.",
-   "Tap + Add a good.",
-   "Give it a clear name: what it is, the model, the colour.",
-   "Choose L$ or US$.",
-   "Type the price.",
-   "Take or choose a photo. Up to four.",
-   "Choose the Market category.",
-   "Fill in the details buyers look for, like storage,",
+   "This is your store. Your goods are listed here, with their stock and their orders.",
+   "Tap Add a good.",
+   "Give it a clear name: what it is, the model, and the colour. Buyers search for these words.",
+   "Choose the currency: Liberian dollars or US dollars.",
+   "Type your price.",
+   "Add photos of the real good: up to four, on a plain background, in good light.",
+   "Choose the Market category. The details for that kind of good then appear.",
+   "Fill in the details buyers look for. For a phone: the storage,",
    "the SIM,",
-   "and whether it is unlocked.",
-   "Tap Save. A store manager checks it before buyers see it."
-  ]
+   "and whether it works on any network.",
+   "For clothes and shoes, you can add sizes and a size chart. For building materials, the size, the length or the bag weight.",
+   "Be accurate. If a good is not as described, the buyer can return it, and you pay for the return.",
+   "When everything is right, tap Save.",
+   "A store manager checks every new good before buyers can see it, usually within a day. You are told when it is approved."
+  ],
+  "topic": "Pros",
+  "computer": {
+   "file": "help-stores-computer",
+   "seconds": 91,
+   "transcript": [
+    "In this video, you will add a good to your store, with everything buyers want to know.",
+    "Click My Store in the menu on the left.",
+    "This is your store. Your goods are listed here, with their stock and their orders.",
+    "Click Add a good.",
+    "Give it a clear name: what it is, the model, and the colour. Buyers search for these words.",
+    "Choose the currency: Liberian dollars or US dollars.",
+    "Type your price.",
+    "Add photos of the real good: up to four, on a plain background, in good light.",
+    "Choose the Market category. The details for that kind of good then appear.",
+    "Fill in the details buyers look for. For a phone: the storage,",
+    "the SIM,",
+    "and whether it works on any network.",
+    "For clothes and shoes, you can add sizes and a size chart. For building materials, the size, the length or the bag weight.",
+    "Be accurate. If a good is not as described, the buyer can return it, and you pay for the return.",
+    "When everything is right, click Save.",
+    "A store manager checks every new good before buyers can see it, usually within a day. You are told when it is approved."
+   ]
+  }
  },
  {
   "key": "deliveries",
@@ -215,17 +506,37 @@
   "title": "Deliver for stores and the Market",
   "tagline": "Your vehicle, your range, and fares in L$",
   "audience": "provider",
-  "seconds": 44,
+  "seconds": 90,
   "transcript": [
-   "How to get delivery jobs as a driver.",
-   "Tap More at the bottom.",
+   "In this video, you will set yourself up to deliver goods for stores and the Market, and earn from each trip.",
+   "Tap More at the bottom of the screen. It lists every part of your account.",
    "Tap Deliveries.",
-   "Choose what you deliver with.",
-   "For a motorbike, keke, car or van, Trothen's L$ fares are used, with examples.",
-   "Choose the longest trip you will take.",
-   "Tap Save. You are offered deliveries your vehicle can carry.",
-   "At the store and at the door, enter the code and take a photo. You are paid when the buyer has it."
-  ]
+   "Choose what you deliver with: a motorbike, a keke, a car, a van, or a truck.",
+   "For a motorbike, keke, car or van, Trothen's fares in Liberian dollars are used. You see examples of what you earn for each trip.",
+   "Choose the longest trip you will take, in kilometres.",
+   "You are only offered deliveries your vehicle can carry. Heavy goods, like cement, go to vans and trucks.",
+   "Tap Save.",
+   "When a delivery is offered, you see where to collect it, where it is going, and what you earn. Accept it, or let it go.",
+   "At the store, enter the pickup code and take a photo of the goods. At the door, check the buyer's code, and take another photo.",
+   "You are paid as soon as the buyer has the goods. The photos protect you if anyone says something went wrong."
+  ],
+  "topic": "Pros",
+  "computer": {
+   "file": "help-deliveries-computer",
+   "seconds": 71,
+   "transcript": [
+    "In this video, you will set yourself up to deliver goods for stores and the Market, and earn from each trip.",
+    "Click Deliveries in the menu on the left.",
+    "Choose what you deliver with: a motorbike, a keke, a car, a van, or a truck.",
+    "For a motorbike, keke, car or van, Trothen's fares in Liberian dollars are used. You see examples of what you earn for each trip.",
+    "Choose the longest trip you will take, in kilometres.",
+    "You are only offered deliveries your vehicle can carry. Heavy goods, like cement, go to vans and trucks.",
+    "Click Save.",
+    "When a delivery is offered, you see where to collect it, where it is going, and what you earn. Accept it, or let it go.",
+    "At the store, enter the pickup code and take a photo of the goods. At the door, check the buyer's code, and take another photo.",
+    "You are paid as soon as the buyer has the goods. The photos protect you if anyone says something went wrong."
+   ]
+  }
  },
  {
   "key": "business",
@@ -233,15 +544,34 @@
   "title": "Business tools",
   "tagline": "Expenses, quotes and invoices for your work",
   "audience": "provider",
-  "seconds": 32,
+  "seconds": 62,
   "transcript": [
-   "How to keep your business records on Trothen.",
-   "Tap More at the bottom.",
+   "In this video, you will use the business tools, to keep your records and send quotes and invoices.",
+   "Tap More at the bottom of the screen. It lists every part of your account.",
    "Tap Business Tools.",
    "Tap Expenses.",
-   "Add each expense with a photo of the receipt.",
-   "Tap Quotes & estimates.",
-   "Write a quote for a customer. When they agree, turn it into an invoice with one tap."
-  ]
+   "Add each thing you spend for your work, like materials or fuel, with a photo of the receipt.",
+   "At the end of the month, you see what you earned, what you spent, and what is left. It helps with your taxes too.",
+   "Tap Quotes and estimates.",
+   "Write a quote for a customer: each part of the work, and its price. The customer sees it in their account.",
+   "When the customer agrees, turn the quote into an invoice with one tap. The customer pays it through Trothen.",
+   "Every quote and invoice can be downloaded as a PDF, with your name on it."
+  ],
+  "topic": "Pros",
+  "computer": {
+   "file": "help-business-computer",
+   "seconds": 98,
+   "transcript": [
+    "In this video, you will use the business tools, to keep your records and send quotes and invoices.",
+    "Click Business Tools in the menu on the left.",
+    "Click Expenses.",
+    "Add each thing you spend for your work, like materials or fuel, with a photo of the receipt.",
+    "At the end of the month, you see what you earned, what you spent, and what is left. It helps with your taxes too.",
+    "Click Quotes and estimates.",
+    "Write a quote for a customer: each part of the work, and its price. The customer sees it in their account.",
+    "When the customer agrees, turn the quote into an invoice with one click. The customer pays it through Trothen.",
+    "Every quote and invoice can be downloaded as a PDF, with your name on it."
+   ]
+  }
  }
 ]

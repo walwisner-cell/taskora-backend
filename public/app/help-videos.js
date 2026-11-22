@@ -30,6 +30,13 @@
     if (v.audience === 'provider') return r === 'provider' || r === 'admin';
     return true;
   }
+  // v179: each video for people has a phone version and a laptop version (the screens are
+  // laid out differently). The one for this screen plays: the laptop one above 760 px wide,
+  // where Trothen shows its menu on the left.
+  const wide = () => { try { return window.matchMedia('(min-width: 761px)').matches; } catch (x) { return false; } };
+  const pick = (v) => (wide() && v.computer && v.computer.file ? { ...v.computer, desk: true } : { file: v.file, seconds: v.seconds, transcript: v.transcript, desk: false });
+  const TOPICS = ['Getting started', 'Customers', 'Rides', 'Market', 'Pros'];
+  const norm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const mins = (s) => { const m = Math.max(1, Math.round((Number(s) || 60) / 60)); return `${m} ${t(m === 1 ? 'min' : 'mins')}`; };
 
   function close() {
@@ -64,31 +71,57 @@
     return o;
   }
 
-  function grid(list) {
-    return `<p style="color:var(--slate);margin:0 0 12px;">${e(t('Short videos on how Trothen works. Each one has its words underneath, if you can\'t play sound.'))}</p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;">${list.map(v => `
-        <button type="button" class="hv-card" data-hv="${e(v.key)}" style="text-align:left;border:1px solid var(--border);border-radius:12px;background:var(--white,#fff);padding:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;color:inherit;font:inherit;">
-          <span style="position:relative;display:block;width:100%;padding-top:62.5%;background:#0F2640;overflow:hidden;"><img src="/help/${e(v.file)}.jpg" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;"/>
+  function card(v) {
+    const p = pick(v);
+    const words = norm([t(v.title), t(v.tagline), v.title, v.tagline, ...(p.transcript || [])].join(' '));
+    return `
+        <button type="button" class="hv-card" data-hv="${e(v.key)}" data-words="${e(words)}" style="text-align:left;border:1px solid var(--border);border-radius:12px;background:var(--white,#fff);padding:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;color:inherit;font:inherit;">
+          <span style="position:relative;display:block;width:100%;padding-top:62.5%;background:#0F2640;overflow:hidden;"><img src="/help/${e(p.file)}.jpg" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;"/>
             <span aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span style="width:54px;height:54px;border-radius:50%;background:rgba(15,38,64,.85);color:#F2B705;display:flex;align-items:center;justify-content:center;font-size:22px;padding-left:4px;">▶</span></span>
-            <span style="position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.7);color:#fff;font-size:12px;border-radius:4px;padding:1px 6px;">${e(mins(v.seconds))}</span></span>
+            <span style="position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.7);color:#fff;font-size:12px;border-radius:4px;padding:1px 6px;">${e(mins(p.seconds))}</span></span>
           <span style="display:block;padding:10px 12px 12px;"><strong style="display:block;color:var(--navy);font-size:15px;">${e(t(v.title))}</strong><span style="display:block;font-size:13px;color:var(--slate);margin-top:2px;">${e(t(v.tagline))}</span></span>
-        </button>`).join('')}</div>
-      <p style="font-size:12px;color:var(--slate);margin:14px 0 0;">${e(t('Narration voice: Piper, LibriTTS (CC BY 4.0).'))} <a href="/help/CREDITS.txt" target="_blank" rel="noopener" style="color:var(--slate);">${e(t('Credits'))}</a></p>`;
+        </button>`;
+  }
+  function grid(list) {
+    // grouped by topic (Getting started, Customers, Rides, Market, Pros), in that order
+    const order = [...TOPICS, ...list.map(v => v.topic || 'More').filter(x => !TOPICS.includes(x))].filter((x, i, a) => a.indexOf(x) === i);
+    const groups = order.map(tp => ({ tp, items: list.filter(v => (v.topic || 'More') === tp) })).filter(g => g.items.length);
+    return `<p style="color:var(--slate);margin:0 0 10px;">${e(t('Videos on how Trothen works, step by step. Each one has its words underneath, if you can\'t play sound.'))}</p>
+      <label for="hv-search" class="sr-only">${e(t('Search the help videos'))}</label>
+      <input id="hv-search" type="search" class="form-input" autocomplete="off" placeholder="${e(t('Search the help videos, for example: pay, ride, store'))}" style="width:100%;margin:0 0 14px;min-height:44px;"/>
+      <p id="hv-none" role="status" style="display:none;color:var(--slate);">${e(t('No video matches your search. Try another word, or ask for help in the support chat.'))}</p>
+      ${groups.map(g => `<section class="hv-group" style="margin:0 0 18px;"><h4 style="margin:0 0 10px;color:var(--navy);font-size:16px;">${e(t(g.tp))}</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;">${g.items.map(card).join('')}</div></section>`).join('')}
+      <p style="font-size:12px;color:var(--slate);margin:14px 0 0;">${e(t('Narration voice: Kokoro (Apache 2.0).'))} <a href="/help/CREDITS.txt" target="_blank" rel="noopener" style="color:var(--slate);">${e(t('Credits'))}</a></p>`;
+  }
+  function search(q) {
+    const o = document.getElementById(ID); if (!o) return;
+    const words = norm(q).split(/\s+/).filter(Boolean);
+    let shown = 0;
+    o.querySelectorAll('.hv-group').forEach(g => {
+      let n = 0;
+      g.querySelectorAll('[data-hv]').forEach(c => { const ok = words.every(w => c.dataset.words.includes(w)); c.style.display = ok ? '' : 'none'; if (ok) n++; });
+      g.style.display = n ? '' : 'none'; shown += n;
+    });
+    const none = o.querySelector('#hv-none'); if (none) none.style.display = shown ? 'none' : '';
   }
   function player(v, list) {
     const others = list.filter(x => x.key !== v.key);
-    return `<video id="hv-video" controls playsinline preload="metadata" style="display:block;margin:0 auto;height:min(66vh,640px);aspect-ratio:720/1558;max-width:100%;object-fit:contain;background:#0F2640;border-radius:12px;" aria-label="${e(t(v.title))}">
-        <source src="/help/${e(v.file)}.mp4" type="video/mp4"/>${e(t('Your browser can\'t play this video. The words are below.'))}</video>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:10px;"><div><strong style="font-size:18px;color:var(--navy);">${e(t(v.title))}</strong> <span style="color:var(--slate);font-size:13px;">· ${e(mins(v.seconds))}</span></div>
+    const p = pick(v);
+    const size = p.desk ? 'width:min(860px,100%);aspect-ratio:16/10;' : 'height:min(66vh,640px);aspect-ratio:720/1558;max-width:100%;';
+    return `<video id="hv-video" controls playsinline preload="metadata" style="display:block;margin:0 auto;${size}object-fit:contain;background:#0F2640;border-radius:12px;" aria-label="${e(t(v.title))}">
+        <source src="/help/${e(p.file)}.mp4" type="video/mp4"/>${e(t('Your browser can\'t play this video. The words are below.'))}</video>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:10px;"><div><strong style="font-size:18px;color:var(--navy);">${e(t(v.title))}</strong> <span style="color:var(--slate);font-size:13px;">· ${e(mins(p.seconds))}</span></div>
         ${others.length ? `<button type="button" class="btn-sm btn-sm-outline" id="hv-all">${e(t('All help videos'))}</button>` : ''}</div>
       <details style="margin-top:10px;"><summary style="cursor:pointer;font-weight:600;color:var(--teal);">${e(t('Read it instead'))}</summary>
-        <ol style="margin:8px 0 0;padding-left:22px;line-height:1.6;font-size:14.5px;">${(v.transcript || []).map(p => `<li>${e(p)}</li>`).join('')}</ol></details>
+        <ol style="margin:8px 0 0;padding-left:22px;line-height:1.6;font-size:14.5px;">${(p.transcript || []).map(x => `<li>${e(x)}</li>`).join('')}</ol></details>
       <div style="margin-top:12px;font-size:13px;color:var(--slate);">${e(t('Still stuck?'))} <a role="button" tabindex="0" id="hv-help" style="color:var(--teal);cursor:pointer;font-weight:600;">${e(t('Ask for help'))}</a></div>`;
   }
   function wire(list) {
     const o = document.getElementById(ID); if (!o) return;
     o.querySelectorAll('[data-hv]').forEach(b => b.addEventListener('click', () => show(b.dataset.hv, list, true)));
-    const all = o.querySelector('#hv-all'); if (all) all.addEventListener('click', () => { shell(grid(list), t('Help videos')); wire(list); const f = document.querySelector('#' + ID + ' [data-hv]'); if (f) f.focus(); });
+    const all = o.querySelector('#hv-all'); if (all) all.addEventListener('click', () => { shell(grid(list), t('Help videos')); wire(list); const f = document.getElementById('hv-search'); if (f) f.focus(); });
+    const q = o.querySelector('#hv-search'); if (q) q.addEventListener('input', () => search(q.value));
     const h = o.querySelector('#hv-help'); if (h) { const go = () => { close(); if (typeof toggleSupportChat === 'function') toggleSupportChat(); else if (typeof showContactPage === 'function') showContactPage(); }; h.addEventListener('click', go); h.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(); }); }
   }
   function show(key, list, play) {

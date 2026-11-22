@@ -6,13 +6,17 @@
   "tagline": "Stores & Skills: read everything, then approve or turn it down",
   "audience": "all",
   "section": "stores",
-  "seconds": 37,
+  "seconds": 128,
   "transcript": [
-   "How to check a good before buyers can see it.",
-   "Open Stores & Skills.",
-   "Look at the photos: they must show the real good.",
-   "Read the details. Do they make sense for this good and this price?",
-   "If all is right, tap Approve. If not, Turn down with a reason."
+   "In this video, you will check a new store good before buyers can see it.",
+   "Open Stores and Skills, in the menu on the left.",
+   "New goods waiting for a check are listed here, oldest first. Nobody can buy a good until it is approved.",
+   "Look at each photo. Click a photo to see it bigger. It must show the real good, not a picture taken from the internet.",
+   "Read the details. Do they make sense for this good, and for this price? A very low price can mean stolen or fake goods.",
+   "Check the name and the description for banned goods, and for phone numbers or links that would take buyers outside Trothen.",
+   "If something is wrong, click Turn down, and write the reason. The seller sees it, and can fix the good.",
+   "If all is right, click Approve. The good is then on sale.",
+   "Lower down are the store settings: the fee per purchase, who pays it, and the banned words."
   ]
  },
  {
@@ -22,13 +26,17 @@
   "tagline": "Market → To check: approve it, or take it down",
   "audience": "all",
   "section": "market",
-  "seconds": 34,
+  "seconds": 103,
   "transcript": [
-   "How to check a Market listing held by the safety checks.",
-   "Open Market.",
-   "Tap To check.",
-   "Read why it was held, the description and the details.",
-   "Tap Approve, or Take it down. A seller who breaks the rules can be stopped."
+   "In this video, you will check a Market listing that the safety checks held back.",
+   "Open Market, in the menu on the left.",
+   "Click To check. Listings held by the safety checks wait here.",
+   "Read why it was held, then the description, the details and the photos.",
+   "Common reasons: a banned word, a price far below normal, a phone number in the text, or a seller who was reported before.",
+   "If it breaks the rules, click Take it down. The seller is told why.",
+   "If a seller breaks the rules again and again, click Stop this seller.",
+   "If the listing is fine, click Approve. It then appears in the Market.",
+   "Stolen items holds reports of stolen goods. Check them often."
   ]
  },
  {
@@ -38,11 +46,15 @@
   "tagline": "User Approvals: check each new sign-up",
   "audience": "all",
   "section": "approvals",
-  "seconds": 17,
+  "seconds": 79,
   "transcript": [
-   "How to approve people who signed up.",
-   "Open User Approvals.",
-   "Check the person, then Approve or Reject."
+   "In this video, you will approve, or reject, people who have just signed up.",
+   "Open User Approvals, in the menu on the left.",
+   "Each new person is listed with their name, their country, and whether they signed up as a customer or a pro.",
+   "Check that the name looks real, the phone number matches the country, and the same person has not signed up before.",
+   "If it looks false, click Reject. The person is told, and cannot use Trothen.",
+   "If all is right, click Approve. The person can then use Trothen.",
+   "Approving someone here does not check their ID. Their ID is checked in the Verification Queue."
   ]
  },
  {
@@ -52,28 +64,36 @@
   "tagline": "Green, orange or red for each part of Trothen",
   "audience": "all",
   "section": "systemcheck",
-  "seconds": 31,
+  "seconds": 75,
   "transcript": [
-   "How to check that Trothen is working.",
-   "Open System Check.",
-   "Tap Check now.",
-   "Each part shows green, orange or red, with the likely cause and what to do.",
-   "Tap Copy report to send it to whoever fixes it."
+   "In this video, you will check that every part of Trothen is working.",
+   "Open System Check, in the menu on the left.",
+   "Click Check now. It takes a few seconds.",
+   "Each part shows green, orange or red. Green is working. Orange needs attention soon. Red is not working now.",
+   "Under each orange or red part, you see the likely cause, and what to do about it.",
+   "Check it every morning, and whenever someone says something does not work.",
+   "Click Copy report, and send it to whoever fixes it. It has everything they need."
   ]
  },
  {
   "key": "fares",
   "file": "help-admin-fares",
   "title": "Ride and delivery fares",
-  "tagline": "Admin → Rides: the L$ fares for each vehicle",
+  "tagline": "Admin → Rides: the L$ fares and the ride rules",
   "audience": "all",
   "section": "rides",
-  "seconds": 38,
+  "seconds": 114,
   "transcript": [
-   "How to set the L$ fares for rides and deliveries.",
-   "Open Rides.",
-   "Choose the country. Each vehicle has a starting price, a price per km and a minimum.",
-   "Type today's fuel price: fares move with it once the change passes your limit."
+   "In this video, you will set the ride rules, and the fares in Liberian dollars, for rides and deliveries.",
+   "Open Rides, in the menu on the left.",
+   "At the top are the ride rules: the longest ride, how far away drivers are shown, and how long a driver has to answer.",
+   "Then Trothen's fee on top of the fare, and the driver's commission.",
+   "Here are the papers a driver must upload, for each country and each vehicle.",
+   "You can stop motorbike rides at night, between the hours you choose.",
+   "Lower down are the fares. Choose the country.",
+   "Each vehicle has a starting price, a price per kilometre, and a minimum fare.",
+   "Type today's fuel price. Fares move with it, once the change passes the limit you set.",
+   "Riders always see the fare before they book. A change applies only to new rides."
   ]
  }
 ]

@@ -1,8 +1,9 @@
 Trothen help videos: credits
 
-The narration is spoken by Piper (https://github.com/rhasspy/piper, MIT licence),
-with its "LibriTTS (high)" English voice, trained on the LibriTTS corpus
-(Zen et al., 2019, https://www.openslr.org/60/), licensed under
-Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/).
+The narration is spoken by Kokoro (https://github.com/hexgrad/kokoro),
+an open text-to-speech model by hexgrad, with its "Heart" (af_heart) voice.
+Kokoro and its voices are licensed under the Apache License 2.0
+(https://www.apache.org/licenses/LICENSE-2.0).
+The model files are from kokoro-onnx (https://github.com/thewh1teagle/kokoro-onnx, MIT licence).
 
 The screens are Trothen's own, recorded from a demo copy with demo people.

@@ -3,6 +3,7 @@
 //
 //   node scripts/help-videos/film.js            records every video into public/help/
 //   node scripts/help-videos/film.js rides      records only the Rides video
+//   node scripts/help-videos/film.js --phone    only the phone versions (or --computer)
 //   node scripts/help-videos/film.js --check    records nothing: checks that every step of
 //                                               every video can still be done (run with the
 //                                               tests; if a screen changed, it says which
@@ -34,6 +35,13 @@ const PORT = Number(process.env.FILM_PORT || 3190);
 const BASE = `http://localhost:${PORT}`;
 const PHONE = { width: 390, height: 844 };
 const DESK = { width: 1280, height: 800 }; // Admin is used on a computer
+// v179: each video for people is recorded twice, on a phone and on a laptop, because
+// the screens are laid out differently (a menu at the bottom on a phone, on the left
+// on a laptop). The app plays the one for the screen it is on. Admin: computer only.
+const DEVICES = (f) => (f.group === 'admin' ? ['computer'] : (f.devices || ['phone', 'computer'])).filter(x => !(args.includes('--phone') && x !== 'phone') && !(args.includes('--computer') && x !== 'computer'));
+const FILE = (f, device) => NAME(f) + (f.group !== 'admin' && device === 'computer' ? '-computer' : '');
+// On a laptop you click: the same captions, in the words for a mouse.
+const FOR_MOUSE = (text) => String(text).replace(/\bTap\b/g, 'Click').replace(/\btap\b/g, 'click').replace(/\bTapping\b/g, 'Clicking').replace(/\btapping\b/g, 'clicking').replace(/\btaps\b/g, 'clicks');
 
 // A throw-away database and uploads folder for the demo.
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'trothen-film-'));
@@ -84,7 +92,7 @@ async function blankTile() {
 }
 
 // One video being recorded (or checked).
-function director(page, key) {
+function director(page, key, desk) {
   const lines = []; let n = 0;
   const voice = []; let speakUntil = 0; // the spoken lines, and when the current one ends
   const wait = (ms) => (CHECK ? Promise.resolve() : page.waitForTimeout(ms));
@@ -93,7 +101,7 @@ function director(page, key) {
     try { await loc.waitFor({ state: 'visible', timeout: 8000 }); }
     catch (e) {
       if (process.env.FILM_DUMP) console.error((await page.evaluate(() => [...document.querySelectorAll('button, a, input, select, textarea, [onclick], [role=button], [role=tab], h1, h2, h3, .dash-title')].filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; }).slice(0, 90).map(el => `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : ''} ${(el.getAttribute('onclick') || '').slice(0, 50)} | ${(el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 50)}`).join('\n'))));
-      throw new StepError(`"${key}" video, step ${n}: can't find ${typeof sel === 'string' ? sel : 'the element'} on the screen. The screen has changed: update scripts/help-videos/flows.js and record this video again.`); }
+      throw new StepError(`"${key}" video${desk ? ' (laptop)' : ''}, step ${n}: can't find ${typeof sel === 'string' ? sel : 'the element'} on the screen. The screen has changed: update scripts/help-videos/flows.js and record this video again.`); }
     await loc.scrollIntoViewIfNeeded().catch(() => {});
     await loc.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'instant' })).catch(() => {});
     // repaint the whole screen after a scroll (a fixed side menu can otherwise be recorded half-drawn)
@@ -101,6 +109,7 @@ function director(page, key) {
     return loc;
   }
   async function caption(text, numbered) {
+    if (desk) text = FOR_MOUSE(text);
     lines.push(text);
     if (VOICE.ok) { const v = await narrate.say(text); voice.push({ file: v.file, wall: Date.now() / 1000 }); speakUntil = Date.now() + v.seconds * 1000 + 300; }
     await page.evaluate(([a, b]) => window.__film && window.__film.caption(a, b), [numbered ? `${n}.` : '', text]).catch(() => {});
@@ -117,6 +126,7 @@ function director(page, key) {
     voice,
     page,
     wait,
+    desk: !!desk, // on a laptop (the menu is on the left), not a phone (the menu is at the bottom)
     // a caption on its own (what this screen is, or a tip)
     async say(text, ms = 2600) { n++; await caption(text, false); n--; await wait(ms); await talk(); },
     // tap something: a circle shows where, then it's tapped for real
@@ -140,10 +150,16 @@ function director(page, key) {
 }
 
 async function startServer() {
+  // another copy already on this port (an earlier recording that was stopped) would be recorded instead
+  try { await fetch(BASE + '/api/health', { signal: AbortSignal.timeout(1500) }); throw new Error(`Something is already running on port ${PORT}. Stop it (or set FILM_PORT to another port) and start again.`); }
+  catch (e) { if (/already running/.test(e.message)) throw e; }
   const seed = require(path.join(ROOT, 'src', 'seed.js'));
   if (typeof seed.seedDatabase === 'function') await seed.seedDatabase();
   const srv = spawn(process.execPath, [path.join(ROOT, 'server.js')], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), FILM: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = ''; srv.stdout.on('data', d => { log += d; }); srv.stderr.on('data', d => { log += d; });
+  // if the recording is stopped, the demo copy of Trothen stops with it
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { try { srv.kill(); } catch (e) {} process.exit(130); });
+  process.on('exit', () => { try { srv.kill(); } catch (e) {} });
   for (let i = 0; i < 120; i++) {
     try { const r = await fetch(BASE + '/api/health'); if (r.ok || r.status < 500) return srv; } catch (e) { /* not up yet */ }
     await new Promise(r => setTimeout(r, 500));
@@ -161,8 +177,10 @@ async function startServer() {
   const meta = []; let failed = 0;
   const flows = FLOWS.filter(f => !ONLY.length || ONLY.includes(f.key));
   const vids = path.join(TMP, 'video'); fs.mkdirSync(vids, { recursive: true });
-  for (const f of flows) {
-    const desk = f.device === 'computer';
+  const jobs = []; for (const f of flows) for (const device of DEVICES(f)) jobs.push({ f, device });
+  for (const { f, device } of jobs) {
+    const desk = device === 'computer';
+    const label = f.key + (f.group !== 'admin' && desk ? ' (laptop)' : '');
     const screen = desk ? DESK : PHONE;
     const ctx = await browser.newContext({ viewport: screen, deviceScaleFactor: desk ? 1 : 2, ...(desk ? {} : { isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' }), locale: 'en-US', geolocation: demo.MONROVIA, permissions: ['geolocation'] });
     // Map pictures: the real ones when this computer is online; a plain light tile when it isn't.
@@ -177,12 +195,12 @@ async function startServer() {
     await page.goto(BASE + '/', { waitUntil: 'networkidle' });
     await page.evaluate(() => { const b = document.getElementById('test-mode-banner'); if (b) b.style.display = 'none'; });
     if (f.start) { await page.evaluate(f.start); await page.waitForTimeout(1500); }
-    const d = director(page, f.key);
+    const d = director(page, f.key, desk);
     // Record the screen at full sharpness (a phone's screen at 2x), frame by frame as it changes.
     let rec = null;
     if (!CHECK) {
       const cdp = await ctx.newCDPSession(page);
-      const fdir = path.join(vids, f.key); fs.mkdirSync(fdir, { recursive: true });
+      const fdir = path.join(vids, f.key + '-' + device); fs.mkdirSync(fdir, { recursive: true });
       rec = { cdp, fdir, frames: [] };
       cdp.on('Page.screencastFrame', (ev) => {
         const file = path.join(fdir, `f${String(rec.frames.length).padStart(6, '0')}.jpg`);
@@ -195,19 +213,19 @@ async function startServer() {
     }
     let ok = true;
     try { await f.steps(d); await d.wait(1200); }
-    catch (e) { ok = false; failed++; console.error((e instanceof StepError ? '' : `"${f.key}" video: `) + e.message.split('\n')[0]); }
-    if (errs.length) { ok = false; failed++; console.error(`"${f.key}" video: the page had an error: ${errs[0]}`); }
+    catch (e) { ok = false; failed++; console.error((e instanceof StepError ? '' : `"${label}" video: `) + e.message.split('\n')[0]); }
+    if (errs.length) { ok = false; failed++; console.error(`"${label}" video: the page had an error: ${errs[0]}`); }
     let endT = Date.now() / 1000;
     if (rec) { await page.waitForTimeout(400); endT = Date.now() / 1000; await rec.cdp.send('Page.stopScreencast').catch(() => {}); }
     await ctx.close();
-    if (CHECK) { if (ok) console.log(`ok   ${f.key} (${d.lines.length} steps)`); continue; }
+    if (CHECK) { if (ok) console.log(`ok   ${label} (${d.lines.length} steps)`); continue; }
     if (!ok) continue;
-    if (!rec || rec.frames.length < 2) { failed++; console.error(`"${f.key}" video: nothing was recorded`); continue; }
+    if (!rec || rec.frames.length < 2) { failed++; console.error(`"${label}" video: nothing was recorded`); continue; }
     // each picture is shown until the next one (the screen only sends a picture when it changes)
     const list = path.join(rec.fdir, 'list.txt');
     fs.writeFileSync(list, rec.frames.map((fr, i) => `file '${fr.file}'\nduration ${Math.max(0.001, ((rec.frames[i + 1] ? rec.frames[i + 1].t : endT) - fr.t)).toFixed(3)}`).join('\n') + `\nfile '${rec.frames[rec.frames.length - 1].file}'\n`);
     const dir = OUT[f.group === 'admin' ? 'admin' : 'public'];
-    const mp4 = path.join(dir, `${NAME(f)}.mp4`), tmp = mp4.replace(/\.mp4$/, '.tmp.mp4');
+    const mp4 = path.join(dir, `${FILE(f, device)}.mp4`), tmp = mp4.replace(/\.mp4$/, '.tmp.mp4');
     fs.mkdirSync(dir, { recursive: true });
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-vf', desk ? 'fps=30,scale=1280:-2' : 'fps=30,scale=720:-2', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', tmp]);
     fs.renameSync(tmp, mp4);
@@ -217,9 +235,13 @@ async function startServer() {
       fs.renameSync(withSound, mp4);
     }
     const secs = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp4]).toString().trim());
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', String(Math.min(3, secs / 3)), '-i', mp4, '-frames:v', '1', '-vf', desk ? 'scale=640:400:force_original_aspect_ratio=decrease,pad=640:400:(ow-iw)/2:(oh-ih)/2:color=0x0F2640' : 'scale=-2:380,pad=640:400:(ow-iw)/2:(oh-ih)/2:color=0x0F2640', '-q:v', '4', path.join(dir, `${NAME(f)}.jpg`)]);
-    meta.push({ group: f.group === 'admin' ? 'admin' : 'public', key: f.key, file: NAME(f), title: f.title, tagline: f.tagline, audience: f.audience || 'all', ...(f.section ? { section: f.section } : {}), seconds: Math.round(secs), transcript: d.lines.filter((x, i, a) => a.indexOf(x) === i) });
-    console.log(`recorded ${f.key}: ${Math.round(secs)} s, ${d.lines.length} steps`);
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', String(Math.min(3, secs / 3)), '-i', mp4, '-frames:v', '1', '-vf', desk ? 'scale=640:400:force_original_aspect_ratio=decrease,pad=640:400:(ow-iw)/2:(oh-ih)/2:color=0x0F2640' : 'scale=-2:380,pad=640:400:(ow-iw)/2:(oh-ih)/2:color=0x0F2640', '-q:v', '4', path.join(dir, `${FILE(f, device)}.jpg`)]);
+    const take = { file: FILE(f, device), seconds: Math.round(secs), transcript: d.lines.filter((x, i, a) => a.indexOf(x) === i) };
+    const g = f.group === 'admin' ? 'admin' : 'public';
+    let m = meta.find(x => x.group === g && x.key === f.key);
+    if (!m) { m = { group: g, key: f.key, title: f.title, tagline: f.tagline, ...(f.topic ? { topic: f.topic } : {}), audience: f.audience || 'all', ...(f.section ? { section: f.section } : {}) }; meta.push(m); }
+    if (g === 'public' && desk) m.computer = take; else Object.assign(m, take);
+    console.log(`recorded ${label}: ${Math.round(secs)} s, ${d.lines.length} steps`);
   }
   await browser.close();
   narrate.stop();
@@ -227,7 +249,14 @@ async function startServer() {
   if (!CHECK && meta.length) for (const g of ['public', 'admin']) { // keep the order of flows.js; keep videos not recorded this time
     const file = path.join(OUT[g], LIST[g]);
     let old = []; try { old = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
-    const all = FLOWS.filter(f => (f.group === 'admin' ? 'admin' : 'public') === g).map(f => meta.find(m => m.group === g && m.key === f.key) || old.find(m => m.key === f.key)).filter(Boolean).map(({ group, ...m }) => m);
+    const all = FLOWS.filter(f => (f.group === 'admin' ? 'admin' : 'public') === g).map(f => {
+      const now = meta.find(m => m.group === g && m.key === f.key), was = old.find(m => m.key === f.key);
+      if (!now) return was;
+      const m = { ...(was || {}), ...now }; // a video recorded on one device only keeps the other one from before
+      if (!now.file && was) { m.file = was.file; m.seconds = was.seconds; m.transcript = was.transcript; }
+      if (!now.computer && was && was.computer) m.computer = was.computer;
+      return m.file ? m : null;
+    }).filter(Boolean).map(({ group, ...m }) => m);
     if (all.length) { fs.mkdirSync(OUT[g], { recursive: true }); fs.writeFileSync(file, JSON.stringify(all, null, 1) + '\n'); }
   }
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) {}
