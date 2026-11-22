@@ -72,6 +72,63 @@ const VEHICLES = ['motorbike', 'bicycle', 'keke', 'car', 'van', 'truck', 'on foo
 // Each driver can narrow their own range ("from 2 km, up to 8 km"); they are
 // only offered deliveries inside it.
 const VEHICLE_MAX_KM = { 'on foot': 3, bicycle: 10, motorbike: 50, keke: 30, car: 200, van: 300, truck: 500 };
+// v174: until a driver sets their own range, they are offered trips across a
+// city, not the vehicle's furthest (Walter's screenshot: a car offered trips
+// of 124 miles). Glovo, Bolt Send and Uber Connect keep same-city delivery to
+// about 20 to 40 km; a driver who wants longer trips raises it themselves.
+const CITY_DEFAULT_KM = { 'on foot': 3, bicycle: 8, motorbike: 25, keke: 20, car: 40, van: 60, truck: 100 };
+// v174: parcel sizes, as courier services describe them (Uber Connect, Bolt
+// Send, DHL), and the largest each vehicle can carry. The seller says how big
+// a good is; an order is as big as its biggest good. Goods with no size given
+// are not checked (as before).
+const SIZES = ['small', 'medium', 'large', 'bulky'];
+const SIZE_WORDS = {
+  small: 'Small: fits in a bag or a backpack (phone, documents, food, clothes)',
+  medium: 'Medium: fits on a motorbike or in a box you can carry (shoes in a box, a small appliance, a 25 kg bag)',
+  large: 'Large: needs a keke or a car (a TV, a microwave, several bags, a chair)',
+  bulky: 'Bulky: needs a van or a truck (a fridge, a bed, furniture, building materials)',
+};
+// v176: a size chart on a good (clothes, shoes): measurements for each size,
+// kept in centimetres and shown in both cm and inches (ISO 8559 names the body
+// measurements; shops like Zalando, ASOS and Jumia show them per size).
+const CHART_MEASURES = ['bust', 'chest', 'waist', 'hips', 'length', 'shoulder', 'sleeve', 'inseam', 'foot'];
+function readSizeChart(c) {
+  if (c === null || c === undefined || c === '') return { value: null };
+  if (typeof c !== 'object') return { error: 'The size chart could not be read' };
+  const unit = c.unit === 'in' ? 'in' : 'cm';
+  const measures = Array.isArray(c.measures) ? [...new Set(c.measures.filter(m => CHART_MEASURES.includes(m)))] : [];
+  if (!measures.length || measures.length > 6) return { error: 'Choose 1 to 6 measurements for the size chart' };
+  if (!Array.isArray(c.rows) || c.rows.length > 20) return { error: 'The size chart can have up to 20 sizes' };
+  const rows = [], seen = new Set();
+  for (const r of c.rows) {
+    const size = String((r && r.size) || '').trim();
+    if (!size || size.length > 40) return { error: 'Each row of the size chart needs a size of up to 40 characters' };
+    if (seen.has(size.toLowerCase())) continue; seen.add(size.toLowerCase());
+    const values = {};
+    for (const m of measures) {
+      const raw = r.values && r.values[m];
+      if (raw === undefined || raw === null || raw === '') continue;
+      const n = Number(raw);
+      if (!(n > 0 && n <= 400)) return { error: `"${size}": a measurement must be between 0 and 400 cm` };
+      values[m] = Math.round(n * 10) / 10; // centimetres
+    }
+    rows.push({ size, values });
+  }
+  if (!rows.some(r => Object.keys(r.values).length)) return { value: null }; // nothing filled in
+  return { value: { unit, measures, rows } };
+}
+const VEHICLE_CARRIES = { 'on foot': 'small', bicycle: 'small', motorbike: 'medium', keke: 'large', car: 'large', van: 'bulky', truck: 'bulky' };
+const sizeRank = (s) => SIZES.indexOf(s);
+function canCarry(vehicle, size) {
+  if (!size || !SIZES.includes(size)) return true;
+  const most = VEHICLE_CARRIES[vehicle];
+  return !most || sizeRank(most) >= sizeRank(size);
+}
+function biggestSize(sizes) {
+  let best = null;
+  for (const s of sizes || []) if (SIZES.includes(s) && (best === null || sizeRank(s) > sizeRank(best))) best = s;
+  return best;
+}
 // The built-in store rules, used until a super admin writes their own.
 // Plain commitments, not a contract an attorney has approved.
 const DEFAULT_STORE_RULES = [
@@ -478,7 +535,7 @@ module.exports = {
   STORE_DEFAULTS, DEFAULT_STORE_RULES, MAX_PHOTOS_PER_GOOD, MAX_QTY_PER_LINE, MAX_EXTRA_SKILLS, MAX_EXTRA_SKILLS_BUSINESS, maxExtraSkillsFor, money,
   storeSettings, storeSettingsCached, saveStoreSettings,
   isOnShelf, inStock, anyInStock, storeIsLive, publicStore, refreshStoreLive,
-  DELIVERY_METHODS, DELIVERY_LABELS, DRIVER_SKILL, VEHICLES, VEHICLE_MAX_KM, storeApproval, whyNotLive, WHY_NOT_LIVE_WORDS, storeOptions,
+  DELIVERY_METHODS, DELIVERY_LABELS, DRIVER_SKILL, VEHICLES, VEHICLE_MAX_KM, CITY_DEFAULT_KM, SIZES, SIZE_WORDS, VEHICLE_CARRIES, canCarry, biggestSize, CHART_MEASURES, readSizeChart, storeApproval, whyNotLive, WHY_NOT_LIVE_WORDS, storeOptions,
   currenciesFor, usdFromLocal, goodUsdPrice, goodPriceFields,
   priceBasket, holdStock, reserveStock, releaseStock, giveBackStock,
   saleOn, variantOf, stockOf, adjustStock, notifyBackInStock, returnPolicyOf, returnPolicyWords, // v143

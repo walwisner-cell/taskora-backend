@@ -275,12 +275,14 @@ app.use(express.static(path.join(__dirname, 'public'), {
       // Asked for without one, the browser checks first, as before.
       res.setHeader('Cache-Control', res.req && res.req.query && /^[0-9a-f]{6,}$/.test(String(res.req.query.v || '')) ? 'public, max-age=31536000, immutable' : 'no-cache');
     }
+    else if (/[\\/]help[\\/][^\\/]+\.(mp4|jpg)$/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=86400'); // v178: help videos: kept a day (checked again after)
+    else if (/[\\/]help[\\/]help-videos\.json$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
   },
 }));
 // A script or vendor file that isn't there must be a plain "not found". It
 // used to fall through to the line below and come back as the HTML page,
 // which a browser then tried to run as code.
-app.get(['/app/*', '/vendor/*'], (req, res) => res.status(404).type('text/plain').send('Not found'));
+app.get(['/app/*', '/vendor/*', '/help/*'], (req, res) => res.status(404).type('text/plain').send('Not found'));
 {
   const fsCheck = require('fs');
   for (const f of ['app/trothen.js', 'app/theme.js']) {

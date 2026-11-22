@@ -2637,6 +2637,7 @@ function navbarHTML(active) {
         <div class="account-menu-item" onclick="closeAccountMenu();goToCustomerDashboard('settings')">⚙️ Settings</div>` : `
         <div class="account-menu-item" onclick="closeAccountMenu();${settingsSectionFn}('settings')">⚙️ Settings</div>`}
         <div class="account-menu-item" onclick="closeAccountMenu();toggleSupportChat()">💬 Get Help</div>
+        <div class="account-menu-item" onclick="closeAccountMenu();openHelpVideos()">▶️ ${escapeHtml(tr('Help videos'))}</div>
         <div class="account-menu-divider"></div>
         <div class="account-menu-item" onclick="closeAccountMenu();showTermsPageModal('${active === 'provider' ? 'provider' : 'customer'}')">📄 Terms of Service</div>
         <div class="account-menu-item" onclick="closeAccountMenu();showPrivacyPolicy()">Privacy Policy</div>
@@ -8221,7 +8222,6 @@ function getAdminNavItems() {
       { key: 'approvals', label: 'User Approvals', icon: '✅' },
       { key: 'verification', label: 'Verification Queue', icon: '🪪' },
       { key: 'stores', label: 'Stores & Skills', icon: '🛍️' },
-    { key: 'market', label: 'Market', icon: '🛒' },
       { key: 'market', label: 'Market', icon: '🛒' },
       { key: 'providerscores', label: 'Provider Scores', icon: '📊' },
       { key: 'settings', label: 'Settings', icon: '⚙️' },
@@ -8245,7 +8245,6 @@ function getAdminNavItems() {
       { key: 'approvals', label: 'User Approvals', icon: '✅' },
       { key: 'verification', label: 'Verification Queue', icon: '🪪' },
       { key: 'stores', label: 'Stores & Skills', icon: '🛍️' },
-    { key: 'market', label: 'Market', icon: '🛒' },
       { key: 'market', label: 'Market', icon: '🛒' },
       { key: 'disputes', label: 'Disputes', icon: '⚖️' },
       { key: 'settings', label: 'Settings', icon: '⚙️' },
@@ -14892,8 +14891,8 @@ function openGoodForm(id) {
   v105Overlay('good-form-overlay', `
     <div class="modal-header"><button class="modal-close" onclick="v105Close('good-form-overlay')" aria-label="Close">✕</button><h3>${escapeHtml(tr(g ? 'Edit this good' : 'Add a good'))}</h3><p>${escapeHtml(tr('A manager checks it before customers can see it.'))}</p></div>
     <div class="modal-body" style="overflow:auto;flex:1 1 auto;min-height:0;">
-      <div class="form-group"><label class="form-label" for="gf-name">${escapeHtml(tr('Name'))}</label><input class="form-input" id="gf-name" maxlength="80" value="${v(g && g.name)}" placeholder="${escapeHtml(tr('e.g. Hair wave, 14 inch'))}"/></div>
-      <div class="form-group"><label class="form-label" for="gf-desc">${escapeHtml(tr('Description'))} <small style="font-weight:400;color:var(--slate);">${escapeHtml(tr('optional'))}</small></label><input class="form-input" id="gf-desc" maxlength="400" value="${v(g && g.description)}"/></div>
+      <div class="form-group"><label class="form-label" for="gf-name">${escapeHtml(tr('Name'))}</label><input class="form-input" id="gf-name" maxlength="80" value="${v(g && g.name)}" placeholder="${escapeHtml(tr('e.g. Hair wave, 14 inch'))}" oninput="goodNameTip()"/><div id="gf-name-tip" class="ver-note" style="display:none;margin-top:4px;border-left:3px solid #C98A2B;padding-left:8px;"></div></div>
+      <div class="form-group"><label class="form-label" for="gf-desc">${escapeHtml(tr('Description'))} <small style="font-weight:400;color:var(--slate);">${escapeHtml(tr('optional'))}</small></label><textarea class="form-input" id="gf-desc" maxlength="2000" rows="5" style="resize:vertical;min-height:110px;" placeholder="${escapeHtml(tr('What the photo doesn\'t show. For clothes: material (e.g. 100% cotton), fit (true to size, loose, stretchy), measurements, care (hand wash cold), what\'s included.'))}">${v(g && g.description)}</textarea></div>
       <div class="dates-row">
         <div class="form-group"><label class="form-label" for="gf-price">${escapeHtml(tr('Price (US$)'))}</label><input class="form-input" id="gf-price" type="number" min="0.01" step="0.01" inputmode="decimal" value="${v(g && g.price)}"/></div>
         <div class="form-group"><label class="form-label" for="gf-unit">${escapeHtml(tr('Sold by'))} <small style="font-weight:400;color:var(--slate);">${escapeHtml(tr('optional'))}</small></label><input class="form-input" id="gf-unit" maxlength="20" value="${v(g && g.unit)}" placeholder="${escapeHtml(tr('pack, bottle, metre…'))}"/></div>
@@ -14935,6 +14934,7 @@ async function saveGood() {
     name: document.getElementById('gf-name').value.trim(), description: document.getElementById('gf-desc').value.trim(),
     price: num('gf-price'), unit: document.getElementById('gf-unit').value.trim(), photoUrls: GOOD_FORM.photos,
     stock: num('gf-stock'), lowStockAt: num('gf-low'), costPrice: num('gf-cost'), forSale: document.getElementById('gf-forsale').checked,
+    ...(document.getElementById('gf-size') ? { size: document.getElementById('gf-size').value || null } : {}), // v174
   };
   if (body.name.length < 2) return showToast(tr('Give the good a name'));
   if (!(body.price > 0)) return showToast(tr('Enter a price above zero'));
@@ -15327,7 +15327,10 @@ async function loadAdminStores() {
       <div style="display:flex;gap:6px;flex-wrap:wrap;max-width:240px;">${g.photoUrls.length ? g.photoUrls.map(u => v105Photo(u, 72)).join('') : '<span style="color:var(--slate);font-size:13px;">No photo</span>'}</div>
       <div style="flex:1;min-width:200px;">
         <div style="font-weight:700;color:var(--navy);">${escapeHtml(g.name)} <span style="font-weight:400;color:var(--slate);">· ${usd2(g.price)}${g.unit ? ' / ' + escapeHtml(g.unit) : ''}</span></div>
-        ${g.description ? `<div style="font-size:13.5px;margin-top:2px;">${escapeHtml(g.description)}</div>` : ''}
+        <div style="font-size:13px;color:var(--slate);margin-top:2px;">${[g.marketCategory, g.brand ? 'Brand: ' + g.brand : '', g.condition ? g.condition[0].toUpperCase() + g.condition.slice(1) : ''].filter(Boolean).map(escapeHtml).join(' · ')}</div>
+        ${g.description ? `<div style="font-size:13.5px;margin-top:2px;white-space:pre-line;">${escapeHtml(g.description)}</div>` : ''}
+        ${g.variantLabels && g.variantLabels.length ? `<div style="font-size:13px;margin-top:4px;"><strong>${escapeHtml(g.variantName || 'Options')}:</strong> ${g.variantLabels.map(escapeHtml).join(', ')}${g.hasSizeChart ? ' · with a size chart' : ''}</div>` : ''}
+        ${typeof specsTableHTML === 'function' && g.specRows && g.specRows.length ? `<div class="admin-specs" style="max-width:520px;">${specsTableHTML(g.specRows)}</div>` : ''}
         <div style="font-size:13px;color:var(--slate);margin-top:4px;">${proLine(g.pro)}</div>
         ${pending ? '' : `<div style="font-size:13px;margin-top:4px;">${statusBadge(g.status)} ${g.reviewedByName ? 'by ' + escapeHtml(g.reviewedByName) : ''} · ${escapeHtml(new Date(g.reviewedAt).toLocaleString())}${g.reviewNote ? ' · ' + escapeHtml(g.reviewNote) : ''}</div>`}
       </div>
@@ -16631,8 +16634,8 @@ function openGoodForm(id) {
   v105Overlay('good-form-overlay', `
     <div class="modal-header"><button class="modal-close" onclick="v105Close('good-form-overlay')" aria-label="Close">✕</button><h3>${escapeHtml(tr(g ? 'Edit this good' : 'Add a good'))}</h3><p>${escapeHtml(tr('A manager checks it before customers can see it.'))}</p></div>
     <div class="modal-body" style="overflow:auto;flex:1 1 auto;min-height:0;">
-      <div class="form-group"><label class="form-label" for="gf-name">${escapeHtml(tr('Name'))}</label><input class="form-input" id="gf-name" maxlength="80" value="${v(g && g.name)}" placeholder="${escapeHtml(tr('e.g. Hair wave, 14 inch'))}"/></div>
-      <div class="form-group"><label class="form-label" for="gf-desc">${escapeHtml(tr('Description'))} <small style="font-weight:400;color:var(--slate);">${escapeHtml(tr('optional'))}</small></label><input class="form-input" id="gf-desc" maxlength="400" value="${v(g && g.description)}"/></div>
+      <div class="form-group"><label class="form-label" for="gf-name">${escapeHtml(tr('Name'))}</label><input class="form-input" id="gf-name" maxlength="80" value="${v(g && g.name)}" placeholder="${escapeHtml(tr('e.g. Hair wave, 14 inch'))}" oninput="goodNameTip()"/><div id="gf-name-tip" class="ver-note" style="display:none;margin-top:4px;border-left:3px solid #C98A2B;padding-left:8px;"></div></div>
+      <div class="form-group"><label class="form-label" for="gf-desc">${escapeHtml(tr('Description'))} <small style="font-weight:400;color:var(--slate);">${escapeHtml(tr('optional'))}</small></label><textarea class="form-input" id="gf-desc" maxlength="2000" rows="5" style="resize:vertical;min-height:110px;" placeholder="${escapeHtml(tr('What the photo doesn\'t show. For clothes: material (e.g. 100% cotton), fit (true to size, loose, stretchy), measurements, care (hand wash cold), what\'s included.'))}">${v(g && g.description)}</textarea></div>
       <div class="dates-row">
         <div class="form-group"><label class="form-label" for="gf-price">${escapeHtml(tr('Price'))}</label>
           <div style="display:flex;gap:6px;">
@@ -16673,6 +16676,7 @@ async function saveGood() {
     name: document.getElementById('gf-name').value.trim(), description: document.getElementById('gf-desc').value.trim(),
     price: num('gf-price'), currency: document.getElementById('gf-currency').value, unit: document.getElementById('gf-unit').value.trim(), photoUrls: GOOD_FORM.photos,
     stock: num('gf-stock'), lowStockAt: num('gf-low'), costPrice: num('gf-cost'), forSale: document.getElementById('gf-forsale').checked,
+    ...(document.getElementById('gf-size') ? { size: document.getElementById('gf-size').value || null } : {}), // v174
   };
   if (body.name.length < 2) return showToast(tr('Give the good a name'));
   if (!(body.price > 0)) return showToast(tr('Enter a price above zero'));
@@ -16730,13 +16734,43 @@ function rangeWords(d) {
   if (!d || !(d.maxKm > 0)) return '';
   return d.minKm > 0 ? `${kmWords(d.minKm)} ${tr('to')} ${kmWords(d.maxKm)}` : `${tr('up to')} ${kmWords(d.maxKm)}`;
 }
+// v176: a name that says what the good is. Buyers search for "red dress" or
+// "maxi dress", and Trothen sorts goods into Market categories by the name;
+// "clothes" or "item" finds nothing. A tip, never a block.
+const VAGUE_NAMES = new Set(['clothes', 'cloth', 'clothing', 'cloths', 'item', 'items', 'product', 'products', 'goods', 'good', 'thing', 'things', 'stuff', 'new', 'sale', 'for sale', 'test', 'dress', 'dresses', 'shoe', 'shoes', 'bag', 'bags', 'shirt', 'shirts', 'wear', 'fashion', 'other', 'misc', 'ropa', 'artículo', 'producto']);
+function goodNameIsVague(name) {
+  const n = String(name || '').trim().toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (!n) return false;
+  return VAGUE_NAMES.has(n) || n.length < 4;
+}
+function goodNameTip() {
+  const inp = document.getElementById('gf-name'), tip = document.getElementById('gf-name-tip'); if (!inp || !tip) return;
+  if (goodNameIsVague(inp.value)) { tip.style.display = ''; tip.textContent = tr('Say what it is, so buyers can find it: the type, style, colour or material and who it\'s for. For example: "Women\'s red A-line midi dress" or "Floral maxi sundress, cotton".'); }
+  else tip.style.display = 'none';
+}
+// v174: parcel sizes (as courier services describe them) and the biggest each vehicle carries.
+const GOOD_SIZES = [
+  ['small', 'Small', 'fits in a bag or a backpack (phone, documents, food, clothes)'],
+  ['medium', 'Medium', 'fits on a motorbike (shoes in a box, a small appliance, a 25 kg bag)'],
+  ['large', 'Large', 'needs a keke or a car (a TV, a microwave, several bags, a chair)'],
+  ['bulky', 'Bulky', 'needs a van or a truck (a fridge, a bed, furniture, building materials)'],
+];
+function sizeSelectHTML(id, value) {
+  return `<div class="form-group"><label class="form-label" for="${id}">${escapeHtml(tr('Size, for delivery'))} <small style="font-weight:400;color:var(--slate);">${escapeHtml(tr('so only a vehicle that can carry it is offered'))}</small></label>
+    <select class="form-input form-select" id="${id}"><option value="">${escapeHtml(tr('Not given'))}</option>${GOOD_SIZES.map(([k, w, d]) => `<option value="${k}" ${value === k ? 'selected' : ''}>${escapeHtml(tr(w))}: ${escapeHtml(tr(d))}</option>`).join('')}</select></div>`;
+}
+// v174: a driver's price in the country's own money first ("L$1,500 · $7.89"), as rides show it.
+function driverPriceHTML(dr) {
+  if (dr && dr.priceLocal != null && dr.symbol && dr.symbol !== '$') return `${escapeHtml(dr.symbol)}${Number(dr.priceLocal).toLocaleString()} <span style="font-weight:400;font-size:12px;color:var(--slate);">${usd2(dr.price)}</span>`;
+  return usd2(dr && dr.price);
+}
 function driverCardHTML(dr, picked) {
   const veh = (dr.vehicle ? `${VEHICLE_ICON[dr.vehicle] || '🚚'} ${vehicleWord(dr.vehicle)}` : `🚚 ${tr('Driver')}`) + (rangeWords(dr) ? ` (${rangeWords(dr)})` : '');
   return `<label class="driver-card" style="display:flex;gap:10px;align-items:center;border:2px solid ${picked ? 'var(--teal)' : 'var(--border)'};border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;background:${picked ? 'var(--offwhite)' : 'var(--white)'};">
     <input type="radio" name="co-driver" value="${escapeHtml(dr.id)}" ${picked ? 'checked' : ''} onchange="CHECKOUT.driverId=this.value;drawCheckout()" style="width:18px;height:18px;flex-shrink:0;"/>
     ${avatarHTML(dr, 38)}
     <span style="flex:1;min-width:0;"><span style="font-weight:700;color:var(--navy);display:block;overflow-wrap:anywhere;">${escapeHtml(dr.name)}</span><span style="font-size:12.5px;color:var(--slate);">${escapeHtml(veh)} · ${dr.isNewPro ? escapeHtml(tr('New on Trothen')) : '★ ' + (dr.rating ? Number(dr.rating).toFixed(1) : '—') + ' · ' + dr.jobs + ' ' + escapeHtml(tr('jobs'))}${dr.city ? ' · ' + escapeHtml(dr.city) : ''}</span></span>
-    <span style="font-weight:800;color:var(--navy);white-space:nowrap;">${usd2(dr.price)}</span>
+    <span style="font-weight:800;color:var(--navy);white-space:nowrap;text-align:right;">${driverPriceHTML(dr)}${dr.priceSource === 'trothen' ? `<span style="display:block;font-size:11.5px;font-weight:400;color:#1E7A55;">${escapeHtml(tr('Trothen fare'))}</span>` : ''}</span>
   </label>`;
 }
 // v147: in Liberia (and wherever the store prices in local money) the total
@@ -16804,13 +16838,13 @@ function drawCheckout() {
     ${checkoutPlaceHTML()}
     <div style="font-weight:700;color:var(--navy);margin:10px 0 6px;">${escapeHtml(tr('Choose your driver'))}</div>
     ${CHECKOUT.loadingDrivers ? `<p style="color:var(--slate);font-size:14px;">${escapeHtml(tr('Finding drivers near the store…'))}</p>`
-      : !(CHECKOUT.drivers || []).length ? `<div class="ver-note">${escapeHtml(tr(CHECKOUT.outOfRange ? 'No driver who goes this distance is available right now.' : 'No pick-and-drop driver is available near this store right now.'))} ${del.methods.includes('pickup') ? escapeHtml(tr('You can collect it yourself, or check again in a bit.')) : escapeHtml(tr('Please check again in a bit.'))}
+      : !(CHECKOUT.drivers || []).length ? `<div class="ver-note">${escapeHtml(tr(CHECKOUT.tooSmall && CHECKOUT.size ? 'No driver with a vehicle big enough for these goods is available right now.' : CHECKOUT.outOfRange ? 'No driver who goes this distance is available right now.' : 'No pick-and-drop driver is available near this store right now.'))} ${del.methods.includes('pickup') ? escapeHtml(tr('You can collect it yourself, or check again in a bit.')) : escapeHtml(tr('Please check again in a bit.'))}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
           ${del.methods.includes('pickup') ? `<button type="button" class="btn-sm btn-sm-primary" onclick="setCheckoutMethod('pickup')">${escapeHtml(tr('Collect it myself instead'))}</button>` : ''}
           <button type="button" class="btn-sm btn-sm-outline" onclick="loadCheckoutDrivers()">🔄 ${escapeHtml(tr('Check again'))}</button>
         </div>
       </div>`
-      : CHECKOUT.drivers.map(x => driverCardHTML(x, x.id === CHECKOUT.driverId)).join('') + `<div style="font-size:12.5px;color:var(--muted);">${CHECKOUT.distanceKm != null ? `${escapeHtml(tr('The trip is about'))} ${escapeHtml(kmWords(CHECKOUT.distanceKm))}. ` : `${escapeHtml(tr('Prices are each driver\'s starting price. Add a pin to see the price for your distance.'))} `}${escapeHtml(tr('The driver has'))} ${CHECKOUT.answerMinutes || 30} ${escapeHtml(tr('minutes to accept. If they don\'t, the delivery money comes back to you and you choose again.'))}</div>`}`;
+      : (CHECKOUT.size ? `<div style="font-size:12.5px;color:var(--slate);margin-bottom:6px;">📦 ${escapeHtml(trf('Size of these goods: {s}. Only drivers whose vehicle can carry them are shown.', { s: tr((GOOD_SIZES.find(x => x[0] === CHECKOUT.size) || [])[1] || CHECKOUT.size) }))}</div>` : '') + CHECKOUT.drivers.map(x => driverCardHTML(x, x.id === CHECKOUT.driverId)).join('') + `<div style="font-size:12.5px;color:var(--muted);">${CHECKOUT.distanceKm != null ? `${escapeHtml(tr('The trip is about'))} ${escapeHtml(kmWords(CHECKOUT.distanceKm))}. ` : `${escapeHtml(tr('Prices are each driver\'s starting price. Add a pin to see the price for your distance.'))} `}${escapeHtml(tr('The driver has'))} ${CHECKOUT.answerMinutes || 30} ${escapeHtml(tr('minutes to accept. If they don\'t, the delivery money comes back to you and you choose again.'))}</div>`}`;
   body.innerHTML = `
     ${p ? `<div class="booking-summary" style="margin-bottom:14px;">${p.items.map(i => `<div class="summary-row"><span>${i.qty} × ${escapeHtml(i.name)}</span><span>${i.priceCurrency ? escapeHtml(localMoney(i.priceSymbol, i.lineTotalLocal)) + ' ≈ ' : ''}${usd2(i.lineTotal)}</span></div>`).join('')}</div>` : ''}
     ${existing ? '' : `<div style="font-weight:700;color:var(--navy);margin-bottom:6px;">${escapeHtml(tr('How do you want to get your goods?'))}</div>
@@ -16823,7 +16857,7 @@ function drawCheckout() {
     <div class="booking-summary" style="margin-top:12px;">
       ${p ? `<div class="summary-row"><span>${escapeHtml(tr('Goods'))}</span><span>${usd2(p.goodsTotal)}</span></div>` : ''}
       ${m === 'seller' ? `<div class="summary-row"><span>${escapeHtml(tr('Seller\'s delivery charge'))}</span><span>${sellerFee > 0 ? usd2(sellerFee) : escapeHtml(tr('Free'))}</span></div>` : ''}
-      ${m === 'driver' ? `<div class="summary-row"><span>${escapeHtml(tr('Driver'))}${dr ? ': ' + escapeHtml(dr.name) : ''}</span><span>${dr ? usd2(dr.price) : '—'}</span></div>` : ''}
+      ${m === 'driver' ? `<div class="summary-row"><span>${escapeHtml(tr('Driver'))}${dr ? ': ' + escapeHtml(dr.name) : ''}</span><span>${dr ? driverPriceHTML(dr) : '—'}</span></div>` : ''}
       ${trothen > 0 ? `<div class="summary-row"><span>${escapeHtml(tr('Trothen fees'))}${p && p.purchaseFee > 0 ? ` <span style="color:var(--slate);font-size:12.5px;">(${escapeHtml(tr('store purchase fee'))} ${usd2(p.purchaseFee)}${(sellerFee + driverFee) > 0 && pc > 0 ? ' + ' + del.feePercent + '% ' + escapeHtml(tr('of delivery')) : ''})</span>` : (pc > 0 ? ` <span style="color:var(--slate);font-size:12.5px;">(${del.feePercent}% ${escapeHtml(tr('of delivery'))})</span>` : '')}</span><span>${usd2(trothen)}</span></div>` : ''}
       <div class="summary-row total"><span>${escapeHtml(tr(existing ? 'To pay now for delivery' : 'Total to pay now'))}</span><span id="co-total">${m === 'driver' && !dr ? escapeHtml(tr('Choose a driver')) : checkoutLocal(total)}</span></div>
     </div>
@@ -16836,8 +16870,9 @@ async function loadCheckoutDrivers() {
   CHECKOUT.loadingDrivers = true; drawCheckout();
   const q = CHECKOUT.pin ? `&latitude=${CHECKOUT.pin.latitude}&longitude=${CHECKOUT.pin.longitude}` : '';
   try {
-    const r = await apiFetch('GET', '/store/drivers?providerId=' + encodeURIComponent(CHECKOUT.pid) + q);
-    CHECKOUT.drivers = r.drivers || []; CHECKOUT.distanceKm = r.distanceKm; CHECKOUT.answerMinutes = r.answerMinutes; CHECKOUT.outOfRange = r.outOfRange || 0;
+    const ids = ((CHECKOUT.priced && CHECKOUT.priced.items) || []).map(i => i.goodId).filter(Boolean); // v174: so only vehicles that can carry them are offered
+    const r = await apiFetch('GET', '/store/drivers?providerId=' + encodeURIComponent(CHECKOUT.pid) + q + (ids.length ? '&items=' + encodeURIComponent(ids.join(',')) : ''));
+    CHECKOUT.drivers = r.drivers || []; CHECKOUT.distanceKm = r.distanceKm; CHECKOUT.answerMinutes = r.answerMinutes; CHECKOUT.outOfRange = r.outOfRange || 0; CHECKOUT.tooSmall = r.tooSmall || 0; CHECKOUT.size = r.size || null;
     if (!CHECKOUT.drivers.find(x => x.id === CHECKOUT.driverId)) CHECKOUT.driverId = null;
   } catch (e) { CHECKOUT.drivers = []; showToast(e.message || 'Could not load drivers'); }
   CHECKOUT.loadingDrivers = false; drawCheckout();
@@ -16981,9 +17016,9 @@ async function loadDeliveries() {
   const perUnit = mi ? r.perKm * KM_PER_MI : r.perKm;
   const waiting = DELIVERIES.filter(d => d.status === 'pending_provider_confirmation'), going = DELIVERIES.filter(d => d.status === 'active'), done = DELIVERIES.filter(d => !['pending_provider_confirmation', 'active'].includes(d.status));
   const job = (d) => `<div class="delivery-job" style="padding:12px 0;border-top:1px solid var(--border);">
-      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;"><div style="font-weight:700;color:var(--navy);">${escapeHtml(d.storeName)} <span style="font-weight:400;color:var(--slate);">· ${escapeHtml(tr('order'))} #${escapeHtml(d.orderNumber)}</span></div><div style="font-weight:800;color:var(--navy);">${usd2(d.price)}</div></div>
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;"><div style="font-weight:700;color:var(--navy);">${escapeHtml(d.storeName)} <span style="font-weight:400;color:var(--slate);">· ${escapeHtml(tr('order'))} #${escapeHtml(d.orderNumber)}</span></div><div style="font-weight:800;color:var(--navy);">${driverMoney(d.price)}</div></div>
       <div style="font-size:13.5px;margin-top:4px;line-height:1.6;">
-        <div>📦 ${escapeHtml(d.items || '')}</div>
+        <div>📦 ${escapeHtml(d.items || '')}${d.size ? ` <span class="badge badge-neutral" style="font-size:11px;">${escapeHtml(tr((GOOD_SIZES.find(x => x[0] === d.size) || [])[1] || d.size))}</span>` : ''}</div>
         <div><strong>${escapeHtml(tr('Collect from:'))}</strong> ${escapeHtml(d.pickup.place || '')}${pinCodeHTML(d.pickup.location)}${mapsLink(d.pickup.location)}${placeLineHTML(d.pickup.location)}</div>
         <div><strong>${escapeHtml(tr('Take to:'))}</strong> ${escapeHtml([d.dropoff.landmark, d.dropoff.address && d.dropoff.address !== d.dropoff.landmark && d.dropoff.address !== PIN_PLACEHOLDER ? d.dropoff.address : ''].filter(Boolean).join(', '))}${pinCodeHTML(d.dropoff.location)}${mapsLink(d.dropoff.location)}${d.distanceKm ? ' · ' + escapeHtml(kmWords(d.distanceKm)) : ''}${placeLineHTML(d.dropoff.location)}</div>
         ${d.status === 'active' ? `<div style="color:var(--slate);">${escapeHtml(tr(d.droppedOffAt ? 'Dropped off. You are paid when the customer confirms.' : d.pickedUpAt ? 'Collected. Take it to the customer and record the drop-off.' : d.orderReadyAt ? 'The seller says it is packed and ready.' : 'The seller is packing it.'))}</div>` : ''}
@@ -17001,17 +17036,48 @@ async function loadDeliveries() {
     <div class="panel"><div class="panel-title">${escapeHtml(tr('Delivery requests'))} <small>${waiting.length}</small></div>${waiting.length ? waiting.map(job).join('') : `<div style="color:var(--slate);font-size:14px;">${escapeHtml(tr('None right now. Requests show here and in your notifications. You have 10 minutes to answer each one; after that it goes to the next driver.'))}</div>`}</div>
     <div class="panel"><div class="panel-title">${escapeHtml(tr('On the go'))} <small>${going.length}</small></div>${going.length ? going.map(job).join('') : `<div style="color:var(--slate);font-size:14px;">${escapeHtml(tr('Nothing to deliver right now.'))}</div>`}</div>
     <div class="panel"><div class="panel-title">${escapeHtml(tr('My delivery prices'))}</div>
-      ${!r.isSet ? `<div class="ver-note" style="margin-bottom:12px;">${escapeHtml(tr('You have not set delivery prices yet, so customers see your listed price as a flat price:'))} <strong>${usd2(r.baseFee)}</strong>. ${escapeHtml(tr('Set them here to charge by distance.'))}</div>` : ''}
+      ${!DRIVER_INFO.priced ? `<div class="ver-note" style="margin-bottom:12px;border-left:3px solid #C98A2B;padding-left:10px;">${escapeHtml(tr('Set your delivery prices to be offered deliveries. Until then customers don\'t see you as a driver.'))}</div>` : ''}
       <div class="dates-row">
-        <div class="form-group"><label class="form-label" for="dr-vehicle">${escapeHtml(tr('What I deliver with'))}</label><select class="form-input form-select" id="dr-vehicle">${DRIVER_INFO.vehicles.map(v => `<option value="${escapeHtml(v)}" ${v === (r.vehicle || 'motorbike') ? 'selected' : ''}>${VEHICLE_ICON[v] || ''} ${escapeHtml(tr(v))}</option>`).join('')}</select></div>
-        <div class="form-group"><label class="form-label" for="dr-base">${escapeHtml(tr('Starting price (US$)'))}</label><input class="form-input" id="dr-base" type="number" min="1" max="500" step="0.01" inputmode="decimal" value="${escapeHtml(r.baseFee)}"/></div>
-        <div class="form-group"><label class="form-label" for="dr-per">${escapeHtml(tr(mi ? 'Plus, for each mile (US$)' : 'Plus, for each kilometre (US$)'))}</label><input class="form-input" id="dr-per" type="number" min="0" step="0.01" inputmode="decimal" value="${escapeHtml(Math.round(perUnit * 100) / 100)}"/></div>
+        <div class="form-group"><label class="form-label" for="dr-vehicle">${escapeHtml(tr('What I deliver with'))}</label><select class="form-input form-select" id="dr-vehicle" onchange="drawDeliveryPriceFields()">${DRIVER_INFO.vehicles.map(v => `<option value="${escapeHtml(v)}" ${v === (r.vehicle || 'motorbike') ? 'selected' : ''}>${VEHICLE_ICON[v] || ''} ${escapeHtml(tr(v))}</option>`).join('')}</select></div>
       </div>
+      <div id="dr-price-fields"></div>
       ${deliveryRangeFieldsHTML(r)}
-      <button class="btn-sm btn-sm-primary" onclick="saveDriverRates()">${escapeHtml(tr('Save my prices'))}</button>
+      <button class="btn-sm btn-sm-primary" onclick="saveDriverRates()">${escapeHtml(tr('Save'))}</button>
       <div class="ver-note" style="margin-top:12px;">${escapeHtml(tr('The customer sees your price for their trip before they choose you, and approves it. Distance is measured in a straight line from the store to the customer. The customer also pays Trothen'))} ${DRIVER_INFO.feePercent}% ${escapeHtml(tr('on top. Your normal commission applies when you are paid.'))} ${DRIVER_INFO.hasLocation ? '' : escapeHtml(tr('Add your location in Settings so you are offered jobs near you first.'))}</div>
     </div>`}
     ${done.length ? `<div class="panel"><div class="panel-title">${escapeHtml(tr('Past deliveries'))} <small>${done.length}</small></div>${done.slice(0, 20).map(job).join('')}</div>` : ''}`;
+  drawDeliveryPriceFields(); // v174
+}
+// v174: money in the driver's own currency first (L$ in Liberia).
+function driverMoney(usd) {
+  const loc = DRIVER_INFO && DRIVER_INFO.pricing && DRIVER_INFO.pricing.local;
+  return loc ? `${escapeHtml(loc.symbol)}${Math.round(Number(usd || 0) * loc.rate).toLocaleString()} <span style="font-weight:400;font-size:12px;color:var(--slate);">${usd2(usd)}</span>` : usd2(usd);
+}
+// v174: the price part of "My delivery prices", for the vehicle chosen: Trothen's
+// fares where Trothen sets them (L$ in Liberia for motorbike, keke, car and van),
+// otherwise the driver's own prices, typed in their own money.
+function drawDeliveryPriceFields() {
+  const box = document.getElementById('dr-price-fields'); if (!box || !DRIVER_INFO) return;
+  const P = DRIVER_INFO.pricing || {}, r = DRIVER_INFO.rates, v = (document.getElementById('dr-vehicle') || {}).value || r.vehicle || 'motorbike';
+  const info = (P.vehicles || {})[v] || { source: 'driver' }, loc = P.local, mi = usesMiles();
+  // a vehicle that can't go as far as the range typed: use its own city distance
+  const maxEl = document.getElementById('dr-max'), capKm = ((DRIVER_INFO.vehicleMaxKm || {})[v]), f = mi ? KM_PER_MI : 1;
+  if (maxEl && capKm && Number(maxEl.value) * f > capKm + 0.05) { const d = Math.min(capKm, ((P.cityDefaultKm || {})[v]) || capKm); maxEl.value = Math.round(d / f * 10) / 10; const minEl = document.getElementById('dr-min'); if (minEl && Number(minEl.value) * f >= d) minEl.value = 0; }
+  const carries = GOOD_SIZES.find(x => x[0] === info.carries);
+  const carriesLine = carries ? `<div style="font-size:12.5px;color:var(--slate);margin:-4px 0 10px;">📦 ${escapeHtml(trf('Carries goods up to {s}', { s: tr(carries[1]).toLowerCase() }))}: ${escapeHtml(tr(carries[2]))}</div>` : '';
+  if (info.source === 'trothen') {
+    const ex = (info.examples || []).map(x => `${escapeHtml(kmWords(x.km))}: <strong>${x.symbol && x.symbol !== '$' ? escapeHtml(x.symbol) + Number(x.local).toLocaleString() : usd2(x.price)}</strong>`).join(' · ');
+    box.innerHTML = `<div style="background:#EEF8F3;border:1px solid #BFE3D2;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:14px;">
+      <strong>${escapeHtml(trf('Your {v} deliveries use Trothen\'s fares for {c}', { v: tr(v), c: DRIVER_INFO.country || tr('your country') }))}</strong>, ${escapeHtml(tr('the same as rides, worked out from the distance. You don\'t set a price for this vehicle.'))}
+      ${ex ? `<div style="margin-top:6px;">${escapeHtml(tr('For example'))}: ${ex}</div>` : ''}</div>${carriesLine}`;
+    return;
+  }
+  const cur = loc ? loc.symbol : 'US$', rate = loc ? loc.rate : 1, perUnit = r.perKm != null ? (mi ? r.perKm * KM_PER_MI : r.perKm) : null;
+  const val = (usd) => usd == null ? '' : (loc ? Math.round(usd * rate) : Math.round(usd * 100) / 100);
+  box.innerHTML = `<div class="dates-row">
+      <div class="form-group"><label class="form-label" for="dr-base">${escapeHtml(tr('Starting price'))} (${escapeHtml(cur)})</label><input class="form-input" id="dr-base" type="number" min="0" step="${loc ? 5 : 0.01}" inputmode="decimal" value="${escapeHtml(val(r.baseFee))}"/></div>
+      <div class="form-group"><label class="form-label" for="dr-per">${escapeHtml(tr(mi ? 'Plus, for each mile' : 'Plus, for each kilometre'))} (${escapeHtml(cur)})</label><input class="form-input" id="dr-per" type="number" min="0" step="${loc ? 1 : 0.01}" inputmode="decimal" value="${escapeHtml(val(perUnit))}"/></div>
+    </div>${loc ? `<div style="font-size:12.5px;color:var(--slate);margin:-4px 0 10px;">${escapeHtml(trf('In {c}. Customers see it in {c} with the US$ amount; Trothen keeps the record in US$ at the day\'s rate.', { c: loc.code }))}</div>` : ''}${carriesLine}`;
 }
 // v164: "I deliver from … up to …", in miles or kilometres as the country uses.
 function deliveryRangeFieldsHTML(r) {
@@ -17032,10 +17098,22 @@ function readRangeFields() {
   return { minKm: min.value === '' ? 0 : Number(min.value) * f, maxKm: max.value === '' ? null : Number(max.value) * f };
 }
 async function saveDriverRates() {
-  const baseFee = Number(document.getElementById('dr-base').value), per = Number(document.getElementById('dr-per').value);
-  if (!(baseFee >= 1)) return showToast(tr('Your starting price must be at least $1'));
-  if (!(per >= 0)) return showToast(tr('Enter a price for each mile or kilometre, or 0'));
-  try { await apiFetch('PUT', '/delivery/rates', { vehicle: document.getElementById('dr-vehicle').value, baseFee, perKm: usesMiles() ? per / KM_PER_MI : per, ...readRangeFields() }); showToast(tr('Your delivery prices are saved')); loadDeliveries(); }
+  const vehicle = document.getElementById('dr-vehicle').value;
+  const P = (DRIVER_INFO && DRIVER_INFO.pricing) || {}, info = (P.vehicles || {})[vehicle] || {};
+  const body = { vehicle, ...readRangeFields() };
+  if (info.source !== 'trothen') { // v174: own prices, typed in the country's money
+    const base = document.getElementById('dr-base'), perEl = document.getElementById('dr-per');
+    const baseFee = Number(base && base.value), per = Number(perEl && perEl.value);
+    if (!(baseFee > 0)) return showToast(tr('Enter your starting price'));
+    if (!(per >= 0) || (perEl && perEl.value === '')) return showToast(tr('Enter a price for each mile or kilometre, or 0'));
+    Object.assign(body, { baseFee, perKm: usesMiles() ? per / KM_PER_MI : per, currency: P.local ? 'local' : 'usd' });
+  }
+  if (DRIVER_INFO.viaRides && !DRIVER_INFO.pickDropSkill) {
+    // a ride driver without the Pick & Drop skill: only the range is theirs to set
+    try { await apiFetch('PUT', '/delivery/range', readRangeFields()); showToast(tr('Saved')); loadDeliveries(); } catch (e) { showToast(e.message || 'Could not save'); }
+    return;
+  }
+  try { await apiFetch('PUT', '/delivery/rates', body); showToast(tr(info.source === 'trothen' ? 'Saved' : 'Your delivery prices are saved')); loadDeliveries(); }
   catch (e) { showToast(e.message || 'Could not save your prices'); }
 }
 async function answerDelivery(contractId, decision) {

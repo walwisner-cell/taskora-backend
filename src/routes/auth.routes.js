@@ -686,7 +686,7 @@ router.get('/google/config', (req, res) => {
 // frontend so, and the frontend routes to POST /google/signup instead,
 // the same "check first, then a separate real signup step" shape as
 // email/password already uses.
-router.post('/google', async (req, res) => {
+router.post('/google', loginLimiter, async (req, res) => {
   const { idToken } = req.body || {};
   const { verifyGoogleIdToken } = require('../google-auth');
   const google = await verifyGoogleIdToken(idToken);

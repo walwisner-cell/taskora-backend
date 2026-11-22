@@ -1,0 +1,8 @@
+Trothen help videos: credits
+
+The narration is spoken by Piper (https://github.com/rhasspy/piper, MIT licence),
+with its "LibriTTS (high)" English voice, trained on the LibriTTS corpus
+(Zen et al., 2019, https://www.openslr.org/60/), licensed under
+Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/).
+
+The screens are Trothen's own, recorded from a demo copy with demo people.

@@ -17,7 +17,20 @@
   const t = (s) => (typeof tr === 'function' ? tr(s) : s);
   const money = (n) => (typeof usd2 === 'function' ? usd2(n) : '$' + Number(n || 0).toFixed(2));
   const stars = (n) => '★'.repeat(Math.round(n)) + '☆'.repeat(5 - Math.round(n));
-  const SIZES = { small: 'Small (fits a motorbike box)', medium: 'Medium (a motorbike can carry it)', large: 'Large (needs a keke or car)', bulky: 'Bulky (needs a van or truck)' };
+  // v176: the same words as at checkout (v174): which vehicles can carry it.
+  const SIZES = { small: 'Small: fits in a bag (phone, documents, food, clothes)', medium: 'Medium: fits on a motorbike (shoes in a box, a small appliance, a 25 kg bag)', large: 'Large: needs a keke or a car (a TV, a microwave, a chair)', bulky: 'Bulky: needs a van or a truck (a fridge, a bed, furniture)' };
+  // v176: size sets filled in with one tap, and the measurements of a size chart.
+  const SIZE_SETS = [
+    ['letters', 'XS to XXL', ['XS', 'S', 'M', 'L', 'XL', 'XXL']],
+    ['uk', 'UK 6 to 20', ['UK 6', 'UK 8', 'UK 10', 'UK 12', 'UK 14', 'UK 16', 'UK 18', 'UK 20']],
+    ['us', 'US 2 to 16', ['US 2', 'US 4', 'US 6', 'US 8', 'US 10', 'US 12', 'US 14', 'US 16']],
+    ['eu', 'EU 34 to 48', ['EU 34', 'EU 36', 'EU 38', 'EU 40', 'EU 42', 'EU 44', 'EU 46', 'EU 48']],
+    ['shoes', 'Shoes EU 36 to 46', ['EU 36', 'EU 37', 'EU 38', 'EU 39', 'EU 40', 'EU 41', 'EU 42', 'EU 43', 'EU 44', 'EU 45', 'EU 46']],
+    ['kids', 'Children 2 to 12 years', ['2-3 years', '3-4 years', '4-5 years', '5-6 years', '7-8 years', '9-10 years', '11-12 years']],
+  ];
+  const MEASURES = { bust: 'Bust', chest: 'Chest', waist: 'Waist', hips: 'Hips', length: 'Length', shoulder: 'Shoulder', sleeve: 'Sleeve', inseam: 'Inside leg', foot: 'Foot length' };
+  const CM_PER_IN = 2.54;
+  const fmt1 = (n) => (Math.round(n * 10) / 10).toString();
   const REASONS = { faulty: 'Faulty or not working', wrong_item: 'Wrong item sent', damaged: 'Damaged', not_as_described: 'Not as described', changed_mind: 'Changed my mind' };
   const priceLocal = (o) => (o.priceCurrency && o.priceCurrency !== 'USD' && o.priceLocal != null ? (typeof localMoney === 'function' ? localMoney(o.priceSymbol, o.priceLocal) : o.priceSymbol + o.priceLocal) : money(o.price));
   const wasLocal = (o) => (o.priceCurrency && o.priceCurrency !== 'USD' && o.wasLocal != null ? (typeof localMoney === 'function' ? localMoney(o.priceSymbol, o.wasLocal) : o.priceSymbol + o.wasLocal) : money(o.wasPrice));
@@ -92,8 +105,9 @@
       const v = (x) => (x === null || x === undefined ? '' : e(x));
       const cats = (window.MARKET_CATS || []);
       const html = `<div id="gf-extras" style="border-top:1px solid var(--border);margin:6px 0 12px;padding-top:10px;">
-        <div class="form-group"><label class="form-label" for="gf-mcat">${e(t('Market category'))}</label><select class="form-input form-select" id="gf-mcat"><option value="">${e(t('Choose for me from the name'))}${g && g.guessedCategory ? ' (' + e(t(g.guessedCategory)) + ')' : ''}</option>${cats.map(c => `<option value="${e(c)}" ${g && g.marketCategory === c ? 'selected' : ''}>${e(t(c))}</option>`).join('')}</select>
+        <div class="form-group"><label class="form-label" for="gf-mcat">${e(t('Market category'))}</label><select class="form-input form-select" id="gf-mcat" onchange="goodCatChanged()"><option value="" id="gf-mcat-auto">${e(t('Choose for me from the name'))}${g && g.guessedCategory ? ' (' + e(t(g.guessedCategory)) + ')' : ''}</option>${cats.map(c => `<option value="${e(c)}" ${g && g.marketCategory === c ? 'selected' : ''}>${e(t(c))}</option>`).join('')}</select>
           <div style="font-size:12.5px;color:var(--muted);margin-top:4px;">${e(t('Where shoppers find this good in the Market, for example Fashion & Clothing or Plumbing Supplies.'))}</div></div>
+        ${typeof specsBoxHTML === 'function' ? specsBoxHTML('gf') : ''}
         <div class="dates-row"><div class="form-group"><label class="form-label" for="gf-brand">${e(t('Brand'))} <small style="font-weight:400;color:var(--slate);">${e(t('optional'))}</small></label><input class="form-input" id="gf-brand" maxlength="40" value="${v(g && g.brand)}"/></div>
         <div class="form-group"><label class="form-label" for="gf-cond">${e(t('Condition'))}</label><select class="form-input form-select" id="gf-cond">${['new', 'used', 'refurbished'].map(c => `<option value="${c}" ${(g ? g.condition : 'new') === c ? 'selected' : ''}>${e(t(c[0].toUpperCase() + c.slice(1)))}</option>`).join('')}</select></div></div>
         <div class="dates-row"><div class="form-group"><label class="form-label" for="gf-shelf">${e(t('Section of my store'))} <small style="font-weight:400;color:var(--slate);">${e(t('optional'))}</small></label><input class="form-input" id="gf-shelf" maxlength="40" value="${v(g && g.shelf)}" placeholder="${e(t('e.g. Pipes, Hair care'))}"/></div>
@@ -104,18 +118,108 @@
         <div style="font-weight:700;color:var(--navy);margin:6px 0 4px;">${e(t('Sizes or colours'))} <small style="font-weight:400;color:var(--slate);">${e(t('optional, up to 20'))}</small></div>
         <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px;">${e(t('Each one can have its own price (blank = the price above) and its own stock. With these, the stock above is not used.'))}</div>
         <div class="form-group" style="max-width:240px;"><label class="form-label" for="gf-vname">${e(t('Called'))}</label><input class="form-input" id="gf-vname" maxlength="20" value="${v(g && g.variantName)}" placeholder="${e(t('Size, Colour, Length…'))}"/></div>
-        <div id="gf-variants"></div><button type="button" class="btn-sm btn-sm-outline" onclick="goodVariantAdd()">+ ${e(t('Add a size or colour'))}</button></div>`;
+        <div id="gf-presets" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;"></div>
+        <div id="gf-variants"></div><button type="button" class="btn-sm btn-sm-outline" onclick="goodVariantAdd()">+ ${e(t('Add a size or colour'))}</button>
+        <div id="gf-chart-box" style="margin-top:14px;"></div></div>`;
       anchor.closest('label').insertAdjacentHTML('beforebegin', html);
-      drawVariants();
+      // v176: the size chart, in the unit the seller typed it in (kept in cm)
+      const sc = g && g.sizeChart;
+      const unit = sc ? sc.unit : (typeof usesMiles === 'function' && usesMiles() ? 'in' : 'cm');
+      GV.chart = { unit, measures: sc ? sc.measures.slice() : ['bust', 'waist', 'hips', 'length'], values: {} };
+      if (sc) for (const r of sc.rows) { GV.chart.values[r.size] = {}; for (const [m, cm] of Object.entries(r.values || {})) GV.chart.values[r.size][m] = fmt1(unit === 'in' ? cm / CM_PER_IN : cm); }
+      // v177: the details for the good's category, and option sets that fit it (storage for a phone, diameters for a pipe)
+      GV.guess = g ? g.guessedCategory || null : null;
+      if (typeof specsDraw === 'function') specsDraw('gf', goodCat(), (g && g.specs) || {}, (g && g.specsExtra) || []);
+      const nm = el('gf-name');
+      if (nm && typeof specsGuess === 'function') nm.addEventListener('input', () => { if (el('gf-mcat') && !el('gf-mcat').value) specsGuess(nm.value, (c) => { if (c === GV.guess) return; GV.guess = c; const o = el('gf-mcat-auto'); if (o) o.textContent = t('Choose for me from the name') + (c ? ' (' + t(c) + ')' : ''); goodCatChanged(); }); });
+      drawVariants(); drawPresets();
+      if (typeof goodNameTip === 'function') goodNameTip();
     };
   }
+  // v177: the category the good is in: the one chosen, else the one Trothen works out from the name.
+  function goodCat() { const s = el('gf-mcat'); return (s && s.value) || GV.guess || ''; }
+  function chartCat() { const T = typeof specsTemplates === 'function' && specsTemplates(), c = goodCat(); return !c || !T || T.chartCategories.includes(c); }
+  window.goodCatChanged = function () {
+    if (typeof specsDraw === 'function') specsDraw('gf', goodCat());
+    drawPresets(); chartRead(); drawChart();
+  };
+  function drawPresets() {
+    const box = el('gf-presets'); if (!box) return;
+    const T = typeof specsTemplates === 'function' && specsTemplates(), c = goodCat();
+    if (!T && typeof specsLoad === 'function') specsLoad().then(x => { if (x) { drawPresets(); drawChart(); } });
+    const own = (T && T.options[c]) || [];
+    const btn = (call, words) => `<button type="button" class="btn-sm btn-sm-ghost" style="border:1px solid var(--border);" onclick="${call}">${e(words)}</button>`;
+    const list = own.map(([word, labels], i) => btn(`goodOptPreset(${i})`, `${t(word)}: ${labels.join(', ')}`));
+    if (chartCat()) for (const [k, w] of SIZE_SETS) list.push(btn(`goodSizePreset(${jsArg(k)})`, t(w)));
+    box.innerHTML = list.length ? `<span style="font-size:12.5px;color:var(--slate);">${e(t(chartCat() ? 'Fill in sizes:' : 'Fill in:'))}</span>${list.join('')}` : '';
+  }
+  // v177: one tap fills in the options that fit the category (the ones already there are kept).
+  window.goodOptPreset = function (i) {
+    const T = typeof specsTemplates === 'function' && specsTemplates(); const set = T && (T.options[goodCat()] || [])[i]; if (!set) return;
+    chartRead(); GV.rows = readVariants().filter(r => r.label || r.price != null || r.stock != null);
+    const have = new Set(GV.rows.map(r => r.label.toLowerCase()));
+    for (const lab of set[1]) if (!have.has(lab.toLowerCase()) && GV.rows.length < 20) GV.rows.push({ label: lab, price: null, stock: null });
+    const vn = el('gf-vname'); if (vn && !vn.value.trim()) vn.value = t(set[0]);
+    drawVariants();
+  };
   function drawVariants() {
     const box = el('gf-variants'); if (!box) return;
-    box.innerHTML = GV.rows.map((r, i) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;"><input class="form-input gv-label" data-i="${i}" maxlength="40" value="${e(r.label || '')}" placeholder="${e(t('e.g. Large, Red, 14 inch'))}" style="flex:2 1 120px;"/><input class="form-input gv-price" data-i="${i}" type="number" min="0" step="0.01" value="${r.price != null ? e(r.price) : ''}" placeholder="${e(t('price'))}" style="flex:1 1 70px;"/><input class="form-input gv-stock" data-i="${i}" type="number" min="0" step="1" value="${r.stock != null ? e(r.stock) : ''}" placeholder="${e(t('stock'))}" style="flex:1 1 60px;"/><button type="button" class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="goodVariantRemove(${i})" aria-label="${e(t('Remove'))}">✕</button></div>`).join('');
+    setTimeout(() => { if (GV.chart) { chartRead(); drawChart(); } }, 0); // v176: the chart has a row for each size
+    box.innerHTML = GV.rows.map((r, i) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;"><input class="form-input gv-label" data-i="${i}" maxlength="40" value="${e(r.label || '')}" onchange="goodChartRedraw()" placeholder="${e(t('e.g. Large, Red, 14 inch'))}" style="flex:2 1 120px;"/><input class="form-input gv-price" data-i="${i}" type="number" min="0" step="0.01" value="${r.price != null ? e(r.price) : ''}" placeholder="${e(t('price'))}" style="flex:1 1 70px;"/><input class="form-input gv-stock" data-i="${i}" type="number" min="0" step="1" value="${r.stock != null ? e(r.stock) : ''}" placeholder="${e(t('stock'))}" style="flex:1 1 60px;"/><button type="button" class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="goodVariantRemove(${i})" aria-label="${e(t('Remove'))}">✕</button></div>`).join('');
+  }
+  // v176: one tap fills in a whole set of sizes (the ones already there are kept).
+  window.goodSizePreset = function (key) {
+    const set = SIZE_SETS.find(x => x[0] === key); if (!set) return;
+    chartRead(); GV.rows = readVariants().filter(r => r.label || r.price != null || r.stock != null);
+    const have = new Set(GV.rows.map(r => r.label.toLowerCase()));
+    for (const lab of set[2]) if (!have.has(lab.toLowerCase()) && GV.rows.length < 20) GV.rows.push({ label: lab, price: null, stock: null });
+    const vn = el('gf-vname'); if (vn && !vn.value.trim()) vn.value = t('Size');
+    if (key === 'shoes' && GV.chart && !Object.keys(GV.chart.values).length) GV.chart.measures = ['foot'];
+    drawVariants();
+  };
+  // v176: the size chart: measurements for each size, typed in cm or inches.
+  function chartRead() {
+    if (!GV.chart) return;
+    for (const inp of document.querySelectorAll('.gc-val')) { const sz = inp.dataset.size, m = inp.dataset.m; (GV.chart.values[sz] = GV.chart.values[sz] || {})[m] = inp.value; }
+  }
+  function drawChart() {
+    const box = el('gf-chart-box'); if (!box || !GV.chart) return;
+    // v177: a size chart is for clothes, shoes and the like; a phone or a pipe doesn't get one (unless it already has one)
+    const hasValues = Object.values(GV.chart.values).some(r => Object.values(r || {}).some(x => x !== '' && x != null));
+    box.style.display = chartCat() || hasValues ? '' : 'none';
+    if (box.style.display === 'none') { box.innerHTML = ''; return; }
+    const C = GV.chart, sizes = readVariants().map(r => r.label).filter(Boolean);
+    box.innerHTML = `<div style="font-weight:700;color:var(--navy);margin-bottom:2px;">${e(t('Size chart'))} <small style="font-weight:400;color:var(--slate);">${e(t('optional, but buyers trust it most'))}</small></div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">${e(t('Measure the garment lying flat, or give the body measurement each size fits. Buyers see it in cm and inches.'))}</div>
+      ${sizes.length ? `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px;">
+        <label style="font-size:13px;">${e(t('I measure in'))} <select class="form-input form-select" id="gc-unit" style="display:inline-block;width:auto;padding:4px 8px;" onchange="goodChartUnit(this.value)"><option value="cm" ${C.unit === 'cm' ? 'selected' : ''}>cm</option><option value="in" ${C.unit === 'in' ? 'selected' : ''}>${e(t('inches'))}</option></select></label>
+        ${Object.entries(MEASURES).map(([k, w]) => `<label style="font-size:13px;display:inline-flex;gap:4px;align-items:center;"><input type="checkbox" ${C.measures.includes(k) ? 'checked' : ''} onchange="goodChartMeasure(${jsArg(k)}, this.checked)"/> ${e(t(w))}</label>`).join('')}
+      </div>
+      ${C.measures.length ? `<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:13px;min-width:100%;"><thead><tr><th style="text-align:left;padding:4px 6px;">${e(t('Size'))}</th>${C.measures.map(m => `<th style="text-align:left;padding:4px 6px;white-space:nowrap;">${e(t(MEASURES[m]))} (${C.unit === 'in' ? 'in' : 'cm'})</th>`).join('')}</tr></thead>
+        <tbody>${sizes.map(sz => `<tr><td style="padding:3px 6px;font-weight:600;white-space:nowrap;">${e(sz)}</td>${C.measures.map(m => `<td style="padding:3px 4px;"><input class="form-input gc-val" data-size="${e(sz)}" data-m="${m}" type="number" min="0" step="0.1" inputmode="decimal" aria-label="${e(sz)} ${e(t(MEASURES[m]))}" value="${e(((C.values[sz] || {})[m]) || '')}" style="padding:5px 6px;min-width:64px;"/></td>`).join('')}</tr>`).join('')}</tbody></table></div>` : `<div class="ver-note">${e(t('Tick at least one measurement.'))}</div>`}`
+      : `<div class="ver-note">${e(t('Add the sizes above first; the chart then has a row for each.'))}</div>`}`;
+  }
+  window.goodChartRedraw = function () { chartRead(); drawChart(); };
+  window.goodChartUnit = function (u) {
+    chartRead(); const C = GV.chart; if (!C || C.unit === u) return;
+    for (const sz of Object.keys(C.values)) for (const m of Object.keys(C.values[sz])) { const n = Number(C.values[sz][m]); if (C.values[sz][m] !== '' && n > 0) C.values[sz][m] = fmt1(u === 'in' ? n / CM_PER_IN : n * CM_PER_IN); }
+    C.unit = u; drawChart();
+  };
+  window.goodChartMeasure = function (m, on) {
+    chartRead(); const C = GV.chart; if (!C) return;
+    if (on && !C.measures.includes(m)) { if (C.measures.length >= 6) { showToast(t('Up to 6 measurements')); drawChart(); return; } C.measures.push(m); C.measures.sort((a, b) => Object.keys(MEASURES).indexOf(a) - Object.keys(MEASURES).indexOf(b)); }
+    if (!on) C.measures = C.measures.filter(x => x !== m);
+    drawChart();
+  };
+  function chartForSave() {
+    if (!GV.chart || !el('gf-chart-box')) return undefined;
+    chartRead(); const C = GV.chart, sizes = readVariants().map(r => r.label).filter(Boolean);
+    const rows = sizes.map(sz => { const values = {}; for (const m of C.measures) { const n = Number((C.values[sz] || {})[m]); if ((C.values[sz] || {})[m] !== '' && (C.values[sz] || {})[m] != null && n > 0) values[m] = Math.round((C.unit === 'in' ? n * CM_PER_IN : n) * 10) / 10; } return { size: sz, values }; });
+    return rows.some(r => Object.keys(r.values).length) && C.measures.length ? { unit: C.unit, measures: C.measures, rows } : null;
   }
   function readVariants() { return [...document.querySelectorAll('.gv-label')].map(i => { const n = i.dataset.i; const p = document.querySelector(`.gv-price[data-i="${n}"]`).value, s = document.querySelector(`.gv-stock[data-i="${n}"]`).value; return { id: GV.rows[n] && GV.rows[n].id, label: i.value.trim(), price: p === '' ? null : Number(p), stock: s === '' ? null : Number(s) }; }); }
-  window.goodVariantAdd = function () { GV.rows = readVariants(); if (GV.rows.length < 20) GV.rows.push({ label: '', price: null, stock: null }); drawVariants(); };
-  window.goodVariantRemove = function (i) { GV.rows = readVariants(); GV.rows.splice(i, 1); drawVariants(); };
+  window.goodVariantAdd = function () { chartRead(); GV.rows = readVariants(); if (GV.rows.length < 20) GV.rows.push({ label: '', price: null, stock: null }); drawVariants(); };
+  window.goodVariantRemove = function (i) { chartRead(); GV.rows = readVariants(); GV.rows.splice(i, 1); drawVariants(); };
   // saveGood sends the extras too (the original reads the rest of the form).
   if (typeof saveGood === 'function') {
     const base = saveGood;
@@ -123,7 +227,9 @@
       if (!el('gf-extras')) return base.apply(this, arguments);
       const realFetch = apiFetch;
       const variants = readVariants().filter(v => v.label);
-      const extras = { marketCategory: el('gf-mcat') ? el('gf-mcat').value : undefined, brand: el('gf-brand').value.trim(), condition: el('gf-cond').value, shelf: el('gf-shelf').value.trim(), size: el('gf-size').value || null, salePercent: Number(el('gf-sale').value) || 0, saleEndsAt: el('gf-sale-end').value ? new Date(el('gf-sale-end').value + 'T23:59:00').toISOString() : null, expiryDate: el('gf-expiry').value || null, variantName: el('gf-vname').value.trim(), variants };
+      const chart = chartForSave(); // v176
+      const sp = typeof specsRead === 'function' ? specsRead('gf') : null; // v177
+      const extras = { ...(chart !== undefined ? { sizeChart: chart } : {}), ...(sp ? sp : {}), marketCategory: el('gf-mcat') ? el('gf-mcat').value : undefined, brand: el('gf-brand').value.trim(), condition: el('gf-cond').value, shelf: el('gf-shelf').value.trim(), size: el('gf-size').value || null, salePercent: Number(el('gf-sale').value) || 0, saleEndsAt: el('gf-sale-end').value ? new Date(el('gf-sale-end').value + 'T23:59:00').toISOString() : null, expiryDate: el('gf-expiry').value || null, variantName: el('gf-vname').value.trim(), variants };
       apiFetch = function (m, p, body) { if ((m === 'POST' && p === '/store/goods') || (m === 'PATCH' && /^\/store\/goods\/[^/]+$/.test(p))) body = { ...body, ...extras }; return realFetch.apply(this, [m, p, body]); };
       try { return await base.apply(this, arguments); } finally { apiFetch = realFetch; }
     };
@@ -133,6 +239,99 @@
   const PICK = {}; // goodId → chosen variant id
   const keyOf = (g) => (g.variants && g.variants.length ? `${g.id}::${PICK[g.id] || ''}` : g.id);
   window.storePickVariant = function (goodId, vid) { PICK[goodId] = vid; renderProStore(); };
+
+  // ── v176: a good's own page ──────────────────────────────────────────
+  // Tapping a good (in the Market or a store) opens all its photos, the full
+  // description, the size choice and the size chart, as Jumia or Amazon do,
+  // with Add to cart and a link to the store.
+  const GP = { pid: null, gid: null, photo: 0, unit: null, back: null };
+  window.openGood = async function (providerId, goodId) {
+    if (!providerId || !goodId) return;
+    if (STORE_VIEW.providerId !== providerId || !STORE_VIEW.data) {
+      try { STORE_VIEW.data = await apiFetch('GET', '/providers/' + encodeURIComponent(providerId) + '/store'); STORE_VIEW.providerId = providerId; }
+      catch (x) { return showToast(x.message || t('This store is closed at the moment.')); }
+    }
+    const g = (STORE_VIEW.data.goods || []).find(x => x.id === goodId);
+    if (!g) { showToast(t('This good is no longer for sale.')); return; }
+    GP.pid = providerId; GP.gid = goodId; GP.photo = 0;
+    if (!GP.unit) GP.unit = typeof usesMiles === 'function' && usesMiles() ? 'in' : 'cm';
+    GP.back = document.activeElement;
+    drawGood(true);
+  };
+  function goodNow() { const d = STORE_VIEW.data; return d && GP.gid ? (d.goods || []).find(x => x.id === GP.gid) : null; }
+  function chartCell(cm) { if (cm == null) return '—'; return GP.unit === 'in' ? `${fmt1(cm / CM_PER_IN)} in` : `${fmt1(cm)} cm`; }
+  function drawGood(first) {
+    const g = goodNow(); if (!g) return closeGood();
+    const d = STORE_VIEW.data, st = d.store || {};
+    const hasV = g.variants && g.variants.length, v = hasV ? g.variants.find(x => x.id === PICK[g.id]) : null, shown = v || g;
+    const photos = g.photoUrls || [], main = photos[GP.photo] || photos[0];
+    const sc = g.sizeChart;
+    const chartHTML = sc ? `<div id="gp-chart" style="margin-top:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"><strong style="color:var(--navy);">${e(t('Size chart'))}</strong>
+          <span role="group" aria-label="${e(t('Units'))}" style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">${['cm', 'in'].map(u => `<button type="button" class="btn-sm" aria-pressed="${GP.unit === u}" onclick="goodUnit(${jsArg(u)})" style="border:none;border-radius:0;min-height:34px;${GP.unit === u ? 'background:var(--navy);color:#fff;' : 'background:transparent;'}">${u === 'in' ? e(t('inches')) : 'cm'}</button>`).join('')}</span></div>
+        <div style="overflow-x:auto;margin-top:6px;"><table style="border-collapse:collapse;font-size:13.5px;min-width:100%;"><thead><tr><th scope="col" style="text-align:left;padding:6px;border-bottom:1px solid var(--border);">${e(t('Size'))}</th>${sc.measures.map(m => `<th scope="col" style="text-align:left;padding:6px;border-bottom:1px solid var(--border);white-space:nowrap;">${e(t(MEASURES[m] || m))}</th>`).join('')}</tr></thead>
+        <tbody>${sc.rows.map(r => `<tr style="${v && v.label === r.size ? 'background:#EEF4FF;font-weight:700;' : ''}"><th scope="row" style="text-align:left;padding:6px;white-space:nowrap;">${e(r.size)}</th>${sc.measures.map(m => `<td style="padding:6px;white-space:nowrap;">${e(chartCell(r.values ? r.values[m] : null))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+        <div style="font-size:12px;color:var(--slate);margin-top:4px;">${e(t('Measurements from the seller. Compare with a garment that fits you well.'))}</div></div>` : '';
+    const html = `<div class="modal" style="max-width:860px;width:min(96vw,860px);max-height:92vh;overflow:auto;padding:16px;" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:13px;color:var(--slate);">${e(t('Store'))}: <a role="button" tabindex="0" onclick="goodVisitStore()" style="cursor:pointer;color:var(--accent,#1F5FBF);font-weight:600;">${e(st.name || '')}</a>${st.city ? ' · ' + e(st.city) : ''}</span>
+        <button type="button" id="gp-close" class="btn-sm btn-sm-ghost" onclick="closeGood()" aria-label="${e(t('Close'))}" style="font-size:22px;line-height:1;min-width:40px;min-height:40px;">×</button></div>
+      <div class="gp-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+        <div>
+          ${main ? `<img src="${e(main)}" alt="${e(g.name)}" style="width:100%;aspect-ratio:1;object-fit:contain;background:#F2F4F7;border-radius:10px;cursor:zoom-in;" onclick="v105Zoom(${jsArg(main)})"/>` : `<div style="width:100%;aspect-ratio:1;background:#F2F4F7;border-radius:10px;"></div>`}
+          ${photos.length > 1 ? `<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">${photos.map((u, i) => `<button type="button" onclick="goodPhoto(${i})" aria-label="${e(t('Photo'))} ${i + 1}" aria-pressed="${i === GP.photo}" style="padding:0;border:2px solid ${i === GP.photo ? 'var(--navy)' : 'transparent'};border-radius:8px;background:none;cursor:pointer;"><img src="${e(u)}" alt="" style="width:60px;height:60px;object-fit:cover;border-radius:6px;display:block;"/></button>`).join('')}</div>` : ''}
+        </div>
+        <div style="min-width:0;">
+          <h2 id="gp-title" style="font-size:20px;color:var(--navy);margin:0 0 4px;line-height:1.3;">${e(g.name)}</h2>
+          <div style="font-size:13px;color:var(--slate);">${[g.brand, g.condition ? t(g.condition[0].toUpperCase() + g.condition.slice(1)) : '', g.rating ? `★ ${g.rating.avg} (${g.rating.count})` : ''].filter(Boolean).map(e).join(' · ')}</div>
+          <div style="font-size:22px;font-weight:800;color:var(--navy);margin:8px 0 2px;">${priceLocal(shown)}${shown.salePercent ? ` <s style="font-weight:400;color:var(--slate);font-size:14px;">${wasLocal(shown)}</s> <span style="background:#C1554D;color:#fff;font-size:12px;border-radius:6px;padding:2px 6px;">−${e(shown.salePercent)}%</span>` : ''}${g.unit ? `<span style="font-weight:400;color:var(--slate);font-size:13px;"> / ${e(g.unit)}</span>` : ''}</div>
+          ${hasV ? `<div style="margin-top:10px;"><div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:14px;color:var(--navy);">${e(g.variantName || t('Option'))}${v ? `: <span style="font-weight:400;">${e(v.label)}</span>` : ''}</strong>${sc ? `<a role="button" tabindex="0" onclick="document.getElementById('gp-chart').scrollIntoView({behavior:'smooth',block:'center'})" style="font-size:13px;cursor:pointer;color:var(--accent,#1F5FBF);">📏 ${e(t('Size chart'))}</a>` : ''}</div>
+            <div role="radiogroup" aria-label="${e(g.variantName || t('Option'))}" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">${g.variants.map(x => `<button type="button" role="radio" aria-checked="${PICK[g.id] === x.id}" ${x.soldOut ? 'disabled' : ''} onclick="goodPick(${jsArg(x.id)})" style="min-width:48px;min-height:44px;padding:6px 12px;border-radius:8px;border:1.5px solid ${PICK[g.id] === x.id ? 'var(--navy)' : 'var(--border)'};background:${PICK[g.id] === x.id ? 'var(--navy)' : 'var(--white,#fff)'};color:${PICK[g.id] === x.id ? '#fff' : 'var(--navy)'};font-weight:600;cursor:${x.soldOut ? 'not-allowed' : 'pointer'};${x.soldOut ? 'opacity:.45;text-decoration:line-through;' : ''}" title="${x.soldOut ? e(t('Sold out')) : ''}">${e(x.label)}</button>`).join('')}</div>
+            ${v && v.left != null ? `<div style="font-size:12.5px;color:#8C6423;margin-top:4px;">${e(t('Only'))} ${e(v.left)} ${e(t('left'))}</div>` : ''}</div>` : (g.left != null ? `<div style="font-size:12.5px;color:#8C6423;margin-top:4px;">${e(t('Only'))} ${e(g.left)} ${e(t('left'))}</div>` : '')}
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+            ${g.soldOut ? `<span class="badge badge-neutral">${e(t('Sold out'))}</span>` : `<button type="button" id="gp-add" class="btn-sm btn-sm-primary" style="min-height:44px;padding:8px 18px;font-size:15px;" onclick="goodAddToCart()">${e(t('Add to cart'))}</button>`}
+            <button type="button" class="btn-sm btn-sm-outline" style="min-height:44px;" onclick="goodVisitStore()">${e(t('Visit the store'))}</button>
+          </div>
+          ${typeof specsTableHTML === 'function' ? specsTableHTML(g.specRows, 'gp-specs') : ''}
+          ${g.description ? `<div style="margin-top:14px;"><strong style="color:var(--navy);">${e(t('Description'))}</strong><div style="white-space:pre-line;font-size:14px;line-height:1.55;margin-top:4px;">${e(g.description)}</div></div>` : ''}
+          ${chartHTML}
+          ${g.size ? `<div style="font-size:12.5px;color:var(--slate);margin-top:10px;">📦 ${e(t('Delivery size'))}: ${e(t((SIZES[g.size] || g.size).split(':')[0]))}</div>` : ''}
+          ${d.returnPolicy && d.returnPolicy.words ? `<div style="font-size:12.5px;color:var(--slate);margin-top:4px;">↩️ ${e(d.returnPolicy.words)}</div>` : ''}
+        </div>
+      </div></div>`;
+    let ov = el('good-page');
+    if (!ov) {
+      ov = document.createElement('div'); ov.id = 'good-page'; ov.className = 'modal-overlay open';
+      ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'gp-title');
+      ov.addEventListener('click', closeGood);
+      document.addEventListener('keydown', goodKeys);
+      document.body.appendChild(ov);
+    }
+    const y = ov.firstElementChild ? ov.firstElementChild.scrollTop : 0;
+    ov.innerHTML = html;
+    if (first) { const c = el('gp-close'); if (c) c.focus(); } else if (ov.firstElementChild) ov.firstElementChild.scrollTop = y;
+  }
+  // Escape closes; the arrow keys go through the photos.
+  function goodKeys(ev) {
+    if (!el('good-page')) { document.removeEventListener('keydown', goodKeys); return; }
+    if (ev.key === 'Escape') { ev.preventDefault(); closeGood(); }
+    else if ((ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') && !(ev.target && /INPUT|SELECT|TEXTAREA/.test(ev.target.tagName))) { const g = goodNow(); const n = g && g.photoUrls ? g.photoUrls.length : 0; if (n > 1) { GP.photo = (GP.photo + (ev.key === 'ArrowRight' ? 1 : n - 1)) % n; drawGood(); } }
+  }
+  window.closeGood = function () { document.removeEventListener('keydown', goodKeys); const ov = el('good-page'); if (ov) ov.remove(); if (GP.back && GP.back.focus) { try { GP.back.focus(); } catch (x) {} } GP.gid = null; };
+  window.goodPhoto = function (i) { GP.photo = i; drawGood(); };
+  window.goodUnit = function (u) { GP.unit = u; drawGood(); };
+  window.goodPick = function (vid) { PICK[GP.gid] = vid; drawGood(); if (el('store-view-body') || typeof renderProStore === 'function') { try { if (STORE_VIEW.providerId === GP.pid && document.querySelector('.store-good')) renderProStore(); } catch (x) {} } };
+  window.goodVisitStore = function () { const pid = GP.pid; closeGood(); openProStore(pid); };
+  window.goodAddToCart = async function () {
+    const g = goodNow(); if (!g) return;
+    const hasV = g.variants && g.variants.length;
+    if (hasV && !PICK[g.id]) { showToast(`${t('Choose the')} ${(g.variantName || t('option')).toLowerCase()} ${t('first')}`); const b = document.querySelector('#good-page [role=radio]:not([disabled])'); if (b) b.focus(); return; }
+    const btn = el('gp-add'); if (btn) btn.disabled = true;
+    try {
+      if (typeof cartAddItem === 'function') showToast(await cartAddItem(GP.pid, g.id, hasV ? PICK[g.id] : null, 1));
+      else { changeBasket(g.id, 1); showToast(t('Added to your cart')); }
+    } catch (x) { showToast(x.message || t('Could not add it')); }
+    finally { if (btn) btn.disabled = false; }
+  };
   changeBasket = function (goodId, delta) {
     const pid = STORE_VIEW.providerId, d = STORE_VIEW.data; if (!pid || !d) return;
     const g = d.goods.find(x => x.id === goodId); if (!g || g.soldOut) return;
@@ -180,12 +379,13 @@
       return `<div class="store-good" style="border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px;background:var(--white);position:relative;">
       <button type="button" onclick="storeToggleSave(${jsArg(g.id)}, ${g.saved ? 'true' : 'false'})" aria-label="${e(t(g.saved ? 'Remove from Saved' : 'Save'))}" title="${e(t(g.saved ? 'Saved' : 'Save'))}" style="position:absolute;top:14px;right:14px;border:none;background:rgba(255,255,255,.9);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:16px;color:${g.saved ? '#C1554D' : 'var(--slate)'};">${g.saved ? '♥' : '♡'}</button>
       ${g.salePercent ? `<span style="position:absolute;top:14px;left:14px;background:#C1554D;color:#fff;font-weight:800;font-size:12px;border-radius:6px;padding:2px 6px;">−${e(g.salePercent)}%</span>` : ''}
-      ${g.photoUrls[0] ? `<img src="${e(g.photoUrls[0])}" alt="${e(g.name)}" loading="lazy" onclick="v105Zoom(${jsArg(g.photoUrls[0])})" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:zoom-in;"/>` : ''}
+      ${g.photoUrls[0] ? `<img src="${e(g.photoUrls[0])}" alt="${e(g.name)}" loading="lazy" onclick="openGood(${jsArg(STORE_VIEW.providerId)}, ${jsArg(g.id)})" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;"/>` : ''}
       ${g.photoUrls.length > 1 ? `<div style="display:flex;gap:4px;">${g.photoUrls.slice(1).map(u => v105Photo(u, 34)).join('')}</div>` : ''}
-      <div style="font-weight:700;color:var(--navy);font-size:14px;line-height:1.3;">${e(g.name)}</div>
+      <a role="button" tabindex="0" onclick="openGood(${jsArg(STORE_VIEW.providerId)}, ${jsArg(g.id)})" onkeydown="if(event.key==='Enter')openGood(${jsArg(STORE_VIEW.providerId)}, ${jsArg(g.id)})" style="font-weight:700;color:var(--navy);font-size:14px;line-height:1.3;cursor:pointer;text-decoration:none;">${e(g.name)}</a>
       <div style="font-size:12px;color:var(--slate);">${[g.brand, g.condition && g.condition !== 'new' ? t(g.condition[0].toUpperCase() + g.condition.slice(1)) : '', g.expiryDate ? t('Use by') + ' ' + new Date(g.expiryDate + 'T12:00:00').toLocaleDateString() : ''].filter(Boolean).map(e).join(' · ')}</div>
       ${g.rating ? `<a onclick="storeShowReviews(${jsArg(g.id)},${jsArg(g.name)})" style="font-size:12.5px;color:#B08A3C;cursor:pointer;">${stars(g.rating.avg)} <span style="color:var(--slate);">${e(g.rating.avg)} (${e(g.rating.count)})</span></a>` : ''}
-      ${g.description ? `<div style="font-size:12.5px;color:var(--slate);line-height:1.4;">${e(g.description)}</div>` : ''}
+      ${g.description ? `<div style="font-size:12.5px;color:var(--slate);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:pre-line;">${e(g.description)}</div>` : ''}
+      <a role="button" tabindex="0" onclick="openGood(${jsArg(STORE_VIEW.providerId)}, ${jsArg(g.id)})" style="font-size:12.5px;color:var(--accent,#1F5FBF);cursor:pointer;">${e(t(g.sizeChart ? 'Details and size chart' : 'More details'))}</a>
       ${hasV ? `<select class="form-input form-select" style="padding:6px;font-size:13px;" onchange="storePickVariant(${jsArg(g.id)}, this.value)" aria-label="${e(g.variantName || t('Option'))}"><option value="">${e(t('Choose'))} ${e((g.variantName || t('option')).toLowerCase())}</option>${g.variants.map(x => `<option value="${e(x.id)}" ${PICK[g.id] === x.id ? 'selected' : ''} ${x.soldOut ? 'disabled' : ''}>${e(x.label)}${x.price !== g.price ? ' · ' + priceLocal(x) : ''}${x.soldOut ? ' · ' + e(t('sold out')) : ''}</option>`).join('')}</select>` : ''}
       <div style="font-weight:800;color:var(--navy);margin-top:auto;">${priceLocal(shown)}${shown.salePercent ? ` <s style="font-weight:400;color:var(--slate);font-size:12.5px;">${wasLocal(shown)}</s>` : ''}${g.unit ? `<span style="font-weight:400;color:var(--slate);font-size:12.5px;"> / ${e(g.unit)}</span>` : ''}</div>
       ${g.saleEndsAt && g.salePercent ? `<div style="font-size:11.5px;color:#C1554D;">${e(t('Sale ends'))} ${e(new Date(g.saleEndsAt).toLocaleDateString())}</div>` : ''}

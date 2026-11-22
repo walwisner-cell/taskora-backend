@@ -44,6 +44,9 @@ const publicFormLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, max: 6, standardHeaders: true, legacyHeaders: false,
   message: { error: 'You\'ve sent several messages in a short time. Please try again in an hour.' },
 });
+// v178: an admin help video or its picture, through a private link that expires (see src/help-media.js).
+router.get('/help-media/:exp/:sig/:file', (req, res) => require('../help-media').serve(req, res));
+
 router.post('/contact', publicFormLimiter, async (req, res) => {
   const { name, email, subject, message, city } = req.body || {};
   const errors = validate([

@@ -146,7 +146,7 @@ async function eraseAccount(closure, adminId) {
   // v139: their Market listings come down, with their photos.
   for (const l of (await safeAll('marketListings')).filter(l => l.sellerId === user.id && l.status !== 'deleted')) {
     for (const u of (l.photoUrls || [])) removeFileQuietly(UPLOADS_DIR, String(u).split('/').pop());
-    try { await db.update('marketListings', l.id, { status: 'deleted', title: 'Removed', description: '', photoUrls: [], deletedAt: new Date().toISOString() }); } catch (e) { /* skip */ }
+    try { await db.update('marketListings', l.id, { status: 'deleted', title: 'Removed', description: '', photoUrls: [], specs: null, specsExtra: null, deletedAt: new Date().toISOString() }); } catch (e) { /* skip */ }
   }
   // v137: voice messages they recorded.
   for (const m of (await safeAll('messages')).filter(m => m.fromId === user.id && m.kind === 'voice' && m.voice && m.voice.file && !m.voice.deletedAt)) {

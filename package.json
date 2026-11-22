@@ -8,7 +8,9 @@
     "start": "node server.js",
     "dev": "node server.js",
     "seed": "node src/seed.js",
-    "sync-reference-data": "node src/sync-reference-data.js"
+    "sync-reference-data": "node src/sync-reference-data.js",
+    "help-videos": "node scripts/help-videos/film.js",
+    "help-videos:check": "node scripts/help-videos/film.js --check"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

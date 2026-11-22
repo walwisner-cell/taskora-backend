@@ -104,11 +104,19 @@ function goodDetails(g) {
   return {
     brand: g.brand || '', condition: g.condition || 'new', shelf: g.shelf || '', size: g.size || null, expiryDate: g.expiryDate || null, marketCategory: g.marketCategory || null, guessedCategory: g.marketCategory ? null : require('../market').guessCategory(`${g.name} ${g.description || ''} ${g.shelf || ''}`),
     variantName: g.variantName || '', salePercent: store.saleOn(g) || 0, saleEndsAt: g.saleEndsAt || null,
+    sizeChart: g.sizeChart || null, // v176
+    ...goodSpecs(g), // v177
   };
 }
+// v177: item specifics (a phone's storage, a pipe's diameter), and as label and value for the buyer's page.
+function goodSpecs(g) {
+  const cat = g.marketCategory || require('../market').guessCategory(`${g.name} ${g.description || ''} ${g.shelf || ''}`) || null;
+  return { specs: g.specs || null, specsExtra: g.specsExtra || null, specRows: require('../specs').specRows(g.specs, g.specsExtra, cat) };
+}
+function specWords(o) { return require('../specs').specRows(o.specs, o.specsExtra, null).map(r => r.label + ' ' + r.value).join(' '); }
 function goodForOwner(g, currencies) {
   return {
-    id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, currencies), unit: g.unit || '', photoUrls: g.photoUrls || [],
+    id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, currencies), unit: g.unit || '', size: g.size || null, photoUrls: g.photoUrls || [],
     ...goodDetails(g), salePercentSet: Number(g.salePercent) || 0,
     variants: (g.variants || []).map(v => ({ id: v.id, label: v.label, price: v.price === undefined ? null : v.price, stock: v.stock === undefined ? null : v.stock })),
     stock: g.stock === undefined ? null : g.stock, lowStockAt: g.lowStockAt === undefined ? null : g.lowStockAt, costPrice: g.costPrice === undefined ? null : g.costPrice,
@@ -120,7 +128,7 @@ function goodForShopper(g, currencies, rating) {
   const hasV = Array.isArray(g.variants) && g.variants.length > 0;
   const variants = hasV ? g.variants.map(v => { const st = v.stock === undefined ? null : v.stock; return { id: v.id, label: v.label, ...store.goodPriceFields(g, currencies, v.id), soldOut: st !== null && st < 1, left: st !== null && st <= 5 ? st : null }; }) : [];
   return {
-    id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, currencies), unit: g.unit || '', photoUrls: g.photoUrls || [],
+    id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, currencies), unit: g.unit || '', size: g.size || null, photoUrls: g.photoUrls || [],
     ...goodDetails(g), variants,
     soldOut: hasV ? variants.every(v => v.soldOut) : !store.inStock(g, 1), left: hasV ? null : ((g.stock !== null && g.stock !== undefined && g.stock <= 5) ? g.stock : null),
     rating: rating || null, // v143: stars from people who bought it
@@ -258,8 +266,9 @@ function readGoodBody(body, userId, existing, currencies) {
     out.name = b.name.trim();
   }
   if (has('description')) {
-    if (b.description && !isNonEmptyString(b.description, { max: 400 })) return { error: 'The description must be under 400 characters' };
-    out.description = b.description ? String(b.description).trim() : '';
+    // v176: a real description (material, fit, measurements, care) needs room and lines, as on Jumia or Amazon.
+    if (b.description && !isNonEmptyString(b.description, { max: 2000 })) return { error: 'The description must be under 2,000 characters' };
+    out.description = b.description ? String(b.description).replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim() : '';
   }
   if (!existing || has('price') || has('currency')) {
     // v108: the price can be in US dollars or in the currency of the pro's country.
@@ -277,6 +286,11 @@ function readGoodBody(body, userId, existing, currencies) {
       if (usd < 0.01) return { error: `That price is less than one US cent. Enter a higher price in ${code}.` };
       out.priceCurrency = code; out.priceLocal = money(amount); out.price = usd; // dollars today; worked out again when someone buys
     }
+  }
+  if (has('size')) { // v174: how big it is, so only a vehicle that can carry it is offered
+    if (b.size === null || b.size === '') out.size = null;
+    else if (!store.SIZES.includes(b.size)) return { error: 'Choose a size: small, medium, large or bulky' };
+    else out.size = b.size;
   }
   if (has('unit')) {
     if (b.unit && !isNonEmptyString(b.unit, { max: 20 })) return { error: 'The unit must be under 20 characters, for example "pack" or "bottle"' };
@@ -328,6 +342,12 @@ function readGoodBody(body, userId, existing, currencies) {
     if (b.saleEndsAt) { const t = Date.parse(b.saleEndsAt); if (!Number.isFinite(t) || t < Date.now()) return { error: 'The sale end date must be in the future' }; out.saleEndsAt = new Date(t).toISOString(); }
     else out.saleEndsAt = null;
   }
+  if (has('sizeChart')) { const c = store.readSizeChart(b.sizeChart); if (c.error) return { error: c.error }; out.sizeChart = c.value; } // v176
+  if (has('specs') || has('specsExtra')) { // v177: item specifics
+    const r = require('../specs').readSpecs(has('specs') ? b.specs : existing && existing.specs, has('specsExtra') ? b.specsExtra : existing && existing.specsExtra);
+    if (r.error) return { error: r.error };
+    out.specs = r.specs; out.specsExtra = r.extra;
+  }
   if (has('variants')) {
     if (b.variants === null) out.variants = [];
     else {
@@ -372,7 +392,7 @@ router.post('/store/goods', requireAuth, requireRole('provider'), async (req, re
   const forSale = out.forSale !== false;
   if (forSale && !(me.store && me.store.name)) return res.status(400).json({ error: 'Name your store first, then add goods to it.' });
   if (forSale && !(out.photoUrls && out.photoUrls.length)) return res.status(400).json({ error: 'Add at least one photo of the good, so a manager and your customers can see what it is.' });
-  const banned = await bannedReason(out.name, out.description, [out.brand, ...(out.variants || []).map(v => v.label)].filter(Boolean).join(' '));
+  const banned = await bannedReason(out.name, out.description, [out.brand, ...(out.variants || []).map(v => v.label), specWords(out)].filter(Boolean).join(' '));
   if (banned) return res.status(400).json({ error: `This can't be sold on Trothen (${banned}).` });
   const count = (await db.filter('storeGoods', g => g.providerId === me.id)).length;
   if (count >= settings.maxGoodsPerStore) return res.status(400).json({ error: `A store can hold up to ${settings.maxGoodsPerStore} goods. Remove one first.` });
@@ -383,6 +403,8 @@ router.post('/store/goods', requireAuth, requireRole('provider'), async (req, re
     forSale, hidden: false,
     brand: out.brand || '', condition: out.condition || 'new', shelf: out.shelf || '', size: out.size || null, expiryDate: out.expiryDate || null, marketCategory: out.marketCategory || null, // v143; v164
     variantName: out.variantName || '', variants: out.variants || [], salePercent: out.salePercent || 0, saleEndsAt: out.saleEndsAt || null,
+    sizeChart: out.sizeChart || null, // v176
+    specs: out.specs || null, specsExtra: out.specsExtra || null, // v177
     status: forSale ? 'pending' : 'private',
     sold: 0, stockLog: [],
     createdAt: new Date().toISOString(),
@@ -394,6 +416,19 @@ router.post('/store/goods', requireAuth, requireRole('provider'), async (req, re
 });
 
 // PATCH /api/store/goods/:id
+// v177: did this change raise a price (the good's, or a size's or colour's), in the same money?
+const SALE_AFTER_RISE_DAYS = 30;
+function priceRaised(good, out) {
+  const cur = (g) => g.priceCurrency || 'USD';
+  const amt = (g) => (cur(g) !== 'USD' ? Number(g.priceLocal) : Number(g.price));
+  const next = { ...good, ...out };
+  if ((out.price !== undefined || out.priceLocal !== undefined) && cur(next) === cur(good) && amt(next) > amt(good) + 1e-9) return true;
+  if (out.variants) {
+    const before = new Map((good.variants || []).map(v => [v.id, v]));
+    for (const v of out.variants) { const o = v.id && before.get(v.id); if (o && v.price != null && Number(v.price) > Number(o.price != null ? o.price : amt(good)) + 1e-9) return true; }
+  }
+  return false;
+}
 router.patch('/store/goods/:id', requireAuth, requireRole('provider'), async (req, res) => {
   const me = await freshUser(req);
   const good = await db.find('storeGoods', g => g.id === req.params.id && g.providerId === me.id);
@@ -401,9 +436,22 @@ router.patch('/store/goods/:id', requireAuth, requireRole('provider'), async (re
   const currencies = await store.currenciesFor(me);
   const { out, error } = readGoodBody(req.body, me.id, good, currencies);
   if (error) return res.status(400).json({ error });
-  const banned = await bannedReason(out.name !== undefined ? out.name : good.name, out.description !== undefined ? out.description : good.description, [out.brand, ...(out.variants || []).map(v => v.label)].filter(Boolean).join(' '));
+  const banned = await bannedReason(out.name !== undefined ? out.name : good.name, out.description !== undefined ? out.description : good.description, [out.brand, ...(out.variants || []).map(v => v.label), specWords(out)].filter(Boolean).join(' '));
   if (banned) return res.status(400).json({ error: `This can't be sold on Trothen (${banned}).` });
   const patch = { ...out };
+  // v177: no fake discounts. A sale's "was" price must be a price buyers really paid, so a sale can't start
+  // (or run on) within 30 days of a price rise: the rule of the EU Omnibus Directive (2019/2161, art. 6a),
+  // and the same idea as Amazon's and Jumia's reference prices.
+  {
+    const raised = priceRaised(good, out);
+    if (raised) patch.priceRaisedAt = new Date().toISOString();
+    const raisedAt = raised ? patch.priceRaisedAt : good.priceRaisedAt;
+    const saleNext = out.salePercent !== undefined ? out.salePercent : (store.saleOn(good) || 0);
+    if (saleNext > 0 && raisedAt && Date.now() - Date.parse(raisedAt) < SALE_AFTER_RISE_DAYS * 864e5) {
+      const from = new Date(Date.parse(raisedAt) + SALE_AFTER_RISE_DAYS * 864e5).toISOString().slice(0, 10);
+      return res.status(400).json({ code: 'SALE_AFTER_RISE', error: raised ? `A sale can't go with a higher price. Raise the price with no sale; a sale can then start from ${from}, so the "was" price is one buyers really paid (the international rule against fake discounts).` : `The price went up recently, so a sale can start from ${from}. That way the "was" price is one buyers really paid (the international rule against fake discounts).` });
+    }
+  }
   const forSale = out.forSale !== undefined ? out.forSale : good.forSale !== false;
   const photos = out.photoUrls !== undefined ? out.photoUrls : (good.photoUrls || []);
   if (forSale && !photos.length) return res.status(400).json({ error: 'A good for sale needs at least one photo.' });
@@ -415,7 +463,9 @@ router.patch('/store/goods/:id', requireAuth, requireRole('provider'), async (re
     || (out.description !== undefined && out.description !== (good.description || ''))
     || (out.photoUrls !== undefined && JSON.stringify(out.photoUrls) !== JSON.stringify(good.photoUrls || []))
     || (out.brand !== undefined && out.brand !== (good.brand || '')) // v143: a new brand is checked too (fake branded goods)
-    || (out.variants !== undefined && JSON.stringify(out.variants.map(v => v.label)) !== JSON.stringify((good.variants || []).map(v => v.label)));
+    || (out.variants !== undefined && JSON.stringify(out.variants.map(v => v.label)) !== JSON.stringify((good.variants || []).map(v => v.label)))
+    || (out.specs !== undefined && JSON.stringify(out.specs) !== JSON.stringify(good.specs || null)) // v177: the details are claims a manager checks too
+    || (out.specsExtra !== undefined && JSON.stringify(out.specsExtra) !== JSON.stringify(good.specsExtra || null));
   let needsReview = false;
   if (!forSale) patch.status = 'private';
   else if (good.status === 'private' || good.status === 'rejected' || wordsChanged) { patch.status = 'pending'; patch.reviewNote = null; needsReview = true; }
@@ -732,7 +782,8 @@ router.get('/admin/store/review', adminGate, async (req, res) => {
   const curCache = new Map();
   const curFor = async (p) => { const k = p.country || ''; if (!curCache.has(k)) curCache.set(k, await store.currenciesFor(p)); return curCache.get(k); };
   for (const u of users) if (u.store && u.store.name) await curFor(u);
-  const shape = (g, p) => ({ id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, curCache.get(p.country || '') || []), unit: g.unit || '', photoUrls: g.photoUrls || [], status: g.status, reviewNote: g.reviewNote || null, reviewedAt: g.reviewedAt || null, reviewedByName: g.reviewedByName || null, createdAt: g.createdAt, updatedAt: g.updatedAt || null, pro: proInfo(p) });
+  const shape = (g, p) => ({ id: g.id, name: g.name, description: g.description || '', ...store.goodPriceFields(g, curCache.get(p.country || '') || []), unit: g.unit || '', photoUrls: g.photoUrls || [], brand: g.brand || '', condition: g.condition || 'new', marketCategory: require('../market').goodCategories(g, p)[0] || null, variantName: g.variantName || '', variantLabels: (g.variants || []).map(v => v.label), hasSizeChart: !!g.sizeChart, specRows: goodSpecs(g).specRows, // v177: everything a manager is asked to check
+    status: g.status, reviewNote: g.reviewNote || null, reviewedAt: g.reviewedAt || null, reviewedByName: g.reviewedByName || null, createdAt: g.createdAt, updatedAt: g.updatedAt || null, pro: proInfo(p) });
   const pending = [], recent = [];
   for (const g of goods) {
     const p = mine(g.providerId);

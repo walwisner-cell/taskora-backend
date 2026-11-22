@@ -1,0 +1,79 @@
+[
+ {
+  "key": "goods",
+  "file": "help-admin-goods",
+  "title": "Check a good before it goes on sale",
+  "tagline": "Stores & Skills: read everything, then approve or turn it down",
+  "audience": "all",
+  "section": "stores",
+  "seconds": 34,
+  "transcript": [
+   "How to check a good before buyers can see it.",
+   "Open Stores & Skills.",
+   "Look at the photos: they must show the real good.",
+   "Read the details. Do they make sense for this good and this price?",
+   "If all is right, tap Approve. If not, Turn down with a reason."
+  ]
+ },
+ {
+  "key": "listings",
+  "file": "help-admin-listings",
+  "title": "Check a held Market listing",
+  "tagline": "Market → To check: approve it, or take it down",
+  "audience": "all",
+  "section": "market",
+  "seconds": 35,
+  "transcript": [
+   "How to check a Market listing held by the safety checks.",
+   "Open Market.",
+   "Tap To check.",
+   "Read why it was held, the description and the details.",
+   "Tap Approve, or Take it down. A seller who breaks the rules can be stopped."
+  ]
+ },
+ {
+  "key": "approvals",
+  "file": "help-admin-approvals",
+  "title": "Approve new people",
+  "tagline": "User Approvals: check each new sign-up",
+  "audience": "all",
+  "section": "approvals",
+  "seconds": 17,
+  "transcript": [
+   "How to approve people who signed up.",
+   "Open User Approvals.",
+   "Check the person, then Approve or Reject."
+  ]
+ },
+ {
+  "key": "systemcheck",
+  "file": "help-admin-systemcheck",
+  "title": "System Check",
+  "tagline": "Green, orange or red for each part of Trothen",
+  "audience": "all",
+  "section": "systemcheck",
+  "seconds": 31,
+  "transcript": [
+   "How to check that Trothen is working.",
+   "Open System Check.",
+   "Tap Check now.",
+   "Each part shows green, orange or red, with the likely cause and what to do.",
+   "Tap Copy report to send it to whoever fixes it."
+  ]
+ },
+ {
+  "key": "fares",
+  "file": "help-admin-fares",
+  "title": "Ride and delivery fares",
+  "tagline": "Admin → Rides: the L$ fares for each vehicle",
+  "audience": "all",
+  "section": "rides",
+  "seconds": 34,
+  "transcript": [
+   "How to set the L$ fares for rides and deliveries.",
+   "Open Rides.",
+   "Choose the country. Each vehicle has a starting price, a price per km and a minimum.",
+   "Type today's fuel price: fares move with it once the change passes your limit."
+  ]
+ }
+]

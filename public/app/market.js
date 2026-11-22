@@ -132,16 +132,18 @@
   }
   const stars = (r) => (r && r.rating ? `<span title="${e(r.ratingCount)} ${e(t(r.ratingCount === 1 ? 'rating' : 'ratings'))}" style="color:#8A5A00;white-space:nowrap;">★ ${Number(r.rating).toFixed(1)}</span>` : ''); // v164: the star stays with its number
   function cardHTML(it) {
-    const click = it.kind === 'store' ? `openProStore(${jsArg(it.providerId)})` : `openListing(${jsArg(it.id)})`;
+    // v176: a store good opens its own page (photos, description, sizes, size chart); a person's item opens as before
+    const click = it.kind === 'store' ? (typeof openGood === 'function' ? `openGood(${jsArg(it.providerId)},${jsArg(it.id)})` : `openProStore(${jsArg(it.providerId)})`) : `openListing(${jsArg(it.id)})`;
     const badge = it.kind === 'store' ? `<span class="badge badge-neutral" style="font-size:11px;">${e(t('Store'))}: ${e(it.storeName)}</span>` : (it.conditionLabel ? `<span class="badge badge-neutral" style="font-size:11px;">${e(t(it.conditionLabel))}</span>` : '');
     return `<div class="mk-card" data-kind="${it.kind}" data-id="${e(it.id)}" role="button" tabindex="0" onclick="${click}" onkeydown="if(event.key==='Enter'){${click}}" style="cursor:pointer;border:1px solid var(--border);border-radius:12px;background:var(--white,#fff);overflow:hidden;display:flex;flex-direction:column;">
       ${it.photo ? `<img src="${e(it.photo)}" alt="" loading="lazy" style="width:100%;aspect-ratio:1;object-fit:cover;background:#f2f4f7;"/>` : `<div style="width:100%;aspect-ratio:1;background:#f2f4f7;"></div>`}
       <div style="padding:9px 10px 11px;display:flex;flex-direction:column;gap:4px;flex:1;">
         <div style="font-weight:800;color:var(--navy);font-size:15.5px;">${money(it.price)}${it.localPrice ? ` <span style="font-weight:400;color:var(--slate);font-size:12px;">${e(localMoney(it.localPrice))}</span>` : ''}</div>
         <div style="font-size:14px;color:var(--text,#1b2533);line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${e(it.title)}</div>
+        ${typeof specsLine === 'function' && it.specRows && it.specRows.length ? `<div class="mk-specs" style="font-size:12px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e(specsLine(it.specRows, 3))}</div>` : ''}
         <div>${badge}</div>
         ${it.tradePrice ? `<div style="font-size:12.5px;color:#0f766e;font-weight:700;">${e(t('Trade price for pros'))}: ${money(it.tradePrice)}</div>` : ''}
-        ${it.kind === 'store' && typeof cartAddFromMarket === 'function' ? `<button type="button" class="btn-sm ${it.hasOptions ? 'btn-sm-outline' : 'btn-sm-primary'} mk-cart-btn" style="margin-top:4px;" onkeydown="event.stopPropagation()" onclick="event.stopPropagation();${it.hasOptions ? `openProStore(${jsArg(it.providerId)})` : `cartAddFromMarket(${jsArg(it.providerId)},${jsArg(it.id)},this)`}">${e(t(it.hasOptions ? 'Choose options' : 'Add to cart'))}</button>` : ''}
+        ${it.kind === 'store' && typeof cartAddFromMarket === 'function' ? `<button type="button" class="btn-sm ${it.hasOptions ? 'btn-sm-outline' : 'btn-sm-primary'} mk-cart-btn" style="margin-top:4px;" onkeydown="event.stopPropagation()" onclick="event.stopPropagation();${it.hasOptions ? (typeof openGood === 'function' ? `openGood(${jsArg(it.providerId)},${jsArg(it.id)})` : `openProStore(${jsArg(it.providerId)})`) : `cartAddFromMarket(${jsArg(it.providerId)},${jsArg(it.id)},this)`}">${e(t(it.hasOptions ? 'Choose options' : 'Add to cart'))}</button>` : ''}
         <div style="font-size:12px;color:var(--slate);margin-top:auto;">${e(it.city || '')}${it.seller ? ` · ${e(it.seller.name)}${it.seller.verified ? ' ✓' : ''} ${stars(it.seller)}${it.seller.isNew ? ` · <span style="color:#8a5a00;">${e(t('New seller'))}</span>` : ''}` : ''}</div>
       </div></div>`;
   }
@@ -161,6 +163,7 @@
         ${l.photoUrls.length > 1 ? `<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">${l.photoUrls.map(u => `<img src="${e(u)}" alt="" onclick="document.getElementById('mkl-main').src=this.src" style="width:56px;height:56px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);"/>`).join('')}</div>` : ''}` : ''}
       <div style="font-size:24px;font-weight:800;color:var(--navy);margin:12px 0 2px;">${money(l.price)}${l.localPrice ? ` <span style="font-size:14px;font-weight:400;color:var(--slate);">${e(localMoney(l.localPrice))}</span>` : ''}</div>
       ${l.status !== 'live' ? `<span class="badge badge-pending">${e(l.status === 'reserved' ? t('Someone is buying this') : l.status === 'sold' ? t('Sold') : l.status)}</span>` : ''}
+      ${typeof specsTableHTML === 'function' ? specsTableHTML(l.specRows, 'mkl-specs') : ''}
       ${l.description ? `<p style="white-space:pre-wrap;line-height:1.6;margin:10px 0;">${e(l.description)}</p>` : ''}
       <div style="display:flex;gap:10px;align-items:center;border:1px solid var(--border);border-radius:10px;padding:10px;margin:12px 0;">
         ${typeof avatarHTML === 'function' ? avatarHTML({ name: s.name, initials: s.initials || String(s.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(), color: s.color || '#1D5FA8', profilePhotoUrl: s.profilePhotoUrl }, 40) : ''}
@@ -227,7 +230,7 @@
       ${CUR.driver ? card('driver', 'A pick-and-drop driver brings it', t('Choose a driver and approve their price.')) : ''}
       ${B.method === 'driver' ? `<div class="form-group" style="margin-top:8px;"><label class="form-label" for="mkb-landmark">${e(t('Where should it be brought?'))}</label><input class="form-input" id="mkb-landmark" maxlength="200" value="${e(B.landmark)}" oninput="MARKET_BUY.landmark=this.value" placeholder="${e(t('A landmark or address'))}"/></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13.5px;margin-bottom:8px;">${B.pin ? `📍 ${e(t('Pinned'))}` : e(t('Add a pin so the driver can find you.'))} <button type="button" class="btn-sm btn-sm-outline" onclick="mkbPin()">📍 ${e(t(B.pin ? 'Pin again' : 'Use where I am now'))}</button> <button type="button" class="btn-sm btn-sm-outline" onclick="mkbDrivers()">${e(t('Find drivers'))}</button></div>
-        ${B.loading ? `<p style="color:var(--slate);">${e(t('Finding drivers…'))}</p>` : B.drivers ? (B.drivers.length ? B.drivers.map(d => `<label style="display:flex;gap:10px;align-items:center;border:2px solid ${B.driverId === d.id ? 'var(--teal)' : 'var(--border)'};border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer;"><input type="radio" name="mkb-d" ${B.driverId === d.id ? 'checked' : ''} onchange="MARKET_BUY.driverId=${jsArg(d.id)};mkbDraw()"/><span style="flex:1;"><strong>${e(d.name)}</strong> <span style="font-size:12.5px;color:var(--slate);">${e(d.vehicle ? t(d.vehicle) : '')}${typeof rangeWords === 'function' && rangeWords(d) ? ` (${e(rangeWords(d))})` : ''}${d.rating ? ` · ★ ${d.rating}` : ''}</span></span><strong>${money(d.price)}</strong></label>`).join('') : `<p style="color:#B4472E;font-size:13.5px;">${e(t('No drivers available right now. You can collect it instead.'))}</p>`) : ''}` : ''}
+        ${B.loading ? `<p style="color:var(--slate);">${e(t('Finding drivers…'))}</p>` : B.drivers ? (B.drivers.length ? B.drivers.map(d => `<label style="display:flex;gap:10px;align-items:center;border:2px solid ${B.driverId === d.id ? 'var(--teal)' : 'var(--border)'};border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer;"><input type="radio" name="mkb-d" ${B.driverId === d.id ? 'checked' : ''} onchange="MARKET_BUY.driverId=${jsArg(d.id)};mkbDraw()"/><span style="flex:1;"><strong>${e(d.name)}</strong> <span style="font-size:12.5px;color:var(--slate);">${e(d.vehicle ? t(d.vehicle) : '')}${typeof rangeWords === 'function' && rangeWords(d) ? ` (${e(rangeWords(d))})` : ''}${d.rating ? ` · ★ ${d.rating}` : ''}</span></span><strong style="text-align:right;">${typeof driverPriceHTML === 'function' ? driverPriceHTML(d) : money(d.price)}</strong></label>`).join('') : `<p style="color:#B4472E;font-size:13.5px;">${e(t('No drivers available right now. You can collect it instead.'))}</p>`) : ''}` : ''}
       <div class="form-group" style="margin-top:8px;"><label class="form-label" for="mkb-note">${e(t('Note to the seller (optional)'))}</label><input class="form-input" id="mkb-note" maxlength="300" value="${e(B.note)}" oninput="MARKET_BUY.note=this.value"/></div>
       <div class="booking-summary" style="margin-top:10px;">
         <div class="summary-row"><span>${e(CUR.title)}</span><span>${money(CUR.price)}</span></div>
@@ -365,9 +368,11 @@
       <div class="modal-body" style="overflow:auto;flex:1 1 auto;min-height:0;">
         <div class="form-group"><label class="form-label" for="mkf-title">${e(t('Title'))}</label><input class="form-input" id="mkf-title" maxlength="80" value="${e(l ? l.title : '')}" placeholder="${e(t('e.g. Bosch drill, 650W, with case'))}"/></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <div class="form-group" style="flex:1 1 200px;"><label class="form-label" for="mkf-cat">${e(t('Category'))}</label><select class="form-input form-select" id="mkf-cat"><option value="">${e(t('Choose…'))}</option>${M.cats.map(c => `<option ${l && l.category === c ? 'selected' : ''}>${e(c)}</option>`).join('')}</select></div>
+          <div class="form-group" style="flex:1 1 200px;"><label class="form-label" for="mkf-cat">${e(t('Category'))}</label><select class="form-input form-select" id="mkf-cat" onchange="if(typeof specsDraw==='function')specsDraw('mkf',this.value)"><option value="">${e(t('Choose…'))}</option>${M.cats.map(c => `<option ${l && l.category === c ? 'selected' : ''}>${e(c)}</option>`).join('')}</select></div>
           <div class="form-group" style="flex:1 1 140px;"><label class="form-label" for="mkf-cond">${e(t('Condition'))}</label><select class="form-input form-select" id="mkf-cond">${Object.entries(M.conds).map(([k, v]) => `<option value="${k}" ${l && l.condition === k ? 'selected' : ''}>${e(t(v))}</option>`).join('')}</select></div>
         </div>
+        ${typeof specsBoxHTML === 'function' ? specsBoxHTML('mkf') : ''}
+        ${typeof sizeSelectHTML === 'function' ? sizeSelectHTML('mkf-size', l && l.size) : ''}
         <div style="display:flex;gap:8px;">
           <div class="form-group" style="flex:1;"><label class="form-label" for="mkf-price">${e(t('Price'))}</label><input class="form-input" id="mkf-price" type="number" min="0" step="0.01" inputmode="decimal" value="${l ? e(l.price_raw) : ''}"/></div>
           <div class="form-group" style="flex:0 0 110px;"><label class="form-label" for="mkf-cur">${e(t('Currency'))}</label><select class="form-input form-select" id="mkf-cur">${cur.map(c => `<option value="${e(c.code)}" ${(l ? l.currency === c.code : c.code === ((cur.find(x => x.code !== 'USD') || cur[0]).code)) ? 'selected' : ''}>${e(c.code)}</option>`).join('')}</select></div>
@@ -391,6 +396,7 @@
       </div><div class="modal-footer"><button class="confirm-btn" id="mkf-save" style="width:100%;" onclick="saveListing()">${e(t(l ? 'Save changes' : 'Put it on sale'))}</button></div>`, 600);
     F.proof = l ? l.proofUrl || null : null;
     drawFormPhotos(); drawPin(); drawOwn();
+    if (typeof specsDraw === 'function') specsDraw('mkf', l ? l.category : '', (l && l.specs) || {}, (l && l.specsExtra) || []); // v177
     ['mkf-cat', 'mkf-part', 'mkf-price', 'mkf-cur'].forEach(id => { const x = document.getElementById(id); if (x) x.addEventListener(id === 'mkf-price' ? 'input' : 'change', drawOwn); });
   };
   // v143: what the form asks for to keep stolen goods out (src/stolen-goods.js)
@@ -465,9 +471,11 @@
     const v = (id) => (document.getElementById(id) || {}).value;
     const body = {
       title: (v('mkf-title') || '').trim(), category: v('mkf-cat'), condition: v('mkf-cond'), price: Number(v('mkf-price')), currency: v('mkf-cur'),
+      ...(document.getElementById('mkf-size') ? { size: v('mkf-size') || null } : {}), // v174
       description: (v('mkf-desc') || '').trim(), photoUrls: F.photos, pickupPlace: (v('mkf-place') || '').trim(), pickupLocation: F.pin,
       protected: document.getElementById('mkf-prot').checked, driver: document.getElementById('mkf-drv').checked, cash: document.getElementById('mkf-cash').checked,
       isPart: !!(document.getElementById('mkf-part') || {}).checked, proofUrl: F.proof || null, // v143
+      ...((typeof specsRead === 'function' && specsRead('mkf')) || {}), // v177: item specifics
     };
     const serial = ((document.getElementById('mkf-serial') || {}).value || '').trim(); if (serial) body.serial = serial;
     if (!(document.getElementById('mkf-owns') || {}).checked) return showToast(t('Confirm that you own this item and have the right to sell it'));
@@ -551,6 +559,8 @@
         ${data.listings.length ? data.listings.map(l => `<div class="adm-ml" data-id="${e(l.id)}" style="display:flex;gap:10px;border-top:1px solid var(--border);padding:10px 0;align-items:flex-start;flex-wrap:wrap;">
           ${l.photoUrls[0] ? `<img src="${e(l.photoUrls[0])}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;"/>` : ''}
           <div style="flex:1;min-width:220px;"><strong style="color:var(--navy);">${e(l.title)}</strong> · ${e(l.currency)} ${e(l.price)} · ${e(l.status)}<div style="font-size:13px;color:var(--slate);">${e(l.seller ? l.seller.name : '')} · ${e([l.city, l.country].filter(Boolean).join(', '))}</div>
+            ${l.description ? `<div style="font-size:13px;margin-top:4px;white-space:pre-line;">${e(l.description)}</div>` : ''}
+            ${typeof specsTableHTML === 'function' && l.specRows && l.specRows.length ? `<div style="max-width:520px;">${specsTableHTML(l.specRows)}</div>` : ''}
             ${(l.reviewReasons || []).length ? `<div style="font-size:13px;color:#8a5a00;margin-top:4px;">Held for a safety check: ${e(l.reviewReasons.join('; '))}</div>` : ''}
             <ul style="font-size:13px;margin:4px 0 0 18px;padding:0;">${l.reports.map(r => `<li>${e(r.reason)}</li>`).join('')}</ul></div>
           <div class="row-actions" style="display:flex;gap:6px;"><button class="btn-sm btn-sm-outline" onclick="adminListing(${jsArg(l.id)},'restore')">${l.status === 'review' ? 'Approve' : 'Keep it on sale'}</button><button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="adminListing(${jsArg(l.id)},'remove')">Take it down</button></div>

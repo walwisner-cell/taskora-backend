@@ -37,6 +37,15 @@ async function me(req) {
   return db.find('users', u => u.id === req.user.sub);
 }
 
+// v178: the admin help videos (kept out of the public site, in help-admin/).
+// Each comes with a private link that works for 30 minutes, because a video
+// player can't send the sign-in header (src/help-media.js checks the link).
+router.get('/help-videos', async (req, res) => {
+  const hm = require('../help-media');
+  res.set('Cache-Control', 'no-store');
+  res.json({ videos: hm.adminList().map(v => ({ ...v, url: hm.signedUrl(`${v.file}.mp4`), poster: hm.signedUrl(`${v.file}.jpg`) })) });
+});
+
 // null region = super admin = sees everything. A non-null region scopes
 // every query below to that one city.
 // A department admin (Verification, Disputes, Financial, HR, etc.) is

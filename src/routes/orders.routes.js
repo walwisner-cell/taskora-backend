@@ -56,11 +56,15 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
   const settings = await store.storeSettings();
   const km = so.kmBetween(opt.pickupLocation, where.jobLocation);
   if (!so.inRange(so.driverRates(driver), km)) { const rr = so.driverRates(driver); return { error: `${driver.name} delivers ${rr.minKm > 0 ? `from ${so.distWords(rr.minKm, seller.country)} ` : ''}up to ${so.distWords(rr.maxKm, seller.country)}, and this trip is about ${so.distWords(km, seller.country)}. Choose another driver.`, code: 'OUT_OF_RANGE' }; } // v164
-  const price = fixedPrice !== undefined ? money(fixedPrice) : await so.deliveryPrice(driver, km); // v143; v148: the price already paid with the order
+  const size = await so.orderSize(order); // v174
+  if (!store.canCarry(so.driverRates(driver).vehicle, size)) return { error: `These goods are ${size} and ${driver.name} delivers by ${so.driverRates(driver).vehicle}, which can't carry them. Choose another driver.`, code: 'TOO_BIG' };
+  const quoted = fixedPrice !== undefined ? null : await so.deliveryPrice(driver, km);
+  if (fixedPrice === undefined && quoted == null) return { error: `${driver.name} hasn't set a delivery price yet. Choose another driver.`, code: 'PICK_DRIVER' }; // v174
+  const price = fixedPrice !== undefined ? money(fixedPrice) : quoted; // v143; v148: the price already paid with the order
   // The customer approved one price. If the driver changed their rates in
   // between, they are shown the new price instead of being charged it.
   if (expectedPrice !== undefined && Math.abs(Number(expectedPrice) - price) > 0.009) {
-    return { error: `${driver.name}'s price is now $${price.toFixed(2)}. Check it and approve again.`, code: 'PRICE_CHANGED', price };
+    return { error: `${driver.name}'s price is now ${await so.moneyWords(price, driver.country)}. Check it and approve again.`, code: 'PRICE_CHANGED', price };
   }
   const rates = so.driverRates(driver);
   const delivery = {
@@ -83,7 +87,7 @@ async function createDelivery({ order, seller, driver, where, payCurrency, expec
     delivery: {
       forContractId: order.id, orderNumber: order.bookingNumber, sellerId: seller.id, storeName: sellerLabel,
       pickupPlace: opt.pickupPlace || [seller.city, seller.country].filter(Boolean).join(', '), pickupLocation: opt.pickupLocation,
-      distanceKm: km, vehicle: rates.vehicle, items: itemsLine(order.storeItems).slice(0, 300), itemCount: (order.storeItems || []).reduce((n, i) => n + i.qty, 0),
+      distanceKm: km, vehicle: rates.vehicle, size: size || null, items: itemsLine(order.storeItems).slice(0, 300), itemCount: (order.storeItems || []).reduce((n, i) => n + i.qty, 0),
     },
     createdAt: new Date().toISOString(),
   };
@@ -107,7 +111,7 @@ async function askDriver(delivery) {
   const driver = await db.find('users', u => u.id === delivery.providerId);
   const km = delivery.delivery.distanceKm;
   const by = require('../booking-rules').whenFor(delivery.providerResponseDeadline, driver, { hour: 'numeric', minute: '2-digit' }); // v158: the driver's own time zone
-  await notify(delivery.providerId, '🚚', `Delivery request: collect order #${delivery.delivery.orderNumber} (${delivery.delivery.items.slice(0, 80)}) from ${delivery.delivery.storeName}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver && driver.country)}` : ''}. You are paid $${Number(delivery.amount).toFixed(2)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by}).`, 'bookingUpdates', { section: 'bookings' });
+  await notify(delivery.providerId, '🚚', `Delivery request: collect order #${delivery.delivery.orderNumber} (${delivery.delivery.items.slice(0, 80)}) from ${delivery.delivery.storeName}, ${delivery.delivery.pickupPlace}, and take it to the customer${km ? `, about ${so.distWords(km, driver && driver.country)}` : ''}${delivery.delivery.size ? ` (${delivery.delivery.size} goods)` : ''}. You are paid ${await so.moneyWords(delivery.amount, driver && driver.country)}. Accept or decline within ${so.DELIVERY_RESPONSE_MINUTES} minutes (by ${by}).`, 'bookingUpdates', { section: 'bookings' });
 }
 
 // v148: a goods order, or a delivery, has just been paid (a code confirmed
@@ -198,19 +202,50 @@ async function orderView(order, viewerId) {
 
 // ── DRIVERS ────────────────────────────────────────────────────────────
 // GET /api/delivery/rates — a pro's own delivery prices.
+// v174: how this driver's deliveries are priced, in their own money: for each
+// vehicle, Trothen's fares (with examples) or their own prices; the country's
+// money and its rate, so prices are typed in L$ in Liberia.
+async function pricingFor(me) {
+  const local = await so.localOf(me.country);
+  const vehicles = {};
+  for (const v of store.VEHICLES) {
+    if (await so.trothenFares(me.country, v)) {
+      const ex = [];
+      for (const km of [3, 8, 15]) { const q = await so.tableQuote(me.country, v, km, me.rideDriver ? me.rideDriver.fareAdjust : 0); if (q) ex.push({ km, price: q.price, local: q.local, symbol: q.symbol }); }
+      vehicles[v] = { source: 'trothen', examples: ex, carries: store.VEHICLE_CARRIES[v] };
+    } else vehicles[v] = { source: 'driver', carries: store.VEHICLE_CARRIES[v] };
+  }
+  return { local, vehicles, sizes: store.SIZES, sizeWords: store.SIZE_WORDS, cityDefaultKm: store.CITY_DEFAULT_KM };
+}
 router.get('/delivery/rates', requireAuth, requireRole('provider'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   const settings = await store.storeSettings();
-  res.json({ hasSkill: store.hasSkill(me, store.DRIVER_SKILL) || so.rideDeliverer(me), viaRides: so.rideDeliverer(me), offered: so.isDriver(me), rates: so.driverRates(me), vehicles: store.VEHICLES, vehicleMaxKm: store.VEHICLE_MAX_KM, skill: store.DRIVER_SKILL, feePercent: settings.deliveryFeePercent, hasLocation: typeof me.latitude === 'number' });
+  const rates = so.driverRates(me), pricing = await pricingFor(me);
+  const priced = rates.isSet || !!(rates.vehicle && pricing.vehicles[rates.vehicle] && pricing.vehicles[rates.vehicle].source === 'trothen');
+  res.json({ hasSkill: store.hasSkill(me, store.DRIVER_SKILL) || so.rideDeliverer(me), pickDropSkill: store.hasSkill(me, store.DRIVER_SKILL), viaRides: so.rideDeliverer(me), offered: so.isDriver(me) && priced, priced, rates, pricing, vehicles: store.VEHICLES, vehicleMaxKm: store.VEHICLE_MAX_KM, skill: store.DRIVER_SKILL, feePercent: settings.deliveryFeePercent, hasLocation: typeof me.latitude === 'number', country: me.country || '' });
 });
 router.put('/delivery/rates', requireAuth, requireRole('provider'), async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   if (!store.hasSkill(me, store.DRIVER_SKILL)) return res.status(403).json({ error: `Add "${store.DRIVER_SKILL}" to your skills first. Delivery prices are for pros who do pick-and-drop.` });
-  const { vehicle, baseFee, perKm, minKm, maxKm } = req.body || {};
+  const { vehicle, minKm, maxKm } = req.body || {};
+  let { baseFee, perKm } = req.body || {};
   if (!store.VEHICLES.includes(vehicle)) return res.status(400).json({ error: 'Choose what you deliver with' });
-  if (typeof baseFee !== 'number' || !(baseFee >= 1) || baseFee > 500) return res.status(400).json({ error: 'Your starting price must be between $1 and $500' });
-  if (typeof perKm !== 'number' || perKm < 0 || perKm > 50) return res.status(400).json({ error: 'Your price per kilometre must be between $0 and $50' });
   const range = readRange(vehicle, minKm, maxKm, me.country); if (range.error) return res.status(400).json({ error: range.error });
+  // v174: where Trothen sets the fares for this vehicle (L$ in Liberia), the driver's own prices aren't used: only the vehicle and the range are saved.
+  if (await so.trothenFares(me.country, vehicle)) {
+    await db.update('users', me.id, { deliveryRates: { ...(me.deliveryRates || {}), vehicle, updatedAt: new Date().toISOString() }, ...(range.value ? { deliveryRange: range.value } : {}) });
+    const after = await db.find('users', u => u.id === me.id);
+    return res.json({ rates: so.driverRates(after), offered: so.isDriver(after), trothenFares: true });
+  }
+  // v174: prices can be typed in the country's own money (L$ in Liberia); they are kept in US$.
+  const local = await so.localOf(me.country);
+  if ((req.body || {}).currency === 'local' && local) {
+    if (typeof baseFee !== 'number' || typeof perKm !== 'number') return res.status(400).json({ error: 'Enter your prices as numbers' });
+    baseFee = baseFee / local.rate; perKm = perKm / local.rate;
+  }
+  const words = (usd) => local ? `${local.symbol}${Math.round(usd * local.rate).toLocaleString('en-US')}` : `$${usd}`;
+  if (typeof baseFee !== 'number' || !(baseFee >= 0.5) || baseFee > 500) return res.status(400).json({ error: `Your starting price must be between ${words(0.5)} and ${words(500)}` });
+  if (typeof perKm !== 'number' || perKm < 0 || perKm > 50) return res.status(400).json({ error: `Your price per kilometre must be between ${words(0)} and ${words(50)}` });
   await db.update('users', me.id, { deliveryRates: { vehicle, baseFee: money(baseFee), perKm: Math.round(perKm * 10000) / 10000, updatedAt: new Date().toISOString() }, ...(range.value ? { deliveryRange: range.value } : {}) });
   const after = await db.find('users', u => u.id === me.id);
   res.json({ rates: so.driverRates(after), offered: so.isDriver(after) });
@@ -249,7 +284,11 @@ router.get('/store/drivers', requireAuth, driverLimiter, async (req, res) => {
   const lat = Number(req.query.latitude), lng = Number(req.query.longitude);
   const { isValidCoordinate } = require('../geo-distance');
   const dropoff = (req.query.latitude !== undefined && isValidCoordinate(lat, lng) && !(lat === 0 && lng === 0)) ? { latitude: lat, longitude: lng } : null;
-  const out = await so.suggestDrivers({ seller, dropoff, customerId: req.user.sub });
+  // v174: the goods being bought (ids), so only a vehicle that can carry them is offered.
+  const ids = String(req.query.items || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 50);
+  let size = null;
+  if (ids.length) { const set = new Set(ids); size = store.biggestSize((await db.filter('storeGoods', g => set.has(g.id) && g.providerId === seller.id)).map(g => g.size)); }
+  const out = await so.suggestDrivers({ seller, dropoff, customerId: req.user.sub, size: size || undefined });
   const settings = await store.storeSettings();
   res.json({ ...out, feePercent: settings.deliveryFeePercent, storeHasPin: !!store.storeOptions(seller).pickupLocation, answerMinutes: so.DELIVERY_RESPONSE_MINUTES });
 });
@@ -304,9 +343,12 @@ router.post('/store/orders', requireAuth, requireBuyer, requireCurrentTerms, asy
     // Checked before anything is charged, so a changed price never leaves a half-made order.
     const tripKm = so.kmBetween(opt.pickupLocation, where.jobLocation);
     if (!so.inRange(so.driverRates(driver), tripKm)) return res.status(400).json({ code: 'OUT_OF_RANGE', error: `${driver.name} doesn't go that far (about ${so.distWords(tripKm, seller.country)}). Choose another driver.` }); // v164
+    const goodsSize = store.biggestSize((await db.filter('storeGoods', g => basket.items.some(i => i.goodId === g.id))).map(g => g.size)); // v174
+    if (!store.canCarry(so.driverRates(driver).vehicle, goodsSize)) return res.status(400).json({ code: 'TOO_BIG', error: `These goods are ${goodsSize} and ${driver.name} delivers by ${so.driverRates(driver).vehicle}, which can't carry them. Choose another driver.` });
     const price = await so.deliveryPrice(driver, tripKm); // v143
+    if (price == null) return res.status(400).json({ code: 'PICK_DRIVER', error: `${driver.name} hasn't set a delivery price yet. Choose another driver.` }); // v174
     if (b.driverPrice === undefined || Math.abs(Number(b.driverPrice) - price) > 0.009) {
-      return res.status(409).json({ code: 'PRICE_CHANGED', price, error: `${driver.name}'s price for this trip is $${price.toFixed(2)}. Check it and approve again.` });
+      return res.status(409).json({ code: 'PRICE_CHANGED', price, error: `${driver.name}'s price for this trip is ${await so.moneyWords(price, driver.country)}. Check it and approve again.` });
     }
   }
   const settings = await store.storeSettings();
@@ -529,7 +571,7 @@ router.get('/store/orders/mine', requireAuth, async (req, res) => {
     const h = d.handover || {};
     delivering.push({
       contractId: d.id, number: d.bookingNumber, status: d.status, price: d.amount, createdAt: d.createdAt, answerBy: d.status === 'pending_provider_confirmation' ? d.providerResponseDeadline : null,
-      orderNumber: d.delivery.orderNumber, storeName: d.delivery.storeName, items: d.delivery.items, itemCount: d.delivery.itemCount, distanceKm: d.delivery.distanceKm,
+      orderNumber: d.delivery.orderNumber, storeName: d.delivery.storeName, items: d.delivery.items, itemCount: d.delivery.itemCount, distanceKm: d.delivery.distanceKm, size: d.delivery.size || null, // v174
       pickup: { place: d.delivery.pickupPlace, location: d.delivery.pickupLocation || null },
       dropoff: { address: d.address, landmark: d.landmark || null, location: d.jobLocation || null },
       orderStatus: order ? order.status : null, orderReadyAt: order ? (order.readyAt || null) : null,

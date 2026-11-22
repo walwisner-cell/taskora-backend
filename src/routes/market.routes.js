@@ -27,6 +27,7 @@ const { notify } = require('../notify');
 const { isNonEmptyString } = require('../validators');
 const store = require('../store');
 const market = require('../market');
+const specs = require('../specs'); // v177
 const { money, sameText } = market;
 
 const router = express.Router();
@@ -66,11 +67,12 @@ async function listingView(l, me, currencies, cache) {
   const usd = l.currency === 'USD' ? money(l.price) : store.usdFromLocal(l.price, cur.rate);
   const s = await store.storeSettings();
   return {
-    kind: 'listing', id: l.id, title: l.title, description: l.description || '', category: l.category, condition: l.condition, conditionLabel: market.CONDITIONS[l.condition] || '',
+    kind: 'listing', id: l.id, title: l.title, description: l.description || '', category: l.category, condition: l.condition, conditionLabel: market.CONDITIONS[l.condition] || '', size: l.size || null,
     price: usd, localPrice: l.currency !== 'USD' ? { amount: l.price, code: cur.code, symbol: cur.symbol } : null,
     photoUrls: l.photoUrls || [], city: l.city || '', country: l.country || '', pickupPlace: l.pickupPlace || '', hasPin: !!l.pickupLocation,
     protected: l.protected !== false, cash: l.cash !== false, driver: l.driver !== false,
     serialLast4: l.serialLast4 || null, isPart: l.isPart === true, proofGiven: !!l.proofUrl, ownerDeclared: !!l.ownerAttestedAt, // v143
+    specs: l.specs || null, specsExtra: l.specsExtra || null, specRows: specs.specRows(l.specs, l.specsExtra, l.category), // v177
     protectionFee: l.protected !== false ? store.protectionFeeFor(usd, s) : 0,
     status: l.status, createdAt: l.createdAt, expiresAt: l.expiresAt || null,
     seller: await sellerInfo(seller, cache), mine: !!(me && me.id === l.sellerId),
@@ -79,7 +81,9 @@ async function listingView(l, me, currencies, cache) {
 }
 
 // ── browse ─────────────────────────────────────────────────────────────
-router.get('/market/categories', (req, res) => res.json({ categories: market.MARKET_CATEGORIES, conditions: market.CONDITIONS }));
+router.get('/market/categories', (req, res) => res.json({ categories: market.MARKET_CATEGORIES, conditions: market.CONDITIONS, specs: require('../specs').publicTemplates() })); // v177: item specifics
+// v177: the aisle Trothen would put a good in, from its name, so the form can show the right details while the seller types.
+router.get('/market/guess-category', listLimiter, (req, res) => res.json({ category: market.guessCategory(String(req.query.text || '').slice(0, 300)) || null }));
 
 router.get('/market/items', listLimiter, async (req, res) => {
   const me = await viewer(req);
@@ -101,7 +105,7 @@ router.get('/market/items', listLimiter, async (req, res) => {
         if (!store.isOnShelf(g) || !store.anyInStock(g)) continue; // v162: goods with sizes or colours too
         const cats = market.goodCategories(g, sel); // v164: each good in its own aisle
         if (category && !cats.includes(category)) continue;
-        if (!matches(`${g.name} ${g.description || ''} ${sel.store.name} ${cats.join(' ')}`)) continue;
+        if (!matches(`${g.name} ${g.description || ''} ${sel.store.name} ${cats.join(' ')} ${g.brand || ''} ${specs.specsText(g.specs, g.specsExtra)}`)) continue; // v177: and its details
         const pf = store.goodPriceFields(g, currencies);
         items.push({
           kind: 'store', id: g.id, title: g.name, description: (g.description || '').slice(0, 140), category: cats[0], price: store.goodUsdPrice(g, currencies),
@@ -109,6 +113,7 @@ router.get('/market/items', listLimiter, async (req, res) => {
           unit: g.unit || '', photo: (g.photoUrls || [])[0] || null, city: sel.city || '', country: sel.country || '',
           providerId: sel.id, storeName: sel.store.name, seller: await sellerInfo(sel, cache), createdAt: g.updatedAt || g.createdAt,
           hasOptions: Array.isArray(g.variants) && g.variants.length > 0, soldOut: !store.anyInStock(g), // v162: for Add to cart
+          specRows: specs.specRows(g.specs, g.specsExtra, cats[0]), // v177: "128 GB · Dual SIM" on the card
           ...(isTradeBuyer(me, sel.id) && Number(g.tradePrice) > 0 && Number(g.tradePrice) < store.goodUsdPrice(g, currencies) ? { tradePrice: money(g.tradePrice) } : {}), // v140
         });
       }
@@ -118,7 +123,7 @@ router.get('/market/items', listLimiter, async (req, res) => {
     const listings = await db.filter('marketListings', l => l.status === 'live' && (!country || sameText(l.country, country)) && (!category || l.category === category));
     const curCache = new Map();
     for (const l of listings) {
-      if (!matches(`${l.title} ${l.description || ''} ${l.category}`)) continue;
+      if (!matches(`${l.title} ${l.description || ''} ${l.category} ${specs.specsText(l.specs, l.specsExtra)}`)) continue; // v177
       const seller = await db.find('users', u => u.id === l.sellerId);
       if (!seller || seller.active === false || seller.closedAt || require('./market-admin.routes').banOf(seller)) continue;
       if (!curCache.has(l.country)) curCache.set(l.country, await store.currenciesFor(seller));
@@ -198,6 +203,11 @@ async function readListing(b, me, existing) {
     if (!market.CONDITIONS[b.condition]) return { error: 'Choose the condition: new, like new, good or fair' };
     out.condition = b.condition;
   }
+  if (has('size')) { // v174: how big it is, so only a vehicle that can carry it is offered
+    if (b.size === null || b.size === '') out.size = null;
+    else if (!store.SIZES.includes(b.size)) return { error: 'Choose a size: small, medium, large or bulky' };
+    else out.size = b.size;
+  }
   if (!existing || has('price') || has('currency')) {
     const currencies = await store.currenciesFor(me);
     const code = has('currency') ? b.currency : (existing ? existing.currency : 'USD');
@@ -226,7 +236,12 @@ async function readListing(b, me, existing) {
   }
   for (const k of ['protected', 'cash', 'driver']) if (!existing || has(k)) out[k] = has(k) ? b[k] !== false : true;
   if (out.protected === false && out.cash === false) return { error: 'Allow at least one way to buy: through Trothen, or in person with cash' };
-  const why = await require('./store.routes').bannedReason(out.title || (existing && existing.title), out.description);
+  if (has('specs') || has('specsExtra')) { // v177: item specifics
+    const r = specs.readSpecs(has('specs') ? b.specs : existing && existing.specs, has('specsExtra') ? b.specsExtra : existing && existing.specsExtra);
+    if (r.error) return { error: r.error };
+    out.specs = r.specs; out.specsExtra = r.extra;
+  }
+  const why = await require('./store.routes').bannedReason(out.title || (existing && existing.title), out.description, specs.specRows(out.specs, out.specsExtra, null).map(r => r.label + ' ' + r.value).join(' '));
   if (why) return { error: `This can't be sold on Trothen (${why}).` };
   // v143: ownership, IMEI / serial numbers and proof of ownership (src/stolen-goods.js)
   const own = require('../stolen-goods').readOwnership(b, existing, out.category, out.priceUsd !== undefined ? out.priceUsd : existing && existing.priceUsd, me.id);
@@ -355,7 +370,7 @@ router.get('/market/listings/:id/drivers', requireAuth, listLimiter, async (req,
   const { isValidCoordinate } = require('../geo-distance');
   const dropoff = (req.query.latitude !== undefined && isValidCoordinate(lat, lng) && !(lat === 0 && lng === 0)) ? { latitude: lat, longitude: lng } : null;
   const so = require('../store-orders');
-  const out = await so.suggestDrivers({ seller, dropoff, customerId: req.user.sub, pickup: l.pickupLocation || null });
+  const out = await so.suggestDrivers({ seller, dropoff, customerId: req.user.sub, pickup: l.pickupLocation || null, size: l.size || undefined });
   const s = await store.storeSettings();
   res.json({ ...out, feePercent: s.deliveryFeePercent, storeHasPin: !!l.pickupLocation, answerMinutes: so.DELIVERY_RESPONSE_MINUTES });
 });
@@ -425,8 +440,10 @@ router.post('/market/listings/:id/buy', requireAuth, require('../terms').require
       // Checked before anything is charged, so a changed driver price never leaves a half-made order.
       const km = so.kmBetween(l.pickupLocation || null, where.jobLocation);
       if (!so.inRange(so.driverRates(driver), km)) return res.status(400).json({ code: 'OUT_OF_RANGE', error: `${driver.name} doesn't go that far (about ${so.distWords(km, seller.country)}). Choose another driver.` }); // v164
+      if (!store.canCarry(so.driverRates(driver).vehicle, l.size)) return res.status(400).json({ code: 'TOO_BIG', error: `This item is ${l.size} and ${driver.name} delivers by ${so.driverRates(driver).vehicle}, which can't carry it. Choose another driver.` }); // v174
       const quoted = await so.deliveryPrice(driver, km); // v143
-      if (Math.abs(Number(b.driverPrice) - quoted) > 0.009) return res.status(409).json({ code: 'PRICE_CHANGED', price: quoted, error: `${driver.name}'s price is now $${quoted.toFixed(2)}. Check it and approve again.` });
+      if (quoted == null) return res.status(400).json({ code: 'PICK_DRIVER', error: `${driver.name} hasn't set a delivery price yet. Choose another driver.` }); // v174
+      if (Math.abs(Number(b.driverPrice) - quoted) > 0.009) return res.status(409).json({ code: 'PRICE_CHANGED', price: quoted, error: `${driver.name}'s price is now ${await so.moneyWords(quoted, driver.country)}. Check it and approve again.` });
     }
     // v148: the buyer pays once, the item and the driver together; nothing goes to the seller until it is paid
     let escrow = null, driverPrice = 0;
@@ -622,7 +639,8 @@ router.get('/admin/market/listings', adminOnly, async (req, res) => {
   for (const l of list.sort((a, b) => ((b.reports || []).length - (a.reports || []).length) || String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 200)) {
     const seller = await db.find('users', u => u.id === l.sellerId);
     if (seller && !req.covers(seller)) continue;
-    out.push({ id: l.id, title: l.title, description: l.description, category: l.category, price: l.price, currency: l.currency, photoUrls: l.photoUrls || [], status: l.status, reviewReasons: l.reviewReasons || [], serialLast4: l.serialLast4 || null, isPart: l.isPart === true, proofUrl: l.proofUrl || null, ownerAttestedAt: l.ownerAttestedAt || null, city: l.city, country: l.country, createdAt: l.createdAt, reports: (l.reports || []).map(r => ({ reason: r.reason, at: r.at })), seller: seller ? { id: seller.id, name: seller.name, verified: seller.verified === true } : null, removedReason: l.removedReason || null });
+    out.push({ id: l.id, title: l.title, description: l.description, category: l.category, specRows: specs.specRows(l.specs, l.specsExtra, l.category), // v177
+       price: l.price, currency: l.currency, photoUrls: l.photoUrls || [], status: l.status, reviewReasons: l.reviewReasons || [], serialLast4: l.serialLast4 || null, isPart: l.isPart === true, proofUrl: l.proofUrl || null, ownerAttestedAt: l.ownerAttestedAt || null, city: l.city, country: l.country, createdAt: l.createdAt, reports: (l.reports || []).map(r => ({ reason: r.reason, at: r.at })), seller: seller ? { id: seller.id, name: seller.name, verified: seller.verified === true } : null, removedReason: l.removedReason || null });
   }
   res.json({ listings: out });
 });

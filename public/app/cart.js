@@ -151,6 +151,18 @@
   }
 
   // From a Market card (a good with no sizes or colours).
+  // v176: add a good (and the size or colour chosen) from its product page.
+  window.cartAddItem = async function (providerId, goodId, variantId, qty) {
+    const n = Math.max(1, Math.min(99, Number(qty) || 1));
+    if (isBuyer()) {
+      const r = await apiFetch('POST', '/cart/items', { providerId, goodId, ...(variantId ? { variantId } : {}), qty: n, mode: 'add' });
+      C.view = r; basketFromView(r); paintCount();
+      return t(r.notice || 'Added to your cart');
+    }
+    const have = readGuest().find(l => l.providerId === providerId && l.goodId === goodId && (l.variantId || null) === (variantId || null));
+    guestSet(providerId, goodId, variantId || null, Math.min(99, ((have && have.qty) || 0) + n)); basketFromLines(readGuest()); paintCount();
+    return t('Added to your cart');
+  };
   window.cartAddFromMarket = async function (providerId, goodId, btn) {
     if (btn) btn.disabled = true;
     try {
@@ -165,7 +177,7 @@
       }
       paintCount();
     } catch (x) {
-      if (x.data && x.data.code === 'CHOOSE_OPTION') return openProStore(providerId);
+      if (x.data && x.data.code === 'CHOOSE_OPTION') return typeof openGood === 'function' ? openGood(providerId, goodId) : openProStore(providerId); // v176
       showToast(x.message || 'Could not add it');
     } finally { if (btn) btn.disabled = false; }
   };

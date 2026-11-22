@@ -53,7 +53,11 @@ function isDriver(u) {
   return !!(u && u.role === 'provider' && u.verified === true && u.active !== false && u.onHold !== true && u.acceptingBookings !== false && (store.hasSkill(u, store.DRIVER_SKILL) || rideDeliverer(u)));
 }
 // What a driver charges: a starting price, plus a price per kilometre.
-// A driver who hasn't set these is offered at their listed price, flat.
+// v174: a driver who hasn't set these is no longer offered at the price of
+// their main work (Walter's screenshot: a $50 flat delivery, his listed
+// price as a pro). Where Trothen has fares for the country and vehicle (L$
+// in Liberia for motorbike, keke, car and van), those are used; otherwise
+// the driver must set a price before being offered deliveries.
 function driverRates(u) {
   const r = (u && u.deliveryRates) || {};
   const base = Number(r.baseFee), perKm = Number(r.perKm);
@@ -61,8 +65,8 @@ function driverRates(u) {
   const vehicle = store.VEHICLES.includes(r.vehicle) ? r.vehicle : (rideDeliverer(u) ? u.rideDriver.vehicle : null);
   return {
     vehicle,
-    baseFee: set ? money(base) : money(Number(u && u.price) > 0 ? u.price : 5),
-    perKm: set && Number.isFinite(perKm) && perKm >= 0 ? Math.round(perKm * 10000) / 10000 : 0, // kept to 4 places so a price per mile converts cleanly
+    baseFee: set ? money(base) : null,
+    perKm: set && Number.isFinite(perKm) && perKm >= 0 ? Math.round(perKm * 10000) / 10000 : (set ? 0 : null), // kept to 4 places so a price per mile converts cleanly
     isSet: set,
     ...rangeOf(u, vehicle),
   };
@@ -73,13 +77,15 @@ function rangeOf(u, vehicle) {
   const cap = store.VEHICLE_MAX_KM[vehicle] || 50;
   const r = (u && u.deliveryRange) || {};
   let min = Number(r.minKm), max = Number(r.maxKm);
-  if (!Number.isFinite(max) || max <= 0 || max > cap) max = cap;
+  if (!Number.isFinite(max) || max <= 0) max = Math.min(cap, store.CITY_DEFAULT_KM[vehicle] || 25); // v174: across a city until they choose
+  else if (max > cap) max = cap;
   if (!Number.isFinite(min) || min < 0 || min >= max) min = 0;
   return { minKm: Math.round(min * 10) / 10, maxKm: Math.round(max * 10) / 10, vehicleMaxKm: cap };
 }
 const inRange = (rates, km) => km == null || (km >= rates.minKm - 0.05 && km <= rates.maxKm + 0.05);
 function quoteFor(u, km) {
   const r = driverRates(u);
+  if (!r.isSet) return null; // v174: no price set, and no Trothen fares for this vehicle: not offered
   return Math.max(1, money(r.baseFee + (km ? r.perKm * km : 0)));
 }
 // v143: where Trothen sets fares for the country (Admin → Rides → Fares, in
@@ -96,36 +102,79 @@ async function tableQuote(country, vehicle, km, adjust) {
   const f = await rideFares.fareFor({ country, rideDriver: { vehicle, fareAdjust: adjust || 0 } }, { km: roadKm, minutes: Math.max(1, Math.round(roadKm / (CITY_KMH[vehicle] || 20) * 60)), source: 'estimate' }, { table: t });
   return { price: f.fare, local: f.local, currency: f.currency, symbol: f.symbol };
 }
-async function deliveryPrice(u, km) {
+// v174: the price with its local amount: { price (US$), local, currency, symbol, source } or null.
+async function deliveryQuote(u, km) {
   const vehicle = driverRates(u).vehicle;
   const q = await tableQuote(u && u.country, vehicle, km, u && u.rideDriver ? u.rideDriver.fareAdjust : 0);
-  return q ? q.price : quoteFor(u, km);
+  if (q) return { ...q, source: 'trothen' };
+  const usd = quoteFor(u, km);
+  if (usd == null) return null;
+  const loc = await localOf(u && u.country);
+  return { price: usd, local: loc ? Math.round(usd * loc.rate) : null, currency: loc ? loc.code : 'USD', symbol: loc ? loc.symbol : '$', source: 'driver' };
+}
+async function deliveryPrice(u, km) {
+  const q = await deliveryQuote(u, km);
+  return q ? q.price : null;
+}
+// v174: does Trothen set the fare for this country and vehicle?
+async function trothenFares(country, vehicle) {
+  const t = await require('./ride-fares').tableFor(country);
+  return !!(t && t.vehicles && t.vehicles[vehicle]);
+}
+// v174: the country's own money, and how many of it to one US dollar (null for US$ countries).
+async function localOf(country) {
+  const { currencyForCountry } = require('./currency-data');
+  const c = currencyForCountry(country);
+  if (!c || !c.code || c.code === 'USD') return null;
+  const rate = require('./plan-pricing').resolveRate(c.code, await db.all('exchangeRates'));
+  return rate > 0 ? { code: c.code, symbol: c.symbol || c.code, rate } : null;
+}
+// "L$1,500 (US$7.89)" where the country has its own money, "$7.89" elsewhere.
+async function moneyWords(usd, country) {
+  const loc = await localOf(country);
+  const d = `$${Number(usd).toFixed(2)}`;
+  return loc ? `${loc.symbol}${Math.round(Number(usd) * loc.rate).toLocaleString('en-US')} (US${d})` : d;
+}
+// v174: how big an order is: its biggest good (store goods, or a Market listing).
+async function orderSize(order) {
+  if (!order) return null;
+  if (order.deliverySize) return order.deliverySize;
+  if (order.marketListingId) { const l = await db.find('marketListings', x => x.id === order.marketListingId); return l && store.SIZES.includes(l.size) ? l.size : null; }
+  const ids = new Set((order.storeItems || []).map(i => i.goodId).filter(Boolean));
+  if (!ids.size) return null;
+  const goods = await db.filter('storeGoods', g => ids.has(g.id));
+  return store.biggestSize(goods.map(g => g.size));
 }
 
 // The drivers to offer for one order: same country as the seller, the
 // seller's own city first, then nearest to the store, then best rated.
-async function suggestDrivers({ seller, dropoff, customerId, pickup }) {
+async function suggestDrivers({ seller, dropoff, customerId, pickup, size }) {
   const opt = store.storeOptions(seller);
   if (pickup !== undefined) opt.pickupLocation = pickup; // v139: a personal listing's own pick-up place
   const km = kmBetween(opt.pickupLocation, dropoff);
   const all = (await db.filter('users', u => isDriver(u) && u.id !== seller.id && u.id !== customerId && sameText(u.country, seller.country)));
-  const rows = await Promise.all(all.map(async u => {
+  let tooSmall = 0, noPrice = 0;
+  const rows = (await Promise.all(all.map(async u => {
     const rates = driverRates(u);
+    if (!store.canCarry(rates.vehicle, size)) { tooSmall++; return null; } // v174: the goods don't fit
+    const q = await deliveryQuote(u, km);
+    if (!q) { noPrice++; return null; } // v174: no price set and no Trothen fares for this vehicle
     const toStore = (typeof u.latitude === 'number' && typeof u.longitude === 'number') ? kmBetween({ latitude: u.latitude, longitude: u.longitude }, opt.pickupLocation) : null;
     return {
       id: u.id, name: u.name, initials: u.initials || null, color: u.color || null, profilePhotoUrl: u.profilePhotoUrl || null,
       city: u.city || '', rating: u.rating || null, jobs: u.jobs || 0,
       isNewPro: u.trustScoreProvisional === true || u.trustScore == null, trustScore: (u.trustScore != null && u.trustScoreProvisional !== true) ? u.trustScore : null,
       vehicle: rates.vehicle, baseFee: rates.baseFee, perKm: rates.perKm, minKm: rates.minKm, maxKm: rates.maxKm,
-      price: await deliveryPrice(u, km), kmFromStore: toStore, sameCity: sameText(u.city, seller.city), fits: inRange(rates, km),
+      price: q.price, priceLocal: q.local != null ? q.local : null, symbol: q.symbol || null, priceSource: q.source,
+      kmFromStore: toStore, sameCity: sameText(u.city, seller.city), fits: inRange(rates, km),
     };
-  }));
+  }))).filter(Boolean);
   const outOfRange = rows.filter(x => !x.fits).length;
   for (let i = rows.length - 1; i >= 0; i--) if (!rows[i].fits) rows.splice(i, 1); else delete rows[i].fits; // v164: only drivers who go that far (or that short)
   rows.sort((a, b) => (b.sameCity - a.sameCity)
     || ((a.kmFromStore === null ? 1e9 : a.kmFromStore) - (b.kmFromStore === null ? 1e9 : b.kmFromStore))
     || ((b.rating || 0) - (a.rating || 0)) || (a.price - b.price));
-  return { drivers: rows.slice(0, MAX_DRIVERS_SUGGESTED), distanceKm: km, totalFound: rows.length, outOfRange };
+  return { drivers: rows.slice(0, MAX_DRIVERS_SUGGESTED), distanceKm: km, totalFound: rows.length, outOfRange, tooSmall, size: size || null };
 }
 
 const isLive = (c) => !!c && ['pending_provider_confirmation', 'active'].includes(c.status);
@@ -142,7 +191,7 @@ async function deliveryEvent(delivery, event) {
   const who = driver ? driver.name : 'The driver';
   const n = d.orderNumber || (order && order.bookingNumber) || '';
   if (event === 'accepted') {
-    await notify(delivery.customerId, '🚚', `${who} accepted the delivery of your store order #${n} for $${delivery.amount}. They will collect it from ${d.storeName || 'the seller'} and bring it to you.`, 'bookingUpdates', { section: 'orders' });
+    await notify(delivery.customerId, '🚚', `${who} accepted the delivery of your store order #${n} for ${await moneyWords(delivery.amount, driver && driver.country)}. They will collect it from ${d.storeName || 'the seller'} and bring it to you.`, 'bookingUpdates', { section: 'orders' });
     if (d.sellerId) await notify(d.sellerId, '🚚', `${who} will collect store order #${n}. When you hand it over, record the pick-up with a photo so there is a record of what left your hands.`, 'bookingUpdates', { section: 'store' });
     return;
   }
@@ -162,7 +211,7 @@ async function deliveryEvent(delivery, event) {
           const tried = [...(d.triedDriverIds || []), delivery.providerId];
           await db.update('contracts', r.delivery.id, { delivery: { ...r.delivery.delivery, triedDriverIds: tried, reassignedFrom: delivery.id } });
           const word = event === 'declined' ? "couldn't take" : "didn't answer in time for";
-          await notify(delivery.customerId, '🚚', `${who} ${word} the delivery of your store order #${n}, so Trothen asked ${next.user.name}, the next nearest driver, for $${r.delivery.amount.toFixed(2)}${r.delivery.amount < delivery.amount - 0.009 ? ` (less than before; the difference was refunded)` : ''}. They have ${DELIVERY_RESPONSE_MINUTES} minutes to answer. Nothing for you to do.`, 'bookingUpdates', { section: 'orders' });
+          await notify(delivery.customerId, '🚚', `${who} ${word} the delivery of your store order #${n}, so Trothen asked ${next.user.name}, the next nearest driver, for ${await moneyWords(r.delivery.amount, next.user.country)}${r.delivery.amount < delivery.amount - 0.009 ? ` (less than before; the difference was refunded)` : ''}. They have ${DELIVERY_RESPONSE_MINUTES} minutes to answer. Nothing for you to do.`, 'bookingUpdates', { section: 'orders' });
           if (d.sellerId) await notify(d.sellerId, '🚚', `The driver for store order #${n} changed: ${next.user.name} has been asked to collect it.`, 'bookingUpdates', { section: 'store' });
           return;
         }
@@ -171,7 +220,7 @@ async function deliveryEvent(delivery, event) {
   }
   const why = event === 'declined' ? `${who} can't take the delivery of` : event === 'expired' ? `${who} didn't answer in time for the delivery of` : `The delivery was cancelled for`;
   if (orderStillOpen) {
-    await notify(delivery.customerId, '🚚', `${why} your store order #${n}. The $${delivery.amount} you paid for delivery was refunded. Choose another driver, or collect it yourself, from Store Orders.`, 'bookingUpdates', { section: 'orders' });
+    await notify(delivery.customerId, '🚚', `${why} your store order #${n}. The ${await moneyWords(delivery.amount, driver && driver.country)} you paid for delivery was refunded. Choose another driver, or collect it yourself, from Store Orders.`, 'bookingUpdates', { section: 'orders' });
     if (d.sellerId) await notify(d.sellerId, '🚚', `The driver for store order #${n} fell through. The customer has been asked to choose another, or to collect it.`, 'bookingUpdates', { section: 'store' });
   }
 }
@@ -186,7 +235,7 @@ async function nextDriver(delivery, order) {
   const seller = await db.find('users', u => u.id === d.sellerId);
   if (!seller) return null;
   const busy = new Set((await db.filter('contracts', c => c.delivery && c.status === 'pending_provider_confirmation')).map(c => c.providerId));
-  const out = await suggestDrivers({ seller, dropoff: delivery.jobLocation || null, customerId: delivery.customerId, pickup: d.pickupLocation || undefined });
+  const out = await suggestDrivers({ seller, dropoff: delivery.jobLocation || null, customerId: delivery.customerId, pickup: d.pickupLocation || undefined, size: d.size || (await orderSize(order)) || undefined });
   const pick = (out.drivers || []).find(x => !tried.has(x.id) && !busy.has(x.id) && x.price <= Number(delivery.amount) + 0.009);
   if (!pick) return null;
   const user = await db.find('users', u => u.id === pick.id);
@@ -245,6 +294,7 @@ async function afterComplete(order, customerId) {
 module.exports = {
   DELIVERY_MAX_DRIVERS, nextDriver,
   DELIVERY_RESPONSE_MINUTES, MAX_DRIVERS_SUGGESTED, kmBetween, distWords, isDriver, driverRates, quoteFor, suggestDrivers,
+  deliveryQuote, trothenFares, localOf, moneyWords, orderSize,
   rideDeliverer, tableQuote, deliveryPrice, // v143
   rangeOf, inRange, // v164
   isLive, deliveryOf, deliveryEvent, afterCancel, afterComplete,

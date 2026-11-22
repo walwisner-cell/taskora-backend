@@ -166,6 +166,7 @@ const ALWAYS = [
   ['GET', '/admin/announcements'],
   ['GET', '/admin/permission-areas'],
   ['POST', '/admin/announcements/:id/acknowledge'],
+  ['GET', '/admin/help-videos'], // v178: the admin help videos (each admin sees those for the parts they can open)
 ].map(([m, p]) => [m, P(p)]);
 
 const isCustom = (u) => !!(u && u.role === 'admin' && !u.isSuperAdmin && u.adminDepartment === 'custom');

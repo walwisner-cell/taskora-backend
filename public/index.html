@@ -640,9 +640,27 @@
   .chat-unread { align-self:center; min-width:22px; height:22px; padding:0 6px; border-radius:11px; background:var(--teal); color:#fff; font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
   .chat-main { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--offwhite); min-height:0; }
   .chat-head { background:#fff; border-bottom:1px solid var(--border); padding:10px 14px; }
-  .chat-head-row { display:flex; align-items:center; gap:10px; }
+  .chat-head-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .chat-head-info { min-width:0; flex:1 1 160px; }
   .chat-head-name { font-weight:700; color:var(--navy); font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .chat-head-sub { font-size:12.5px; color:var(--slate); }
+  .chat-head-sub { font-size:12.5px; color:var(--slate); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chat-head-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-left:auto; }
+  .chat-head-actions:empty { display:none; }
+  /* v175: on a phone the name gets the whole first line and the buttons sit under it,
+     instead of the buttons squeezing the name into one word per line (Walter's iPhone). */
+  @media (max-width: 600px) {
+    .chat-head { padding:8px 10px; }
+    .chat-head-row { gap:8px; }
+    .chat-head-info { flex:1 1 0; }
+    .chat-head-actions { flex:1 0 100%; margin-left:0; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding-bottom:2px; }
+    .chat-head-actions::-webkit-scrollbar { display:none; }
+    .chat-head-actions .btn-sm { min-height:40px; padding:6px 12px; white-space:nowrap; flex:0 0 auto; }
+    .chat-head-actions .chat-act-label { display:none; }
+    .chat-avatar { width:34px; height:34px; font-size:12.5px; }
+    .msg-input-row { padding:10px; gap:8px; }
+    .msg-input-row input { font-size:16px; } /* 16px stops iPhones zooming the page when typing */
+  }
+  @media (max-width: 380px) { .chat-back-label { display:none; } .chat-back { font-size:24px; line-height:1; padding:4px 8px 4px 0; min-width:32px; min-height:40px; } }
   .chat-head-empty { color:var(--slate); font-size:13.5px; padding:6px 0; }
   .chat-back { display:none; background:none; border:none; color:var(--teal); font-weight:700; font-size:14px; cursor:pointer; padding:4px 6px 4px 0; white-space:nowrap; }
   .chat-chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
@@ -2969,6 +2987,7 @@
         <a onclick="showAboutPage()" data-i18n="footer_about">About Us</a>
         <a onclick="showCareersPage()" data-i18n="footer_careers">Careers</a>
         <a onclick="showContactPage()" data-i18n="footer_contact">Contact Us</a>
+        <a onclick="openHelpVideos()">Help videos</a>
         <a onclick="showTermsPage()" data-i18n="footer_terms">Terms of Service</a>
         <a onclick="showPrivacyPolicy()">Privacy Policy</a>
         <a onclick="showPricing()" data-i18n="nav_become_pro">Become a Pro</a>
@@ -3695,6 +3714,7 @@
   </div>
   <div class="support-chat-body" id="support-chat-body"></div>
   <div style="padding:8px 14px;border-top:1px solid var(--border);background:var(--offwhite);text-align:center;">
+    <a onclick="toggleSupportChat();openHelpVideos()" style="font-size:13px;color:var(--teal);cursor:pointer;font-weight:600;margin-right:14px;">▶️ Help videos</a>
     <a onclick="requestHumanSupport()" style="font-size:13px;color:var(--teal);cursor:pointer;font-weight:600;">💬 Contact our team instead</a>
   </div>
   <div class="support-chat-input-row">
@@ -3723,13 +3743,13 @@
     <button type="button" class="btn-solid" onclick="document.getElementById('install-help').hidden=true" data-i18n="install_ok">Got it</button>
   </div>
 </div>
-<script src="/app/trothen.js?v=59d4a1d36c" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
+<script src="/app/trothen.js?v=965b26f12c" onerror="document.body.insertAdjacentHTML('afterbegin','<div style=&quot;padding:16px;background:#FBF3E4;color:#5C4A12;font:16px sans-serif;text-align:center;&quot;>Trothen is being updated. Please refresh this page in a minute.</div>')"></script>
 <script src="/app/rides.js?v=2317890616"></script>
 <script src="/app/tokens.js?v=5697c68ad9"></script>
 <script src="/app/payways.js?v=06dccae9e7"></script>
 <script src="/app/review.js?v=86c2ff86bf"></script>
 <script src="/app/pricing.js?v=4fdcba4521"></script>
-<script src="/app/chats.js?v=4c77951670"></script>
+<script src="/app/chats.js?v=e7f3749dc8"></script>
 <script src="/app/where.js?v=7ac044a389"></script>
 <script src="/app/arrival.js?v=aa3e97aea4"></script>
 <script src="/app/live.js?v=d337fd30f0"></script>
@@ -3739,7 +3759,9 @@
 <script src="/app/callhealth.js?v=04d5713002"></script>
 <script src="/app/teams.js?v=0a22b63b77"></script>
 <script src="/app/voice.js?v=7554f61733"></script>
-<script src="/app/market.js?v=6c13e937a2"></script>
+<script src="/app/help-videos.js?v=7ac0a5f0f2"></script>
+<script src="/app/specs.js?v=cbeea65ade"></script>
+<script src="/app/market.js?v=329c94751e"></script>
 <script src="/app/market-admin.js?v=6e5672fbad"></script>
 <script src="/app/commission.js?v=2fd7aaa6b7"></script>
 <script src="/app/categories.js?v=9ac65b7765"></script>
@@ -3747,8 +3769,8 @@
 <script src="/app/listing.js?v=7dec72f4f4"></script>
 <script src="/app/permissions.js?v=790e421988"></script>
 <script src="/app/postjob.js?v=f70359e917"></script>
-<script src="/app/store-plus.js?v=501b2f5eae"></script>
-<script src="/app/cart.js?v=0a00e3cac4"></script>
+<script src="/app/store-plus.js?v=7023e11d2d"></script>
+<script src="/app/cart.js?v=2bb7bae36c"></script>
 <script src="/app/receipts-ui.js?v=a47e7bac7d"></script>
 <script src="/app/price-units.js?v=1d2df9e851"></script>
 <script src="/app/payout-details.js?v=f2e785bbae"></script>
@@ -3757,7 +3779,7 @@
 <script src="/app/checks.js?v=83eacc00ae"></script>
 <script src="/app/polish.js?v=7ed5bc4aca"></script>
 <script src="/app/a11y.js?v=7a13a5f443"></script>
-<script src="/app/es-v152.js?v=5a436fc8a5"></script>
+<script src="/app/es-v152.js?v=71e60be53a"></script>
 <script src="/app/mobile.js?v=d4850238eb"></script>
 </body>
 </html>

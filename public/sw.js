@@ -28,6 +28,8 @@ self.addEventListener('fetch', (event) => {
   let sameSite = false;
   try { sameSite = new URL(req.url).origin === self.location.origin; } catch (e) { /* not a web address */ }
   if (!sameSite) return;
+  // v178: videos stream in parts (Range requests); iPhones play them only when the browser fetches them itself.
+  if (req.destination === 'video' || req.destination === 'audio' || req.headers.has('range')) return;
   event.respondWith(fetch(req));
 });
 

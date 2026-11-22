@@ -144,12 +144,14 @@
     const chips = (c.bookings || []).slice(0, 4).map(b => `<button type="button" class="chat-chip" onclick="chatsOpenBookings()" title="${escapeHtml(tr('Open your bookings'))}">${b.bookingNumber ? '#' + escapeHtml(b.bookingNumber) + ' · ' : ''}${escapeHtml(String(b.service || '').slice(0, 28))} · ${escapeHtml(statusWord(b.status))}</button>`).join('')
       + (c.jobs || []).filter(j => !(c.bookings || []).some(b => b.jobId === j.id)).slice(0, 2).map(j => `<span class="chat-chip">${escapeHtml(tr('Job'))}: ${escapeHtml(String(j.title).slice(0, 30))}</span>`).join('');
     return `<div class="chat-head-row">
-        <button type="button" class="chat-back" onclick="chatsBack()" aria-label="${escapeHtml(tr('All conversations'))}">‹ ${escapeHtml(tr('All Chats'))}</button>
+        <button type="button" class="chat-back" onclick="chatsBack()" aria-label="${escapeHtml(tr('All conversations'))}">‹<span class="chat-back-label"> ${escapeHtml(tr('All Chats'))}</span></button>
         <span class="chat-avatar" aria-hidden="true">${escapeHtml(initials(c.name))}</span>
-        <div style="min-width:0;flex:1;"><div class="chat-head-name">${escapeHtml(c.name)}</div><div class="chat-head-sub">${escapeHtml([who, since].filter(Boolean).join(' · '))}</div></div>
+        <div class="chat-head-info"><div class="chat-head-name">${escapeHtml(c.name)}</div><div class="chat-head-sub">${escapeHtml([who, since].filter(Boolean).join(' · '))}</div></div>
+        <div class="chat-head-actions">
         ${typeof callButtonsHTML === 'function' && c.userId && ['customer', 'provider'].includes(c.role) ? callButtonsHTML(c.userId, c.name) : ''}
         ${typeof callMenuHTML === 'function' && c.userId && ['customer', 'provider'].includes(c.role) ? callMenuHTML(c.userId, c.name) : ''}
-        ${c.total ? `<button type="button" class="btn-sm btn-sm-outline" onclick="chatsDownload()" title="${escapeHtml(tr('Download this conversation as a text file'))}">⬇ ${escapeHtml(tr('Save Chat'))}</button>` : ''}
+        ${c.total ? `<button type="button" class="btn-sm btn-sm-outline" onclick="chatsDownload()" title="${escapeHtml(tr('Download this conversation as a text file'))}" aria-label="${escapeHtml(tr('Save Chat'))}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg><span class="chat-act-label"> ${escapeHtml(tr('Save Chat'))}</span></button>` : ''}
+        </div>
       </div>
       ${chips ? `<div class="chat-chips">${chips}</div>` : ''}`;
   }
@@ -324,4 +326,22 @@
 
   // Moving between phone and wide screen keeps the right panel showing.
   window.addEventListener('resize', () => { const lay = $('chat-layout'); if (lay) lay.classList.toggle('show-thread', !!(CHATS.showThread && isPhone())); });
+
+  // v175: on a phone, when the keyboard opens, the chat shrinks to the space
+  // above it, so the message box and Send stay in sight (Walter's iPhone: the
+  // box was hidden behind the keyboard). iPhones don't shrink the page for the
+  // keyboard; the visual viewport says how much is really visible.
+  function fitToKeyboard() {
+    const vv = window.visualViewport, m = document.querySelector('.chat-layout.show-thread .chat-main');
+    if (!vv || !m) return;
+    const keyboard = isPhone() && window.innerHeight - vv.height > 120;
+    if (!keyboard) { if (m.style.height) { m.style.height = ''; } return; }
+    m.style.height = Math.max(220, Math.round(vv.height) - 8) + 'px';
+    const top = m.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo(0, Math.max(0, top - vv.offsetTop - 4));
+    const body = $('msg-thread-body'); if (body) body.scrollTop = body.scrollHeight;
+  }
+  if (window.visualViewport) { window.visualViewport.addEventListener('resize', fitToKeyboard); }
+  document.addEventListener('focusin', (ev) => { if (ev.target && ev.target.id === 'msg-input') setTimeout(fitToKeyboard, 350); });
+  document.addEventListener('focusout', (ev) => { if (ev.target && ev.target.id === 'msg-input') setTimeout(fitToKeyboard, 350); });
 })();

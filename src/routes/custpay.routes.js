@@ -55,8 +55,10 @@ const momoHook = async (req, res) => {
   try { await cp.momoCallback(req.get('X-Reference-Id') || b.referenceId, b.externalId); } catch (e) { console.error('[momo callback]', e.message); }
   res.json({ ok: true });
 };
-router.put('/webhooks/mtn-momo', momoHook);
-router.post('/webhooks/mtn-momo', momoHook);
+// v177: MTN's callbacks aren't signed (MTN is asked directly instead), so they are throttled: nobody can make Trothen hammer MTN.
+const momoHookLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many callbacks' } });
+router.put('/webhooks/mtn-momo', momoHookLimiter, momoHook);
+router.post('/webhooks/mtn-momo', momoHookLimiter, momoHook);
 // GET /api/customer-payments/:contractId/card-status — after coming back from Stripe.
 router.get('/customer-payments/:contractId/card-status', requireAuth, requireRole('customer', 'provider'), async (req, res) => {
   const r = await cp.cardStatus(req.params.contractId, req.user.sub);
