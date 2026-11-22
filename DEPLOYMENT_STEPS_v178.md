@@ -11,16 +11,16 @@ This one package holds everything since the version on your GitHub `main` before
 | File | Status | Bytes |
 |---|---|---|
 | `help-admin\admin-help-videos.json` | **new** | 2,352 |
-| `help-admin\help-admin-approvals.jpg` | **new** | 30,821 |
-| `help-admin\help-admin-approvals.mp4` | **new** | 225,401 |
-| `help-admin\help-admin-fares.jpg` | **new** | 30,819 |
-| `help-admin\help-admin-fares.mp4` | **new** | 581,277 |
+| `help-admin\help-admin-approvals.jpg` | **new** | 32,665 |
+| `help-admin\help-admin-approvals.mp4` | **new** | 280,854 |
+| `help-admin\help-admin-fares.jpg` | **new** | 30,820 |
+| `help-admin\help-admin-fares.mp4` | **new** | 624,319 |
 | `help-admin\help-admin-goods.jpg` | **new** | 32,959 |
-| `help-admin\help-admin-goods.mp4` | **new** | 587,577 |
-| `help-admin\help-admin-listings.jpg` | **new** | 30,808 |
-| `help-admin\help-admin-listings.mp4` | **new** | 568,127 |
-| `help-admin\help-admin-systemcheck.jpg` | **new** | 32,463 |
-| `help-admin\help-admin-systemcheck.mp4` | **new** | 481,585 |
+| `help-admin\help-admin-goods.mp4` | **new** | 690,468 |
+| `help-admin\help-admin-listings.jpg` | **new** | 30,821 |
+| `help-admin\help-admin-listings.mp4` | **new** | 555,943 |
+| `help-admin\help-admin-systemcheck.jpg` | **new** | 32,580 |
+| `help-admin\help-admin-systemcheck.mp4` | **new** | 495,204 |
 | `package-lock.json` | changed | 67,674 |
 | `package.json` | changed | 1,082 |
 | `public\app\a11y.js` | **new** | 5,700 |
@@ -62,32 +62,32 @@ This one package holds everything since the version on your GitHub `main` before
 | `public\app\voice.js` | **new** | 28,883 |
 | `public\app\where.js` | **new** | 40,143 |
 | `public\help\CREDITS.txt` | **new** | 406 |
-| `public\help\help-accounts.jpg` | **new** | 17,526 |
-| `public\help\help-accounts.mp4` | **new** | 825,341 |
-| `public\help\help-business.jpg` | **new** | 18,797 |
-| `public\help\help-business.mp4` | **new** | 626,568 |
-| `public\help\help-cart.jpg` | **new** | 18,002 |
-| `public\help\help-cart.mp4` | **new** | 714,204 |
-| `public\help\help-deliveries.jpg` | **new** | 18,900 |
-| `public\help\help-deliveries.mp4` | **new** | 873,418 |
-| `public\help\help-market.jpg` | **new** | 18,209 |
-| `public\help\help-market.mp4` | **new** | 727,367 |
-| `public\help\help-messages.jpg` | **new** | 18,296 |
-| `public\help\help-messages.mp4` | **new** | 483,229 |
-| `public\help\help-payments.jpg` | **new** | 18,219 |
-| `public\help\help-payments.mp4` | **new** | 720,617 |
-| `public\help\help-privacy.jpg` | **new** | 18,323 |
-| `public\help\help-privacy.mp4` | **new** | 639,755 |
-| `public\help\help-rides.jpg` | **new** | 18,075 |
-| `public\help\help-rides.mp4` | **new** | 870,017 |
-| `public\help\help-sell.jpg` | **new** | 18,336 |
-| `public\help\help-sell.mp4` | **new** | 860,873 |
-| `public\help\help-services.jpg` | **new** | 18,341 |
-| `public\help\help-services.mp4` | **new** | 956,337 |
-| `public\help\help-stores.jpg` | **new** | 18,835 |
-| `public\help\help-stores.mp4` | **new** | 1,140,811 |
-| `public\help\help-verification.jpg` | **new** | 13,766 |
-| `public\help\help-verification.mp4` | **new** | 829,164 |
+| `public\help\help-accounts.jpg` | **new** | 17,486 |
+| `public\help\help-accounts.mp4` | **new** | 877,934 |
+| `public\help\help-business.jpg` | **new** | 18,873 |
+| `public\help\help-business.mp4` | **new** | 713,967 |
+| `public\help\help-cart.jpg` | **new** | 18,024 |
+| `public\help\help-cart.mp4` | **new** | 837,372 |
+| `public\help\help-deliveries.jpg` | **new** | 18,854 |
+| `public\help\help-deliveries.mp4` | **new** | 1,015,160 |
+| `public\help\help-market.jpg` | **new** | 18,235 |
+| `public\help\help-market.mp4` | **new** | 792,894 |
+| `public\help\help-messages.jpg` | **new** | 18,277 |
+| `public\help\help-messages.mp4` | **new** | 571,181 |
+| `public\help\help-payments.jpg` | **new** | 18,205 |
+| `public\help\help-payments.mp4` | **new** | 762,140 |
+| `public\help\help-privacy.jpg` | **new** | 18,311 |
+| `public\help\help-privacy.mp4` | **new** | 646,399 |
+| `public\help\help-rides.jpg` | **new** | 18,097 |
+| `public\help\help-rides.mp4` | **new** | 967,288 |
+| `public\help\help-sell.jpg` | **new** | 18,322 |
+| `public\help\help-sell.mp4` | **new** | 902,709 |
+| `public\help\help-services.jpg` | **new** | 18,323 |
+| `public\help\help-services.mp4` | **new** | 1,131,156 |
+| `public\help\help-stores.jpg` | **new** | 18,834 |
+| `public\help\help-stores.mp4` | **new** | 1,217,180 |
+| `public\help\help-verification.jpg` | **new** | 13,774 |
+| `public\help\help-verification.mp4` | **new** | 927,220 |
 | `public\help\help-videos.json` | **new** | 7,914 |
 | `public\index.html` | changed | 292,132 |
 | `public\manifest.json` | changed | 780 |
@@ -95,7 +95,7 @@ This one package holds everything since the version on your GitHub `main` before
 | `scripts\help-videos\demo.js` | **new** | 7,260 |
 | `scripts\help-videos\film.js` | **new** | 19,184 |
 | `scripts\help-videos\flows.js` | **new** | 18,190 |
-| `scripts\help-videos\narrate.js` | **new** | 6,275 |
+| `scripts\help-videos\narrate.js` | **new** | 7,290 |
 | `server.js` | changed | 37,049 |
 | `src\account-export-zip.js` | **new** | 20,814 |
 | `src\account-privacy.js` | changed | 20,795 |
@@ -566,7 +566,7 @@ git commit -m "v178: help videos recorded from the real screens; team videos onl
 git push -u origin v178-help-videos
 ```
 
-`git status` should list **56 files** if v177 is live, **74 files** if v173 is live (v177 not deployed yet), or **230 files** if your main is older than v128. Any other number means something is off: stop and send me a screenshot.
+`git status` should list **74 files** if v173 is live, **56 files** if v177 is live, or **230 files** if your main is older than v128. Any other number means something is off: stop and send me a screenshot.
 
 ## 4. Test on your computer
 
