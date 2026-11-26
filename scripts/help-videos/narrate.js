@@ -41,6 +41,8 @@ function spoken(text) {
     .replace(/(\d+(?:\.\d+)?)\s?km\b/g, '$1 kilometres').replace(/\bkm\b/g, 'kilometres').replace(/(\d+(?:\.\d+)?)\s?cm\b/g, '$1 centimetres').replace(/(\d+(?:\.\d+)?)\s?mm\b/g, '$1 millimetres').replace(/(\d+(?:\.\d+)?)\s?m\b/g, '$1 metres')
     .replace(/(\d+(?:\.\d+)?)\s?(?:in|")(?=\W|$)/g, '$1 inches').replace(/(\d+(?:\.\d+)?)\s?L\b/g, '$1 litres').replace(/(\d+(?:\.\d+)?)\s?ml\b/gi, '$1 millilitres')
     .replace(/(\d+(?:\.\d+)?)\s?%/g, '$1 percent')
+    // v182: PIN is said as one word ("pin"), the way people say it; the captions keep "PIN"
+    .replace(/\bPIN(s?)\b/g, 'pin$1')
     .replace(/\be\.g\./gi, 'for example').replace(/\bi\.e\./gi, 'that is').replace(/\betc\./gi, 'and so on').replace(/\bapprox\.?\b/gi, 'about')
     .replace(/\bno\.\s?(\d)/gi, 'number $1').replace(/\bqty\b/gi, 'quantity').replace(/\bpcs\b/gi, 'pieces').replace(/\bmin\b/g, 'minutes').replace(/\bhrs?\b/g, 'hours')
     // a unit before a noun is said in the singular: "a 50-kilogram bag", "a 2-metre pipe"
@@ -83,7 +85,7 @@ print('ready', flush=True)
 for line in sys.stdin:
     out, text = line.rstrip('\\n').split('\\t', 1)
     # whole sentences, so the voice keeps its natural rise and fall; a short breath between sentences
-    parts = [p.strip() for p in re.findall(r'[^.!?]+[.!?]*', text) if p.strip()]
+    parts = [p.strip() for p in re.findall(r'(?:\\d\\.\\d|[^.!?])+[.!?]*', text) if p.strip()]  # v182: never split inside a number like 4.7
     rate = 24000; chunks = [np.zeros(int(rate * 0.2), dtype=np.float32)]
     for p in parts:
         a, rate = k.create(p, voice=voice, speed=pace, lang='en-us')
@@ -109,7 +111,7 @@ function startWorker() {
 async function say(text) {
   fs.mkdirSync(CACHE, { recursive: true });
   const words = spoken(text);
-  const file = path.join(CACHE, crypto.createHash('sha1').update(`kokoro|${SPEAKER}|${PACE}|v4|${words}`).digest('hex').slice(0, 16) + '.wav');
+  const file = path.join(CACHE, crypto.createHash('sha1').update(`kokoro|${SPEAKER}|${PACE}|${/\d\.\d/.test(words) ? 'v5' : 'v4'}|${words}`).digest('hex').slice(0, 16) + '.wav');
   if (!fs.existsSync(file)) {
     const w = startWorker(); await w.isReady;
     await new Promise((res, rej) => { w.waiting.set(file, (e) => (e ? rej(e) : res())); w.p.stdin.write(`${file}\t${words.replace(/[\t\n]/g, ' ')}\n`); });
@@ -127,7 +129,7 @@ function addSound(mp4, lines, out) {
   for (const l of lines) args.push('-i', l.file);
   const parts = lines.map((l, i) => `[${i + 1}:a]aresample=44100,adelay=${Math.max(0, Math.round(l.at * 1000))}:all=1[a${i}]`);
   const mix = `${lines.map((l, i) => `[a${i}]`).join('')}amix=inputs=${lines.length}:normalize=0:dropout_transition=0,loudnorm=I=-16:TP=-1.5:LRA=11[aout]`;
-  args.push('-filter_complex', parts.join(';') + ';' + mix, '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '96k', '-ac', '1', '-shortest', '-movflags', '+faststart', out);
+  args.push('-filter_complex', parts.join(';') + ';' + mix, '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '64k', '-ar', '24000', '-ac', '1', '-shortest', '-movflags', '+faststart', out);
   execFileSync('ffmpeg', args);
   return true;
 }

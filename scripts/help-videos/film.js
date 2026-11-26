@@ -257,6 +257,8 @@ async function startServer() {
       if (!now.computer && was && was.computer) m.computer = was.computer;
       return m.file ? m : null;
     }).filter(Boolean).map(({ group, ...m }) => m);
+    // v182: keep subjects that have only an animated explainer (no screen recording)
+    for (const was of old) if (was.explainer && !all.some(m => m.key === was.key)) all.push(was);
     if (all.length) { fs.mkdirSync(OUT[g], { recursive: true }); fs.writeFileSync(file, JSON.stringify(all, null, 1) + '\n'); }
   }
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) {}

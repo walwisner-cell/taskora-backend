@@ -195,6 +195,8 @@ app.use('/api', require('./src/routes/custpay.routes')); // v119: customer payme
 app.use('/api', require('./src/routes/calls.routes')); // v136: in-app voice and video calls
 app.use('/api', require('./src/routes/market.routes')); // v139: the Market (stores and personal listings)
 app.use('/api', require('./src/routes/market-admin.routes')); // v164: Admin → Market
+app.use('/api', require('./src/routes/rentals.routes')); // v180: Rentals (stays by the night, homes by the month)
+require('./src/rentals').startScheduler(); // v180: money released after check-in; reminders
 require('./src/market').startMarketScheduler(); // v139: orders complete by themselves; listings end
 app.use('/api', require('./src/routes/business.routes'));
 app.use('/api', marketplaceRoutes);

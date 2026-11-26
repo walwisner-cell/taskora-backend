@@ -48,6 +48,44 @@
     "Did not get the code? Check your spam folder, wait a minute, then ask for a new code.",
     "Already have an account? Click Sign In instead, and type your email and password. That is all."
    ]
+  },
+  "explainer": {
+   "file": "explain-accounts",
+   "seconds": 175,
+   "transcript": [
+    "This video shows how to create your Trothen account. It is free, and it takes about three minutes.",
+    "Before you start, have two things ready: your phone number, and an email address you can open now, because we send you a code there.",
+    "First, Trothen asks how you will use it. There are two choices.",
+    "Choose Customer if you want to hire people, book rides, buy things in the Market, or rent a place to stay.",
+    "Choose Provider if you will offer your own work, like cleaning, repairs, braids, driving, or a store.",
+    "Not sure? Choose Customer. You can start offering your work later.",
+    "Open trothenpro.com on your phone or computer, and tap Sign In, at the top of the screen.",
+    "You do not have an account yet, so tap Sign Up.",
+    "Then tap Customer or Provider. In this video, we choose Customer.",
+    "Type your full name, the way it is written on your ID card or passport. Later, when you verify your identity, the two names must match.",
+    "Choose your country and your county, and type your city or town. Trothen then shows you prices in your money, and pros near you.",
+    "Type your phone number. Pros, drivers and sellers never see it. Calls and messages go through the app.",
+    "Type your email address. Make sure it is one you can open now, because the code goes there.",
+    "Next, choose a password. A good password keeps your money and your messages safe.",
+    "Use at least eight characters. Longer is safer.",
+    "Mix letters, numbers and a sign, like a dash or an exclamation mark.",
+    "Do not use your name or your phone number. They are easy to guess.",
+    "And do not use the same password anywhere else. Never tell it to anyone, even someone who says they work for Trothen.",
+    "When everything is filled in, tap Create Account.",
+    "Trothen emails you a code of six numbers. Open your email, and find the message from Trothen.",
+    "Type the code into Trothen, and tap Confirm. Your account is ready.",
+    "No code? Look in your spam folder, wait a minute, then tap Send a new code.",
+    "Here is what comes next.",
+    "With your account, you can already look around: pros, the Market, and places to stay.",
+    "To book or pay, you verify your identity once. There is a help video for that.",
+    "Then add a way to pay, like Mobile Money or a card.",
+    "And you are ready: hire a pro, book a ride, buy in the Market, or rent a place.",
+    "Already have an account? Just tap Sign In, and type your email and password. Welcome to Trothen."
+   ],
+   "computer": {
+    "file": "explain-accounts-computer",
+    "seconds": 175
+   }
   }
  },
  {
@@ -89,6 +127,43 @@
     "A person on our team checks it, usually within 48 hours. We tell you by email, and on your home screen.",
     "Your photos are kept private. Only the team that checks them can see them, and they are never shown to other people."
    ]
+  },
+  "explainer": {
+   "file": "explain-verification",
+   "seconds": 157,
+   "transcript": [
+    "This video shows how to verify your identity on Trothen. You do it only once.",
+    "You need your national ID card, your passport, or your driver's licence, and a phone camera. Find a place with good light.",
+    "Why does Trothen ask for your ID? To keep everyone safe.",
+    "Everyone you meet on Trothen is a real person: customers, pros, drivers, sellers and hosts.",
+    "When a pro or a driver comes to you, you know who they are. And pros know who they work for.",
+    "It also keeps scammers out. Someone whose account is closed cannot just make a new one.",
+    "On your home screen, tap Verify Now.",
+    "Choose the kind of document you have: a national ID card, a passport, or a driver's licence.",
+    "Type your name exactly as it is printed on the document, with the same spelling.",
+    "Then you take three photos.",
+    "First, the front of your document. Lay it flat on a table, and fill the whole photo with it.",
+    "Then the back. A passport has no back, so you can leave this one out.",
+    "Then a photo of your face. Look straight at the camera, with no hat and no sunglasses. We compare it with the photo on your document.",
+    "Before you send them, check each photo. Every word on the document must be easy to read.",
+    "If it is blurred, hold the phone still, and tap the screen to focus.",
+    "If light is shining on it, move away from the window or the lamp.",
+    "If the document is cut off, step back. Every corner must show.",
+    "If it is too dark, go near a window in the daytime. Clear photos are checked much faster.",
+    "When the photos are clear, tap Submit for Review.",
+    "A person on the Trothen team checks it, usually within 48 hours.",
+    "We tell you by email, and on your home screen. You can then book and pay.",
+    "If something is not clear, we tell you what to fix, and you send it again.",
+    "Your photos are safe.",
+    "They are kept private. Only the team that checks them can see them.",
+    "They are never shown to customers, pros or anyone else on Trothen.",
+    "And Trothen never asks for your ID photos by message, by phone, or by email. Only on this page.",
+    "That is all. Once you are verified, you can book, pay, and use everything on Trothen."
+   ],
+   "computer": {
+    "file": "explain-verification-computer",
+    "seconds": 157
+   }
   }
  },
  {
@@ -154,6 +229,46 @@
     "Pros near you are told about it, and they answer with their prices. You can read each pro's reviews, then choose one.",
     "Never pay a pro outside Trothen. If you do, we cannot protect your money."
    ]
+  },
+  "explainer": {
+   "file": "explain-services",
+   "seconds": 196,
+   "transcript": [
+    "This video shows how to post a job on Trothen, so that pros near you can offer to do it. For example: cleaning, plumbing, electrical work, braids, or moving.",
+    "You need your ID verified. A photo of the job helps a lot, so have your phone ready.",
+    "Posting a job has four short steps.",
+    "One: what you need.",
+    "Two: when and where.",
+    "Three: the price, and how you pay.",
+    "Four: check everything, and post it. Pros near you are told straight away.",
+    "On your home screen, tap Post a New Job.",
+    "Type the kind of work, for example cleaning. The list gets shorter as you type. Tap the one that fits best. If nothing fits, choose Something else.",
+    "Describe the job: what needs doing, where in the house, and how big it is. Add photos or a short video if you can. The more pros know, the better their prices.",
+    "Say who brings the materials: you, the pro, or Not sure, and the pro can advise you. Then tap Next.",
+    "Choose when you need it: as soon as possible, on a date, or flexible, if you will agree a time with the pro.",
+    "Show where the job is. If you are there now, tap Pin my current location. If not, tap Choose on a map, and put the pin on the place.",
+    "Add a landmark or directions, like the colour of the gate, so the pro finds you easily. Then tap Next.",
+    "Step three is the price. There are two ways.",
+    "The first way: pros send you their prices. Each pro who can do the job sends a price, and you choose the one you like. You can read their reviews first. We recommend this way.",
+    "The second way: you set your own price, in Liberian dollars or US dollars. The first pro who accepts your price gets the job. This is good for small jobs, when you already know the usual price.",
+    "Then choose how you will pay. We recommend Protected by Trothen.",
+    "You pay when you choose your pro, but the money does not go to the pro straight away. Trothen holds it safely.",
+    "The pro is paid only when you say the job is done.",
+    "If there is a problem, tap Report a Problem. The money stays held, and the Trothen team helps you both.",
+    "Step four: read your job once more.",
+    "To change anything, tap Change next to it.",
+    "When it is right, tap Post my job.",
+    "Pros near you are told about it, and they answer with their prices. Read each pro's reviews, then tap the one you choose.",
+    "Three safety rules.",
+    "Never pay a pro outside Trothen, by cash, by transfer, or by phone. If you do, we cannot protect your money.",
+    "If a pro asks you to pay outside Trothen, report them.",
+    "Keep your talks in Trothen messages. If there is a disagreement later, we can see what was agreed.",
+    "When the job is done, say so in My Bookings, and rate your pro. It helps other customers choose. That is all."
+   ],
+   "computer": {
+    "file": "explain-services-computer",
+    "seconds": 196
+   }
   }
  },
  {
@@ -162,7 +277,7 @@
   "title": "Add Mobile Money",
   "tagline": "How you pay, and why your money is safe",
   "audience": "all",
-  "seconds": 109,
+  "seconds": 87,
   "transcript": [
    "In this video, you will add Mobile Money, so you can pay for jobs, rides and goods on Trothen.",
    "Tap Payments at the bottom of the screen.",
@@ -181,7 +296,7 @@
   "topic": "Customers",
   "computer": {
    "file": "help-payments-computer",
-   "seconds": 103,
+   "seconds": 83,
    "transcript": [
     "In this video, you will add Mobile Money, so you can pay for jobs, rides and goods on Trothen.",
     "Click Payments in the menu on the left.",
@@ -197,6 +312,37 @@
     "Your money is then held by Trothen. The pro is paid only when you confirm the job is done. If there is a problem, click Report a Problem, and we step in.",
     "At any time, you can download all your payments as a PDF, for your records."
    ]
+  },
+  "explainer": {
+   "file": "explain-payments",
+   "seconds": 130,
+   "transcript": [
+    "This video shows how to add Mobile Money to Trothen, so you can pay for jobs, rides, goods and places to stay.",
+    "You need the phone number your Mobile Money wallet is on. Or, if you prefer, a bank card.",
+    "Open Payments. On a phone, it is at the bottom of the screen. On a computer, in the menu on the left.",
+    "This page shows your ways to pay at the top, and everything you have paid below. Tap Add Payment Method.",
+    "Choose Mobile Money. If you would rather pay with a bank card, choose Card.",
+    "Type your Mobile Money number: the phone number your wallet is on.",
+    "Choose your network: Orange Money, or MTN Mobile Money.",
+    "Say whose number it is. You can pay from a family member's wallet, or your company's, if they agree. Check the name the wallet is registered in.",
+    "Tap Save Payment Method. That is it.",
+    "When you pay for something, your phone gets a message from your Mobile Money network.",
+    "You approve the payment on your phone, with your own Mobile Money PIN.",
+    "Trothen never asks for your PIN. Not in the app, not by phone, not by message. Anyone who asks for it is a scammer.",
+    "Here is why paying through Trothen is safe.",
+    "When you pay, the money does not go straight to the pro, the seller or the host.",
+    "Trothen holds it. They are paid only when you confirm that the job is done, or that you have the goods.",
+    "If there is a problem, tap Report a Problem. The money stays held while the Trothen team helps.",
+    "Everything you pay is kept for you.",
+    "Every payment is listed on the Payments page, with the date, what it was for, and the amount.",
+    "Tap Download PDF to get all your payments in one file, for your records or your taxes.",
+    "Refunds show here too. A Mobile Money refund goes back to the number the money came from.",
+    "That is all. You are ready to pay safely on Trothen."
+   ],
+   "computer": {
+    "file": "explain-payments-computer",
+    "seconds": 130
+   }
   }
  },
  {
@@ -205,7 +351,7 @@
   "title": "Book a ride",
   "tagline": "A motorbike, keke, car or van, with the fare in L$ before you book",
   "audience": "all",
-  "seconds": 134,
+  "seconds": 109,
   "transcript": [
    "In this video, you will book a ride: a motorbike, a keke, a car or a van. You see the fare before you book.",
    "Tap More at the bottom of the screen. It lists every part of your account.",
@@ -221,14 +367,14 @@
    "Tap Find drivers near me.",
    "Each ride shows its fare in Liberian dollars, and how far away the driver is. The fare is fixed before you book.",
    "Choose one and confirm. The driver is told at once, and you see them coming on the map.",
-   "You can call or text the driver in the app. Neither of you sees the other's phone number.",
+   "You can call or text the driver in the app. While the ride is open, you can see each other's phone number. After the ride, it is hidden again.",
    "When the driver arrives, check the plate number. Give your four-digit PIN only if the plate matches. The trip starts then.",
    "At the end, the fare is paid, and you can rate your driver. If anything went wrong, tap Report a Problem on the trip."
   ],
   "topic": "Rides",
   "computer": {
    "file": "help-rides-computer",
-   "seconds": 126,
+   "seconds": 102,
    "transcript": [
     "In this video, you will book a ride: a motorbike, a keke, a car or a van. You see the fare before you book.",
     "Click Rides in the menu on the left.",
@@ -243,10 +389,50 @@
     "Click Find drivers near me.",
     "Each ride shows its fare in Liberian dollars, and how far away the driver is. The fare is fixed before you book.",
     "Choose one and confirm. The driver is told at once, and you see them coming on the map.",
-    "You can call or text the driver in the app. Neither of you sees the other's phone number.",
+    "You can call or text the driver in the app. While the ride is open, you can see each other's phone number. After the ride, it is hidden again.",
     "When the driver arrives, check the plate number. Give your four-digit PIN only if the plate matches. The trip starts then.",
     "At the end, the fare is paid, and you can rate your driver. If anything went wrong, click Report a Problem on the trip."
    ]
+  },
+  "explainer": {
+   "file": "explain-rides",
+   "seconds": 194,
+   "transcript": [
+    "This video shows how to book a ride on Trothen: a motorbike, a keke, a car, or a van. You see the fare before you book.",
+    "You need your ID verified, and your phone's location turned on, so the driver can find you.",
+    "There are four kinds of ride.",
+    "A motorbike carries one passenger. It is the quickest in traffic.",
+    "A keke carries a few passengers: never more people than it has seats.",
+    "A car has more room, and keeps you out of the rain.",
+    "A van is for a group, or when you have bags and boxes.",
+    "Open Rides. First, say where the driver should pick you up. Tap Use my location. Your phone asks if Trothen may see where you are: tap Allow.",
+    "Give the place a name or a landmark that drivers know, like a petrol station or a church.",
+    "You can add a note for the driver, like the colour of the gate, or what you are wearing.",
+    "If you often leave from here, tap Save this place. Next time, it is one tap.",
+    "Then say where you are going. Search for the place, or tap Choose on a map, and put the pin where you are going.",
+    "Choose how many people are riding. Remember: a motorbike carries only one passenger.",
+    "Tap Find drivers near me.",
+    "You see the rides near you. Each one shows its fare in Liberian dollars, and how far away the driver is.",
+    "The fare is fixed before you book. The driver must not ask you for more money.",
+    "Choose one, and confirm. The driver is told at once, and you see them coming on the map.",
+    "When the driver arrives, look at the plate number. It must be the same as the one in the app.",
+    "Only if the plate matches, tell the driver your four-digit PIN. The trip starts then.",
+    "If the plate or the driver is wrong, do not get on. Cancel the ride.",
+    "On a motorbike, wear the helmet the driver gives you.",
+    "You choose how to pay the fare when you book.",
+    "In the app: the fare is held by Trothen. The driver is paid only when you confirm you arrived. If no driver accepts, or you cancel before the trip starts, you get it back.",
+    "In cash: you pay the driver exactly the fare shown, at the end of the trip. Nothing is held by Trothen. If the driver asks for more, do not pay it, and report it.",
+    "On the way, and after the trip.",
+    "You can call or message the driver in the app. While the ride is open, you can also see each other's phone number. After the ride, the numbers are hidden again.",
+    "If you ever feel unsafe, press SOS. It sends an alert, and where you are, to the Trothen team. In an emergency, call the police first.",
+    "At the end, rate your driver. It helps other passengers, and good drivers.",
+    "If anything went wrong, tap Report a Problem on the trip. A person on the Trothen team looks at it and decides.",
+    "That is all. Have a safe ride."
+   ],
+   "computer": {
+    "file": "explain-rides-computer",
+    "seconds": 194
+   }
   }
  },
  {
@@ -291,6 +477,38 @@
     "Then pay from your cart. Your payment is held by Trothen until you have the goods in your hands.",
     "If the goods do not arrive, or are not as described, click Report a Problem on the order, and we help you get your money back."
    ]
+  },
+  "explainer": {
+   "file": "explain-market",
+   "seconds": 132,
+   "transcript": [
+    "This video shows how to find something in the Trothen Market, check it carefully, and buy it safely.",
+    "To buy, you need your ID verified, and a way to pay, like Mobile Money.",
+    "The Market has three kinds of things.",
+    "Goods from stores on Trothen: phones, clothes, building materials, food, and much more.",
+    "Things people sell themselves, like a used phone, a drill, or a sofa.",
+    "And Rentals: places to stay by the night, or homes to rent by the month. There is a separate video for those.",
+    "Open the Market. On a phone, tap More at the bottom of the screen, then Market.",
+    "Type what you are looking for. You can search for details too, like 128 gigabytes, or a brand. Then tap Search.",
+    "Each card shows the price, the condition, and where it is. Compare a few before you choose.",
+    "Tap a good to see everything about it. Look at all the photos. They should show the real item, not a picture from the internet.",
+    "Read the details: for a phone, the storage, the memory, the SIM, the network, and any warranty. Make sure it is what you need.",
+    "Not sure about something? Tap Message the seller, and ask before you buy.",
+    "Watch out for signs of a scam.",
+    "A price much lower than everywhere else.",
+    "Photos copied from the internet, instead of the real item.",
+    "A seller who asks you to pay by phone, transfer or cash, outside Trothen.",
+    "If you see one of these, tap Report on the listing. Our team checks it.",
+    "When you are happy, tap Add to cart, and pay from your cart.",
+    "Your payment is held by Trothen. The seller does not have it yet.",
+    "The seller is paid only when you have the goods in your hands.",
+    "If the goods do not arrive, or are not as described, tap Report a Problem on the order, and we help you get your money back.",
+    "That is all. Next, watch the video about your cart and checkout."
+   ],
+   "computer": {
+    "file": "explain-market-computer",
+    "seconds": 132
+   }
   }
  },
  {
@@ -329,6 +547,36 @@
     "You see the full total, with every fee, before you pay. Nothing is added afterwards.",
     "When the driver arrives, check the goods, then give them your code. Only then is the store paid."
    ]
+  },
+  "explainer": {
+   "file": "explain-cart",
+   "seconds": 115,
+   "transcript": [
+    "This video shows how to use your cart: add goods, check them, choose the delivery, and pay. You see the full total before you pay.",
+    "In the Market, tap Add to cart on any good.",
+    "You can add goods from different stores. They all go into the same cart.",
+    "Then open your Cart, to see everything together. On a phone, tap More at the bottom of the screen, then Cart.",
+    "Your cart shows every good, grouped by store, with the price of each one.",
+    "Change the quantity if you need more than one. For example, ten bags of cement.",
+    "Not ready to buy something? Tap Save for later. It stays saved, and you can buy it another day.",
+    "At checkout, choose how to get your goods.",
+    "You can collect them from the store yourself. Then there is no delivery price.",
+    "Or a driver brings them to you. You see the delivery price before you pay.",
+    "For heavy goods, like cement, only a vehicle that can carry them is offered, such as a van or a truck.",
+    "Before you pay, Trothen shows the full total: each good, the delivery, and any fee.",
+    "This is the full price. Nothing is added afterwards.",
+    "Then pay, with Mobile Money or a card. The money is held by Trothen until you have your goods.",
+    "Here is what happens when your goods come.",
+    "The driver brings them to you.",
+    "When they arrive, check the goods. Count them, and look at them. Is everything there, and in good condition?",
+    "Only when everything is right, give the driver your code.",
+    "Only then is the store paid. If something is wrong, do not give the code. Tap Report a Problem instead.",
+    "That is all. Happy shopping."
+   ],
+   "computer": {
+    "file": "explain-cart-computer",
+    "seconds": 115
+   }
   }
  },
  {
@@ -373,6 +621,38 @@
     "Some listings are checked by our team before they appear. That keeps the Market safe for everyone.",
     "Buyers pay through Trothen, so you are always paid. Never accept money outside the app."
    ]
+  },
+  "explainer": {
+   "file": "explain-sell",
+   "seconds": 131,
+   "transcript": [
+    "This video shows how to sell something of your own in the Trothen Market: for example a phone, a tool, or a piece of furniture.",
+    "You need your ID verified, and a few clear photos of the real item.",
+    "Open the Market, and tap Sell at the top. Then tap Sell an item.",
+    "Give it a clear title: what it is, the brand, and the most important detail. For example: Bosch drill, 650 watts, with case. Buyers search for these words.",
+    "Choose the category. The details buyers look for in that category then appear below.",
+    "Next, choose the condition. Be honest: a buyer who paid through Trothen can report a problem, and get their money back, if the item is not as described.",
+    "New means never used, and still in its box.",
+    "Like new means used a little, with no marks.",
+    "Good means it works well, with small marks.",
+    "Used means it works, but it has clearly been used.",
+    "Type your price. Look at similar items in the Market first, to choose a fair price.",
+    "Fill in the details, like the brand and the power. Listings with details sell faster.",
+    "Add clear photos of the real item, from a few sides, in good light. Never use pictures from the internet.",
+    "Tick the box to confirm that the item is yours to sell. Selling stolen goods is against the law, and the account is closed.",
+    "Then tap Put it on sale.",
+    "Some listings are checked by our team before they appear. That keeps the Market safe for everyone.",
+    "Here is how you get paid.",
+    "A buyer pays through Trothen. The money is held safely.",
+    "You hand the item over, or a driver delivers it.",
+    "When the buyer has it, you are paid.",
+    "Never accept money outside the app. Inside Trothen, you are always paid, and you are protected.",
+    "That is all. Answer buyers' messages quickly: it helps you sell faster."
+   ],
+   "computer": {
+    "file": "explain-sell-computer",
+    "seconds": 131
+   }
   }
  },
  {
@@ -410,6 +690,32 @@
     "Nobody sees your phone number. Keep your talks in Trothen: if there is a disagreement later, we can help, because we can see what was agreed.",
     "If someone is rude, or asks you to pay outside Trothen, report them from the conversation."
    ]
+  },
+  "explainer": {
+   "file": "explain-messages",
+   "seconds": 91,
+   "transcript": [
+    "This video shows how to send a message, a voice message, and make a call, all inside Trothen.",
+    "Tap Messages, at the bottom of the screen.",
+    "Each conversation is with one person: a pro, a seller, a store, or a host. The newest are at the top.",
+    "Tap a conversation to open it.",
+    "Type your message in the box at the bottom, and tap Send.",
+    "Would you rather talk? Hold the microphone button to record a voice message. Let go to send it.",
+    "You can also make a call, or a video call, from the top of the conversation. You can turn calls off, or choose your times, in Settings.",
+    "Why should you keep your talks in Trothen?",
+    "Your phone number stays private. Messages and calls go through the app.",
+    "What you agreed is written down. If there is a disagreement later, the Trothen team can see what was agreed, and help.",
+    "And Trothen watches for scams. A message asking you to pay outside Trothen is flagged to our team.",
+    "What if something is wrong?",
+    "If someone asks you to pay outside Trothen, by phone, transfer or cash,",
+    "or if someone is rude, or threatens you,",
+    "tap Report in the conversation. The Trothen team looks at it, and can close their account.",
+    "That is all. Keep your talks in Trothen, and you are protected."
+   ],
+   "computer": {
+    "file": "explain-messages-computer",
+    "seconds": 91
+   }
   }
  },
  {
@@ -448,6 +754,227 @@
     "Click Download a copy of my data to get everything Trothen holds about you, in one file.",
     "And if you ever want to leave, you can close your account here. Your personal data is then removed."
    ]
+  },
+  "explainer": {
+   "file": "explain-privacy",
+   "seconds": 95,
+   "transcript": [
+    "This video shows how to look after your account: your details, your password, calls and sounds, and your data. Everything is in Settings.",
+    "To open Settings on a phone, tap More at the bottom of the screen, then Settings.",
+    "At the top are your details: your name, email, phone number and address.",
+    "Moving? Change your country, county and city here, so Trothen shows you pros near you.",
+    "After any change, tap Save Changes.",
+    "To change your password, type your current password, then your new password twice.",
+    "Lost your phone? Or do you think someone knows your password?",
+    "Tap Sign out of all devices. Everyone using your account is signed out. Then sign in again on your own phone, and change your password.",
+    "Below, choose how Trothen reaches you.",
+    "Choose whether people can call you in the app, and at what times. For example, not at night.",
+    "Choose your ringtone, and the sound for a new message. Tap Play to hear them.",
+    "Your data belongs to you.",
+    "Tap Download a copy of my data, to get everything Trothen holds about you, in one file.",
+    "And if you ever want to leave, tap Close my account. Your personal data is then removed.",
+    "Some records, like payments, are kept for the time the law asks.",
+    "That is all. Check your settings now and then, and keep your password to yourself."
+   ],
+   "computer": {
+    "file": "explain-privacy-computer",
+    "seconds": 95
+   }
+  }
+ },
+ {
+  "key": "rentals",
+  "title": "Book a place to stay",
+  "tagline": "A room for a few nights, or a home by the month, paid safely",
+  "topic": "Rentals",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-rentals",
+   "seconds": 232,
+   "transcript": [
+    "This video shows how to find and book a place to stay on Trothen: a room or an apartment for a few nights, or a home to rent by the month.",
+    "Before you start, you need two things: your ID verified on Trothen, and a way to pay, such as Mobile Money or a card.",
+    "First, open the Market. On a phone, tap More at the bottom of the screen, then tap Market.",
+    "At the top of the Market, tap Rentals.",
+    "Choose Stays by the night for a short visit, or Homes by the month to rent a home.",
+    "Type the area you want, for example Sinkor. Choose your dates and how many people are coming, then tap Search.",
+    "Tap a place to open it. Look at all the photos, and read the description.",
+    "Check what the place has: for example electricity, a generator, a water tank, or a security guard. Read the house rules too.",
+    "You see the area, but not the exact address. The address is shared with you only when the host accepts your booking. This keeps hosts safe.",
+    "Look at the host. Every host on Trothen has a verified ID, and you can read what other guests said about the place.",
+    "The calendar shows the free days. Days that are already taken are crossed out.",
+    "Tap the day you arrive, then the day you leave.",
+    "Trothen shows the price straight away: the nights, any cleaning fee, Trothen's service fee, and the total, in US dollars and in Liberian dollars.",
+    "Before you book, read the cancellation rule. It tells you how much comes back if you cancel. Then tap Request to book, and pay.",
+    "When you tap Request to book, you pay, but the money does not go to the host.",
+    "Trothen holds it safely.",
+    "The money goes to the host only 24 hours after you check in. So if the place is not as described, you have time to report a problem.",
+    "The host has 24 hours to accept your booking. If they say no, or do not answer, you get everything back.",
+    "Here is what happens next.",
+    "You book and pay.",
+    "The host accepts. You get a message with the full address and a map link, and you can message the host.",
+    "On the day, you check in from the time shown on the place.",
+    "If all is well, the host is paid 24 hours after check-in. Or tap All good to pay them straight away.",
+    "Each place has a cancellation rule. Cancel in My trips, and Trothen shows you how much comes back before you confirm.",
+    "Flexible: free until 24 hours before check-in. After that, the first night is not refunded.",
+    "Moderate: free until 5 days before check-in. After that, half of the nights are refunded.",
+    "Strict: free until 14 days before check-in. Then half, until 7 days before. After that, nothing.",
+    "For a home by the month: free until 7 days before you move in. After that, the first month is not refunded. If the host cancels, you always get everything back.",
+    "Three safety rules.",
+    "Never pay a host by phone, bank transfer or cash outside Trothen. Outside Trothen, your money is not protected.",
+    "If a host asks you to pay outside Trothen, report them with the Report button on the place.",
+    "When you arrive, check the place. If it is not as described, tap Report a problem in My trips before the payment goes to the host. The Trothen team then decides.",
+    "After your stay, rate the place. It helps other guests, and the host. Enjoy your stay."
+   ],
+   "computer": {
+    "file": "explain-rentals-computer",
+    "seconds": 232
+   }
+  },
+  "file": "help-rentals",
+  "seconds": 165,
+  "transcript": [
+   "In this video, you will find a place to stay, check it, and see the full price before you book.",
+   "Tap More at the bottom of the screen. It lists every part of your account.",
+   "Tap Market.",
+   "At the top of the Market, tap Rentals.",
+   "Choose Stays by the night for a short visit, or Homes by the month to rent a home.",
+   "Type the area you want, for example Sinkor.",
+   "Choose your dates and how many people are coming.",
+   "Tap Search.",
+   "Each place shows its photos, its kind, how many people it takes, the price in US dollars and Liberian dollars, and its rating.",
+   "Tap a place to open it.",
+   "Look at all the photos, and read the description: what the place has, and the house rules.",
+   "You see the area, but not the exact address. The address is shared only when the host accepts your booking.",
+   "The calendar shows the free days. Days already taken are crossed out.",
+   "Tap the arrow to see the next month.",
+   "Tap the day you arrive.",
+   "Then tap the day you leave.",
+   "The price appears straight away: the nights, the cleaning fee, Trothen's service fee, and the total.",
+   "Read the cancellation rule. Then tap Request to book, and pay.",
+   "Your money is held by Trothen. The host has 24 hours to accept. If they say no, or do not answer, you get everything back.",
+   "The host is paid 24 hours after you check in. If the place is not as described, tap Report a problem in My trips before then.",
+   "Never pay a host outside Trothen. Outside Trothen, your money is not protected."
+  ],
+  "computer": {
+   "file": "help-rentals-computer",
+   "seconds": 196,
+   "transcript": [
+    "In this video, you will find a place to stay, check it, and see the full price before you book.",
+    "Click Market in the menu on the left.",
+    "At the top of the Market, click Rentals.",
+    "Choose Stays by the night for a short visit, or Homes by the month to rent a home.",
+    "Type the area you want, for example Sinkor.",
+    "Choose your dates and how many people are coming.",
+    "Click Search.",
+    "Each place shows its photos, its kind, how many people it takes, the price in US dollars and Liberian dollars, and its rating.",
+    "Click a place to open it.",
+    "Look at all the photos, and read the description: what the place has, and the house rules.",
+    "You see the area, but not the exact address. The address is shared only when the host accepts your booking.",
+    "The calendar shows the free days. Days already taken are crossed out.",
+    "Click the arrow to see the next month.",
+    "Click the day you arrive.",
+    "Then click the day you leave.",
+    "The price appears straight away: the nights, the cleaning fee, Trothen's service fee, and the total.",
+    "Read the cancellation rule. Then click Request to book, and pay.",
+    "Your money is held by Trothen. The host has 24 hours to accept. If they say no, or do not answer, you get everything back.",
+    "The host is paid 24 hours after you check in. If the place is not as described, click Report a problem in My trips before then.",
+    "Never pay a host outside Trothen. Outside Trothen, your money is not protected."
+   ]
+  }
+ },
+ {
+  "key": "hosting",
+  "title": "Rent out your place",
+  "tagline": "List your place, answer guests, and get paid",
+  "topic": "Rentals",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-hosting",
+   "seconds": 237,
+   "transcript": [
+    "This video shows how to rent out your place on Trothen: a room or an apartment for a few nights, or a whole home by the month.",
+    "You need your ID verified, three to twelve clear photos of the place, and you must own it, or have the owner's written permission to rent it out.",
+    "Open the Market, then tap Rentals.",
+    "Tap Hosting. This is where you manage your places and your guests.",
+    "Tap List a place. The form has five short parts.",
+    "Here are the five parts.",
+    "One: the place. Its kind, like an apartment, a house, or a room, how many bedrooms and bathrooms, and how many guests it takes.",
+    "Two: where it is. The full address stays private until you accept a guest.",
+    "Three: photos. Three to twelve clear photos of the real place.",
+    "Four: what it has, like a generator or a water tank, and your house rules.",
+    "Five: your prices.",
+    "Good photos get bookings.",
+    "Take them in the daytime, with the lights on and the curtains open.",
+    "Show every room: the bedroom, the bathroom, the kitchen, and the sitting room.",
+    "Show the outside too: the compound and the gate.",
+    "Never use photos of another place, or pictures from the internet. Guests report it, and the place is taken down.",
+    "In prices, choose by the night, by the month, or both, in US dollars or Liberian dollars.",
+    "By the night, add a cleaning fee if you want one, the check-in and check-out times, and the shortest and longest stay.",
+    "Choose a cancellation rule: flexible, moderate, or strict. It says how much a guest gets back if they cancel. Guests see it before they book.",
+    "By the month, choose how many months are paid at the start, for example six, as is usual in Monrovia.",
+    "At the end, tick the declaration: you own this place, or you have the owner's written permission. The photos and the description are true. And you will only take payment through Trothen.",
+    "Then tap Send to the Trothen team to check. The team checks every new place before guests can see it. If something is wrong, you are told the reason.",
+    "If you later change the address, the map pin or the photos, the place is checked again. This stops scams.",
+    "When a guest books and pays, you are told at once, in Hosting under Requests.",
+    "You have 24 hours to accept or decline. If you do not answer, the guest gets all their money back.",
+    "You see exactly what you will get. Trothen takes a host fee of 3 percent from the price. When you accept, the guest gets the address, and you can message each other.",
+    "Here is how you get paid.",
+    "The guest pays the whole booking through Trothen, and Trothen holds it.",
+    "The guest checks in.",
+    "You are paid 24 hours after check-in, if the guest has not reported a problem.",
+    "For a home by the month, it is 48 hours after the move-in day. And a guest who is happy can tap All good, to pay you straight away.",
+    "The host rules.",
+    "Never ask a guest to pay outside Trothen, by phone, transfer or cash. If you do, the place is taken down.",
+    "Try never to cancel. If you cancel, the guest gets everything back, and those dates close in your calendar. Hosts who cancel often are looked at by the Trothen team.",
+    "Use your calendar to close the days the place is not free, for example when your family uses it. Then nobody can book those days.",
+    "After each stay, your guest can rate the place. Good ratings bring more guests. Welcome, host."
+   ],
+   "computer": {
+    "file": "explain-hosting-computer",
+    "seconds": 237
+   }
+  },
+  "file": "help-hosting",
+  "seconds": 146,
+  "transcript": [
+   "In this video, you will list a place to rent out: a room or an apartment by the night, or a home by the month.",
+   "Tap More at the bottom of the screen. It lists every part of your account.",
+   "Tap Market.",
+   "At the top of the Market, tap Rentals.",
+   "Tap Hosting. Your places and your guests' requests are here.",
+   "Each of your places is listed, with whether guests can see it. You can pause it, edit it, or close days in its calendar.",
+   "To add a place, tap List a place.",
+   "Give it a clear title: the kind of place, and the area.",
+   "Choose the kind of place: an apartment, a house, a room in a home, a studio, a guesthouse, or a duplex.",
+   "Say how many bedrooms and bathrooms, and how many guests it takes.",
+   "Type the full address. Guests see it only after you accept them.",
+   "Add 3 to 12 real photos of the place, in daylight: the outside, each room, the bathroom and the kitchen.",
+   "Choose by the night, by the month, or both. Add your price, any cleaning fee, and a cancellation rule.",
+   "Tick the declaration: you own the place, or have the owner's written permission, and you take payment only through Trothen.",
+   "Then tap Send to the Trothen team to check. The team checks every new place before guests can see it.",
+   "When a guest books, you have 24 hours to accept. You are paid 24 hours after they check in, less Trothen's host fee."
+  ],
+  "computer": {
+   "file": "help-hosting-computer",
+   "seconds": 140,
+   "transcript": [
+    "In this video, you will list a place to rent out: a room or an apartment by the night, or a home by the month.",
+    "Click Market in the menu on the left.",
+    "At the top of the Market, click Rentals.",
+    "Click Hosting. Your places and your guests' requests are here.",
+    "Each of your places is listed, with whether guests can see it. You can pause it, edit it, or close days in its calendar.",
+    "To add a place, click List a place.",
+    "Give it a clear title: the kind of place, and the area.",
+    "Choose the kind of place: an apartment, a house, a room in a home, a studio, a guesthouse, or a duplex.",
+    "Say how many bedrooms and bathrooms, and how many guests it takes.",
+    "Type the full address. Guests see it only after you accept them.",
+    "Add 3 to 12 real photos of the place, in daylight: the outside, each room, the bathroom and the kitchen.",
+    "Choose by the night, by the month, or both. Add your price, any cleaning fee, and a cancellation rule.",
+    "Tick the declaration: you own the place, or have the owner's written permission, and you take payment only through Trothen.",
+    "Then click Send to the Trothen team to check. The team checks every new place before guests can see it.",
+    "When a guest books, you have 24 hours to accept. You are paid 24 hours after they check in, less Trothen's host fee."
+   ]
   }
  },
  {
@@ -456,7 +983,7 @@
   "title": "Add a good to your store",
   "tagline": "Photos, price, details and sizes, the way buyers want them",
   "audience": "provider",
-  "seconds": 112,
+  "seconds": 90,
   "transcript": [
    "In this video, you will add a good to your store, with everything buyers want to know.",
    "Tap More at the bottom of the screen. It lists every part of your account.",
@@ -472,14 +999,14 @@
    "the SIM,",
    "and whether it works on any network.",
    "For clothes and shoes, you can add sizes and a size chart. For building materials, the size, the length or the bag weight.",
-   "Be accurate. If a good is not as described, the buyer can return it, and you pay for the return.",
+   "Be accurate. Faulty, wrong or not-as-described goods can always be returned within your return days, and the buyer is refunded.",
    "When everything is right, tap Save.",
    "A store manager checks every new good before buyers can see it, usually within a day. You are told when it is approved."
   ],
   "topic": "Pros",
   "computer": {
    "file": "help-stores-computer",
-   "seconds": 91,
+   "seconds": 86,
    "transcript": [
     "In this video, you will add a good to your store, with everything buyers want to know.",
     "Click My Store in the menu on the left.",
@@ -494,10 +1021,36 @@
     "the SIM,",
     "and whether it works on any network.",
     "For clothes and shoes, you can add sizes and a size chart. For building materials, the size, the length or the bag weight.",
-    "Be accurate. If a good is not as described, the buyer can return it, and you pay for the return.",
+    "Be accurate. Faulty, wrong or not-as-described goods can always be returned within your return days, and the buyer is refunded.",
     "When everything is right, click Save.",
     "A store manager checks every new good before buyers can see it, usually within a day. You are told when it is approved."
    ]
+  },
+  "explainer": {
+   "file": "explain-stores",
+   "seconds": 103,
+   "transcript": [
+    "This video shows how to add a good to your store on Trothen, with everything buyers want to know.",
+    "Have the good in front of you, with good light for the photos, and know its price and its details.",
+    "Open My Store. On a phone, tap More at the bottom of the screen, then My Store. Your goods are listed here, with their stock and their orders.",
+    "Tap Add a good.",
+    "Give it a clear name: what it is, the model, and the colour. Buyers search for these words.",
+    "Choose the currency, Liberian dollars or US dollars, and type your price.",
+    "Add photos of the real good, up to four.",
+    "Use a plain background, like a white wall or a table, and good daylight. Show the front, the back, and any marks.",
+    "Choose the Market category. The details for that kind of good then appear.",
+    "Fill in the details buyers look for. For a phone: the storage, the SIM, and whether it works on any network.",
+    "For clothes and shoes, you can add sizes and a size chart. For building materials, the size, the length, or the bag weight.",
+    "When everything is right, tap Save.",
+    "A store manager checks every new good before buyers can see it, usually within a day.",
+    "You are told when it is approved, and buyers can see it in the Market.",
+    "Be accurate. Faulty, wrong or not-as-described goods can always be returned within your return days, and the buyer is refunded.",
+    "That is all. Keep your stock up to date, so buyers never order something you do not have."
+   ],
+   "computer": {
+    "file": "explain-stores-computer",
+    "seconds": 103
+   }
   }
  },
  {
@@ -536,6 +1089,41 @@
     "At the store, enter the pickup code and take a photo of the goods. At the door, check the buyer's code, and take another photo.",
     "You are paid as soon as the buyer has the goods. The photos protect you if anyone says something went wrong."
    ]
+  },
+  "explainer": {
+   "file": "explain-deliveries",
+   "seconds": 116,
+   "transcript": [
+    "This video shows how to deliver goods for stores and the Market on Trothen, and earn from each trip.",
+    "You need your ID verified, and a vehicle: a motorbike, a keke, a car, a van, or a truck.",
+    "Open Deliveries. Choose what you deliver with: a motorbike, a keke, a car, a van, or a truck.",
+    "For a motorbike, keke, car or van, Trothen's fares in Liberian dollars are used. You see examples of what you earn for each trip.",
+    "Choose the longest trip you will take, in kilometres.",
+    "Tap Save.",
+    "You are only offered deliveries your vehicle can carry.",
+    "A motorbike carries small and medium goods: anything up to a box you can carry, or a 25 kilogram bag.",
+    "A keke or a car also carries large goods: a TV, a microwave, several bags, or a chair.",
+    "A van or a truck carries everything, even bulky goods, like a fridge, a bed, or building materials.",
+    "When a delivery is offered, you see where to collect it,",
+    "where it is going, and how far it is,",
+    "and what you earn.",
+    "Accept it, or let it go. Another driver is then offered it.",
+    "Here is each delivery, step by step.",
+    "At the store, type the pickup code.",
+    "Take a photo of the goods, before you leave.",
+    "At the door, check the buyer's code. Without the right code, do not hand over the goods.",
+    "Take another photo, of the handover.",
+    "And you are paid.",
+    "With the right code at the door,",
+    "the buyer has the goods,",
+    "and you are paid straight away.",
+    "Your photos protect you, if anyone says later that something went wrong.",
+    "That is all. Drive safely."
+   ],
+   "computer": {
+    "file": "explain-deliveries-computer",
+    "seconds": 116
+   }
   }
  },
  {
@@ -572,6 +1160,691 @@
     "When the customer agrees, turn the quote into an invoice with one click. The customer pays it through Trothen.",
     "Every quote and invoice can be downloaded as a PDF, with your name on it."
    ]
+  },
+  "explainer": {
+   "file": "explain-business",
+   "seconds": 115,
+   "transcript": [
+    "This video shows the business tools on Trothen. They help you keep your records, and send quotes and invoices to customers.",
+    "There are three tools. Open Business Tools: on a phone, tap More, then Business Tools.",
+    "Expenses: what you spend for your work.",
+    "Quotes and estimates: the price you offer, before you do the work.",
+    "And invoices: the bill, after the work is done.",
+    "Tap Expenses, then Add an expense, for each thing you spend for your work.",
+    "For example, materials, or fuel. Add a photo of the receipt.",
+    "At the end of the month, you see what you earned, what you spent, and what is left. It helps with your taxes too.",
+    "Then quotes and invoices.",
+    "Tap Quotes and estimates. Write a quote for a customer: each part of the work, and its price. An estimate says the final price may change once you have seen the work.",
+    "The customer sees it in Quotes and Invoices, and accepts it. That is a yes to the price, in writing. No money is taken yet.",
+    "Then the customer books you through Trothen, and the money is held safely, like any booking.",
+    "You can also send invoices, and download every quote and invoice as a PDF with your name on it. But an invoice for work outside a Trothen booking is a record only: Trothen does not hold or protect that payment.",
+    "There are more tools in the same place.",
+    "Inventory: what you have in stock.",
+    "A tax report: your earnings and expenses for the year, for your taxes.",
+    "And Tax and invoice details: your business name and numbers, printed on your quotes and invoices.",
+    "That is all. Add your expenses every week, and the end of the month is easy."
+   ],
+   "computer": {
+    "file": "explain-business-computer",
+    "seconds": 115
+   }
+  }
+ },
+ {
+  "key": "bookings",
+  "title": "My Bookings: from booking to done",
+  "tagline": "Agree a time, follow the pro, approve extras, and finish",
+  "topic": "Customers",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-bookings",
+   "seconds": 155,
+   "transcript": [
+    "This video follows a booking in My Bookings, from the moment you book a pro, to the moment the job is done.",
+    "A booking has five steps.",
+    "First, the pro confirms. If they decline, or do not answer in time, you get your money back.",
+    "You agree a time, and Trothen reminds you both.",
+    "When the pro sets off, you can see them coming.",
+    "During the work, anything extra needs your approval.",
+    "When it is done, you check it, and rate the pro.",
+    "In My Bookings, agree when the pro arrives. Accept the time they propose, or propose another.",
+    "Trothen reminds you both an hour before. If the pro is 30 minutes late, you are told, and shown your options.",
+    "When the pro taps Leave Now, you can follow them on the map, until they arrive.",
+    "What if the job turns out bigger?",
+    "The pro sends a request for extra work in Trothen: the amount, and what changed.",
+    "You decide. Approve it, or not.",
+    "If you approve, you pay the extra the same way you paid for the booking, and it is held with the rest.",
+    "Nothing changes unless you approve. Never pay extra in cash on a protected booking.",
+    "When the pro has finished, they tell Trothen, and you are asked to check the work.",
+    "Check it carefully. You have 3 days.",
+    "If all is well, tap Mark Complete. The pro is paid. You can add a tip, which goes to the pro in full.",
+    "If you do nothing for 3 days, the job completes by itself, and the pro is paid. So if something is wrong, tap Report a Problem before then.",
+    "Then rate the pro.",
+    "Give stars, and write a few honest words: what was good, and what was not.",
+    "You are also asked: do you trust this pro? Your answer helps other customers, and it counts in the pro's Trothen Score.",
+    "Each booking and each review earns you a loyalty point.",
+    "If you need to cancel.",
+    "Before the pro arrives, you can cancel in My Bookings, and you are refunded.",
+    "After the pro has arrived, or said the work is done, you cannot cancel for a full refund, because work may have been done.",
+    "Then tap Report a Problem instead. A person on the Trothen team looks at it, and decides fairly.",
+    "That is all. If anything goes wrong, watch the video called Report a problem."
+   ],
+   "computer": {
+    "file": "explain-bookings-computer",
+    "seconds": 155
+   }
+  }
+ },
+ {
+  "key": "contracts",
+  "title": "Your bookings, from start to payment",
+  "tagline": "Confirm, agree a time, go, finish, and get paid",
+  "topic": "Pros",
+  "audience": "provider",
+  "explainer": {
+   "file": "explain-contracts",
+   "seconds": 158,
+   "transcript": [
+    "This video follows one booking in My Contracts, from the moment a customer books you, to the moment you are paid.",
+    "A booking has five steps.",
+    "Confirm it, before the time runs out.",
+    "Agree a time when you will arrive.",
+    "Tap Leave Now when you set off.",
+    "Finish the job, and the customer checks it.",
+    "Then you are paid, in Earnings.",
+    "A new booking appears in My Contracts, with the time you have left to answer. The sooner the job, the shorter the time.",
+    "Tap Accept and Confirm. Or, if you cannot do it, tap Decline, and the customer is refunded at once.",
+    "If you do not answer in time, the booking is cancelled, and the customer gets their money back.",
+    "Next, agree when you will arrive. Propose a time, or accept the customer's. Trothen reminds you both an hour before, and tells you when it is time to leave.",
+    "When you set off, tap Leave Now. Your live location is shared with this customer, and only this customer, until you tap Arrived. Keep the page open on your phone.",
+    "When you get there, tap Arrived.",
+    "What if the job turns out bigger than posted?",
+    "Request extra work in the booking: the extra amount, and what changed.",
+    "The customer approves it, and pays it, the same way they paid for the booking.",
+    "Only then do the extra work. The job's total goes up.",
+    "Never do extra work, or take extra money, before it is approved and paid in Trothen. Otherwise it is not protected.",
+    "When the work is done, tap I've finished the job.",
+    "The customer is asked to check the work. They have 3 days to confirm it, or report a problem.",
+    "When they confirm, the money is yours, in Earnings. If they do not answer in 3 days, the job completes by itself, and you are paid.",
+    "If the customer adds a tip, it goes to you in full, with no commission.",
+    "If you must cancel.",
+    "Cancelling lowers your Trothen Score, and the customer is refunded.",
+    "But if the place is unsafe, or the job is the wrong kind of work, choose that reason. It does not count against you.",
+    "And if there is a problem with the customer, tap Report a Problem. A person on the Trothen team looks at it and decides.",
+    "Do good work, arrive on time, and keep your talks in Trothen messages. Good reviews bring more customers."
+   ],
+   "computer": {
+    "file": "explain-contracts-computer",
+    "seconds": 158
+   }
+  }
+ },
+ {
+  "key": "driving",
+  "title": "Drive for Trothen",
+  "tagline": "Get approved, go online, take rides, and get paid",
+  "topic": "Rides",
+  "audience": "provider",
+  "explainer": {
+   "file": "explain-driving",
+   "seconds": 174,
+   "transcript": [
+    "This video shows how to drive for Trothen: get approved, go online, take rides safely, and get paid.",
+    "You need your ID verified, your driving licence and your vehicle papers, and photos of your vehicle.",
+    "First, get approved.",
+    "In Rides, add your vehicle: a motorbike, a keke, a car or a van. Then upload the papers the app asks for. The list depends on your country and vehicle.",
+    "To keep riders safe, a person on the Trothen team checks your licence and your vehicle.",
+    "Once approved, you can go online and take rides.",
+    "Your documents are private. Trothen reminds you a week before one runs out. If it expires, you go offline until you update it.",
+    "To take rides, tap Go online.",
+    "Keep the page open while you are online, so riders near you can find you.",
+    "You go offline by yourself after 12 hours, so you are never shown when you are asleep.",
+    "Here is a ride, step by step.",
+    "A ride request shows the pickup, where they are going, and the fare. Accept it, and go to the rider.",
+    "Press I have arrived, so the rider knows. Then look for them. The rider can send a photo of where they are waiting.",
+    "The rider checks your plate, then gives you their four-digit PIN. Type it in, and the trip starts.",
+    "End the trip when the rider is out of the vehicle safely.",
+    "The fare is worked out from the distance and the time, the same for every rider. Riders see it before they choose.",
+    "If the rider pays in the app, the fare is held by Trothen, and paid to you when the rider confirms they arrived.",
+    "If the rider pays in cash, they pay you the fare shown, at the end. Never ask for more than the fare shown. Riders can report it.",
+    "Trothen's commission on rides is lower than on other work.",
+    "Without a pass, Trothen takes a small ride commission. On rides paid in the app, it comes off your payout. On cash rides, it comes from your tokens.",
+    "Or buy a Driver Pass: one flat price for a day, a week or a month, and you keep every fare.",
+    "To take cash rides, turn them on in Rides. You need tokens, or a Driver Pass.",
+    "Drive safely.",
+    "Never start a trip without the rider's PIN. It proves you have the right person.",
+    "On a motorbike, carry a helmet for the passenger.",
+    "If the rider does not come, wait the full time shown, then report it. The ride is cancelled, and riders who often do not show up are paused.",
+    "Read the Ride Rules in Rides, and accept them before your first trip. Safe driving."
+   ],
+   "computer": {
+    "file": "explain-driving-computer",
+    "seconds": 174
+   }
+  }
+ },
+ {
+  "key": "earnings",
+  "title": "Earnings and cash out",
+  "tagline": "What you earned, Trothen's commission, and getting your money",
+  "topic": "Pros",
+  "audience": "provider",
+  "explainer": {
+   "file": "explain-earnings",
+   "seconds": 138,
+   "transcript": [
+    "This video shows how to see what you earned on Trothen, how Trothen's commission works, and how to get your money.",
+    "You need your payout details saved: the Mobile Money wallet, or bank account, where you want to be paid.",
+    "In Earnings and Payouts, add your payout details. Choose Mobile Money, and type the network and the number. Or choose a bank transfer.",
+    "Type the name the wallet is registered in, exactly. If the name does not match, the payout cannot be sent.",
+    "Your number is kept safe. Only the last four digits are shown.",
+    "Trothen takes a commission on each job. It depends on your plan.",
+    "On the Starter plan, 13 percent.",
+    "On the Pro plan, 12 percent.",
+    "On the Super Pro plan, 10 percent.",
+    "Tips, and goods sold from your store, carry no commission. Rides carry a lower ride rate.",
+    "Available to cash out shows money from jobs the customer has completed.",
+    "Each job is listed, less Trothen's commission, plus any tips. It is the same calculation as the real payout, so there are no surprises.",
+    "Tap Cash out to ask for your money.",
+    "Here is how the money reaches you.",
+    "You tap Cash out.",
+    "The Trothen finance team sends it to your Mobile Money wallet or bank account.",
+    "You see the transaction reference in Earnings, and you get a statement by email, showing each job, the commission, the tips, and what you received.",
+    "If something is wrong with your details, like a name that does not match, you are told what to fix, and the payout waits for you.",
+    "Good to know.",
+    "If you are a new seller or host, money from your first few sales is held a few days longer, in case a buyer reports a problem.",
+    "You can choose to pay the commission from your tokens, and keep more of each payout.",
+    "And once a month, the top-scoring pro in each country gets a payout with no commission at all.",
+    "Your payout history can be downloaded as a PDF, for your records and your taxes. That is all."
+   ],
+   "computer": {
+    "file": "explain-earnings-computer",
+    "seconds": 138
+   }
+  }
+ },
+ {
+  "key": "favorites",
+  "title": "Favorite pros, reviews and points",
+  "tagline": "Book good pros again, and help others choose",
+  "topic": "Customers",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-favorites",
+   "seconds": 78,
+   "transcript": [
+    "This video shows how to save pros you like, how to write a helpful review, and how loyalty points work.",
+    "When you find a pro you like, tap the heart on their profile.",
+    "They are saved in Favorite Pros, in your account.",
+    "Next time, open Favorite Pros, and book them again in a tap.",
+    "After a job is complete, you can review the pro. Only people who really booked the pro can review them.",
+    "Give stars, from 1 to 5: how good was the work?",
+    "Write a few honest words. Was the pro on time? Did they clean up? Was the price as agreed? These help other customers most.",
+    "Then answer: do you trust this pro? Yes or no. Your answer counts in the pro's Trothen Score.",
+    "And loyalty points.",
+    "You earn a point for each booking.",
+    "A point for each review.",
+    "And a point when a friend joins Trothen with your referral link.",
+    "You can use points on a booking. If that booking is cancelled, declined, or runs out, your points come back.",
+    "That is all. Save the pros you like, and review honestly. It makes Trothen better for everyone."
+   ],
+   "computer": {
+    "file": "explain-favorites-computer",
+    "seconds": 78
+   }
+  }
+ },
+ {
+  "key": "findpro",
+  "title": "Find and book a pro",
+  "tagline": "Search, compare, and choose the right person",
+  "topic": "Customers",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-findpro",
+   "seconds": 127,
+   "transcript": [
+    "This video shows how to find a pro on Trothen, check them carefully, and book the right person. A pro is anyone who offers their work: a plumber, a cleaner, an electrician, a hairdresser, and many more.",
+    "There are two ways to hire someone.",
+    "Post a job, and pros near you send their prices. You compare, and choose. There is a separate video for that.",
+    "Or find a pro yourself, and book them directly. This video shows that way.",
+    "On the Trothen home page, type what you need, in your own words: plumber, braids, AC repair. Trothen understands common words.",
+    "Pros near you come first. You only see pros whose ID Trothen has checked.",
+    "Each card shows the pro's rating, how many jobs they have done, where they are, and a starting price.",
+    "Tap a pro to see more. Look for ID checked, and their Trothen Score. A higher score means more customers trust them.",
+    "Look at photos of their own finished work.",
+    "Read what other customers said in their reviews. Every review comes from a real booking.",
+    "Like this pro? Tap the heart to save them in Favorite Pros, for next time.",
+    "Then tap Book.",
+    "If the pro has a fixed price for your job, like fixing a tap, you can book it straight away.",
+    "If not, describe the job, and the pro sends you a price.",
+    "Choose the day, and how you will pay. We recommend Protected by Trothen: the money is held until you say the job is done.",
+    "Before you book, remember.",
+    "Never pay a pro outside Trothen before the work. Outside Trothen, your money is not protected.",
+    "Never share your PIN or your password with anyone.",
+    "Not sure about something? Message the pro first, in Trothen, and ask.",
+    "That is all. Next, watch the video about My Bookings, to see what happens after you book."
+   ],
+   "computer": {
+    "file": "explain-findpro-computer",
+    "seconds": 127
+   }
+  }
+ },
+ {
+  "key": "getready",
+  "title": "Get ready to take work",
+  "tagline": "The checklist every new pro goes through",
+  "topic": "Pros",
+  "audience": "provider",
+  "explainer": {
+   "file": "explain-getready",
+   "seconds": 107,
+   "transcript": [
+    "This video is for new pros. It goes through the checklist you complete before customers can find and book you.",
+    "Your Get ready list is on your Overview. Trothen checks your real account, and shows what is missing.",
+    "Items that are done are ticked.",
+    "Tap any item to go straight to the place where you fix it.",
+    "Here is what is on the list, and why.",
+    "Your ID verified, so customers know who comes to their home.",
+    "A profile photo. You are not shown to customers without one.",
+    "Your kinds of work and your prices. You only get job matches for these.",
+    "Your payout details, so you can be paid.",
+    "And if your work needs a licence, its date. An expired licence stops you accepting jobs.",
+    "Guarantors are people who vouch for you. They take the place of a background check.",
+    "Add people who know you and your work: a past employer, a teacher, or a community leader. Write their number with the country code.",
+    "The Trothen team calls them. Confirmed guarantors raise your Trothen Score.",
+    "A guarantor must be someone else. Your own phone number or your own name is caught, and does not count.",
+    "Then, if you want to take cash jobs, where the customer pays you directly, buy a few tokens. Trothen's commission on cash jobs comes from them. There is a video about tokens.",
+    "Jobs paid through Trothen do not need tokens: the commission comes from your payout.",
+    "When everything is ticked, you are ready. Customers can find you, and jobs start coming. Welcome to Trothen."
+   ],
+   "computer": {
+    "file": "explain-getready-computer",
+    "seconds": 107
+   }
+  }
+ },
+ {
+  "key": "matches",
+  "title": "Job matches: find work",
+  "tagline": "How jobs reach you, and how to win them",
+  "topic": "Pros",
+  "audience": "provider",
+  "explainer": {
+   "file": "explain-matches",
+   "seconds": 145,
+   "transcript": [
+    "This video shows how customers' jobs reach you on Trothen, and how to win them.",
+    "To get job matches, you need three things: your ID verified, a clear profile photo, and the kinds of work you do, in your profile. Without them, you are not shown to customers.",
+    "Here is how a job reaches you.",
+    "A customer posts a job: what they need, photos, and where it is.",
+    "Trothen sends it to pros nearby who do that kind of work.",
+    "You are told, and the job appears in Job Matches.",
+    "Pros in the same city come first, then the region, then the country. A job is never sent to another country.",
+    "Open Job Matches. Tap a job, and read it carefully: what is needed, where, and when.",
+    "Look at the customer's photos. They show how big the job is.",
+    "See who brings the materials: the customer, or you.",
+    "And see how far it is from you.",
+    "If you can do it, send your price: a fair price for the whole job, including materials if you bring them.",
+    "Add a short note: why you are a good fit, and when you can come. A friendly, clear note wins more jobs.",
+    "If the job is not for you, tap Decline. It is better than leaving it unanswered.",
+    "Then the customer chooses.",
+    "Several pros may answer. The customer compares prices, reviews and notes.",
+    "If they choose you, they pay. On a protected job, Trothen holds the money.",
+    "You confirm the booking before the time shown runs out. If you do not, it is cancelled and the customer gets their money back.",
+    "The job is then in My Contracts. There is a separate video about it.",
+    "How many job matches do you get each week?",
+    "It depends on your Trothen Score. A higher score gets more jobs each week.",
+    "Finish your jobs well, and arrive on time. When customers trust you, your score goes up.",
+    "Cancelling lowers it. But a cancellation for your safety, or because the job was the wrong kind of work, does not count against you.",
+    "A last tip: answer quickly. Customers often choose one of the first pros who reply. Good luck."
+   ],
+   "computer": {
+    "file": "explain-matches-computer",
+    "seconds": 145
+   }
+  }
+ },
+ {
+  "key": "orders",
+  "title": "Your orders, delivery and returns",
+  "tagline": "Follow an order, receive it safely, or send it back",
+  "topic": "Market",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-orders",
+   "seconds": 132,
+   "transcript": [
+    "This video shows what happens after you buy something in the Market: how to follow your order, receive it safely, and what to do if it is not right.",
+    "When you order, you choose how to receive it.",
+    "Collect it yourself, from the seller.",
+    "The seller brings it, for their own delivery price.",
+    "Or a pick-and-drop driver brings it. Trothen suggests drivers who can carry it, and you see the price before you pay.",
+    "Open Store Orders to follow your order.",
+    "You see each step: paid, packed, collected by the driver, and on the way.",
+    "You also get a delivery code. Keep it to yourself until the goods are in your hands.",
+    "When it arrives.",
+    "Check the goods before you give anything. Count them, look at them, and try them if you can.",
+    "If all is right, give the driver your code. That confirms you have them.",
+    "If something is wrong, do not give the code. Tap Report a Problem on the order.",
+    "After the goods are handed over, a countdown starts.",
+    "You have a few days to report a problem. Trothen tells you the exact date.",
+    "Then the order completes by itself, the seller is paid, and you can rate the seller.",
+    "You are reminded before it completes. So report anything wrong before then.",
+    "And returns from a store.",
+    "In Store Orders, ask for a return within the store's return days, counted from when the order completed. Faulty, wrong, damaged or not-as-described goods can always be returned. Changed your mind? Only if the store accepts that.",
+    "The seller accepts or declines within 3 days. If they do not answer, the return is accepted.",
+    "Bring or send the goods back, and say so in the order.",
+    "When the seller confirms they have them, you are refunded from the money Trothen still holds. If the seller declines, or does not confirm, the Trothen team decides.",
+    "That is all. Check before you give your code, and you are always protected."
+   ],
+   "computer": {
+    "file": "explain-orders-computer",
+    "seconds": 132
+   }
+  }
+ },
+ {
+  "key": "paycash",
+  "title": "Protected or cash: two ways to pay",
+  "tagline": "What each way means, and which to choose",
+  "topic": "Getting started",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-paycash",
+   "seconds": 123,
+   "transcript": [
+    "When you book a pro on Trothen, you choose how to pay. There are two ways: Protected by Trothen, or cash. This video explains the difference, so you can choose well.",
+    "First: Protected by Trothen.",
+    "You pay Trothen when you book.",
+    "Trothen holds the money. The pro does not have it yet.",
+    "The pro is paid only when you say the work is done.",
+    "If something is wrong, report a problem, and the money stays held while the team helps. If you cancel before the work starts, you get it back.",
+    "Second: cash.",
+    "You book, and pay nothing yet.",
+    "The work is done.",
+    "You pay the pro directly, in cash, after the work. When you mark the job complete, you confirm how much you paid.",
+    "Trothen never holds the money. So a cash job is not covered by Trothen if something goes wrong.",
+    "So, which should you choose?",
+    "With Protected, the money is held until the work is done. With cash, it is not.",
+    "If the pro does not come, Protected gives you a refund. With cash, there is nothing to refund.",
+    "If there is a problem, the team can look at it either way. But only with Protected can they refund you, because only then is the money held.",
+    "Protected has a small service fee, shown before you pay. Cash has none. We recommend Protected, especially for bigger jobs and new pros.",
+    "To pay Protected, you can use the ways offered in your country.",
+    "Mobile Money: you approve the payment on your phone, with your own PIN.",
+    "Or a payment code: send exactly the amount shown to Trothen's number, with the code in the reference. The team confirms it.",
+    "Or a bank card, where cards are offered.",
+    "That is all. When in doubt, choose Protected by Trothen. Your money is safe until the work is done."
+   ],
+   "computer": {
+    "file": "explain-paycash-computer",
+    "seconds": 123
+   }
+  }
+ },
+ {
+  "key": "problems",
+  "title": "Report a problem",
+  "tagline": "What to do when a job, an order or a stay goes wrong",
+  "topic": "Customers",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-problems",
+   "seconds": 136,
+   "transcript": [
+    "This video explains what to do when something goes wrong: a job not finished, goods not as described, or a place that is not what was shown. On Trothen, this is called reporting a problem.",
+    "First, talk.",
+    "Message the other person in Trothen, and explain what is wrong. Many problems are solved with a simple message, like asking the pro to come back and finish.",
+    "But do not tap Mark Complete, or All good, if you are not happy. That releases the money.",
+    "If talking does not solve it, open the booking, the order or the trip, and tap Report a Problem.",
+    "Say what happened, clearly and calmly: what was agreed, and what is wrong.",
+    "Add photos. For example, the leaking pipe, or the damaged goods. Photos help the team decide fairly.",
+    "When you report a problem, the money stays held.",
+    "You must report before the money is released. For a job, that is within 3 days of the pro saying it is done.",
+    "Trothen keeps the money held. Nobody gets it yet.",
+    "The Trothen Disputes team reads both sides: your messages in Trothen, the photos, and what each person says. This is why it matters to keep your talks in Trothen.",
+    "The team can decide one of three things.",
+    "Refund the customer: the money goes back to the customer.",
+    "Pay the pro: the money is released to the pro, the seller or the host.",
+    "Or split it: part goes back to the customer, and the rest to the pro.",
+    "The decision is written down, with the reason, and both people see it.",
+    "Good to know.",
+    "On a cash job, Trothen never held the money, so there is nothing Trothen can refund.",
+    "That is why we recommend paying with Protected by Trothen.",
+    "And if someone threatens you, tries to scam you, or you feel in danger, report it too. In an emergency, call the police first.",
+    "That is all. Pay through Trothen, talk in Trothen, and report problems before the money is released. Then you are protected."
+   ],
+   "computer": {
+    "file": "explain-problems-computer",
+    "seconds": 136
+   }
+  }
+ },
+ {
+  "key": "profile",
+  "title": "Your profile, prices and portfolio",
+  "tagline": "What customers see, and how you charge",
+  "topic": "Pros",
+  "audience": "provider",
+  "explainer": {
+   "file": "explain-profile",
+   "seconds": 114,
+   "transcript": [
+    "This video shows how to set up what customers see about you: your photo, your work, your prices, and your portfolio. A good profile gets more jobs.",
+    "First, your profile photo. Without one, you are not shown to customers at all.",
+    "Use a clear photo of your face, in good light, with no sunglasses. Customers want to know who is coming to their home.",
+    "Do not use a logo, a cartoon, or a group photo.",
+    "Next, choose how you charge.",
+    "Per job: the customer describes the job, and you send a price. This is how most work is priced.",
+    "Per hour, or per day: for example cleaning by the hour, or masons and labourers by the day.",
+    "Per trip: for pick-and-drop, or moving a load.",
+    "You can also add up to 20 fixed prices, that customers can book straight away. For example: fix a tap, fifteen hundred Liberian dollars.",
+    "Then your portfolio: photos of your own finished work. Customers look at it before they choose you.",
+    "Before-and-after photos work very well: a broken pipe, then the fixed one.",
+    "Only your own work. No screenshots, logos, or pictures from the internet.",
+    "Keep your profile up to date.",
+    "The kinds of work you do. You only get job matches for these.",
+    "Going away for a while? Turn off Accepting new bookings, in Settings. Customers then cannot book you until you turn it back on.",
+    "And if your work needs a licence, keep its date up to date. Trothen reminds you 30 days before it runs out.",
+    "A clear photo, fair prices, and real photos of your work. That is what customers look for. That is all."
+   ],
+   "computer": {
+    "file": "explain-profile-computer",
+    "seconds": 114
+   }
+  }
+ },
+ {
+  "key": "quotes",
+  "title": "Quotes and invoices from a pro",
+  "tagline": "Read a price in writing, accept it, and book",
+  "topic": "Customers",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-quotes",
+   "seconds": 92,
+   "transcript": [
+    "Sometimes a pro sends you a written price before the work, or a bill after it. This video shows where to find them, and what they mean.",
+    "There are three kinds.",
+    "A quote: a fixed price for the work, before it starts.",
+    "An estimate: a likely price. The final price may change once the pro has seen the work.",
+    "An invoice: a bill for work.",
+    "Open Quotes and Invoices. It lists everything your pros sent you, with what needs your answer at the top.",
+    "Tap one to read it: each part of the work, and its price.",
+    "Then tap Accept, or Decline. The pro is told either way.",
+    "Accepting is not paying.",
+    "When you accept, you say yes to the price, in writing.",
+    "The price is then fixed. The pro can no longer change it.",
+    "To go ahead, tap Book this pro, and pay. Trothen holds the money until the work is done.",
+    "No money is taken when you accept. Only money paid through a Trothen booking is held and protected.",
+    "One warning about invoices.",
+    "If an invoice is for work arranged outside a Trothen booking, Trothen does not hold or protect that payment. The app tells you so on the invoice.",
+    "To be protected, book the work through Trothen.",
+    "Every quote and invoice can be downloaded as a PDF, for your records. That is all."
+   ],
+   "computer": {
+    "file": "explain-quotes-computer",
+    "seconds": 92
+   }
+  }
+ },
+ {
+  "key": "receipts",
+  "title": "Receipts and records",
+  "tagline": "A receipt for every payment, refund and payout",
+  "topic": "Getting started",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-receipts",
+   "seconds": 93,
+   "transcript": [
+    "This video explains the receipts Trothen sends you, and where to find all your records.",
+    "Trothen sends a receipt for every money movement.",
+    "Every payment you make: a job, a ride, an order, a place to stay, extra work, or a tip.",
+    "A cash job or a cash ride, when it is completed.",
+    "Every refund, in full or in part.",
+    "And for pros: every token purchase, and every payout, showing the jobs, Trothen's commission, the tips, and what you received.",
+    "How does it reach you?",
+    "The moment the money moves.",
+    "By email, with a short summary, and the receipt as a PDF attached.",
+    "Or, if you have no email, a short text message with the amount and a link, where text messages are set up.",
+    "Receipts come even if you turned off update emails, because a receipt is a record, not a notification.",
+    "All your receipts are kept in the app. Open your account menu, then Receipts.",
+    "Every receipt is listed, newest first.",
+    "Tap one to download it again, as a PDF.",
+    "What does a receipt show?",
+    "The date, and a receipt number.",
+    "What it was for, and every amount: the price, any fees, and the total.",
+    "And for rides and deliveries, a small map with the exact place.",
+    "Keep your receipts for your records, and for your taxes. You can always download them again."
+   ],
+   "computer": {
+    "file": "explain-receipts-computer",
+    "seconds": 93
+   }
+  }
+ },
+ {
+  "key": "score",
+  "title": "Your Trothen Score and plan",
+  "tagline": "What your score means, and how to move up a plan",
+  "topic": "Pros",
+  "audience": "provider",
+  "explainer": {
+   "file": "explain-score",
+   "seconds": 143,
+   "transcript": [
+    "This video explains your Trothen Score: what it is, how it changes, and why it matters. And how your plan moves up, from Starter to Pro to Super Pro.",
+    "What is the Trothen Score?",
+    "It is a number from 0 to 99. It shows how much customers can trust you.",
+    "It is updated every day, from your real work on Trothen.",
+    "New pros start fairly. You are not marked down just because you have done few jobs yet.",
+    "Here is what counts, out of 100 points.",
+    "Jobs completed: 20 points.",
+    "Customers who say they trust you: 20 points.",
+    "Not cancelling: 15 points.",
+    "Arriving on time: 15 points.",
+    "And 30 more for your verified ID, answering jobs, repeat customers, your licence or papers, and your guarantors.",
+    "Why does it matter? Your score decides how many new job matches you get each week.",
+    "From 90 to 99, there is no limit.",
+    "From 70 to 89, between 10 and 30 a week.",
+    "From 40 to 69, between 3 and 7 a week.",
+    "Under 20, new matches are paused until the Trothen team reviews. Finishing your current jobs well is the fastest way back up.",
+    "Your plan moves up by itself as you grow.",
+    "Everyone starts on Starter, with 13 percent commission.",
+    "After 50 completed jobs, with a rating of at least 4.7, and few cancellations, you move to Pro: 12 percent commission, and a better place in search.",
+    "After 500 jobs, a rating of at least 4.85, very few cancellations, and a year on Trothen, you move to Super Pro: 10 percent commission.",
+    "How do you raise your score?",
+    "Finish every job you accept.",
+    "Arrive at the agreed time, and use Leave Now and Arrived, so it is recorded.",
+    "Answer jobs and messages quickly.",
+    "And be honest and kind. Customers who trust you come back, and they say so in their review.",
+    "Your score and your plan are on your Overview, with what you need for the next step. Keep going."
+   ],
+   "computer": {
+    "file": "explain-score-computer",
+    "seconds": 143
+   }
+  }
+ },
+ {
+  "key": "support",
+  "title": "Get help",
+  "tagline": "Help videos, the assistant, and our team",
+  "topic": "Getting started",
+  "audience": "all",
+  "explainer": {
+   "file": "explain-support",
+   "seconds": 81,
+   "transcript": [
+    "Stuck, or something went wrong? This video shows every way to get help on Trothen.",
+    "There are four ways to get help.",
+    "Help videos, like this one, for each part of Trothen. Find them in the menu, or tap Watch how it works where you are stuck.",
+    "The Trothen Assistant, in the support chat. It answers questions at any time of day. It is a computer, not a person.",
+    "Our team. From the support chat, tap Contact our team, to chat, call, or send a WhatsApp message.",
+    "And Report a Problem, on a booking, an order or a trip, when something has gone wrong with money or work.",
+    "Tap the chat button in the corner of the screen.",
+    "Ask your question in your own words, for example: how do I get my money back?",
+    "If you would rather talk to a person, tap Contact our team instead.",
+    "Watch out for fake helpers.",
+    "Trothen staff never ask for your password, your Mobile Money PIN, or your sign-in code.",
+    "Trothen never asks you to send money to a person's number.",
+    "Only trust help that comes inside the Trothen app, or from the numbers it shows you.",
+    "That is all. Whatever happens, help is one tap away."
+   ],
+   "computer": {
+    "file": "explain-support-computer",
+    "seconds": 81
+   }
+  }
+ },
+ {
+  "key": "tokens",
+  "title": "Tokens: how pros pay Trothen",
+  "tagline": "What tokens are, how to buy them, and what they pay for",
+  "topic": "Pros",
+  "audience": "provider",
+  "explainer": {
+   "file": "explain-tokens",
+   "seconds": 204,
+   "transcript": [
+    "This video explains Trothen tokens: what they are, how to buy them, and what they pay for. Tokens are for pros and drivers.",
+    "To buy tokens, you need your ID verified, and Mobile Money.",
+    "So, what is a token?",
+    "One token is always worth one US dollar. So your balance keeps its value, even when the exchange rate between Liberian dollars and US dollars moves.",
+    "Tokens are prepaid credit, like airtime. You buy them first, and spend them later.",
+    "And tokens only pay Trothen's own fees. They never touch a customer's money. What customers pay is always held separately.",
+    "Why do you need tokens? Because of cash jobs.",
+    "On a cash job, the customer pays you directly. Trothen never holds that money.",
+    "So Trothen's commission is paid from your tokens instead.",
+    "It is taken when you accept the job, and corrected to the final price when the job is done.",
+    "Without enough tokens, you cannot accept cash jobs. On jobs paid through Trothen, the commission comes out of your payout, so tokens are not needed for those.",
+    "To buy tokens, open Tokens. Your balance is at the top.",
+    "Below are the packs, from small to large, with the price in your own money.",
+    "Bigger packs include bonus tokens. Tap the pack you want.",
+    "There are two ways to pay for tokens, depending on your country.",
+    "Pay in the app: your phone asks you to approve the payment with your Mobile Money PIN. Your tokens arrive as soon as it goes through. If your connection drops, press Pay again: you are never charged twice.",
+    "Or get a payment code. Send exactly the amount shown to Trothen's number, with the code in the reference. Press I have sent it. The team checks the payment, and adds your tokens.",
+    "Keep your money safe.",
+    "Only send money to the numbers shown inside Trothen. Before you confirm, check the account name on your phone.",
+    "Trothen never asks for your PIN, and never asks you to send money to a person.",
+    "Before your first purchase, tick the box to say you have read how tokens work. Remember: tokens are for paying Trothen. Unused tokens are not paid out as cash, except by arrangement with support.",
+    "Tokens can also pay other Trothen fees, if you choose them on the Tokens page.",
+    "The commission on jobs paid through Trothen. Then you keep your whole payout.",
+    "Your monthly plan fee.",
+    "A Driver Pass, for drivers: a day, a week, or a month of rides with no commission.",
+    "And an advert for your profile.",
+    "What if you owe tokens?",
+    "If the final price of a cash job is higher, and your balance cannot cover all the commission, the rest is owed.",
+    "While you owe, you cannot accept new cash jobs.",
+    "Your next purchase pays what you owe first. Then you can accept cash jobs again.",
+    "Your token history shows every token you bought and spent, and what for. Keep your balance topped up, so you never miss a cash job."
+   ],
+   "computer": {
+    "file": "explain-tokens-computer",
+    "seconds": 204
+   }
   }
  }
 ]

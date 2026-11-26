@@ -1,0 +1,19 @@
+// Animated explainer: your pro profile, prices and portfolio.
+module.exports = {
+  key: 'profile', title: 'Your profile, prices and portfolio', tagline: 'What customers see, and how you charge', topic: 'Pros', audience: 'provider',
+  scenes: [
+    { kind: 'title', icon: 'user', title: 'Your profile, **prices** and **portfolio**', sub: 'What customers see, and how you charge.',
+      beats: ['This video shows how to set up what customers see about you: your photo, your work, your prices, and your portfolio. A good profile gets more jobs.'] },
+    { kind: 'phone', n: '1', h: 'A clear **photo** of your face', points: [{ b: 0, icon: 'camera', t: 'Required to be shown to customers' }, { b: 1, icon: 'eye', t: 'Your face, in good light, no sunglasses' }, { b: 2, icon: 'x', t: 'No logos, cartoons or group photos' }],
+      rows: [{ k: 'head', t: 'Settings' }, { k: 'card', icon: 'user', t: 'Profile photo', sub: 'Shown on your profile and in search results.', on: true }, { k: 'button', t: 'Upload a photo', b: 0, tap: 0 }, { k: 'note', icon: 'eye', t: 'Use a clear photo of your face.', b: 1 }],
+      beats: ['First, your profile photo. Without one, you are not shown to customers at all.', 'Use a clear photo of your face, in good light, with no sunglasses. Customers want to know who is coming to their home.', 'Do not use a logo, a cartoon, or a group photo.'] },
+    { kind: 'table', h: 'How you **charge**', head: ['Way', 'Good for'], rows: [{ c: ['Per job', 'Most work. You send a price for each job.'] }, { c: ['Per hour or per day', 'Cleaning by the hour, masons, labourers'] }, { c: ['Per trip', 'Pick-and-drop, moving a load'] }, { c: ['Fixed prices', 'Up to 20 jobs customers can book at once: "Fix a tap, L$ 1,500"'] }],
+      beats: ['Next, choose how you charge.', 'Per job: the customer describes the job, and you send a price. This is how most work is priced.', 'Per hour, or per day: for example cleaning by the hour, or masons and labourers by the day.', 'Per trip: for pick-and-drop, or moving a load.', 'You can also add up to 20 fixed prices, that customers can book straight away. For example: fix a tap, fifteen hundred Liberian dollars.'] },
+    { kind: 'phone', n: '2', h: 'Your **portfolio**', points: [{ b: 0, icon: 'photo', t: 'Photos of **your own** finished work' }, { b: 1, icon: 'refresh', t: 'Before and after works well' }, { b: 2, icon: 'x', t: 'No screenshots, logos or pictures from the internet' }],
+      rows: [{ k: 'head', t: 'Portfolio' }, { k: 'photos', n: 3 }, { k: 'button', t: '+ Add photos', b: 0, tap: 0 }, { k: 'note', icon: 'photo', t: 'Photos of your own completed work only.', b: 2 }],
+      beats: ['Then your portfolio: photos of your own finished work. Customers look at it before they choose you.', 'Before-and-after photos work very well: a broken pipe, then the fixed one.', 'Only your own work. No screenshots, logos, or pictures from the internet.'] },
+    { kind: 'list', h: 'Keep it **up to date**', items: [{ icon: 'wrench', t: 'The kinds of work you do', sub: 'You get job matches for these.' }, { icon: 'pause', t: 'Not taking work for a while?', sub: 'Turn off "Accepting new bookings" in Settings.' }, { icon: 'doc', t: 'Your licence date', sub: 'You are reminded 30 days before it runs out.' }],
+      beats: ['Keep your profile up to date.', 'The kinds of work you do. You only get job matches for these.', 'Going away for a while? Turn off Accepting new bookings, in Settings. Customers then cannot book you until you turn it back on.', 'And if your work needs a licence, keep its date up to date. Trothen reminds you 30 days before it runs out.'] },
+    { kind: 'end', title: 'Show your **best work**', sub: 'Stuck? Tap Help videos, or ask us in the support chat.', beats: ['A clear photo, fair prices, and real photos of your work. That is what customers look for. That is all.'] },
+  ],
+};

@@ -1,0 +1,18 @@
+// Animated explainer: Business tools.
+module.exports = {
+  key: 'business', title: 'Business tools',
+  scenes: [
+    { kind: 'title', icon: 'chart', title: 'Business **tools**', sub: 'Expenses, quotes and invoices for your work.',
+      beats: ['This video shows the business tools on Trothen. They help you keep your records, and send quotes and invoices to customers.'] },
+    { kind: 'list', h: 'Three **tools**', items: [{ icon: 'receipt', t: '**Expenses**', sub: 'what you spend for your work.' }, { icon: 'doc', t: '**Quotes and estimates**', sub: 'the price, before the work.' }, { icon: 'money', t: '**Invoices**', sub: 'the bill, after the work.' }],
+      beats: ['There are three tools. Open Business Tools: on a phone, tap More, then Business Tools.', 'Expenses: what you spend for your work.', 'Quotes and estimates: the price you offer, before you do the work.', 'And invoices: the bill, after the work is done.'] },
+    { kind: 'phone', n: '1', h: '**Expenses**', points: [{ b: 0, icon: 'plus', t: 'Tap **Add an expense**' }, { b: 1, icon: 'camera', t: 'A photo of the **receipt**' }, { b: 2, icon: 'chart', t: 'Earned, spent, and **what is left**' }],
+      rows: [{ k: 'button', t: '+ Add an expense', tap: 0 }, { k: 'card', icon: 'box', t: 'PVC pipes and glue', sub: '12 November · receipt ✓', right: 'L$ 2,400', b: 1 }, { k: 'card', icon: 'bike', t: 'Fuel', sub: '13 November', right: 'L$ 800', b: 1 }, { k: 'price', b: 2, lines: [['Earned in November', 'L$ 48,000'], ['Spent', 'L$ 9,600']], total: ['Left for you', 'L$ 38,400'] }],
+      beats: ['Tap Expenses, then Add an expense, for each thing you spend for your work.', 'For example, materials, or fuel. Add a photo of the receipt.', 'At the end of the month, you see what you earned, what you spent, and what is left. It helps with your taxes too.'] },
+    { kind: 'flow', h: 'From **quote** to **booking**', nodes: [{ icon: 'doc', t: 'You write a quote', sub: 'each part, and its price' }, { icon: 'check', t: 'The customer accepts', sub: 'in Quotes & Invoices', tone: 'gold' }, { icon: 'shield', t: 'They book you', sub: 'paid and held through Trothen' }], foot: 'An **invoice** for work outside a Trothen booking is a record only: Trothen does **not** hold or protect that payment.', footAt: 3,
+      beats: ['Then quotes and invoices.', 'Tap Quotes and estimates. Write a quote for a customer: each part of the work, and its price. An estimate says the final price may change once you have seen the work.', 'The customer sees it in Quotes and Invoices, and accepts it. That is a yes to the price, in writing. No money is taken yet.', 'Then the customer books you through Trothen, and the money is held safely, like any booking.', 'You can also send invoices, and download every quote and invoice as a PDF with your name on it. But an invoice for work outside a Trothen booking is a record only: Trothen does not hold or protect that payment.'] },
+    { kind: 'list', h: 'More **tools**', items: [{ icon: 'box', t: '**Inventory**', sub: 'what you have in stock.' }, { icon: 'chart', t: '**Tax report**', sub: 'your earnings and expenses for the year.' }, { icon: 'settings', t: '**Tax & invoice details**', sub: 'your business name and numbers, printed on your documents.' }],
+      beats: ['There are more tools in the same place.', 'Inventory: what you have in stock.', 'A tax report: your earnings and expenses for the year, for your taxes.', 'And Tax and invoice details: your business name and numbers, printed on your quotes and invoices.'] },
+    { kind: 'end', title: 'Keep good **records**', sub: 'Stuck? Tap Help videos, or ask us in the support chat.', beats: ['That is all. Add your expenses every week, and the end of the month is easy.'] },
+  ],
+};

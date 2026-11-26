@@ -28,11 +28,11 @@
       'Store': 'Tienda', 'Verified': 'Verificado', 'Buy with Trothen protection': 'Comprar con protección de Trothen', 'Message the seller': 'Escribir al vendedor',
       'Report': 'Reportar', 'Sell an item': 'Vender un artículo', 'Nothing found. Try other words or another category.': 'No se encontró nada. Prueba otras palabras u otra categoría.',
       'Pay through Trothen: your money is held until you have your order.': 'Paga a través de Trothen: tu dinero se retiene hasta que tengas tu pedido.', 'Sign in to buy or sell': 'Inicia sesión para comprar o vender', 'All countries': 'Todos los países',
-      'Offer my services': 'Ofrecer mis servicios', 'Sell goods (a store)': 'Vender productos (una tienda)', 'Both: services and a store': 'Ambos: servicios y una tienda',
+      'Goods': 'Productos', 'Places to stay and rent': 'Lugares para alojarse y alquilar', 'Offer my services': 'Ofrecer mis servicios', 'Sell goods (a store)': 'Vender productos (una tienda)', 'Both: services and a store': 'Ambos: servicios y una tienda',
     });
   } catch (x) {}
 
-  const M = { tab: 'browse', q: '', category: '', type: 'all', sort: 'newest', items: null, total: 0, cats: [], conds: {}, mine: null, currencies: [], earnings: null, selling: [], loading: false, seq: 0 };
+  const M = { tab: 'browse', q: '', category: '', type: 'all', sort: '', items: null, total: 0, cats: [], conds: {}, mine: null, currencies: [], earnings: null, selling: [], loading: false, seq: 0 };
   window.MARKET = M;
 
   // ── menu and section ────────────────────────────────────────────────
@@ -45,7 +45,7 @@
   try { addNav(PROVIDER_NAV_ITEMS, 'contracts'); } catch (x) {}
   const shell = () => `<div class="dash-header"><div><div class="dash-title">${e(t('Market'))}</div><div class="dash-sub">${e(t('Items from stores and people near you. Your payment is held until you receive your order.'))}</div></div></div>
     <div class="market-tabs" role="tablist" style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
-      ${[['browse', 'Browse'], ['sell', 'Sell'], ['orders', 'My orders']].map(([k, l]) => `<button type="button" role="tab" class="btn-sm ${M.tab === k ? 'btn-sm-primary' : 'btn-sm-outline'}" data-mtab="${k}" onclick="marketTab('${k}')">${e(t(l))}</button>`).join('')}
+      ${[['browse', 'Browse'], ['rentals', '🏠 Rentals'], ['sell', 'Sell'], ['orders', 'My orders']].map(([k, l]) => `<button type="button" role="tab" class="btn-sm ${M.tab === k ? 'btn-sm-primary' : 'btn-sm-outline'}" data-mtab="${k}" onclick="marketTab('${k}')">${e(t(l))}</button>`).join('')}
     </div>
     <div style="text-align:right;margin:-6px 0 10px;font-size:13px;"><a onclick="reportStolen()" style="color:var(--teal);cursor:pointer;font-weight:600;">🚨 ${e(t('Was something of yours stolen? Register it'))}</a></div>
     <div id="market-body"><div class="panel" style="color:var(--slate);">${e(t('Loading…'))}</div></div>`;
@@ -75,6 +75,7 @@
     host.innerHTML = `<div class="browse-back" role="link" tabindex="0" onclick="goHome()" onkeydown="if(event.key==='Enter')goHome()">← ${e(t('Back to Explore'))}</div>
       <h1 class="browse-title">${e(t('Market'))}</h1>
       <div class="browse-sub public-market-sub">${e(t('Pay through Trothen: your money is held until you have your order.'))} <button type="button" class="btn-link" onclick="showAuth('login')">${e(t('Sign in to buy or sell'))}</button></div>
+      <div role="tablist" aria-label="${e(t('Market'))}" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 12px;">${[['browse', 'Goods'], ['rentals', '🏠 Places to stay and rent']].map(([k, l]) => `<button type="button" role="tab" class="btn-sm ${k === 'browse' ? 'btn-sm-primary' : 'btn-sm-outline'}" data-mtab="${k}" onclick="marketTab('${k}')">${e(t(l))}</button>`).join('')}</div>
       <div id="market-body"></div>`;
     window.scrollTo(0, 0);
     M.pubCountries = null; drawBrowse();
@@ -87,6 +88,7 @@
     if (!document.getElementById('market-body')) return;
     if (M.tab === 'sell') return drawSell();
     if (M.tab === 'orders') return drawOrders();
+    if (M.tab === 'rentals' && typeof drawRentals === 'function') return drawRentals(); // v180
     return drawBrowse();
   }
 
@@ -95,41 +97,120 @@
     if (M.cats.length) return;
     try { const r = await apiFetch('GET', '/market/categories'); M.cats = r.categories; M.conds = r.conditions; } catch (x) {}
   }
+  // v183: search with suggestions, filters and "Best match" (public/app/search-ui.js)
+  Object.assign(M, { minPrice: '', maxPrice: '', condition: '', city: '', verified: false, more: false, page: 1, relaxed: false, didYouMean: null, facets: {} });
   async function drawBrowse() {
     const body = document.getElementById('market-body'); if (!body) return;
     await cats();
-    body.innerHTML = `<div class="panel" style="padding:12px;">
+    const pubShown = document.getElementById('public-market') && document.getElementById('screen-market') && document.getElementById('screen-market').classList.contains('active');
+    const sorts = [['relevance', 'Best match'], ['newest', 'Newest'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['rating', 'Best rated sellers']];
+    const filtersOn = !!(M.minPrice || M.maxPrice || M.condition || M.city || M.verified);
+    body.innerHTML = `<div class="panel" style="padding:12px;" role="search" aria-label="${e(t('Search the Market'))}">
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <input type="search" class="form-input" id="mk-q" value="${e(M.q)}" placeholder="${e(t('Search the Market'))}" style="flex:1 1 220px;" onkeydown="if(event.key==='Enter')marketSearch()"/>
-          ${document.getElementById('public-market') && document.getElementById('screen-market') && document.getElementById('screen-market').classList.contains('active') ? '<span id="mk-pub-country" style="flex:1 1 150px;min-width:0;display:flex;"></span>' : ''}
-          <select class="form-input form-select" id="mk-cat" style="flex:1 1 150px;width:auto;min-width:0;" onchange="marketSearch()"><option value="">${e(t('All categories'))}</option>${M.cats.map(c => `<option ${M.category === c ? 'selected' : ''}>${e(c)}</option>`).join('')}</select>
+          <input type="search" class="form-input" id="mk-q" value="${e(M.q)}" placeholder="${e(t('Search the Market, for example: phone, cement, sofa'))}" aria-label="${e(t('Search the Market'))}" style="flex:1 1 220px;" maxlength="100"/>
+          ${pubShown ? '<span id="mk-pub-country" style="flex:1 1 150px;min-width:0;display:flex;"></span>' : ''}
+          <button type="button" class="btn-sm btn-sm-primary" style="min-height:44px;" onclick="marketSearch()">${e(t('Search'))}</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          <label class="ts-sr" for="mk-cat">${e(t('Category'))}</label>
+          <select class="form-input form-select" id="mk-cat" style="flex:1 1 150px;width:auto;min-width:0;" onchange="marketSearch()"><option value="">${e(t('All categories'))}</option>${M.cats.map(c => `<option value="${e(c)}" ${M.category === c ? 'selected' : ''}>${e(t(c))}${M.facets[c] ? ` (${M.facets[c]})` : ''}</option>`).join('')}</select>
+          <label class="ts-sr" for="mk-type">${e(t('Sellers'))}</label>
           <select class="form-input form-select" id="mk-type" style="flex:1 1 120px;width:auto;min-width:0;" onchange="marketSearch()">${[['all', 'Everything'], ['stores', 'Stores'], ['people', 'From people']].map(([v, l]) => `<option value="${v}" ${M.type === v ? 'selected' : ''}>${e(t(l))}</option>`).join('')}</select>
-          <select class="form-input form-select" id="mk-sort" style="flex:1 1 150px;width:auto;min-width:0;" onchange="marketSearch()">${[['newest', 'Newest'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['rating', 'Best rated sellers']].map(([v, l]) => `<option value="${v}" ${M.sort === v ? 'selected' : ''}>${e(t(l))}</option>`).join('')}</select>
-          <button type="button" class="btn-sm btn-sm-primary" onclick="marketSearch()">${e(t('Search'))}</button>
+          <label class="ts-sr" for="mk-sort">${e(t('Sort by'))}</label>
+          <select class="form-input form-select" id="mk-sort" style="flex:1 1 150px;width:auto;min-width:0;" onchange="marketSearch()">${sorts.map(([v, l]) => `<option value="${v}" ${(M.sort || (M.q ? 'relevance' : 'newest')) === v ? 'selected' : ''}>${e(t(l))}</option>`).join('')}</select>
+          <button type="button" class="btn-sm btn-sm-outline" id="mk-more-btn" aria-expanded="${M.more}" aria-controls="mk-more" style="min-height:44px;" onclick="marketMoreFilters()">${e(t('More filters'))}${filtersOn ? ' •' : ''}</button>
+        </div>
+        <div id="mk-more" ${M.more ? '' : 'hidden'} style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+            <label style="flex:1 1 110px;font-size:13px;">${e(t('Lowest price (US$)'))}<input type="number" inputmode="decimal" min="0" step="any" class="form-input" id="mk-min" value="${e(M.minPrice)}"/></label>
+            <label style="flex:1 1 110px;font-size:13px;">${e(t('Highest price (US$)'))}<input type="number" inputmode="decimal" min="0" step="any" class="form-input" id="mk-max" value="${e(M.maxPrice)}"/></label>
+            <label style="flex:1 1 130px;font-size:13px;">${e(t('Condition'))}<select class="form-input form-select" id="mk-cond"><option value="">${e(t('Any condition'))}</option>${Object.entries(M.conds || {}).map(([k, l]) => `<option value="${e(k)}" ${M.condition === k ? 'selected' : ''}>${e(t(l))}</option>`).join('')}</select></label>
+            <label style="flex:1 1 150px;font-size:13px;">${e(t('Town or area'))}<input type="text" class="form-input" id="mk-city" value="${e(M.city)}" placeholder="${e(t('for example: Monrovia'))}" autocomplete="address-level2"/></label>
+            <label style="display:flex;gap:6px;align-items:center;font-size:14px;min-height:44px;"><input type="checkbox" id="mk-ver" ${M.verified ? 'checked' : ''} style="width:20px;height:20px;"/> ${e(t('Verified sellers only'))}</label>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+            <button type="button" class="btn-sm btn-sm-primary" style="min-height:44px;" onclick="marketSearch()">${e(t('Apply filters'))}</button>
+            <button type="button" class="btn-sm btn-sm-ghost" style="min-height:44px;" onclick="marketClearFilters()">${e(t('Clear filters'))}</button>
+          </div>
         </div>
       </div>
-      <div id="mk-results" style="margin-top:12px;"><div style="color:var(--slate);">${e(t('Loading…'))}</div></div>`;
+      <div id="mk-results" style="margin-top:12px;" aria-live="polite" aria-busy="true"><div style="color:var(--slate);">${e(t('Loading…'))}</div></div>`;
+    const qEl = document.getElementById('mk-q');
+    if (typeof searchBox === 'function') searchBox(qEl, {
+      recentKey: 'trothen_market_recent',
+      suggest: async (q) => { const qs = new URLSearchParams({ q }); if (M.pubCountry) qs.set('country', M.pubCountry); return (await apiFetch('GET', '/market/autocomplete?' + qs.toString())).suggestions || []; },
+      onSearch: (q, it) => { if (it && it.kind === 'category') { M.category = it.text; qEl.value = ''; const c = document.getElementById('mk-cat'); if (c) c.value = it.text; } marketSearch(); },
+      onType: (q) => { const f = (window.TrothenSearch && TrothenSearch.fold(q)) || ''; if (!f || f.length >= 2) marketSearch(true); }, // results follow the typing
+    });
+    else qEl.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') marketSearch(); });
     await loadItems();
   }
-  window.marketSearch = function () {
-    M.q = (document.getElementById('mk-q') || {}).value || '';
-    M.category = (document.getElementById('mk-cat') || {}).value || '';
-    M.type = (document.getElementById('mk-type') || {}).value || 'all';
-    M.sort = (document.getElementById('mk-sort') || {}).value || 'newest';
+  window.marketMoreFilters = function () {
+    M.more = !M.more; const box = document.getElementById('mk-more'), b = document.getElementById('mk-more-btn');
+    if (box) box.hidden = !M.more; if (b) b.setAttribute('aria-expanded', String(M.more));
+    if (M.more) { const f = document.getElementById('mk-min'); if (f) f.focus(); }
+  };
+  window.marketClearFilters = function () {
+    Object.assign(M, { minPrice: '', maxPrice: '', condition: '', city: '', verified: false, category: '', type: 'all' });
+    ['mk-min', 'mk-max', 'mk-city'].forEach(id => { const x = document.getElementById(id); if (x) x.value = ''; });
+    ['mk-cond', 'mk-cat'].forEach(id => { const x = document.getElementById(id); if (x) x.value = ''; });
+    const ty = document.getElementById('mk-type'); if (ty) ty.value = 'all';
+    const v = document.getElementById('mk-ver'); if (v) v.checked = false;
+    marketSearch();
+  };
+  window.marketSearch = function (typing) {
+    if (!typing) { const qb = document.getElementById('mk-q'); if (qb && qb.getAttribute('aria-expanded') === 'true') qb.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); }
+    const g = (id) => document.getElementById(id);
+    const q = (g('mk-q') || {}).value || '';
+    if (q !== M.q && !typing) M.sort = ''; // a new search starts on "Best match"
+    M.q = q;
+    M.category = (g('mk-cat') || {}).value || '';
+    M.type = (g('mk-type') || {}).value || 'all';
+    const so = (g('mk-sort') || {}).value || '';
+    if (!typing) M.sort = so === 'relevance' && !M.q ? '' : so;
+    if (g('mk-min')) { M.minPrice = g('mk-min').value; M.maxPrice = g('mk-max').value; M.condition = g('mk-cond').value; M.city = g('mk-city').value.trim(); M.verified = g('mk-ver').checked; }
+    if (M.minPrice !== '' && M.maxPrice !== '' && Number(M.minPrice) > Number(M.maxPrice)) { const a = M.minPrice; M.minPrice = M.maxPrice; M.maxPrice = a; if (g('mk-min')) { g('mk-min').value = M.minPrice; g('mk-max').value = M.maxPrice; } }
+    M.page = 1;
     loadItems();
   };
-  async function loadItems() {
+  window.marketTry = function (q) { const x = document.getElementById('mk-q'); if (x) x.value = q; marketSearch(); };
+  async function loadItems(more) {
     const box = document.getElementById('mk-results'); if (!box) return;
     const seq = ++M.seq;
-    const qs = new URLSearchParams({ q: M.q, category: M.category, type: M.type, sort: M.sort });
+    const qs = new URLSearchParams({ q: M.q, category: M.category, type: M.type, page: String(M.page) });
+    if (M.sort) qs.set('sort', M.sort);
+    if (M.minPrice !== '') qs.set('minPrice', M.minPrice); if (M.maxPrice !== '') qs.set('maxPrice', M.maxPrice);
+    if (M.condition) qs.set('condition', M.condition); if (M.city) qs.set('city', M.city); if (M.verified) qs.set('verified', '1');
     const pub = !!document.getElementById('public-market') && document.getElementById('screen-market') && document.getElementById('screen-market').classList.contains('active');
     if (pub) { qs.set('country', M.pubCountry || ''); if (!M.pubCountries) qs.set('countries', '1'); } // v164: a visitor chooses the country
-    try { const r = await apiFetch('GET', '/market/items?' + qs.toString()); if (seq !== M.seq) return; M.items = r.items; M.total = r.total; if (r.countries) { M.pubCountries = r.countries; paintCountryChoice(); } }
-    catch (x) { box.innerHTML = `<div class="panel">${e(x.message || 'Could not load the Market')}</div>`; return; }
+    box.setAttribute('aria-busy', 'true');
+    let r;
+    try { r = await apiFetch('GET', '/market/items?' + qs.toString()); if (seq !== M.seq) return; if (r.countries) { M.pubCountries = r.countries; paintCountryChoice(); } }
+    catch (x) { box.setAttribute('aria-busy', 'false'); box.innerHTML = `<div class="panel">${e(x.message || 'Could not load the Market')}</div>`; return; }
+    M.items = more ? (M.items || []).concat(r.items) : r.items; M.total = r.total; M.relaxed = r.relaxed; M.didYouMean = r.didYouMean; M.facets = (r.facets && r.facets.categories) || {};
+    // the category list shows how many are in each, for these words
+    const cat = document.getElementById('mk-cat');
+    if (cat) [...cat.options].forEach(o => { if (o.value) o.textContent = `${t(o.value)}${M.facets[o.value] ? ` (${M.facets[o.value]})` : ''}`; });
+    box.setAttribute('aria-busy', 'false');
+    const filtersOn = !!(M.category || M.type !== 'all' || M.minPrice || M.maxPrice || M.condition || M.city || M.verified);
+    const head = M.q
+      ? `<strong>${M.total}</strong> ${e(t(M.total === 1 ? 'result for' : 'results for'))} “${e(M.q)}”`
+      : `<strong>${M.total}</strong> ${e(t(M.total === 1 ? 'item' : 'items'))}`;
+    const dym = M.didYouMean ? `<div style="margin:4px 0 8px;">${e(t('Did you mean'))} <a href="#" onclick="event.preventDefault();marketTry(${jsArg(M.didYouMean)})" style="font-weight:700;color:var(--teal);">${e(M.didYouMean)}</a>?</div>` : '';
+    const relaxedNote = M.relaxed ? `<div class="ver-note" style="margin:4px 0 8px;">${e(t('Nothing has all of your words. These match some of them.'))}</div>` : '';
+    const showMore = M.items.length < M.total ? `<div style="text-align:center;margin:14px 0;"><button type="button" class="btn-sm btn-sm-outline" style="min-height:44px;" onclick="marketShowMore()">${e(t('Show more'))} (${M.total - M.items.length})</button></div>` : '';
     box.innerHTML = M.items.length
-      ? `<div style="font-size:13px;color:var(--slate);margin-bottom:8px;">${M.total} ${e(t(M.total === 1 ? 'item' : 'items'))}</div><div class="mk-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;">${M.items.map(cardHTML).join('')}</div>`
-      : `<div class="panel" style="color:var(--slate);">${e(t('Nothing found. Try other words or another category.'))}</div>`;
+      ? `<div style="font-size:14px;color:var(--slate);margin-bottom:6px;">${head}</div>${dym}${relaxedNote}<div class="mk-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;">${M.items.map(cardHTML).join('')}</div>${showMore}`
+      : `<div class="panel" style="color:var(--slate);">
+          <div style="font-weight:700;color:var(--navy);margin-bottom:6px;">${M.q ? `${e(t('Nothing found for'))} “${e(M.q)}”` : e(t('Nothing for sale here yet.'))}</div>
+          ${dym}
+          <ul style="margin:6px 0 0;padding-left:20px;line-height:1.7;">
+            <li>${e(t('Check the spelling, or use fewer or more general words.'))}</li>
+            ${filtersOn ? `<li><a href="#" onclick="event.preventDefault();marketClearFilters()" style="color:var(--teal);font-weight:700;">${e(t('Clear the filters'))}</a></li>` : ''}
+            <li>${e(t('Try another category, or "Everything".'))}</li>
+          </ul></div>`;
   }
+  window.marketShowMore = function () { M.page += 1; loadItems(true); };
   const stars = (r) => (r && r.rating ? `<span title="${e(r.ratingCount)} ${e(t(r.ratingCount === 1 ? 'rating' : 'ratings'))}" style="color:#8A5A00;white-space:nowrap;">★ ${Number(r.rating).toFixed(1)}</span>` : ''); // v164: the star stays with its number
   function cardHTML(it) {
     // v176: a store good opens its own page (photos, description, sizes, size chart); a person's item opens as before
@@ -139,7 +220,7 @@
       ${it.photo ? `<img src="${e(it.photo)}" alt="" loading="lazy" style="width:100%;aspect-ratio:1;object-fit:cover;background:#f2f4f7;"/>` : `<div style="width:100%;aspect-ratio:1;background:#f2f4f7;"></div>`}
       <div style="padding:9px 10px 11px;display:flex;flex-direction:column;gap:4px;flex:1;">
         <div style="font-weight:800;color:var(--navy);font-size:15.5px;">${money(it.price)}${it.localPrice ? ` <span style="font-weight:400;color:var(--slate);font-size:12px;">${e(localMoney(it.localPrice))}</span>` : ''}</div>
-        <div style="font-size:14px;color:var(--text,#1b2533);line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${e(it.title)}</div>
+        <div style="font-size:14px;color:var(--text,#1b2533);line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${typeof highlightHTML === 'function' && M.q ? highlightHTML(it.title, M.q) : e(it.title)}</div>
         ${typeof specsLine === 'function' && it.specRows && it.specRows.length ? `<div class="mk-specs" style="font-size:12px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e(specsLine(it.specRows, 3))}</div>` : ''}
         <div>${badge}</div>
         ${it.tradePrice ? `<div style="font-size:12.5px;color:#0f766e;font-weight:700;">${e(t('Trade price for pros'))}: ${money(it.tradePrice)}</div>` : ''}

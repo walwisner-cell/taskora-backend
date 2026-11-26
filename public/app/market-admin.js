@@ -6,7 +6,7 @@
   const e = (s) => escapeHtml(s == null ? '' : String(s));
   const A = { tab: 'overview', show: {}, q: {} };
   const TABS = [
-    ['overview', 'At a glance'], ['check', 'To check'], ['listings', 'Listings'], ['goods', 'Store goods'],
+    ['overview', 'At a glance'], ['check', 'To check'], ['rentals', 'Rentals'], ['listings', 'Listings'], ['goods', 'Store goods'],
     ['sellers', 'Sellers'], ['orders', 'Orders'], ['stolen', 'Stolen items'], ['activity', 'Team activity'], ['fees', 'Fees'],
   ];
   const plural = (n, one, many) => `${e(n)} ${e(n === 1 ? one : many)}`;
@@ -48,6 +48,7 @@
       if (A.tab === 'overview') return await drawOverview();
       if (A.tab === 'check') { A.show.listings = 'check'; return await drawListings('check'); }
       if (A.tab === 'listings') return await drawListings();
+      if (A.tab === 'rentals') return await drawRentalPlaces(); // v180
       if (A.tab === 'goods') return await drawGoods();
       if (A.tab === 'sellers') return await drawSellers();
       if (A.tab === 'orders') return await drawOrders();
@@ -56,6 +57,44 @@
       if (A.tab === 'fees') { b.innerHTML = ''; return await window.drawMarketFees(b); }
     } catch (x) { fail(x); }
   }
+
+  // v180: rental places. Each new place is checked before guests can see it,
+  // the same "notice and action" way as listings: a place turned down or
+  // taken down always gives the host the reason.
+  async function drawRentalPlaces() {
+    const b = body(); if (!b) return;
+    const show = A.show.rentals || 'review';
+    const r = await apiFetch('GET', '/admin/market/rentals?status=' + encodeURIComponent(show));
+    const c = r.counts || {};
+    const money = (n) => '$' + Number(n || 0).toFixed(2);
+    b.innerHTML = filterRow('rentals', [['review', `To check (${c.review || 0})`], ['live', `Shown (${c.live || 0})`], ['paused', `Paused (${c.paused || 0})`], ['rejected', `Turned down (${c.rejected || 0})`], ['removed', `Taken down (${c.removed || 0})`], ['all', 'All']], false)
+      + `<div class="panel" style="font-size:13.5px;color:var(--slate);line-height:1.55;">Before approving, check: the photos look like one real place (not taken from the internet or another listing); the area and the address match; the price is normal for the area; the host's ID is verified. If unsure, call the host. A place reported 3 times is hidden until you look again.</div>`
+      + (r.listings.length ? r.listings.map(l => `<div class="panel am-rental" data-id="${e(l.id)}">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><strong style="color:var(--navy);">${e(l.title)}</strong>${badge(l.status === 'review' ? 'review' : l.status)}</div>
+        <div style="font-size:13.5px;color:var(--slate);margin:2px 0 6px;">${e(l.propertyLabel)} · ${e(l.bedrooms)} bedrooms · ${e(l.bathrooms)} bathrooms · up to ${e(l.maxGuests)} guests · ${e(l.community)}, ${e(l.city)}, ${e(l.country)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">${(l.photoUrls || []).map(u => `<a href="${e(u)}" target="_blank" rel="noopener"><img src="${e(u)}" alt="" style="width:96px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--border);"/></a>`).join('')}</div>
+        <div style="font-size:14px;margin-top:8px;line-height:1.55;"><strong>Address (private):</strong> ${e(l.address)}${l.location ? ` · <a href="https://www.google.com/maps/search/?api=1&query=${l.location.latitude},${l.location.longitude}" target="_blank" rel="noopener">pin on the map</a>` : ' · no pin'}<br>
+          <strong>Prices:</strong> ${[l.stay ? `${money(l.stay.nightlyUsd)} a night (${e(l.stay.cancellationLabel)} cancellation)` : '', l.monthly ? `${money(l.monthly.monthlyUsd)} a month, ${e(l.monthly.payMonths)} paid at the start` : ''].filter(Boolean).join(' · ')}<br>
+          <strong>Host:</strong> ${l.hostDetails ? `${e(l.hostDetails.name)} · ${e(l.hostDetails.phone || 'no phone')} · ${l.hostDetails.verified ? 'ID verified' : '<span style="color:#A5352B;">ID not verified</span>'} · on Trothen since ${e(when(l.hostDetails.createdAt))}` : 'not found'} · ${l.ownerDeclaredAt ? `declared they own it or have permission (${e(when(l.ownerDeclaredAt))})` : '<span style="color:#A5352B;">no ownership declaration</span>'}${l.hostCancels ? ` · <span style="color:#A5352B;">${e(l.hostCancels)} cancellations in 90 days</span>` : ''}</div>
+        <details style="margin-top:6px;"><summary style="cursor:pointer;">Description and rules</summary><p style="white-space:pre-wrap;">${e(l.description)}</p>${l.rules ? `<p style="white-space:pre-wrap;"><strong>Rules:</strong> ${e(l.rules)}</p>` : ''}</details>
+        ${(l.reportList || []).length ? `<div style="font-size:13.5px;color:#A5352B;margin-top:6px;"><strong>Reports (${l.reportList.length}):</strong> ${l.reportList.map(x => e(x.reason)).join(' · ')}</div>` : ''}
+        ${l.reviewNote ? `<div style="font-size:13.5px;margin-top:4px;"><strong>Note to the host:</strong> ${e(l.reviewNote)}</div>` : ''}
+        <div class="row-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+          ${['review', 'rejected'].includes(l.status) ? `<button class="btn-sm btn-sm-primary" onclick="adminRentalDecide(${jsArg(l.id)},'approve')">Approve: show it to guests</button>` : ''}
+          ${l.status === 'review' ? `<button class="btn-sm btn-sm-outline" onclick="adminRentalDecide(${jsArg(l.id)},'reject')">Turn down</button>` : ''}
+          ${['live', 'paused', 'review'].includes(l.status) ? `<button class="btn-sm btn-sm-ghost" style="color:#A5352B;" onclick="adminRentalDecide(${jsArg(l.id)},'remove')">Take down</button>` : ''}
+          ${l.status === 'removed' ? `<button class="btn-sm btn-sm-outline" onclick="adminRentalDecide(${jsArg(l.id)},'restore')">Show it again</button>` : ''}
+        </div></div>`).join('') : '<div class="panel" style="color:var(--slate);">Nothing here.</div>');
+  }
+  window.adminRentalDecide = async function (id, decision) {
+    let reason = '';
+    if (decision === 'reject' || decision === 'remove') {
+      const ok = await confirmDialog(decision === 'reject' ? 'Why is this place turned down? The host reads this and can fix it.' : 'Why is this place taken down? The host reads this.', { requireTextInput: true, confirmLabel: decision === 'reject' ? 'Turn down' : 'Take down', danger: decision === 'remove', placeholder: 'For example: the photos are of a different house' });
+      if (typeof ok !== 'string' || !ok) return;
+      reason = ok;
+    }
+    try { await apiFetch('POST', `/admin/market/rentals/${encodeURIComponent(id)}/decide`, { decision, reason }); showToast('Done. The host has been told.'); draw(); } catch (x) { showToast(x.message); }
+  };
 
   async function drawOverview() {
     const o = await apiFetch('GET', '/admin/market/overview');

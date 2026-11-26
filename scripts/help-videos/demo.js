@@ -66,6 +66,21 @@ async function prepare(root) {
   if (!(await db.find('storeGoods', x => x.id === 'good_spark'))) await db.insert('storeGoods', { id: 'good_spark', providerId: 'u_james', name: 'Tecno Spark 20, 256 GB', description: 'New, sealed. Dual SIM.', price: 135, priceCurrency: 'USD', status: 'pending', forSale: true, condition: 'new', marketCategory: 'Phones & Tablets', photoUrls: ['/uploads/store_u_james_spark.png'], stock: 4, specs: { model: 'Spark 20', storage: '256 GB', ram: '8 GB', network: '4G LTE', sim: 'Dual SIM', locked: 'Unlocked (any network)' }, createdAt: now, updatedAt: now });
   const c = await productPng('#8C6423', 'Drill'); if (c) fs.writeFileSync(path.join(up, 'market_u_jordan_drill.png'), c);
   if (!(await db.find('marketListings', x => x.id === 'ml_drill'))) await db.insert('marketListings', { id: 'ml_drill', sellerId: 'u_jordan', title: 'Bosch drill, 650 W, with case', description: 'Used twice. Works perfectly. Comes with its case.', category: 'Tools & Equipment', condition: 'like_new', price: 45, currency: 'USD', priceUsd: 45, photoUrls: ['/uploads/market_u_jordan_drill.png'], pickupPlace: 'Sinkor', protected: true, cash: true, driver: true, status: 'review', reviewReasons: ['A new seller with a high price for the category'], reports: [], views: 3, city: 'Monrovia', country: 'Liberia', ownerAttestedAt: now, createdAt: now, expiresAt: new Date(Date.now() + 30 * 864e5).toISOString(), specs: { model: 'GSB 650', powerSource: 'Mains (corded)', power: 650 } });
+  // v181: places to stay, for the Rentals videos (Marcus is the host; Jordan books)
+  const rooms = [['1', '#2F6F8F', 'Sitting room'], ['2', '#7A5C99', 'Bedroom'], ['3', '#3E8E6A', 'Kitchen'], ['4', '#9A6B3F', 'Outside']];
+  for (const [n, col, l] of rooms) { const p = await productPng(col, l); if (p) fs.writeFileSync(path.join(up, `rental_u_marcus_${n}.png`), p); }
+  const RN = R('rentals.js');
+  const marcus = await db.find('users', x => x.id === 'u_marcus');
+  const places = [
+    { id: 'rl_demo_sinkor', title: '2-bedroom apartment in Sinkor', description: 'A quiet, clean apartment near the beach, with a generator and a water tank. Five minutes from Tubman Boulevard.', propertyType: 'apartment', bedrooms: 2, bathrooms: 1, maxGuests: 4, amenities: ['generator', 'water_tank', 'wifi', 'security_guard'], rules: 'No smoking inside. Quiet after 22:00.', community: 'Sinkor, 12th Street', city: 'Monrovia', address: 'House 14, 12th Street, behind the Total station, Sinkor', location: { latitude: 6.2891, longitude: -10.7712 }, photoUrls: ['1', '2', '3', '4'].map(n => `/uploads/rental_u_marcus_${n}.png`), stay: { price: 40, currency: 'USD', cleaningFee: 10, minNights: 2, maxNights: 30, checkInFrom: '14:00', checkOutBy: '11:00', cancellation: 'moderate' }, ownerDeclared: true },
+    { id: 'rl_demo_congo', title: '3-bedroom house in Congo Town', description: 'A family house in a fenced compound, with solar power and running water.', propertyType: 'house', bedrooms: 3, bathrooms: 2, maxGuests: 6, amenities: ['solar', 'running_water', 'parking'], rules: 'No parties.', community: 'Congo Town', city: 'Monrovia', address: 'Old Road, Congo Town, the house with the green gate', location: { latitude: 6.27, longitude: -10.74 }, photoUrls: ['4', '1', '2'].map(n => `/uploads/rental_u_marcus_${n}.png`), monthly: { price: 450, currency: 'USD', payMonths: 6, minMonths: 6 }, ownerDeclared: true },
+  ];
+  for (const body of places) {
+    if (await db.find('rentalListings', x => x.id === body.id)) continue;
+    const r = await RN.readListing(body, marcus, null);
+    if (r.error) { console.warn('demo rental place not made:', r.error); continue; }
+    await db.insert('rentalListings', { id: body.id, hostId: 'u_marcus', ...r.out, location: r.out.location || null, country: 'Liberia', status: 'live', approvedAt: now, blockedDates: [], reports: [], hostCancels: [], ratingAvg: 4.8, ratingCount: 12, createdAt: now, updatedAt: now });
+  }
 }
 
 module.exports = { prepare, token, MONROVIA };

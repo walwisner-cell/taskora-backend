@@ -1,0 +1,21 @@
+// Animated explainer: find and book a pro (customers).
+module.exports = {
+  key: 'findpro', title: 'Find and book a pro', tagline: 'Search, compare, and choose the right person', topic: 'Customers', audience: 'all',
+  scenes: [
+    { kind: 'title', icon: 'search', title: 'Find and book a **pro**', sub: 'Search, compare, and choose the right person for the job.',
+      beats: ['This video shows how to find a pro on Trothen, check them carefully, and book the right person. A pro is anyone who offers their work: a plumber, a cleaner, an electrician, a hairdresser, and many more.'] },
+    { kind: 'table', h: 'Two ways to **hire**', head: ['Way', 'Good when'], rows: [{ c: ['Post a job', 'You want several pros to send prices, and to compare'] }, { c: ['Book a pro directly', 'You already found a pro you like, or a fixed price fits'] }],
+      beats: ['There are two ways to hire someone.', 'Post a job, and pros near you send their prices. You compare, and choose. There is a separate video for that.', 'Or find a pro yourself, and book them directly. This video shows that way.'] },
+    { kind: 'phone', n: '1', h: '**Search**', points: [{ b: 0, icon: 'search', t: 'Type what you need: **plumber**, **braids**' }, { b: 1, icon: 'pin', t: 'Pros **near you** come first' }, { b: 2, icon: 'star', t: 'Each card: rating, jobs done, price' }],
+      rows: [{ k: 'field', label: 'What do you need?', value: 'plumber', type: 0 }, { k: 'card', icon: 'user', t: 'Marcus T. · Plumbing', sub: '★ 4.9 · 86 jobs done · Sinkor', right: 'from L$ 1,500', b: 1 }, { k: 'card', icon: 'user', t: 'Joseph K. · Plumbing', sub: '★ 4.7 · 31 jobs done · Paynesville', right: 'from L$ 1,200', b: 1 }],
+      beats: ['On the Trothen home page, type what you need, in your own words: plumber, braids, AC repair. Trothen understands common words.', 'Pros near you come first. You only see pros whose ID Trothen has checked.', 'Each card shows the pro\'s rating, how many jobs they have done, where they are, and a starting price.'] },
+    { kind: 'phone', n: '2', h: 'Look **closely**', points: [{ b: 0, icon: 'id', t: '**ID checked**, and the Trothen Score' }, { b: 1, icon: 'photo', t: 'Photos of their **own work**' }, { b: 2, icon: 'chat', t: 'Read the **reviews**' }, { b: 3, icon: 'heart', t: 'Tap ♡ to save them' }],
+      rows: [{ k: 'card', icon: 'user', t: 'Marcus T.', sub: '✓ ID checked · Trothen Score 92', on: true }, { k: 'photos', n: 3, b: 1 }, { k: 'note', icon: 'star', t: '★★★★★ "Came on time and fixed it fast." · Aisha', b: 2 }, { k: 'button', t: 'Book', b: 3 }],
+      beats: ['Tap a pro to see more. Look for ID checked, and their Trothen Score. A higher score means more customers trust them.', 'Look at photos of their own finished work.', 'Read what other customers said in their reviews. Every review comes from a real booking.', 'Like this pro? Tap the heart to save them in Favorite Pros, for next time.'] },
+    { kind: 'list', h: 'Then **book**', items: [{ icon: 'tag', t: 'A **fixed price**? Book it straight away', sub: 'For example: fix a tap, L$ 1,500.' }, { icon: 'chat', t: 'No fixed price? Describe the job', sub: 'The pro sends you a price.' }, { icon: 'calendar', t: 'Choose the day, and how you pay' }],
+      beats: ['Then tap Book.', 'If the pro has a fixed price for your job, like fixing a tap, you can book it straight away.', 'If not, describe the job, and the pro sends you a price.', 'Choose the day, and how you will pay. We recommend Protected by Trothen: the money is held until you say the job is done.'] },
+    { kind: 'warn', h: 'Before you **book**', lines: [{ t: 'Never pay a pro **outside Trothen** before the work.' }, { t: 'Never share your PIN or password with a pro.' }, { ok: true, icon: 'chat', t: 'Not sure? **Message** the pro first, in Trothen.' }],
+      beats: ['Before you book, remember.', 'Never pay a pro outside Trothen before the work. Outside Trothen, your money is not protected.', 'Never share your PIN or your password with anyone.', 'Not sure about something? Message the pro first, in Trothen, and ask.'] },
+    { kind: 'end', title: 'Find the right **pro**', sub: 'Next: watch "My Bookings".', beats: ['That is all. Next, watch the video about My Bookings, to see what happens after you book.'] },
+  ],
+};

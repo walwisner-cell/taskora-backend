@@ -17,7 +17,25 @@
    "If something is wrong, click Turn down, and write the reason. The seller sees it, and can fix the good.",
    "If all is right, click Approve. The good is then on sale.",
    "Lower down are the store settings: the fee per purchase, who pays it, and the banned words."
-  ]
+  ],
+  "explainer": {
+   "file": "help-admin-x-adm-stores",
+   "seconds": 62,
+   "transcript": [
+    "This video explains Stores and Skills: approving pros' stores, checking goods before they go on sale, and reviewing new kinds of work.",
+    "Each new good is checked before buyers see it. Check four things.",
+    "Real photos of the real good, not pictures from the internet.",
+    "The name and the details match the photos.",
+    "A normal price for the area. A price far too low is a warning sign.",
+    "And the good is not stolen, fake, or not allowed on Trothen.",
+    "Then decide.",
+    "Approve: buyers can see it in the Market, and the seller is told.",
+    "Reject, with a clear reason: the seller is told what to fix.",
+    "Pros can also ask for a kind of work that is not in the list yet.",
+    "Add it, if it is real and common. Or point the pro to an existing one that fits.",
+    "For the exact clicks, watch the step-by-step video on the real screens."
+   ]
+  }
  },
  {
   "key": "listings",
@@ -37,7 +55,27 @@
    "If a seller breaks the rules again and again, click Stop this seller.",
    "If the listing is fine, click Approve. It then appears in the Market.",
    "Stolen items holds reports of stolen goods. Check them often."
-  ]
+  ],
+  "explainer": {
+   "file": "help-admin-x-adm-market",
+   "seconds": 74,
+   "transcript": [
+    "This video explains the Market area: listings held for checking, and new places to stay, before anyone can see them.",
+    "Some personal listings are held before they appear: for example a phone with signs of being stolen, or a listing people reported.",
+    "Check the photos, the price, and the seller.",
+    "Then release it, or take it down, with a reason the seller can read.",
+    "Every new place to stay is checked in Market, under Rentals. Check four things.",
+    "The photos show one real place.",
+    "The area and the address match.",
+    "The price is normal for the area.",
+    "And the host's ID is verified.",
+    "Watch for scams.",
+    "If a host changes the address, the pin, or the photos after approval, the place comes back to you. This stops a known scam.",
+    "Three reports from different people hide a place until you look at it.",
+    "Turning down or taking down a place always needs a reason. The host is told, and it is logged.",
+    "For the exact clicks, watch the step-by-step video on the real screens."
+   ]
+  }
  },
  {
   "key": "approvals",
@@ -55,7 +93,25 @@
    "If it looks false, click Reject. The person is told, and cannot use Trothen.",
    "If all is right, click Approve. The person can then use Trothen.",
    "Approving someone here does not check their ID. Their ID is checked in the Verification Queue."
-  ]
+  ],
+  "explainer": {
+   "file": "help-admin-x-adm-approvals",
+   "seconds": 62,
+   "transcript": [
+    "This video explains User Approvals: where new sign-ups wait before they can use Trothen fully.",
+    "What does approval mean?",
+    "Someone signs up, as a customer or a pro.",
+    "You check the account: does the name look real, is the place right, and for a pro, is the kind of work right?",
+    "Then approve, or reject. They are told.",
+    "For a pro, approval is not enough to be found by customers. Their ID must also be approved in the Verification Queue, and they need a profile photo.",
+    "Signs to look for.",
+    "A name that is not a real name, like random letters.",
+    "A place that does not match the phone number's country.",
+    "The same phone number or email as another account.",
+    "Not sure? Message the person in Trothen, or ask your manager, before you decide.",
+    "Always give a clear reason when you reject, so the person can fix it and try again."
+   ]
+  }
  },
  {
   "key": "systemcheck",
@@ -73,7 +129,25 @@
    "Under each orange or red part, you see the likely cause, and what to do about it.",
    "Check it every morning, and whenever someone says something does not work.",
    "Click Copy report, and send it to whoever fixes it. It has everything they need."
-  ]
+  ],
+  "explainer": {
+   "file": "help-admin-x-adm-systemcheck",
+   "seconds": 44,
+   "transcript": [
+    "This video explains System Check: Trothen watching itself, and telling you when something needs attention.",
+    "System Check looks at the live system.",
+    "Are emails going out?",
+    "Are payments waiting for Finance?",
+    "Are refunds or payouts waiting to be sent?",
+    "It checks by itself every 15 minutes, or when you press Check now.",
+    "When something is wrong.",
+    "You are alerted.",
+    "It shows the likely cause.",
+    "And what to do about it.",
+    "Fix the cause, then press Check now, to confirm it is fixed.",
+    "For the exact clicks, watch the step-by-step video on the real screens."
+   ]
+  }
  },
  {
   "key": "fares",
@@ -94,6 +168,558 @@
    "Each vehicle has a starting price, a price per kilometre, and a minimum fare.",
    "Type today's fuel price. Fares move with it, once the change passes the limit you set.",
    "Riders always see the fare before they book. A change applies only to new rides."
+  ],
+  "explainer": {
+   "file": "help-admin-x-adm-rides",
+   "seconds": 73,
+   "transcript": [
+    "This video explains the Rides area: approving drivers, watching safety alerts, and the settings for fares and countries.",
+    "No ride can happen in a country until you approve a driver there.",
+    "Check the licence and the vehicle papers. The list depends on the country and the vehicle.",
+    "Check that the vehicle photos match the papers.",
+    "Then approve the driver, or ask for what is missing.",
+    "Safety alerts.",
+    "When a rider or a driver presses SOS, the alert comes here, with where they are.",
+    "Act at once. Call them, and call the police if needed.",
+    "The settings are for a super admin only.",
+    "Turn rides on or off for each live country, only after checking the local transport rules.",
+    "Set fares per vehicle, in the country's own money.",
+    "Set the Driver Pass prices.",
+    "And the papers drivers must upload. Ask a lawyer or the Ministry of Transport which papers are legally required.",
+    "For the exact clicks on fares, watch the step-by-step video on the real screens."
+   ]
+  }
+ },
+ {
+  "key": "advertising",
+  "section": "advertising",
+  "title": "Adverts from pros",
+  "tagline": "Check adverts before they show",
+  "explainer": {
+   "file": "help-admin-x-adm-advertising",
+   "seconds": 50,
+   "transcript": [
+    "This video explains Advertising: pros, and businesses who asked through Advertise here, who want their profile shown as an advert.",
+    "How does an advert work?",
+    "A verified pro pays for an advert, with tokens or the ways offered.",
+    "You check it: the photo and the words.",
+    "Approve it, and it shows on the home page.",
+    "Several adverts can show at once. You can take one down at any time, with a reason.",
+    "Check each advert.",
+    "A real, clear photo.",
+    "True words, with no false promises, like the cheapest in Monrovia.",
+    "And nothing rude, unsafe, or misleading.",
+    "An advert is a promise to customers. Make sure it is true."
+   ]
+  }
+ },
+ {
+  "key": "categories",
+  "section": "categories",
+  "title": "Categories and countries",
+  "tagline": "The kinds of work, and where Trothen is open",
+  "explainer": {
+   "file": "help-admin-x-adm-categories",
+   "seconds": 43,
+   "transcript": [
+    "This video explains Categories and Countries: the kinds of work customers can hire for, and the countries where Trothen is open.",
+    "Categories are the kinds of work, grouped the way customers look for them.",
+    "Add a new one, with a clear name and an icon.",
+    "Choose where it is offered.",
+    "A category can also set its own answer time: how long a pro has to accept a booking.",
+    "Countries are live, or planned.",
+    "Only live countries appear on the home page, and in the sign-up list.",
+    "Changing a country does not affect existing accounts.",
+    "Keep the lists tidy, and clear for customers."
+   ]
+  }
+ },
+ {
+  "key": "custpay",
+  "section": "custpay",
+  "title": "Payment codes from customers",
+  "tagline": "Confirm what arrived, and send refunds back",
+  "explainer": {
+   "file": "help-admin-x-adm-custpay",
+   "seconds": 67,
+   "transcript": [
+    "This video is for Finance. It explains Customer Payments: bookings paid by Mobile Money with a payment code.",
+    "How does a code payment work?",
+    "When a customer books, they get a one-time code and Trothen's number.",
+    "They send exactly the amount, with the code in the reference, and press I have sent it.",
+    "You find the payment on Trothen's statement, and confirm it.",
+    "Only after you confirm is the pro asked to confirm the booking.",
+    "For each payment.",
+    "When the customer says they paid, find it on Trothen's statement. The code in the reference must match.",
+    "If the right amount arrived, tap Confirm payment.",
+    "If nothing arrived, tap No payment found. The booking is cancelled, and the customer is told.",
+    "Below are the refunds due to customers who paid by code.",
+    "Send the money back to the number they paid from.",
+    "Then mark it sent.",
+    "Never confirm a payment you have not seen arrive on the statement."
+   ]
+  }
+ },
+ {
+  "key": "disputes",
+  "section": "disputes",
+  "title": "Decide disputes fairly",
+  "tagline": "Read both sides, then refund, release or split",
+  "explainer": {
+   "file": "help-admin-x-adm-disputes",
+   "seconds": 89,
+   "transcript": [
+    "This video explains Disputes: what to do when a customer and a pro, a buyer and a seller, or a guest and a host disagree about money.",
+    "While a dispute is open.",
+    "Someone reports a problem, before the money was released.",
+    "The money stays held. Nobody gets it until you decide.",
+    "You decide, and write the reason.",
+    "Both people see your decision, and your reason.",
+    "Read everything first.",
+    "Their messages in Trothen: what was agreed.",
+    "The photos and evidence each side sent.",
+    "The times and places Trothen recorded: when the pro left and arrived, and the handover photos for deliveries.",
+    "And call both sides if you need to.",
+    "Then decide one of three things.",
+    "Refund the customer, when the work was not done, or not as agreed.",
+    "Release to the pro, when the work was done as agreed.",
+    "Or split: part goes back to the customer, and the rest to the pro.",
+    "Good to know.",
+    "On a cash job, Trothen holds no money, so there is nothing to split. Decide for one side, and explain in the note.",
+    "You can download the list of disputes as a PDF.",
+    "Every decision is kept in the audit log.",
+    "Read, listen, then decide. Be fair to both sides."
+   ]
+  }
+ },
+ {
+  "key": "fraud",
+  "section": "fraud",
+  "title": "Fraud and safety flags",
+  "tagline": "What the automatic checks catch, and what to do",
+  "explainer": {
+   "file": "help-admin-x-adm-fraud",
+   "seconds": 57,
+   "transcript": [
+    "This video explains Fraud and Safety: flags raised automatically when something looks wrong, and what to do with them.",
+    "Trothen screens sign-ups, bookings and messages automatically. Here are examples of what gets flagged.",
+    "Two accounts with the same phone number, booking each other.",
+    "Unusually many purchases in one day.",
+    "Messages asking to pay outside Trothen.",
+    "A host who cancels three times in 90 days.",
+    "What do you do?",
+    "Look at the flag, and the account behind it.",
+    "Talk to the person, if you need to.",
+    "Then resolve the flag, with a note saying what you found and did.",
+    "A flag never suspends anyone by itself. A person always decides.",
+    "Most flags are innocent. Some are not. Look carefully, and write what you found."
+   ]
+  }
+ },
+ {
+  "key": "golive",
+  "section": "golive",
+  "title": "Go-Live and data cleanup",
+  "tagline": "Launch for real, and remove test accounts safely",
+  "explainer": {
+   "file": "help-admin-x-adm-golive",
+   "seconds": 59,
+   "transcript": [
+    "This video is for super admins. It explains Go-Live, the checklist before real people use Trothen, and Data Cleanup.",
+    "Go-Live, step by step.",
+    "First, send yourself a test email. Sign-in codes and password resets go by email, so check it works.",
+    "Step one: create your super admin account, with your own email.",
+    "Step two: remove all the demo data. Preview what will be removed first.",
+    "Step three: choose the countries you serve. Only these appear on the home page and at sign-up.",
+    "Data Cleanup removes unused test accounts in a country.",
+    "Accounts with any booking, payment, or dispute history are never removed.",
+    "Always preview first, then tick exactly what to remove. Every cleanup is logged.",
+    "Only a super admin can do these. Take it one step at a time."
+   ]
+  },
+  "sections": [
+   "golive",
+   "datacleanup"
   ]
+ },
+ {
+  "key": "locations",
+  "section": "locations",
+  "title": "Admins and their access",
+  "tagline": "Add team members, choose their role and area",
+  "explainer": {
+   "file": "help-admin-x-adm-locations",
+   "seconds": 78,
+   "transcript": [
+    "This video is for super admins and team managers. It explains Locations and Admins: adding team members, and choosing what they can see and do.",
+    "To add a team member, type their name, their email, and a temporary password. They set their own when they first sign in.",
+    "Choose their city.",
+    "Choose their role: Regional Admin, Verification, Finance, Customer Service, Legal, Sales, HR, or Custom.",
+    "And what they cover: the whole country, which we recommend, or only one city. One city only finds people who typed the city exactly the same way.",
+    "Give only what is needed.",
+    "Team roles like Finance see every country, unless you tick the box to limit them to the area.",
+    "With Custom, you tick exactly the actions a person may do, in each area.",
+    "And Access Logs show which administrator viewed sensitive data, and when. Check them regularly.",
+    "When someone leaves the team, turn their admin account off the same day.",
+    "A team manager can add people to their team, and suspend them.",
+    "The right people, with the right access, and nothing more."
+   ]
+  },
+  "sections": [
+   "locations",
+   "accesslogs",
+   "myteam"
+  ]
+ },
+ {
+  "key": "messages",
+  "section": "contact-submissions",
+  "title": "Messages from the website",
+  "tagline": "Contact Us messages and job applications",
+  "explainer": {
+   "file": "help-admin-x-adm-messages",
+   "seconds": 51,
+   "transcript": [
+    "This video explains two lists of messages that come from the Trothen website: Contact Us messages, and job applications from the Careers page.",
+    "Contact Us messages are questions and requests from the public.",
+    "They go to the admin for that city, or to everyone if no one covers it.",
+    "Reply by email, then change the status, so the team knows it is done.",
+    "Job applications come from the Careers page.",
+    "They are seen by the HR team.",
+    "Change the status as you go: new, being reviewed, and done.",
+    "Remember: these messages contain people's personal details.",
+    "Never share them outside the team.",
+    "Answer every message, even with a short reply."
+   ]
+  },
+  "sections": [
+   "contact-submissions",
+   "careers"
+  ]
+ },
+ {
+  "key": "overview",
+  "section": "overview",
+  "title": "Your first day in Admin",
+  "tagline": "What you see, and what you can do",
+  "explainer": {
+   "file": "help-admin-x-adm-overview",
+   "seconds": 95,
+   "transcript": [
+    "This video is for new members of the Trothen team. It explains how Admin is organised, and what you can see and do.",
+    "On the left is the Admin menu.",
+    "Each area is one job: approving people, checking IDs, deciding disputes, sending payouts, and more.",
+    "You only see the areas your role allows. For example, the Verification Team sees verification, and Finance sees payments.",
+    "And you only see people in your region: one city, one country, or everywhere, as your super admin decided.",
+    "These are the roles.",
+    "A Regional Admin can do everything for their city or country.",
+    "The Verification Team checks identities.",
+    "Finance handles money held by Trothen, payouts and payment codes.",
+    "Customer Service handles approvals, verification and disputes.",
+    "Legal can read disputes and transactions, without changing them. And a custom admin can do exactly the actions a super admin ticked for them.",
+    "Your duties.",
+    "Everything you open about a person, like an ID or a payment, is written to the access log, with your name and the time.",
+    "Never share what you see outside Trothen. And never ask anyone for their password or PIN.",
+    "For each area, there is a help video like this one, in Admin, under Help videos.",
+    "Welcome to the team. Start with the help video for your own area."
+   ]
+  }
+ },
+ {
+  "key": "payments",
+  "section": "payments",
+  "title": "Money held and payouts",
+  "tagline": "See the money held, and send pros their payouts",
+  "explainer": {
+   "file": "help-admin-x-adm-payments",
+   "seconds": 80,
+   "transcript": [
+    "This video is for Finance. It explains the Payments area: the money Trothen holds, and sending pros their payouts.",
+    "At the top are the numbers.",
+    "Escrow currently held: money customers paid, waiting for the work to be done.",
+    "Escrow released: paid out to pros so far.",
+    "And commission and service fees: Trothen's own income. Choose dates to see a period, and download the transactions as a PDF.",
+    "Here is how a payout is sent.",
+    "A pro taps Cash out, and the payout joins the queue.",
+    "Check the details: the wallet or bank, and the name. The full number is shown only here.",
+    "Send the money from Trothen's Mobile Money or bank account. Or, where it is set up, tap Send by MTN MoMo.",
+    "Then tap Mark as sent, with the transaction ID from the receipt. The pro sees the reference.",
+    "If something is wrong.",
+    "A wrong number, or a name that does not match: do not send.",
+    "Tap Can't send, and say why. The pro is told what to fix.",
+    "The payout stays in the queue until it is fixed.",
+    "Every payout is recorded, and the pro gets a statement by email."
+   ]
+  }
+ },
+ {
+  "key": "people",
+  "section": "people",
+  "title": "Customers and providers",
+  "tagline": "Find a person, see their account, and pause or reactivate it",
+  "explainer": {
+   "file": "help-admin-x-adm-people",
+   "seconds": 74,
+   "transcript": [
+    "This video explains Customers and Providers: the list of everyone in your region, and what you can do with an account.",
+    "Search for a person by name, email or phone.",
+    "Filter to see only customers, or only providers.",
+    "Open an account to see their bookings, their verification, their score, and any fraud flags.",
+    "What can you do with an account?",
+    "Suspend it, for a serious problem: fraud, threats, or repeated no-shows. A suspended person cannot book or be booked, and is not shown in search.",
+    "Reactivate it, when the problem is resolved.",
+    "For a pro with a low Trothen Score, talk to them first. A pause is recommended by the system, but only an administrator applies it.",
+    "Be fair.",
+    "Never suspend someone because of one complaint you have not checked.",
+    "Always write the reason. The person is told.",
+    "Closing an account is the person's own choice, in their Settings. Their personal data is then removed.",
+    "Every action is recorded. Be careful, and be fair."
+   ]
+  }
+ },
+ {
+  "key": "pricing",
+  "section": "pricing",
+  "title": "Plans and pricing",
+  "tagline": "Plan prices per country, and the monthly plan fee",
+  "explainer": {
+   "file": "help-admin-x-adm-pricing",
+   "seconds": 85,
+   "transcript": [
+    "This video explains Plans and Pricing: the pros' plans, their prices in each country, and the monthly plan fee.",
+    "There are three plans for pros.",
+    "Starter: 13 percent commission. Everyone starts here.",
+    "Pro: 12 percent. A pro moves up by themselves after 50 jobs, a rating of 4.7, and few cancellations.",
+    "Super Pro: 10 percent, after 500 jobs, a rating of 4.85, and a year on Trothen.",
+    "Each plan has a monthly price.",
+    "A base price in US dollars.",
+    "A country can have its own price, in its own money, that suits local incomes.",
+    "Exchange rates update by themselves every day. A super admin can also set a rate by hand.",
+    "The monthly plan fee.",
+    "It is off until it is switched on in two places: on the server, and here, by a super admin.",
+    "Then every pro gets 30 days' notice before the first invoice. Nothing is ever back-billed.",
+    "It is never charged to a card. It is taken from the pro's payouts, never more than half of one payout. You can waive an invoice if needed.",
+    "Set prices people can afford, and give fair notice of any change."
+   ]
+  }
+ },
+ {
+  "key": "promotions",
+  "section": "promotions",
+  "title": "Promotions and announcements",
+  "tagline": "Tell people news, and tell the team",
+  "explainer": {
+   "file": "help-admin-x-adm-promotions",
+   "seconds": 67,
+   "transcript": [
+    "This video explains two ways to tell people news: Promotions, for customers and pros, and Announcements, for the Trothen team.",
+    "Promotions are for customers and pros.",
+    "Write a title, a message, and add a picture if you like.",
+    "Choose who sees it: customers, pros, or both.",
+    "A regional admin's promotion reaches their own city. A super admin can post everywhere.",
+    "You can also send it by email to everyone who sees it: for policy changes, service notices, or offers.",
+    "Announcements are for the Trothen team.",
+    "Official messages to Regional Managers.",
+    "With a priority, and a time to send them.",
+    "And you can see who has read each one.",
+    "Before you post.",
+    "Never promise what Trothen does not do, like a price or a refund rule.",
+    "Read it twice. Check the spelling, the dates, and the prices.",
+    "Short, clear, and true. That is a good message."
+   ]
+  },
+  "sections": [
+   "promotions",
+   "announcements"
+  ]
+ },
+ {
+  "key": "reports",
+  "section": "reports",
+  "title": "Reports and referrals",
+  "tagline": "Where demand is, how pros perform, and who invites others",
+  "explainer": {
+   "file": "help-admin-x-adm-reports",
+   "seconds": 41,
+   "transcript": [
+    "This video explains Reports and Referrals: where customers need work, how each kind of work performs, and who is inviting new people.",
+    "Reports show demand: how many jobs were booked in each kind of work.",
+    "The last 30 days, day by day.",
+    "Where customers posted a job and no pro was found. This tells you where to find more pros.",
+    "And the top pros.",
+    "Referrals show who invited others to Trothen,",
+    "and the sign-ups that came through each person's link.",
+    "Use these numbers to decide where to find pros, and what to promote."
+   ]
+  },
+  "sections": [
+   "reports",
+   "referrals"
+  ]
+ },
+ {
+  "key": "sales",
+  "section": "sales",
+  "title": "Sales inquiries and organizations",
+  "tagline": "From a business's first message to their own team on Trothen",
+  "explainer": {
+   "file": "help-admin-x-adm-sales",
+   "seconds": 51,
+   "transcript": [
+    "This video is for the Sales team. It explains Sales Inquiries and Organizations: businesses that want Trothen for a whole team.",
+    "Here is the journey.",
+    "A business writes through the Contact Sales button on the Custom plan.",
+    "You reply, talk, and write the agreed price and notes on the inquiry.",
+    "When it is agreed, turn the inquiry into an organization, with a number of seats.",
+    "Then invite their team, with an invite link.",
+    "An organization has its own agreed commission rate, shown on each of its pros' payouts.",
+    "Seats: you can add or remove people.",
+    "And invite links, which you can cancel at any time.",
+    "Write every agreement on the inquiry, so the whole team can see it."
+   ]
+  },
+  "sections": [
+   "sales",
+   "organizations"
+  ]
+ },
+ {
+  "key": "scores",
+  "section": "providerscores",
+  "title": "Provider Scores",
+  "tagline": "What the Trothen Score shows, and when to step in",
+  "explainer": {
+   "file": "help-admin-x-adm-scores",
+   "seconds": 79,
+   "transcript": [
+    "This video explains Provider Scores: every pro ranked by their Trothen Score, and what to do when a score drops.",
+    "The Trothen Score runs from 0 to 99, updated every day.",
+    "Jobs completed: 20 points.",
+    "Customers who say they trust the pro: 20 points.",
+    "Not cancelling: 15 points.",
+    "Arriving on time: 15 points.",
+    "And 30 more for the ID, answering jobs, repeat customers, papers, and guarantors.",
+    "The score decides how many new job matches a pro gets each week.",
+    "From 90, no limit.",
+    "From 70 to 89, 10 to 30 a week.",
+    "From 40 to 69, 3 to 7 a week.",
+    "Under 20, new matches are paused until the team reviews.",
+    "When a score drops.",
+    "Open the breakdown, and see which part fell: cancellations, lateness, or trust.",
+    "Call the pro. Understand why, and see whether they can be helped to recover.",
+    "The system only recommends a pause. An administrator decides.",
+    "A score is a signal, not a verdict. Look, call, then decide."
+   ]
+  }
+ },
+ {
+  "key": "settings",
+  "section": "settings",
+  "title": "Admin settings",
+  "tagline": "Support numbers, booking answer time, wording and backups",
+  "explainer": {
+   "file": "help-admin-x-adm-settings",
+   "seconds": 63,
+   "transcript": [
+    "This video explains the Admin settings: the things that change how Trothen works for everyone in your area.",
+    "Support numbers.",
+    "Set your city's WhatsApp and phone number. People in your city see it in Chat with us, and Call.",
+    "If you set none, they see the platform-wide number.",
+    "The booking answer time.",
+    "How long a pro has to accept or decline a new booking.",
+    "It is shorter when the job is soon.",
+    "If the pro does not answer in time, the booking is cancelled, and the customer refunded. Changes apply to new bookings only.",
+    "A super admin also manages:",
+    "the getting-started guide, a PDF offered to every new customer and pro,",
+    "the wording of the app, and the privacy notice,",
+    "how long people stay signed in,",
+    "and the nightly backups of Trothen's records.",
+    "Change settings carefully. They affect everyone in your area."
+   ]
+  }
+ },
+ {
+  "key": "tokens",
+  "section": "tokens",
+  "title": "Tokens: sales, top-ups and settings",
+  "tagline": "What pros bought and spent, and recording cash top-ups",
+  "explainer": {
+   "file": "help-admin-x-adm-tokens",
+   "seconds": 82,
+   "transcript": [
+    "This video explains the Tokens area: what pros have bought and spent, checking payment codes, and recording top-ups paid outside the app.",
+    "At the top, you see the tokens pros hold now. That is money paid in advance, owed to them in service.",
+    "What was spent in the last 30 days.",
+    "And purchases still waiting for their Mobile Money payment to be confirmed.",
+    "Pros who send Mobile Money themselves get a code. When a pro says they paid, check the code and the amount on the statement, then confirm.",
+    "A top-up paid outside the app, like cash at an office, is recorded from the receipt. You never type a number of tokens: they are worked out from what was paid.",
+    "Each receipt or transaction number can be used once, so the same payment is never recorded twice.",
+    "Settings are for a super admin only.",
+    "The packs, the limits, and the countries where tokens are on.",
+    "The test-purchase switch must stay off on the live site, or pros would get tokens for free.",
+    "For the accounts: token sales count as income only when tokens are spent. Unspent tokens are a balance owed to pros.",
+    "Every token is a line in the ledger, with what it was for."
+   ]
+  }
+ },
+ {
+  "key": "verification",
+  "section": "verification",
+  "title": "Check IDs and guarantors",
+  "tagline": "Approve identities, chase missing IDs, and call guarantors",
+  "explainer": {
+   "file": "help-admin-x-adm-verification",
+   "seconds": 125,
+   "transcript": [
+    "This video explains the Verification Queue: checking people's IDs, chasing people who have not sent one, and calling pros' guarantors.",
+    "For each ID in the queue, check four things.",
+    "The name on the ID matches the account. Small spelling differences are fine; a different person is not.",
+    "The face photo matches the photo on the ID.",
+    "The document is real and readable. Not a screenshot, and not a photo of a screen.",
+    "And the document has not expired.",
+    "Then decide.",
+    "Approve, when all four checks pass. The person can then book, or be found by customers.",
+    "Reject, when something is wrong, and say exactly what to fix, like: the back of the ID is blurred. They are told, and can send it again.",
+    "Below the queue are people who are not verified yet: they never sent an ID, or theirs was turned down. Tap Remind to nudge them.",
+    "There is also a list of accounts marked verified without an approved ID on file. These are old accounts. Ask everyone on that list for their ID.",
+    "Pros add guarantors: people who vouch for them. They take the place of a background check.",
+    "Call each guarantor. Ask if they know the pro, and how.",
+    "Then mark them confirmed, or not. Confirmed guarantors raise the pro's Trothen Score.",
+    "A guarantor with the pro's own phone number or name is not valid. Trothen flags these for you.",
+    "ID photos are private.",
+    "Never download, copy or share them.",
+    "Every document you open is written to the access log.",
+    "And ID files are deleted by themselves some time after the decision. Past checks stay listed, without the photos.",
+    "Every customer and pro on Trothen passed your check. Take your time, and be fair."
+   ]
+  }
+ },
+ {
+  "key": "callhealth",
+  "section": "callhealth",
+  "title": "Call health",
+  "tagline": "Why in-app calls worked or not, and what to fix",
+  "explainer": {
+   "file": "help-admin-x-adm-callhealth",
+   "seconds": 75,
+   "transcript": [
+    "This video is for super admins. It explains Call health: how the calls people make inside Trothen are going, and what to fix when they fail.",
+    "What do you see?",
+    "The last 50 calls made in Trothen.",
+    "For each one, what happened, in plain words: they talked, nobody answered, or the call was cut off.",
+    "And this week's totals.",
+    "What do the results mean?",
+    "Talked: the call worked.",
+    "Did not ring, because Trothen was not open: the other person did not have the app open, so the phone could not ring.",
+    "Answered, but the sound never connected: usually the network blocked it.",
+    "Cut off: the call dropped part way, often a weak signal.",
+    "When calls fail.",
+    "Look for a pattern: is it one person, or everyone?",
+    "Read what to fix, shown on the page.",
+    "Then check again after the fix.",
+    "Many failures for everyone at once usually means a set-up problem with the call service, not people.",
+    "Good calls help customers and pros agree, without sharing their phone numbers. Check this page now and then."
+   ]
+  }
  }
 ]

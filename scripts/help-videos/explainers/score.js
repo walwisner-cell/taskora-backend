@@ -1,0 +1,19 @@
+// Animated explainer: Trothen Score and plans (for pros).
+module.exports = {
+  key: 'score', title: 'Your Trothen Score and plan', tagline: 'What your score means, and how to move up a plan', topic: 'Pros', audience: 'provider',
+  scenes: [
+    { kind: 'title', icon: 'star', title: 'Your Trothen **Score** and **plan**', sub: 'What your score means, and how to move up a plan.',
+      beats: ['This video explains your Trothen Score: what it is, how it changes, and why it matters. And how your plan moves up, from Starter to Pro to Super Pro.'] },
+    { kind: 'list', h: 'What is the **Trothen Score**?', items: [{ icon: 'star', t: 'A number from **0 to 99**', sub: 'It shows how much customers can trust you.' }, { icon: 'refresh', t: 'Updated **every day**', sub: 'From your real work on Trothen.' }, { icon: 'users', t: 'New pros start **fairly**', sub: 'You are not marked down for having few jobs yet.' }],
+      beats: ['What is the Trothen Score?', 'It is a number from 0 to 99. It shows how much customers can trust you.', 'It is updated every day, from your real work on Trothen.', 'New pros start fairly. You are not marked down just because you have done few jobs yet.'] },
+    { kind: 'table', h: 'What **counts**', head: ['Part', 'Points'], rows: [{ c: ['Jobs completed', '20'] }, { c: ['Customers who trust you', '20'] }, { c: ['Not cancelling', '15'] }, { c: ['Arriving on time', '15'] }, { c: ['ID, answering, repeat customers, papers, guarantors', '30'] }],
+      beats: ['Here is what counts, out of 100 points.', 'Jobs completed: 20 points.', 'Customers who say they trust you: 20 points.', 'Not cancelling: 15 points.', 'Arriving on time: 15 points.', 'And 30 more for your verified ID, answering jobs, repeat customers, your licence or papers, and your guarantors.'] },
+    { kind: 'table', h: 'Your score and **your jobs**', head: ['Score', 'New job matches each week'], rows: [{ c: ['90 to 99', 'No limit'] }, { c: ['70 to 89', '10 to 30'] }, { c: ['40 to 69', '3 to 7'] }, { c: ['Under 20', 'Paused, until the team reviews'] }],
+      beats: ['Why does it matter? Your score decides how many new job matches you get each week.', 'From 90 to 99, there is no limit.', 'From 70 to 89, between 10 and 30 a week.', 'From 40 to 69, between 3 and 7 a week.', 'Under 20, new matches are paused until the Trothen team reviews. Finishing your current jobs well is the fastest way back up.'] },
+    { kind: 'timeline', h: 'Your **plan** moves up by itself', points: [{ icon: 'user', t: 'Starter', sub: '13% commission' }, { icon: 'star', t: 'Pro', sub: '50 jobs · rating 4.7 · 12%' }, { icon: 'star', t: 'Super Pro', sub: '500 jobs · 4.85 · a year · 10%' }],
+      beats: ['Your plan moves up by itself as you grow.', 'Everyone starts on Starter, with 13 percent commission.', 'After 50 completed jobs, with a rating of at least 4.7, and few cancellations, you move to Pro: 12 percent commission, and a better place in search.', 'After 500 jobs, a rating of at least 4.85, very few cancellations, and a year on Trothen, you move to Super Pro: 10 percent commission.'] },
+    { kind: 'list', h: 'How to **raise** your score', items: [{ icon: 'check', t: 'Finish every job you accept' }, { icon: 'clock', t: 'Arrive at the agreed time', sub: 'Tap Leave Now and Arrived.' }, { icon: 'chat', t: 'Answer jobs and messages quickly' }, { icon: 'heart', t: 'Be honest and kind', sub: 'Customers who trust you come back, and say so.' }],
+      beats: ['How do you raise your score?', 'Finish every job you accept.', 'Arrive at the agreed time, and use Leave Now and Arrived, so it is recorded.', 'Answer jobs and messages quickly.', 'And be honest and kind. Customers who trust you come back, and they say so in their review.'] },
+    { kind: 'end', title: 'Grow with **Trothen**', sub: 'See your score and plan on your Overview.', beats: ['Your score and your plan are on your Overview, with what you need for the next step. Keep going.'] },
+  ],
+};

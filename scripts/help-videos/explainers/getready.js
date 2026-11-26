@@ -1,0 +1,18 @@
+// Animated explainer: get ready to take work (pros).
+module.exports = {
+  key: 'getready', title: 'Get ready to take work', tagline: 'The checklist every new pro goes through', topic: 'Pros', audience: 'provider',
+  scenes: [
+    { kind: 'title', icon: 'check', title: 'Get ready to take **work**', sub: 'The checklist every new pro goes through.',
+      beats: ['This video is for new pros. It goes through the checklist you complete before customers can find and book you.'] },
+    { kind: 'phone', n: '1', h: 'Your **Get ready** list', points: [{ b: 0, icon: 'home', t: 'On your **Overview**' }, { b: 1, icon: 'check', t: 'Done items are ticked' }, { b: 2, icon: 'arrow', t: 'Tap an item to fix it' }],
+      rows: [{ k: 'head', t: 'Get ready' }, { k: 'card', icon: 'check', t: 'ID verified', sub: 'Done', on: true, b: 1 }, { k: 'card', icon: 'user', t: 'Add a profile photo', sub: 'Needed to be shown to customers', b: 0, tap: 2 }, { k: 'card', icon: 'wallet', t: 'Add your payout details', sub: 'Needed to be paid' }, { k: 'card', icon: 'coin', t: 'Tokens for cash jobs', sub: 'Recommended' }],
+      beats: ['Your Get ready list is on your Overview. Trothen checks your real account, and shows what is missing.', 'Items that are done are ticked.', 'Tap any item to go straight to the place where you fix it.'] },
+    { kind: 'table', h: 'What is on the **list**', head: ['Item', 'Why'], rows: [{ c: ['ID verified', 'Customers know who comes to their home'] }, { c: ['Profile photo', 'You are not shown without one'] }, { c: ['Your kinds of work and prices', 'You get matches for these'] }, { c: ['Payout details', 'So you can be paid'] }, { c: ['Licence date, if your work needs one', 'An expired licence stops you accepting jobs'] }],
+      beats: ['Here is what is on the list, and why.', 'Your ID verified, so customers know who comes to their home.', 'A profile photo. You are not shown to customers without one.', 'Your kinds of work and your prices. You only get job matches for these.', 'Your payout details, so you can be paid.', 'And if your work needs a licence, its date. An expired licence stops you accepting jobs.'] },
+    { kind: 'list', h: '**Guarantors**: people who vouch for you', items: [{ icon: 'users', t: 'Add people who know your work', sub: 'A past employer, a teacher, a community leader.' }, { icon: 'call', t: 'The Trothen team **calls** them' }, { icon: 'x', tone: 'bad', t: 'Never your own number or name', sub: 'A guarantor must be someone else. Fakes are caught.' }],
+      beats: ['Guarantors are people who vouch for you. They take the place of a background check.', 'Add people who know you and your work: a past employer, a teacher, or a community leader. Write their number with the country code.', 'The Trothen team calls them. Confirmed guarantors raise your Trothen Score.', 'A guarantor must be someone else. Your own phone number or your own name is caught, and does not count.'] },
+    { kind: 'list', from: 0, h: 'Then, to take **cash jobs**', items: [{ icon: 'coin', t: 'Buy a few **tokens**', sub: 'Trothen\'s commission on cash jobs comes from them.' }, { icon: 'shield', t: 'Or take jobs paid **through Trothen**', sub: 'The commission comes from your payout. No tokens needed.' }],
+      beats: ['Then, if you want to take cash jobs, where the customer pays you directly, buy a few tokens. Trothen\'s commission on cash jobs comes from them. There is a video about tokens.', 'Jobs paid through Trothen do not need tokens: the commission comes from your payout.'] },
+    { kind: 'end', title: 'You are **ready**', sub: 'Next: watch "Job matches: find work".', beats: ['When everything is ticked, you are ready. Customers can find you, and jobs start coming. Welcome to Trothen.'] },
+  ],
+};

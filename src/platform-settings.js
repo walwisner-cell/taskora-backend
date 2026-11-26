@@ -62,6 +62,8 @@ const DEFAULTS = {
   // v111: passenger rides. Countries where rides are switched on (a super admin
   // can change this). Even when a country is on, no ride can happen until an
   // admin has approved at least one ride driver there.
+  rentalGuestFeePercent: 5, // v180: Trothen's service fee a rental guest pays on top of the price
+  rentalHostFeePercent: 3,  // v180: taken from the price when a guest books (no commission at payout)
   rideEnabledCountries: ['Liberia'],
   rideMaxKm: 40,          // longest trip a rider can request
   rideSearchKm: 15,       // how far from the pickup a driver can be and still be offered

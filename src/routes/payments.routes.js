@@ -1006,7 +1006,7 @@ async function sweepUnstartedBookings() {
     const a = c.arrival && c.arrival.agreed ? Date.parse(String(c.arrival.agreed.at).slice(0, 10) + 'T00:00:00Z') : null;
     return d == null ? a : a == null ? d : Math.max(d, a);
   };
-  const list = await db.filter('contracts', c => c.status === 'active' && !c.ride && !c.delivery && !c.storeOrder && !c.goodsOnly
+  const list = await db.filter('contracts', c => c.status === 'active' && !c.ride && !c.delivery && !c.storeOrder && !c.goodsOnly && !c.rental
     && !c.onMyWayAt && !c.arrivedAt && !c.workDoneAt && dayOf(c) != null && today - dayOf(c) >= UNSTARTED_ASK_DAYS * 86400e3);
   let asked = 0, cancelled = 0;
   for (const c0 of list) {
@@ -1063,6 +1063,7 @@ async function handleContractComplete(req, res) {
     return res.status(400).json({ error: `This booking is already ${contract.status} and can't be marked complete` });
   }
   if (contract.ride && !contract.ride.startedAt) return res.status(400).json({ error: 'The trip has not started yet. If you no longer need the ride, cancel it instead.' }); // v111
+  if (contract.rental) return res.status(409).json({ code: 'USE_RENTALS', error: 'A rental booking is finished from Market → Rentals → My trips.' }); // v180
 
   // Tipping — genuinely optional (default $0, never required to complete
   // a job), and deliberately kept separate from the escrow/commission
@@ -1216,6 +1217,7 @@ async function handleContractCancel(req, res) {
     c.id === req.params.id && (c.customerId === req.user.sub || c.providerId === req.user.sub)
   );
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.rental) return res.status(409).json({ code: 'USE_RENTALS', error: 'Cancel a rental booking from Market → Rentals, where its cancellation rule is applied.' }); // v180
   if (!['active', 'pending_agreement', 'pending_provider_confirmation', 'awaiting_payment'].includes(contract.status)) {
     return res.status(400).json({ error: `This booking is already ${contract.status} and can't be cancelled` });
   }

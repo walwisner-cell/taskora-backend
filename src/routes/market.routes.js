@@ -85,16 +85,24 @@ router.get('/market/categories', (req, res) => res.json({ categories: market.MAR
 // v177: the aisle Trothen would put a good in, from its name, so the form can show the right details while the seller types.
 router.get('/market/guess-category', listLimiter, (req, res) => res.json({ category: market.guessCategory(String(req.query.text || '').slice(0, 300)) || null }));
 
+// v183: the Market search, with Trothen's search engine (public/app/search-core.js):
+// typos, plurals, other names for the same thing, ranked by best match, filters for
+// price, condition, place and verified sellers, counts per category, and "Did you mean".
+const SEARCH = require('../../public/app/search-core.js');
+const num = (v) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : null; };
 router.get('/market/items', listLimiter, async (req, res) => {
   const me = await viewer(req);
   const country = String(req.query.country || (me && me.country) || '').trim();
-  const q = String(req.query.q || '').trim().toLowerCase().slice(0, 80);
-  const words = q.split(/\s+/).filter(w => w.length > 1);
+  const q = String(req.query.q || '').trim().slice(0, 100);
   const category = market.MARKET_CATEGORIES.includes(req.query.category) ? req.query.category : null;
   const type = ['stores', 'people'].includes(req.query.type) ? req.query.type : 'all';
-  const sort = ['newest', 'price_asc', 'price_desc', 'rating'].includes(req.query.sort) ? req.query.sort : 'newest';
-  const matches = (text) => !words.length || words.every(w => String(text).toLowerCase().includes(w));
-  const items = [];
+  const SORTS = ['relevance', 'newest', 'price_asc', 'price_desc', 'rating'];
+  const sort = SORTS.includes(req.query.sort) ? req.query.sort : (q ? 'relevance' : 'newest');
+  const minPrice = num(req.query.minPrice), maxPrice = num(req.query.maxPrice); // US dollars
+  const condition = Object.keys(market.CONDITIONS).includes(req.query.condition) ? req.query.condition : null;
+  const city = String(req.query.city || '').trim().slice(0, 60);
+  const verifiedOnly = req.query.verified === '1';
+  const items = []; // every item for sale in this country, before the words and filters
   const cache = new Map();
   const settings = await store.storeSettings();
   if (type !== 'people' && settings.enabled) {
@@ -104,41 +112,60 @@ router.get('/market/items', listLimiter, async (req, res) => {
       for (const g of await db.filter('storeGoods', x => x.providerId === sel.id)) {
         if (!store.isOnShelf(g) || !store.anyInStock(g)) continue; // v162: goods with sizes or colours too
         const cats = market.goodCategories(g, sel); // v164: each good in its own aisle
-        if (category && !cats.includes(category)) continue;
-        if (!matches(`${g.name} ${g.description || ''} ${sel.store.name} ${cats.join(' ')} ${g.brand || ''} ${specs.specsText(g.specs, g.specsExtra)}`)) continue; // v177: and its details
         const pf = store.goodPriceFields(g, currencies);
         items.push({
-          kind: 'store', id: g.id, title: g.name, description: (g.description || '').slice(0, 140), category: cats[0], price: store.goodUsdPrice(g, currencies),
+          kind: 'store', id: g.id, title: g.name, description: (g.description || '').slice(0, 140), category: cats[0], categories: cats, price: store.goodUsdPrice(g, currencies),
           localPrice: pf.priceCurrency && pf.priceCurrency !== 'USD' ? { amount: pf.priceLocal, code: pf.priceCurrency, symbol: pf.priceSymbol || '' } : null,
-          unit: g.unit || '', photo: (g.photoUrls || [])[0] || null, city: sel.city || '', country: sel.country || '',
+          unit: g.unit || '', photo: (g.photoUrls || [])[0] || null, city: sel.city || '', country: sel.country || '', condition: 'new',
           providerId: sel.id, storeName: sel.store.name, seller: await sellerInfo(sel, cache), createdAt: g.updatedAt || g.createdAt,
           hasOptions: Array.isArray(g.variants) && g.variants.length > 0, soldOut: !store.anyInStock(g), // v162: for Add to cart
           specRows: specs.specRows(g.specs, g.specsExtra, cats[0]), // v177: "128 GB · Dual SIM" on the card
           ...(isTradeBuyer(me, sel.id) && Number(g.tradePrice) > 0 && Number(g.tradePrice) < store.goodUsdPrice(g, currencies) ? { tradePrice: money(g.tradePrice) } : {}), // v140
+          _f: [{ text: g.name, weight: 3 }, { text: `${g.brand || ''} ${specs.specsText(g.specs, g.specsExtra)}`, weight: 2 }, { text: cats.join(' '), weight: 2 }, { text: sel.store.name, weight: 1.5 }, { text: g.description || '', weight: 1 }],
         });
       }
     }
   }
   if (type !== 'stores') {
-    const listings = await db.filter('marketListings', l => l.status === 'live' && (!country || sameText(l.country, country)) && (!category || l.category === category));
+    const listings = await db.filter('marketListings', l => l.status === 'live' && (!country || sameText(l.country, country)));
     const curCache = new Map();
     for (const l of listings) {
-      if (!matches(`${l.title} ${l.description || ''} ${l.category} ${specs.specsText(l.specs, l.specsExtra)}`)) continue; // v177
       const seller = await db.find('users', u => u.id === l.sellerId);
       if (!seller || seller.active === false || seller.closedAt || require('./market-admin.routes').banOf(seller)) continue;
       if (!curCache.has(l.country)) curCache.set(l.country, await store.currenciesFor(seller));
       const v = await listingView(l, me, curCache.get(l.country), cache);
-      items.push({ ...v, description: v.description.slice(0, 140), photo: v.photoUrls[0] || null });
+      items.push({ ...v, categories: [l.category], description: v.description.slice(0, 140), photo: v.photoUrls[0] || null,
+        _f: [{ text: l.title, weight: 3 }, { text: specs.specsText(l.specs, l.specsExtra), weight: 2 }, { text: l.category, weight: 2 }, { text: l.description || '', weight: 1 }] });
     }
   }
+  // the filters that aren't words
+  const fits = (it) => (minPrice == null || it.price >= minPrice) && (maxPrice == null || it.price <= maxPrice)
+    && (!condition || it.condition === condition) && (!verifiedOnly || (it.seller && it.seller.verified))
+    && (!city || SEARCH.score(city, it.city || '').matched > 0);
+  let pool = items.filter(fits);
+  // the words
+  const found = SEARCH.search(pool, q, (it) => it._f);
+  const scoreOf = new Map(found.results.map(r => [r.item, r.score]));
+  let hits = found.results.map(r => r.item);
+  // counts per category (before choosing a category), so people see where things are
+  const facetCounts = {};
+  for (const it of hits) for (const c of new Set(it.categories || [it.category])) facetCounts[c] = (facetCounts[c] || 0) + 1;
+  if (category) hits = hits.filter(it => (it.categories || [it.category]).includes(category));
   const by = {
+    relevance: (a, b) => (scoreOf.get(b) || 0) - (scoreOf.get(a) || 0) || String(b.createdAt).localeCompare(String(a.createdAt)),
     newest: (a, b) => String(b.createdAt).localeCompare(String(a.createdAt)),
     price_asc: (a, b) => a.price - b.price,
     price_desc: (a, b) => b.price - a.price,
     rating: (a, b) => ((b.seller && b.seller.rating) || 0) - ((a.seller && a.seller.rating) || 0) || String(b.createdAt).localeCompare(String(a.createdAt)),
-  }[sort];
-  items.sort(by);
-  const page = Math.max(1, Number(req.query.page) || 1), per = 40;
+  }[q ? sort : (sort === 'relevance' ? 'newest' : sort)];
+  hits.sort(by);
+  // "Did you mean": only when the words found nothing, or only part of them
+  let didYouMean = null;
+  if (q && (!hits.length || found.relaxed)) {
+    const vocab = SEARCH.vocabulary(items.map(it => `${it.title} ${(it.categories || []).join(' ')} ${it.storeName || ''}`));
+    didYouMean = SEARCH.didYouMean(q, vocab);
+  }
+  const page = Math.max(1, Math.min(50, Number(req.query.page) || 1)), per = 40;
   res.set('Cache-Control', 'no-store');
   // v164: the countries with something for sale, for a visitor's country choice
   let countries;
@@ -148,9 +175,36 @@ router.get('/market/items', listLimiter, async (req, res) => {
     for (const l of await db.filter('marketListings', l => l.status === 'live' && l.country)) set.add(l.country);
     countries = [...set].sort();
   }
-  res.json({ items: items.slice((page - 1) * per, page * per), total: items.length, page, perPage: per, country: country || null, ...(countries ? { countries } : {}) });
+  const clean = ({ _f, categories, ...it }) => it;
+  res.json({
+    items: hits.slice((page - 1) * per, page * per).map(clean), total: hits.length, page, perPage: per, sort,
+    relaxed: !!(q && found.relaxed), didYouMean, facets: { categories: facetCounts },
+    country: country || null, ...(countries ? { countries } : {}),
+  });
 });
-
+// v183: suggestions while typing: names of goods, brands and categories that start
+// with (or nearly match) what has been typed. At most 8, most common first.
+router.get('/market/autocomplete', listLimiter, async (req, res) => {
+  const me = await viewer(req);
+  const q = String(req.query.q || '').trim().slice(0, 60);
+  res.set('Cache-Control', 'no-store');
+  if (SEARCH.fold(q).length < 2) return res.json({ suggestions: [] });
+  const country = String(req.query.country || (me && me.country) || '').trim();
+  const names = new Map(); // folded → { text, n, kind }
+  const add = (text, kind) => { const t = String(text || '').trim(); if (!t) return; const k = SEARCH.fold(t); const was = names.get(k); if (was) was.n++; else names.set(k, { text: t, n: 1, kind }); };
+  if ((await store.storeSettings()).enabled) {
+    for (const sel of await db.filter('users', u => u.role === 'provider' && u.store && store.storeIsLive(u) && (!country || sameText(u.country, country)))) {
+      for (const g of await db.filter('storeGoods', x => x.providerId === sel.id)) { if (!store.isOnShelf(g) || !store.anyInStock(g)) continue; add(g.name, 'item'); if (g.brand) add(g.brand, 'brand'); }
+    }
+  }
+  for (const l of await db.filter('marketListings', l => l.status === 'live' && (!country || sameText(l.country, country)))) add(l.title, 'item');
+  for (const c of market.MARKET_CATEGORIES) add(c, 'category');
+  const list = [...names.values()].map(x => ({ ...x, s: SEARCH.score(q, [{ text: x.text, weight: 1 }]) }))
+    .filter(x => x.s.matched === x.s.of && x.s.of > 0)
+    .sort((a, b) => (b.kind === 'category') - (a.kind === 'category') || b.s.score - a.s.score || b.n - a.n || a.text.length - b.text.length)
+    .slice(0, 8).map(x => ({ text: x.text, kind: x.kind }));
+  res.json({ suggestions: list });
+});
 router.get('/market/listings/mine', requireAuth, async (req, res) => {
   const me = await db.find('users', u => u.id === req.user.sub);
   const mine = (await db.filter('marketListings', l => l.sellerId === me.id && l.status !== 'deleted')).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));

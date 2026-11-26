@@ -34,8 +34,17 @@
   // laid out differently). The one for this screen plays: the laptop one above 760 px wide,
   // where Trothen shows its menu on the left.
   const wide = () => { try { return window.matchMedia('(min-width: 761px)').matches; } catch (x) { return false; } };
-  const pick = (v) => (wide() && v.computer && v.computer.file ? { ...v.computer, desk: true } : { file: v.file, seconds: v.seconds, transcript: v.transcript, desk: false });
-  const TOPICS = ['Getting started', 'Customers', 'Rides', 'Market', 'Pros'];
+  // v181: most subjects have two videos: an animated one that explains it simply
+  // ("explain", drawn pictures and a narrator) and the step-by-step one on the real
+  // screens ("screen"). The animated one plays first; a switch above the video changes it.
+  const kinds = (v) => [v.explainer && v.explainer.file ? 'explain' : null, v.file ? 'screen' : null].filter(Boolean);
+  const pick = (v, kind) => {
+    const k = kinds(v).includes(kind) ? kind : kinds(v)[0];
+    const src = k === 'explain' ? v.explainer : v;
+    const big = wide() && src.computer && src.computer.file;
+    return { kind: k, file: big ? src.computer.file : src.file, seconds: big ? src.computer.seconds : src.seconds, transcript: (big && src.computer.transcript) || src.transcript, desk: !!big }; // the laptop step-by-step video has its own words (Click, not Tap)
+  };
+  const TOPICS = ['Getting started', 'Customers', 'Rides', 'Market', 'Rentals', 'Pros'];
   const norm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const mins = (s) => { const m = Math.max(1, Math.round((Number(s) || 60) / 60)); return `${m} ${t(m === 1 ? 'min' : 'mins')}`; };
 
@@ -73,7 +82,7 @@
 
   function card(v) {
     const p = pick(v);
-    const words = norm([t(v.title), t(v.tagline), v.title, v.tagline, ...(p.transcript || [])].join(' '));
+    const words = norm([t(v.title), t(v.tagline), v.title, v.tagline, ...(v.transcript || []), ...((v.explainer && v.explainer.transcript) || [])].join(' '));
     return `
         <button type="button" class="hv-card" data-hv="${e(v.key)}" data-words="${e(words)}" style="text-align:left;border:1px solid var(--border);border-radius:12px;background:var(--white,#fff);padding:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;color:inherit;font:inherit;">
           <span style="position:relative;display:block;width:100%;padding-top:62.5%;background:#0F2640;overflow:hidden;"><img src="/help/${e(p.file)}.jpg" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;"/>
@@ -83,7 +92,7 @@
         </button>`;
   }
   function grid(list) {
-    // grouped by topic (Getting started, Customers, Rides, Market, Pros), in that order
+    // grouped by topic (Getting started, Customers, Rides, Market, Rentals, Pros), in that order
     const order = [...TOPICS, ...list.map(v => v.topic || 'More').filter(x => !TOPICS.includes(x))].filter((x, i, a) => a.indexOf(x) === i);
     const groups = order.map(tp => ({ tp, items: list.filter(v => (v.topic || 'More') === tp) })).filter(g => g.items.length);
     return `<p style="color:var(--slate);margin:0 0 10px;">${e(t('Videos on how Trothen works, step by step. Each one has its words underneath, if you can\'t play sound.'))}</p>
@@ -105,11 +114,14 @@
     });
     const none = o.querySelector('#hv-none'); if (none) none.style.display = shown ? 'none' : '';
   }
-  function player(v, list) {
+  function player(v, list, kind) {
     const others = list.filter(x => x.key !== v.key);
-    const p = pick(v);
-    const size = p.desk ? 'width:min(860px,100%);aspect-ratio:16/10;' : 'height:min(66vh,640px);aspect-ratio:720/1558;max-width:100%;';
-    return `<video id="hv-video" controls playsinline preload="metadata" style="display:block;margin:0 auto;${size}object-fit:contain;background:#0F2640;border-radius:12px;" aria-label="${e(t(v.title))}">
+    const p = pick(v, kind);
+    const ratio = p.kind === 'explain' ? (p.desk ? '16/9' : '720/1280') : (p.desk ? '16/10' : '720/1558');
+    const size = p.desk ? `width:min(860px,100%);aspect-ratio:${ratio};` : `height:min(66vh,640px);aspect-ratio:${ratio};max-width:100%;`;
+    const two = kinds(v).length > 1;
+    const tab = (k, label) => `<button type="button" class="btn-sm ${p.kind === k ? 'btn-sm-primary' : 'btn-sm-outline'}" data-hvkind="${k}" aria-pressed="${p.kind === k}" style="flex:1 1 0;min-width:0;min-height:44px;margin:0;padding:6px 8px;font-size:13.5px;line-height:1.2;white-space:normal;">${e(t(label))}</button>`;
+    return `${two ? `<div role="group" aria-label="${e(t('Which video'))}" style="display:flex;gap:6px;max-width:460px;margin:0 auto 10px;">${tab('explain', 'Explained simply')}${tab('screen', 'Step by step on the screen')}</div>` : ''}<video id="hv-video" controls playsinline preload="metadata" style="display:block;margin:0 auto;${size}object-fit:contain;background:#0F2640;border-radius:12px;" aria-label="${e(t(v.title))}">
         <source src="/help/${e(p.file)}.mp4" type="video/mp4"/>${e(t('Your browser can\'t play this video. The words are below.'))}</video>
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:10px;"><div><strong style="font-size:18px;color:var(--navy);">${e(t(v.title))}</strong> <span style="color:var(--slate);font-size:13px;">· ${e(mins(p.seconds))}</span></div>
         ${others.length ? `<button type="button" class="btn-sm btn-sm-outline" id="hv-all">${e(t('All help videos'))}</button>` : ''}</div>
@@ -117,17 +129,18 @@
         <ol style="margin:8px 0 0;padding-left:22px;line-height:1.6;font-size:14.5px;">${(p.transcript || []).map(x => `<li>${e(x)}</li>`).join('')}</ol></details>
       <div style="margin-top:12px;font-size:13px;color:var(--slate);">${e(t('Still stuck?'))} <a role="button" tabindex="0" id="hv-help" style="color:var(--teal);cursor:pointer;font-weight:600;">${e(t('Ask for help'))}</a></div>`;
   }
-  function wire(list) {
+  function wire(list, key) {
     const o = document.getElementById(ID); if (!o) return;
+    o.querySelectorAll('[data-hvkind]').forEach(b => b.addEventListener('click', () => show(key, list, true, b.dataset.hvkind)));
     o.querySelectorAll('[data-hv]').forEach(b => b.addEventListener('click', () => show(b.dataset.hv, list, true)));
     const all = o.querySelector('#hv-all'); if (all) all.addEventListener('click', () => { shell(grid(list), t('Help videos')); wire(list); const f = document.getElementById('hv-search'); if (f) f.focus(); });
     const q = o.querySelector('#hv-search'); if (q) q.addEventListener('input', () => search(q.value));
     const h = o.querySelector('#hv-help'); if (h) { const go = () => { close(); if (typeof toggleSupportChat === 'function') toggleSupportChat(); else if (typeof showContactPage === 'function') showContactPage(); }; h.addEventListener('click', go); h.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(); }); }
   }
-  function show(key, list, play) {
+  function show(key, list, play, kind) {
     const v = list.find(x => x.key === key); if (!v) return;
-    shell(player(v, list), t('Help videos'));
-    wire(list);
+    shell(player(v, list, kind), t('Help videos'));
+    wire(list, key);
     const vid = document.getElementById('hv-video');
     if (vid) { if (play) { const p = vid.play(); if (p && p.catch) p.catch(() => {}); } vid.focus(); }
   }
@@ -135,7 +148,7 @@
   window.openHelpVideos = async function (key) {
     shell(`<p style="color:var(--slate);">${e(t('Loading…'))}</p>`, t('Help videos'));
     let list;
-    try { list = (await load()).filter(forMe); }
+    try { list = (await load()).filter(forMe).filter(v => kinds(v).length); }
     catch (x) { const b = document.getElementById('hv-body'); if (b) b.innerHTML = `<p>${e(t('The help videos can\'t be loaded right now. Check your connection and try again.'))}</p>`; return; }
     if (!document.getElementById(ID)) return; // closed while loading
     if (key && list.some(v => v.key === key)) show(key, list, true);
@@ -152,15 +165,21 @@
       <button type="button" data-ahv="${e(v.key)}" style="text-align:left;border:1px solid var(--border);border-radius:12px;background:var(--white,#fff);padding:0;overflow:hidden;cursor:pointer;color:inherit;font:inherit;">
         <span style="position:relative;display:block;width:100%;padding-top:62.5%;background:#0F2640;overflow:hidden;"><img src="${e(v.poster)}" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;"/>
           <span aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span style="width:50px;height:50px;border-radius:50%;background:rgba(15,38,64,.85);color:#F2B705;display:flex;align-items:center;justify-content:center;font-size:20px;padding-left:4px;">▶</span></span>
-          <span style="position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.7);color:#fff;font-size:12px;border-radius:4px;padding:1px 6px;">${e(mins(v.seconds))}</span></span>
+          <span style="position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.7);color:#fff;font-size:12px;border-radius:4px;padding:1px 6px;">${e(mins(v.explainer ? v.explainer.seconds : v.seconds))}</span></span>
         <span style="display:block;padding:10px 12px 12px;"><strong style="display:block;color:var(--navy);font-size:15px;">${e(v.title)}</strong><span style="display:block;font-size:13px;color:var(--slate);margin-top:2px;">${e(v.tagline)}</span></span>
       </button>`).join('')}</div>` : `<p style="color:var(--slate);">${e(t('No admin help videos yet.'))}</p>`;
   }
-  function adminPlayer(v) {
-    return `<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start;">
-      <video id="ahv-video" controls playsinline preload="metadata" style="width:min(760px,100%);aspect-ratio:16/10;background:#0F2640;border-radius:12px;" aria-label="${e(v.title)}"><source src="${e(v.url)}" type="video/mp4"/></video>
-      <div style="flex:1 1 280px;min-width:0;"><h3 style="margin:0 0 4px;color:var(--navy);">${e(v.title)}</h3><div style="color:var(--slate);font-size:13px;margin-bottom:10px;">${e(v.tagline)} · ${e(mins(v.seconds))}</div>
-        <div style="font-weight:700;margin-bottom:6px;">${e(t('Step by step'))}</div><ol style="margin:0;padding-left:20px;line-height:1.6;font-size:14px;">${(v.transcript || []).map(p => `<li>${e(p)}</li>`).join('')}</ol>
+  // v182: an Admin subject can have the animated explainer, the screen recording, or both.
+  const akinds = (v) => [v.explainer ? 'explain' : null, v.file ? 'screen' : null].filter(Boolean);
+  function adminPlayer(v, kind) {
+    const k = akinds(v).includes(kind) ? kind : akinds(v)[0];
+    const src = k === 'explain' ? v.explainer : v;
+    const two = akinds(v).length > 1;
+    const tab = (x, label) => `<button type="button" class="btn-sm ${k === x ? 'btn-sm-primary' : 'btn-sm-outline'}" data-ahvkind="${x}" aria-pressed="${k === x}" style="margin:0;">${e(t(label))}</button>`;
+    return `${two ? `<div role="group" aria-label="${e(t('Which video'))}" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px;">${tab('explain', 'Explained simply')}${tab('screen', 'Step by step on the screen')}</div>` : ''}<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start;">
+      <video id="ahv-video" controls playsinline preload="metadata" poster="${e(src.poster || '')}" style="width:min(760px,100%);aspect-ratio:${k === 'explain' ? '16/9' : '16/10'};background:#0F2640;border-radius:12px;" aria-label="${e(v.title)}"><source src="${e(src.url)}" type="video/mp4"/></video>
+      <div style="flex:1 1 280px;min-width:0;"><h3 style="margin:0 0 4px;color:var(--navy);">${e(v.title)}</h3><div style="color:var(--slate);font-size:13px;margin-bottom:10px;">${e(v.tagline)} · ${e(mins(src.seconds))}</div>
+        <div style="font-weight:700;margin-bottom:6px;">${e(t(k === 'explain' ? 'What it says' : 'Step by step'))}</div><ol style="margin:0;padding-left:20px;line-height:1.6;font-size:14px;">${(src.transcript || []).map(p => `<li>${e(p)}</li>`).join('')}</ol>
         <button type="button" class="btn-sm btn-sm-outline" id="ahv-back" style="margin-top:12px;">← ${e(t('All admin videos'))}</button></div></div>`;
   }
   async function drawAdminVideos() {
@@ -169,11 +188,12 @@
     try { all = (await apiFetch('GET', '/admin/help-videos')).videos || []; }
     catch (x) { box.innerHTML = `<p>${e(x.message || t('Could not load the videos'))}</p>`; return; }
     const keys = adminKeys(), isSuper = !!(typeof AUTH !== 'undefined' && AUTH.user && AUTH.user.isSuperAdmin);
-    const mine = all.filter(v => isSuper || !v.section || keys.has(v.section));
+    const mine = all.filter(v => isSuper || !v.section || keys.has(v.section) || (v.sections || []).some(k => keys.has(k))); // v182: some videos cover two parts of Admin
     const wireGrid = () => box.querySelectorAll('[data-ahv]').forEach(b => b.addEventListener('click', () => show(b.dataset.ahv)));
-    const show = (key) => {
+    const show = (key, kind) => {
       const v = mine.find(x => x.key === key); if (!v) return;
-      box.innerHTML = adminPlayer(v);
+      box.innerHTML = adminPlayer(v, kind);
+      box.querySelectorAll('[data-ahvkind]').forEach(b => b.addEventListener('click', () => show(key, b.dataset.ahvkind)));
       document.getElementById('ahv-back').addEventListener('click', () => { box.innerHTML = adminGrid(mine); wireGrid(); });
       const vid = document.getElementById('ahv-video'); if (vid) { const p = vid.play(); if (p && p.catch) p.catch(() => {}); vid.focus(); }
     };
@@ -183,7 +203,7 @@
     const baseNav = getAdminNavItems;
     getAdminNavItems = function () { const l = baseNav.apply(this, arguments) || []; return l.some(i => i.key === 'helpvideos') ? l : [...l, { key: 'helpvideos', label: 'Help videos', icon: '▶️' }]; };
   }
-  if (typeof ADMIN_SECTIONS === 'object' && ADMIN_SECTIONS) ADMIN_SECTIONS.helpvideos = () => `<div class="dash-header"><div><div class="dash-title">${e(t('Help videos for the team'))}</div><div class="dash-sub">${e(t('How to do each job in Admin, recorded on the real screens. Only admins can watch these.'))}</div></div></div><div class="panel" id="admin-hv-body">${e(t('Loading…'))}</div>`;
+  if (typeof ADMIN_SECTIONS === 'object' && ADMIN_SECTIONS) ADMIN_SECTIONS.helpvideos = () => `<div class="dash-header"><div><div class="dash-title">${e(t('Help videos for the team'))}</div><div class="dash-sub">${e(t('How to do each job in Admin: an animated video that explains it simply, and for some, a recording of the real screens. Only admins can watch these.'))}</div></div></div><div class="panel" id="admin-hv-body">${e(t('Loading…'))}</div>`;
   if (typeof selectAdminSection === 'function') {
     const baseSel = selectAdminSection;
     selectAdminSection = function (key) { const r = baseSel.apply(this, arguments); if (key === 'helpvideos') drawAdminVideos(); return r; };

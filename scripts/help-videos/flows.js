@@ -145,7 +145,7 @@ module.exports = [
       await d.tap('button:has-text("Find drivers near me")', 'Tap Find drivers near me.');
       await d.show('.ride-choose', 'Each ride shows its fare in Liberian dollars, and how far away the driver is. The fare is fixed before you book.', 3800);
       await d.say('Choose one and confirm. The driver is told at once, and you see them coming on the map.', 3200);
-      await d.say('You can call or text the driver in the app. Neither of you sees the other\'s phone number.', 3200);
+      await d.say('You can call or text the driver in the app. While the ride is open, you can see each other\'s phone number. After the ride, it is hidden again.', 3200);
       await d.say('When the driver arrives, check the plate number. Give your four-digit PIN only if the plate matches. The trip starts then.', 3800);
       await d.say('At the end, the fare is paid, and you can rate your driver. If anything went wrong, tap Report a Problem on the trip.', 3600);
     },
@@ -237,6 +237,59 @@ module.exports = [
       await d.show('button:has-text("Close my account")', 'And if you ever want to leave, you can close your account here. Your personal data is then removed.', 3400);
     },
   },
+  // ── v181: rentals (places to stay) ──────────────────────────────────
+  {
+    key: 'rentals', group: 'public', topic: 'Rentals', as: 'u_jordan', title: 'Book a place to stay', tagline: 'A room for a few nights, or a home by the month, paid safely',
+    start: () => goToCustomerDashboard('overview'),
+    async steps(d) {
+      await d.say('In this video, you will find a place to stay, check it, and see the full price before you book.', 3200);
+      await open(d, 'market', 'Market');
+      await d.tap('button[data-mtab="rentals"]', 'At the top of the Market, tap Rentals.');
+      await d.show('button[data-rmode="monthly"]', 'Choose Stays by the night for a short visit, or Homes by the month to rent a home.', 3200);
+      await d.type('#rt-q', 'Sinkor', 'Type the area you want, for example Sinkor.');
+      await d.show('#rt-guests', 'Choose your dates and how many people are coming.', 2600);
+      await d.tap('button[onclick="rentalsSearch()"]', 'Tap Search.');
+      await d.show('.rt-card', 'Each place shows its photos, its kind, how many people it takes, the price in US dollars and Liberian dollars, and its rating.', 3800);
+      await d.tap('.rt-card', 'Tap a place to open it.');
+      await d.show('#rtp-photos', 'Look at all the photos, and read the description: what the place has, and the house rules.', 3600);
+      await d.say('You see the area, but not the exact address. The address is shared only when the host accepts your booking.', 3600);
+      await d.scrollTo('#rtp-book');
+      await d.show('#rtp-book .rt-cal', 'The calendar shows the free days. Days already taken are crossed out.', 3000);
+      await d.tap('#rtp-book button[aria-label="Next month"]', 'Tap the arrow to see the next month.');
+      await d.tap(d.page.locator('#rtp-book .rt-day:not([disabled])').nth(9), 'Tap the day you arrive.');
+      await d.tap(d.page.locator('#rtp-book .rt-day:not([disabled])').nth(12), 'Then tap the day you leave.');
+      await d.show('#rtp-quote', 'The price appears straight away: the nights, the cleaning fee, Trothen\'s service fee, and the total.', 3800);
+      await d.show('#rtp-go', 'Read the cancellation rule. Then tap Request to book, and pay.', 3200);
+      await d.say('Your money is held by Trothen. The host has 24 hours to accept. If they say no, or do not answer, you get everything back.', 4000);
+      await d.say('The host is paid 24 hours after you check in. If the place is not as described, tap Report a problem in My trips before then.', 4000);
+      await d.say('Never pay a host outside Trothen. Outside Trothen, your money is not protected.', 3000);
+    },
+  },
+  {
+    key: 'hosting', group: 'public', topic: 'Rentals', as: 'u_marcus', title: 'Rent out your place', tagline: 'List your place, answer guests, and get paid',
+    start: () => selectProviderSection('overview'),
+    async steps(d) {
+      await d.say('In this video, you will list a place to rent out: a room or an apartment by the night, or a home by the month.', 3400);
+      await open(d, 'market', 'Market');
+      await d.tap('button[data-mtab="rentals"]', 'At the top of the Market, tap Rentals.');
+      await d.tap('button[onclick="drawRentals(\'hosting\')"]', 'Tap Hosting. Your places and your guests\' requests are here.');
+      await d.show('.rt-mine', 'Each of your places is listed, with whether guests can see it. You can pause it, edit it, or close days in its calendar.', 3800);
+      await d.tap('button[onclick="rentalsEdit()"]', 'To add a place, tap List a place.');
+      await d.type('#rf-title', 'Room with a balcony in Paynesville', 'Give it a clear title: the kind of place, and the area.');
+      await d.choose('#rf-type', 'room', 'Choose the kind of place: an apartment, a house, a room in a home, a studio, a guesthouse, or a duplex.');
+      await d.show('#rf-bed', 'Say how many bedrooms and bathrooms, and how many guests it takes.', 3000);
+      await d.scrollTo('#rf-addr');
+      await d.show('#rf-addr', 'Type the full address. Guests see it only after you accept them.', 3000);
+      await d.scrollTo('#rf-photos');
+      await d.show('#rf-photos', 'Add 3 to 12 real photos of the place, in daylight: the outside, each room, the bathroom and the kitchen.', 3600);
+      await d.scrollTo('#rf-stay');
+      await d.show('#rf-stay', 'Choose by the night, by the month, or both. Add your price, any cleaning fee, and a cancellation rule.', 3600);
+      await d.scrollTo('#rf-own');
+      await d.show('#rf-own', 'Tick the declaration: you own the place, or have the owner\'s written permission, and you take payment only through Trothen.', 4000);
+      await d.say('Then tap Send to the Trothen team to check. The team checks every new place before guests can see it.', 3400);
+      await d.say('When a guest books, you have 24 hours to accept. You are paid 24 hours after they check in, less Trothen\'s host fee.', 3800);
+    },
+  },
   // ── for pros ────────────────────────────────────────────────────────
   {
     key: 'stores', group: 'public', topic: 'Pros', audience: 'provider', as: 'u_james', title: 'Add a good to your store', tagline: 'Photos, price, details and sizes, the way buyers want them',
@@ -255,7 +308,7 @@ module.exports = [
       await d.choose('#gf-spec-sim', 'Dual SIM', 'the SIM,');
       await d.choose('#gf-spec-locked', 'Unlocked (any network)', 'and whether it works on any network.');
       await d.say('For clothes and shoes, you can add sizes and a size chart. For building materials, the size, the length or the bag weight.', 3600);
-      await d.say('Be accurate. If a good is not as described, the buyer can return it, and you pay for the return.', 3200);
+      await d.say('Be accurate. Faulty, wrong or not-as-described goods can always be returned within your return days, and the buyer is refunded.', 3200);
       await d.show('#gf-save', 'When everything is right, tap Save.', 2400);
       await d.say('A store manager checks every new good before buyers can see it, usually within a day. You are told when it is approved.', 3600);
     },

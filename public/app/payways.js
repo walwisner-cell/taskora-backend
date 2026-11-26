@@ -165,6 +165,7 @@
       <div class="modal-footer"><button class="btn-sm btn-sm-outline" onclick="document.getElementById('pw-code-overlay').remove()">${e(tr('I\'ll pay later (see My Bookings)'))}</button></div>
     </div></div>`);
   }
+  window.payWaysShowFor = function (contract, p) { showPaymentCode(contract, p); }; // v180: a rental booking's payment code
   // "Pay now" on a booking in My Bookings.
   window.payWaysShow = function (contractId) {
     const c = typeof RAW_CONTRACTS === 'object' ? RAW_CONTRACTS[contractId] : null;

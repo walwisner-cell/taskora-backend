@@ -274,6 +274,7 @@ async function finishPaymentNow(e, c, { receipt, amountReceived, confirmedBy, co
   }
   const updated = await db.update('contracts', c.id, patch);
   if (c.topUpFor) { await require('./top-ups').applyPaid(updated, { ...e, status: 'held' }); return { ok: true, contract: updated }; } // v157: extra work or a tip
+  if (c.rental) { await require('./rentals').afterPaid(updated); return { ok: true, contract: updated }; } // v180: a rental booking has its own messages
   if (c.storeOrder || c.delivery) { // v148: goods orders and deliveries have their own messages and next steps
     await require('./routes/orders.routes').afterPaid(updated, { ...e, receipt: tx, amountReceived: got });
     return { ok: true, contract: updated };

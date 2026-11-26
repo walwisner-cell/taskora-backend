@@ -17,6 +17,7 @@ const proStore = require('../store'); // v105: pro stores and extra skills
 // v166: the one paying for a booking: a customer, or a pro booking for themselves (a ride, say). Each route still checks that this person is the booking's customer.
 const requirePayer = (req, res, next) => (['customer', 'provider'].includes(req.user && req.user.role) ? next() : res.status(403).json({ error: 'Only the customer on this booking can do this.' }));
 const router = express.Router();
+const SEARCH = require('../../public/app/search-core.js'); // v183: Trothen's search engine
 const { isListedPro } = require('../listing'); // v133
 
 // A genuine dispute should be rare — this is defense against spam
@@ -895,7 +896,9 @@ router.get('/providers', async (req, res) => {
       (p.tags || []).some(t => t.toLowerCase().includes(needle)) ||
       synonymCategories.includes(p.category) ||
       // v105: a carpenter who also does plumbing is found by "plumber" too
-      proStore.approvedSkills(p).some(sk => sk.toLowerCase().includes(needle) || synonymCategories.includes(sk))
+      proStore.approvedSkills(p).some(sk => sk.toLowerCase().includes(needle) || synonymCategories.includes(sk)) ||
+      // v183: Trothen's search engine: typos ("plumbr", "electrishan"), plurals and other names ("braids")
+      (() => { const r = SEARCH.score(q, [{ text: `${p.name} ${p.category} ${p.providerRole || ''} ${(p.tags || []).join(' ')} ${proStore.approvedSkills(p).join(' ')}` }]); return r.of > 0 && r.matched === r.of; })()
     );
   }
 
@@ -911,7 +914,9 @@ router.get('/providers', async (req, res) => {
   if (city || country) {
     let scoped = providers;
     if (city) {
-      const cityMatches = scoped.filter(p => p.city && p.city.toLowerCase() === city.toLowerCase() && (!country || p.country === country));
+      let cityMatches = scoped.filter(p => p.city && p.city.toLowerCase() === city.toLowerCase() && (!country || p.country === country));
+      // v183: a small typo in the town ("Monrovai") still finds it
+      if (!cityMatches.length) { const fc = SEARCH.fold(city); cityMatches = scoped.filter(p => p.city && (!country || p.country === country) && SEARCH.dist(SEARCH.fold(p.city), fc, fc.length >= 8 ? 2 : 1) <= (fc.length >= 8 ? 2 : fc.length >= 4 ? 1 : 0)); }
       if (cityMatches.length) { providers = cityMatches; locationScope = 'city'; }
     }
     if (locationScope === 'none' && city && state) {
@@ -2525,7 +2530,7 @@ router.patch('/contracts/:id/job-location', requireAuth, requireRole('customer')
 // GET /api/contracts/mine — works for both customers and providers
 router.get('/contracts/mine', requireAuth, async (req, res) => {
   const field = req.user.role === 'provider' ? 'providerId' : 'customerId';
-  const contracts = await db.filter('contracts', c => c[field] === req.user.sub && !(field === 'providerId' && c.status === 'awaiting_payment' && (c.statusAfterPayment !== 'active' || c.storeOrder))
+  const contracts = await db.filter('contracts', c => c[field] === req.user.sub && !c.rental /* v180: rentals are in Market → Rentals */ && !(field === 'providerId' && c.status === 'awaiting_payment' && (c.statusAfterPayment !== 'active' || c.storeOrder))
     && !(c.topUpFor && (field === 'providerId' || c.status !== 'awaiting_payment'))); // v157: an extra or a tip shows only to the customer, only while it waits to be paid  // v148 audit: an unpaid goods order stays hidden from the seller // v119: a pro sees a new booking once it is paid (an offer they already accepted stays in view)
   const withNames = await Promise.all(contracts.map(async c => {
     const customer = await db.find('users', u => u.id === c.customerId);

@@ -41,6 +41,7 @@ async function ratesFor(provider) {
 function escrowLineCommission(e, contract, rates) {
   const base = Math.max(0, (e.amount || 0) - (e.materialsAdvanceAmount || 0));
   const goods = Math.min(e.storeGoodsAmount || 0, base);
+  const rentalPart = Math.min(e.noCommissionAmount || 0, Math.max(0, base - goods)); // v180: a rental's host fee was taken at booking
   const ride = !!(contract && contract.ride);
   const passFree = ride && contract.ride.commissionFree === true;
   const rate = passFree ? 0 : ride ? rates.rideRate : rates.commissionRate;
@@ -49,7 +50,8 @@ function escrowLineCommission(e, contract, rates) {
   else if (passFree) note = 'Driver Pass: no commission';
   else if (ride) note = 'Ride rate';
   if (goods > 0) note = (note ? note + '. ' : '') + `Store goods ($${cents(goods)}) carry no commission`;
-  return { base: cents(base), goods: cents(goods), rate, raw: (base - goods) * rate, storeFee: cents(Math.min(e.storeFeeFromPro || 0, base)), note };
+  if (rentalPart > 0) note = (note ? note + '. ' : '') + 'Rental: the host fee was taken when the guest booked, so there is no commission';
+  return { base: cents(base), goods: cents(goods), rate, raw: (base - goods - rentalPart) * rate, storeFee: cents(Math.min(e.storeFeeFromPro || 0, base)), note };
 }
 
 // Makes the per-job amounts add up exactly to the payout total.
@@ -92,7 +94,8 @@ async function calcPayout(provider) {
   const { commissionRate, rideRate } = rates;
   // v105: goods from the pro's store carry no commission.
   const storeGoodsAmount = cents(payableEscrow.reduce((sum, e) => sum + Math.min(e.storeGoodsAmount || 0, Math.max(0, e.amount - (e.materialsAdvanceAmount || 0))), 0));
-  const commissionableAmount = Math.max(0, cents(grossAmount - storeGoodsAmount));
+  const rentalAmount = cents(payableEscrow.reduce((sum, e) => { const base = Math.max(0, e.amount - (e.materialsAdvanceAmount || 0)); return sum + Math.min(e.noCommissionAmount || 0, Math.max(0, base - Math.min(e.storeGoodsAmount || 0, base))); }, 0)); // v180
+  const commissionableAmount = Math.max(0, cents(grossAmount - storeGoodsAmount - rentalAmount));
   // v111: rides carry their own, lower commission. v113: none with a Driver Pass.
   const rideGross = cents(payableEscrow.reduce((sum, e) => {
     const c = contracts.find(x => x.id === e.contractId);
@@ -132,7 +135,7 @@ async function calcPayout(provider) {
       signedAt: contract.signedAt || (contract.createdAt || '').slice(0, 10),
       review: review ? { stars: review.stars, text: review.text || null } : null,
       amount: newlyPayable,
-      kind: contract.ride ? 'ride' : 'job',
+      kind: contract.ride ? 'ride' : contract.rental ? 'rental' : 'job',
       commissionRate: lc.rate, raw: lc.raw, storeFee: lc.storeFee, commissionNote: lc.note,
     });
   }
@@ -182,7 +185,7 @@ async function calcPayout(provider) {
 
   return {
     contracts, payableEscrow, payableAdvances, unpaidTipContracts,
-    grossAmount, totalTips, storeGoodsAmount, commissionableAmount,
+    grossAmount, totalTips, storeGoodsAmount, rentalAmount, commissionableAmount,
     rideGross, ridePassFree, rideRate, commissionRate, rates,
     usedFreeCommissionCredit: rates.freeCredit,
     commissionAmount, storeFeeAmount, lineItems,

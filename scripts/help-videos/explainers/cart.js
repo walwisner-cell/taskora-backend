@@ -1,0 +1,22 @@
+// Animated explainer: Your cart and checkout.
+module.exports = {
+  key: 'cart', title: 'Your cart and checkout',
+  scenes: [
+    { kind: 'title', icon: 'cart', title: 'Your **cart** and checkout', sub: 'One cart for every store, with the total before you pay.',
+      beats: ['This video shows how to use your cart: add goods, check them, choose the delivery, and pay. You see the full total before you pay.'] },
+    { kind: 'phone', n: '1', h: 'Add goods to your **cart**', points: [{ b: 0, icon: 'plus', t: 'Tap **Add to cart** on any good' }, { b: 1, icon: 'store', t: 'Goods from **different stores**: one cart' }, { b: 2, icon: 'cart', t: 'Open **Cart** to see them' }],
+      rows: [{ k: 'card', icon: 'box', t: 'Cement, 50 kg bag', sub: 'Builders Depot', right: 'L$ 1,450' }, { k: 'button', t: 'Add to cart', tap: 0 }, { k: 'card', icon: 'wrench', t: 'Hammer', sub: 'Tool Shop', right: 'L$ 900', b: 1 }, { k: 'button', t: 'Add to cart', b: 1, tap: 1 }, { k: 'bar', on: 4, tap: 2, b: 2 }],
+      beats: ['In the Market, tap Add to cart on any good.', 'You can add goods from different stores. They all go into the same cart.', 'Then open your Cart, to see everything together. On a phone, tap More at the bottom of the screen, then Cart.'] },
+    { kind: 'phone', n: '2', h: 'Check your **cart**', points: [{ b: 0, icon: 'store', t: 'Grouped **by store**' }, { b: 1, icon: 'plus', t: 'Change how many' }, { b: 2, icon: 'clock', t: '**Save for later**: keep it, buy it another day' }],
+      rows: [{ k: 'head', t: 'Cart' }, { k: 'text', t: 'Builders Depot' }, { k: 'card', icon: 'box', t: 'Cement, 50 kg bag', sub: 'Quantity: 10', right: 'L$ 14,500', b: 1 }, { k: 'text', t: 'Tool Shop', b: 0 }, { k: 'card', icon: 'wrench', t: 'Hammer', sub: 'Save for later', right: 'L$ 900', b: 2, tap: 2 }],
+      beats: ['Your cart shows every good, grouped by store, with the price of each one.', 'Change the quantity if you need more than one. For example, ten bags of cement.', 'Not ready to buy something? Tap Save for later. It stays saved, and you can buy it another day.'] },
+    { kind: 'table', h: 'How to get your **goods**', head: ['Way', 'How it works'], rows: [{ c: ['Collect it', 'Go to the store and pick it up. No delivery price.'] }, { c: ['A driver brings it', 'You see the delivery price before you pay.'] }, { c: ['Heavy goods', 'Only a vehicle that can carry them is offered: a van or a truck for cement.'] }],
+      beats: ['At checkout, choose how to get your goods.', 'You can collect them from the store yourself. Then there is no delivery price.', 'Or a driver brings them to you. You see the delivery price before you pay.', 'For heavy goods, like cement, only a vehicle that can carry them is offered, such as a van or a truck.'] },
+    { kind: 'phone', n: '3', h: 'See the **total**, then pay', points: [{ b: 0, icon: 'receipt', t: 'Every price and fee, shown first' }, { b: 1, icon: 'lock', t: 'Nothing is added afterwards' }, { b: 2, icon: 'wallet', t: 'Pay with Mobile Money or a card' }],
+      rows: [{ k: 'price', lines: [['10 × Cement, 50 kg', 'L$ 14,500'], ['Delivery by van', 'L$ 2,000']], total: ['Total', 'L$ 16,500'] }, { k: 'note', icon: 'lock', t: 'This is the full price. Nothing is added later.', b: 1 }, { k: 'button', t: 'Pay L$ 16,500', b: 2, tap: 2 }],
+      beats: ['Before you pay, Trothen shows the full total: each good, the delivery, and any fee.', 'This is the full price. Nothing is added afterwards.', 'Then pay, with Mobile Money or a card. The money is held by Trothen until you have your goods.'] },
+    { kind: 'timeline', h: 'When the driver **arrives**', points: [{ icon: 'truck', t: 'The driver comes', sub: 'to your door' }, { icon: 'eye', t: 'Check the goods', sub: 'count them, look at them' }, { icon: 'key', t: 'Give your **code**', sub: 'only when all is right' }, { icon: 'money', t: 'The store is paid', sub: 'only then' }],
+      beats: ['Here is what happens when your goods come.', 'The driver brings them to you.', 'When they arrive, check the goods. Count them, and look at them. Is everything there, and in good condition?', 'Only when everything is right, give the driver your code.', 'Only then is the store paid. If something is wrong, do not give the code. Tap Report a Problem instead.'] },
+    { kind: 'end', title: 'That is your **cart**', sub: 'Stuck? Tap Help videos, or ask us in the support chat.', beats: ['That is all. Happy shopping.'] },
+  ],
+};

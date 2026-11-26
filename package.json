@@ -10,7 +10,8 @@
     "seed": "node src/seed.js",
     "sync-reference-data": "node src/sync-reference-data.js",
     "help-videos": "node scripts/help-videos/film.js",
-    "help-videos:check": "node scripts/help-videos/film.js --check"
+    "help-videos:check": "node scripts/help-videos/film.js --check",
+    "help-explainers": "node scripts/help-videos/explain.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

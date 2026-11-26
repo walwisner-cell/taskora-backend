@@ -61,6 +61,7 @@ async function between(a, b) {
   // the last message they were sent. Neither opens calls.
   if (!message && a.role === 'customer' && b.role === 'provider') { message = true; why = 'enquiry'; }
   if (!message && await db.find('marketListings', l => l.sellerId === b.id && l.status === 'live')) { message = true; why = 'enquiry'; }
+  if (!message && await db.find('rentalListings', l => l.hostId === b.id && l.status === 'live')) { message = true; why = 'enquiry'; } // v180: asking a host about their place
   if (!message) {
     const last = (await db.filter('messages', m => m.fromId === b.id && m.toId === a.id && m.kind !== 'call')).reduce((t, m) => Math.max(t, Date.parse(m.createdAt) || 0), 0);
     if (last && now - last < MSG_AFTER_DONE) { message = true; why = 'reply'; until = last + MSG_AFTER_DONE; }

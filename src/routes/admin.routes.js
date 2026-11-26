@@ -43,7 +43,9 @@ async function me(req) {
 router.get('/help-videos', async (req, res) => {
   const hm = require('../help-media');
   res.set('Cache-Control', 'no-store');
-  res.json({ videos: hm.adminList().map(v => ({ ...v, url: hm.signedUrl(`${v.file}.mp4`), poster: hm.signedUrl(`${v.file}.jpg`) })) });
+  // v182: a video can be the screen recording (file), the animated explainer, or both.
+  const link = (f) => (f ? { url: hm.signedUrl(`${f}.mp4`), poster: hm.signedUrl(`${f}.jpg`) } : {});
+  res.json({ videos: hm.adminList().map(v => ({ ...v, ...link(v.file || (v.explainer && v.explainer.file)), explainer: v.explainer && v.explainer.file ? { ...v.explainer, ...link(v.explainer.file) } : undefined })) });
 });
 
 // null region = super admin = sees everything. A non-null region scopes

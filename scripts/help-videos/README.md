@@ -36,6 +36,26 @@ There are two sets:
 
 3. Commit the new files in `public/help/` and `help-admin/` with the change.
 
+## The animated explainers (v181)
+
+Most subjects also have an **animated explainer**: drawn pictures, a narrator and subtitles that explain the subject simply, before the step-by-step video shows it on the real screens. In "Help videos", the explainer plays first, and a switch above the video changes between "Explained simply" and "Step by step on the screen".
+
+- Each explainer is one file in `scripts/help-videos/explainers/` (for example `rentals.js`). It is a list of scenes; each scene has its sentences ("beats"), and each picture appears with its sentence.
+- The name of the file matches the step-by-step video on the same subject (`key`), so the two are shown together.
+- They are made into `public/help/explain-<name>.mp4` (tall, for phones) and `explain-<name>-computer.mp4` (wide, for laptops), with a `.jpg` cover each, and added to `help-videos.json`.
+
+To make them:
+
+```
+node scripts/help-videos/explain.js              every explainer, both versions
+node scripts/help-videos/explain.js rentals      one explainer
+node scripts/help-videos/explain.js --check      one picture of each scene, to look at; makes no video
+```
+
+Add `--tall` or `--wide` to make only one of the two versions. The explainers don't use the app, so they don't need the demo copy of Trothen; they need the same Kokoro voice, Playwright and ffmpeg as the step-by-step videos.
+
+When a fact changes in the app (a fee, a time limit, a button name), change the sentence in the explainer as well as in `flows.js`, and make both again.
+
 ## Narration
 Each caption is also spoken aloud by Kokoro, a free text-to-speech model that runs on the recording computer. It uses the "Heart" voice (`af_heart`, a warm American woman's voice), licensed Apache 2.0 and credited in `public/help/CREDITS.txt`.
 

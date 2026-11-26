@@ -1,0 +1,21 @@
+// Animated explainer: Deliver for stores and the Market.
+module.exports = {
+  key: 'deliveries', title: 'Deliver for stores and the Market',
+  scenes: [
+    { kind: 'title', icon: 'truck', title: 'Deliver for **stores** and the **Market**', sub: 'Your vehicle, your range, and what you earn for each trip.', needTitle: 'Before you start', need: [{ icon: 'id', t: 'Your ID verified' }, { icon: 'bike', t: 'A vehicle' }],
+      beats: ['This video shows how to deliver goods for stores and the Market on Trothen, and earn from each trip.', 'You need your ID verified, and a vehicle: a motorbike, a keke, a car, a van, or a truck.'] },
+    { kind: 'phone', n: '1', h: 'Open **Deliveries**', points: [{ b: 0, icon: 'bike', t: 'Choose your **vehicle**' }, { b: 1, icon: 'money', t: 'See examples of what you **earn**' }, { b: 2, icon: 'map', t: 'The longest trip you will take' }, { b: 3, icon: 'check', t: 'Tap **Save**' }],
+      rows: [{ k: 'head', t: 'Deliveries' }, { k: 'field', label: 'I deliver with', value: 'Motorbike' }, { k: 'note', icon: 'money', t: 'Trothen fares in L$ are used. Example: a 5 km trip earns about…', b: 1 }, { k: 'field', label: 'Longest trip (kilometres)', value: '12', type: 2, b: 2 }, { k: 'button', t: 'Save', b: 3, tap: 3 }],
+      beats: ['Open Deliveries. Choose what you deliver with: a motorbike, a keke, a car, a van, or a truck.', 'For a motorbike, keke, car or van, Trothen\'s fares in Liberian dollars are used. You see examples of what you earn for each trip.', 'Choose the longest trip you will take, in kilometres.', 'Tap Save.'] },
+    { kind: 'table', h: 'You get **what you can carry**', head: ['Vehicle', 'It carries'], rows: [{ c: ['Motorbike', 'Up to medium: a box you can carry, a 25 kg bag'] }, { c: ['Keke or car', 'Up to large: a TV, a microwave, several bags, a chair'] }, { c: ['Van or truck', 'Everything, even bulky: a fridge, a bed, building materials'] }],
+      beats: ['You are only offered deliveries your vehicle can carry.', 'A motorbike carries small and medium goods: anything up to a box you can carry, or a 25 kilogram bag.', 'A keke or a car also carries large goods: a TV, a microwave, several bags, or a chair.', 'A van or a truck carries everything, even bulky goods, like a fridge, a bed, or building materials.'] },
+    { kind: 'phone', n: '2', h: 'A delivery is **offered**', points: [{ b: 0, icon: 'store', t: 'Where to **collect** it' }, { b: 1, icon: 'pin', t: 'Where it is **going**' }, { b: 2, icon: 'money', t: 'What you **earn**' }, { b: 3, icon: 'check', t: 'Accept it, or let it go' }],
+      rows: [{ k: 'map', pa: 0, pb: 1 }, { k: 'card', icon: 'store', t: 'Collect: Builders Depot', sub: 'Broad Street' }, { k: 'card', icon: 'pin', t: 'Deliver: Sinkor 12th Street', sub: '4.2 km', b: 1 }, { k: 'button', t: 'Accept · you earn L$ 450', b: 2, tap: 3 }],
+      beats: ['When a delivery is offered, you see where to collect it,', 'where it is going, and how far it is,', 'and what you earn.', 'Accept it, or let it go. Another driver is then offered it.'] },
+    { kind: 'timeline', h: 'Codes and **photos**', points: [{ icon: 'store', t: 'At the store', sub: 'type the pickup code' }, { icon: 'camera', t: 'Photo', sub: 'of the goods' }, { icon: 'door', t: 'At the door', sub: 'check the buyer\'s code' }, { icon: 'camera', t: 'Photo', sub: 'of the handover' }],
+      beats: ['Here is each delivery, step by step.', 'At the store, type the pickup code.', 'Take a photo of the goods, before you leave.', 'At the door, check the buyer\'s code. Without the right code, do not hand over the goods.', 'Take another photo, of the handover.'] },
+    { kind: 'flow', h: 'You are **paid** at once', nodes: [{ icon: 'key', t: 'Right code', sub: 'at the door' }, { icon: 'box', t: 'The buyer has the goods', tone: 'gold' }, { icon: 'money', t: 'You are paid', sub: 'straight away' }], foot: 'The photos **protect you** if anyone says something went wrong.', footAt: 3,
+      beats: ['And you are paid.', 'With the right code at the door,', 'the buyer has the goods,', 'and you are paid straight away.', 'Your photos protect you, if anyone says later that something went wrong.'] },
+    { kind: 'end', title: 'Drive **safely**', sub: 'Stuck? Tap Help videos, or ask us in the support chat.', beats: ['That is all. Drive safely.'] },
+  ],
+};
