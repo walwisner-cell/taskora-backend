@@ -253,8 +253,11 @@ async function computeProviderScore(providerId) {
 // could genuinely help with, not just a number to react to.
 function recommendedActionForScore(score) {
   if (score > 60) return null; // fine standing, nothing recommended
-  if (score > 40) return { callRequired: false, label: 'Approaching the new-match floor. No action needed yet.' };
-  return { callRequired: true, label: 'At or below the new-match floor: new job matches are already paused automatically; call to understand why and see whether they can be helped to recover' };
+  if (score > 40) return { callRequired: false, label: 'Getting fewer new matches each week. No action needed yet.' };
+  // v185: the label says what really happens (WEEKLY_JOB_ACCESS_TIERS below): 1 to 3 new matches a week
+  // from 20 to 40, and none below 20. It used to say "already paused" from 40 down.
+  if (score >= 20) return { callRequired: true, label: 'Low score: only 1 to 3 new job matches a week. Call to understand why, and see whether they can be helped to recover.' };
+  return { callRequired: true, label: 'Below 20: new job matches are paused automatically. Call to understand why, and see whether they can be helped to recover.' };
 }
 
 // Weekly job-access tiers, replacing the old flat pass/fail floor at 40

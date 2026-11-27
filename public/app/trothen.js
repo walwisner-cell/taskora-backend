@@ -8816,7 +8816,7 @@ const ADMIN_SECTIONS = {
       <div class="panel-title">New Admin</div>
       <div class="form-group"><label class="form-label">Admin Name</label><input class="form-input" id="loc-admin-name" placeholder="e.g. Fatima B."/></div>
       <div class="form-group"><label class="form-label">Admin Email</label><input class="form-input" id="loc-admin-email" type="email" placeholder="fatima@example.com"/></div>
-      <div class="form-group"><label class="form-label">Temporary Password</label><input class="form-input" id="loc-admin-password" placeholder="Set a starting password" type="text" value="Welcome123456!"/><div style="font-size:12.5px;color:var(--muted);margin-top:5px;">8 to 72 characters. They can change it after signing in.</div></div>
+      <div class="form-group"><label class="form-label">Temporary Password</label><input class="form-input" id="loc-admin-password" placeholder="Set a starting password" type="text" autocomplete="off" value=""/><div style="font-size:12.5px;color:var(--muted);margin-top:5px;">A new random password is made for each admin. Give it to them directly, by phone or in person. They must choose their own the first time they sign in.</div></div>
       <div class="form-group"><label class="form-label">Country</label>
         <select class="form-input form-select" id="loc-country"></select>
       </div>
@@ -9757,8 +9757,10 @@ async function loadProviderScoresPanel() {
           ? `<span class="badge badge-warn">On hold${p.holdUntil ? ' until ' + new Date(p.holdUntil).toLocaleDateString() : ''}</span>`
           : p.isNew
             ? `<span class="badge badge-neutral" title="Counts only jobs completed through Trothen. Ratings or job counts on the profile may include work done elsewhere, which doesn't count toward this.">New: fewer than ${threshold} Trothen booking${threshold === 1 ? '' : 's'}, starter allowance</span>`
-          : p.trustScore <= 40
+          : p.trustScore < 20
             ? `<span class="badge" style="background:#FDECEA;color:#C1554D;">New matches paused (automatic)</span>`
+          : p.trustScore <= 40
+            ? `<span class="badge" style="background:#FDECEA;color:#C1554D;">Few new matches (automatic)</span>`
             : p.recommendedAction
               ? `<span class="badge" style="background:#FBF3E3;color:#8A6A2A;">${escapeHtml(p.recommendedAction.label)}</span>`
               : '<span class="badge badge-success">Good standing</span>'}</td>
@@ -10707,8 +10709,16 @@ async function submitOrgSettings(orgId) {
   } catch (e) { showToast(e.message || 'Could not update organization'); }
 }
 
+// v185: a different random starting password for each new admin (it used to be the same for everyone)
+function randomStartPassword() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const b = new Uint32Array(14); (window.crypto || window.msCrypto).getRandomValues(b);
+  const core = Array.from(b, x => abc[x % abc.length]).join('');
+  return `${core.slice(0, 5)}-${core.slice(5, 10)}-${core.slice(10)}`;
+}
 function openNewLocationForm() {
   document.getElementById('new-location-panel').style.display = 'block';
+  const pw = document.getElementById('loc-admin-password'); if (pw && !pw.value) pw.value = randomStartPassword();
   const countrySelect = document.getElementById('loc-country');
   const countries = (GEO_DATA.countries && GEO_DATA.countries.length) ? GEO_DATA.countries : FALLBACK_GEO.countries;
   const current = 'United States';
@@ -11840,14 +11850,14 @@ async function viewDispute(id) {
 
   document.getElementById('dispute-modal-body').innerHTML = `
     <div class="booking-summary">
-      <div class="summary-row"><span>Reason</span><span>${escapeHtml(d.reason)}</span></div>
+      <div class="summary-row" style="gap:16px;align-items:flex-start;"><span>Reason</span><span style="text-align:right;">${escapeHtml(d.reason)}</span></div>
       <div class="summary-row"><span>Amount in escrow</span><span>$${d.amount}</span></div>
       <div class="summary-row total"><span>Status</span><span>${statusBadge(d.status)}</span></div>
     </div>
     <div class="form-label" style="margin-bottom:10px;">Timeline</div>
     <div style="font-size:13.5px;color:var(--slate);line-height:2;">
       ⚠️ Dispute opened${openedDate ? ` — ${openedDate}` : ''}<br/>
-      ${d.status === 'resolved' ? (d.resolution === 'refund_customer' ? '✅ Resolved: customer refunded' : '✅ Resolved: payment released to provider') : `Current status: ${DISPUTE_ACTION_LABEL[d.status] || d.status}`}
+      ${d.status === 'resolved' ? (d.resolution === 'refund_customer' ? '✅ Resolved: customer refunded' : d.resolution === 'split' ? `✅ Resolved: split${d.refundedAmount != null ? ` ($${escapeHtml(String(d.refundedAmount))} back to the customer, $${escapeHtml(String(d.releasedAmount))} to the provider)` : ''}` : '✅ Resolved: payment released to provider') : `Current status: ${DISPUTE_ACTION_LABEL[d.status] || d.status}`}
     </div>
     ${evidenceHTML}
     ${auditLogHTML}`;
